@@ -1,0 +1,1344 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成学习概念检验：从误差相关性、训练顺序与验证方式识别合适的方法及常见陷阱</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --warn: #B83A20;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, sans-serif;
+      --fs-h1: 30px;
+      --fs-h2: 20px;
+      --fs-body: 16px;
+      --fs-label: 14px;
+      --fs-tick: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-sans); }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: 24px 44px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* 顶部标题区 */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid #D5DFE5;
+      padding-bottom: 10px;
+      flex-shrink: 0;
+    }
+    .top-bar h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .top-bar .subtitle {
+      font-size: 15px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .preset-nav {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .nav-btn {
+      padding: 6px 12px;
+      border: 1px solid #BFCCD5;
+      background: var(--surface);
+      border-radius: 4px;
+      font-size: 13px;
+      color: var(--text);
+      cursor: pointer;
+      transition: background var(--duration), border-color var(--duration);
+    }
+    .nav-btn:hover { border-color: var(--model); }
+    .nav-btn.active {
+      background: var(--model);
+      color: #FFF;
+      border-color: var(--model);
+      font-weight: 600;
+    }
+    .reset-btn {
+      padding: 6px 12px;
+      border: 1px solid #BFCCD5;
+      background: #F8FAFB;
+      border-radius: 4px;
+      font-size: 13px;
+      color: var(--muted);
+      cursor: pointer;
+      margin-left: 6px;
+    }
+    .reset-btn:hover { color: var(--text); border-color: var(--text); }
+
+    /* 主交互区布局：三列 */
+    .workbench {
+      display: grid;
+      grid-template-columns: 460px 500px 1fr;
+      gap: 16px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid #D5DFE5;
+      border-radius: 6px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .panel-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-sub {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    /* 变量输入配置卡 */
+    .field-group {
+      margin-bottom: 12px;
+    }
+    .field-group:last-child {
+      margin-bottom: 0;
+    }
+    .field-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .field-val {
+      font-family: var(--font-num);
+      color: var(--model);
+      font-weight: 700;
+    }
+
+    .chips-group {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+    }
+    .chips-group.c3 {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .chip {
+      padding: 7px 9px;
+      border: 1px solid #D5DFE5;
+      background: #FAFCFD;
+      border-radius: 4px;
+      font-size: 13px;
+      line-height: 1.3;
+      text-align: left;
+      cursor: pointer;
+      color: var(--text);
+      transition: all var(--duration);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .chip span.desc {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .chip:hover { border-color: var(--model); background: #F1F6FA; }
+    .chip.active {
+      border-color: var(--model);
+      background: #E8F0F7;
+      color: var(--model);
+      font-weight: 600;
+      box-shadow: inset 0 0 0 1px var(--model);
+    }
+
+    /* 范围滑动条 */
+    .slider-box {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: #F8FAFB;
+      border: 1px solid #E2EBF0;
+      border-radius: 4px;
+      padding: 8px 10px;
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--model);
+      cursor: pointer;
+    }
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* 中间列：结构拓扑与数据流图 */
+    .flow-card {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .canvas-wrap {
+      flex: 1;
+      min-height: 240px;
+      position: relative;
+      background: #FAFBFD;
+      border: 1px solid #E5ECF0;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .loss-breakdown {
+      margin-top: 10px;
+      background: #F8FAFB;
+      border: 1px solid #E2EBF0;
+      border-radius: 4px;
+      padding: 8px 12px;
+    }
+    .loss-bar-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .loss-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .loss-bar {
+      height: 22px;
+      border-radius: 3px;
+      overflow: hidden;
+      display: flex;
+      font-size: 11px;
+      line-height: 22px;
+      color: #FFF;
+      font-weight: 600;
+      text-align: center;
+    }
+    .loss-seg-bias {
+      background: var(--aggregate);
+      transition: width var(--duration);
+      white-space: nowrap;
+      padding: 0 4px;
+    }
+    .loss-seg-var {
+      background: var(--model);
+      transition: width var(--duration);
+      white-space: nowrap;
+      padding: 0 4px;
+    }
+
+    /* 实时数值比对表 */
+    .metric-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .metric-box {
+      background: #F8FAFC;
+      border: 1px solid #E2EBF0;
+      border-radius: 4px;
+      padding: 8px;
+      text-align: center;
+    }
+    .metric-k {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .metric-v {
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text);
+      font-family: var(--font-num);
+    }
+    .metric-v.good { color: var(--answer); }
+    .metric-v.bad { color: var(--warn); }
+    .metric-v.neutral { color: var(--model); }
+
+    /* 右侧列：判别推演、架构匹配度与陷阱排查 */
+    .verdict-card {
+      background: var(--surface);
+      border: 1px solid #D5DFE5;
+      border-radius: 6px;
+      padding: 14px 16px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+    }
+    .match-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #E5ECF0;
+    }
+    .match-tag {
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 15px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tag-bagging { background: #E7EFF6; color: #1E557C; border: 1px solid #BED2E3; }
+    .tag-boosting { background: #FCEFE9; color: #A53612; border: 1px solid #F1C5B3; }
+    .tag-stacking { background: #EBF4F0; color: #1E604F; border: 1px solid #B8DACF; }
+    .tag-invalid { background: #FDEEEF; color: #9A1C25; border: 1px solid #F3BDC2; }
+    .tag-single { background: #EEF2F4; color: #445967; border: 1px solid #CCD8DE; }
+
+    .analysis-block {
+      background: #F8FAFB;
+      border-left: 3px solid var(--model);
+      padding: 8px 12px;
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .analysis-block.alert {
+      border-left-color: var(--warn);
+      background: #FEF8F8;
+    }
+
+    .trap-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .trap-item {
+      padding: 8px 10px;
+      border-radius: 4px;
+      border: 1px solid #E5ECF0;
+      background: #FFF;
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .trap-item.triggered {
+      border-color: #F3B8B4;
+      background: #FFF6F6;
+    }
+    .trap-title {
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+    }
+    .trap-item.triggered .trap-title { color: var(--warn); }
+    .trap-badge {
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 2px;
+      font-weight: 600;
+    }
+    .badge-danger { background: #F8D7DA; color: #842029; }
+    .badge-ok { background: #D1E7DD; color: #0F5132; }
+
+    .trap-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 底部学习检查与挑战动作栏 */
+    .challenge-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #E8EFF4;
+      border: 1px solid #CDDBE3;
+      border-radius: 6px;
+      padding: 10px 16px;
+      flex-shrink: 0;
+    }
+    .challenge-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .challenge-q {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .challenge-hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .challenge-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .ans-btn {
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      background: #FFF;
+      border: 1px solid #BAC9D4;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--text);
+      transition: all var(--duration);
+    }
+    .ans-btn:hover { border-color: var(--model); background: #F3F7FA; }
+    .ans-btn.correct { background: var(--answer); color: #FFF; border-color: var(--answer); }
+    .ans-btn.wrong { background: var(--warn); color: #FFF; border-color: var(--warn); }
+    .challenge-feedback {
+      font-size: 13px;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+    .challenge-feedback.pass { color: var(--answer); }
+    .challenge-feedback.fail { color: var(--warn); }
+  </style>
+</head>
+<body data-page="27" data-total="27">
+  <div id="stage">
+    <!-- 顶部导航与场景预设 -->
+    <header class="top-bar">
+      <div>
+        <h1>集成学习概念检验：架构推演与陷阱排查工作台</h1>
+        <p class="subtitle">通过调整基模型异质性、训练次序、误差相关性与验证策略，观察方差/偏差响应并识别三大范式及常见失效陷阱</p>
+      </div>
+      <div class="preset-nav">
+        <span style="font-size:13px; color:var(--muted); margin-right:4px;">经典案例预设:</span>
+        <button class="nav-btn active" data-preset="bagging">随机森林 (低相关并行)</button>
+        <button class="nav-btn" data-preset="boosting">梯度提升 (序贯纠偏)</button>
+        <button class="nav-btn" data-preset="stacking">异质Stacking (跨层泛化)</button>
+        <button class="nav-btn" data-preset="leakage">K折陷阱 (同源泄漏)</button>
+        <button class="reset-btn" id="btn-reset">重置参数</button>
+      </div>
+    </header>
+
+    <!-- 工作台三列核心交互 -->
+    <main class="workbench">
+      <!-- 第1列：环境与结构参数设定 -->
+      <section class="col">
+        <div class="panel">
+          <div class="panel-title">
+            <span>1. 结构与多样性参数</span>
+            <span class="panel-sub">定义基学习器群的组成性质</span>
+          </div>
+
+          <div class="field-group">
+            <div class="field-label">
+              <span>基学习器模型类型 (Model Space)</span>
+            </div>
+            <div class="chips-group" id="opt-base-models">
+              <button class="chip active" data-val="homogeneous-deep">
+                <span>同质高方差 (深树群)</span>
+                <span class="desc">单体强拟合，方差大偏差小</span>
+              </button>
+              <button class="chip" data-val="homogeneous-weak">
+                <span>同质高偏差 (树桩/浅树)</span>
+                <span class="desc">单体拟合弱，单模型欠拟合</span>
+              </button>
+              <button class="chip" data-val="heterogeneous">
+                <span>异质组合 (树+线性+NN)</span>
+                <span class="desc">不同假设空间，互补性强</span>
+              </button>
+              <button class="chip" data-val="identical-strong">
+                <span>同质过拟合 (高度重合)</span>
+                <span class="desc">完全同源参数与特征选择</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <div class="field-label">
+              <span>基模型预测误差相关系数 (ρ)</span>
+              <span class="field-val" id="val-rho">0.18</span>
+            </div>
+            <div class="slider-box">
+              <div class="slider-row">
+                <input type="range" id="range-rho" min="-0.2" max="0.95" step="0.01" value="0.18">
+              </div>
+              <div class="slider-labels">
+                <span>-0.2 (互补互斥)</span>
+                <span>0.0 (完全独立)</span>
+                <span>0.5 (中等同向)</span>
+                <span>0.95 (同质趋同)</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <div class="field-label">
+              <span>训练生成顺序 (Training Order)</span>
+            </div>
+            <div class="chips-group c3" id="opt-order">
+              <button class="chip active" data-val="parallel">
+                <span>并行独立</span>
+                <span class="desc">互不依赖可加速</span>
+              </button>
+              <button class="chip" data-val="sequential">
+                <span>串行序贯</span>
+                <span class="desc">针对残差递进拟合</span>
+              </button>
+              <button class="chip" data-val="two-stage">
+                <span>两阶段分层</span>
+                <span class="desc">基预测作为元特征</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <div class="field-label">
+              <span>组合策略与验证机制 (Aggregation & CV)</span>
+            </div>
+            <div class="chips-group" id="opt-cv">
+              <button class="chip active" data-val="bootstrap-oob">
+                <span>Bootstrap + OOB折外</span>
+                <span class="desc">约36.8%折外无偏估计</span>
+              </button>
+              <button class="chip" data-val="residual-shrinkage">
+                <span>学习率加权累加 (Shrinkage)</span>
+                <span class="desc">按残差梯度缩减步长</span>
+              </button>
+              <button class="chip" data-val="oof-cv">
+                <span>K折折外特征 (Out-of-Fold)</span>
+                <span class="desc">元学习器严格防泄漏隔离</span>
+              </button>
+              <button class="chip" data-val="in-sample-meta">
+                <span>训练集自预测 (In-sample Meta)</span>
+                <span class="desc">元模型直接使用内样本预测</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 第2列：机制流向拓扑与数值推演 -->
+      <section class="col">
+        <div class="panel flow-card">
+          <div class="panel-title">
+            <span>2. 机制流向图与误差分解</span>
+            <span class="panel-sub" id="topology-tag">Bagging 独立并联模式</span>
+          </div>
+
+          <div class="canvas-wrap">
+            <canvas id="cv-flow" class="cv-fill"></canvas>
+          </div>
+
+          <!-- 误差构成雷达与分解对比 -->
+          <div class="loss-breakdown">
+            <div class="loss-bar-wrap">
+              <div class="loss-label"><span>泛化误差构成 (Bias² + Var)</span><span id="loss-total-val">0.272</span></div>
+              <div class="loss-bar">
+                <div class="loss-seg-bias" id="bar-bias" style="width: 37%;">偏差 0.102</div>
+                <div class="loss-seg-var" id="bar-var" style="width: 63%;">方差 0.170</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 实时数值比对表 -->
+          <div class="metric-row">
+            <div class="metric-box">
+              <div class="metric-k">理论方差 Var(S)</div>
+              <div class="metric-v" id="m-var">0.26</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-k">偏差水平 Bias²</div>
+              <div class="metric-v" id="m-bias">0.12</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-k">集成增益 Expected Gain</div>
+              <div class="metric-v good" id="m-gain">+38.5%</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 第3列：架构匹配判断与陷阱报警 -->
+      <section class="col">
+        <div class="verdict-card">
+          <div class="match-header">
+            <div>
+              <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">匹配集成范式</div>
+              <div class="match-tag tag-bagging" id="match-badge">Bagging / 随机森林模式</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">系统健康度</div>
+              <span id="health-score" style="font-weight:700; font-size:16px; color:var(--answer);">健康 (92/100)</span>
+            </div>
+          </div>
+
+          <div class="analysis-block" id="analysis-text">
+            <strong>范式机理契合：</strong>采用同质高方差基学习器并行训练，且基模型误差相关性极低（ρ = 0.18），配合 Bootstrap 重采样，能最大化发挥方差缩减优势，集成泛化误差显著优于单模型。
+          </div>
+
+          <div class="panel-title" style="margin-top:6px; margin-bottom:4px;">
+            <span>陷阱与边界检查</span>
+            <span class="panel-sub">根据当前设定实时扫描</span>
+          </div>
+
+          <div class="trap-list" id="trap-container">
+            <!-- 由 JS 渲染陷阱卡片 -->
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部：交互式诊断挑战条（把知识转为学习游戏） -->
+    <footer class="challenge-bar">
+      <div class="challenge-info">
+        <span class="challenge-q" id="cq-title">诊断挑战 [1/3]：业务要求对高维稀疏特征进行快速预测，且基模型各自过拟合严重，应如何配置？</span>
+        <span class="challenge-hint" id="cq-hint">提示：关注哪个范式核心解决方差过高，且允许大规模并行训练。</span>
+      </div>
+      <div class="challenge-actions">
+        <button class="ans-btn" data-ans="A">A. 提升误差相关性并用串行弱分类器</button>
+        <button class="ans-btn" data-ans="B">B. 降低误差相关性(随机特征)+并行Bagging</button>
+        <button class="ans-btn" data-ans="C">C. 用训练集内样本直训元模型Stacking</button>
+        <span class="challenge-feedback" id="cq-fb"></span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 1. 状态定义
+      const state = {
+        baseModel: "homogeneous-deep", // homogeneous-deep, homogeneous-weak, heterogeneous, identical-strong
+        rho: 0.18,
+        order: "parallel", // parallel, sequential, two-stage
+        cvStrategy: "bootstrap-oob", // bootstrap-oob, residual-shrinkage, oof-cv, in-sample-meta
+        numEstimators: 10,
+        challengeIdx: 0
+      };
+
+      // 预设配置
+      const PRESETS = {
+        bagging: {
+          baseModel: "homogeneous-deep",
+          rho: 0.15,
+          order: "parallel",
+          cvStrategy: "bootstrap-oob"
+        },
+        boosting: {
+          baseModel: "homogeneous-weak",
+          rho: 0.35,
+          order: "sequential",
+          cvStrategy: "residual-shrinkage"
+        },
+        stacking: {
+          baseModel: "heterogeneous",
+          rho: 0.12,
+          order: "two-stage",
+          cvStrategy: "oof-cv"
+        },
+        leakage: {
+          baseModel: "heterogeneous",
+          rho: 0.65,
+          order: "two-stage",
+          cvStrategy: "in-sample-meta"
+        }
+      };
+
+      // 诊断题库
+      const CHALLENGES = [
+        {
+          q: "诊断挑战 [1/3]：基模型都是过拟合严重的复杂深树（高方差、低偏差），首选哪种方案降噪？",
+          hint: "核心目标：不增加偏差的前提下，依靠平均化大幅压缩方差。",
+          opts: [
+            { id: "A", text: "A. 序贯提升并针对残差强行压制", ok: false },
+            { id: "B", text: "B. 降低样本/特征相关性并采用并行Bagging", ok: true },
+            { id: "C", text: "C. 训练集自预测直接堆叠Stacking", ok: false }
+          ],
+          explain: "回答正确！Bagging 专治高方差模型：E[f̄]偏差不变，Var(f̄)随着相关系数降低和树数量增加逼近极限。"
+        },
+        {
+          q: "诊断挑战 [2/3]：若在 Stacking 中直接拿第一层模型的【训练集内预测】作为第二层元模型的输入，会发生什么？",
+          hint: "第一层基模型对训练集已有强记忆甚至过拟合。",
+          opts: [
+            { id: "A", text: "A. 严重数据泄漏，元模型对训练拟合极好但泛化崩溃", ok: true },
+            { id: "B", text: "B. 完全没有影响，元学习器具备自适应校准能力", ok: false },
+            { id: "C", text: "C. 会导致基学习器训练速度翻倍但指标保持一致", ok: false }
+          ],
+          explain: "回答正确！这就是典型的 Stacking 泄漏陷阱。必须使用 Out-of-Fold (K折折外预测) 生成元特征，保证元模型输入的是未见过的预测分布。"
+        },
+        {
+          q: "诊断挑战 [3/3]：某工程师训练了 50 棵超参数几乎相同的深度决策树做集成，测试集指标毫无提升，主因是？",
+          hint: "集成方差公式：Var = ρ·σ² + (1-ρ)/M·σ²。若 ρ ≈ 1 会发生什么？",
+          opts: [
+            { id: "A", text: "A. 树的数量不够多，需要增加到 1000 棵", ok: false },
+            { id: "B", text: "B. 误差高度正相关（ρ接近1），平均化无法消除系统性方差", ok: true },
+            { id: "C", text: "C. 决策树不能用来做 Bagging 集成", ok: false }
+          ],
+          explain: "回答正确！若缺乏特征扰动或数据多样性导致各模型在相同样本犯同样错误（ρ→1），集成就退化为单模型，无法产生方差消除红利。"
+        }
+      ];
+
+      // DOM 元素引用
+      const elRho = document.getElementById("range-rho");
+      const valRho = document.getElementById("val-rho");
+      const cvFlow = document.getElementById("cv-flow");
+      const ctx = Deck.fit(cvFlow);
+
+      const mVar = document.getElementById("m-var");
+      const mBias = document.getElementById("m-bias");
+      const mGain = document.getElementById("m-gain");
+      const barBias = document.getElementById("bar-bias");
+      const barVar = document.getElementById("bar-var");
+      const lossTotalVal = document.getElementById("loss-total-val");
+      const matchBadge = document.getElementById("match-badge");
+      const healthScore = document.getElementById("health-score");
+      const analysisText = document.getElementById("analysis-text");
+      const trapContainer = document.getElementById("trap-container");
+      const topologyTag = document.getElementById("topology-tag");
+
+      // 挑战题 UI
+      const cqTitle = document.getElementById("cq-title");
+      const cqHint = document.getElementById("cq-hint");
+      const cqFb = document.getElementById("cq-fb");
+      const ansButtons = document.querySelectorAll(".ans-btn");
+
+      // 2. 规则与推导计算模型
+      function evaluateModel(s) {
+        // 单基学习器基础方差与偏差
+        let baseVar = 0.50;
+        let baseBias = 0.20;
+        if (s.baseModel === "homogeneous-deep") {
+          baseVar = 0.65;
+          baseBias = 0.10;
+        } else if (s.baseModel === "homogeneous-weak") {
+          baseVar = 0.15;
+          baseBias = 0.60;
+        } else if (s.baseModel === "heterogeneous") {
+          baseVar = 0.40;
+          baseBias = 0.22;
+        } else if (s.baseModel === "identical-strong") {
+          baseVar = 0.70;
+          baseBias = 0.15;
+        }
+
+        const M = s.numEstimators;
+        const rho = s.rho;
+
+        // 计算理论集成方差: Var_ens = rho * Var + (1 - rho) / M * Var
+        let ensVar = rho * baseVar + ((1 - rho) / M) * baseVar;
+        let ensBias = baseBias;
+
+        // 机制判定逻辑
+        let paradigm = "unknown";
+        let title = "未知配置组合";
+        let badgeClass = "tag-invalid";
+        let health = 90;
+        let traps = [];
+
+        // 规则 1: Bagging 判定 (并行 + 独立/低相关 + 同质深树/异质 + Bootstrap/OOB)
+        if (s.order === "parallel") {
+          if (s.cvStrategy === "bootstrap-oob") {
+            if (s.baseModel === "homogeneous-deep" || s.baseModel === "heterogeneous") {
+              paradigm = "bagging";
+              title = "标准 Bagging / 随机森林模式";
+              badgeClass = "tag-bagging";
+              ensBias = baseBias * 1.02; // 偏差略微上升或持平
+            } else if (s.baseModel === "homogeneous-weak") {
+              paradigm = "bagging-weak";
+              title = "低效 Bagging (基模型过弱)";
+              badgeClass = "tag-invalid";
+              health -= 35;
+              traps.push({
+                name: "基学习器欠拟合",
+                danger: true,
+                desc: "Bagging 只能降低方差，无法降低偏差。基模型本身是高偏差浅树时，平均化后仍处于严重欠拟合状态。"
+              });
+            } else if (s.baseModel === "identical-strong") {
+              paradigm = "bagging-redundant";
+              title = "退化 Bagging (高相关同质)";
+              badgeClass = "tag-invalid";
+              health -= 45;
+              traps.push({
+                name: "模型间高度共线性 / 缺乏多样性",
+                danger: true,
+                desc: "各树几乎完全相同，预测误差相关性极高。平均化操作无法消除方差，白白消耗计算资源。"
+              });
+            }
+          } else {
+            // 并行却用了残差或in-sample
+            paradigm = "conflict-parallel";
+            title = "架构冲突：并行模式无法拟合序贯残差";
+            badgeClass = "tag-invalid";
+            health -= 40;
+            traps.push({
+              name: "时序与策略错位",
+              danger: true,
+              desc: "并行训练各模型同时生成，根本无法获得前序累加模型的即时残差作为优化目标。"
+            });
+          }
+        }
+
+        // 规则 2: Boosting 判定 (串行序贯 + 弱分类器 + 残差收缩)
+        else if (s.order === "sequential") {
+          if (s.cvStrategy === "residual-shrinkage") {
+            if (s.baseModel === "homogeneous-weak") {
+              paradigm = "boosting";
+              title = "标准 Boosting / 梯度提升 (GBDT)";
+              badgeClass = "tag-boosting";
+              // 偏差被逐步攻克降低，方差随步数轻微累积
+              ensBias = baseBias * 0.22;
+              ensVar = baseVar * 1.25 + rho * 0.15;
+            } else if (s.baseModel === "homogeneous-deep" || s.baseModel === "identical-strong") {
+              paradigm = "boosting-overfit";
+              title = "极速过拟合 Boosting";
+              badgeClass = "tag-invalid";
+              health -= 50;
+              ensBias = 0.02;
+              ensVar = 0.85;
+              traps.push({
+                name: "基模型过强导致迅速过拟合噪声",
+                danger: true,
+                desc: "Boosting 是针对残差连续修正，深树在第1-2轮就会强行记住残差中的随机噪声，导致后续轮次崩溃。"
+              });
+            } else {
+              paradigm = "boosting-hetero";
+              title = "混合 Boosting";
+              badgeClass = "tag-boosting";
+              ensBias = baseBias * 0.35;
+            }
+          } else {
+            paradigm = "conflict-seq";
+            title = "时序逻辑违约";
+            badgeClass = "tag-invalid";
+            health -= 40;
+            traps.push({
+              name: "串行拓扑未接入残差更新",
+              danger: true,
+              desc: "串行架构没有采用残差缩减或重权机制，无法发挥递进纠偏价值，丧失了Boosting本质。"
+            });
+          }
+        }
+
+        // 规则 3: Stacking 判定 (两阶段 + 异质 + OOF)
+        else if (s.order === "two-stage") {
+          if (s.cvStrategy === "oof-cv") {
+            if (s.baseModel === "heterogeneous") {
+              paradigm = "stacking";
+              title = "标准 Stacking 堆叠泛化 (OOF严防泄漏)";
+              badgeClass = "tag-stacking";
+              ensBias = baseBias * 0.65;
+              ensVar = ensVar * 0.70;
+            } else {
+              paradigm = "stacking-homo";
+              title = "同质 Stacking (收益收窄)";
+              badgeClass = "tag-single";
+              health -= 20;
+              traps.push({
+                name: "假设空间单一",
+                danger: false,
+                desc: "Stacking 核心价值源于不同算法（树+LR+神经网络）决策边界的互补。全为同构树时元模型学习收益有限。"
+              });
+            }
+          } else if (s.cvStrategy === "in-sample-meta") {
+            paradigm = "stacking-leak";
+            title = "致命陷阱：Stacking 训练集自泄漏";
+            badgeClass = "tag-invalid";
+            health -= 70;
+            ensBias = 0.01; // 假象极好
+            ensVar = 0.95;  // 真实泛化严重爆炸
+            traps.push({
+              name: "【高危】In-Sample 数据泄漏 (Data Leakage)",
+              danger: true,
+              desc: "第一层基模型在训练集上的预测早已过拟合。元模型学到的是基模型的过拟合偏好，在测试集上必定性能暴跌！必须使用严格的 K 折 Out-of-Fold 生成元特征。"
+            });
+          } else {
+            paradigm = "stacking-irregular";
+            title = "非标准 Stacking 策略";
+            badgeClass = "tag-invalid";
+            health -= 35;
+          }
+        }
+
+        // 检查误差相关系数过高的通用陷阱
+        if (s.rho > 0.65 && !traps.some(t => t.name.includes("相关"))) {
+          health -= 30;
+          traps.push({
+            name: "基模型误差正相关过高 (ρ > 0.65)",
+            danger: true,
+            desc: "根据 Condorcet 陪审团定理与方差分解公式，若基学习器犯错高度一致，集成无法抵消随机误差，失去多样性红利。"
+          });
+        }
+
+        // 若一切良好
+        if (traps.length === 0) {
+          traps.push({
+            name: "全流程验证完备",
+            danger: false,
+            desc: "样本划分、基学习器假设空间与时序组合策略相互协同，无数据泄漏与模型同质化瓶颈。"
+          });
+        }
+
+        // 计算预期集成收益
+        const singleTotalLoss = baseVar + baseBias;
+        const ensTotalLoss = Math.max(0.08, ensVar + ensBias);
+        const gainPct = ((singleTotalLoss - ensTotalLoss) / singleTotalLoss) * 100;
+
+        return {
+          paradigm,
+          title,
+          badgeClass,
+          health: Math.max(10, Math.min(100, health)),
+          ensVar: ensVar.toFixed(3),
+          ensBias: ensBias.toFixed(3),
+          gainPct: gainPct > 0 ? `+${gainPct.toFixed(1)}%` : `${gainPct.toFixed(1)}%`,
+          isGainGood: gainPct > 15,
+          traps
+        };
+      }
+
+      // 3. 界面渲染与画布绘制
+      function render() {
+        const evalResult = evaluateModel(state);
+
+        // 标签与度量更新
+        valRho.textContent = Number(state.rho).toFixed(2);
+        mVar.textContent = evalResult.ensVar;
+        mBias.textContent = evalResult.ensBias;
+        mGain.textContent = evalResult.gainPct;
+        mGain.className = "metric-v " + (evalResult.isGainGood ? "good" : (evalResult.health < 60 ? "bad" : "neutral"));
+
+        // 更新误差构成条
+        const numBias = parseFloat(evalResult.ensBias);
+        const numVar = parseFloat(evalResult.ensVar);
+        const totalLoss = Math.max(0.01, numBias + numVar);
+        const biasPct = Math.round((numBias / totalLoss) * 100);
+        const varPct = 100 - biasPct;
+        barBias.style.width = `${biasPct}%`;
+        barBias.textContent = `偏差 ${numBias.toFixed(3)}`;
+        barVar.style.width = `${varPct}%`;
+        barVar.textContent = `方差 ${numVar.toFixed(3)}`;
+        lossTotalVal.textContent = totalLoss.toFixed(3);
+
+        matchBadge.textContent = evalResult.title;
+        matchBadge.className = "match-tag " + evalResult.badgeClass;
+
+        healthScore.textContent = `${evalResult.health < 60 ? "高危警告" : (evalResult.health < 80 ? "存在短板" : "健康稳定")} (${evalResult.health}/100)`;
+        healthScore.style.color = evalResult.health < 60 ? "var(--warn)" : (evalResult.health < 80 ? "var(--model)" : "var(--answer)");
+
+        // 说明文案
+        if (evalResult.paradigm === "bagging") {
+          analysisText.className = "analysis-block";
+          analysisText.innerHTML = `<strong>标准 Bagging 范式：</strong>通过 Bootstrap 构造多样化训练集，深决策树群在独立并行下最大化消除个体方差（当前 ρ=${state.rho}，Var降至${evalResult.ensVar}）。OOB 可作为天然无偏袋外验证。`;
+          topologyTag.textContent = "Bagging 并行解耦拓扑";
+        } else if (evalResult.paradigm === "boosting") {
+          analysisText.className = "analysis-block";
+          analysisText.innerHTML = `<strong>标准 Boosting 范式：</strong>各浅层弱学习器按序贯前后串联，后一模型专门学习前序模型的预测残差。通过 Shrinkage 学习率累加步长，将基偏差从 0.60 逐步纠偏至 ${evalResult.ensBias}。`;
+          topologyTag.textContent = "Boosting 序贯纠偏拓扑";
+        } else if (evalResult.paradigm === "stacking") {
+          analysisText.className = "analysis-block";
+          analysisText.innerHTML = `<strong>标准 Stacking 范式：</strong>利用 K-Fold OOF（折外预测）生成元特征矩阵，元模型综合不同模型（树模型+线性+网络）在未见样本上的预测边界，实现异质优势互补。`;
+          topologyTag.textContent = "Stacking 双层泛化拓扑";
+        } else {
+          analysisText.className = "analysis-block alert";
+          analysisText.innerHTML = `<strong>检测到设计缺陷：</strong>当前选定的模型类型、训练时序或验证方式存在理论冲突或严重泄漏。请核查右侧排查列表并进行针对性调整。`;
+          topologyTag.textContent = "异常/失效结构拓扑";
+        }
+
+        // 陷阱卡片列表更新
+        trapContainer.innerHTML = evalResult.traps.map(t => `
+          <div class="trap-item ${t.danger ? 'triggered' : ''}">
+            <div class="trap-title">
+              <span>${t.name}</span>
+              <span class="trap-badge ${t.danger ? 'badge-danger' : 'badge-ok'}">${t.danger ? '违约/陷阱' : '规则合格'}</span>
+            </div>
+            <div class="trap-desc">${t.desc}</div>
+          </div>
+        `).join("");
+
+        // 绘制拓扑画板
+        drawTopology(evalResult);
+      }
+
+      // 4. 拓扑与数据流动态绘制
+      function drawTopology(res) {
+        const w = cvFlow.width / (window.devicePixelRatio || 1);
+        const h = cvFlow.height / (window.devicePixelRatio || 1);
+        ctx.clearRect(0, 0, w, h);
+
+        const colorModel = Deck.token("--model") || "#27648F";
+        const colorSample = Deck.token("--sample") || "#2F7568";
+        const colorAgg = Deck.token("--aggregate") || "#C34B22";
+        const colorWarn = Deck.token("--warn") || "#B83A20";
+        const colorText = Deck.token("--text") || "#122634";
+        const colorMuted = Deck.token("--muted") || "#536A78";
+
+        // 背景微网格
+        ctx.strokeStyle = "#EDF2F5";
+        ctx.lineWidth = 1;
+        for (let x = 20; x < w; x += 40) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+        }
+        for (let y = 20; y < h; y += 40) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+        }
+
+        // 绘制输入数据池
+        ctx.fillStyle = colorSample;
+        Deck.rr(ctx, 30, 40, 80, 160, 6);
+        ctx.fill();
+
+        ctx.fillStyle = "#FFF";
+        ctx.font = "bold 13px 'Noto Sans SC'";
+        ctx.textAlign = "center";
+        ctx.fillText("原始数据集", 70, 95);
+        ctx.font = "11px 'Noto Sans SC'";
+        ctx.fillText("D (N, P)", 70, 115);
+        ctx.fillText("全量样本空间", 70, 135);
+
+        // 区分不同范式的中间连线与节点
+        if (state.order === "parallel") {
+          // 并行：三条平行线指向基模型
+          const ys = [60, 120, 180];
+          const labels = ["基学习器 1", "基学习器 2", "基学习器 M"];
+          const isLeak = state.cvStrategy === "in-sample-meta";
+
+          ys.forEach((y, i) => {
+            // 连线
+            ctx.beginPath();
+            ctx.strokeStyle = isLeak ? colorWarn : colorMuted;
+            ctx.lineWidth = 2;
+            ctx.moveTo(110, 120);
+            ctx.bezierCurveTo(150, 120, 150, y, 180, y);
+            ctx.stroke();
+
+            // 基学习器方块
+            ctx.fillStyle = isLeak ? "#FBEAEB" : "#FFF";
+            ctx.strokeStyle = isLeak ? colorWarn : colorModel;
+            ctx.lineWidth = 2;
+            Deck.rr(ctx, 180, y - 22, 100, 44, 4);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = colorText;
+            ctx.font = "bold 12px 'Noto Sans SC'";
+            ctx.fillText(labels[i], 230, y);
+            ctx.fillStyle = colorMuted;
+            ctx.font = "10px 'Noto Sans SC'";
+            ctx.fillText(state.baseModel === "heterogeneous" ? `不同算法空间` : `深树样本扰动`, 230, y + 14);
+
+            // 连向聚合节点
+            ctx.beginPath();
+            ctx.strokeStyle = colorMuted;
+            ctx.moveTo(280, y);
+            ctx.bezierCurveTo(320, y, 320, 120, 350, 120);
+            ctx.stroke();
+          });
+
+          // 聚合节点 (Voting / Average)
+          ctx.fillStyle = colorAgg;
+          Deck.rr(ctx, 350, 95, 95, 50, 6);
+          ctx.fill();
+          ctx.fillStyle = "#FFF";
+          ctx.font = "bold 13px 'Noto Sans SC'";
+          ctx.fillText("等权均值/投票", 397, 118);
+          ctx.font = "11px 'Noto Sans SC'";
+          ctx.fillText("f̄(x) = (1/M)∑f_m", 397, 134);
+
+        } else if (state.order === "sequential") {
+          // 串行：流水线式链条
+          const xs = [150, 250, 350];
+          const labels = ["T₁ (初始拟合)", "T₂ (学残差 r₁)", "T_M (学残差 r_{m-1})"];
+
+          xs.forEach((x, i) => {
+            if (i === 0) {
+              ctx.beginPath();
+              ctx.strokeStyle = colorMuted;
+              ctx.lineWidth = 2;
+              ctx.moveTo(110, 120);
+              ctx.lineTo(x, 120);
+              ctx.stroke();
+            } else {
+              // 残差反向更新回路
+              ctx.beginPath();
+              ctx.strokeStyle = colorAgg;
+              ctx.lineWidth = 2;
+              ctx.moveTo(xs[i-1] + 80, 120);
+              ctx.lineTo(x, 120);
+              ctx.stroke();
+
+              // 小箭头
+              Deck.arrow(ctx, xs[i-1] + 80, 120, x, 120, 5);
+            }
+
+            ctx.fillStyle = "#FFF";
+            ctx.strokeStyle = colorModel;
+            ctx.lineWidth = 2;
+            Deck.rr(ctx, x, 95, 80, 50, 4);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = colorText;
+            ctx.font = "bold 11px 'Noto Sans SC'";
+            ctx.fillText(labels[i], x + 40, 118);
+            ctx.fillStyle = colorAgg;
+            ctx.font = "10px 'Noto Sans SC'";
+            ctx.fillText("步长 η 缩减", x + 40, 133);
+          });
+
+          // 最终累加
+          ctx.fillStyle = colorAgg;
+          Deck.rr(ctx, 350, 175, 95, 42, 6);
+          ctx.fill();
+          ctx.fillStyle = "#FFF";
+          ctx.font = "bold 12px 'Noto Sans SC'";
+          ctx.fillText("加法模型总成", 397, 195);
+          ctx.font = "10px 'Noto Sans SC'";
+          ctx.fillText("F(x) = ∑ η·h_m(x)", 397, 208);
+
+          // 连线到总成
+          ctx.beginPath();
+          ctx.strokeStyle = colorAgg;
+          ctx.lineWidth = 2;
+          ctx.moveTo(390, 145);
+          ctx.lineTo(390, 175);
+          ctx.stroke();
+
+        } else if (state.order === "two-stage") {
+          // 两阶段 Stacking 架构
+          const isLeak = state.cvStrategy === "in-sample-meta";
+          const ys = [65, 120, 175];
+          const mNames = ["模型A (XGBoost)", "模型B (RandomForest)", "模型C (Logistic/MLP)"];
+
+          ys.forEach((y, i) => {
+            // 输入连线
+            ctx.beginPath();
+            ctx.strokeStyle = isLeak ? colorWarn : colorSample;
+            ctx.lineWidth = 2;
+            ctx.moveTo(110, 120);
+            ctx.bezierCurveTo(130, 120, 130, y, 150, y);
+            ctx.stroke();
+
+            // 第1层模型
+            ctx.fillStyle = "#FFF";
+            ctx.strokeStyle = colorModel;
+            ctx.lineWidth = 2;
+            Deck.rr(ctx, 150, y - 20, 115, 40, 4);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = colorText;
+            ctx.font = "bold 11px 'Noto Sans SC'";
+            ctx.fillText(mNames[i], 207, y - 4);
+            ctx.fillStyle = isLeak ? colorWarn : colorSample;
+            ctx.font = "10px 'Noto Sans SC'";
+            ctx.fillText(isLeak ? "⚠️ 训练集内自预测" : "✓ K-Fold OOF折外预测", 207, y + 10);
+
+            // 连接到 Meta 特征池
+            ctx.beginPath();
+            ctx.strokeStyle = isLeak ? colorWarn : colorMuted;
+            ctx.moveTo(265, y);
+            ctx.bezierCurveTo(290, y, 290, 120, 310, 120);
+            ctx.stroke();
+          });
+
+          // Meta 特征矩阵与第2层学习器
+          ctx.fillStyle = isLeak ? "#FDF0F0" : "#F0F5F8";
+          ctx.strokeStyle = isLeak ? colorWarn : colorMuted;
+          ctx.lineWidth = 1.5;
+          Deck.rr(ctx, 310, 80, 60, 80, 4);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = isLeak ? colorWarn : colorText;
+          ctx.font = "bold 11px 'Noto Sans SC'";
+          ctx.fillText("元特征", 340, 115);
+          ctx.fillText("Z=[ŷ₁,ŷ₂,ŷ₃]", 340, 130);
+
+          // Meta-Learner
+          ctx.fillStyle = isLeak ? colorWarn : colorAgg;
+          Deck.rr(ctx, 385, 95, 80, 50, 6);
+          ctx.fill();
+          ctx.fillStyle = "#FFF";
+          ctx.font = "bold 12px 'Noto Sans SC'";
+          ctx.fillText("元学习器", 425, 118);
+          ctx.font = "10px 'Noto Sans SC'";
+          ctx.fillText(isLeak ? "过拟合假象" : "线性/Ridge元权", 425, 133);
+        }
+
+        // 底部提示小字
+        ctx.fillStyle = colorMuted;
+        ctx.font = "11px 'Noto Sans SC'";
+        ctx.textAlign = "left";
+        ctx.fillText(`拓扑状态: ${state.order.toUpperCase()} | 样本扰动/验证: ${state.cvStrategy} | 树相关性 ρ=${Number(state.rho).toFixed(2)}`, 20, h - 12);
+      }
+
+      // 5. 事件绑定与状态流转
+      function bindEvents() {
+        // 相关系数滑块
+        elRho.addEventListener("input", (e) => {
+          state.rho = parseFloat(e.target.value);
+          render();
+        });
+
+        // 单选按钮组通用绑定
+        function setupButtonGroup(containerId, stateKey) {
+          const container = document.getElementById(containerId);
+          container.addEventListener("click", (e) => {
+            const btn = e.target.closest("button.chip");
+            if (!btn) return;
+            container.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+            btn.classList.add("active");
+            state[stateKey] = btn.dataset.val;
+            render();
+          });
+        }
+
+        setupButtonGroup("opt-base-models", "baseModel");
+        setupButtonGroup("opt-order", "order");
+        setupButtonGroup("opt-cv", "cvStrategy");
+
+        // 预设切换按钮
+        document.querySelectorAll(".nav-btn").forEach(btn => {
+          btn.addEventListener("click", () => {
+            document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            const preset = PRESETS[btn.dataset.preset];
+            if (preset) {
+              applyPreset(preset);
+            }
+          });
+        });
+
+        // 重置按钮
+        document.getElementById("btn-reset").addEventListener("click", () => {
+          applyPreset(PRESETS.bagging);
+          document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+          document.querySelector('[data-preset="bagging"]').classList.add("active");
+        });
+
+        // 挑战题目答题与诊断机制
+        function renderChallenge() {
+          const item = CHALLENGES[state.challengeIdx];
+          cqTitle.textContent = item.q;
+          cqHint.textContent = item.hint;
+          cqFb.textContent = "";
+          ansButtons.forEach((btn, idx) => {
+            btn.className = "ans-btn";
+            btn.textContent = item.opts[idx].text;
+            btn.dataset.ok = item.opts[idx].ok;
+          });
+        }
+
+        ansButtons.forEach(btn => {
+          btn.addEventListener("click", () => {
+            const isOk = btn.dataset.ok === "true";
+            const item = CHALLENGES[state.challengeIdx];
+            if (isOk) {
+              btn.classList.add("correct");
+              cqFb.className = "challenge-feedback pass";
+              cqFb.textContent = item.explain;
+              // 1.5秒后切下一题
+              setTimeout(() => {
+                state.challengeIdx = (state.challengeIdx + 1) % CHALLENGES.length;
+                renderChallenge();
+              }, 2200);
+            } else {
+              btn.classList.add("wrong");
+              cqFb.className = "challenge-feedback fail";
+              cqFb.textContent = "未通过诊断。请再次观察提示与三大范式的作用边界。";
+            }
+          });
+        });
+
+        renderChallenge();
+      }
+
+      function applyPreset(p) {
+        state.baseModel = p.baseModel;
+        state.rho = p.rho;
+        state.order = p.order;
+        state.cvStrategy = p.cvStrategy;
+
+        // 同步 UI 状态
+        elRho.value = p.rho;
+        syncChips("opt-base-models", p.baseModel);
+        syncChips("opt-order", p.order);
+        syncChips("opt-cv", p.cvStrategy);
+
+        render();
+      }
+
+      function syncChips(containerId, value) {
+        const container = document.getElementById(containerId);
+        container.querySelectorAll(".chip").forEach(c => {
+          if (c.dataset.val === value) c.classList.add("active");
+          else c.classList.remove("active");
+        });
+      }
+
+      // 初始化启动
+      Deck.init({ index: 27, total: 27, keys: false });
+      bindEvents();
+      render();
+
+      // 响应画布尺寸变化
+      Deck.onResize(() => {
+        Deck.fit(cvFlow);
+        render();
+      });
+    })();
+  </script>
+</body>
+</html>

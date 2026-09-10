@@ -70,3 +70,30 @@ def inputs(request=None):
     return ('风格轻索引：ID | 名称 | 简述 | 详情。先选主要方向并 Read 对应 ID，'
             '收到详细资料和参考图后再写主题。用户要求组合可同轮读取多项。'
             '这些不是风格上限；自定义方向可借用最接近的资料再创作，不必强称某流派。\n' + table, [])
+
+
+def selection_inputs():
+    """Full visual coverage, using the generated compact-sheet index (not a fixed count)."""
+    from .director import _images
+    folder = ROOT / 'contact-sheets'
+    names = re.findall(r'!\[[^\]]*\]\(([^)]+\.png)\)', (folder / 'README.md').read_text())
+    shots = []
+    for name in dict.fromkeys(names):
+        path = (folder / name).resolve()
+        if not path.is_relative_to(folder.resolve()):
+            raise ValueError(f'概览路径越界: {name}')
+        shots.append({'id': f'风格概览 {name}', 'shot': str(path)})
+    if not shots:
+        raise ValueError('风格概览索引为空')
+    index = '\n'.join(' | '.join(row[:3]) for row in rows())
+    return index, _images(shots, width=1600)
+
+
+def selected_inputs(ids):
+    """Load known selections without an extra model Read response."""
+    texts, images = [], []
+    for key in dict.fromkeys(ids):
+        text, blocks = detail(key)
+        texts.append(text)
+        images.extend(blocks)
+    return '\n\n'.join(texts), images

@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>准确性之外还需要多样性</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F4F7FB;
+      --surface: #E8EEF5;
+      --text: #13243A;
+      --muted: #53667C;
+      --model: #2457A6;
+      --aggregate: #0F766E;
+      --focus: #C94B00;
+      --font-sans: "Noto Sans CJK SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC", system-ui, sans-serif;
+      --font-numeric: "DIN Alternate", "Noto Sans CJK SC", sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      padding: 28px 56px;
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    header {
+      flex: 0 0 auto;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    /* 主体两栏布局 */
+    main {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 410px;
+      gap: 36px;
+      align-items: stretch;
+    }
+
+    /* 左侧图表卡片 */
+    .chart-panel {
+      position: relative;
+      background: #FFFFFF;
+      border: 1px solid #D8E2ED;
+      border-radius: 8px;
+      padding: 20px 24px 16px;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .panel-title {
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      align-items: center;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-line {
+      width: 22px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .line-indep { background: var(--aggregate); }
+    .line-corr { background: var(--focus); }
+
+    .chart-box {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      width: 100%;
+    }
+
+    /* 右侧控制与推导区 */
+    .inspect-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .card {
+      background: #FFFFFF;
+      border: 1px solid #D8E2ED;
+      border-radius: 8px;
+      padding: 20px 22px;
+    }
+
+    .card h2 {
+      margin: 0 0 12px 0;
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .param-group {
+      margin-bottom: 16px;
+    }
+
+    .param-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .param-val {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      background: var(--surface);
+      border-radius: 3px;
+      accent-color: var(--model);
+      cursor: pointer;
+      margin: 0;
+      outline: none;
+    }
+
+    .stats-card {
+      background: var(--surface);
+      border: 1px solid #D0DBE7;
+      border-radius: 8px;
+      padding: 18px 20px;
+    }
+
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 8px 0;
+      border-bottom: 1px solid #D0DBE7;
+    }
+
+    .metric-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+
+    .metric-num {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .metric-num.highlight {
+      color: var(--aggregate);
+    }
+
+    .metric-num.warn {
+      color: var(--focus);
+    }
+
+    .takeaway-box {
+      border: 2px solid var(--focus);
+      background: #FFFFFF;
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    .takeaway-box b {
+      color: var(--focus);
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body data-page="04" data-total="29">
+  <div id="stage">
+    <header>
+      <h1>准确性之外还需要多样性：高度相关的错误无法仅靠增加模型数量消除</h1>
+    </header>
+
+    <main>
+      <!-- 左侧对比图表 -->
+      <section class="chart-panel min0">
+        <div class="panel-head">
+          <div class="panel-title">集成分类误差随成员数量变化轨迹</div>
+          <div class="legend-row">
+            <div class="legend-item">
+              <span class="legend-line line-indep"></span>
+              <span>独立模型 (ρ = 0)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line line-corr"></span>
+              <span>相关模型</span>
+            </div>
+          </div>
+        </div>
+        <div id="echart-container" class="chart-box"></div>
+      </section>
+
+      <!-- 右侧交互调参与实时推论 -->
+      <aside class="inspect-panel min0">
+        <div class="card">
+          <h2>参数探究</h2>
+
+          <div class="param-group">
+            <div class="param-header">
+              <span>基分类器单体错误率 ε</span>
+              <span class="param-val" id="val-err">0.35</span>
+            </div>
+            <input type="range" id="slider-err" min="0.20" max="0.45" step="0.05" value="0.35">
+          </div>
+
+          <div class="param-group" style="margin-bottom: 0;">
+            <div class="param-header">
+              <span>模型间错误相关度 ρ</span>
+              <span class="param-val" id="val-rho">0.40</span>
+            </div>
+            <input type="range" id="slider-rho" min="0.00" max="0.80" step="0.10" value="0.40">
+          </div>
+        </div>
+
+        <div class="stats-card">
+          <div class="metric-row">
+            <span class="metric-label">25 个独立模型误差</span>
+            <span class="metric-num highlight" id="stat-indep">0.060</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">25 个相关模型误差</span>
+            <span class="metric-num warn" id="stat-corr">0.278</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">相关渐近误差下限</span>
+            <span class="metric-num warn" id="stat-floor">0.245</span>
+          </div>
+        </div>
+
+        <div class="takeaway-box">
+          <b>误差瓶颈</b>：模型犯错高度一致时，多数票共同投向错误。增加模型数量无法抹平系统性盲区。
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    在上一页我们看到，当多个弱分类器相互独立时，根据大数定律和二项分布累计概率，多数投票能让集成误差随基模型数量增加呈指数级衰减，甚至趋近于零。
+    但这一理想结论的前提是“独立犯错”。在实际工程中，若成员模型都在相同的数据集上、使用相似的结构进行拟合，它们对难样本的犯错往往高度相关。
+    根据方差与相关性分解，当模型间存在正相关 ρ 时，增加基模型数量只能消减方差中属于独立的 (1-ρ)/M 部分，剩下的相关部分 ρ 将成为无法通过加模型消除的误差下限。因此，缺乏多样性的集成即便增加到几百个模型，也只是在重复相同的错误。
+  </aside>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 4, total: 29 });
+
+      var chartDom = document.getElementById("echart-container");
+      var myChart = echarts.init(chartDom, null, { renderer: "svg" });
+
+      var sliderErr = document.getElementById("slider-err");
+      var sliderRho = document.getElementById("slider-rho");
+      var valErr = document.getElementById("val-err");
+      var valRho = document.getElementById("val-rho");
+      var statIndep = document.getElementById("stat-indep");
+      var statCorr = document.getElementById("stat-corr");
+      var statFloor = document.getElementById("stat-floor");
+
+      // 组合数计算辅助
+      function comb(n, k) {
+        if (k < 0 || k > n) return 0;
+        if (k === 0 || k === n) return 1;
+        var c = 1;
+        for (var i = 1; i <= k; i++) {
+          c = c * (n - (k - i)) / i;
+        }
+        return c;
+      }
+
+      // 独立情况下的多数票错误率 (二项分布前缀和)
+      function binomialError(m, eps) {
+        var maj = Math.floor(m / 2) + 1;
+        var sum = 0;
+        for (var k = maj; k <= m; k++) {
+          sum += comb(m, k) * Math.pow(eps, k) * Math.pow(1 - eps, m - k);
+        }
+        return sum;
+      }
+
+      // 正态近似分位数求解 (近似计算正相关条件下的集成多数表决误差)
+      // 根据高斯潜变量相关模型: P(集成分类错误) ≈ Φ( (Φ^(-1)(eps)) / sqrt(1 - rho + rho/m) )
+      // 其中当 m -> ∞ 时，极限误差为 Φ( Φ^(-1)(eps) / sqrt(1 - rho) ) 略有收敛但停留在下限
+      // 为直观且严谨对应标准二分类潜变量集成模型 (Gaussian Copula / Probit 聚合):
+      // Z_i = sqrt(rho)*Z_0 + sqrt(1-rho)*U_i, 模型 i 犯错 iff Z_i < t, 其中 Φ(t) = eps.
+      // 当给定公共因子 Z_0 时条件独立，全概率积分或直接由均值方差定理计算：
+      function phiInv(p) {
+        // Acklam 近似
+        var a1 = -3.969683028665376e+01, a2 = 2.209460984245205e+02, a3 = -2.759285104469687e+02;
+        var a4 = 1.383577518672690e+02, a5 = -3.066479806614716e+01, a6 = 2.506628277459239e+00;
+        var b1 = -5.447609879822406e+01, b2 = 1.615858368580409e+02, b3 = -1.556989798598866e+02;
+        var b4 = 6.680131188771972e+01, b5 = -1.328068155288572e+01;
+        var c1 = -7.784894002430293e-03, c2 = -3.223964580411365e-01, c3 = -2.400758277161838e+00;
+        var c4 = -2.549732539343734e+00, c5 = 4.374664141464968e+00, c6 = 2.938163982698783e+00;
+        var d1 = 7.784695709041462e-03, d2 = 3.224671290700398e-01, d3 = 2.445134137142996e+00, d4 = 3.754408661907416e+00;
+        var q, r;
+        if (p <= 0) return -7;
+        if (p >= 1) return 7;
+        if (p < 0.02425) {
+          q = Math.sqrt(-2 * Math.log(p));
+          return (((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) /
+                 ((((d1 * q + d2) * q + d3) * q + d4) * q + 1);
+        }
+        if (p > 1 - 0.02425) {
+          q = Math.sqrt(-2 * Math.log(1 - p));
+          return -(((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) /
+                  ((((d1 * q + d2) * q + d3) * q + d4) * q + 1);
+        }
+        q = p - 0.5;
+        r = q * q;
+        return (((((a1 * r + a2) * r + a3) * r + a4) * r + a5) * r + a6) * q /
+               (((((b1 * r + b2) * r + b3) * r + b4) * r + b5) * r + 1);
+      }
+
+      function phiCdf(x) {
+        var t = 1 / (1 + 0.2316419 * Math.abs(x));
+        var d = 0.3989422804014327 * Math.exp(-x * x / 2);
+        var prob = d * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+        return x > 0 ? 1 - prob : prob;
+      }
+
+      function correlatedError(m, eps, rho) {
+        if (rho <= 0.001) return binomialError(m, eps);
+        if (rho >= 0.999) return eps;
+        var t = phiInv(eps);
+        // 多数票的极限/连续近似：
+        // 多数票过半即平均值 Y_bar > 0.5，对应潜变量平均值低于临界阈值
+        // Var(平均潜变量) = rho + (1 - rho)/m
+        var sigmaM = Math.sqrt(rho + (1 - rho) / m);
+        return phiCdf(t / sigmaM);
+      }
+
+      var mValues = [1, 3, 5, 7, 9, 11, 15, 19, 23, 27, 31, 35, 41, 49];
+
+      function update() {
+        var eps = parseFloat(sliderErr.value);
+        var rho = parseFloat(sliderRho.value);
+
+        valErr.textContent = eps.toFixed(2);
+        valRho.textContent = rho.toFixed(2);
+
+        var indepData = [];
+        var corrData = [];
+
+        mValues.forEach(function (m) {
+          var errInd = binomialError(m, eps);
+          var errCor = correlatedError(m, eps, rho);
+          indepData.push([m, parseFloat(errInd.toFixed(4))]);
+          corrData.push([m, parseFloat(errCor.toFixed(4))]);
+        });
+
+        var e25Ind = binomialError(25, eps);
+        var e25Cor = correlatedError(25, eps, rho);
+        var eFloor = rho > 0 ? phiCdf(phiInv(eps) / Math.sqrt(rho)) : 0;
+
+        statIndep.textContent = e25Ind.toFixed(3);
+        statCorr.textContent = e25Cor.toFixed(3);
+        statFloor.textContent = eFloor.toFixed(3);
+
+        var option = {
+          animationDuration: 300,
+          grid: {
+            left: 55,
+            right: 40,
+            top: 40,
+            bottom: 45
+          },
+          tooltip: {
+            trigger: "axis",
+            backgroundColor: "#FFFFFF",
+            borderColor: "#D8E2ED",
+            borderWidth: 1,
+            textStyle: { color: "#13243A", fontSize: 14 }
+          },
+          xAxis: {
+            type: "value",
+            name: "成员模型数量 M",
+            nameLocation: "middle",
+            nameGap: 30,
+            min: 1,
+            max: 50,
+            splitLine: { lineStyle: { color: "#E8EEF5", type: "dashed" } },
+            axisLine: { lineStyle: { color: "#53667C" } },
+            axisLabel: { color: "#53667C", fontSize: 13, fontFamily: "DIN Alternate, Noto Sans CJK SC" }
+          },
+          yAxis: {
+            type: "value",
+            name: "集成错误率",
+            nameLocation: "end",
+            min: 0,
+            max: 0.5,
+            splitLine: { lineStyle: { color: "#E8EEF5" } },
+            axisLine: { lineStyle: { color: "#53667C" } },
+            axisLabel: { color: "#53667C", fontSize: 13, fontFamily: "DIN Alternate, Noto Sans CJK SC" }
+          },
+          series: [
+            {
+              name: "独立模型 (ρ=0)",
+              type: "line",
+              data: indepData,
+              smooth: true,
+              symbol: "circle",
+              symbolSize: 6,
+              lineStyle: { color: "#0F766E", width: 3 },
+              itemStyle: { color: "#0F766E" },
+              areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                  { offset: 0, color: "rgba(15, 118, 110, 0.2)" },
+                  { offset: 1, color: "rgba(15, 118, 110, 0.01)" }
+                ])
+              }
+            },
+            {
+              name: "相关模型 (ρ=" + rho.toFixed(2) + ")",
+              type: "line",
+              data: corrData,
+              smooth: true,
+              symbol: "circle",
+              symbolSize: 6,
+              lineStyle: { color: "#C94B00", width: 3 },
+              itemStyle: { color: "#C94B00" },
+              markLine: rho > 0.05 ? {
+                symbol: "none",
+                data: [
+                  {
+                    yAxis: parseFloat(eFloor.toFixed(3)),
+                    name: "误差下限",
+                    lineStyle: { color: "#C94B00", type: "dashed", width: 2 },
+                    label: {
+                      formatter: "理论下限: {c}",
+                      position: "insideEndTop",
+                      distance: 8,
+                      color: "#C94B00",
+                      fontSize: 13,
+                      fontFamily: "DIN Alternate, Noto Sans CJK SC"
+                    }
+                  }
+                ]
+              } : undefined
+            }
+          ]
+        };
+
+        myChart.setOption(option, true);
+      }
+
+      sliderErr.addEventListener("input", update);
+      sliderRho.addEventListener("input", update);
+
+      window.addEventListener("resize", function () {
+        myChart.resize();
+      });
+
+      update();
+    })();
+  </script>
+</body>
+</html>

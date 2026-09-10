@@ -112,6 +112,8 @@ class StyleTests(unittest.TestCase):
              patch.object(director,'gates',side_effect=[['missing --bg'],[]]):
             director.theme(self.run,[],'low',planner.skills.WORKFLOWS)
         second=json.dumps(snapshots[1],ensure_ascii=False)
+        first_slots=json.loads(snapshots[0][0]['content'][0]['text'].split('\n\n明确风格要求：')[0])
+        self.assertIn('通用 Paper', first_slots['theme_bans'])
         self.assertIn('broken candidate',second)
         self.assertIn('missing --bg',second)
         self.assertEqual(self.run._style_calls,2)
@@ -145,6 +147,10 @@ class StyleTests(unittest.TestCase):
         self.assertIn('21-bauhaus',text)
         self.assertEqual(sum(x['type']=='input_image' for x in images),1)
         with self.assertRaises(ValueError): style_catalog.read_path('../../config.yaml')
+        text, images = style_catalog.selection_inputs()
+        self.assertTrue(all(r[0] in text for r in rows))
+        self.assertEqual(sum(x['type']=='input_image' for x in images), 10)
+        self.assertIn('1488×656', str([x for x in images if x['type']=='input_text']))
 
     def test_import_does_not_silently_repair_unclosed_css(self):
         source=self.root/'broken-package'
@@ -160,25 +166,93 @@ class StyleTests(unittest.TestCase):
         self.assertFalse(target.exists())
         self.assertFalse(list(self.assets.glob('.theme-publish-*')))
 
-    def test_pick_all_available_no_lightness_band_gate_and_continuous_history(self):
-        shot=self.root/'gallery.png'
-        Image.new('RGB',(8,8),'white').save(shot)
-        rows=[{'id':str(i),'shot':str(shot),'src':'test','title':'test',
-               'pal':[{'hex':'#fff','h':0,'s':0,'l':100,'share':100}]} for i in range(2)]
+    def test_visual_pick_preserves_reason_and_preloads_details_in_two_calls(self):
         history=[]
-        r=response(call('Write',file_path=str(self.root/'style-picks.tsv'),content='0\n1'))
-        with patch.object(director.llm,'respond',return_value=r):
-            self.assertEqual(director.pick(self.run,rows,'low',history),rows)
+        selection='19-hand-drawn\t不规则墨线与荧光批注'
+        r=response(call('Write',file_path=str(self.root/'style-picks.tsv'),content=selection))
+        with patch.object(director.llm,'respond',return_value=r) as model:
+            chosen=director.pick(self.run,'low',history)
+            self.assertEqual(chosen,['19-hand-drawn'])
+            first=model.call_args.args[1][0]['content']
+            self.assertEqual(sum(x['type']=='input_image' for x in first),10)
+            self.assertIn('通用 Paper', json.loads(first[0]['text'])['theme_bans'])
+        self.assertEqual((self.root/'style-picks.tsv').read_text().strip(),selection)
         self.assertTrue(any(x.get('type')=='function_call_output' for x in history))
         snapshot=[]
         def respond(_i,hist,*a,**kw):
             snapshot.extend(copy.deepcopy(hist))
             return response(call('Write',file_path=str(self.assets/'theme.css'),content=CSS))
-        with patch.object(director.llm,'respond',side_effect=respond), patch.object(director,'gates',return_value=[]), \
-             patch.object(style_catalog,'inputs',return_value=('styles',[])):
-            director.theme(self.run,rows,'low',planner.skills.WORKFLOWS,history)
+        with patch.object(director.llm,'respond',side_effect=respond), patch.object(director,'gates',return_value=[]):
+            director.theme(self.run,chosen,'low',planner.skills.WORKFLOWS,history)
         self.assertTrue(any(x.get('type')=='function_call_output' for x in snapshot))
+        body='\n'.join(c.get('text','') for item in snapshot if item.get('role')=='user'
+                       for c in item.get('content',[]) if isinstance(c,dict))
+        writes=[json.loads(item['arguments'])['content'] for item in snapshot
+                if item.get('type')=='function_call' and item.get('name')=='Write']
+        self.assertIn(selection,writes)
+        self.assertIn('已备妥的字体声明',body)
+        self.assertIn('19-hand-drawn.png',body)
+        theme_body=next(item['content'][0]['text'] for item in snapshot
+                        if item.get('role')=='user' and isinstance(item.get('content'),list)
+                        and '待修改完整原主题' not in item['content'][0].get('text','')
+                        and '\n\n明确风格要求：' in item['content'][0].get('text',''))
+        self.assertEqual(json.loads(theme_body.split('\n\n明确风格要求：')[0])['theme_bans'], '')
         self.assertEqual(self.run._style_calls,2)
+        self.assertEqual(theme.references((self.assets/'theme.css').read_text()),[('style','19-hand-drawn')])
+
+    def test_pick_does_not_gate_reason_length_or_style_count(self):
+        for selection in ('01-minimalism', '01-minimalism\n02-swiss\n03-editorial'):
+            r=response(call('Write',file_path=str(self.root/'style-picks.tsv'),content=selection))
+            with patch.object(director.llm,'respond',return_value=r), \
+                 patch.object(style_catalog,'selection_inputs',return_value=('index',[])):
+                self.assertEqual(director.pick(self.run,'low'),selection.splitlines())
+
+    def test_explicit_style_skips_pick(self):
+        self.run.style='19-hand-drawn'
+        with patch.object(director,'pick') as pick, patch.object(director,'theme',return_value=CSS):
+            director.direct(self.run,'low')
+        pick.assert_not_called()
+
+    def test_final_reference_is_used_without_candidate_or_old_image(self):
+        shots=self.assets/'style/shots'
+        shots.mkdir(parents=True)
+        Image.new('RGB',(8,8)).save(shots/'old.png')
+        css=CSS.replace('==== /INTERFACE ====', 'reference style:21-bauhaus\n==== /INTERFACE ====')
+        (self.assets/'theme.css').write_text(css)
+        images=builder.theme_ref_images(self.root)
+        self.assertEqual(sum(x['type']=='input_image' for x in images),1)
+        captions=str([x for x in images if x['type']=='input_text'])
+        self.assertIn('21-bauhaus',captions)
+        self.assertNotIn('old.png',captions)
+        (self.assets/'theme.css').write_text(CSS)
+        self.assertIn('old.png',str([x for x in builder.theme_ref_images(self.root) if x['type']=='input_text']))
+
+    def test_user_reference_relocation_and_boundary(self):
+        source=self.root/'package'
+        source.mkdir()
+        Image.new('RGB',(8,8)).save(source/'my reference.png')
+        css=CSS.replace('==== /INTERFACE ====', 'reference user:my reference.png\n==== /INTERFACE ====')
+        (source/'theme.css').write_text(css)
+        imported,_=theme.import_input(source,self.assets)
+        self.assertEqual(theme.references(imported),[('user','style/my reference.png')])
+        self.assertTrue(Path(theme.reference_images(imported,self.assets)[0]['shot']).is_file())
+        for value in ('../../outside.png','https://example.org/image.png'):
+            with self.assertRaises(ValueError):
+                theme.reference_images(css.replace('my reference.png',value),self.assets)
+
+    def test_reference_optional_colon_preserves_identity_and_relocation(self):
+        css=CSS.replace('==== /INTERFACE ====', 'reference: style:03-editorial\nreference style:03-editorial\n==== /INTERFACE ====')
+        self.assertEqual(theme.references(css), [('style','03-editorial')])
+        source=self.root/'package'
+        source.mkdir()
+        Image.new('RGB',(8,8)).save(source/'ref.png')
+        (source/'theme.css').write_text(css.replace('reference: style:03-editorial', 'reference: user:ref.png'))
+        imported,_=theme.import_input(source,self.assets)
+        self.assertEqual(theme.references(imported), [('user','style/ref.png'),('style','03-editorial')])
+
+    def test_legacy_style_ids_remain_readable_without_rewriting_runs(self):
+        (self.root/'style-picks.tsv').write_text('19-hand-drawn\t依据\n')
+        self.assertEqual(sum(x['type']=='input_image' for x in builder.ref_images(self.root)),1)
 
     def test_theme_submissions_are_bounded_and_keep_source_candidate(self):
         r=response(call('Write',file_path=str(self.assets/'theme.css'),content='bad CSS'))

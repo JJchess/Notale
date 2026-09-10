@@ -46,13 +46,13 @@ _CHECK_USE_ITEMS = {
         "result; decoration must not imitate the algorithm.",
     ),
     "build-page": (
-        "Judge local fills, borders and shadows by this page's composition and reading. Theme-directed materials may group content; neither grouping nor a theme class alone justifies keeping or removing a container. Preserve boundaries that encode evidence or interaction state.",
+        "Review container treatments against the initial visual guidance. Preserve the chosen style and actual controls; do not flatten every panel into a borderless layout.",
         "Check that there is one main evidence field, not several equal parts.",
         "Recompute at least one derived value from the page's own data and formulas.",
         "The same data must agree across prose, chart, and annotations.",
     ),
     "build-interaction": (
-        "Judge local fills, borders and shadows by this page's composition and reading. Theme-directed materials may group content; neither grouping nor a theme class alone justifies keeping or removing a container. Preserve boundaries that encode evidence or interaction state.",
+        "Review container treatments against the initial visual guidance. Preserve the chosen style and actual controls; do not flatten every panel into a borderless layout.",
         "Walk one legal progression path with the after states.",
         "Also cover the applicable illegal or boundary case, the completion state, and Reset.",
         "A legal action must change the real model and the visible evidence; an action "
@@ -195,7 +195,7 @@ def _sample_sheet(path: Path, resource_root: Path | None) -> Path | None:
 
 
 def _visual_main_sample(path: Path, resource_root: Path | None) -> bool:
-    """Visual full and mini bundles share the same migration boundary."""
+    """Only live visual mini bundles carry sample-use guidance."""
     if resource_root is None or resource_root.name not in VISUAL_SAMPLE_WORKFLOWS:
         return False
     try:
@@ -205,7 +205,7 @@ def _visual_main_sample(path: Path, resource_root: Path | None) -> bool:
     return (
         len(rel.parts) >= 3
         and rel.parts[:2] == ("samples", "bundles")
-        and path.name.endswith((".full.md", ".mini.md"))
+        and path.name.endswith(".mini.md")
     )
 
 

@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    /* #stage 由 base.css 统一居中并缩放，不要写 position: absolute; inset: 0; */
+    #stage {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      box-sizing: border-box;
+      padding: var(--pad-y) var(--pad-x);
+      overflow: hidden;
+    }
+
+    header {
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      margin: 0 0 8px 0;
+      color: var(--aggregate);
+    }
+
+    .subtitle {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 48px;
+      height: 700px;
+      align-items: start;
+    }
+
+    /* 左侧：理论推导与曲线图 */
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      height: 680px;
+    }
+
+    .chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
+    }
+
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--aggregate);
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-line {
+      width: 22px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .chart-box {
+      position: relative;
+      width: 880px;
+      height: 480px;
+      background: rgba(255, 255, 255, 0.35);
+      border-radius: 8px;
+      border: 1px solid rgba(116, 129, 124, 0.3);
+    }
+
+    #variance-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .formula-banner {
+      margin-top: 18px;
+      padding: 14px 20px;
+      background: rgba(23, 62, 80, 0.05);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .formula-banner .katex-box {
+      font-size: 22px;
+      color: var(--aggregate);
+    }
+
+    .formula-banner .formula-note {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    /* 右侧：核心洞察卡片 */
+    .insight-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding-top: 52px;
+    }
+
+    .card {
+      padding: 22px 24px;
+      background: rgba(255, 255, 255, 0.5);
+      border-radius: 4px;
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--aggregate);
+      margin-bottom: 8px;
+    }
+
+    .card.accent .card-title {
+      color: var(--focus);
+    }
+
+    .card.rho-card .card-title {
+      color: var(--uncertain);
+    }
+
+    .card-body {
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+      color: var(--text);
+      margin: 0;
+    }
+
+    .highlight-num {
+      font-family: var(--font-numeric);
+      font-weight: var(--weight-bold);
+    }
+
+    /* 坐标轴样式 */
+    .axis line, .axis path {
+      stroke: var(--line);
+      stroke-width: 1.2;
+    }
+    .axis text {
+      fill: var(--muted);
+      font-family: var(--font-numeric);
+      font-size: var(--fs-tick);
+    }
+    .grid line {
+      stroke: rgba(116, 129, 124, 0.2);
+      stroke-dasharray: 4 4;
+    }
+    .asymptote-line {
+      stroke: var(--line);
+      stroke-dasharray: 5 4;
+      stroke-width: 1.5;
+    }
+    .curve-path {
+      fill: none;
+      stroke-width: 3.5;
+      stroke-linecap: round;
+    }
+    .curve-ideal {
+      stroke: var(--focus);
+    }
+    .curve-rho2 {
+      stroke: var(--aggregate);
+    }
+    .curve-rho5 {
+      stroke: var(--uncertain);
+    }
+    .curve-rho8 {
+      stroke: var(--line);
+    }
+    .curve-label {
+      font-size: var(--fs-label);
+      font-weight: var(--weight-medium);
+      dominant-baseline: middle;
+    }
+  </style>
+  <script src="assets/lib/katex.min.js"></script>
+</head>
+<body data-page="08" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>Bagging 降方差：平均与相关性的双重制约</h1>
+      <p class="subtitle">平均抵消随机扰动，但无法跨越基学习器之间的相关性下限</p>
+    </header>
+
+    <main class="main-grid">
+      <!-- 左栏：方差随模型数变化曲线 -->
+      <section class="chart-panel min0">
+        <div class="chart-head">
+          <div class="chart-title">集成方差随学习器数量 <span class="katex-inline" id="k-sym"></span> 的衰减规律</div>
+          <div class="chart-legend">
+            <div class="legend-item"><span class="legend-line" style="background:var(--focus)"></span>完全独立 (ρ=0)</div>
+            <div class="legend-item"><span class="legend-line" style="background:var(--aggregate)"></span>弱相关 (ρ=0.2)</div>
+            <div class="legend-item"><span class="legend-line" style="background:var(--uncertain)"></span>中相关 (ρ=0.5)</div>
+          </div>
+        </div>
+
+        <div class="chart-box">
+          <svg id="variance-svg" viewBox="0 0 880 480">
+            <!-- 坐标网格与刻度通过 JS 动态精确生成 -->
+          </svg>
+        </div>
+
+        <div class="formula-banner">
+          <div class="katex-box" id="variance-formula"></div>
+          <div class="formula-note">设单个模型方差为 σ²，两两相关系数均为 ρ</div>
+        </div>
+      </section>
+
+      <!-- 右栏：核心推演机制 -->
+      <section class="insight-panel min0">
+        <div class="card accent">
+          <div class="card-title">独立假设 (ρ = 0)</div>
+          <p class="card-body">
+            方差降为 <span class="highlight-num">σ² / B</span>。模型数无限增加，方差趋向于零。
+          </p>
+        </div>
+
+        <div class="card rho-card">
+          <div class="card-title">现实瓶颈 (ρ &gt; 0)</div>
+          <p class="card-body">
+            同源数据导致正相关。<span class="highlight-num">B → ∞</span> 时，方差受制于下限 <span class="highlight-num">ρσ²</span>。
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-title">突破路径：特征随机性</div>
+          <p class="card-body">
+            堆叠模型只能消解非相关波动。要进一步降方差，必须压低相关系数 <span class="highlight-num">ρ</span>。
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们，上一讲我们看过了 Bagging 的训练流程，大家一定会好奇：为什么把多个基模型算个平均，就能奇迹般地提升泛化性能？
+    答案就在方差公式里。如果我们把集成模型写成平均：f(x) = (1/B) ∑ f_b(x)。
+    每个单模型的方差是 σ²，两两相关系数是 ρ。展开后，方差分为两部分：第一项是 (1-ρ)/B · σ²，第二项是 ρσ²。
+    看左边的曲线图：如果模型完全不相关，也就是 ρ=0，橙色线会随着 B 趋向于 0！这意味着只要堆树，方差就能无限降低。
+    但是在现实中，所有自助采样集都来自同一个总数据集，树与树之间不可能完全独立。
+    一旦 ρ 大于 0，比如深蓝色的 ρ=0.2，当树的数量增加到一定程度后，曲线就平了，稳稳地贴在渐近线 ρσ² 上。
+    这告诉我们两个关键教学结论：
+    第一，单纯盲目增加 Bagging 的树木数量（B），收益会迅速饱和；
+    第二，要想突破这个瓶颈，唯一的出路是打散树与树之间的相似度，压低相关系数 ρ。
+    这为我们下一课引入“随机森林”在特征维度再次抽样打下了最核心的理论基础。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      // 渲染数学公式
+      katex.render("B", document.getElementById("k-sym"));
+      katex.render("\\mathrm{Var}\\Big(\\frac{1}{B}\\sum_{b=1}^B f_b\\Big) = \\frac{1-\\rho}{B}\\sigma^2 + \\rho\\sigma^2", document.getElementById("variance-formula"));
+
+      // 绘制方差随 B 衰减 SVG 曲线
+      const svg = document.getElementById("variance-svg");
+      const padLeft = 70;
+      const padRight = 130;
+      const padTop = 40;
+      const padBottom = 55;
+      const width = 880;
+      const height = 480;
+
+      const plotW = width - padLeft - padRight;
+      const plotH = height - padTop - padBottom;
+
+      // X: B 从 1 到 50
+      const minB = 1, maxB = 50;
+      // Y: Var / sigma^2 从 0 到 1.05
+      const minY = 0, maxY = 1.05;
+
+      const getX = b => padLeft + ((b - minB) / (maxB - minB)) * plotW;
+      const getY = v => padTop + plotH - ((v - minY) / (maxY - minY)) * plotH;
+
+      // 生成坐标网格与轴
+      let svgHtml = '';
+
+      // 横网格线
+      const yTicks = [0, 0.2, 0.4, 0.6, 0.8, 1.0];
+      yTicks.forEach(yVal => {
+        const yPos = getY(yVal);
+        svgHtml += `<g class="grid"><line x1="${padLeft}" y1="${yPos}" x2="${width - padRight}" y2="${yPos}" /></g>`;
+        svgHtml += `<g class="axis"><text x="${padLeft - 12}" y="${yPos + 4}" text-anchor="end">${yVal === 0 ? '0' : yVal.toFixed(1) + 'σ²'}</text></g>`;
+      });
+
+      // 纵网格线
+      const xTicks = [1, 10, 20, 30, 40, 50];
+      xTicks.forEach(bVal => {
+        const xPos = getX(bVal);
+        svgHtml += `<g class="grid"><line x1="${xPos}" y1="${padTop}" x2="${xPos}" y2="${padTop + plotH}" /></g>`;
+        svgHtml += `<g class="axis"><text x="${xPos}" y="${padTop + plotH + 24}" text-anchor="middle">B = ${bVal}</text></g>`;
+      });
+
+      // 坐标轴线
+      svgHtml += `<g class="axis">
+        <line x1="${padLeft}" y1="${padTop + plotH}" x2="${width - padRight + 20}" y2="${padTop + plotH}" />
+        <line x1="${padLeft}" y1="${padTop + plotH}" x2="${padLeft}" y2="${padTop - 15}" />
+        <text x="${width - padRight + 25}" y="${padTop + plotH + 4}" text-anchor="start" font-weight="500">模型数 B</text>
+        <text x="${padLeft}" y="${padTop - 22}" text-anchor="middle" font-weight="500">集成方差</text>
+      </g>`;
+
+      // 绘制三条主要曲线
+      const series = [
+        { rho: 0.0, class: 'curve-ideal', color: 'var(--focus)', label: 'ρ = 0 (极限)' },
+        { rho: 0.2, class: 'curve-rho2', color: 'var(--aggregate)', label: 'ρ = 0.2 (弱相关)' },
+        { rho: 0.5, class: 'curve-rho5', color: 'var(--uncertain)', label: 'ρ = 0.5 (中相关)' }
+      ];
+
+      // 绘制渐近线（针对 rho=0.2 和 rho=0.5）
+      [0.2, 0.5].forEach(rho => {
+        const yPos = getY(rho);
+        svgHtml += `<line class="asymptote-line" x1="${padLeft}" y1="${yPos}" x2="${width - padRight + 10}" y2="${yPos}" />`;
+        svgHtml += `<text x="${width - padRight + 16}" y="${yPos + 4}" fill="var(--muted)" font-size="13px" font-family="var(--font-numeric)">渐近线 ${rho}σ²</text>`;
+      });
+
+      series.forEach(s => {
+        let d = '';
+        for (let b = 1; b <= 50; b += 0.5) {
+          const v = (1 - s.rho) / b + s.rho;
+          const x = getX(b);
+          const y = getY(v);
+          d += (b === 1 ? `M ${x.toFixed(1)} ${y.toFixed(1)}` : ` L ${x.toFixed(1)} ${y.toFixed(1)}`);
+        }
+        svgHtml += `<path class="curve-path ${s.class}" d="${d}" />`;
+
+        // 终点标记与数值说明
+        const finalB = 50;
+        const finalV = (1 - s.rho) / finalB + s.rho;
+        const endX = getX(finalB);
+        const endY = getY(finalV);
+        svgHtml += `<circle cx="${endX}" cy="${endY}" r="4" fill="${s.color}" />`;
+      });
+
+      // 起始点标记：B=1 时全都在 1.0σ²
+      svgHtml += `<circle cx="${getX(1)}" cy="${getY(1.0)}" r="5" fill="var(--aggregate)" />`;
+      svgHtml += `<text x="${getX(1) + 12}" y="${getY(1.0) - 10}" fill="var(--text)" font-size="14px" font-weight="500">单模型方差 σ² (B=1)</text>`;
+
+      // 添加解释性垂直方差分解标注：在 B=12 处展示两项构成
+      const markB = 10;
+      const markX = getX(markB);
+      const yBottom = getY(0);
+      const yAsymptote = getY(0.2);
+      const yCurve = getY((1 - 0.2) / markB + 0.2);
+
+      svgHtml += `
+        <!-- B=10 垂直虚线 -->
+        <line x1="${markX}" y1="${padTop + plotH}" x2="${markX}" y2="${yCurve}" stroke="var(--line)" stroke-width="1.2" stroke-dasharray="3 3" />
+        <!-- 区分刻度段 -->
+        <line x1="${markX - 6}" y1="${yAsymptote}" x2="${markX + 6}" y2="${yAsymptote}" stroke="var(--aggregate)" stroke-width="2"/>
+        <line x1="${markX - 6}" y1="${yCurve}" x2="${markX + 6}" y2="${yCurve}" stroke="var(--aggregate)" stroke-width="2"/>
+        
+        <!-- 标注文字：向上偏置避免与曲线重合 -->
+        <text x="${markX + 8}" y="${(yAsymptote + yBottom) / 2 + 4}" fill="var(--uncertain)" font-size="13px" font-weight="500">下半段：ρσ² (渐近下限)</text>
+        <text x="${markX + 8}" y="${yCurve - 14}" fill="var(--focus)" font-size="13px" font-weight="500">上半段：(1-ρ)σ²/B (随 B 衰减)</text>
+      `;
+
+      svg.innerHTML = svgHtml;
+    })();
+
+    Deck.init({ index: 8, total: 26 });
+  </script>
+</body>
+</html>

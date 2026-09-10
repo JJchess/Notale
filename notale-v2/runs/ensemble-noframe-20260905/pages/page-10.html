@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>袋外样本 OOB</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F4F7FB;
+      --surface: #E8EEF5;
+      --text: #13243A;
+      --muted: #53667C;
+      --model: #2457A6;
+      --aggregate: #0F766E;
+      --focus: #C94B00;
+      --font-display: "Noto Sans CJK SC", system-ui, sans-serif;
+      --font-sans: "Noto Sans CJK SC", system-ui, sans-serif;
+      --font-numeric: "DIN Alternate", monospace, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 28px;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid rgba(83, 102, 124, 0.2);
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      font-weight: 700;
+      margin: 0 0 14px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* 矩阵区域 */
+    .matrix-wrap {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .matrix-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 5px;
+      table-layout: fixed;
+    }
+
+    .matrix-table th {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 500;
+      padding: 4px 2px;
+      text-align: center;
+    }
+
+    .sample-label {
+      font-size: var(--fs-label);
+      font-family: var(--font-numeric);
+      font-weight: 700;
+      color: var(--text);
+      text-align: left;
+      width: 44px;
+    }
+
+    .cell {
+      height: 38px;
+      border-radius: 4px;
+      text-align: center;
+      vertical-align: middle;
+      font-size: var(--fs-label);
+      font-family: var(--font-numeric);
+      font-weight: 600;
+      transition: all var(--dur-fast) var(--ease);
+      cursor: pointer;
+      border: 1.5px solid transparent;
+      user-select: none;
+    }
+
+    .cell.in-bag {
+      background: rgba(36, 87, 166, 0.15);
+      color: var(--model);
+      border-color: rgba(36, 87, 166, 0.3);
+    }
+
+    .cell.oob {
+      background: #FFFFFF;
+      color: var(--muted);
+      border-color: rgba(83, 102, 124, 0.25);
+    }
+
+    .cell.oob.active-row {
+      background: #FFF2EA;
+      color: var(--focus);
+      border-color: var(--focus);
+      font-weight: 700;
+    }
+
+    .row-summary {
+      font-size: var(--fs-label);
+      font-family: var(--font-numeric);
+      color: var(--muted);
+      text-align: center;
+      width: 140px;
+    }
+
+    .row-summary b {
+      color: var(--aggregate);
+      font-size: var(--fs-body);
+    }
+
+    .matrix-legend {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(83, 102, 124, 0.2);
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-box {
+      width: 16px;
+      height: 16px;
+      border-radius: 3px;
+    }
+
+    /* 右侧推导与评估 */
+    .eval-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .stat-card {
+      background: #FFFFFF;
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      border: 1px solid rgba(83, 102, 124, 0.15);
+    }
+
+    .stat-math {
+      font-size: var(--fs-h1);
+      font-family: var(--font-numeric);
+      font-weight: 700;
+      color: var(--model);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .stat-math span.desc {
+      font-size: var(--fs-sec);
+      font-family: var(--font-sans);
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .stat-card p {
+      margin: 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .focus-panel {
+      background: #FFFFFF;
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      border: 2px solid var(--aggregate);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .focus-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .focus-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    .tree-tags {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .tag {
+      font-size: var(--fs-label);
+      font-family: var(--font-numeric);
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: rgba(15, 118, 110, 0.12);
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+
+    .eval-flow {
+      background: var(--surface);
+      border-radius: 6px;
+      padding: 12px 16px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .eval-flow strong {
+      color: var(--focus);
+    }
+
+    .eval-metrics {
+      display: flex;
+      gap: 16px;
+      margin-top: 10px;
+    }
+
+    .metric-box {
+      flex: 1;
+      background: #FFFFFF;
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: 1px solid rgba(83, 102, 124, 0.15);
+    }
+
+    .metric-num {
+      font-size: var(--fs-h2);
+      font-family: var(--font-numeric);
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .btn {
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      border-radius: 4px;
+      border: 1px solid var(--muted);
+      background: #FFFFFF;
+      color: var(--text);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: all var(--dur-fast);
+    }
+
+    .btn:hover, .btn.active {
+      border-color: var(--model);
+      color: var(--model);
+      background: rgba(36, 87, 166, 0.08);
+    }
+  </style>
+</head>
+<body data-page="10" data-total="29">
+  <div id="stage">
+    <header>
+      <h1>袋外样本 OOB：每棵树未抽中的约 36.8% 样本构成天然验证集</h1>
+    </header>
+
+    <div class="main-grid">
+      <!-- 左栏：样本 × 树 抽样矩阵 -->
+      <section class="card min0">
+        <div class="card-title">
+          <span>样本抽样归属矩阵 (N=8, B=6)</span>
+          <span style="font-size:var(--fs-tick); font-weight:normal; color:var(--muted)">点击样本切换查看</span>
+        </div>
+
+        <div class="matrix-wrap">
+          <table class="matrix-table" id="sampleMatrix">
+            <thead>
+              <tr>
+                <th style="width:48px;">样本</th>
+                <th>Tree 1</th>
+                <th>Tree 2</th>
+                <th>Tree 3</th>
+                <th>Tree 4</th>
+                <th>Tree 5</th>
+                <th>Tree 6</th>
+                <th style="width:130px;">OOB 评估树</th>
+              </tr>
+            </thead>
+            <tbody id="matrixBody">
+              <!-- JS 动态注入或静态生成 -->
+            </tbody>
+          </table>
+
+          <div class="matrix-legend">
+            <div class="legend-item">
+              <div class="legend-box" style="background:rgba(36, 87, 166, 0.2); border:1px solid var(--model);"></div>
+              <span>袋内训练 (In-Bag)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-box" style="background:#FFFFFF; border:1px solid rgba(83, 102, 124, 0.4);"></div>
+              <span>袋外评估 (OOB)</span>
+            </div>
+            <div class="legend-item" style="margin-left:auto;">
+              <span id="overallRate">整体未抽中比例：<b>37.5%</b> (18/48)</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：理论极限与评估机制 -->
+      <section class="eval-wrap min0">
+        <div class="stat-card">
+          <div class="stat-math">
+            (1 - 1/N)ᴺ → 1/e ≈ 36.8%
+            <span class="desc">理论未抽中概率</span>
+          </div>
+          <p>样本容量 N 充分大时，每棵树约有 36.8% 的训练样本从未被抽中。这部分样本对该树完全不可见。</p>
+        </div>
+
+        <div class="focus-panel">
+          <div>
+            <div class="focus-header">
+              <span class="focus-title" id="focusSampleTitle">样本 x₄ 的 OOB 预测</span>
+              <span style="font-size:var(--fs-label); color:var(--muted)" id="focusSampleTruth">真实标签：y = +1</span>
+            </div>
+
+            <div style="font-size:var(--fs-label); color:var(--muted); margin-bottom:6px;">未将该样本用于训练的基学习器：</div>
+            <div class="tree-tags" id="evalTreesTags">
+              <span class="tag">Tree 1</span>
+              <span class="tag">Tree 3</span>
+              <span class="tag">Tree 5</span>
+            </div>
+
+            <div class="eval-flow" id="evalFlowText">
+              仅收集 <strong>Tree 1、3、5</strong> 的预测输出，由这 3 棵树进行多数投票聚合，得到样本 x₄ 的无偏近似评估。
+            </div>
+          </div>
+
+          <div class="eval-metrics">
+            <div class="metric-box">
+              <div class="metric-num" id="metricTreeCount">3 / 6</div>
+              <div class="metric-label">参与评估的树数量</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-num" id="metricVoteResult">+1 (一致)</div>
+              <div class="metric-label">OOB 聚合预测结果</div>
+            </div>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn" onclick="selectSample(0)">样本 x₁</button>
+            <button class="btn" onclick="selectSample(3)">样本 x₄</button>
+            <button class="btn" onclick="selectSample(6)">样本 x₇</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页重点建立对袋外样本（Out-Of-Bag）的直观认知。
+    左侧展示了一组有放回抽样的具体对照：每一列代表一棵树，每一行代表一个样本。蓝色单元格表示被抽中用于训练（袋内），白色单元格表示未被抽中（袋外）。
+    右上角给出了关键数学推导：每次抽取不中概率为 1-1/N，抽取 N 次均未抽中的概率极限为 1/e，约等于 36.8%。
+    右下角展示了 OOB 评估的核心机制：对于任意样本，仅让未包含该样本的树参与投票，从而在无需保留独立验证集的前提下，获得对模型泛化误差的有效估计。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 固定的 8 个样本在 6 棵树中的抽样情况 (0 = OOB, 1 = In-Bag)
+    // 保持每个样本平均约 37% 的 OOB 比例 (2~3 棵树 OOB)
+    const MATRIX_DATA = [
+      { id: 1, label: "x₁", truth: "+1", inBag: [1, 0, 1, 1, 0, 1], preds: ["+1", "+1", "+1", "+1", "+1", "+1"] },
+      { id: 2, label: "x₂", truth: "-1", inBag: [0, 1, 1, 0, 1, 1], preds: ["-1", "-1", "+1", "-1", "-1", "-1"] },
+      { id: 3, label: "x₃", truth: "+1", inBag: [1, 1, 0, 1, 1, 0], preds: ["+1", "+1", "+1", "+1", "-1", "+1"] },
+      { id: 4, label: "x₄", truth: "+1", inBag: [0, 1, 0, 1, 0, 1], preds: ["+1", "+1", "+1", "+1", "+1", "+1"] },
+      { id: 5, label: "x₅", truth: "-1", inBag: [1, 0, 1, 0, 1, 1], preds: ["-1", "-1", "-1", "-1", "-1", "-1"] },
+      { id: 6, label: "x₆", truth: "+1", inBag: [1, 1, 1, 0, 0, 1], preds: ["+1", "+1", "+1", "+1", "+1", "+1"] },
+      { id: 7, label: "x₇", truth: "-1", inBag: [0, 1, 1, 1, 0, 0], preds: ["-1", "-1", "-1", "-1", "+1", "-1"] },
+      { id: 8, label: "x₈", truth: "+1", inBag: [1, 0, 0, 1, 1, 0], preds: ["+1", "-1", "+1", "+1", "+1", "+1"] },
+    ];
+
+    let currentSampleIdx = 3; // 默认 x4
+
+    function renderMatrix() {
+      const tbody = document.getElementById("matrixBody");
+      tbody.innerHTML = "";
+
+      MATRIX_DATA.forEach((row, rIdx) => {
+        const tr = document.createElement("tr");
+        const isSelected = rIdx === currentSampleIdx;
+
+        // 样本标签
+        const tdLabel = document.createElement("td");
+        tdLabel.className = "sample-label";
+        tdLabel.textContent = row.label;
+        if (isSelected) tdLabel.style.color = "var(--focus)";
+        tr.appendChild(tdLabel);
+
+        // 各树状态
+        let oobCount = 0;
+        let oobTrees = [];
+        row.inBag.forEach((inBag, cIdx) => {
+          const td = document.createElement("td");
+          td.className = "cell " + (inBag ? "in-bag" : "oob");
+          if (!inBag) {
+            oobCount++;
+            oobTrees.push(`T${cIdx + 1}`);
+            if (isSelected) td.classList.add("active-row");
+            td.textContent = "OOB";
+          } else {
+            td.textContent = "训练";
+          }
+          td.onclick = () => selectSample(rIdx);
+          tr.appendChild(td);
+        });
+
+        // 摘要列
+        const tdSummary = document.createElement("td");
+        tdSummary.className = "row-summary";
+        tdSummary.innerHTML = `<b>${oobCount}</b> 棵树 (${oobTrees.join(",")})`;
+        if (isSelected) tdSummary.style.color = "var(--focus)";
+        tr.appendChild(tdSummary);
+
+        tr.style.background = isSelected ? "rgba(201, 75, 0, 0.05)" : "transparent";
+        tbody.appendChild(tr);
+      });
+    }
+
+    function selectSample(idx) {
+      currentSampleIdx = idx;
+      renderMatrix();
+      updateDetail();
+
+      // 同步按钮状态
+      const btns = document.querySelectorAll(".btn");
+      btns.forEach(btn => btn.classList.remove("active"));
+      if (idx === 0 && btns[0]) btns[0].classList.add("active");
+      if (idx === 3 && btns[1]) btns[1].classList.add("active");
+      if (idx === 6 && btns[2]) btns[2].classList.add("active");
+    }
+
+    function updateDetail() {
+      const row = MATRIX_DATA[currentSampleIdx];
+      document.getElementById("focusSampleTitle").textContent = `样本 ${row.label} 的 OOB 预测`;
+      document.getElementById("focusSampleTruth").textContent = `真实标签：y = ${row.truth}`;
+
+      const oobTreeIndices = [];
+      row.inBag.forEach((inBag, idx) => {
+        if (!inBag) oobTreeIndices.push(idx + 1);
+      });
+
+      const tagsContainer = document.getElementById("evalTreesTags");
+      tagsContainer.innerHTML = "";
+      oobTreeIndices.forEach(tNum => {
+        const span = document.createElement("span");
+        span.className = "tag";
+        span.textContent = `Tree ${tNum} (预测 ${row.preds[tNum - 1]})`;
+        tagsContainer.appendChild(span);
+      });
+
+      const oobTreesStr = oobTreeIndices.map(t => `Tree ${t}`).join("、");
+      document.getElementById("evalFlowText").innerHTML =
+        `仅收集 <strong>${oobTreesStr}</strong> 的预测输出，由这 ${oobTreeIndices.length} 棵树进行投票聚合，得到样本 ${row.label} 的独立评估。`;
+
+      document.getElementById("metricTreeCount").textContent = `${oobTreeIndices.length} / 6`;
+
+      // 计算投票
+      const oobVotes = oobTreeIndices.map(t => row.preds[t - 1]);
+      const posVotes = oobVotes.filter(v => v === "+1").length;
+      const negVotes = oobVotes.filter(v => v === "-1").length;
+      const finalVote = posVotes >= negVotes ? "+1" : "-1";
+      const isCorrect = finalVote === row.truth;
+
+      document.getElementById("metricVoteResult").textContent = `${finalVote} (${isCorrect ? '正确' : '偏差'})`;
+      document.getElementById("metricVoteResult").style.color = isCorrect ? "var(--aggregate)" : "var(--focus)";
+    }
+
+    // 初始化
+    Deck.init({ index: 10, total: 29 });
+    selectSample(3);
+  </script>
+</body>
+</html>

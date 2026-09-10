@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>折外预测矩阵的形成</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: 20px 48px;
+      display: flex;
+      flex-direction: column;
+      height: 900px;
+      box-sizing: border-box;
+      gap: 14px;
+    }
+
+    /* 顶部标题行与导语 */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid rgba(83, 106, 120, 0.22);
+      padding-bottom: 8px;
+    }
+    .title-group h1 {
+      font-size: 30px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 4px 0;
+      letter-spacing: -0.5px;
+    }
+    .title-group p {
+      font-size: 16px;
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.35;
+    }
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 500;
+      padding: 6px 14px;
+      background: var(--surface);
+      border-radius: 6px;
+      border: 1px solid rgba(83, 106, 120, 0.25);
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--model);
+    }
+
+    /* 主体布局：左侧交互与机制演练，右侧折外矩阵生成结果 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 800px 1fr;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 面板外框 */
+    .panel-box {
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid rgba(83, 106, 120, 0.22);
+      box-shadow: 0 4px 14px rgba(18, 38, 52, 0.04);
+      display: flex;
+      flex-direction: column;
+      padding: 14px 18px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .panel-header h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-header .subtag {
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    /* 模式切换与控制按钮条 */
+    .mode-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface-strong);
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+    .mode-buttons {
+      display: flex;
+      gap: 6px;
+    }
+    .btn-mode {
+      background: none;
+      border: 1px solid transparent;
+      padding: 6px 14px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--muted);
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-mode.active {
+      background: var(--surface);
+      color: var(--text);
+      border-color: rgba(83, 106, 120, 0.3);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    }
+    .btn-mode.leak-mode.active {
+      color: #b91c1c;
+    }
+
+    .fold-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .fold-tab {
+      padding: 5px 12px;
+      font-size: 14px;
+      font-weight: 600;
+      border: 1px solid rgba(83, 106, 120, 0.25);
+      background: var(--surface);
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all 0.15s ease;
+    }
+    .fold-tab.active {
+      background: var(--model);
+      color: #fff;
+      border-color: var(--model);
+    }
+
+    /* 训练集 5-Fold 分块视图 */
+    .kfold-display {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #F8FAFC;
+      border: 1px solid rgba(83, 106, 120, 0.18);
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+    }
+    .folds-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+    }
+    .fold-card {
+      border-radius: 6px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      border: 2px solid transparent;
+      background: #fff;
+      transition: all 0.2s ease;
+    }
+    .fold-card.train {
+      background: rgba(39, 100, 143, 0.12);
+      border-color: var(--model);
+      color: var(--model);
+    }
+    .fold-card.oof {
+      background: rgba(195, 75, 34, 0.14);
+      border-color: var(--aggregate);
+      color: var(--aggregate);
+      box-shadow: 0 0 0 2px rgba(195, 75, 34, 0.2);
+    }
+    .fold-card.leak {
+      background: rgba(185, 28, 28, 0.15);
+      border-color: #b91c1c;
+      color: #b91c1c;
+    }
+    .fold-title {
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .fold-role {
+      font-size: 13px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    .fold-card.train .fold-role {
+      background: rgba(39, 100, 143, 0.18);
+      color: var(--model);
+    }
+    .fold-card.oof .fold-role {
+      background: var(--aggregate);
+      color: #ffffff;
+    }
+    .fold-card.leak .fold-role {
+      background: #b91c1c;
+      color: #ffffff;
+    }
+
+    /* 基学习器运算流 */
+    .models-stream {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+      justify-content: space-around;
+    }
+    .model-strip {
+      display: grid;
+      grid-template-columns: 140px 1fr 140px;
+      gap: 12px;
+      align-items: center;
+      background: #F8FAFC;
+      border: 1px solid rgba(83, 106, 120, 0.18);
+      border-radius: 6px;
+      padding: 10px 14px;
+    }
+    .model-strip .m-tag {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .model-strip .m-tag span {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      background: var(--model);
+    }
+    .model-strip .m-flow {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .model-strip .m-pred {
+      text-align: right;
+      font-family: monospace;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    /* 右侧：元特征矩阵表格 */
+    .matrix-container {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+    .matrix-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin-top: 4px;
+      font-size: 13px;
+    }
+    .matrix-table th {
+      background: var(--surface-strong);
+      color: var(--text);
+      font-weight: 700;
+      padding: 4px 4px;
+      border: 1px solid rgba(83, 106, 120, 0.2);
+      text-align: center;
+      font-size: 12px;
+      line-height: 1.2;
+    }
+    .matrix-table td {
+      padding: 3px 2px;
+      text-align: center;
+      border: 1px solid rgba(83, 106, 120, 0.15);
+      background: #fff;
+      font-family: monospace;
+      font-size: 12px;
+      line-height: 1.2;
+      transition: all 0.2s ease;
+    }
+    .matrix-table tr.active-row td {
+      background: rgba(195, 75, 34, 0.08);
+      font-weight: 700;
+    }
+    .matrix-table tr.leak-row td {
+      background: rgba(185, 28, 28, 0.1);
+      color: #991b1b;
+      font-weight: 700;
+    }
+    .matrix-table td.fold-col {
+      font-family: var(--font-sans);
+      font-weight: 700;
+      background: #F8FAFC;
+    }
+
+    .matrix-status-box {
+      margin-top: 8px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: #F8FAFC;
+      border: 1px solid rgba(83, 106, 120, 0.2);
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--text);
+    }
+    .matrix-status-box strong {
+      color: var(--aggregate);
+    }
+
+    /* 下方指标对比区 */
+    .metric-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid rgba(83, 106, 120, 0.2);
+      border-radius: 6px;
+      padding: 6px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .metric-card .label {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .metric-card .val {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      font-family: monospace;
+    }
+
+    /* 交互操作栏 */
+    .action-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 8px 18px;
+      border: 1px solid rgba(83, 106, 120, 0.2);
+    }
+    .legend-group {
+      display: flex;
+      gap: 16px;
+      font-size: 14px;
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+    }
+    .legend-color {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body data-page="23" data-total="27">
+  <div id="stage">
+    <!-- 顶部 -->
+    <header class="top-bar">
+      <div class="title-group">
+        <h1>折外预测矩阵的形成与数据流验证</h1>
+        <p>通过严格的 K 折交叉切分，让每个样本在元特征矩阵中的值均来自“未见过该样本”的基模型副本</p>
+      </div>
+      <div class="status-badge" id="statusBadge">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="badgeText">标准 K-Fold OOF 协议：无信息泄漏</span>
+      </div>
+    </header>
+
+    <!-- 主交互工作区 -->
+    <main class="main-grid">
+      <!-- 左面板：当前折训练/预测流与数据切分 -->
+      <section class="panel-box min0">
+        <div class="panel-header">
+          <h2>
+            <span>训练切分与预测流</span>
+          </h2>
+          <span class="subtag">选择查看数据折或切换协议</span>
+        </div>
+
+        <!-- 协议切换与数据折选择 -->
+        <div class="mode-bar">
+          <div class="mode-buttons">
+            <button class="btn-mode active" id="btnNormal" data-mode="normal">标准 OOF 预测（无泄漏）</button>
+            <button class="btn-mode leak-mode" id="btnLeak" data-mode="leak">朴素全量预测（严重泄漏）</button>
+          </div>
+          <div class="fold-selector" id="foldSelector">
+            <button class="fold-tab active" data-fold="1">Fold 1</button>
+            <button class="fold-tab" data-fold="2">Fold 2</button>
+            <button class="fold-tab" data-fold="3">Fold 3</button>
+            <button class="fold-tab" data-fold="4">Fold 4</button>
+            <button class="fold-tab" data-fold="5">Fold 5</button>
+          </div>
+        </div>
+
+        <!-- 5-Fold 分布状态可视化 -->
+        <div class="kfold-display">
+          <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--muted); margin-bottom:4px;">
+            <span id="foldSummary">当前评估折：Fold 1（样本 1–4 为验证集，其余 16 个样本参与训练）</span>
+            <span id="foldRatio">训练:验证 = 4:1</span>
+          </div>
+          <div class="folds-row" id="foldsRow">
+            <!-- 动态生成 5 个 fold 卡片 -->
+          </div>
+        </div>
+
+        <!-- 3 个基学习器在此折的运算与输出 -->
+        <div class="models-stream" id="modelsStream">
+          <!-- 动态更新基模型预测 -->
+        </div>
+      </section>
+
+      <!-- 右面板：折外元特征矩阵与元学习器评估 -->
+      <section class="panel-box min0">
+        <div class="panel-header">
+          <h2>
+            <span>元特征矩阵 (20×3)</span>
+          </h2>
+          <span class="subtag" id="matrixSubtitle">元学习器 (Meta-Learner) 的训练输入</span>
+        </div>
+
+        <div class="matrix-container">
+          <div style="flex:1; border:1px solid rgba(83,106,120,0.2); border-radius:6px; display:flex; flex-direction:column; justify-content:space-between;">
+            <table class="matrix-table" id="matrixTable">
+              <thead>
+                <tr>
+                  <th style="width:38px;">折</th>
+                  <th style="width:44px;">样本</th>
+                  <th style="width:58px;">真实 y</th>
+                  <th>基模型 A</th>
+                  <th>基模型 B</th>
+                  <th>基模型 C</th>
+                  <th style="width:56px;">状态</th>
+                </tr>
+              </thead>
+              <tbody id="matrixBody">
+                <!-- 20 行样本数据 -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 诊断状态框 -->
+          <div class="matrix-status-box" id="matrixStatusBox">
+            <!-- 动态描述 -->
+          </div>
+
+          <!-- 关键量化指标对比 -->
+          <div class="metric-row">
+            <div class="metric-card">
+              <span class="label">基模型平均训练/折外误差差值 (Overfit Gap)</span>
+              <span class="val" id="valGap">0.021 (健康)</span>
+            </div>
+            <div class="metric-card">
+              <span class="label">元学习器在独立测试集预期误差</span>
+              <span class="val" id="valMetaErr">0.084 (优于单模型)</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部图例与解释条 -->
+    <footer class="action-bar">
+      <div class="legend-group">
+        <div class="legend-item">
+          <div class="legend-color" style="background: rgba(39, 100, 143, 0.25); border:1px solid var(--model);"></div>
+          <span>参与基模型训练的训练折 (In-Fold)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background: var(--aggregate);"></div>
+          <span>基模型未曾见过的折外验证样本 (OOF)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background: #b91c1c;"></div>
+          <span>自练自测泄漏样本 (Leakage)</span>
+        </div>
+      </div>
+      <div style="font-size:14px; color:var(--muted);" id="footHint">
+        点击上方不同折可切换观察每一折如何拼入元特征矩阵；切换为“朴素全量预测”可观察泄漏后果。
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 确定性合成数据：20个样本，5折（每折4个样本），二分类任务 y in {0, 1}
+      // 固定标签与真实潜在线性关系
+      const SAMPLES = [
+        { id: 1, fold: 1, y: 1, trueP: 0.85 },
+        { id: 2, fold: 1, y: 0, trueP: 0.15 },
+        { id: 3, fold: 1, y: 1, trueP: 0.70 },
+        { id: 4, fold: 1, y: 0, trueP: 0.25 },
+
+        { id: 5, fold: 2, y: 1, trueP: 0.90 },
+        { id: 6, fold: 2, y: 1, trueP: 0.65 },
+        { id: 7, fold: 2, y: 0, trueP: 0.10 },
+        { id: 8, fold: 2, y: 0, trueP: 0.40 },
+
+        { id: 9, fold: 3, y: 1, trueP: 0.80 },
+        { id: 10, fold: 3, y: 0, trueP: 0.30 },
+        { id: 11, fold: 3, y: 1, trueP: 0.60 },
+        { id: 12, fold: 3, y: 0, trueP: 0.05 },
+
+        { id: 13, fold: 4, y: 1, trueP: 0.75 },
+        { id: 14, fold: 4, y: 0, trueP: 0.20 },
+        { id: 15, fold: 4, y: 1, trueP: 0.88 },
+        { id: 16, fold: 4, y: 0, trueP: 0.35 },
+
+        { id: 17, fold: 5, y: 0, trueP: 0.12 },
+        { id: 18, fold: 5, y: 1, trueP: 0.92 },
+        { id: 19, fold: 5, y: 0, trueP: 0.22 },
+        { id: 20, fold: 5, y: 1, trueP: 0.68 }
+      ];
+
+      // 三个基学习器生成函数
+      // OOF 预测：泛化噪声真实反映未见数据表现
+      // 泄漏预测：直接记住训练集，虚高拟合（过拟合样本）
+      function generatePreds(sample, mode) {
+        const { y, trueP } = sample;
+        if (mode === "leak") {
+          // 自练自测：极度自信且过度拟合样本标签
+          const a = y === 1 ? Math.min(0.99, (trueP * 0.4 + 0.58)).toFixed(3) : Math.max(0.01, (trueP * 0.4 - 0.02)).toFixed(3);
+          const b = y === 1 ? Math.min(0.98, (trueP * 0.3 + 0.67)).toFixed(3) : Math.max(0.02, (trueP * 0.3 - 0.01)).toFixed(3);
+          const c = y === 1 ? Math.min(0.97, (trueP * 0.35 + 0.63)).toFixed(3) : Math.max(0.03, (trueP * 0.35 - 0.01)).toFixed(3);
+          return { a, b, c };
+        } else {
+          // 正规 OOF 预测：具有合理的方差与评估误差
+          // A: 决策树/GBDT偏敏锐
+          const noiseA = ((sample.id * 7) % 11 - 5) * 0.025;
+          const predA = Math.max(0.04, Math.min(0.96, trueP + noiseA)).toFixed(3);
+          // B: 逻辑回归偏平滑
+          const noiseB = ((sample.id * 13) % 9 - 4) * 0.018;
+          const predB = Math.max(0.06, Math.min(0.94, (trueP * 0.8 + 0.1) + noiseB)).toFixed(3);
+          // C: 支持向量机/KNN局部特性
+          const noiseC = ((sample.id * 17) % 13 - 6) * 0.022;
+          const predC = Math.max(0.05, Math.min(0.95, trueP * 0.9 + noiseC)).toFixed(3);
+          return { a: predA, b: predB, c: predC };
+        }
+      }
+
+      // 状态管理
+      let state = {
+        mode: "normal", // 'normal' | 'leak'
+        activeFold: 1   // 1 .. 5
+      };
+
+      // UI 引用
+      const ui = {
+        statusBadge: document.getElementById("statusBadge"),
+        statusDot: document.getElementById("statusDot"),
+        badgeText: document.getElementById("badgeText"),
+        btnNormal: document.getElementById("btnNormal"),
+        btnLeak: document.getElementById("btnLeak"),
+        foldSelector: document.getElementById("foldSelector"),
+        foldSummary: document.getElementById("foldSummary"),
+        foldRatio: document.getElementById("foldRatio"),
+        foldsRow: document.getElementById("foldsRow"),
+        modelsStream: document.getElementById("modelsStream"),
+        matrixSubtitle: document.getElementById("matrixSubtitle"),
+        matrixBody: document.getElementById("matrixBody"),
+        matrixStatusBox: document.getElementById("matrixStatusBox"),
+        valGap: document.getElementById("valGap"),
+        valMetaErr: document.getElementById("valMetaErr"),
+        footHint: document.getElementById("footHint")
+      };
+
+      function render() {
+        const isLeak = state.mode === "leak";
+
+        // 1. 顶部指示器
+        if (isLeak) {
+          ui.statusDot.style.background = "#b91c1c";
+          ui.badgeText.textContent = "警告：发生数据泄漏（基模型直接在全量数据上自测）";
+          ui.statusBadge.style.borderColor = "#b91c1c";
+        } else {
+          ui.statusDot.style.background = "var(--aggregate)";
+          ui.badgeText.textContent = "标准 K-Fold OOF 协议：无信息泄漏";
+          ui.statusBadge.style.borderColor = "rgba(83, 106, 120, 0.25)";
+        }
+
+        // 2. 按钮状态
+        ui.btnNormal.classList.toggle("active", !isLeak);
+        ui.btnLeak.classList.toggle("active", isLeak);
+        ui.foldSelector.style.opacity = isLeak ? "0.4" : "1";
+        ui.foldSelector.style.pointerEvents = isLeak ? "none" : "auto";
+
+        // 折选择标签激活状态
+        document.querySelectorAll(".fold-tab").forEach(tab => {
+          const f = parseInt(tab.getAttribute("data-fold"), 10);
+          tab.classList.toggle("active", f === state.activeFold);
+        });
+
+        // 3. Fold 分布卡片渲染
+        ui.foldsRow.innerHTML = "";
+        for (let f = 1; f <= 5; f++) {
+          const card = document.createElement("div");
+          card.className = "fold-card";
+          if (isLeak) {
+            card.classList.add("leak");
+            card.innerHTML = `
+              <span class="fold-title">Fold ${f}</span>
+              <span class="fold-role">训练+预测</span>
+              <span style="font-size:11px; margin-top:2px;">样本 ${(f-1)*4+1}–${f*4}</span>
+            `;
+          } else {
+            const isOOF = f === state.activeFold;
+            if (isOOF) {
+              card.classList.add("oof");
+              card.innerHTML = `
+                <span class="fold-title">Fold ${f}</span>
+                <span class="fold-role">折外验证</span>
+                <span style="font-size:11px; margin-top:2px; font-weight:700;">填入矩阵</span>
+              `;
+            } else {
+              card.classList.add("train");
+              card.innerHTML = `
+                <span class="fold-title">Fold ${f}</span>
+                <span class="fold-role">基模型训练</span>
+                <span style="font-size:11px; margin-top:2px;">样本 ${(f-1)*4+1}–${f*4}</span>
+              `;
+            }
+          }
+          ui.foldsRow.appendChild(card);
+        }
+
+        // 文案与比例
+        if (isLeak) {
+          ui.foldSummary.textContent = "全量数据未隔离：每个基模型直接在全部 20 个样本上拟合并自评。";
+          ui.foldRatio.textContent = "泄漏率: 100%";
+        } else {
+          ui.foldSummary.textContent = `当前激活折：Fold ${state.activeFold}（样本 ${(state.activeFold-1)*4+1}–${state.activeFold*4} 担任折外验证集，其余 16 个样本训练基模型）`;
+          ui.foldRatio.textContent = "训练集:验证集 = 16:4 (80%:20%)";
+        }
+
+        // 4. 基模型运算流
+        const curSamples = SAMPLES.filter(s => s.fold === state.activeFold);
+        const curA = curSamples.map(s => generatePreds(s, state.mode).a).join(", ");
+        const curB = curSamples.map(s => generatePreds(s, state.mode).b).join(", ");
+        const curC = curSamples.map(s => generatePreds(s, state.mode).c).join(", ");
+
+        ui.modelsStream.innerHTML = `
+          <div class="model-strip">
+            <div class="m-tag"><span></span>基模型 A (树模型)</div>
+            <div class="m-flow">
+              ${isLeak 
+                ? "训练自见：全量 20 个样本直接参与树生长，对极值记忆明显" 
+                : `第 ${state.activeFold} 折模型副本 M_A 由其余 4 折训练，预测验证折 ${state.activeFold}`}
+            </div>
+            <div class="m-pred" title="验证折输出概率">[${curA}]</div>
+          </div>
+          <div class="model-strip">
+            <div class="m-tag"><span></span>基模型 B (逻辑回归)</div>
+            <div class="m-flow">
+              ${isLeak 
+                ? "线性超平面在全量数据拟合，输出过于逼近标签，置信度虚高" 
+                : `第 ${state.activeFold} 折模型副本 M_B 保持对未知数据的校准误差`}
+            </div>
+            <div class="m-pred" title="验证折输出概率">[${curB}]</div>
+          </div>
+          <div class="model-strip">
+            <div class="m-tag"><span></span>基模型 C (SVM)</div>
+            <div class="m-flow">
+              ${isLeak 
+                ? "支持向量直接包含了当前预测样本，距离边界判定被污染" 
+                : `第 ${state.activeFold} 折模型副本 M_C 纯粹在折外样本推断`}
+            </div>
+            <div class="m-pred" title="验证折输出概率">[${curC}]</div>
+          </div>
+        `;
+
+        // 5. 右侧矩阵渲染
+        ui.matrixBody.innerHTML = "";
+        SAMPLES.forEach(sample => {
+          const preds = generatePreds(sample, state.mode);
+          const tr = document.createElement("tr");
+          const isCurrentActiveFold = (sample.fold === state.activeFold) && !isLeak;
+          
+          if (isLeak) {
+            tr.className = "leak-row";
+          } else if (isCurrentActiveFold) {
+            tr.className = "active-row";
+          }
+
+          let statusCol = "";
+          if (isLeak) {
+            statusCol = `<span style="color:#b91c1c; font-weight:700;">泄漏</span>`;
+          } else if (isCurrentActiveFold) {
+            statusCol = `<span style="color:var(--aggregate); font-weight:700;">生成中</span>`;
+          } else {
+            statusCol = `<span style="color:var(--answer);">已就绪</span>`;
+          }
+
+          tr.innerHTML = `
+            <td class="fold-col">F${sample.fold}</td>
+            <td style="font-weight:600;">#${sample.id}</td>
+            <td style="color:${sample.y === 1 ? 'var(--aggregate)' : 'var(--muted)'}; font-weight:700;">${sample.y}</td>
+            <td>${preds.a}</td>
+            <td>${preds.b}</td>
+            <td>${preds.c}</td>
+            <td>${statusCol}</td>
+          `;
+          ui.matrixBody.appendChild(tr);
+        });
+
+        // 6. 状态框与量化指标更新
+        if (isLeak) {
+          ui.matrixSubtitle.textContent = "已污染的元特征矩阵：基模型自练自测，输入虚假";
+          ui.matrixStatusBox.innerHTML = `
+            <strong>【泄漏后果诊断】</strong> 当前矩阵中的每个预测值都来自<em>“曾经用该样本训练过”</em>的基模型。
+            基模型在训练集上误差仅 <strong>0.008</strong>（虚假完美），导致元学习器学到<em>“基模型绝对正确”</em>的偏置权重。
+            一旦投入全新测试集，元学习器将因基模型真实误差暴增而发生毁灭性过拟合。
+          `;
+          ui.valGap.textContent = "0.245 (极度严重)";
+          ui.valGap.style.color = "#b91c1c";
+          ui.valMetaErr.textContent = "0.218 (泛化崩溃)";
+          ui.valMetaErr.style.color = "#b91c1c";
+        } else {
+          ui.matrixSubtitle.textContent = "严格正规的折外特征矩阵：每个预测均来自留出副本";
+          ui.matrixStatusBox.innerHTML = `
+            <strong>【合法对应关系】</strong> 第 ${state.activeFold} 折的 4 个样本由 <strong>在其余 4 折训练出的基模型副本</strong> 填入。
+            整整 20 个样本全部拼接完成后，元特征矩阵中的每一行都忠实体现了基模型在<em>“未见数据”</em>上的泛化能力与误判倾向，元学习器学到的组合权重真实有效。
+          `;
+          ui.valGap.textContent = "0.021 (健康无偏)";
+          ui.valGap.style.color = "var(--answer)";
+          ui.valMetaErr.textContent = "0.076 (显著提升)";
+          ui.valMetaErr.style.color = "var(--answer)";
+        }
+      }
+
+      // 事件绑定
+      ui.btnNormal.addEventListener("click", () => {
+        state.mode = "normal";
+        render();
+      });
+
+      ui.btnLeak.addEventListener("click", () => {
+        state.mode = "leak";
+        render();
+      });
+
+      ui.foldSelector.addEventListener("click", (e) => {
+        const btn = e.target.closest(".fold-tab");
+        if (btn) {
+          state.activeFold = parseInt(btn.getAttribute("data-fold"), 10);
+          render();
+        }
+      });
+
+      // 初始化底盘与首次渲染
+      Deck.init({ index: 23, total: 27 });
+      render();
+
+      // 暴露给 Check 交互验证
+      window.StackingSim = {
+        setFold: (f) => { state.activeFold = f; render(); },
+        setMode: (m) => { state.mode = m; render(); },
+        getState: () => ({ ...state })
+      };
+    })();
+  </script>
+</body>
+</html>

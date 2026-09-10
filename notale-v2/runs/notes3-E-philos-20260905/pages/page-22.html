@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+    }
+
+    /* 顶部标题区 */
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0;
+      color: var(--text);
+    }
+    .lead-text {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主舞台双栏 */
+    .workbench {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 560px 1fr;
+      gap: 20px;
+    }
+
+    /* 左侧：二层网络结构示意 */
+    .flow-panel {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .flow-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .flow-tag {
+      font-size: var(--fs-tick);
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+
+    .arch-svg-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+    .arch-svg-wrap svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧：决策边界空间对比 (固定平均 vs 元学习器) */
+    .compare-panel {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .compare-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+    }
+    .tab-btn {
+      appearance: none;
+      border: var(--line) solid var(--surface-strong);
+      background: var(--bg);
+      color: var(--muted);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+    .tab-btn[aria-pressed="true"] {
+      background: var(--surface-strong);
+      color: var(--text);
+      border-color: var(--focus);
+    }
+
+    .views-container {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .view-card {
+      background: var(--bg);
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+    }
+    .view-card.highlight {
+      border-color: var(--aggregate);
+    }
+    .view-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .view-name {
+      font-size: var(--fs-label);
+      font-weight: 700;
+    }
+    .view-formula {
+      font-family: var(--font-num);
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .canvas-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #fdfefe;
+    }
+    .canvas-wrap canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .view-metric {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      border-top: 1px solid var(--surface-strong);
+      padding-top: 6px;
+    }
+    .view-metric .num {
+      font-family: var(--font-num);
+      font-weight: 700;
+    }
+    .val-good {
+      color: var(--correct);
+    }
+    .val-bad {
+      color: var(--aggregate);
+    }
+
+    /* 底部署名/重点注释条 */
+    .summary-strip {
+      background: var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+    }
+    .summary-strip b {
+      color: var(--text);
+    }
+    .weights-badge {
+      display: flex;
+      gap: 12px;
+      font-family: var(--font-num);
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .weights-badge span {
+      background: var(--surface);
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--surface-strong);
+    }
+  </style>
+</head>
+<body data-page="22" data-total="27">
+  <div id="stage">
+    <header>
+      <h1>Stacking 的二层结构：元学习器学习互补边界</h1>
+      <p class="lead-text">基模型各自擅长不同子空间，元学习器基于验证预测寻找最优组合，而非固定平均。</p>
+    </header>
+
+    <div class="workbench">
+      <!-- 左栏：二层前向结构 -->
+      <section class="flow-panel min0">
+        <div class="flow-title">
+          <span>二层堆叠网络</span>
+          <span class="flow-tag">分层学习机制</span>
+        </div>
+        <div class="arch-svg-wrap">
+          <svg viewBox="0 0 500 550" id="archSvg">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#536777"/>
+              </marker>
+              <marker id="arrow-agg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#B63B24"/>
+              </marker>
+            </defs>
+
+            <!-- 原始特征 X -->
+            <rect x="25" y="240" width="80" height="70" rx="8" fill="#F7FAFC" stroke="#536777" stroke-width="2"/>
+            <text x="65" y="272" text-anchor="middle" font-size="16" font-weight="700" fill="#142533">原始特征</text>
+            <text x="65" y="293" text-anchor="middle" font-size="13" fill="#536777" font-family="var(--font-num)">X = (x₁, x₂)</text>
+
+            <!-- 连线 X 到基学习器 -->
+            <path d="M 105 255 L 180 135" fill="none" stroke="#536777" stroke-width="1.5" stroke-dasharray="4 2" marker-end="url(#arrow)"/>
+            <path d="M 105 275 L 180 275" fill="none" stroke="#536777" stroke-width="1.5" stroke-dasharray="4 2" marker-end="url(#arrow)"/>
+            <path d="M 105 295 L 180 415" fill="none" stroke="#536777" stroke-width="1.5" stroke-dasharray="4 2" marker-end="url(#arrow)"/>
+
+            <!-- 第一层：异构基学习器 (h1, h2, h3) -->
+            <!-- h1: 决策树 -->
+            <g transform="translate(185, 95)" id="nodeH1">
+              <rect x="0" y="0" width="130" height="75" rx="8" fill="#F7FAFC" stroke="#275D91" stroke-width="2"/>
+              <text x="65" y="28" text-anchor="middle" font-size="15" font-weight="700" fill="#275D91">基学习器 h₁</text>
+              <text x="65" y="47" text-anchor="middle" font-size="13" fill="#142533">决策树 (直角轴切)</text>
+              <text x="65" y="64" text-anchor="middle" font-size="12" fill="#536777" font-family="var(--font-num)">预测 ŷ₁ ∈ [0,1]</text>
+            </g>
+
+            <!-- h2: 支持向量机 -->
+            <g transform="translate(185, 235)" id="nodeH2">
+              <rect x="0" y="0" width="130" height="75" rx="8" fill="#F7FAFC" stroke="#275D91" stroke-width="2"/>
+              <text x="65" y="28" text-anchor="middle" font-size="15" font-weight="700" fill="#275D91">基学习器 h₂</text>
+              <text x="65" y="47" text-anchor="middle" font-size="13" fill="#142533">SVM (平滑环形)</text>
+              <text x="65" y="64" text-anchor="middle" font-size="12" fill="#536777" font-family="var(--font-num)">预测 ŷ₂ ∈ [0,1]</text>
+            </g>
+
+            <!-- h3: KNN -->
+            <g transform="translate(185, 375)" id="nodeH3">
+              <rect x="0" y="0" width="130" height="75" rx="8" fill="#F7FAFC" stroke="#275D91" stroke-width="2"/>
+              <text x="65" y="28" text-anchor="middle" font-size="15" font-weight="700" fill="#275D91">基学习器 h₃</text>
+              <text x="65" y="47" text-anchor="middle" font-size="13" fill="#142533">KNN (局部近邻)</text>
+              <text x="65" y="64" text-anchor="middle" font-size="12" fill="#536777" font-family="var(--font-num)">预测 ŷ₃ ∈ [0,1]</text>
+            </g>
+
+            <!-- 连线 基学习器到第二层元学习器 -->
+            <path d="M 315 135 L 375 250" fill="none" stroke="#275D91" stroke-width="2" marker-end="url(#arrow-agg)"/>
+            <path d="M 315 275 L 375 275" fill="none" stroke="#275D91" stroke-width="2" marker-end="url(#arrow-agg)"/>
+            <path d="M 315 415 L 375 300" fill="none" stroke="#275D91" stroke-width="2" marker-end="url(#arrow-agg)"/>
+
+            <!-- 转换空间标注 -->
+            <text x="350" y="195" text-anchor="middle" font-size="12" fill="#536777" font-family="var(--font-num)">ŷ₁</text>
+            <text x="345" y="267" text-anchor="middle" font-size="12" fill="#536777" font-family="var(--font-num)">ŷ₂</text>
+            <text x="350" y="365" text-anchor="middle" font-size="12" fill="#536777" font-family="var(--font-num)">ŷ₃</text>
+
+            <!-- 第二层：元学习器 H_meta -->
+            <g transform="translate(380, 225)">
+              <rect x="0" y="0" width="105" height="95" rx="8" fill="#F7FAFC" stroke="#B63B24" stroke-width="2.5"/>
+              <text x="52" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="#B63B24">元学习器</text>
+              <text x="52" y="52" text-anchor="middle" font-size="13" fill="#142533">Meta-Learner</text>
+              <text x="52" y="74" text-anchor="middle" font-size="12" fill="#536777" font-family="var(--font-num)">f(ŷ₁, ŷ₂, ŷ₃)</text>
+            </g>
+
+            <!-- 最终输出箭头 -->
+            <path d="M 485 272.5 L 498 272.5" fill="none" stroke="#B63B24" stroke-width="2"/>
+
+            <!-- 底部层级解释标签 -->
+            <rect x="25" y="490" width="455" height="38" rx="6" fill="#D7E1E8"/>
+            <text x="252" y="514" text-anchor="middle" font-size="13" fill="#142533">
+              初级输入转换：新特征空间由各模型的预测概率构成
+            </text>
+          </svg>
+        </div>
+      </section>
+
+      <!-- 右栏：决策边界空间直观对比 -->
+      <section class="compare-panel min0">
+        <div class="compare-header">
+          <div class="flow-title">
+            <span>决策边界对照</span>
+            <span class="flow-tag" id="currentSampleCount">N=120</span>
+          </div>
+          <div class="tab-bar">
+            <button class="tab-btn" id="btnInspect" aria-pressed="false">强调互补修正区</button>
+            <button class="tab-btn" id="btnReseed">刷新样本</button>
+          </div>
+        </div>
+
+        <div class="views-container">
+          <!-- 简单固定平均 (Simple Average) -->
+          <div class="view-card" id="cardAvg">
+            <div class="view-header">
+              <span class="view-name">固定均值集成</span>
+              <span class="view-formula">ŷ = ⅓(ŷ₁ + ŷ₂ + ŷ₃)</span>
+            </div>
+            <div class="canvas-wrap">
+              <canvas id="cvAvg"></canvas>
+            </div>
+            <div class="view-metric">
+              <span>集成准确率</span>
+              <span class="num val-bad" id="accAvg">76.7%</span>
+            </div>
+          </div>
+
+          <!-- Stacking 元学习器 (Meta-Learner) -->
+          <div class="view-card highlight" id="cardMeta">
+            <div class="view-header">
+              <span class="view-name" style="color: var(--aggregate);">Stacking 元学习器</span>
+              <span class="view-formula">ŷ = σ(wᵀ·ŷ + b)</span>
+            </div>
+            <div class="canvas-wrap">
+              <canvas id="cvMeta"></canvas>
+            </div>
+            <div class="view-metric">
+              <span>集成准确率</span>
+              <span class="num val-good" id="accMeta">95.0%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="summary-strip">
+          <span><b>核心差异：</b>均值集成强行稀释局部信号；元学习器在孤立区信任 KNN，平滑区信任 SVM。</span>
+          <div class="weights-badge">
+            <span>准确率增益: <b id="gainText" style="color:var(--correct)">+18.3%</b></span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    Stacking 的核心不是简单把模型揉在一起，而是构建分层学习机制。
+    第一层由一组不同原理的异构基模型构成，比如树模型擅长轴对齐切分，SVM擅长平滑最大间隔，KNN保留局部岛状结构。
+    如果简单取平均，各模型在自身盲区所产生的自信错误会被盲目加和，拉低总体精度。
+    而在 Stacking 中，元学习器把这些初级预测视为新的特征向量，自动学出在哪些预测组合下应该相信哪一个模型，从而勾勒出更精确的互补边界。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 22, total: 27, keys: false });
+
+      const cvAvg = document.getElementById("cvAvg");
+      const cvMeta = document.getElementById("cvMeta");
+      const accAvgEl = document.getElementById("accAvg");
+      const accMetaEl = document.getElementById("accMeta");
+      const gainTextEl = document.getElementById("gainText");
+      const btnInspect = document.getElementById("btnInspect");
+      const btnReseed = document.getElementById("btnReseed");
+
+      let inspectComplementary = false;
+      let seed = 42;
+
+      function pseudoRandom(s) {
+        let t = s;
+        return function () {
+          t = (t * 1664525 + 1013904223) % 4294967296;
+          return t / 4294967296;
+        };
+      }
+
+      // 生成三类模型互补的分布：
+      // 类 0 (蓝): 居中椭圆聚集区 (48 个)
+      // 类 1 (红):
+      //   - 外圈环绕点 (48 个)
+      //   - 右上局部特异孤岛 (24 个, 坐标 0.76, 0.74 附近)
+      let dataset = [];
+      function generateDataset(s) {
+        const rng = pseudoRandom(s);
+        const pts = [];
+        // 类 0: 中心密集分布
+        for (let i = 0; i < 48; i++) {
+          const r = 0.05 + rng() * 0.18;
+          const theta = rng() * Math.PI * 2;
+          const x = 0.44 + r * Math.cos(theta) * 0.9;
+          const y = 0.46 + r * Math.sin(theta) * 1.1;
+          pts.push({ x: clamp01(x), y: clamp01(y), label: 0 });
+        }
+        // 类 1 主体: 外围环绕
+        for (let i = 0; i < 48; i++) {
+          const r = 0.31 + rng() * 0.16;
+          const theta = rng() * Math.PI * 2;
+          const x = 0.44 + r * Math.cos(theta);
+          const y = 0.46 + r * Math.sin(theta);
+          pts.push({ x: clamp01(x), y: clamp01(y), label: 1 });
+        }
+        // 类 1 特异孤岛: 右上特异簇 (24 个)
+        for (let i = 0; i < 24; i++) {
+          const x = 0.75 + (rng() - 0.5) * 0.14;
+          const y = 0.73 + (rng() - 0.5) * 0.14;
+          pts.push({ x: clamp01(x), y: clamp01(y), label: 1 });
+        }
+        return pts;
+      }
+
+      function clamp01(v) {
+        return Math.max(0.06, Math.min(0.94, v));
+      }
+
+      // 1. 决策树模型：直角阶梯切分，但把右上孤岛误切给背景（认为 x>0.7 且 y>0.65 为噪声剪枝判定为0）
+      function predictTree(x, y) {
+        if (x > 0.68 && y > 0.62) return 0.12; // 树模型死角
+        if (x < 0.22 || x > 0.66 || y < 0.22 || y > 0.70) return 0.82;
+        return 0.15;
+      }
+
+      // 2. SVM (RBF 高斯核)：平滑主环形，同样因大带宽正则化，右上孤岛被判定为背景类 0 (p = 0.18)
+      function predictSVM(x, y) {
+        if (x > 0.66 && y > 0.60) return 0.18; // SVM 孤岛死角
+        const dist = Math.hypot(x - 0.44, y - 0.46);
+        const val = (dist - 0.25) * 8.5;
+        return 1 / (1 + Math.exp(-val));
+      }
+
+      // 3. KNN (局部近邻模型)：近邻密度高，极其敏锐捕捉到右上孤岛 (p = 0.95)；
+      // 但在主平滑环界处，由于样本稀疏有局部噪波跳变
+      function predictKNN(x, y) {
+        const distIsland = Math.hypot(x - 0.75, y - 0.73);
+        if (distIsland < 0.16) return 0.95; // KNN 孤岛特长
+
+        const dist = Math.hypot(x - 0.44, y - 0.46);
+        const wave = Math.sin(x * 16) * 0.04;
+        const val = (dist - 0.25 + wave) * 6.5;
+        return 1 / (1 + Math.exp(-val));
+      }
+
+      // 简单固定平均：⅓(ŷ₁ + ŷ₂ + ŷ₃)
+      // 在右上孤岛处：p1 = 0.12, p2 = 0.18, p3 = 0.95 -> 均值 = 0.417 < 0.5！
+      // 两个基模型的死角“两票否决”了 KNN 的正确发现，导致孤岛全部被划入蓝色负类（错判）！
+      function predictAverage(x, y) {
+        const p1 = predictTree(x, y);
+        const p2 = predictSVM(x, y);
+        const p3 = predictKNN(x, y);
+        return (p1 + p2 + p3) / 3;
+      }
+
+      // Stacking 元学习器：
+      // 元学习器从初级预测中学会：当 p3 > 0.75 时，孤岛具有独占权威，抑制 p1 与 p2 的平滑死角；
+      // 在主体边界区，SVM 的置信度权重大于 KNN，自适应整合两类优势。
+      function predictMeta(x, y) {
+        const p1 = predictTree(x, y);
+        const p2 = predictSVM(x, y);
+        const p3 = predictKNN(x, y);
+
+        if (p3 > 0.75) return 0.95; // 自适应信任局部专长
+        const score = 0.25 * p1 + 0.6 * p2 + 0.15 * p3;
+        return score >= 0.45 ? 0.92 : 0.08;
+      }
+
+      function drawDecisionGrid(ctx, w, h, predictFn, isMeta) {
+        const step = 6;
+        const cols = Math.ceil(w / step);
+        const rows = Math.ceil(h / step);
+
+        for (let i = 0; i < cols; i++) {
+          for (let j = 0; j < rows; j++) {
+            const nx = (i * step + step / 2) / w;
+            const ny = 1 - (j * step + step / 2) / h;
+            const prob = predictFn(nx, ny);
+
+            // 类别背景着色
+            if (prob >= 0.5) {
+              const alpha = Math.min(0.24, 0.08 + (prob - 0.5) * 0.32);
+              ctx.fillStyle = `rgba(182, 59, 36, ${alpha})`;
+            } else {
+              const alpha = Math.min(0.24, 0.08 + (0.5 - prob) * 0.32);
+              ctx.fillStyle = `rgba(39, 93, 145, ${alpha})`;
+            }
+            ctx.fillRect(i * step, j * step, step, step);
+          }
+        }
+
+        // 决策边界等高线 (p = 0.5)
+        ctx.strokeStyle = isMeta ? "#B63B24" : "#536777";
+        ctx.lineWidth = isMeta ? 2.5 : 1.8;
+        if (!isMeta) ctx.setLineDash([4, 3]);
+        else ctx.setLineDash([]);
+
+        ctx.beginPath();
+        for (let i = 0; i < cols; i++) {
+          for (let j = 0; j < rows; j++) {
+            const nx = (i * step) / w;
+            const ny = 1 - (j * step) / h;
+            const pCurrent = predictFn(nx, ny);
+            const pRight = predictFn(nx + step / w, ny);
+            const pDown = predictFn(nx, ny - step / h);
+
+            if ((pCurrent - 0.5) * (pRight - 0.5) < 0) {
+              ctx.moveTo(i * step, j * step);
+              ctx.lineTo(i * step + step, j * step);
+            }
+            if ((pCurrent - 0.5) * (pDown - 0.5) < 0) {
+              ctx.moveTo(i * step, j * step);
+              ctx.lineTo(i * step, j * step + step);
+            }
+          }
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      function drawPoints(ctx, w, h, predictFn, isMeta) {
+        let correctCount = 0;
+
+        dataset.forEach((pt) => {
+          const px = pt.x * w;
+          const py = (1 - pt.y) * h;
+          const prob = predictFn(pt.x, pt.y);
+          const pred = prob >= 0.5 ? 1 : 0;
+          const isCorrect = pred === pt.label;
+          if (isCorrect) correctCount++;
+
+          const pAvgPred = predictAverage(pt.x, pt.y) >= 0.5 ? 1 : 0;
+          const pMetaPred = predictMeta(pt.x, pt.y) >= 0.5 ? 1 : 0;
+          // Stacking 修正成功的样本 (平均错了，元模型对了)
+          const isComplementaryGain = (pAvgPred !== pt.label) && (pMetaPred === pt.label);
+
+          ctx.beginPath();
+          ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+          ctx.fillStyle = pt.label === 1 ? "#B63B24" : "#275D91";
+          ctx.fill();
+
+          if (!isCorrect) {
+            ctx.strokeStyle = "#D84836";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // 叉号
+            ctx.beginPath();
+            ctx.moveTo(px - 3, py - 3);
+            ctx.lineTo(px + 3, py + 3);
+            ctx.moveTo(px + 3, py - 3);
+            ctx.lineTo(px - 3, py + 3);
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          } else {
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+          }
+
+          if (inspectComplementary && isMeta && isComplementaryGain) {
+            // 用主题正确色描绘被元学习器成功救回的样本
+            ctx.beginPath();
+            ctx.arc(px, py, 8.5, 0, Math.PI * 2);
+            ctx.strokeStyle = "#2E6A45";
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+          }
+        });
+
+        return (correctCount / dataset.length * 100).toFixed(1);
+      }
+
+      function renderAll() {
+        const w = cvAvg.offsetWidth;
+        const h = cvAvg.offsetHeight;
+        if (w === 0 || h === 0) return;
+
+        const ctxAvg = Deck.fit(cvAvg);
+        const ctxMeta = Deck.fit(cvMeta);
+
+        ctxAvg.clearRect(0, 0, w, h);
+        ctxMeta.clearRect(0, 0, w, h);
+
+        drawDecisionGrid(ctxAvg, w, h, predictAverage, false);
+        drawDecisionGrid(ctxMeta, w, h, predictMeta, true);
+
+        const accA = drawPoints(ctxAvg, w, h, predictAverage, false);
+        const accM = drawPoints(ctxMeta, w, h, predictMeta, true);
+
+        accAvgEl.textContent = accA + "%";
+        accMetaEl.textContent = accM + "%";
+        const diff = (parseFloat(accM) - parseFloat(accA)).toFixed(1);
+        gainTextEl.textContent = (diff >= 0 ? "+" : "") + diff + "%";
+      }
+
+      dataset = generateDataset(seed);
+
+      window.addEventListener("load", () => {
+        setTimeout(renderAll, 60);
+      });
+
+      Deck.onResize(renderAll);
+
+      btnInspect.addEventListener("click", () => {
+        inspectComplementary = !inspectComplementary;
+        btnInspect.setAttribute("aria-pressed", inspectComplementary ? "true" : "false");
+        btnInspect.textContent = inspectComplementary ? "已标出互补救回样本" : "强调互补修正区";
+        renderAll();
+      });
+
+      btnReseed.addEventListener("click", () => {
+        seed += 19;
+        dataset = generateDataset(seed);
+        renderAll();
+      });
+    })();
+  </script>
+</body>
+</html>

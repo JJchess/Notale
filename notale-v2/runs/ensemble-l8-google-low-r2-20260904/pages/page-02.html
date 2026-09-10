@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成学习的基本结构</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow: hidden;
+    }
+
+    .masthead {
+      flex: 0 0 auto;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: end;
+      gap: 32px;
+    }
+
+    .title-group h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .title-group p {
+      margin-top: 8px;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .formula-badge {
+      padding: 12px 20px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      font-family: var(--font-num), var(--font-sans);
+      white-space: nowrap;
+    }
+
+    .formula-badge .f-lhs {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+    .formula-badge .f-op {
+      font-size: 20px;
+      color: var(--muted);
+    }
+    .formula-badge .f-rhs {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--model);
+    }
+    .formula-badge .f-note {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-left: 6px;
+    }
+
+    /* 主舞台区域：一个连贯的集成流动管道舞台 */
+    .pipeline-stage {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 10px;
+      padding: 20px 24px;
+      display: grid;
+      grid-template-columns: 280px 1fr 300px;
+      gap: 32px;
+      align-items: stretch;
+    }
+
+    /* SVG 连线流道层 */
+    .flow-connectors {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .pipeline-stage > .col-lane {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .col-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+
+    .col-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .col-role {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .role-sample { background: rgba(47,117,104,0.12); color: var(--sample); }
+    .role-model  { background: rgba(39,100,143,0.12); color: var(--model); }
+    .role-agg    { background: rgba(195,75,34,0.12); color: var(--aggregate); }
+
+    /* 左栏：输入与样本差异 */
+    .sample-box {
+      background: var(--bg);
+      border: 1px solid rgba(83,106,120,0.15);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .sample-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--surface);
+      border-radius: 6px;
+      border: 1px solid var(--surface-strong);
+      font-size: var(--fs-sec);
+    }
+
+    .sample-tag {
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--sample);
+    }
+
+    .sample-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .mode-switch-box {
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mode-switch-title {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .mode-btn {
+      padding: 9px 0;
+      border-radius: 6px;
+      border: 1px solid var(--surface-strong);
+      background: var(--bg);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--duration) var(--ease);
+    }
+
+    .mode-btn:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+
+    .mode-btn.active {
+      background: var(--model);
+      border-color: var(--model);
+      color: #fff;
+    }
+
+    /* 中栏：基学习器卡片列与流向图 */
+    .models-container {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 12px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .model-card {
+      background: var(--bg);
+      border: 1px solid rgba(39,100,143,0.2);
+      border-radius: 8px;
+      padding: 14px 18px;
+      display: grid;
+      grid-template-columns: 130px 1fr 150px;
+      align-items: center;
+      gap: 16px;
+      transition: all var(--duration) var(--ease);
+    }
+
+    .model-card:hover {
+      border-color: var(--model);
+      background: #eaf1f5;
+    }
+
+    .model-id {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .model-name {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--model);
+      font-family: var(--font-num), var(--font-sans);
+    }
+
+    .model-type {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .model-mechanism {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .model-metric {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+    }
+
+    .metric-val {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: var(--font-num);
+      color: var(--text);
+    }
+
+    .metric-lbl {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    /* 右栏：聚合规则与最终判定 */
+    .agg-rule-card {
+      background: var(--bg);
+      border: 1px solid rgba(195,75,34,0.2);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .agg-title {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    .agg-desc {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.45;
+    }
+
+    .agg-result-box {
+      margin-top: auto;
+      background: rgba(195,75,34,0.06);
+      border: 1.5px solid var(--aggregate);
+      border-radius: 8px;
+      padding: 18px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      text-align: center;
+    }
+
+    .agg-result-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--aggregate);
+      letter-spacing: 0.05em;
+    }
+
+    .agg-result-val {
+      font-size: 32px;
+      font-weight: 800;
+      font-family: var(--font-num);
+      color: var(--aggregate);
+      line-height: 1.1;
+    }
+
+    .agg-result-meta {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 底部三条核心公理条 */
+    .principles-strip {
+      flex: 0 0 auto;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 20px;
+    }
+
+    .principle-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .principle-num {
+      flex: 0 0 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--surface-strong);
+      color: var(--text);
+      font-weight: 700;
+      font-family: var(--font-num);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-sec);
+    }
+
+    .principle-body h3 {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+
+    .principle-body p {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body data-page="02" data-total="27">
+  <main id="stage">
+    <!-- 顶栏标题与核心公式 -->
+    <header class="masthead">
+      <div class="title-group">
+        <h1>集成学习的基本结构</h1>
+        <p>基学习器提供差异化视角，聚合规则消除单点偏差，共同构建高稳健集成模型。</p>
+      </div>
+      <div class="formula-badge">
+        <span class="f-lhs" id="math-lhs">H(x)</span>
+        <span class="f-op">=</span>
+        <span class="f-rhs" id="math-rhs">mode { h₁(x), h₂(x), h₃(x) }</span>
+        <span class="f-note" id="math-note">（多数投票）</span>
+      </div>
+    </header>
+
+    <!-- 主展示区：连贯的集成流动管道舞台 -->
+    <section class="pipeline-stage" id="pipeline-stage">
+      <!-- 动态流动流向 SVG 管道 -->
+      <svg class="flow-connectors" id="flow-svg" viewBox="0 0 1488 560" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="grad-in" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#2F7568" stop-opacity="0.3"/>
+            <stop offset="100%" stop-color="#27648F" stop-opacity="0.6"/>
+          </linearGradient>
+          <linearGradient id="grad-out" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#27648F" stop-opacity="0.6"/>
+            <stop offset="100%" stop-color="#C34B22" stop-opacity="0.8"/>
+          </linearGradient>
+          <marker id="arrow-agg" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#C34B22"/>
+          </marker>
+        </defs>
+        <!-- 左侧输入扰动分流到三棵基模型 -->
+        <path d="M 304 150 C 340 150, 350 115, 386 115" fill="none" stroke="url(#grad-in)" stroke-width="2" stroke-dasharray="4,4"/>
+        <path d="M 304 195 C 340 195, 350 250, 386 250" fill="none" stroke="url(#grad-in)" stroke-width="2" stroke-dasharray="4,4"/>
+        <path d="M 304 240 C 340 240, 350 385, 386 385" fill="none" stroke="url(#grad-in)" stroke-width="2" stroke-dasharray="4,4"/>
+        <!-- 三棵基模型输出汇聚到右侧聚合规则 -->
+        <path d="M 1120 115 C 1156 115, 1166 180, 1200 180" fill="none" stroke="url(#grad-out)" stroke-width="2.5" marker-end="url(#arrow-agg)"/>
+        <path d="M 1120 250 C 1156 250, 1166 220, 1200 220" fill="none" stroke="url(#grad-out)" stroke-width="2.5" marker-end="url(#arrow-agg)"/>
+        <path d="M 1120 385 C 1156 385, 1166 260, 1200 260" fill="none" stroke="url(#grad-out)" stroke-width="2.5" marker-end="url(#arrow-agg)"/>
+      </svg>
+
+      <!-- 阶段 1：数据来源与差异化扰动 -->
+      <div class="col-lane min0">
+        <div class="col-header">
+          <div class="col-title">
+            <span>输入扰动</span>
+          </div>
+          <span class="col-role role-sample">数据端</span>
+        </div>
+
+        <p style="font-size: var(--fs-sec); color: var(--muted); line-height: 1.45;">
+          通过重采样或特征子集切分，让每个模型观察不同视角：
+        </p>
+
+        <div class="sample-box">
+          <div class="sample-item">
+            <div>
+              <div class="sample-tag">子集 D₁</div>
+              <div class="sample-desc" id="sub-desc-1">自助采样 63.2% 样本</div>
+            </div>
+            <span style="font-size: var(--fs-tick); color: var(--sample); font-weight: 600;">已就绪</span>
+          </div>
+          <div class="sample-item">
+            <div>
+              <div class="sample-tag">子集 D₂</div>
+              <div class="sample-desc" id="sub-desc-2">随机特征扰动子空间</div>
+            </div>
+            <span style="font-size: var(--fs-tick); color: var(--sample); font-weight: 600;">已就绪</span>
+          </div>
+          <div class="sample-item">
+            <div>
+              <div class="sample-tag">子集 D₃</div>
+              <div class="sample-desc" id="sub-desc-3">聚焦残差与高权样本</div>
+            </div>
+            <span style="font-size: var(--fs-tick); color: var(--sample); font-weight: 600;">已就绪</span>
+          </div>
+        </div>
+
+        <div class="mode-switch-box">
+          <div class="mode-switch-title">演示任务类型</div>
+          <div class="btn-group">
+            <button class="mode-btn active" id="btn-clf" type="button">分类任务</button>
+            <button class="mode-btn" id="btn-reg" type="button">回归任务</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 阶段 2：基学习器独立/序列推断 -->
+      <div class="col-lane min0">
+        <div class="col-header">
+          <div class="col-title">
+            <span>基学习器 (Base Learners)</span>
+          </div>
+          <span class="col-role role-model">成员预测</span>
+        </div>
+
+        <div class="models-container" id="models-list">
+          <!-- 动态渲染三张基模型卡片 -->
+        </div>
+      </div>
+
+      <!-- 阶段 3：聚合规则与集成产出 -->
+      <div class="col-lane min0">
+        <div class="col-header">
+          <div class="col-title">
+            <span>聚合规则 (Aggregator)</span>
+          </div>
+          <span class="col-role role-agg">最终决策</span>
+        </div>
+
+        <div class="agg-rule-card">
+          <div class="agg-title" id="rule-title">多数表决机制</div>
+          <div class="agg-desc" id="rule-desc">
+            汇总所有基学习器的分类标签，选取获得票数最多的类别作为集成结论。若出现平票则按置信度或随机仲裁。
+          </div>
+        </div>
+
+        <div class="agg-result-box">
+          <div class="agg-result-title">集成输出 H(x)</div>
+          <div class="agg-result-val" id="res-val">类别 A</div>
+          <div class="agg-result-meta" id="res-meta">投票比 2 : 1，抑制了单模型 h₂ 的误判</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 底部三条核心法则 -->
+    <footer class="principles-strip">
+      <div class="principle-item">
+        <div class="principle-num">1</div>
+        <div class="principle-body">
+          <h3>基学习器 (Base Learner)</h3>
+          <p>集成的基本构建单元，可以是决策树、神经网络或线性模型，需具备一定准度。</p>
+        </div>
+      </div>
+      <div class="principle-item">
+        <div class="principle-num">2</div>
+        <div class="principle-body">
+          <h3>多样性 (Diversity)</h3>
+          <p>成员之间必须存在差异，若预测完全一致则聚合失去纠错和降低方差的价值。</p>
+        </div>
+      </div>
+      <div class="principle-item">
+        <div class="principle-num">3</div>
+        <div class="principle-body">
+          <h3>结合策略 (Combination)</h3>
+          <p>通过投票、算术平均或次级模型元学习将多元输出整合为唯一明确判断。</p>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      Deck.init({ index: 2, total: 27, keys: false });
+
+      const state = {
+        task: 'classification' // 'classification' | 'regression'
+      };
+
+      const taskData = {
+        classification: {
+          formulaLhs: 'H(x)',
+          formulaRhs: 'mode { h₁(x), h₂(x), h₃(x) }',
+          formulaNote: '（多数投票）',
+          models: [
+            {
+              name: 'h₁(x)',
+              type: 'CART 决策树',
+              mech: '基于特征阈值判断，判定样本归属为主要类别',
+              val: '类别 A',
+              valMeta: '置信度 86%'
+            },
+            {
+              name: 'h₂(x)',
+              type: '支持向量分类机',
+              mech: '最大边距超平面判定，受局部边界噪声扰动误判',
+              val: '类别 B',
+              valMeta: '置信度 54%'
+            },
+            {
+              name: 'h₃(x)',
+              type: 'Logistic 回归',
+              mech: '基于全局线性概率估计，支持主要类别的概率预测',
+              val: '类别 A',
+              valMeta: '置信度 79%'
+            }
+          ],
+          ruleTitle: '硬投票表决 (Majority Voting)',
+          ruleDesc: '统计各成员模型的类别投票输出，以少数服从多数原则输出众数。成员间相抵消的不相关错误直接被集体多数过滤。',
+          resultVal: '类别 A',
+          resultMeta: '最终得票 2 : 1，纠正了模型 h₂ 的孤立误判'
+        },
+        regression: {
+          formulaLhs: 'H(x)',
+          formulaRhs: '¹/₃ ∑ᵢ₌₁³ hᵢ(x)',
+          formulaNote: '（算术平均）',
+          models: [
+            {
+              name: 'h₁(x)',
+              type: '深度回归树',
+              mech: '局部阶梯逼近，对高维非线性特征拟合良好',
+              val: '42.8',
+              valMeta: '单点残差 +1.6'
+            },
+            {
+              name: 'h₂(x)',
+              type: '岭回归 (L2)',
+              mech: '全局线性平滑约束，抵抗离群波动但存在轻微欠拟合',
+              val: '39.4',
+              valMeta: '单点残差 -1.8'
+            },
+            {
+              name: 'h₃(x)',
+              type: 'K 近邻回归 (KNN)',
+              mech: '邻域样本均值插值，反映局域数据流形分布',
+              val: '41.0',
+              valMeta: '单点残差 -0.2'
+            }
+          ],
+          ruleTitle: '算术均值聚合 (Simple Averaging)',
+          ruleDesc: '将各个回归模型的连续预测值求等权平均。由于正负误差相互抵消，平均值方差远小于单模型的方差。',
+          resultVal: '41.07',
+          resultMeta: '真实基准值 41.2，均值聚合抵消了各模型的正负偏差'
+        }
+      };
+
+      const btnClf = document.getElementById('btn-clf');
+      const btnReg = document.getElementById('btn-reg');
+      const mathLhs = document.getElementById('math-lhs');
+      const mathRhs = document.getElementById('math-rhs');
+      const mathNote = document.getElementById('math-note');
+      const modelsList = document.getElementById('models-list');
+      const ruleTitle = document.getElementById('rule-title');
+      const ruleDesc = document.getElementById('rule-desc');
+      const resVal = document.getElementById('res-val');
+      const resMeta = document.getElementById('res-meta');
+
+      function render() {
+        const d = taskData[state.task];
+        mathLhs.textContent = d.formulaLhs;
+        mathRhs.textContent = d.formulaRhs;
+        mathNote.textContent = d.formulaNote;
+
+        // 切换高亮按钮
+        if (state.task === 'classification') {
+          btnClf.classList.add('active');
+          btnReg.classList.remove('active');
+        } else {
+          btnClf.classList.remove('active');
+          btnReg.classList.add('active');
+        }
+
+        // 渲染模型列表
+        modelsList.innerHTML = '';
+        d.models.forEach(m => {
+          const card = document.createElement('div');
+          card.className = 'model-card';
+          card.innerHTML = `
+            <div class="model-id">
+              <span class="model-name">${m.name}</span>
+              <span class="model-type">${m.type}</span>
+            </div>
+            <div class="model-mechanism">${m.mech}</div>
+            <div class="model-metric">
+              <span class="metric-val">${m.val}</span>
+              <span class="metric-lbl">${m.valMeta}</span>
+            </div>
+          `;
+          modelsList.appendChild(card);
+        });
+
+        // 规则与结果
+        ruleTitle.textContent = d.ruleTitle;
+        ruleDesc.textContent = d.ruleDesc;
+        resVal.textContent = d.resultVal;
+        resMeta.textContent = d.resultMeta;
+      }
+
+      btnClf.addEventListener('click', function () {
+        if (state.task !== 'classification') {
+          state.task = 'classification';
+          render();
+        }
+      });
+
+      btnReg.addEventListener('click', function () {
+        if (state.task !== 'regression') {
+          state.task = 'regression';
+          render();
+        }
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>

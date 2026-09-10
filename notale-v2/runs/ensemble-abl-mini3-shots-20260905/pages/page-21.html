@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Stacking 的两层结构</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+
+    .title-block h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .title-block p {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+    }
+
+    .header-formula {
+      font-size: 20px;
+      color: var(--aggregate);
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 6px 16px;
+    }
+
+    /* 主架构展台 */
+    .main-canvas-wrap {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      gap: 20px;
+    }
+
+    .diagram-panel {
+      flex: 1 1 68%;
+      min-width: 0;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .diagram-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧对比与解释区 */
+    .side-panel {
+      flex: 0 0 32%;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 10px;
+      padding: 16px 18px;
+      box-sizing: border-box;
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0 0 10px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-title .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--model);
+      display: inline-block;
+    }
+    .card-title .dot.agg {
+      background: var(--aggregate);
+    }
+
+    .contrast-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-sec);
+      margin-top: 4px;
+    }
+
+    .contrast-table th, .contrast-table td {
+      padding: 8px 10px;
+      text-align: left;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+
+    .contrast-table th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: var(--fs-label);
+    }
+
+    .contrast-table td.tag-col {
+      font-weight: 700;
+      width: 76px;
+      color: var(--text);
+    }
+
+    .interactive-legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .layer-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: var(--fs-label);
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      user-select: none;
+      transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease);
+      border: 1px solid transparent;
+    }
+
+    .layer-badge.active {
+      background: var(--surface-strong);
+      border-color: var(--focus);
+    }
+
+    .step-explain {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .step-explain b {
+      color: var(--aggregate);
+    }
+
+    /* 底部控制器栏 */
+    .control-bar {
+      flex: 0 0 auto;
+      height: 64px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      box-sizing: border-box;
+    }
+
+    .control-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .state-info {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .state-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+
+    .state-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .state-nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .state-btn {
+      padding: 6px 14px;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: var(--fs-label);
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+      transition: all var(--duration) var(--ease);
+    }
+
+    .state-btn.active {
+      background: var(--text);
+      color: var(--surface);
+      border-color: var(--text);
+      font-weight: 700;
+    }
+
+    .state-btn:hover:not(.active) {
+      background: var(--surface-strong);
+      color: var(--text);
+    }
+
+    /* SVG 内部样式 */
+    .node-box {
+      stroke-width: 1.5;
+      transition: stroke 0.2s, stroke-width 0.2s;
+    }
+    .flow-line {
+      fill: none;
+      stroke-width: 1.8;
+      stroke-dasharray: 4 2;
+    }
+    .solid-line {
+      fill: none;
+      stroke-width: 2;
+    }
+    .text-title {
+      font-weight: 700;
+      font-family: var(--font-sans);
+      font-size: 16px;
+    }
+    .text-sub {
+      font-size: 13px;
+      font-family: var(--font-sans);
+    }
+  </style>
+</head>
+<body data-page="21" data-total="27">
+  <div id="stage">
+    <header>
+      <div class="title-block">
+        <h1>Stacking 的两层结构</h1>
+        <p>基模型输出成为元学习器的输入特征，模型间的组合规则由数据自适应学习</p>
+      </div>
+      <div class="header-formula" id="formulaBox">
+        <!-- KaTeX 注入 -->
+      </div>
+    </header>
+
+    <main class="main-canvas-wrap">
+      <!-- 结构流程大图 -->
+      <section class="diagram-panel min0" aria-label="Stacking 两层架构机制图">
+        <svg id="stackingSvg" class="diagram-svg" viewBox="0 0 1020 570">
+          <defs>
+            <marker id="arrow-model" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M0,1 L7,4 L0,7 Z" fill="#27648F" />
+            </marker>
+            <marker id="arrow-agg" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M0,1 L7,4 L0,7 Z" fill="#C34B22" />
+            </marker>
+            <marker id="arrow-sample" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M0,1 L7,4 L0,7 Z" fill="#2F7568" />
+            </marker>
+            <marker id="arrow-muted" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M0,1 L7,4 L0,7 Z" fill="#536A78" />
+            </marker>
+          </defs>
+
+          <!-- 阶段背景分界框 -->
+          <g id="layerBgs">
+            <!-- 原始输入区 -->
+            <rect x="20" y="24" width="180" height="520" rx="10" fill="#F8FAFC" stroke="#E2EBF0" stroke-width="1.5" />
+            <text x="36" y="54" fill="#536A78" font-size="16" font-weight="700">输入空间</text>
+            <text x="36" y="74" fill="#536A78" font-size="13">原始特征 X ∈ ℝᵈ</text>
+
+            <!-- 第一层：基学习器 -->
+            <rect x="230" y="24" width="280" height="520" rx="10" fill="#F4F8FA" stroke="#D3E2EB" stroke-width="1.5" id="baseBg" />
+            <text x="246" y="54" fill="#27648F" font-size="16" font-weight="700">第一层 (Level-0)</text>
+            <text x="246" y="74" fill="#536A78" font-size="13">异质基学习器并行拟合</text>
+
+            <!-- 中间层：元特征空间 -->
+            <rect x="540" y="24" width="190" height="520" rx="10" fill="#F2F6F8" stroke="#D7E4EB" stroke-width="1.5" id="metaFeatBg" />
+            <text x="556" y="54" fill="#2F7568" font-size="16" font-weight="700">元特征矩阵 Z</text>
+            <text x="556" y="74" fill="#536A78" font-size="13">预测向量映射</text>
+
+            <!-- 第二层：元学习器 -->
+            <rect x="760" y="24" width="240" height="520" rx="10" fill="#FCF6F4" stroke="#F0DDD5" stroke-width="1.5" id="metaLearnerBg" />
+            <text x="776" y="54" fill="#C34B22" font-size="16" font-weight="700">第二层 (Level-1)</text>
+            <text x="776" y="74" fill="#536A78" font-size="13">元学习器学习权衡</text>
+          </g>
+
+          <!-- 原始样本小卡片展示 -->
+          <g id="inputSamples" transform="translate(36, 110)">
+            <rect x="0" y="0" width="148" height="60" rx="6" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.2" />
+            <text x="12" y="26" font-size="13" font-weight="700" fill="#122634">样本 xᵢ = [x₁, x₂]</text>
+            <text x="12" y="46" font-size="13" fill="#536A78">原始非线性坐标</text>
+
+            <rect x="0" y="74" width="148" height="290" rx="6" fill="#FFFFFF" stroke="#E2EBF0" stroke-width="1" />
+            <text x="12" y="100" font-size="13" font-weight="700" fill="#536A78">训练集矩阵 X</text>
+
+            <!-- 微型示意散点图 (非线性分布) -->
+            <g transform="translate(14, 114)">
+              <rect x="0" y="0" width="120" height="120" fill="#F8FAFC" stroke="#E2EBF0" rx="4" />
+              <!-- 模拟环形/交错数据 -->
+              <circle cx="35" cy="40" r="4.5" fill="#2F7568" />
+              <circle cx="50" cy="30" r="4.5" fill="#2F7568" />
+              <circle cx="70" cy="35" r="4.5" fill="#2F7568" />
+              <circle cx="85" cy="55" r="4.5" fill="#2F7568" />
+              <circle cx="40" cy="80" r="4.5" fill="#C34B22" />
+              <circle cx="60" cy="90" r="4.5" fill="#C34B22" />
+              <circle cx="80" cy="85" r="4.5" fill="#C34B22" />
+              <circle cx="60" cy="60" r="4.5" fill="#27648F" />
+              <text x="60" y="112" font-size="13" fill="#536A78" text-anchor="middle">复杂决策空间</text>
+            </g>
+
+            <g transform="translate(12, 252)">
+              <text x="0" y="0" font-size="13" fill="#536A78">真实标签 y ∈ {0, 1}</text>
+              <text x="0" y="20" font-size="13" fill="#536A78">监督信号贯穿两层</text>
+            </g>
+          </g>
+
+          <!-- 连线：输入 -> 基学习器 -->
+          <g id="inputLines" opacity="0.8">
+            <path d="M184,140 C206,140 206,150 246,150" class="flow-line" stroke="#27648F" marker-end="url(#arrow-model)" />
+            <path d="M184,140 C206,140 206,280 246,280" class="flow-line" stroke="#27648F" marker-end="url(#arrow-model)" />
+            <path d="M184,140 C206,140 206,410 246,410" class="flow-line" stroke="#27648F" marker-end="url(#arrow-model)" />
+          </g>
+
+          <!-- 第一层模型节点 (三类异质基模型) -->
+          <g id="baseModels">
+            <!-- 基学习器 1: 随机森林 -->
+            <g id="model-rf" transform="translate(250, 105)">
+              <rect x="0" y="0" width="240" height="95" rx="8" fill="#FFFFFF" stroke="#27648F" stroke-width="1.8" class="node-box" />
+              <rect x="0" y="0" width="6" height="95" rx="3" fill="#27648F" />
+              <text x="18" y="28" font-size="16" font-weight="700" fill="#122634">基学习器 h₁(x)</text>
+              <text x="140" y="28" font-size="13" font-weight="600" fill="#27648F">随机森林</text>
+              <text x="18" y="52" font-size="13" fill="#536A78">善于捕捉局部非线性切分</text>
+              <text x="18" y="74" font-size="13" fill="#27648F" font-weight="600">输出预测概率: z₁ = 0.82</text>
+            </g>
+
+            <!-- 基学习器 2: 支持向量机 -->
+            <g id="model-svm" transform="translate(250, 235)">
+              <rect x="0" y="0" width="240" height="95" rx="8" fill="#FFFFFF" stroke="#27648F" stroke-width="1.8" class="node-box" />
+              <rect x="0" y="0" width="6" height="95" rx="3" fill="#27648F" />
+              <text x="18" y="28" font-size="16" font-weight="700" fill="#122634">基学习器 h₂(x)</text>
+              <text x="140" y="28" font-size="13" font-weight="600" fill="#27648F">SVM (RBF核)</text>
+              <text x="18" y="52" font-size="13" fill="#536A78">依赖支持向量确定间隔边界</text>
+              <text x="18" y="74" font-size="13" fill="#27648F" font-weight="600">输出预测概率: z₂ = 0.74</text>
+            </g>
+
+            <!-- 基学习器 3: 梯度提升树/逻辑回归 -->
+            <g id="model-knn" transform="translate(250, 365)">
+              <rect x="0" y="0" width="240" height="95" rx="8" fill="#FFFFFF" stroke="#27648F" stroke-width="1.8" class="node-box" />
+              <rect x="0" y="0" width="6" height="95" rx="3" fill="#27648F" />
+              <text x="18" y="28" font-size="16" font-weight="700" fill="#122634">基学习器 h₃(x)</text>
+              <text x="140" y="28" font-size="13" font-weight="600" fill="#27648F">KNN / GBDT</text>
+              <text x="18" y="52" font-size="13" fill="#536A78">根据邻域距离提供平滑估计</text>
+              <text x="18" y="74" font-size="13" fill="#27648F" font-weight="600">输出预测概率: z₃ = 0.41</text>
+            </g>
+          </g>
+
+          <!-- 连线：基学习器 -> 元特征空间 -->
+          <g id="metaLines">
+            <path d="M490,152 C515,152 520,185 556,185" class="solid-line" stroke="#27648F" marker-end="url(#arrow-model)" />
+            <path d="M490,282 C515,282 525,270 556,270" class="solid-line" stroke="#27648F" marker-end="url(#arrow-model)" />
+            <path d="M490,412 C515,412 520,355 556,355" class="solid-line" stroke="#27648F" marker-end="url(#arrow-model)" />
+          </g>
+
+          <!-- 元特征空间表达 (Z 矩阵与向量) -->
+          <g id="metaFeatures" transform="translate(556, 110)">
+            <rect x="0" y="0" width="158" height="360" rx="8" fill="#FFFFFF" stroke="#2F7568" stroke-width="1.6" />
+            <text x="14" y="28" font-size="16" font-weight="700" fill="#2F7568">元特征向量 z</text>
+            <text x="14" y="48" font-size="13" fill="#536A78">z = [z₁, z₂, z₃]ᵀ</text>
+
+            <!-- 元特征值刻度卡 -->
+            <g transform="translate(14, 60)">
+              <rect x="0" y="0" width="130" height="42" rx="4" fill="#F4F8FA" stroke="#D3E2EB" />
+              <text x="10" y="18" font-size="13" fill="#536A78">维度 1 (RF)</text>
+              <text x="10" y="34" font-size="13" font-weight="700" fill="#27648F">z₁ = 0.82</text>
+            </g>
+
+            <g transform="translate(14, 115)">
+              <rect x="0" y="0" width="130" height="42" rx="4" fill="#F4F8FA" stroke="#D3E2EB" />
+              <text x="10" y="18" font-size="13" fill="#536A78">维度 2 (SVM)</text>
+              <text x="10" y="34" font-size="13" font-weight="700" fill="#27648F">z₂ = 0.74</text>
+            </g>
+
+            <g transform="translate(14, 170)">
+              <rect x="0" y="0" width="130" height="42" rx="4" fill="#F4F8FA" stroke="#D3E2EB" />
+              <text x="10" y="18" font-size="13" fill="#536A78">维度 3 (KNN)</text>
+              <text x="10" y="34" font-size="13" font-weight="700" fill="#27648F">z₃ = 0.41</text>
+            </g>
+
+            <line x1="14" y1="230" x2="144" y2="230" stroke="#E2EBF0" stroke-width="1" />
+
+            <text x="14" y="254" font-size="13" font-weight="700" fill="#122634">空间性质转变：</text>
+            <text x="14" y="274" font-size="13" fill="#536A78">从原始特征空间</text>
+            <text x="14" y="294" font-size="13" fill="#536A78">变换到“各模型信任度”</text>
+            <text x="14" y="314" font-size="13" fill="#2F7568" font-weight="600">低维高信息量空间</text>
+          </g>
+
+          <!-- 连线：元特征 -> 元学习器 -->
+          <g id="metaToLearnerLine">
+            <path d="M714,270 C735,270 740,270 774,270" class="solid-line" stroke="#C34B22" stroke-width="2.4" marker-end="url(#arrow-agg)" />
+          </g>
+
+          <!-- 第二层模型节点 (元学习器) -->
+          <g id="metaLearnerNode" transform="translate(778, 140)">
+            <rect x="0" y="0" width="206" height="260" rx="10" fill="#FFFFFF" stroke="#C34B22" stroke-width="2" />
+            <rect x="0" y="0" width="6" height="260" rx="3" fill="#C34B22" />
+            
+            <text x="18" y="32" font-size="16" font-weight="700" fill="#C34B22">元学习器 (Meta-Learner)</text>
+            <text x="18" y="54" font-size="13" fill="#536A78">通常选用轻量线性模型</text>
+            <text x="18" y="70" font-size="13" fill="#536A78">如带 L2 正则的 Logistic 回归</text>
+
+            <rect x="16" y="86" width="174" height="66" rx="6" fill="#FCF6F4" stroke="#F0DDD5" />
+            <text x="26" y="108" font-size="13" font-weight="700" fill="#122634">学习到的组合权重：</text>
+            <text x="26" y="128" font-size="13" fill="#C34B22" font-weight="600">w₁: +1.42  |  w₂: +0.85</text>
+            <text x="26" y="144" font-size="13" fill="#536A78">w₃: -0.31 (自动惩罚弱者)</text>
+
+            <g transform="translate(16, 168)">
+              <text x="0" y="16" font-size="13" font-weight="700" fill="#122634">决策机制：</text>
+              <text x="0" y="36" font-size="13" fill="#536A78">H(x) = g( wᵀ z + b )</text>
+              <text x="0" y="56" font-size="13" fill="#C34B22" font-weight="700">数据驱动，自适应加权！</text>
+            </g>
+          </g>
+
+          <!-- 最终输出箭头与终点 -->
+          <g id="finalOutput">
+            <path d="M984,270 L1004,270" stroke="#C34B22" stroke-width="3" marker-end="url(#arrow-agg)" />
+          </g>
+        </svg>
+      </section>
+
+      <!-- 右侧解析与规则对比 -->
+      <aside class="side-panel min0">
+        <!-- 机制解剖卡片 -->
+        <div class="card">
+          <div class="card-title">
+            <span class="dot"></span>
+            <span>两层学习范式本质</span>
+          </div>
+          <p class="step-explain" id="paradigmExplain">
+            基学习器负责<b>从原始特征挖掘多样化模式</b>；元学习器负责<b>在新的预测空间寻找最优仲裁面</b>。它打破了“等权重投票”或“人工调参赋权”的局限。
+          </p>
+          <div class="interactive-legend">
+            <div class="layer-badge active" data-step="0">全景流转</div>
+            <div class="layer-badge" data-step="1">1. 空间升华</div>
+            <div class="layer-badge" data-step="2">2. 异质互补</div>
+            <div class="layer-badge" data-step="3">3. 权重学习</div>
+          </div>
+        </div>
+
+        <!-- 对比表格：Stacking vs 投票法 vs Boosting -->
+        <div class="card" style="flex: 1;">
+          <div class="card-title">
+            <span class="dot agg"></span>
+            <span>组合策略本质差异</span>
+          </div>
+          <table class="contrast-table">
+            <thead>
+              <tr>
+                <th style="width: 70px;">集成方式</th>
+                <th>组合规则来源</th>
+                <th>基模型类型</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="tag-col">Voting</td>
+                <td>人工预设（多数决/均值）</td>
+                <td>同质或异质</td>
+              </tr>
+              <tr>
+                <td class="tag-col">Boosting</td>
+                <td>算法按历史残差/误差公式算得</td>
+                <td>同质弱分类器</td>
+              </tr>
+              <tr style="background: #F8FAFC;">
+                <td class="tag-col" style="color: var(--aggregate);">Stacking</td>
+                <td><b style="color: var(--aggregate);">由元学习器从数据中训练得到</b></td>
+                <td><b>高度异质基模型</b></td>
+              </tr>
+            </tbody>
+          </table>
+          
+          <div style="margin-top: 14px; font-size: 15px; color: var(--muted); line-height: 1.5; border-top: 1px solid var(--surface-strong); padding-top: 10px;">
+            <b style="color: var(--text);">关键观察：</b>如果某基模型在某类样本上持续误判，元学习器可在训练中赋予其<b>负权重</b>或更小系数，实现比简单平均更智能的“纠偏”。
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- 底部状态演变控制器 -->
+    <footer class="control-bar">
+      <div class="control-left">
+        <div class="state-info">
+          <span class="state-title" id="stageName">结构全景</span>
+          <span class="state-desc" id="stageDesc">基学习器生成元特征向量，元学习器训练综合决策</span>
+        </div>
+      </div>
+      <div class="state-nav">
+        <button class="state-btn active" data-idx="0">全景概览</button>
+        <button class="state-btn" data-idx="1">基模型预测 (Level-0)</button>
+        <button class="state-btn" data-idx="2">元特征变换 (Z 空间)</button>
+        <button class="state-btn" data-idx="3">元模型学习 (Level-1)</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 渲染公式
+      const formulaEl = document.getElementById("formulaBox");
+      if (window.katex && formulaEl) {
+        katex.render(
+          "H(x) = g\\Big(\\sum_{m=1}^M w_m \\cdot h_m(x) + b\\Big)",
+          formulaEl,
+          { throwOnError: false }
+        );
+      }
+
+      // 交互阶段定义
+      const STAGES = [
+        {
+          name: "两层协同全景",
+          desc: "Level-0 模型将复杂输入映射为预测值向量，Level-1 模型以此为特征学习终极权重。",
+          explain: "基学习器负责<b>从原始特征挖掘多样化模式</b>；元学习器负责<b>在新的预测空间寻找最优仲裁面</b>。它打破了“等权重投票”或“人工调参赋权”的局限。",
+          hl: { base: 1, metaFeat: 1, metaLearner: 1, lines: 1 }
+        },
+        {
+          name: "Level-0：基模型多样性",
+          desc: "引入决策树、支持向量机、KNN等截然不同的算法，捕捉不同维度的边界模式。",
+          explain: "基模型越<b>异质（多样化）</b>，在元特征空间提供的有效信息就越互补。如果三个基学习器预测完全相同，元学习器将无法学出互补收益。",
+          hl: { base: 1.2, metaFeat: 0.35, metaLearner: 0.35, lines: 0.5 }
+        },
+        {
+          name: "元特征空间：Z = [h₁(x), h₂(x), ...]",
+          desc: "坐标轴从原始测量指标变为“基模型的置信度”，将非线性决策转化为低维线性可分空间。",
+          explain: "样本在元特征空间中的坐标是<b>各基模型做出的概率打分</b>。原本在原始特征空间中犬牙交错的非线性分布，在各专家打分空间中常变得极易划分。",
+          hl: { base: 0.4, metaFeat: 1.2, metaLearner: 0.4, lines: 0.8 }
+        },
+        {
+          name: "Level-1：规则自适应学习",
+          desc: "元学习器以 Z 为输入、真实 y 为标签，用数据优化出最具鲁棒性的组合裁决方案。",
+          explain: "元学习器通常选用<b>带正则项的逻辑回归或浅层树</b>。如果某个基模型在特定区域不可靠，元模型会自动降低甚至反向调整其权重系数。",
+          hl: { base: 0.35, metaFeat: 0.5, metaLearner: 1.2, lines: 1 }
+        }
+      ];
+
+      let currentStage = 0;
+
+      const stageName = document.getElementById("stageName");
+      const stageDesc = document.getElementById("stageDesc");
+      const paradigmExplain = document.getElementById("paradigmExplain");
+      const navBtns = document.querySelectorAll(".state-btn");
+      const badges = document.querySelectorAll(".layer-badge");
+
+      const baseBg = document.getElementById("baseBg");
+      const metaFeatBg = document.getElementById("metaFeatBg");
+      const metaLearnerBg = document.getElementById("metaLearnerBg");
+      const modelRf = document.getElementById("model-rf");
+      const modelSvm = document.getElementById("model-svm");
+      const modelKnn = document.getElementById("model-knn");
+      const metaFeatures = document.getElementById("metaFeatures");
+      const metaLearnerNode = document.getElementById("metaLearnerNode");
+
+      function updateStage(idx) {
+        currentStage = idx;
+        const info = STAGES[idx];
+
+        stageName.textContent = info.name;
+        stageDesc.textContent = info.desc;
+        paradigmExplain.innerHTML = info.explain;
+
+        navBtns.forEach((btn, i) => {
+          btn.classList.toggle("active", i === idx);
+        });
+
+        badges.forEach((b, i) => {
+          b.classList.toggle("active", i === idx);
+        });
+
+        // 视觉高亮调度
+        const h = info.hl;
+        if (idx === 0) {
+          modelRf.style.opacity = "1";
+          modelSvm.style.opacity = "1";
+          modelKnn.style.opacity = "1";
+          metaFeatures.style.opacity = "1";
+          metaLearnerNode.style.opacity = "1";
+          baseBg.setAttribute("stroke-width", "1.5");
+          metaFeatBg.setAttribute("stroke-width", "1.5");
+          metaLearnerBg.setAttribute("stroke-width", "1.5");
+        } else if (idx === 1) {
+          modelRf.style.opacity = "1";
+          modelSvm.style.opacity = "1";
+          modelKnn.style.opacity = "1";
+          metaFeatures.style.opacity = "0.35";
+          metaLearnerNode.style.opacity = "0.35";
+          baseBg.setAttribute("stroke-width", "3");
+          metaFeatBg.setAttribute("stroke-width", "1");
+          metaLearnerBg.setAttribute("stroke-width", "1");
+        } else if (idx === 2) {
+          modelRf.style.opacity = "0.45";
+          modelSvm.style.opacity = "0.45";
+          modelKnn.style.opacity = "0.45";
+          metaFeatures.style.opacity = "1";
+          metaLearnerNode.style.opacity = "0.35";
+          baseBg.setAttribute("stroke-width", "1");
+          metaFeatBg.setAttribute("stroke-width", "3");
+          metaLearnerBg.setAttribute("stroke-width", "1");
+        } else if (idx === 3) {
+          modelRf.style.opacity = "0.35";
+          modelSvm.style.opacity = "0.35";
+          modelKnn.style.opacity = "0.35";
+          metaFeatures.style.opacity = "0.5";
+          metaLearnerNode.style.opacity = "1";
+          baseBg.setAttribute("stroke-width", "1");
+          metaFeatBg.setAttribute("stroke-width", "1");
+          metaLearnerBg.setAttribute("stroke-width", "3");
+        }
+      }
+
+      navBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const i = parseInt(btn.getAttribute("data-idx"), 10);
+          updateStage(i);
+        });
+      });
+
+      badges.forEach((badge) => {
+        badge.addEventListener("click", () => {
+          const i = parseInt(badge.getAttribute("data-step"), 10);
+          updateStage(i);
+        });
+      });
+
+      Deck.init({ index: 21, total: 27, keys: true });
+    })();
+  </script>
+</body>
+</html>

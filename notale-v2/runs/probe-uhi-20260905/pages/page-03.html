@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>成因：城市如何改写地表能量收支</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #0C151A;
+      --surface: #142127;
+      --surface-strong: #1B2D35;
+      --text: #EDF3F5;
+      --muted: #8AA3AD;
+      --focus: #E65A36;
+      --heat: #E65A36;
+      --cooling: #2DB5D3;
+      --vegetation: #4CAE68;
+      --observed: #3EA6C4;
+      --uncertain: #C29F4D;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "Bahnschrift", system-ui, sans-serif;
+      --fs-h1: 34px;
+      --fs-h2: 22px;
+      --fs-lead: 19px;
+      --fs-body: 18px;
+      --fs-sec: 16px;
+      --fs-label: 15px;
+      --fs-tick: 13px;
+    }
+
+    body {
+      background: #060B0E;
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+      background: radial-gradient(1200px 700px at 78% 52%, #162B34 0%, var(--bg) 75%);
+    }
+
+    /* 背景粒子与热流 Canvas */
+    #flux-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* 章节前缀与标题布局 */
+    .header-zone {
+      position: relative;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-width: 900px;
+      margin-top: 36px;
+    }
+
+    .chapter-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      color: var(--focus);
+      text-transform: uppercase;
+    }
+
+    .chapter-tag::before {
+      content: "";
+      display: inline-block;
+      width: 24px;
+      height: 3px;
+      background: var(--focus);
+      border-radius: 2px;
+    }
+
+    .title-main {
+      font-size: var(--fs-h1);
+      line-height: 1.25;
+      font-weight: 700;
+      color: #FFFFFF;
+      letter-spacing: -0.01em;
+      margin: 0;
+    }
+
+    .title-sub {
+      font-size: var(--fs-lead);
+      line-height: 1.5;
+      color: #A4BFC9;
+      margin: 0;
+      max-width: 760px;
+    }
+
+    /* 能量收支因果骨架微卡片 (右下侧锚定与导航引导) */
+    .balance-anchor {
+      position: relative;
+      z-index: 5;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+      width: 100%;
+      margin-bottom: 24px;
+    }
+
+    .flux-card {
+      background: rgba(20, 33, 39, 0.72);
+      border: 1px solid rgba(126, 151, 160, 0.22);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 10px;
+      padding: 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+      transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+    }
+
+    .flux-card:hover {
+      border-color: rgba(230, 90, 54, 0.45);
+      transform: translateY(-2px);
+    }
+
+    .flux-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .flux-sym {
+      font-family: var(--font-num);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .flux-sym.rn { color: #F0C35B; }
+    .flux-sym.qh { color: var(--heat); }
+    .flux-sym.qe { color: var(--cooling); }
+    .flux-sym.qs { color: #E09543; }
+
+    .flux-name {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: #FFFFFF;
+      letter-spacing: 0.02em;
+    }
+
+    .flux-desc {
+      font-size: var(--fs-tick);
+      line-height: 1.45;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .equation-bar {
+      position: absolute;
+      right: 56px;
+      top: 56px;
+      z-index: 5;
+      background: rgba(15, 25, 30, 0.85);
+      border: 1px solid rgba(126, 151, 160, 0.25);
+      border-radius: 8px;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-family: var(--font-num);
+      font-size: var(--fs-lead);
+      color: #E2ECEF;
+      backdrop-filter: blur(8px);
+    }
+
+    .eq-label {
+      font-family: var(--font-sans);
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      border-right: 1px solid rgba(126, 151, 160, 0.3);
+      padding-right: 14px;
+    }
+
+    .eq-term {
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body data-page="03" data-total="19">
+  <div id="stage">
+    <canvas id="flux-canvas" class="cv-fill"></canvas>
+
+    <div class="equation-bar">
+      <span class="eq-label">地表能量平衡收支式</span>
+      <span><span class="eq-term" style="color:#F0C35B">R<sub>n</sub></span> + <span class="eq-term" style="color:#FF7B59">Q<sub>F</sub></span> = <span class="eq-term" style="color:#FF5A36">Q<sub>H</sub></span> + <span class="eq-term" style="color:#2DB5D3">Q<sub>E</sub></span> + <span class="eq-term" style="color:#E09543">ΔQ<sub>S</sub></span></span>
+    </div>
+
+    <header class="header-zone">
+      <div class="chapter-tag">机理剖析</div>
+      <h1 class="title-main">成因：城市如何改写<br>地表能量收支</h1>
+      <p class="title-sub">
+        不透水下垫面削弱蒸散潜热，建筑群多重反射滞留辐射，人工热源持续注入，促使净辐射向显热与建筑储热深度倾斜。
+      </p>
+    </header>
+
+    <nav class="balance-anchor" aria-label="地表能量平衡四大核心通量">
+      <article class="flux-card">
+        <div class="flux-meta">
+          <span class="flux-name">净辐射改写</span>
+          <span class="flux-sym rn">R<sub>n</sub></span>
+        </div>
+        <p class="flux-desc">反照率降低与深峡谷“天穹可视度”受限，截留更多下行短波与长波辐射。</p>
+      </article>
+
+      <article class="flux-card">
+        <div class="flux-meta">
+          <span class="flux-name">显热通量激增</span>
+          <span class="flux-sym qh">Q<sub>H</sub></span>
+        </div>
+        <p class="flux-desc">干燥地表迅速升温，通过湍流对流将巨大热量倾泻至近地层大气。</p>
+      </article>
+
+      <article class="flux-card">
+        <div class="flux-meta">
+          <span class="flux-name">潜热蒸散阻断</span>
+          <span class="flux-sym qe">Q<sub>E</sub></span>
+        </div>
+        <p class="flux-desc">植被与水体被沥青混凝土排挤，天然水分相变带走热量的“冷源”失效。</p>
+      </article>
+
+      <article class="flux-card">
+        <div class="flux-meta">
+          <span class="flux-name">高热容储存释放</span>
+          <span class="flux-sym qs">ΔQ<sub>S</sub></span>
+        </div>
+        <p class="flux-desc">致密建材白天蓄积巨量热能，夜间作为长波热源持久反哺，延滞降温。</p>
+      </article>
+    </nav>
+  </div>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      Deck.init({ index: 3, total: 19 });
+
+      const canvas = document.getElementById("flux-canvas");
+      const SEED = "uhi-energy-budget-p03";
+
+      // 城市峡谷建筑几何基底 + 生成式能量流场
+      const BUILDINGS = [
+        { x: 920, w: 110, h: 260 },
+        { x: 1060, w: 140, h: 360 },
+        { x: 1230, w: 90, h: 220 },
+        { x: 1350, w: 160, h: 420 },
+        { x: 1540, w: 100, h: 300 }
+      ];
+      const BASE_Y = 640;
+
+      // 粒子与能量线系统
+      const NUM_LINES = 72;
+      let streamlines = [];
+
+      function buildModel() {
+        const rng = new Math.seedrandom(SEED);
+        const lines = [];
+
+        // 1. 阳光/净辐射下行束 (入射流)
+        for (let i = 0; i < 28; i++) {
+          const originX = 850 + rng() * 700;
+          const targetX = originX - (180 + rng() * 140);
+          lines.push({
+            type: 'solar',
+            x0: originX,
+            y0: -20,
+            x1: targetX,
+            y1: BASE_Y,
+            curvX: originX - 60,
+            curvY: 260,
+            speed: 0.25 + rng() * 0.35,
+            phase: rng(),
+            alpha: 0.12 + rng() * 0.22,
+            width: 1 + rng() * 1.5,
+            color: [240, 195, 91] // 太阳黄
+          });
+        }
+
+        // 2. 显热与长波滞留湍流 (自峡谷向上翻涌)
+        for (let i = 0; i < 44; i++) {
+          const bx = 980 + rng() * 580;
+          const tx = bx + (rng() - 0.45) * 220;
+          lines.push({
+            type: 'sensible',
+            x0: bx,
+            y0: BASE_Y - 5,
+            x1: tx,
+            y1: 80 + rng() * 180,
+            curvX: (bx + tx) / 2 + (rng() - 0.5) * 140,
+            curvY: 380 + rng() * 100,
+            speed: 0.3 + rng() * 0.45,
+            phase: rng(),
+            alpha: 0.15 + rng() * 0.3,
+            width: 1.2 + rng() * 2,
+            color: rng() > 0.3 ? [230, 90, 54] : [224, 149, 67] // 显热红与储热橙
+          });
+        }
+
+        return lines;
+      }
+
+      function drawScene(ctx, time) {
+        ctx.clearRect(0, 0, Deck.W, Deck.H);
+
+        // 1. 绘制几何都市剪影与峡谷网格 (低对比度技术感)
+        ctx.save();
+        ctx.fillStyle = "rgba(10, 19, 24, 0.85)";
+        ctx.strokeStyle = "rgba(78, 120, 135, 0.28)";
+        ctx.lineWidth = 1;
+
+        // 地平线标尺
+        ctx.beginPath();
+        ctx.moveTo(850, BASE_Y);
+        ctx.lineTo(1600, BASE_Y);
+        ctx.stroke();
+
+        BUILDINGS.forEach(b => {
+          const topY = BASE_Y - b.h;
+          // 建筑外廓
+          ctx.fillRect(b.x, topY, b.w, b.h);
+          ctx.strokeRect(b.x, topY, b.w, b.h);
+
+          // 建筑内部结构细线 (体现城市下垫面三维立面特性)
+          const cols = Math.floor(b.w / 24);
+          for (let c = 1; c < cols; c++) {
+            ctx.beginPath();
+            ctx.strokeStyle = "rgba(62, 166, 196, 0.08)";
+            ctx.moveTo(b.x + c * 24, topY);
+            ctx.lineTo(b.x + c * 24, BASE_Y);
+            ctx.stroke();
+          }
+          const floors = Math.floor(b.h / 32);
+          for (let f = 1; f < floors; f++) {
+            ctx.beginPath();
+            ctx.strokeStyle = "rgba(62, 166, 196, 0.08)";
+            ctx.moveTo(b.x, topY + f * 32);
+            ctx.lineTo(b.x + b.w, topY + f * 32);
+            ctx.stroke();
+          }
+
+          // 建筑顶层蓄热警示色微光
+          ctx.fillStyle = "rgba(230, 90, 54, 0.25)";
+          ctx.fillRect(b.x, topY, b.w, 3);
+          ctx.fillStyle = "rgba(10, 19, 24, 0.85)";
+        });
+
+        // 2. 峡谷滞留与多重反射微弧
+        ctx.strokeStyle = "rgba(230, 90, 54, 0.35)";
+        ctx.setLineDash([4, 6]);
+        ctx.beginPath();
+        ctx.moveTo(1030, BASE_Y - 60);
+        ctx.quadraticCurveTo(1045, BASE_Y - 140, 1060, BASE_Y - 90);
+        ctx.quadraticCurveTo(1045, BASE_Y - 30, 1030, BASE_Y - 60);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.restore();
+
+        // 3. 绘制能量通量曲线与脉冲粒子
+        streamlines.forEach(line => {
+          const t = ((time * 0.0008 * line.speed + line.phase) % 1);
+          
+          // 曲线底纹
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(${line.color[0]}, ${line.color[1]}, ${line.color[2]}, ${line.alpha * 0.4})`;
+          ctx.lineWidth = line.width;
+          ctx.moveTo(line.x0, line.y0);
+          ctx.quadraticCurveTo(line.curvX, line.curvY, line.x1, line.y1);
+          ctx.stroke();
+
+          // 沿贝塞尔曲线采样的动态光斑
+          const invT = 1 - t;
+          const px = invT * invT * line.x0 + 2 * invT * t * line.curvX + t * t * line.x1;
+          const py = invT * invT * line.y0 + 2 * invT * t * line.curvY + t * t * line.y1;
+
+          // 粒子光晕
+          const grad = ctx.createRadialGradient(px, py, 1, px, py, 7);
+          grad.addColorStop(0, `rgba(${line.color[0]}, ${line.color[1]}, ${line.color[2]}, 0.95)`);
+          grad.addColorStop(1, `rgba(${line.color[0]}, ${line.color[1]}, ${line.color[2]}, 0)`);
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(px, py, 7, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      streamlines = buildModel();
+
+      Deck.autofit(canvas, (ctx) => {
+        drawScene(ctx, 0);
+      });
+
+      if (!Deck.reduced()) {
+        Deck.loop(time => {
+          const ctx = canvas.getContext("2d");
+          if (ctx) drawScene(ctx, time);
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

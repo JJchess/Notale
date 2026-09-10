@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F7F8;
+      --paper: #FFFFFF;
+      --text: #142B33;
+      --muted: #526970;
+      --focus: #C45A00;
+      --acid: #B43F2B;
+      --base: #23629A;
+      --buffer: #08746E;
+      --selected: #DCECEF;
+      --correct: #356A3A;
+      --incorrect: #8A5100;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: Bahnschrift, "Noto Sans SC", sans-serif;
+      --fs-h1: 34px;
+      --fs-h2: 22px;
+      --fs-lead: 19px;
+      --fs-body: 18px;
+      --fs-sec: 16px;
+      --fs-label: 15px;
+      --fs-tick: 13px;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      padding: 34px 56px 28px;
+      gap: 20px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题与导语 */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid rgba(82, 105, 112, 0.25);
+      padding-bottom: 16px;
+    }
+    .top-bar h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .top-bar .lead {
+      margin: 6px 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+    }
+    .top-bar .controls-summary {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .btn-reset {
+      background: var(--paper);
+      border: 1px solid rgba(82, 105, 112, 0.35);
+      color: var(--text);
+      font-size: var(--fs-sec);
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      font-weight: 500;
+    }
+    .btn-reset:hover {
+      border-color: var(--focus);
+      color: var(--focus);
+    }
+
+    /* 主区交互网格：左侧图表+状态，右侧控制与微观对比 */
+    .focus-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 820px 1fr;
+      gap: 28px;
+    }
+
+    /* 左侧面板：曲线实时追踪 */
+    .chart-panel {
+      background: var(--paper);
+      border-radius: 4px;
+      border: 1px solid rgba(82, 105, 112, 0.22);
+      padding: 20px 24px 16px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .chart-panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+    .legend-row {
+      display: flex;
+      gap: 18px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sw-line {
+      width: 22px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .sw-line.water { background: var(--muted); stroke-dasharray: 4 3; }
+    .sw-line.buffer { background: var(--buffer); height: 4px; }
+
+    .canvas-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      width: 100%;
+    }
+
+    /* 右侧面板：控制与微观比对 */
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--paper);
+      border: 1px solid rgba(82, 105, 112, 0.22);
+      border-radius: 4px;
+      padding: 18px 20px;
+    }
+
+    /* 扰动滑块控制区 */
+    .ctrl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .ctrl-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .ctrl-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      margin: 0;
+      white-space: nowrap;
+    }
+    .preset-btns {
+      display: flex;
+      gap: 6px;
+    }
+    .btn-sm {
+      background: var(--bg);
+      border: 1px solid rgba(82, 105, 112, 0.35);
+      color: var(--text);
+      font-size: var(--fs-tick);
+      padding: 3px 8px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+    }
+    .btn-sm:hover {
+      border-color: var(--focus);
+    }
+
+    .slider-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .slider-labels .acid-side { color: var(--acid); font-weight: 600; }
+    .slider-labels .base-side { color: var(--base); font-weight: 600; }
+
+    input[type="range"].disturbance {
+      width: 100%;
+      height: 8px;
+      appearance: none;
+      -webkit-appearance: none;
+      background: #D9E4E8;
+      border-radius: 4px;
+      outline: none;
+      margin: 8px 0;
+      cursor: pointer;
+    }
+    input[type="range"].disturbance::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--focus);
+      border: 2px solid #FFF;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+      cursor: pointer;
+    }
+
+    /* 读数与响应对比 */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .metric-cell {
+      padding: 12px 14px;
+      border-radius: 4px;
+      background: var(--bg);
+      border: 1px solid rgba(82, 105, 112, 0.15);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-cell.buffer-cell {
+      border-color: rgba(8, 116, 110, 0.35);
+      background: #EDF7F6;
+    }
+    .metric-name {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: 34px;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--text);
+    }
+    .metric-val.water-val { color: var(--text); }
+    .metric-val.buffer-val { color: var(--buffer); }
+    .metric-delta {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+
+    /* 缓冲体系组分与消耗机制柱状示意 */
+    .species-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .species-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+    }
+    .species-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .bar-row {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .bar-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--text);
+    }
+    .bar-info .role {
+      color: var(--muted);
+    }
+    .bar-track {
+      height: 12px;
+      background: var(--bg);
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+    }
+    .bar-fill {
+      height: 100%;
+      transition: width 0.1s ease-out;
+    }
+    .bar-fill.hac { background: var(--acid); }
+    .bar-fill.ac { background: var(--base); }
+
+    .bottom-hint {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 0;
+      border-top: 1px solid rgba(82, 105, 112, 0.2);
+      padding-top: 12px;
+    }
+    .bottom-hint strong {
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="07" data-total="17">
+  <div id="stage">
+    <header class="top-bar">
+      <div>
+        <h1>水与缓冲液的 pH 扰动响应对比</h1>
+        <p class="lead">外加少量强酸或强碱时，纯水发生急剧跳变，而共轭酸碱对将 pH 稳在缓冲窗内。</p>
+      </div>
+      <div class="controls-summary">
+        <button type="button" class="btn-reset" id="btn-reset">归零扰动</button>
+      </div>
+    </header>
+
+    <main class="focus-grid">
+      <!-- 左侧：全响应范围实时滴定追踪图 -->
+      <section class="chart-panel min0">
+        <div class="chart-panel-head">
+          <h2 class="chart-title">pH 响应曲线与实时状态</h2>
+          <div class="legend-row">
+            <div class="legend-item">
+              <span class="sw-line water"></span>
+              <span>纯水 (50 mL)</span>
+            </div>
+            <div class="legend-item">
+              <span class="sw-line buffer"></span>
+              <span>HAc–NaAc 缓冲液 (0.1 M, 50 mL)</span>
+            </div>
+          </div>
+        </div>
+        <div class="canvas-wrap min0">
+          <canvas id="cv-chart" class="cv-fill"></canvas>
+        </div>
+      </section>
+
+      <!-- 右侧：扰动量控制、双体系读数与物种消长 -->
+      <section class="side-panel min0">
+        <!-- 扰动操作 -->
+        <div class="card ctrl-group">
+          <div class="ctrl-head">
+            <h3 class="ctrl-title">外加扰动量 (1.0 M 酸 / 碱)</h3>
+            <div class="preset-btns">
+              <button type="button" class="btn-sm" data-add="-2.0">-2.0 mL</button>
+              <button type="button" class="btn-sm" data-add="-0.5">-0.5 mL</button>
+              <button type="button" class="btn-sm" data-add="0">0</button>
+              <button type="button" class="btn-sm" data-add="0.5">+0.5 mL</button>
+              <button type="button" class="btn-sm" data-add="2.0">+2.0 mL</button>
+            </div>
+          </div>
+          <div class="slider-row">
+            <div class="slider-labels">
+              <span class="acid-side">加 1.0 M HCl 4.0 mL</span>
+              <span id="slider-curr-label">无外加 (0.00 mL)</span>
+              <span class="base-side">加 1.0 M NaOH 4.0 mL</span>
+            </div>
+            <input type="range" id="delta-range" class="disturbance" min="-4.0" max="4.0" step="0.05" value="0.0">
+          </div>
+        </div>
+
+        <!-- 读数面板 -->
+        <div class="metrics-grid">
+          <div class="metric-cell">
+            <span class="metric-name">纯水 pH 读数</span>
+            <span class="metric-val water-val" id="val-water-ph">7.00</span>
+            <span class="metric-delta" id="val-water-delta">ΔpH: 0.00</span>
+          </div>
+          <div class="metric-cell buffer-cell">
+            <span class="metric-name">缓冲液 pH 读数</span>
+            <span class="metric-val buffer-val" id="val-buffer-ph">4.76</span>
+            <span class="metric-delta" id="val-buffer-delta">ΔpH: 0.00</span>
+          </div>
+        </div>
+
+        <!-- 微观物种消耗与储备 -->
+        <div class="card species-card">
+          <div class="species-title">
+            <span>缓冲体系组分与储备变化</span>
+            <span id="ratio-label">[Ac⁻]/[HAc] = 1.00</span>
+          </div>
+          <div class="species-bars">
+            <div class="bar-row">
+              <div class="bar-info">
+                <span>弱酸 HAc (抗外加碱)</span>
+                <span id="hac-amount">5.00 mmol</span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill hac" id="bar-hac" style="width: 50%;"></div>
+              </div>
+            </div>
+            <div class="bar-row">
+              <div class="bar-info">
+                <span>共轭碱 Ac⁻ (抗外加酸)</span>
+                <span id="ac-amount">5.00 mmol</span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill ac" id="bar-ac" style="width: 50%;"></div>
+              </div>
+            </div>
+          </div>
+          <p class="bottom-hint" id="status-hint">
+            初态等物质的量共轭对处于<strong>最佳缓冲容量点</strong>。此时外加微量酸碱主要被共轭酸碱相互转化吸收。
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看这个实时对比模拟：我们在左侧画出了外加强酸或强碱时，50毫升纯水与50毫升等摩尔醋酸-醋酸钠缓冲液的pH响应全貌。
+    拖动右侧的扰动滑块，或者点击预设按钮：当我们哪怕加入0.5毫升1摩尔每升的盐酸时，纯水的pH就会瞬间跌破2，而缓冲液仅仅从4.76变到4.67，变化只有0.09个单位。
+    下方实时反映了微观组分的消长：外加酸被Ac⁻消耗生成HAc，外加碱被HAc消耗生成Ac⁻。只要加入的酸碱未超出总物质的量，pH就被牢牢锁定在平缓的缓冲区内。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 体系基本参数
+      // 50 mL 溶液，初始纯水 pH 7.00
+      // 50 mL 缓冲液：0.10 M HAc + 0.10 M NaAc => 初始各 5.0 mmol, pKa = 4.76
+      // 外加 HCl (酸, delta < 0) 或 NaOH (碱, delta > 0), 浓度 1.0 M => 1 mL = 1 mmol
+      const V0 = 50.0; // mL
+      const pKa = 4.76;
+      const initHAc = 5.0; // mmol
+      const initAc = 5.0;  // mmol
+
+      // 计算纯水加扰动后的 pH
+      function calcWaterPH(v) {
+        if (Math.abs(v) < 1e-4) return 7.00;
+        const totalV = (V0 + Math.abs(v)) * 1e-3; // L
+        if (v < 0) {
+          // 加入 HCl: mol = |v| * 1e-3
+          const molH = Math.abs(v) * 1e-3;
+          const cH = molH / totalV;
+          return -Math.log10(cH);
+        } else {
+          // 加入 NaOH: mol = v * 1e-3
+          const molOH = v * 1e-3;
+          const cOH = molOH / totalV;
+          const pOH = -Math.log10(cOH);
+          return 14.0 - pOH;
+        }
+      }
+
+      // 计算缓冲溶液加扰动后的 pH 与组分
+      function calcBuffer(v) {
+        // v in mL of 1 M
+        // v > 0: 加 NaOH, 消耗 HAc, 产生 Ac-
+        // v < 0: 加 HCl, 消耗 Ac-, 产生 HAc
+        const deltaMmol = v * 1.0;
+        let nHAc = initHAc - deltaMmol;
+        let nAc = initAc + deltaMmol;
+
+        let ph;
+        if (nHAc <= 0.05) {
+          // 几乎耗尽 HAc，缓冲击穿偏碱
+          nHAc = 0.05;
+          nAc = 9.95;
+          const excessOH = (v * 1.0 - initHAc) * 1e-3;
+          const totV = (V0 + Math.abs(v)) * 1e-3;
+          if (excessOH > 0) {
+            ph = 14.0 - (-Math.log10(excessOH / totV));
+          } else {
+            ph = pKa + Math.log10(nAc / nHAc);
+          }
+        } else if (nAc <= 0.05) {
+          // 几乎耗尽 Ac-，缓冲击穿偏酸
+          nAc = 0.05;
+          nHAc = 9.95;
+          const excessH = (Math.abs(v) * 1.0 - initAc) * 1e-3;
+          const totV = (V0 + Math.abs(v)) * 1e-3;
+          if (excessH > 0) {
+            ph = -Math.log10(excessH / totV);
+          } else {
+            ph = pKa + Math.log10(nAc / nHAc);
+          }
+        } else {
+          // 正常 Henderson-Hasselbalch
+          ph = pKa + Math.log10(nAc / nHAc);
+        }
+        return {
+          ph: Math.max(0.5, Math.min(13.5, ph)),
+          nHAc: Math.max(0, nHAc),
+          nAc: Math.max(0, nAc)
+        };
+      }
+
+      // 预生成曲线采样点 [-4.0, +4.0]
+      const samplePoints = [];
+      const steps = 160;
+      for (let i = 0; i <= steps; i++) {
+        const v = -4.0 + (8.0 * i) / steps;
+        const waterPh = calcWaterPH(v);
+        const buf = calcBuffer(v);
+        samplePoints.push({ v, waterPh, bufPh: buf.ph });
+      }
+
+      // 状态
+      let currentV = 0.0;
+
+      // DOM 引用
+      const canvas = document.getElementById("cv-chart");
+      const rangeInput = document.getElementById("delta-range");
+      const btnReset = document.getElementById("btn-reset");
+      const sliderCurrLabel = document.getElementById("slider-curr-label");
+      const valWaterPh = document.getElementById("val-water-ph");
+      const valWaterDelta = document.getElementById("val-water-delta");
+      const valBufferPh = document.getElementById("val-buffer-ph");
+      const valBufferDelta = document.getElementById("val-buffer-delta");
+      const ratioLabel = document.getElementById("ratio-label");
+      const hacAmount = document.getElementById("hac-amount");
+      const acAmount = document.getElementById("ac-amount");
+      const barHac = document.getElementById("bar-hac");
+      const barAc = document.getElementById("bar-ac");
+      const statusHint = document.getElementById("status-hint");
+
+      function updateDOM(v) {
+        const water = calcWaterPH(v);
+        const buf = calcBuffer(v);
+        const deltaWater = water - 7.00;
+        const deltaBuf = buf.ph - 4.76;
+
+        valWaterPh.textContent = water.toFixed(2);
+        valWaterDelta.textContent = `ΔpH: ${deltaWater >= 0 ? "+" : ""}${deltaWater.toFixed(2)}`;
+        valBufferPh.textContent = buf.ph.toFixed(2);
+        valBufferDelta.textContent = `ΔpH: ${deltaBuf >= 0 ? "+" : ""}${deltaBuf.toFixed(2)}`;
+
+        if (v === 0) {
+          sliderCurrLabel.textContent = "无外加 (0.00 mL)";
+          statusHint.innerHTML = "初态等物质的量共轭对处于<strong>最佳缓冲容量点</strong>。此时外加微量酸碱主要被共轭对相互转化吸收。";
+        } else if (v < 0) {
+          sliderCurrLabel.textContent = `外加 1.0 M HCl: ${Math.abs(v).toFixed(2)} mL`;
+          statusHint.innerHTML = `外加酸电离出 H⁺，被弱酸根 <strong>Ac⁻ 结合生成 HAc</strong>，抑制了游离 [H⁺] 的激增，pH 仅轻微下降。`;
+        } else {
+          sliderCurrLabel.textContent = `外加 1.0 M NaOH: ${v.toFixed(2)} mL`;
+          statusHint.innerHTML = `外加碱电离出 OH⁻，被弱酸 <strong>HAc 中和生成 Ac⁻</strong>，避免了游离 [OH⁻] 的急剧增加，pH 维持平稳。`;
+        }
+
+        hacAmount.textContent = `${buf.nHAc.toFixed(2)} mmol`;
+        acAmount.textContent = `${buf.nAc.toFixed(2)} mmol`;
+
+        const totalMol = buf.nHAc + buf.nAc;
+        const pctHac = (buf.nHAc / totalMol) * 100;
+        const pctAc = (buf.nAc / totalMol) * 100;
+        barHac.style.width = `${pctHac.toFixed(1)}%`;
+        barAc.style.width = `${pctAc.toFixed(1)}%`;
+
+        const ratio = (buf.nAc / buf.nHAc).toFixed(2);
+        ratioLabel.textContent = `[Ac⁻]/[HAc] = ${ratio}`;
+      }
+
+      function drawChart(ctx, w, h) {
+        ctx.clearRect(0, 0, w, h);
+
+        const padLeft = 56;
+        const padRight = 36;
+        const padTop = 30;
+        const padBottom = 48;
+
+        const plotW = w - padLeft - padRight;
+        const plotH = h - padTop - padBottom;
+
+        // 映射函数：v [-4.0, 4.0] -> x; pH [0, 14] -> y
+        const mapX = v => padLeft + ((v + 4.0) / 8.0) * plotW;
+        const mapY = ph => padTop + ((14.0 - ph) / 14.0) * plotH;
+
+        // 1. 绘制有效缓冲窗口带 (pKa ± 1: 3.76 ~ 5.76)
+        const yBufTop = mapY(5.76);
+        const yBufBtm = mapY(3.76);
+        ctx.fillStyle = "rgba(8, 116, 110, 0.08)";
+        ctx.fillRect(padLeft, yBufTop, plotW, yBufBtm - yBufTop);
+
+        ctx.strokeStyle = "rgba(8, 116, 110, 0.25)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, yBufTop); ctx.lineTo(padLeft + plotW, yBufTop);
+        ctx.moveTo(padLeft, yBufBtm); ctx.lineTo(padLeft + plotW, yBufBtm);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 标注缓冲窗口
+        ctx.fillStyle = "#08746E";
+        ctx.font = "12px Bahnschrift, sans-serif";
+        ctx.fillText("有效缓冲窗 (pKa ± 1: 3.76 ~ 5.76)", padLeft + 10, yBufTop + 16);
+
+        // 2. 网格与坐标轴
+        ctx.strokeStyle = "rgba(82, 105, 112, 0.15)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+
+        // pH 水平网格线 (0, 2, 4, 6, 7, 8, 10, 12, 14)
+        const phTicks = [0, 2, 4, 6, 7, 8, 10, 12, 14];
+        ctx.fillStyle = "#526970";
+        ctx.font = "13px Bahnschrift, sans-serif";
+        ctx.textAlign = "right";
+        phTicks.forEach(ph => {
+          const y = mapY(ph);
+          ctx.moveTo(padLeft, y);
+          ctx.lineTo(padLeft + plotW, y);
+          ctx.fillText(ph.toString(), padLeft - 10, y + 4);
+        });
+
+        // 扰动体积垂直网格线 (-4, -2, 0, 2, 4)
+        const vTicks = [-4, -2, 0, 2, 4];
+        ctx.textAlign = "center";
+        vTicks.forEach(v => {
+          const x = mapX(v);
+          ctx.moveTo(x, padTop);
+          ctx.lineTo(x, padTop + plotH);
+          let label = v === 0 ? "0" : (v < 0 ? `${v} mL` : `+${v} mL`);
+          ctx.fillText(label, x, padTop + plotH + 22);
+        });
+        ctx.stroke();
+
+        // X轴刻度说明
+        ctx.font = "13px 'Noto Sans SC', sans-serif";
+        ctx.fillText("← 外加 HCl (酸性扰动)", mapX(-2.5), padTop + plotH + 40);
+        ctx.fillText("外加 NaOH (碱性扰动) →", mapX(2.5), padTop + plotH + 40);
+
+        // Y轴标题
+        ctx.save();
+        ctx.translate(18, padTop + plotH / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = "center";
+        ctx.font = "14px 'Noto Sans SC', sans-serif";
+        ctx.fillStyle = "#142B33";
+        ctx.fillText("溶液 pH 读数", 0, 0);
+        ctx.restore();
+
+        // 3. 绘制纯水曲线 (虚线)
+        ctx.save();
+        ctx.strokeStyle = "#718991";
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        samplePoints.forEach((pt, idx) => {
+          const x = mapX(pt.v);
+          const y = mapY(pt.waterPh);
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.restore();
+
+        // 4. 绘制缓冲液曲线 (实线)
+        ctx.save();
+        ctx.strokeStyle = "#08746E";
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        samplePoints.forEach((pt, idx) => {
+          const x = mapX(pt.v);
+          const y = mapY(pt.bufPh);
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.restore();
+
+        // 5. 绘制当前状态竖线与采样点
+        const curX = mapX(currentV);
+        ctx.strokeStyle = "rgba(196, 90, 0, 0.75)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(curX, padTop);
+        ctx.lineTo(curX, padTop + plotH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 当前纯水状态点
+        const curWaterPh = calcWaterPH(currentV);
+        const yW = mapY(curWaterPh);
+        ctx.fillStyle = "#FFF";
+        ctx.strokeStyle = "#142B33";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(curX, yW, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // 当前缓冲液状态点
+        const curBuf = calcBuffer(currentV);
+        const yB = mapY(curBuf.ph);
+        ctx.fillStyle = "#08746E";
+        ctx.strokeStyle = "#FFF";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(curX, yB, 7.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      function updateAll(v) {
+        currentV = v;
+        updateDOM(v);
+        const ctx = Deck.fit(canvas);
+        drawChart(ctx, canvas.offsetWidth, canvas.offsetHeight);
+      }
+
+      // 绑定滑块
+      rangeInput.addEventListener("input", (e) => {
+        updateAll(parseFloat(e.target.value));
+      });
+
+      // 绑定预设按钮
+      document.querySelectorAll(".preset-btns button").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const v = parseFloat(btn.getAttribute("data-add"));
+          rangeInput.value = v;
+          updateAll(v);
+        });
+      });
+
+      // 绑定归零按钮
+      btnReset.addEventListener("click", () => {
+        rangeInput.value = 0;
+        updateAll(0);
+      });
+
+      // 自适应绘制
+      Deck.autofit(canvas, (ctx, w, h) => {
+        drawChart(ctx, w, h);
+      });
+
+      // 初始化
+      updateAll(0);
+      Deck.init({ index: 7, total: 17, keys: false });
+    })();
+  </script>
+</body>
+</html>

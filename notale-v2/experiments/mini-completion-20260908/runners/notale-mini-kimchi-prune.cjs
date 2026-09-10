@@ -1,0 +1,5 @@
+const fs=require('fs'),parser=require('/tmp/notale-waveform-build/node_modules/@babel/parser');
+const file='workflows/build-interaction/samples/general/grandmas-kimchi-kitchen/mini/pages/sound.svelte';let text=fs.readFileSync(file,'utf8');const script=text.match(/<script>([\s\S]*?)<\/script>/)[1],start=text.indexOf(script),ast=parser.parse(script,{sourceType:'module'});
+const keep={chordProgressionLookup:['1','2','3'],songLookup:['anthem','peppy'],chordProgression:['happy','upbeat'],chords:['M','m']},edits=[];
+for(const statement of ast.program.body){if(statement.type!=='VariableDeclaration')continue;for(const decl of statement.declarations){const keys=keep[decl.id.name];if(!keys)continue;const props=decl.init.properties.filter(p=>keys.includes(p.key.value));if(props.length!==keys.length)throw Error(decl.id.name);edits.push({start:start+decl.init.start,end:start+decl.init.end,text:'{\n'+props.map(p=>script.slice(p.start,p.end)).join(',\n')+'\n}'});}}
+for(const e of edits.sort((a,b)=>b.start-a.start))text=text.slice(0,e.start)+e.text+text.slice(e.end);fs.writeFileSync(file,text);console.log('Pruned only inactive chapter music tables');

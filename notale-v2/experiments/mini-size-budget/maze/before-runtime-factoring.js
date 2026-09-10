@@ -1,0 +1,347 @@
+const focusStill=element=>element?.focus({preventScroll:true});
+const stop=element=>element.getAnimations().forEach(a=>a.cancel());
+const reducedMotion = matchMedia('(prefers-reduced-motion:reduce)');
+const setAttr = (element, name, value) => element.setAttribute(name, value),
+  setText = (element, value) => element.textContent = value;
+const toggleClass = (element, name, on) => element.classList.toggle(name, on);
+const dialog = (element, name, on) => {element.classList.toggle(name,on);setAttr(element,'aria-modal',on)};
+const $ = (s, e = document) => e.querySelector(s),
+  all = (s, e = document) => [...e.querySelectorAll(s)],
+  clone = index => $('#t').content.children[index].cloneNode(true);
+const data = await fetch('assets/mini-data.json').then(r => r.json()),
+  names = data.names,
+  states = data.states,
+  dash = data.sections.Dashboard,
+  method = data.sections.Methodology;
+await Promise.all(data.fonts.map(async ([family, url, weight]) => {
+  let font = new FontFace(family, `url(${url})`, {
+    weight,
+    display: 'swap'
+  });
+  document.fonts.add(font);
+  await font.load().catch(() => {});
+}));
+let order='geo',selected,game,cells,dims,location,path,userSolved,started,currentFact,shareTimer;
+const grid = $('#grid'),
+  tracker = $('.tracker'),
+  modal = $('.modal'),
+  info = $('.modal .info .info'),
+  maze = $('.maze-container'),
+  mazeSvg = $('svg', maze),
+  overlay = $('.overlay', maze),
+  factBox = $('.facts'),
+  stateSelect = all('.bar select')[1],
+  sortSelect = all('.bar select')[0],
+  savedKey = 'pudding-state-maze-mazes';
+const cached0 = $('#pick .stories'),
+cached1 = $('.clipboard'),
+cached3 = $('.below button.start'),
+cached4 = $('.methods');
+const readSaved = () => {
+  try {
+    return JSON.parse(localStorage.getItem(savedKey)) || [];
+  } catch {
+    return [];
+  }
+};
+const aliases = data.labels;
+for (let {id,name,info,person,mazeAlt,storyAlt} of data.storyCards) {
+  let e=clone(0),images=all('img',e);
+  images[0].src=`assets/img/states/${id}.png`;
+  images[0].alt=mazeAlt;
+  images[1].src=`assets/img/stories/${person}.png`;
+  images[1].alt=storyAlt;
+  setText($('.name',e),name);
+  setText($('.info',e),info);
+  e.onclick = () => setTimeout(() => open(id), 800);
+  cached0.append(e);
+}
+for (let option of data.stateOptions) stateSelect.add(new Option(...option));
+stateSelect.onchange = () => {
+  if (stateSelect.value !== 'default') open(stateSelect.value);
+};
+sortSelect.onchange = () => {
+  order = sortSelect.value;
+  renderGrid();
+};
+sortSelect.value = order;
+$('#pick .sub').onclick = () => focusStill($('.state', grid));
+function heading(text) {
+  let h = document.createElement('h3');
+  setText(h, text);
+  grid.append(h);
+}
+function renderGrid() {
+  let saved = readSaved(), count = saved.length, finished = count === 51;
+  all('.state,h3', grid).forEach(e => e.remove());
+  toggleClass(grid, 'geo', order === 'geo');
+  toggleClass(tracker, 'hasBorder', order !== 'geo');
+  $('.tracker-sentence').innerHTML = `You've completed ${finished ? 'all ' : count + '/'}51 mazes.` + (finished ? `<span class="done">${dash.doneMessage}</span>` : '');
+  $('.maze-directions').hidden = finished;
+  for (let {title,indices} of data.gridGroups[order]) {
+    if(title) heading(title);
+    for(let i of indices) {
+      let s=states[i];
+      let e = clone(1);
+      e.id = s.id;
+      toggleClass(e, 'geo', order === 'geo');
+      if (order !== 'region') e.style.cssText = `--row:${s.row};--col:${s.col}`;
+      let labels = all('.text', e);
+      setText(labels[0], order === 'geo' ? s.id.toUpperCase() : names[s.name]);
+      setText(labels[1], aliases[s.id] || '');
+      $('.icon', e).hidden = !s.story || order === 'region';
+      toggleClass($('.check', e), 'visible', saved.some(x => x.id === s.id));
+      let img = $('.img-wrapper>img', e);
+      img.src = `assets/img/states/${s.id}.png`;
+      img.alt = 'maze for ' + s.name;
+      e.onclick = () => open(s.id);
+      e.onkeydown = ev => {
+        if (['Enter', ' '].includes(ev.key)) {
+          ev.preventDefault();
+          open(s.id);
+        }
+      };
+      grid.append(e);
+    }
+  }
+  requestAnimationFrame(() => {
+    all('.state', grid).forEach(e => {
+      let [a, b] = all('.text', e),
+        short = !!aliases[e.id] && a.clientWidth > e.clientWidth;
+      toggleClass(a, 'visible', !short);
+      toggleClass(b, 'visible', short);
+    });
+  });
+}
+function fade(open) {
+  for (let e of [grid, $('.bar'), $('#pick .title'), cached0]) toggleClass(e, 'fade', open);
+  toggleClass(document.body, 'noscroll', open);
+}
+function open(id) {
+  selected = states.find(s => s.id === id);
+  if (!selected) return;
+  cells = data.mazes[id];
+  dims = Math.sqrt(cells.length);
+  resetGame(false);
+  dialog(modal,'open',true);
+  fade(true);
+  setText($('.header h2', info), names[selected.name]);
+  let story = $('.header .story', info);
+  story.hidden = !selected.story;
+  story.replaceChildren(story.firstElementChild, document.createTextNode(" " + names[selected.story] + "'s story"));
+  $('.classification', info).innerHTML = data.classifications[id];
+  factBox.innerHTML = '';
+  for (let text of data.factsByState[id]) {
+    let e = document.createElement('div');
+    e.className = 'fact';
+    e.innerHTML = text;
+    e.onmouseover = () => {
+      if (!e.classList.contains('below')) e.style.zIndex = 100;
+    };
+    e.onmouseleave = layoutFacts;
+    factBox.append(e);
+  }
+  $('.learn>a').href = selected.guttmacher;
+  $('.share>a').onclick = share;
+  focusStill(modal);
+  let saved = readSaved().find(s => s.id === id);
+  if (saved) {
+    path = saved.path;
+    location = cells.at(-1);
+    started = true;
+    game = 2;
+  }
+  setAttr(wallsGroup,'href',`assets/walls/${selected.id}.svg`);
+  setAttr(pathGroup,'transform',data.pathTransforms[selected.id]);
+  stop(animatedPath);
+  renderGame();
+}
+function close() {
+  let id = selected?.id;
+  selected = null;
+  dialog(modal,'open',false);
+  fade(false);
+  stateSelect.value = 'default';
+  renderGrid();
+  focusStill($('#' + id));
+}
+function share(e) {
+  e.preventDefault();
+  navigator.clipboard.writeText(locationOrigin() + '?state=' + encodeURIComponent(selected.id)).then(() => {
+    clearTimeout(shareTimer);
+    cached1.classList.add('visible');
+    shareTimer = setTimeout(() => cached1.classList.remove('visible'), 2000);
+  }).catch(() => {});
+}
+const locationOrigin = () => window.location.origin + window.location.pathname;
+function layoutFacts() {
+  let facts = all('.fact', factBox),
+    heights = facts.map(e => e.getBoundingClientRect().height),
+    sum = heights.reduce((a, b) => a + b, 0),
+    h = factBox.clientHeight,
+    last = heights.at(-1),
+    above = 0,
+    clientAbove = 0;
+  for (let [i, e] of facts.entries()) {
+    let top = i === 0 ? 0 : h > sum ? clientAbove - 20 : (sum === last ? .5 : above / (sum - last)) * (h - last);
+    above += heights[i];
+    clientAbove += e.clientHeight;
+    e.style.top = top + 'px';
+    e.style.zIndex = facts.length - Math.abs(i - currentFact);
+    for (let [c, v] of Object.entries({
+      above: i < currentFact,
+      below: i > currentFact,
+      disabled: game === 0,
+      fade: game === 0 || i !== currentFact,
+      visible: i <= currentFact
+    })) toggleClass(e, c, v);
+  }
+}
+const wallsGroup=mazeSvg.firstElementChild,pathGroup=mazeSvg.lastElementChild,[circle,fullPath,animatedPath]=pathGroup.children;
+function renderPath() {
+  let x = location.col,
+    y = location.row,
+    oldX = +circle.getAttribute('cx'),
+    oldY = +circle.getAttribute('cy'),
+    duration = game === 2 || !location.row && !location.col || reducedMotion.matches ? 0 : 100;
+  setAttr(circle, 'cx', x);
+  setAttr(circle, 'cy', y);
+  stop(circle);
+  if (duration) circle.animate([{
+    transform: `translate(${oldX - x}px,${oldY - y}px)`
+  }, {
+    transform: 'translate(0,0)'
+  }], {
+    duration
+  });
+  setAttr(fullPath,'d','M0 0'+path.slice(1,game===2?path.length:-1).map(p=>'L'+p.col+' '+p.row).join(''));
+  let recent = '';
+  if (path.length > 1) {
+    let prev = path.at(-2),
+      two = path.at(-3),
+      dr = location.row - prev.row,
+      dc = location.col - prev.col,
+      px = prev.col,
+      py = prev.row,
+      double = two && two.row === location.row && two.col === location.col;
+    if ((prev.row || prev.col) && !double) {
+      px -= dc * .125;
+      py -= dr * .125;
+    }
+    recent = `M${px} ${py}l${dc} ${dr}`;
+  }
+  setAttr(animatedPath, 'd', recent);
+  if (recent && game === 1 && duration) {
+    let length = animatedPath.getTotalLength();
+    stop(animatedPath);
+    animatedPath.animate(Array.from({
+      length: 201
+    }, (_, i) => ({
+      strokeDasharray: length,
+      strokeDashoffset: length * (1 - i / 200) ** 5
+    })), {
+      duration: 200
+    });
+  }
+  toggleClass(wallsGroup, 'fade', game !== 1);
+  toggleClass(pathGroup, 'fade', game !== 1);
+}
+function renderGame() {
+  maze.dataset.row = location.row;
+  maze.dataset.col = location.col;
+  maze.dataset.game = ['pre','mid','post'][game];
+  maze.dataset.pathLength = path.length;
+  setText(cached3, (game === 0 ? 'start' : 'restart') + ' maze');
+  toggleClass(cached3, 'bounce', !started && !reducedMotion.matches);
+  toggleClass(overlay, 'visible', game === 2);
+  $('.complete', overlay).hidden = !userSolved;
+  let a = $('.link', overlay);
+  setText(a, names[selected.name] + "'s");
+  a.href = selected.guttmacher;
+  if (game === 2) currentFact = factBox.children.length - 1;else if (game === 0 || path.length === 1) currentFact = 0;
+  layoutFacts();
+  renderPath();
+}
+function resetGame(play){
+  started=play;game=play?1:0;location=cells[0];path=[location];userSolved=true;currentFact=0;
+}
+function start(){resetGame(true);renderGame()}
+cached3.onclick = start;
+$('.below button.solve').onclick = () => {
+  userSolved = false;
+  path = data.solutions[selected.id].map(i => cells[i]);
+  location = cells.at(-1);
+  game = 2;
+  renderGame();
+};
+$('.link-sm', overlay).onclick = close;
+$('.close', modal).onclick = close;
+function move(direction) {
+  if (!selected || game !== 1) return;
+  let index = data.moves[selected.id][location.row*dims+location.col][direction], next = index == null ? null : cells[index];
+  if (!next) return;
+  location = next;
+  path.push(location);
+  if (!next.row && !next.col) path = [location];
+  if (next.row === dims - 1 && next.col === dims - 1) {
+    game = 2;
+    try {
+      localStorage.setItem(savedKey, JSON.stringify([...readSaved().filter(d => d.id !== selected.id), {
+        id: selected.id,
+        path
+      }]));
+    } catch {}
+  } else if (path.length % (dims <= 10 ? 2 : 5) === 0) currentFact = Math.min(currentFact + 1, factBox.children.length - 1);
+  renderGame();
+}
+const methods = $('#methodology');
+cached4.onclick = () => {
+  dialog(methods,'visible',true);
+  focusStill(methods);
+};
+function closeMethods() {
+  dialog(methods,'visible',false);
+  focusStill(cached4);
+}
+$('.close-methods').onclick = closeMethods;
+let inner = $('.inner', methods);
+setText($('h4', inner), method.title);
+$('details',inner).insertAdjacentHTML('beforebegin',method.content.map(c=>'<p>'+c.value+'</p>').join(''));
+$('tbody', methods).innerHTML = data.sources.map((s,i)=>`<tr><td><span>${i+1}</span><a href='${s.link}' target="_blank">${s.metric}</a></td><td>${s.lastUpdated}</td></tr>`).join('');
+$('.activity').onclick = e => {
+  if (e.target.id !== 'pdf-link') $('#pdf-link').click();
+};
+function trap(e, box) {
+  if (e.key !== 'Tab') return;
+  let f = all('a[href],button,summary', box).filter(n => n.getClientRects().length && !n.disabled && getComputedStyle(n).visibility !== 'hidden'),
+    first = f[0],
+    last = f.at(-1);
+  let [from,to] = e.shiftKey ? [first,last] : [last,first];
+  if (document.activeElement === from || document.activeElement === box) {
+    e.preventDefault();
+    to?.focus();
+  }
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (methods.classList.contains('visible')) closeMethods();else if (selected) close();
+  }
+  if (methods.classList.contains('visible')) trap(e, methods);else if (selected) {
+    trap(e, modal);
+    let direction = ['ArrowUp','ArrowRight','ArrowDown','ArrowLeft'].indexOf(e.key);
+    if (direction >= 0 && game === 1) {
+      e.preventDefault();
+      move(direction);
+    }
+  }
+});
+const observer = new ResizeObserver(layoutFacts);
+observer.observe(maze);
+addEventListener('pagehide', () => {
+  observer.disconnect();
+  clearTimeout(shareTimer);
+  stop(circle);
+});
+renderGrid();
+let initial = new URLSearchParams(window.location.search).get('state');
+if (initial) setTimeout(() => open(initial), 100);

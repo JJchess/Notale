@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF1;
+      --text: #142630;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      margin: 0;
+    }
+
+    #stage {
+      background: var(--bg);
+      box-sizing: border-box;
+      padding: var(--pad-y) var(--pad-x);
+    }
+
+    #canvas {
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .cover-copy {
+      position: absolute;
+      z-index: 5;
+      left: 104px;
+      top: 240px;
+      width: 620px;
+      pointer-events: none;
+    }
+
+    .title-kicker {
+      display: none;
+    }
+
+    h1 {
+      margin: 0 0 24px 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .core-claim {
+      margin: 0;
+      font-size: var(--fs-h2);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    .formula-badge {
+      position: absolute;
+      z-index: 5;
+      left: 104px;
+      top: 680px;
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      pointer-events: none;
+    }
+
+    .formula-tag {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--model);
+      letter-spacing: 0.08em;
+    }
+
+    .formula-math {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      font-family: "Noto Sans CJK SC Medium", "Noto Sans CJK SC", sans-serif;
+    }
+
+    .legend-box {
+      position: absolute;
+      z-index: 5;
+      right: 96px;
+      bottom: 60px;
+      display: flex;
+      gap: 32px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      pointer-events: none;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .legend-swatch {
+      width: 28px;
+      height: 2px;
+      background: var(--model);
+    }
+
+    .legend-swatch.ensemble {
+      height: 4px;
+    }
+
+    .legend-swatch.base {
+      opacity: 0.38;
+    }
+  </style>
+</head>
+<body data-page="08" data-total="32">
+  <main id="stage">
+    <canvas id="canvas" class="cv-fill"></canvas>
+
+    <header class="cover-copy">
+      <h1>Bagging：并行训练降低方差</h1>
+      <p class="core-claim">独立扰动样本构造多颗决策树，平均后抑制单模型剧烈震荡。</p>
+    </header>
+
+    <div class="formula-badge">
+      <span class="formula-tag">方差收敛</span>
+      <span class="formula-math">Var(f_ens) = ρσ² + (1 - ρ)σ² / B</span>
+    </div>
+
+    <div class="legend-box">
+      <div class="legend-item">
+        <span class="legend-swatch base"></span>
+        <span>单模型波动（高方差）</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-swatch ensemble"></span>
+        <span>集成平均（稳定收束）</span>
+      </div>
+    </div>
+  </main>
+
+  <aside class="notes" hidden>
+    这一章我们正式进入 Bagging。单棵决策树容易因为训练样本的局部扰动产生剧烈的震荡与过拟合，也就是高方差。Bagging 通过并行生成有重叠的自助抽样集，分别训练多棵树并取平均。只要基模型之间的相关性低于 1，随着模型数量 B 的增加，第二项非相关方差就会迅速衰减到零，让整个集成预测稳定下来。
+  </aside>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.querySelector("#canvas");
+      const SEED = "bagging-variance-reduction-08";
+      const NUM_CURVES = 18;
+      const PTS = 80;
+      const X_START = 760;
+      const X_END = 1480;
+      const Y_CENTER = 450;
+      const Y_SPREAD = 170;
+
+      Deck.init({ index: 8, total: 32, keys: false });
+
+      function buildCurves() {
+        const rng = new Math.seedrandom(SEED);
+        const curves = [];
+        const ensemblePts = new Array(PTS).fill(0);
+
+        // Ground truth trend: subtle sigmoid-like curve
+        const truth = [];
+        for (let i = 0; i < PTS; i++) {
+          const t = i / (PTS - 1);
+          // Underlying smooth signal
+          const s = Y_CENTER - 60 * Math.sin(t * Math.PI * 1.2) + (t - 0.5) * 80;
+          truth.push(s);
+        }
+
+        for (let c = 0; c < NUM_CURVES; c++) {
+          const pts = [];
+          // Random high-frequency high-variance fluctuations for individual trees
+          const p1 = (rng() - 0.5) * 2;
+          const p2 = (rng() - 0.5) * 2;
+          const p3 = (rng() - 0.5) * 2;
+          const phase = rng() * Math.PI * 2;
+
+          for (let i = 0; i < PTS; i++) {
+            const t = i / (PTS - 1);
+            const x = X_START + t * (X_END - X_START);
+            // High variance tree fluctuations
+            const noise = (Math.sin(t * 7 + phase) * p1 +
+                           Math.cos(t * 13 + phase) * p2 +
+                           Math.sin(t * 21 + phase) * p3) * Y_SPREAD * 0.45;
+            const y = truth[i] + noise;
+            pts.push({ x, y });
+            ensemblePts[i] += y / NUM_CURVES;
+          }
+          curves.push(pts);
+        }
+
+        const avgCurve = [];
+        for (let i = 0; i < PTS; i++) {
+          const t = i / (PTS - 1);
+          const x = X_START + t * (X_END - X_START);
+          avgCurve.push({ x, y: ensemblePts[i] });
+        }
+
+        return { curves, avgCurve, truth };
+      }
+
+      function draw(ctx) {
+        ctx.clearRect(0, 0, Deck.W, Deck.H);
+
+        const data = buildCurves();
+        const modelColor = Deck.rgb("model");
+        const ruleColor = Deck.rgb("rule");
+
+        // 1. Draw coordinate axes / baseline frame
+        ctx.strokeStyle = `rgba(${ruleColor.join(",")}, 0.28)`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        // X axis line at bottom of data window
+        ctx.moveTo(X_START - 20, Y_CENTER + Y_SPREAD + 40);
+        ctx.lineTo(X_END + 20, Y_CENTER + Y_SPREAD + 40);
+        // Vertical axis guide
+        ctx.moveTo(X_START, Y_CENTER - Y_SPREAD - 40);
+        ctx.lineTo(X_START, Y_CENTER + Y_SPREAD + 40);
+        ctx.stroke();
+
+        // Tick marks & axis labels
+        ctx.fillStyle = `rgba(${ruleColor.join(",")}, 0.9)`;
+        ctx.font = "16px var(--font-sans)";
+        ctx.textAlign = "center";
+        ctx.fillText("特征输入 x", (X_START + X_END) / 2, Y_CENTER + Y_SPREAD + 58);
+
+        ctx.save();
+        ctx.translate(X_START - 44, Y_CENTER);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = "center";
+        ctx.fillText("模型预测 f(x)", 0, 0);
+        ctx.restore();
+
+        // 2. Base models (18 high variance individual trees): thin, semi-transparent
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        data.curves.forEach((pts) => {
+          ctx.strokeStyle = `rgba(${modelColor.join(",")}, 0.18)`;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (let i = 1; i < pts.length; i++) {
+            ctx.lineTo(pts[i].x, pts[i].y);
+          }
+          ctx.stroke();
+        });
+
+        // 3. Highlight 2 specific individual trees with slightly higher clarity
+        [data.curves[2], data.curves[7]].forEach((pts) => {
+          ctx.strokeStyle = `rgba(${modelColor.join(",")}, 0.38)`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (let i = 1; i < pts.length; i++) {
+            ctx.lineTo(pts[i].x, pts[i].y);
+          }
+          ctx.stroke();
+        });
+
+        // 4. Integrated/Bagged curve: Signature 4px convergence line
+        ctx.strokeStyle = `rgba(${modelColor.join(",")}, 0.98)`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(data.avgCurve[0].x, data.avgCurve[0].y);
+        for (let i = 1; i < data.avgCurve.length; i++) {
+          ctx.lineTo(data.avgCurve[i].x, data.avgCurve[i].y);
+        }
+        ctx.stroke();
+
+        // End point indicator for ensemble
+        const lastPt = data.avgCurve[data.avgCurve.length - 1];
+        ctx.fillStyle = `rgb(${modelColor.join(",")})`;
+        ctx.beginPath();
+        ctx.arc(lastPt.x, lastPt.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Annotations on canvas
+        ctx.font = "bold 16px var(--font-sans)";
+        ctx.textAlign = "left";
+        ctx.fillStyle = `rgb(${modelColor.join(",")})`;
+        ctx.fillText("集成均值 f_ens(x)", lastPt.x + 12, lastPt.y + 5);
+
+        const volatilePt = data.curves[2][Math.floor(PTS * 0.65)];
+        ctx.fillStyle = `rgba(${modelColor.join(",")}, 0.85)`;
+        ctx.fillText("单模型 f_b(x)", volatilePt.x + 10, volatilePt.y - 12);
+      }
+
+      Deck.autofit(canvas, draw);
+    })();
+  </script>
+</body>
+</html>

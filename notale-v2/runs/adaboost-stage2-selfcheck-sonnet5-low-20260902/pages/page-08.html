@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>AdaBoost 算法讲解</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{
+  --bg:#EEF1F5; --text:#111820;
+  --font-sans:"Noto Sans CJK SC",ui-sans-serif,system-ui,sans-serif;
+}
+#stage{
+  width:1600px;height:900px;padding:28px 56px;box-sizing:border-box;
+  display:flex;flex-direction:column;gap:14px;
+  font-family:var(--font-sans);color:var(--text);
+}
+h1{
+  font-family:"Clear Sans","Noto Sans CJK SC",sans-serif;
+  font-size:40px;font-weight:700;letter-spacing:-.01em;margin:0;line-height:1.15;
+}
+.lead{font-size:18px;color:#3b4452;margin:2px 0 0;line-height:1.4;}
+.body-row{flex:1;min-height:0;display:flex;gap:24px;}
+.left{width:40%;min-width:0;display:flex;flex-direction:column;gap:12px;}
+.right{width:60%;min-width:0;display:flex;flex-direction:column;gap:10px;}
+
+.panel{
+  background:#FAFBFC;border:1px solid #C8D0DB;border-radius:6px;
+  padding:16px 20px;
+}
+.step-title{font-size:20px;font-weight:700;color:#111820;margin:0 0 8px;font-family:"Clear Sans","Noto Sans CJK SC",sans-serif;}
+.step-desc{font-size:16px;line-height:1.55;color:#333c47;margin:0;}
+.step-desc b{color:#164E9B;font-weight:700;}
+.step-desc .err{color:#C64232;font-weight:700;}
+
+.formula-panel{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:10px;}
+.frow{display:flex;align-items:baseline;gap:10px;font-size:16px;}
+.flabel{color:#657181;font-size:14px;min-width:118px;flex:0 0 auto;}
+.fval{font-family:"JetBrains Mono",ui-monospace,Consolas,monospace;font-size:18px;color:#111820;}
+.fval .weight{color:#164E9B;font-weight:700;}
+.fval .error{color:#C64232;font-weight:700;}
+
+.scene-panel{flex:1;min-height:0;position:relative;}
+.cvbox{position:absolute;inset:16px;}
+svg#scene{width:100%;height:100%;display:block;}
+
+.weight-bar-panel{height:118px;flex:0 0 auto;}
+.wb-title{font-size:14px;color:#657181;margin:0 0 8px;}
+.wb-row{display:flex;align-items:center;gap:10px;height:22px;}
+.wb-name{font-family:"JetBrains Mono",monospace;font-size:13px;width:70px;flex:0 0 auto;color:#333c47;}
+.wb-track{flex:1;height:12px;background:#E4E8EE;border-radius:2px;position:relative;overflow:hidden;}
+.wb-fill{position:absolute;left:0;top:0;height:100%;background:#164E9B;border-radius:2px;transition:width .5s ease;}
+.wb-fill.correct{background:#294E86;}
+.wb-fill.error{background:#C64232;}
+.wb-num{font-family:"JetBrains Mono",monospace;font-size:13px;width:52px;text-align:right;color:#111820;}
+
+.timeline{
+  flex:0 0 auto;display:flex;align-items:center;gap:16px;
+  border-top:1px solid #C8D0DB;padding-top:14px;
+}
+.tl-label{font-size:14px;color:#657181;flex:0 0 auto;}
+.tl-track{flex:1;display:flex;gap:8px;}
+.tl-btn{
+  flex:1;text-align:center;padding:10px 6px;border-radius:5px;border:1px solid #C8D0DB;
+  background:#FAFBFC;cursor:pointer;font-size:15px;color:#657181;font-weight:600;
+  transition:background .2s,color .2s,border-color .2s;
+}
+.tl-btn.active{background:#164E9B;color:#fff;border-color:#164E9B;}
+.tl-btn:hover:not(.active){border-color:#617CA8;color:#111820;}
+
+.final-note{font-size:15px;color:#657181;line-height:1.5;}
+.final-note b{color:#111820;}
+</style>
+</head>
+<body data-page="08" data-total="16">
+<div id="stage">
+  <header>
+    <h1>三个弱分类器合起来，就是一个更准的分类器</h1>
+    <p class="lead">每一轮挑当前误差最小的弱分类器，用它的错误率算出该轮的话语权 α，再用 α 更新样本权重，进入下一轮</p>
+  </header>
+
+  <div class="body-row">
+    <div class="left">
+      <div class="panel">
+        <p class="step-title" id="stepTitle">第 1 轮：挑选误差最小的分类器</p>
+        <p class="step-desc" id="stepDesc"></p>
+      </div>
+      <div class="panel formula-panel">
+        <div class="frow"><span class="flabel">候选与误差</span><span class="fval" id="fCandidates"></span></div>
+        <div class="frow"><span class="flabel">本轮误差 ε</span><span class="fval error" id="fErr"></span></div>
+        <div class="frow"><span class="flabel">分类器权重 α</span><span class="fval weight" id="fAlpha"></span></div>
+        <div class="frow"><span class="flabel">权重更新式</span><span class="fval" id="fUpdate">wᵢ ← wᵢ · exp(−α·yᵢ·h(xᵢ)) ，再归一化使 Σw=1</span></div>
+      </div>
+      <div class="panel">
+        <p class="final-note" id="finalNote">拖动或点击下方轮次，观察每一轮如何在前一轮基础上继续修正。</p>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="panel scene-panel">
+        <div class="cvbox"><svg id="scene" viewBox="0 0 900 560"></svg></div>
+      </div>
+      <div class="panel weight-bar-panel">
+        <p class="wb-title">样本权重 wᵢ（气泡与条形同步；越大代表越难分）</p>
+        <div id="wbList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="timeline">
+    <span class="tl-label">选择状态</span>
+    <div class="tl-track" id="tlTrack">
+      <div class="tl-btn active" data-i="0">第 1 轮 · 选 h₁</div>
+      <div class="tl-btn" data-i="1">第 2 轮 · 选 h₂</div>
+      <div class="tl-btn" data-i="2">第 3 轮 · 选 h₃</div>
+      <div class="tl-btn" data-i="3">最终组合 H(x)</div>
+    </div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  // ---- ground truth data (computed offline, reproduced exactly) ----
+  var pts = [
+    {x:1,y:4,label:1,  name:'A'},
+    {x:2,y:1,label:1,  name:'B'},
+    {x:3,y:5,label:-1, name:'C'},
+    {x:4,y:2,label:-1, name:'D'},
+    {x:5,y:4,label:1,  name:'E'}
+  ];
+  var n = pts.length;
+
+  function h1(p){ return p.x < 2.5 ? 1 : -1; }
+  function h2(p){ return p.y > 3 ? 1 : -1; }
+  function h3(p){ return p.x > 4.5 ? 1 : -1; }
+  var H = {h1:h1, h2:h2, h3:h3};
+
+  // classifier geometric descriptors for drawing (data space)
+  var lineDef = {
+    h1:{type:'v', at:2.5, plus:'left'},
+    h2:{type:'h', at:3,   plus:'above'},
+    h3:{type:'v', at:4.5, plus:'right'}
+  };
+
+  // round-by-round: weights BEFORE this round, chosen classifier, error, alpha, preds, weights AFTER
+  var rounds = [
+    {
+      wBefore:[0.2,0.2,0.2,0.2,0.2],
+      candidates:[['h1',0.2],['h2',0.4],['h3',0.4]],
+      chosen:'h1', err:0.2, alpha:0.6931,
+      preds:[1,1,-1,-1,-1],
+      wAfter:[0.125,0.125,0.125,0.125,0.5]
+    },
+    {
+      wBefore:[0.125,0.125,0.125,0.125,0.5],
+      candidates:[['h2',0.25],['h3',0.25]],
+      chosen:'h2', err:0.25, alpha:0.5493,
+      preds:[1,-1,1,-1,1],
+      wAfter:[0.0833,0.25,0.25,0.0833,0.3333]
+    },
+    {
+      wBefore:[0.0833,0.25,0.25,0.0833,0.3333],
+      candidates:[['h3',0.3333]],
+      chosen:'h3', err:0.3333, alpha:0.3466,
+      preds:[-1,-1,-1,-1,1],
+      wAfter:[0.125,0.375,0.1875,0.0625,0.25]
+    }
+  ];
+
+  var alphas = [0.6931, 0.5493, 0.3466];
+  var chosenOrder = ['h1','h2','h3'];
+
+  // final scores per point using all three classifiers
+  var finalScores = pts.map(function(p){
+    var s = alphas[0]*h1(p) + alphas[1]*h2(p) + alphas[2]*h3(p);
+    return s;
+  });
+  var finalPreds = finalScores.map(function(s){ return s>0?1:-1; });
+
+  // ---- SVG scene ----
+  var svg = document.getElementById('scene');
+  var W=900,H_=560;
+  var padL=70,padR=40,padT=40,padB=60;
+  var plotW = W-padL-padR, plotH = H_-padT-padB;
+  var xmin=0,xmax=6,ymin=0,ymax=6;
+  function sx(x){ return padL + (x-xmin)/(xmax-xmin)*plotW; }
+  function sy(y){ return padT + plotH - (y-ymin)/(ymax-ymin)*plotH; }
+
+  function svgEl(tag, attrs){
+    var e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  // axes
+  var axesG = svgEl('g', {});
+  axesG.appendChild(svgEl('line',{x1:sx(xmin),y1:sy(ymin),x2:sx(xmax),y2:sy(ymin),stroke:'#C8D0DB','stroke-width':1.5}));
+  axesG.appendChild(svgEl('line',{x1:sx(xmin),y1:sy(ymin),x2:sx(xmin),y2:sy(ymax),stroke:'#C8D0DB','stroke-width':1.5}));
+  for (var t=0;t<=6;t++){
+    var tx=svgEl('text',{x:sx(t),y:sy(ymin)+22,'font-size':12,fill:'#657181','text-anchor':'middle','font-family':'JetBrains Mono,monospace'});
+    tx.textContent=t; axesG.appendChild(tx);
+    var ty=svgEl('text',{x:sx(xmin)-14,y:sy(t)+4,'font-size':12,fill:'#657181','text-anchor':'end','font-family':'JetBrains Mono,monospace'});
+    ty.textContent=t; axesG.appendChild(ty);
+  }
+  var xl=svgEl('text',{x:sx(xmax)+0,y:sy(ymin)+42,'font-size':13,fill:'#657181','text-anchor':'end'}); xl.textContent='x₁'; axesG.appendChild(xl);
+  var yl=svgEl('text',{x:sx(xmin)-14,y:sy(ymax)-10,'font-size':13,fill:'#657181','text-anchor':'end'}); yl.textContent='x₂'; axesG.appendChild(yl);
+  svg.appendChild(axesG);
+
+  var lineG = svgEl('g', {id:'lineG'});
+  svg.appendChild(lineG);
+
+  var comboLineG = svgEl('g', {id:'comboLineG'}); // faded previous lines
+  svg.insertBefore(comboLineG, lineG);
+
+  var ptG = svgEl('g', {id:'ptG'});
+  svg.appendChild(ptG);
+
+  var legendG = svgEl('g', {id:'legendG', transform:'translate('+(padL)+',18)'});
+  var lg1 = svgEl('circle',{cx:0,cy:0,r:7,fill:'#294E86'});
+  var lt1 = svgEl('text',{x:14,y:4,'font-size':13,fill:'#333c47'}); lt1.textContent='+1 类样本';
+  var lg2 = svgEl('circle',{cx:118,cy:0,r:7,fill:'none',stroke:'#C64232','stroke-width':2});
+  var lt2 = svgEl('text',{x:132,y:4,'font-size':13,fill:'#333c47'}); lt2.textContent='-1 类样本';
+  legendG.appendChild(lg1);legendG.appendChild(lt1);legendG.appendChild(lg2);legendG.appendChild(lt2);
+  svg.appendChild(legendG);
+
+  var pointNodes = pts.map(function(p, i){
+    var g = svgEl('g',{});
+    var c = svgEl('circle',{cx:sx(p.x), cy:sy(p.y), r:18, fill: p.label===1?'#294E86':'none', stroke: p.label===1?'#294E86':'#C64232', 'stroke-width': p.label===1?0:2.5});
+    var t = svgEl('text',{x:sx(p.x), y:sy(p.y)-26, 'text-anchor':'middle','font-size':14,fill:'#111820','font-family':'JetBrains Mono,monospace','font-weight':'700'});
+    t.textContent = p.name;
+    var mark = svgEl('text',{x:sx(p.x), y:sy(p.y)+5,'text-anchor':'middle','font-size':13,fill: p.label===1?'#fff':'#C64232','font-weight':'700'});
+    mark.textContent='';
+    g.appendChild(c); g.appendChild(t); g.appendChild(mark);
+    ptG.appendChild(g);
+    return {g:g, c:c, mark:mark};
+  });
+
+  function drawLine(def, color, opacity, dash){
+    var g = svgEl('g',{});
+    if (def.type==='v'){
+      g.appendChild(svgEl('line',{x1:sx(def.at),y1:sy(ymin),x2:sx(def.at),y2:sy(ymax),stroke:color,'stroke-width':2.5,opacity:opacity,'stroke-dasharray':dash||''}));
+    } else {
+      g.appendChild(svgEl('line',{x1:sx(xmin),y1:sy(def.at),x2:sx(xmax),y2:sy(def.at),stroke:color,'stroke-width':2.5,opacity:opacity,'stroke-dasharray':dash||''}));
+    }
+    return g;
+  }
+
+  // ---- weight bars ----
+  var wbList = document.getElementById('wbList');
+  var wbRows = pts.map(function(p,i){
+    var row=document.createElement('div'); row.className='wb-row';
+    var name=document.createElement('div'); name.className='wb-name'; name.textContent=p.name+' ('+p.x+','+p.y+')';
+    var track=document.createElement('div'); track.className='wb-track';
+    var fill=document.createElement('div'); fill.className='wb-fill';
+    track.appendChild(fill);
+    var num=document.createElement('div'); num.className='wb-num';
+    row.appendChild(name); row.appendChild(track); row.appendChild(num);
+    wbList.appendChild(row);
+    return {fill:fill, num:num};
+  });
+
+  function updateWeights(w, errFlags){
+    var maxw = Math.max.apply(null, w);
+    w.forEach(function(wi, i){
+      var pct = (wi/ (maxw||1)) *100;
+      wbRows[i].fill.style.width = pct+'%';
+      wbRows[i].fill.className = 'wb-fill ' + (errFlags[i] ? 'error':'correct');
+      wbRows[i].num.textContent = wi.toFixed(3);
+      // bubble radius scaled to weight
+      var r = 12 + wi*70;
+      pointNodes[i].c.setAttribute('r', r);
+      pointNodes[i].g.querySelector('text').setAttribute('y', sy(pts[i].y)-r-8);
+    });
+  }
+
+  var candColor = {h1:'#617CA8', h2:'#617CA8', h3:'#617CA8'};
+  var chosenColor = '#164E9B';
+
+  function fmtCandidates(cands, chosen){
+    return cands.map(function(c){
+      var mark = c[0]===chosen ? '★' : '';
+      return c[0]+' ε='+c[1].toFixed(3)+mark;
+    }).join('   ');
+  }
+
+  var tlBtns = Array.prototype.slice.call(document.querySelectorAll('.tl-btn'));
+  var stepTitle = document.getElementById('stepTitle');
+  var stepDesc = document.getElementById('stepDesc');
+  var fCandidates = document.getElementById('fCandidates');
+  var fErr = document.getElementById('fErr');
+  var fAlpha = document.getElementById('fAlpha');
+  var finalNote = document.getElementById('finalNote');
+
+  function clearSvgDynamic(){
+    lineG.innerHTML=''; comboLineG.innerHTML=''; ptG.childNodes.forEach(function(g){ });
+  }
+
+  function renderRound(idx){
+    clearSvgDynamic();
+    tlBtns.forEach(function(b,i){ b.classList.toggle('active', i===idx); });
+
+    if (idx < 3){
+      var r = rounds[idx];
+      var errFlags = pts.map(function(p,i){ return r.preds[i] !== p.label; });
+      updateWeights(r.wBefore, errFlags);
+
+      // faded previous chosen lines
+      for (var k=0;k<idx;k++){
+        comboLineG.appendChild(drawLine(lineDef[chosenOrder[k]], '#C8D0DB', 0.9, '4,4'));
+      }
+      // current chosen line
+      lineG.appendChild(drawLine(lineDef[r.chosen], chosenColor, 1, ''));
+
+      // mark correctness on points
+      pointNodes.forEach(function(node, i){
+        node.mark.textContent = errFlags[i] ? '✕' : '';
+        node.mark.setAttribute('fill', '#fff');
+      });
+
+      stepTitle.textContent = '第 '+(idx+1)+' 轮：挑选误差最小的分类器';
+      var chosenName = r.chosen;
+      stepDesc.innerHTML = '本轮候选分类器中，<b>'+chosenName+'</b> 的加权误差最低（ε='+r.err.toFixed(3)+'）。'+
+        '用它的误差算出话语权 <b>α='+r.alpha.toFixed(3)+'</b>：误差越小，α 越大，这个弱分类器在最终投票里的声音就越大。'+
+        (idx<2 ? '接下来把 <span class="err">分错的样本权重调高</span>，分对的调低，重新归一化，进入下一轮。' : '这一轮误差率是三轮里最高的（0.333），α 也最小——它对最终投票的贡献最弱，但依然是正的，因为误差仍小于 0.5。');
+
+      fCandidates.textContent = fmtCandidates(r.candidates, r.chosen);
+      fErr.textContent = 'ε_'+(idx+1)+' = '+r.err.toFixed(3);
+      fAlpha.textContent = 'α_'+(idx+1)+' = ½·ln((1−ε)/ε) = '+r.alpha.toFixed(3);
+
+      finalNote.innerHTML = '更新后的权重（右侧条形）将作为<b>下一轮</b>训练弱分类器时的加权依据。';
+    } else {
+      // final combined view
+      updateWeights(rounds[2].wAfter, finalPreds.map(function(pred,i){ return pred !== pts[i].label; }));
+      chosenOrder.forEach(function(name){
+        comboLineG.appendChild(drawLine(lineDef[name], '#617CA8', 0.55, '4,4'));
+      });
+      pointNodes.forEach(function(node, i){
+        var wrong = finalPreds[i] !== pts[i].label;
+        node.mark.textContent = wrong ? '✕' : '';
+      });
+
+      stepTitle.textContent = '最终强分类器 H(x) = sign(Σ αₜ·hₜ(x))';
+      var scoreLines = pts.map(function(p,i){
+        return p.name+': '+finalScores[i].toFixed(3)+' → 预测 '+(finalPreds[i]>0?'+1':'-1')+(finalPreds[i]!==p.label?' （错分）':'');
+      }).join('　');
+      stepDesc.innerHTML = '三个弱分类器按各自的话语权 α 加权投票：H(x) = sign(0.693·h₁ + 0.549·h₂ + 0.347·h₃)。'+
+        '五个样本里四个投票结果正确，只有 <b>B</b> 仍然被分错——它同时靠近两条分割线的错误一侧，单靠这三条轴向直线无法把它救回来。'+
+        '这正是 AdaBoost 的真实样子：<span class="err">不保证零训练误差</span>，但每一轮都在让整体误差单调下降。';
+
+      fCandidates.textContent = scoreLines;
+      fErr.textContent = '训练误差 = 1/5 = 0.200（仅样本 B 错分）';
+      fAlpha.textContent = 'α₁=0.693　α₂=0.549　α₃=0.347';
+      finalNote.innerHTML = '若想救回 B，需要一个能画出更复杂边界的弱分类器，或者继续追加轮次。';
+    }
+  }
+
+  tlBtns.forEach(function(btn, i){
+    btn.addEventListener('click', function(){ renderRound(i); });
+  });
+
+  document.addEventListener('keydown', function(e){
+    if (e.key==='ArrowRight'){ var cur = tlBtns.findIndex(function(b){return b.classList.contains('active');}); renderRound(Math.min(3,cur+1)); }
+    if (e.key==='ArrowLeft'){ var cur2 = tlBtns.findIndex(function(b){return b.classList.contains('active');}); renderRound(Math.max(0,cur2-1)); }
+  });
+
+  renderRound(0);
+  Deck.init({ keys:false });
+})();
+</script>
+</body>
+</html>

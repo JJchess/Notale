@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    /* 标题区域 */
+    header {
+      position: absolute;
+      left: var(--pad-x);
+      top: var(--pad-y);
+      z-index: 10;
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      color: var(--text);
+    }
+    .lead {
+      margin-top: 6px;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-tight);
+    }
+
+    /* 主网格：左侧图表 820px，右侧准则与防御 580px */
+    .layout {
+      position: absolute;
+      left: var(--pad-x);
+      right: var(--pad-x);
+      top: 130px;
+      bottom: 40px;
+      display: grid;
+      grid-template-columns: 840px 1fr;
+      gap: 56px;
+    }
+
+    /* 左侧图表区 */
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+    .panel-head h2 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      margin: 0;
+      color: var(--text);
+    }
+    .chart-legend {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-line {
+      width: 18px;
+      height: var(--stroke);
+      background: currentColor;
+    }
+    .legend-line.dashed {
+      border-bottom: 2px dashed currentColor;
+      background: transparent;
+      height: 0;
+    }
+
+    .plot-container {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+    }
+    #chart-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 右侧工程选型与防过拟合防御 */
+    .spec-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-width: 0;
+      border-left: 1px solid var(--rule);
+      padding-left: 48px;
+    }
+
+    .spec-section-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      margin: 0 0 16px 0;
+      color: var(--text);
+    }
+
+    /* 选型清单 */
+    .decision-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .decision-row {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      column-gap: 14px;
+      align-items: baseline;
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+    }
+    .decision-target {
+      font-weight: 700;
+      color: var(--model);
+    }
+    .decision-rule {
+      color: var(--text);
+    }
+    .decision-rule strong {
+      color: var(--text);
+    }
+
+    /* 防过拟合三条铁律 */
+    .pitfall-box {
+      border-top: 1px solid var(--rule);
+      padding-top: 20px;
+    }
+    .rule-item {
+      margin-bottom: 12px;
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--text);
+    }
+    .rule-item strong {
+      color: var(--focus);
+    }
+
+    /* SVG 样式 */
+    .axis-line {
+      stroke: var(--rule);
+      stroke-width: var(--stroke);
+    }
+    .axis-tick {
+      stroke: var(--rule);
+      stroke-width: 1px;
+    }
+    .tick-label {
+      fill: var(--muted);
+      font-size: var(--fs-tick);
+      font-family: var(--font-sans);
+    }
+    .axis-label {
+      fill: var(--text);
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      font-weight: 600;
+    }
+    .curve-train {
+      fill: none;
+      stroke: var(--rule);
+      stroke-width: var(--stroke);
+      stroke-dasharray: 5 4;
+    }
+    .curve-bagging {
+      fill: none;
+      stroke: var(--model);
+      stroke-width: var(--stroke);
+    }
+    .curve-boosting {
+      fill: none;
+      stroke: var(--focus);
+      stroke-width: var(--stroke-strong);
+    }
+    .curve-annotation {
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      font-weight: 700;
+    }
+    .split-line {
+      stroke: var(--focus);
+      stroke-width: 1.5px;
+      stroke-dasharray: 3 3;
+    }
+  </style>
+</head>
+<body data-page="21" data-total="22">
+  <div id="stage">
+    <header>
+      <h1>工程选型与防过拟合实践</h1>
+      <p class="lead">基学习器规模、多样性代价与泛化分界</p>
+    </header>
+
+    <div class="layout">
+      <!-- 左栏：测试误差走势与早停分水岭 -->
+      <section class="chart-panel">
+        <div class="panel-head">
+          <h2>模型规模与测试误差走势</h2>
+          <div class="chart-legend">
+            <span class="legend-item" style="color:var(--focus)"><span class="legend-line"></span>Boosting 测试</span>
+            <span class="legend-item" style="color:var(--model)"><span class="legend-line"></span>Bagging 测试</span>
+            <span class="legend-item" style="color:var(--rule)"><span class="legend-line dashed"></span>训练误差</span>
+          </div>
+        </div>
+
+        <div class="plot-container">
+          <svg id="chart-svg" viewBox="0 0 840 600" preserveAspectRatio="none">
+            <!-- 坐标网格与轴 -->
+            <line x1="70" y1="520" x2="800" y2="520" class="axis-line" />
+            <line x1="70" y1="520" x2="70" y2="40" class="axis-line" />
+
+            <!-- 坐标轴标签 -->
+            <text x="800" y="555" text-anchor="end" class="axis-label">基学习器数量 M</text>
+            <text x="60" y="30" text-anchor="start" class="axis-label">误差率 (Error)</text>
+
+            <!-- 刻度线与刻度 -->
+            <line x1="70" y1="520" x2="70" y2="526" class="axis-tick" />
+            <text x="70" y="542" text-anchor="middle" class="tick-label">1</text>
+            <line x1="230" y1="520" x2="230" y2="526" class="axis-tick" />
+            <text x="230" y="542" text-anchor="middle" class="tick-label">50</text>
+            <line x1="390" y1="520" x2="390" y2="526" class="axis-tick" />
+            <text x="390" y="542" text-anchor="middle" class="tick-label">120</text>
+            <line x1="580" y1="520" x2="580" y2="526" class="axis-tick" />
+            <text x="580" y="542" text-anchor="middle" class="tick-label">300</text>
+            <line x1="780" y1="520" x2="780" y2="526" class="axis-tick" />
+            <text x="780" y="542" text-anchor="middle" class="tick-label">500</text>
+
+            <!-- 训练误差（单调递减接近 0） -->
+            <path d="M 70 120 C 180 320, 350 450, 780 485" class="curve-train" />
+            <text x="785" y="488" fill="var(--rule)" class="curve-annotation">训练逼近 0</text>
+
+            <!-- Bagging 验证误差（单调递减并收敛至固定极限平台，不因 M 增大而过拟合） -->
+            <path d="M 70 140 C 180 310, 320 335, 780 340" class="curve-bagging" />
+            <text x="785" y="343" fill="var(--model)" class="curve-annotation">Bagging 稳定极限</text>
+
+            <!-- Boosting 验证误差（先降后升：存在最佳早停极小值点） -->
+            <path d="M 70 130 C 180 340, 290 410, 390 410 C 490 410, 620 360, 780 260" class="curve-boosting" />
+            <text x="785" y="263" fill="var(--focus)" class="curve-annotation">Boosting 过拟合</text>
+
+            <!-- 最佳早停线 -->
+            <line x1="390" y1="70" x2="390" y2="520" class="split-line" />
+            <circle cx="390" cy="410" r="5" fill="var(--focus)" />
+            <text x="390" y="60" fill="var(--focus)" text-anchor="middle" class="curve-annotation">最佳早停点 (M=120)</text>
+          </svg>
+        </div>
+      </section>
+
+      <!-- 右栏：工程选型与防过拟合防御 -->
+      <section class="spec-panel">
+        <div>
+          <h2 class="spec-section-title">主流场景选型</h2>
+          <div class="decision-list">
+            <div class="decision-row">
+              <span class="decision-target">高维高噪</span>
+              <span class="decision-rule"><strong>随机森林</strong>：双重抽样抗噪鲁棒。</span>
+            </div>
+            <div class="decision-row">
+              <span class="decision-target">稠密表格</span>
+              <span class="decision-rule"><strong>LightGBM</strong>：拟合上限高，依赖早停。</span>
+            </div>
+            <div class="decision-row">
+              <span class="decision-target">极致冲榜</span>
+              <span class="decision-rule"><strong>多模型融合</strong>：异构互补，严防数据穿越。</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="pitfall-box">
+          <h2 class="spec-section-title">防过拟合三大防御</h2>
+          <div class="rule-item">
+            <strong>1. 早停机制：</strong>监控验证集，连续多轮无提升即停。
+          </div>
+          <div class="rule-item">
+            <strong>2. 步长与抽样：</strong>学习率 ≤ 0.1，配合列抽样保证多样性。
+          </div>
+          <div class="rule-item">
+            <strong>3. K 折隔离预测：</strong>次学习器仅使用折外特征，杜绝泄漏。
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+在实际工程落地集成学习时，我们需要明确：Bagging 的树数量增加不会导致过拟合，它只是单调降低方差直至极限；但 Boosting 随着轮数增多会拟合噪声，因此必须使用早停与学习率收缩。在选型上，高噪数据首选随机森林，表格任务首推 GBDT，多模型 Stacking 的关键是严禁元特征泄漏。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 21, total: 22, keys: false });
+  </script>
+</body>
+</html>

@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bootstrap 重采样：每个基学习器看到同一训练集的不同有放回样本</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F9;
+      --text: #172A3A;
+      --muted: #536575;
+      --paper: #FFFFFF;
+      --model: #245FA6;
+      --aggregate: #C94F2D;
+      --diversity: #28785E;
+      --focus: #A63D21;
+      --font-sans: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --font-num: "DIN Alternate", "Avenir Next Condensed", "PingFang SC", sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    header {
+      position: absolute;
+      left: var(--pad-x);
+      top: 32px;
+      right: var(--pad-x);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .sub-claim {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+      text-align: right;
+    }
+
+    /* 主画幅 */
+    .layout {
+      position: absolute;
+      left: var(--pad-x);
+      top: 104px;
+      width: 1488px;
+      height: 700px;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 32px;
+    }
+
+    /* 左侧：源训练集 */
+    .panel-source {
+      background: var(--paper);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 18px rgba(23, 42, 58, 0.05);
+      border: 1px solid rgba(83, 101, 117, 0.15);
+      padding: 26px 22px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0 0 8px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title .badge {
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .source-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 14px;
+      margin-bottom: auto;
+    }
+
+    .sample-token {
+      height: 74px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: var(--fs-h2);
+      border: 2px solid rgba(83, 101, 117, 0.2);
+      background: #F8FAFC;
+      color: var(--text);
+      transition: all var(--dur) var(--ease);
+      position: relative;
+    }
+
+    .sample-token.highlight {
+      border-color: var(--diversity);
+      background: rgba(40, 120, 94, 0.14);
+      color: var(--diversity);
+    }
+
+    .source-summary {
+      border-top: 1px solid rgba(83, 101, 117, 0.15);
+      padding-top: 20px;
+    }
+
+    .formula-box {
+      font-family: var(--font-num);
+      background: #F4F8FA;
+      border-radius: 6px;
+      padding: 14px 16px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.45;
+    }
+
+    .formula-box strong {
+      color: var(--aggregate);
+      font-size: var(--fs-h2);
+    }
+
+    /* 右侧：3个Bootstrap样本与对应基学习器 */
+    .panel-targets {
+      display: grid;
+      grid-template-rows: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .bootstrap-row {
+      background: var(--paper);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 18px rgba(23, 42, 58, 0.05);
+      border: 1px solid rgba(83, 101, 117, 0.15);
+      padding: 24px 28px;
+      display: grid;
+      grid-template-columns: 190px 1fr 230px;
+      align-items: center;
+      gap: 24px;
+      position: relative;
+      cursor: pointer;
+      transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+    }
+
+    .bootstrap-row.active {
+      border-color: var(--model);
+      box-shadow: 0 6px 20px rgba(36, 95, 166, 0.14);
+    }
+
+    .learner-tag {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .learner-name {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--model);
+    }
+
+    .learner-state {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+
+    .resampled-stream {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 12px;
+    }
+
+    .sub-token {
+      height: 74px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: var(--fs-h2);
+      background: #F8FAFC;
+      border: 2px solid rgba(83, 101, 117, 0.18);
+      color: var(--text);
+      position: relative;
+      transition: all var(--dur) var(--ease);
+    }
+
+    .sub-token.repeat-2 {
+      background: rgba(36, 95, 166, 0.12);
+      border-color: var(--model);
+      color: var(--model);
+    }
+
+    .sub-token.repeat-3 {
+      background: rgba(201, 79, 45, 0.14);
+      border-color: var(--aggregate);
+      color: var(--aggregate);
+    }
+
+    .sub-token .count-pin {
+      position: absolute;
+      top: -7px;
+      right: -7px;
+      background: var(--text);
+      color: #fff;
+      font-size: var(--fs-tick);
+      width: 19px;
+      height: 19px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-num);
+    }
+
+    .sub-token.repeat-2 .count-pin {
+      background: var(--model);
+    }
+
+    .sub-token.repeat-3 .count-pin {
+      background: var(--aggregate);
+    }
+
+    .row-stats {
+      border-left: 1px solid rgba(83, 101, 117, 0.16);
+      padding-left: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .stat-line {
+      font-size: var(--fs-sec);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .stat-line span {
+      color: var(--muted);
+    }
+
+    .stat-line b {
+      font-family: var(--font-num);
+      font-size: var(--fs-body);
+    }
+
+    .oob-badge {
+      color: var(--diversity);
+      font-weight: 600;
+    }
+
+    /* 连线 SVG 画布 */
+    #connector-canvas {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    /* 交互切换按钮组 */
+    .controls {
+      position: absolute;
+      right: var(--pad-x);
+      bottom: 26px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .btn-toggle {
+      border: 1px solid rgba(83, 101, 117, 0.3);
+      background: var(--paper);
+      color: var(--text);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+
+    .btn-toggle:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+
+    .btn-toggle.active {
+      background: var(--model);
+      color: #FFFFFF;
+      border-color: var(--model);
+    }
+  </style>
+</head>
+<body data-page="06" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>Bootstrap 重采样：每个基学习器看到同一训练集的不同有放回样本</h1>
+      <p class="sub-claim">N 次有放回抽样：约 63.2% 样本被选中，约 36.8% 未被选中</p>
+    </header>
+
+    <div class="layout">
+      <!-- 源数据 -->
+      <section class="panel-source min0">
+        <h2 class="panel-title">
+          原始训练集 D
+          <span class="badge">N = 8</span>
+        </h2>
+
+        <div class="source-grid" id="sourceGrid">
+          <!-- 8个样本卡片 x1~x8 -->
+        </div>
+
+        <div class="source-summary">
+          <div class="formula-box">
+            未被抽中概率极限：<br>
+            lim (1 − 1/N)ᴺ = 1/e ≈ <strong>36.8%</strong>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3 个基学习器的采样结果 -->
+      <section class="panel-targets min0" id="targetRows">
+        <!-- 动态生成 3 个样本子集 -->
+      </section>
+    </div>
+
+    <!-- 连线画布 -->
+    <svg id="connector-canvas" width="1600" height="900"></svg>
+
+    <div class="controls">
+      <button class="btn-toggle active" id="btn-tree-1" onclick="selectModel(0)">基学习器 T₁</button>
+      <button class="btn-toggle" id="btn-tree-2" onclick="selectModel(1)">基学习器 T₂</button>
+      <button class="btn-toggle" id="btn-tree-3" onclick="selectModel(2)">基学习器 T₃</button>
+      <button class="btn-toggle" id="btn-all" onclick="selectModel(-1)">全览</button>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    Bootstrap 抽样即“有放回抽样”。对于包含 N 个样本的数据集，每次抽取一个样本并放回，重复抽取 N 次构成新子集。
+    数学上，某个特定样本在 N 次抽取中一次也没被抽中的概率是 (1 - 1/N)^N。当 N 趋向无穷大时，这个概率极限为 1/e，约等于 36.8%。
+    这意味着每个基模型只看到了大约 63.2% 的去重样本，且部分样本被赋予了 2 次甚至 3 次的高频权重；剩下的 36.8% 样本完全没有参与该模型的训练，被称为“袋外样本（OOB）”。
+    这种天然的样本分布扰动，使得即使采用完全相同的学习算法，各个基模型也能学到互不相同的决策视角。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    const N = 8;
+    // 3组固定有放回抽样真实数据（确保确定性与教学可读性）
+    const BOOTSTRAP_SETS = [
+      {
+        id: 1,
+        name: "基学习器 T₁",
+        samples: [1, 1, 3, 4, 4, 6, 7, 7], // 1(2次), 3(1次), 4(2次), 6(1次), 7(2次) | 独立5个(62.5%), OOB: 2, 5, 8 (37.5%)
+        oob: [2, 5, 8]
+      },
+      {
+        id: 2,
+        name: "基学习器 T₂",
+        samples: [2, 2, 2, 3, 5, 5, 8, 8], // 2(3次), 3(1次), 5(2次), 8(2次) | 独立4个(50.0%), OOB: 1, 4, 6, 7 (50.0%)
+        oob: [1, 4, 6, 7]
+      },
+      {
+        id: 3,
+        name: "基学习器 T₃",
+        samples: [1, 3, 4, 5, 6, 6, 7, 8], // 6(2次), 其余各1次 | 独立7个(87.5%), OOB: 2 (12.5%)
+        oob: [2]
+      }
+    ];
+
+    let activeModelIndex = 0;
+
+    function initSourceGrid() {
+      const grid = document.getElementById("sourceGrid");
+      grid.innerHTML = "";
+      for (let i = 1; i <= N; i++) {
+        const div = document.createElement("div");
+        div.className = "sample-token";
+        div.id = `source-token-${i}`;
+        div.innerHTML = `<span>x${i}</span>`;
+        grid.appendChild(div);
+      }
+    }
+
+    function initTargetRows() {
+      const container = document.getElementById("targetRows");
+      container.innerHTML = "";
+      BOOTSTRAP_SETS.forEach((data, idx) => {
+        const counts = {};
+        data.samples.forEach(s => counts[s] = (counts[s] || 0) + 1);
+
+        const row = document.createElement("div");
+        row.className = `bootstrap-row ${idx === activeModelIndex ? 'active' : ''}`;
+        row.id = `row-${idx}`;
+        row.onclick = () => selectModel(idx);
+
+        let streamHtml = "";
+        data.samples.forEach((s, sIdx) => {
+          const repeatClass = counts[s] === 3 ? "repeat-3" : (counts[s] === 2 ? "repeat-2" : "");
+          const pinHtml = counts[s] > 1 ? `<div class="count-pin">×${counts[s]}</div>` : "";
+          streamHtml += `
+            <div class="sub-token ${repeatClass}" id="sub-token-${idx}-${sIdx}" data-source="${s}">
+              x${s}
+              ${pinHtml}
+            </div>
+          `;
+        });
+
+        const uniqueCount = Object.keys(counts).length;
+        const oobStr = data.oob.map(s => `x${s}`).join(", ");
+
+        row.innerHTML = `
+          <div class="learner-tag">
+            <span class="learner-name">${data.name}</span>
+            <span class="learner-state">采样量 N = 8</span>
+          </div>
+          <div class="resampled-stream">
+            ${streamHtml}
+          </div>
+          <div class="row-stats">
+            <div class="stat-line">
+              <span>覆盖样本</span>
+              <b>${uniqueCount} / 8 (${(uniqueCount/8*100).toFixed(0)}%)</b>
+            </div>
+            <div class="stat-line">
+              <span>袋外样本(OOB)</span>
+              <b class="oob-badge">${oobStr}</b>
+            </div>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function drawConnections() {
+      const svg = document.getElementById("connector-canvas");
+      svg.innerHTML = "";
+
+      // 清除源点的高亮
+      for (let i = 1; i <= N; i++) {
+        const el = document.getElementById(`source-token-${i}`);
+        if (el) el.classList.remove("highlight");
+      }
+
+      if (activeModelIndex === -1) {
+        // 全览模式：不高亮单一连线，显示多样性提示
+        return;
+      }
+
+      const activeSet = BOOTSTRAP_SETS[activeModelIndex];
+      const counts = {};
+      activeSet.samples.forEach(s => counts[s] = (counts[s] || 0) + 1);
+
+      // 高亮被选中的源样本
+      Object.keys(counts).forEach(s => {
+        const el = document.getElementById(`source-token-${s}`);
+        if (el) el.classList.add("highlight");
+      });
+
+      // 画出平滑贝塞尔连接线
+      const svgRect = svg.getBoundingClientRect();
+
+      activeSet.samples.forEach((s, sIdx) => {
+        const srcEl = document.getElementById(`source-token-${s}`);
+        const dstEl = document.getElementById(`sub-token-${activeModelIndex}-${sIdx}`);
+
+        if (!srcEl || !dstEl) return;
+
+        const srcR = srcEl.getBoundingClientRect();
+        const dstR = dstEl.getBoundingClientRect();
+
+        // 转换为 SVG 逻辑坐标 (1600x900)
+        const scaleX = 1600 / svgRect.width;
+        const scaleY = 900 / svgRect.height;
+
+        const x1 = (srcR.right - svgRect.left) * scaleX;
+        const y1 = (srcR.top + srcR.height / 2 - svgRect.top) * scaleY;
+
+        const x2 = (dstR.left - svgRect.left) * scaleX;
+        const y2 = (dstR.top + dstR.height / 2 - svgRect.top) * scaleY;
+
+        const dx = (x2 - x1) * 0.45;
+
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`);
+        
+        let strokeColor = "rgba(40, 120, 94, 0.35)"; // diversity 绿
+        let strokeWidth = "1.5";
+        if (counts[s] === 2) {
+          strokeColor = "rgba(36, 95, 166, 0.45)"; // model 蓝
+          strokeWidth = "2";
+        } else if (counts[s] >= 3) {
+          strokeColor = "rgba(201, 79, 45, 0.55)"; // aggregate 红
+          strokeWidth = "2.5";
+        }
+
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", strokeColor);
+        path.setAttribute("stroke-width", strokeWidth);
+        path.setAttribute("stroke-linecap", "round");
+        svg.appendChild(path);
+      });
+    }
+
+    function selectModel(idx) {
+      activeModelIndex = idx;
+      document.querySelectorAll(".bootstrap-row").forEach((row, i) => {
+        row.classList.toggle("active", i === idx);
+      });
+      document.querySelectorAll(".btn-toggle").forEach((btn, i) => {
+        if (idx === -1) {
+          btn.classList.toggle("active", i === 3);
+        } else {
+          btn.classList.toggle("active", i === idx);
+        }
+      });
+      drawConnections();
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      Deck.init({ index: 6, total: 26 });
+      initSourceGrid();
+      initTargetRows();
+      setTimeout(drawConnections, 60);
+      window.addEventListener("resize", drawConnections);
+    });
+  </script>
+</body>
+</html>

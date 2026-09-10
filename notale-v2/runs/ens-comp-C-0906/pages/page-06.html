@@ -1,0 +1,387 @@
+<!doctype html>
+<!--
+构图意图：
+1. 主对象：原始数据集 D（N个样本点）与通过有放回抽样生成的 3 组不同自助样本集 D*₁、D*₂、D*₃。
+2. 对象关系：上方是固定基准全集 D（10个带序号样本，从 x₁ 到 x₁₀）；下方横向展开 3 份自助集。从上方到下方拉出带透明度的抽样轨迹，直观展示“有放回”带来的样本重复（如 x₂ 出现两次）与遗漏（袋外样本未被选中）。
+3. 说明依附：核心判断置于标题与导语，关键数学极限 (1-1/e ≈ 63.2%) 贴着右侧统计小结，每个自助集下方标注其独有构成与袋外未选占比。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans SC", sans-serif;
+      --font-numeric: "Lato", "Noto Sans SC", sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      font-family: var(--font-sans);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    header {
+      margin-top: 12px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      margin: 0 0 10px 0;
+      color: var(--text);
+    }
+
+    p.lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: var(--lh-copy);
+    }
+
+    /* 构图主区 */
+    .sampling-stage {
+      position: relative;
+      width: 100%;
+      height: 600px;
+      margin-top: 8px;
+    }
+
+    /* 原始数据集 */
+    .source-panel {
+      position: absolute;
+      top: 18px;
+      left: 40px;
+      width: 860px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .row-meta {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+    }
+
+    .meta-title {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--aggregate);
+    }
+
+    .meta-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .sample-strip {
+      display: flex;
+      gap: 14px;
+    }
+
+    .sample-pill {
+      width: 62px;
+      height: 48px;
+      border-radius: 6px;
+      border: 1.5px solid var(--line);
+      background: #D5DCD7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-numeric);
+      transition: all var(--duration-fast) var(--ease-join);
+    }
+
+    .sample-pill .idx {
+      font-size: 15px;
+      font-weight: var(--weight-medium);
+      color: var(--text);
+    }
+
+    /* 右侧理论极限卡片（纯内容结构） */
+    .stat-card {
+      position: absolute;
+      top: 18px;
+      right: 40px;
+      width: 380px;
+      padding-left: 28px;
+      border-left: 1.5px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .stat-title {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--aggregate);
+    }
+
+    .stat-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 连线与下方的多套自助集 */
+    svg.sampling-traces {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .boots-container {
+      position: absolute;
+      bottom: 24px;
+      left: 0;
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 36px;
+      padding: 0 40px;
+    }
+
+    .boot-item {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding-top: 16px;
+      border-top: 1.5px solid var(--line);
+    }
+
+    .boot-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .boot-name {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--model);
+    }
+
+    .boot-badge {
+      font-size: var(--fs-label);
+      font-family: var(--font-numeric);
+      color: var(--muted);
+    }
+
+    .boot-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+    }
+
+    .boot-cell {
+      height: 44px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-numeric);
+      font-size: 15px;
+      background: #CCD4CF;
+      border: 1px solid var(--line);
+      color: var(--text);
+    }
+
+    .boot-cell.repeated {
+      background: #C4D2DC;
+      border-color: var(--model);
+      color: var(--aggregate);
+      font-weight: var(--weight-bold);
+      position: relative;
+    }
+
+    .boot-cell.repeated::after {
+      content: "重";
+      position: absolute;
+      top: 1px;
+      right: 3px;
+      font-size: 10px;
+      font-weight: normal;
+      color: var(--model);
+      font-family: var(--font-sans);
+    }
+
+    .boot-oob {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-sec);
+      color: var(--uncertain);
+    }
+
+    .boot-oob span.val {
+      font-family: var(--font-numeric);
+      font-weight: var(--weight-medium);
+    }
+  </style>
+</head>
+<body data-page="06" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>Bootstrap 自助采样：有放回抽样构造多样性</h1>
+      <p class="lead">从大小为 N 的数据集进行 N 次等概率有放回抽取，生成多份重叠但互异的子集。</p>
+    </header>
+
+    <main class="sampling-stage min0">
+      <!-- 原始训练集 D -->
+      <section class="source-panel">
+        <div class="row-meta">
+          <span class="meta-title">原始训练集 D</span>
+          <span class="meta-sub">样本总数 N = 10，每次等概率 1/N 抽取</span>
+        </div>
+        <div class="sample-strip" id="original-samples">
+          <div class="sample-pill"><span class="idx">x₁</span></div>
+          <div class="sample-pill"><span class="idx">x₂</span></div>
+          <div class="sample-pill"><span class="idx">x₃</span></div>
+          <div class="sample-pill"><span class="idx">x₄</span></div>
+          <div class="sample-pill"><span class="idx">x₅</span></div>
+          <div class="sample-pill"><span class="idx">x₆</span></div>
+          <div class="sample-pill"><span class="idx">x₇</span></div>
+          <div class="sample-pill"><span class="idx">x₈</span></div>
+          <div class="sample-pill"><span class="idx">x₉</span></div>
+          <div class="sample-pill"><span class="idx">x₁₀</span></div>
+        </div>
+      </section>
+
+      <!-- 理论极限推导卡片 -->
+      <section class="stat-card">
+        <div class="stat-title">袋外样本比例收敛</div>
+        <div class="stat-formula">
+          lim<sub>N→∞</sub> (1 - 1/N)<sup>N</sup> = 1/e ≈ <span class="highlight">36.8%</span>
+        </div>
+        <div class="stat-desc">
+          每次抽取中样本未入选概率为 1 - 1/N。N 次有放回抽取后，约 63.2% 样本进入子集，约 36.8% 成为袋外验证样本。
+        </div>
+      </section>
+
+      <!-- 连线矢量背景 -->
+      <svg class="sampling-traces" id="trace-svg">
+        <defs>
+          <linearGradient id="grad-model" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#74817C" stop-opacity="0.5"/>
+            <stop offset="100%" stop-color="#2E5F78" stop-opacity="0.3"/>
+          </linearGradient>
+        </defs>
+        <!-- 抽样代表性导向路径 -->
+        <path d="M 150 85 C 150 190, 200 220, 220 320" fill="none" stroke="url(#grad-model)" stroke-width="1.5" stroke-dasharray="3 3"/>
+        <path d="M 150 85 C 150 190, 290 220, 330 320" fill="none" stroke="url(#grad-model)" stroke-width="1.5" stroke-dasharray="3 3"/>
+        <path d="M 430 85 C 430 180, 700 210, 730 320" fill="none" stroke="url(#grad-model)" stroke-width="1.5" stroke-dasharray="3 3"/>
+        <path d="M 700 85 C 700 180, 1160 200, 1200 320" fill="none" stroke="url(#grad-model)" stroke-width="1.5" stroke-dasharray="3 3"/>
+      </svg>
+
+      <!-- 3组生成的自助样本集 -->
+      <section class="boots-container">
+        <!-- 子集 1 -->
+        <div class="boot-item">
+          <div class="boot-header">
+            <span class="boot-name">自助样本集 D*₁</span>
+            <span class="boot-badge">|D*₁| = 10</span>
+          </div>
+          <div class="boot-grid">
+            <div class="boot-cell repeated">x₂</div>
+            <div class="boot-cell repeated">x₂</div>
+            <div class="boot-cell">x₃</div>
+            <div class="boot-cell">x₅</div>
+            <div class="boot-cell repeated">x₇</div>
+            <div class="boot-cell">x₁</div>
+            <div class="boot-cell repeated">x₇</div>
+            <div class="boot-cell">x₉</div>
+            <div class="boot-cell">x₁₀</div>
+            <div class="boot-cell">x₅</div>
+          </div>
+          <div class="boot-oob">
+            <span>未入选样本 (OOB):</span>
+            <span class="val">x₄, x₆, x₈ (占比 30%)</span>
+          </div>
+        </div>
+
+        <!-- 子集 2 -->
+        <div class="boot-item">
+          <div class="boot-header">
+            <span class="boot-name">自助样本集 D*₂</span>
+            <span class="boot-badge">|D*₂| = 10</span>
+          </div>
+          <div class="boot-grid">
+            <div class="boot-cell">x₁</div>
+            <div class="boot-cell repeated">x₄</div>
+            <div class="boot-cell repeated">x₄</div>
+            <div class="boot-cell repeated">x₄</div>
+            <div class="boot-cell">x₆</div>
+            <div class="boot-cell">x₈</div>
+            <div class="boot-cell repeated">x₉</div>
+            <div class="boot-cell repeated">x₉</div>
+            <div class="boot-cell">x₃</div>
+            <div class="boot-cell">x₁₀</div>
+          </div>
+          <div class="boot-oob">
+            <span>未入选样本 (OOB):</span>
+            <span class="val">x₂, x₅, x₇ (占比 30%)</span>
+          </div>
+        </div>
+
+        <!-- 子集 3 -->
+        <div class="boot-item">
+          <div class="boot-header">
+            <span class="boot-name">自助样本集 D*₃</span>
+            <span class="boot-badge">|D*₃| = 10</span>
+          </div>
+          <div class="boot-grid">
+            <div class="boot-cell">x₂</div>
+            <div class="boot-cell">x₃</div>
+            <div class="boot-cell repeated">x₅</div>
+            <div class="boot-cell repeated">x₅</div>
+            <div class="boot-cell">x₆</div>
+            <div class="boot-cell">x₇</div>
+            <div class="boot-cell repeated">x₈</div>
+            <div class="boot-cell repeated">x₈</div>
+            <div class="boot-cell">x₁</div>
+            <div class="boot-cell">x₄</div>
+          </div>
+          <div class="boot-oob">
+            <span>未入选样本 (OOB):</span>
+            <span class="val">x₉, x₁₀ (占比 20%)</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，今天我们正式进入 Bagging 与随机森林的机制拆解。
+    大家首先思考一个问题：在很多场景下，我们只有一份大小为 N 的真实训练数据，无法多次从真实世界采样。那怎么才能拥有多个互不相同的训练集来训练多个基学习器？
+    答案就是屏幕上的核心方法：Bootstrap 自助采样。
+    它的规则非常简单且优美：面对容量为 N 的集合，我们每次随机抽一个记录下来，然后放回池中，重复执行 N 次。
+    因为是有放回抽样，某些样本会被重复抽中多次，比如子集 1 中的 x₂ 和 x₇；而另一些样本则一次也没被抽中，落在了集合之外。
+    从数学极限来看，当 N 足够大时，任意一个特定样本在 N 次抽取中始终未被选中的概率会收敛到 1/e，也就是大约 36.8%。
+    这意味着每个自助子集大约只覆盖了 63.2% 的原始样本，而剩下的 36.8% 就成了天然未被该学习器见过的“袋外样本”，我们后续会用它来做模型评估与泛化误差估计。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 6, total: 26 });
+  </script>
+</body>
+</html>

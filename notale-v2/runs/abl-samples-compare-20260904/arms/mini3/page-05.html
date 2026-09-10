@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>多数票与软投票的分歧</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      box-sizing: border-box;
+      background: var(--bg);
+    }
+
+    /* 顶部标题区 */
+    .header-block {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .header-block h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--text);
+    }
+    .header-block p {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 交互主工作区：左 3 成员卡片，右汇总判决对比 */
+    .workspace {
+      flex: 1 1 0;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 430px;
+      gap: 24px;
+    }
+
+    /* 左侧模型调节区 */
+    .models-col {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+    .col-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .col-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .col-hint {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .preset-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .preset-btn {
+      padding: 6px 14px;
+      border: 1px solid var(--muted);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--text);
+      font-size: var(--fs-label);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease);
+    }
+    .preset-btn:hover {
+      background: var(--surface-strong);
+    }
+    .preset-btn.active {
+      border-color: var(--model);
+      background: var(--surface-strong);
+      font-weight: 700;
+    }
+
+    .models-list {
+      flex: 1 1 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .model-card {
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 18px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 1px 4px rgba(18, 38, 52, 0.06);
+      border: 1px solid rgba(83, 106, 120, 0.2);
+    }
+    .model-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .model-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--model);
+    }
+    .model-badge {
+      padding: 2px 8px;
+      font-size: var(--fs-label);
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .prob-bar-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .prob-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .prob-label-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: var(--fs-body);
+    }
+    .prob-label-val.clsA {
+      color: var(--model);
+    }
+    .prob-label-val.clsB {
+      color: var(--aggregate);
+    }
+
+    .prob-track {
+      height: 18px;
+      border-radius: 9px;
+      background: #E2EBF0;
+      overflow: hidden;
+      display: flex;
+      position: relative;
+    }
+    .prob-track::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: rgba(255, 255, 255, 0.85);
+      z-index: 2;
+    }
+    .prob-seg-a {
+      height: 100%;
+      background: var(--model);
+      transition: width var(--duration) var(--ease);
+    }
+    .prob-seg-b {
+      height: 100%;
+      background: var(--aggregate);
+      transition: width var(--duration) var(--ease);
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .slider-row label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      white-space: nowrap;
+      width: 140px;
+    }
+    .slider-row input[type="range"] {
+      flex: 1;
+      accent-color: var(--model);
+      cursor: pointer;
+      height: 6px;
+    }
+
+    /* 右侧汇总比对区 */
+    .summary-col {
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid rgba(83, 106, 120, 0.25);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .summary-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .verdict-comparison {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .verdict-box {
+      border: 1px solid rgba(83, 106, 120, 0.2);
+      border-radius: 6px;
+      padding: 12px 16px;
+      background: #FAFCFD;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .verdict-box.divergent {
+      border-color: var(--aggregate);
+      background: #FFF9F6;
+    }
+
+    .verdict-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .verdict-method {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .verdict-winner {
+      font-size: var(--fs-body);
+      font-weight: 800;
+      padding: 2px 10px;
+      border-radius: 4px;
+    }
+    .verdict-winner.clsA {
+      background: rgba(39, 100, 143, 0.15);
+      color: var(--model);
+    }
+    .verdict-winner.clsB {
+      background: rgba(195, 75, 34, 0.15);
+      color: var(--aggregate);
+    }
+
+    .verdict-detail {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+      font-family: var(--font-sans);
+    }
+    .verdict-detail b {
+      font-family: var(--font-num);
+      color: var(--text);
+    }
+
+    /* 状态指示条 */
+    .status-panel {
+      border-radius: 6px;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border: 1px solid rgba(83, 106, 120, 0.2);
+    }
+    .status-panel.split {
+      background: #FFF5F0;
+      border-color: rgba(195, 75, 34, 0.4);
+    }
+    .status-panel.agree {
+      background: #F0F7F4;
+      border-color: rgba(35, 112, 82, 0.4);
+    }
+    .status-title {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .status-panel.split .status-title {
+      color: var(--aggregate);
+    }
+    .status-panel.agree .status-title {
+      color: var(--answer);
+    }
+    .status-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .rule-formula {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      border-top: 1px solid rgba(83, 106, 120, 0.15);
+      padding-top: 10px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body data-page="05" data-total="27">
+  <div id="stage">
+    <!-- 页眉与导语 -->
+    <div class="header-block">
+      <h1>多数票与软投票的分歧：置信度决定判决方向</h1>
+      <p>多数投票仅统计离散标签类别，软投票依据成员输出的后验概率均值。当少数模型具备极高置信度时，两种聚合规则将得出相反结论。</p>
+    </div>
+
+    <!-- 主工作区 -->
+    <div class="workspace min0">
+      <!-- 左栏：基学习器调节与预设 -->
+      <div class="models-col min0">
+        <div class="col-header">
+          <div class="col-title">三个基分类器的后验概率设定</div>
+          <div class="preset-bar">
+            <span class="col-hint">典型工况：</span>
+            <button class="preset-btn active" id="btnPresetDiverge" data-preset="diverge">典型分歧（2弱胜 vs 1笃定）</button>
+            <button class="preset-btn" id="btnPresetAgree" data-preset="agree">方向一致（3者同向）</button>
+            <button class="preset-btn" id="btnPresetMarginal" data-preset="marginal">微弱多数（势均力敌）</button>
+          </div>
+        </div>
+
+        <div class="models-list min0">
+          <!-- 模型 1 -->
+          <div class="model-card min0" id="cardModel1">
+            <div class="model-card-top">
+              <span class="model-name">
+                基学习器 1 (树模型)
+              </span>
+              <span class="model-badge" id="badgeM1">离散判决：类别 A</span>
+            </div>
+            <div class="prob-bar-wrap">
+              <div class="prob-labels">
+                <span>类别 A 置信度：<span class="prob-label-val clsA" id="valM1A">52%</span></span>
+                <span>类别 B 置信度：<span class="prob-label-val clsB" id="valM1B">48%</span></span>
+              </div>
+              <div class="prob-track">
+                <div class="prob-seg-a" id="barM1A" style="width: 52%;"></div>
+                <div class="prob-seg-b" id="barM1B" style="width: 48%;"></div>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label for="rangeM1">调节 P(y=类别A)：</label>
+              <input type="range" id="rangeM1" min="1" max="99" value="52" step="1">
+            </div>
+          </div>
+
+          <!-- 模型 2 -->
+          <div class="model-card min0" id="cardModel2">
+            <div class="model-card-top">
+              <span class="model-name">
+                基学习器 2 (支持向量机)
+              </span>
+              <span class="model-badge" id="badgeM2">离散判决：类别 A</span>
+            </div>
+            <div class="prob-bar-wrap">
+              <div class="prob-labels">
+                <span>类别 A 置信度：<span class="prob-label-val clsA" id="valM2A">53%</span></span>
+                <span>类别 B 置信度：<span class="prob-label-val clsB" id="valM2B">47%</span></span>
+              </div>
+              <div class="prob-track">
+                <div class="prob-seg-a" id="barM2A" style="width: 53%;"></div>
+                <div class="prob-seg-b" id="barM2B" style="width: 47%;"></div>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label for="rangeM2">调节 P(y=类别A)：</label>
+              <input type="range" id="rangeM2" min="1" max="99" value="53" step="1">
+            </div>
+          </div>
+
+          <!-- 模型 3 -->
+          <div class="model-card min0" id="cardModel3">
+            <div class="model-card-top">
+              <span class="model-name">
+                基学习器 3 (神经网络)
+              </span>
+              <span class="model-badge" id="badgeM3">离散判决：类别 B</span>
+            </div>
+            <div class="prob-bar-wrap">
+              <div class="prob-labels">
+                <span>类别 A 置信度：<span class="prob-label-val clsA" id="valM3A">10%</span></span>
+                <span>类别 B 置信度：<span class="prob-label-val clsB" id="valM3B">90%</span></span>
+              </div>
+              <div class="prob-track">
+                <div class="prob-seg-a" id="barM3A" style="width: 10%;"></div>
+                <div class="prob-seg-b" id="barM3B" style="width: 90%;"></div>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label for="rangeM3">调节 P(y=类别A)：</label>
+              <input type="range" id="rangeM3" min="1" max="99" value="10" step="1">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右栏：聚合裁决对比 -->
+      <div class="summary-col min0">
+        <div class="summary-title">
+          <span>聚合规则判决对比</span>
+          <span class="col-hint">双轨并行运算</span>
+        </div>
+
+        <div class="verdict-comparison">
+          <!-- 硬投票结果 -->
+          <div class="verdict-box" id="boxHard">
+            <div class="verdict-head">
+              <span class="verdict-method">硬投票 (多数投票)</span>
+              <span class="verdict-winner clsA" id="winnerHard">类别 A 胜出</span>
+            </div>
+            <div class="verdict-detail" id="detailHard">
+              票数统计：类别 A 获得 <b>2</b> 票，类别 B 获得 <b>1</b> 票。规则忽略各成员置信度强弱，直接依票数多数胜出。
+            </div>
+          </div>
+
+          <!-- 软投票结果 -->
+          <div class="verdict-box divergent" id="boxSoft">
+            <div class="verdict-head">
+              <span class="verdict-method">软投票 (概率均值)</span>
+              <span class="verdict-winner clsB" id="winnerSoft">类别 B 胜出</span>
+            </div>
+            <div class="verdict-detail" id="detailSoft">
+              均值概率：P̄(A) = <b>38.3%</b>，P̄(B) = <b>61.7%</b>。模型 3 给出极高确信度 (90%)，拉高整体平均概率，完成翻盘。
+            </div>
+          </div>
+        </div>
+
+        <!-- 分歧解读面板 -->
+        <div class="status-panel split" id="panelStatus">
+          <div class="status-title" id="statusTitle">发现决策分歧：硬投票 ≠ 软投票</div>
+          <div class="status-desc" id="statusDesc">
+            模型 1 与模型 2 虽然都投票支持 A，但均处于犹豫边缘（置信度刚过 50%）；模型 3 以压倒性置信度判定为 B。软投票捕捉到了这种确定性差异。
+          </div>
+        </div>
+
+        <!-- 理论小结说明 -->
+        <div class="rule-formula">
+          <strong>机制启示：</strong>硬投票将概率信息离散二值化，丢弃了预测方差与把握程度；软投票能充分利用校准良好的概率输出，但要求各基学习器的概率估计具有可比性。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 5, total: 27 });
+
+      // 状态定义：三个基分类器对类别 A 的预测概率 (百分比 1~99)
+      const state = {
+        pA: [52, 53, 10],
+        preset: 'diverge'
+      };
+
+      const PRESETS = {
+        diverge: [52, 53, 10],
+        agree: [78, 65, 82],
+        marginal: [51, 49, 48]
+      };
+
+      // 元素引用
+      const elRange1 = document.getElementById('rangeM1');
+      const elRange2 = document.getElementById('rangeM2');
+      const elRange3 = document.getElementById('rangeM3');
+      const ranges = [elRange1, elRange2, elRange3];
+
+      const valM1A = document.getElementById('valM1A');
+      const valM1B = document.getElementById('valM1B');
+      const valM2A = document.getElementById('valM2A');
+      const valM2B = document.getElementById('valM2B');
+      const valM3A = document.getElementById('valM3A');
+      const valM3B = document.getElementById('valM3B');
+
+      const barM1A = document.getElementById('barM1A');
+      const barM1B = document.getElementById('barM1B');
+      const barM2A = document.getElementById('barM2A');
+      const barM2B = document.getElementById('barM2B');
+      const barM3A = document.getElementById('barM3A');
+      const barM3B = document.getElementById('barM3B');
+
+      const badgeM1 = document.getElementById('badgeM1');
+      const badgeM2 = document.getElementById('badgeM2');
+      const badgeM3 = document.getElementById('badgeM3');
+
+      const boxHard = document.getElementById('boxHard');
+      const winnerHard = document.getElementById('winnerHard');
+      const detailHard = document.getElementById('detailHard');
+
+      const boxSoft = document.getElementById('boxSoft');
+      const winnerSoft = document.getElementById('winnerSoft');
+      const detailSoft = document.getElementById('detailSoft');
+
+      const panelStatus = document.getElementById('panelStatus');
+      const statusTitle = document.getElementById('statusTitle');
+      const statusDesc = document.getElementById('statusDesc');
+
+      const presetBtns = {
+        diverge: document.getElementById('btnPresetDiverge'),
+        agree: document.getElementById('btnPresetAgree'),
+        marginal: document.getElementById('btnPresetMarginal')
+      };
+
+      function updateUI() {
+        const p1 = state.pA[0];
+        const p2 = state.pA[1];
+        const p3 = state.pA[2];
+
+        // 1. 各卡片数值与条形
+        const pA_vals = [p1, p2, p3];
+        const pB_vals = [100 - p1, 100 - p2, 100 - p3];
+
+        valM1A.textContent = p1 + '%';
+        valM1B.textContent = (100 - p1) + '%';
+        barM1A.style.width = p1 + '%';
+        barM1B.style.width = (100 - p1) + '%';
+        badgeM1.textContent = p1 >= 50 ? '离散判决：类别 A' : '离散判决：类别 B';
+        badgeM1.style.color = p1 >= 50 ? 'var(--model)' : 'var(--aggregate)';
+
+        valM2A.textContent = p2 + '%';
+        valM2B.textContent = (100 - p2) + '%';
+        barM2A.style.width = p2 + '%';
+        barM2B.style.width = (100 - p2) + '%';
+        badgeM2.textContent = p2 >= 50 ? '离散判决：类别 A' : '离散判决：类别 B';
+        badgeM2.style.color = p2 >= 50 ? 'var(--model)' : 'var(--aggregate)';
+
+        valM3A.textContent = p3 + '%';
+        valM3B.textContent = (100 - p3) + '%';
+        barM3A.style.width = p3 + '%';
+        barM3B.style.width = (100 - p3) + '%';
+        badgeM3.textContent = p3 >= 50 ? '离散判决：类别 A' : '离散判决：类别 B';
+        badgeM3.style.color = p3 >= 50 ? 'var(--model)' : 'var(--aggregate)';
+
+        ranges[0].value = p1;
+        ranges[1].value = p2;
+        ranges[2].value = p3;
+
+        // 2. 硬投票统计
+        let votesA = 0;
+        let votesB = 0;
+        pA_vals.forEach(p => {
+          if (p >= 50) votesA++;
+          else votesB++;
+        });
+
+        let hardWinner = 'A';
+        if (votesB > votesA) hardWinner = 'B';
+        else if (votesA === votesB) hardWinner = '平局';
+
+        if (hardWinner === 'A') {
+          winnerHard.textContent = '类别 A 胜出';
+          winnerHard.className = 'verdict-winner clsA';
+        } else if (hardWinner === 'B') {
+          winnerHard.textContent = '类别 B 胜出';
+          winnerHard.className = 'verdict-winner clsB';
+        } else {
+          winnerHard.textContent = '平局';
+          winnerHard.className = 'verdict-winner';
+        }
+        detailHard.innerHTML = `票数统计：类别 A 获得 <b>${votesA}</b> 票，类别 B 获得 <b>${votesB}</b> 票。规则忽略各成员置信度强弱，直接依多数判决。`;
+
+        // 3. 软投票统计
+        const meanA = (p1 + p2 + p3) / 3;
+        const meanB = 100 - meanA;
+
+        let softWinner = 'A';
+        if (meanB > meanA) softWinner = 'B';
+        else if (Math.abs(meanB - meanA) < 0.01) softWinner = '平局';
+
+        if (softWinner === 'A') {
+          winnerSoft.textContent = '类别 A 胜出';
+          winnerSoft.className = 'verdict-winner clsA';
+        } else if (softWinner === 'B') {
+          winnerSoft.textContent = '类别 B 胜出';
+          winnerSoft.className = 'verdict-winner clsB';
+        } else {
+          winnerSoft.textContent = '概率相等';
+          winnerSoft.className = 'verdict-winner';
+        }
+        detailSoft.innerHTML = `均值概率：P̄(A) = <b>${meanA.toFixed(1)}%</b>，P̄(B) = <b>${meanB.toFixed(1)}%</b>。依据全员平均后验概率作出连续型判定。`;
+
+        // 4. 比较是否分歧
+        const isDivergent = (hardWinner !== '平局' && softWinner !== '平局' && hardWinner !== softWinner);
+
+        if (isDivergent) {
+          boxSoft.classList.add('divergent');
+          panelStatus.className = 'status-panel split';
+          statusTitle.textContent = '产生决策分歧：硬投票 ≠ 软投票';
+          statusDesc.textContent = `多数票判定为类别 ${hardWinner}（获得 ${Math.max(votesA, votesB)}/3 票），但软投票依据平均概率判为类别 ${softWinner}（均值 ${Math.max(meanA, meanB).toFixed(1)}%）。置信度极高的少数派彻底颠覆了微弱多数派。`;
+        } else {
+          boxSoft.classList.remove('divergent');
+          panelStatus.className = 'status-panel agree';
+          statusTitle.textContent = '两项规则结论一致：类别 ' + (hardWinner !== '平局' ? hardWinner : softWinner);
+          statusDesc.textContent = `当前票数分布与概率均值的倾斜方向一致。多数成员不仅投向同一类别，且给出了足够的置信度支持。`;
+        }
+
+        // 5. 预设高亮
+        Object.keys(presetBtns).forEach(k => {
+          presetBtns[k].classList.remove('active');
+        });
+        if (state.preset && presetBtns[state.preset]) {
+          presetBtns[state.preset].classList.add('active');
+        }
+      }
+
+      // 绑定滑块事件
+      ranges.forEach((rng, idx) => {
+        rng.addEventListener('input', function (e) {
+          state.pA[idx] = parseInt(e.target.value, 10);
+          state.preset = null; // 自由改动后取消预设高亮
+          updateUI();
+        });
+      });
+
+      // 预设按钮事件
+      Object.keys(presetBtns).forEach(k => {
+        presetBtns[k].addEventListener('click', function () {
+          state.pA = [...PRESETS[k]];
+          state.preset = k;
+          updateUI();
+        });
+      });
+
+      // 初始化渲染
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

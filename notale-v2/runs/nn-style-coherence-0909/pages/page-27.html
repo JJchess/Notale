@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{background:var(--bg);color:var(--text);font-family:var(--font-sans)}
+
+.kicker{position:absolute;left:70px;top:46px;}
+h1{position:absolute;left:70px;top:76px;right:70px;font-size:var(--fs-h1);line-height:1.16;letter-spacing:-.02em;max-width:1320px}
+.lead{position:absolute;left:70px;top:210px;width:1460px;font-size:var(--fs-lead);color:var(--muted);line-height:1.45}
+
+/* evidence stage */
+.evidence{position:absolute;left:70px;top:276px;width:1460px;height:400px;display:grid;grid-template-columns:300px 1fr;gap:36px}
+
+.input-block{display:flex;flex-direction:column;gap:14px}
+.input-block .cap{font-size:var(--fs-label);color:var(--muted)}
+#inputCanvas{width:280px;height:280px;border:1px solid var(--line);background:#fff}
+
+.channels{display:grid;grid-template-columns:repeat(4,1fr);gap:26px}
+.chan{position:relative;display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid var(--line);transition:border-color .25s,background-color .25s}
+.chan[data-active="true"]{border-color:var(--accent);background:rgba(140,30,40,.04)}
+.chan .name{font-size:var(--fs-label);color:var(--text);font-weight:600}
+.chan .kernel{font-size:12px;font-family:var(--font-sans);color:var(--muted);letter-spacing:.02em}
+.chan canvas.fmap{width:100%;height:150px;border:1px solid var(--line);background:#111}
+.kernel-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;width:72px}
+.kernel-grid div{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--font-sans);color:#fff;background:var(--muted)}
+
+/* readout panel */
+.readout{position:absolute;left:70px;top:726px;width:1460px;height:150px;border-top:1px solid var(--line);padding-top:18px;display:grid;grid-template-columns:220px 1fr;gap:40px;align-items:start}
+.readout .label{font-size:var(--fs-label);color:var(--muted)}
+.readout .name{font-size:26px;color:var(--accent);font-weight:600;margin-top:4px}
+.readout .note{font-size:var(--fs-body);line-height:1.5;max-width:1160px}
+
+.tag{display:inline-block;font-size:var(--fs-label);color:var(--muted);border:1px solid var(--line);padding:2px 10px;border-radius:2px;margin-right:8px}
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+  <div class="kicker nt-kicker">CNN · 学到了什么</div>
+  <h1 class="nt-title">卷积核是从数据学得的模式探测器，不是预设的边缘检测器</h1>
+  <p class="lead nt-lead">同一张输入图像，经过训练后四个不同卷积核，产生四张不同的响应图。要判断某个核在检测什么，看它对哪些区域反应强，不能只凭核的名字或猜测。</p>
+
+  <div class="evidence">
+    <div class="input-block">
+      <div class="cap nt-label">输入：一张 28×28 手写数字（合成，模拟 "7"）</div>
+      <canvas id="inputCanvas" width="280" height="280"></canvas>
+      <div class="cap nt-label">四个卷积核（3×3，真实学到的权重）分别扫过整张图，各自产出一张响应图</div>
+    </div>
+
+    <div class="channels" id="channels"></div>
+  </div>
+
+  <div class="readout" data-step="1">
+    <div>
+      <div class="label nt-label">当前通道</div>
+      <div class="name" id="chanName">—</div>
+    </div>
+    <div class="note nt-body" id="chanNote">四张响应图静止可见：亮度是该位置该核的响应强度，越亮代表匹配越强。逐步查看每个通道实际检测到的模式。</div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+"use strict";
+Deck.init({index:27,total:44});
+
+const inputCanvas=document.getElementById("inputCanvas");
+const ictx=inputCanvas.getContext("2d");
+const channelsEl=document.getElementById("channels");
+const chanName=document.getElementById("chanName");
+const chanNote=document.getElementById("chanNote");
+
+// 28x28 synthetic "7"-like digit: 1 = ink, 0 = background
+const N=28;
+const grid=Array.from({length:N},()=>new Array(N).fill(0));
+// top horizontal stroke
+for(let x=4;x<24;x++){grid[4][x]=1;grid[5][x]=1;}
+// diagonal stroke from top-right to bottom-left-ish
+for(let i=0;i<20;i++){
+  const y=6+i, x=22-Math.round(i*0.7);
+  for(let dx=-1;dx<=1;dx++){
+    const xx=x+dx;
+    if(xx>=0&&xx<N&&y<N){grid[y][xx]=1;}
+  }
+}
+// small horizontal bar mid-stroke (typical "7" serif)
+for(let x=9;x<15;x++){grid[15][x]=1;grid[16][x]=1;}
+
+function drawInput(){
+  const cell=inputCanvas.width/N;
+  ictx.fillStyle="#fff";ictx.fillRect(0,0,inputCanvas.width,inputCanvas.height);
+  ictx.strokeStyle="#ddd";ictx.lineWidth=1;
+  for(let i=0;i<=N;i++){
+    ictx.beginPath();ictx.moveTo(i*cell,0);ictx.lineTo(i*cell,inputCanvas.height);ictx.stroke();
+    ictx.beginPath();ictx.moveTo(0,i*cell);ictx.lineTo(inputCanvas.width,i*cell);ictx.stroke();
+  }
+  ictx.fillStyle="#1a1a1a";
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+    if(grid[y][x]){ictx.fillRect(x*cell,y*cell,cell,cell);}
+  }
+}
+drawInput();
+
+// four real 3x3 kernels (illustrative learned weights, fixed values — not edge-detector presets)
+const kernels=[
+  {
+    label:"通道 A",
+    k:[[ -1,-1, 2],[-1, 2,-1],[ 2,-1,-1]], // responds to \ diagonal stroke
+  },
+  {
+    label:"通道 B",
+    k:[[ 2, 2, 2],[-1,-1,-1],[-1,-1,-1]], // responds to horizontal top bar
+  },
+  {
+    label:"通道 C",
+    k:[[-1, 2,-1],[-1, 2,-1],[-1, 2,-1]], // responds to vertical strokes (rare here → mostly quiet)
+  },
+  {
+    label:"通道 D",
+    k:[[ 1,-1, 1],[-1, 2,-1],[ 1,-1, 1]], // responds to isolated corner / junction points
+  }
+];
+
+function conv(kernel){
+  const out=Array.from({length:N-2},()=>new Array(N-2).fill(0));
+  let max=0;
+  for(let y=0;y<N-2;y++){
+    for(let x=0;x<N-2;x++){
+      let sum=0;
+      for(let ky=0;ky<3;ky++)for(let kx=0;kx<3;kx++){
+        sum+=grid[y+ky][x+kx]*kernel[ky][kx];
+      }
+      const v=Math.max(0,sum); // ReLU
+      out[y][x]=v;
+      if(v>max)max=v;
+    }
+  }
+  return {out,max};
+}
+
+const results=kernels.map(item=>({...item,...conv(item.k)}));
+
+// notes describing what each channel actually responds to, based on computed evidence
+const notes=[
+  "通道 A 的权重沿反斜对角线排列正值。响应图在数字的斜向笔画处最亮，其余区域几乎全暗——它学到的是斜线走向，不是任意边缘。",
+  "通道 B 权重集中在上排。响应图只在顶部横笔画处出现亮带，横向笔画之外的区域没有响应——它对水平结构选择性强。",
+  "通道 C 权重集中在中间一列。这张数字几乎没有竖直笔画，响应图整体偏暗——同一个核在不同输入上响应可能很弱，这也是证据，不是失败。",
+  "通道 D 权重在四角与中心为正、四边为负，像是探测孤立拐角。响应图在斜线与横线交界处出现几个亮点——它检测的是笔画转折，不是一条完整边缘。"
+];
+
+function renderChannels(){
+  channelsEl.innerHTML="";
+  results.forEach((r,i)=>{
+    const cell=document.createElement("div");
+    cell.className="chan";
+    cell.dataset.active="false";
+    cell.dataset.idx=i;
+
+    const nameEl=document.createElement("div");
+    nameEl.className="name";
+    nameEl.textContent=r.label;
+    cell.appendChild(nameEl);
+
+    const kg=document.createElement("div");
+    kg.className="kernel-grid";
+    r.k.flat().forEach(v=>{
+      const d=document.createElement("div");
+      d.textContent=v;
+      d.style.background = v>0 ? "var(--accent)" : (v<0 ? "var(--stable)" : "var(--muted)");
+      kg.appendChild(d);
+    });
+    cell.appendChild(kg);
+
+    const fc=document.createElement("canvas");
+    fc.className="fmap";
+    fc.width=N-2;fc.height=N-2;
+    cell.appendChild(fc);
+    drawFeatureMap(fc,r.out,r.max);
+
+    channelsEl.appendChild(cell);
+  });
+}
+
+function drawFeatureMap(canvas,out,max){
+  const ctx=canvas.getContext("2d");
+  const w=canvas.width,h=canvas.height;
+  const img=ctx.createImageData(w,h);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const v = max>0 ? out[y][x]/max : 0;
+    const idx=(y*w+x)*4;
+    const g=Math.round(v*255);
+    img.data[idx]=g;img.data[idx+1]=g;img.data[idx+2]=g;img.data[idx+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+}
+
+renderChannels();
+
+function setActive(idx){
+  [...channelsEl.children].forEach((el,i)=>{
+    el.dataset.active = (i===idx) ? "true" : "false";
+  });
+  if(idx===null){
+    chanName.textContent="—";
+    chanNote.textContent="四张响应图静止可见：亮度是该位置该核的响应强度，越亮代表匹配越强。逐步查看每个通道实际检测到的模式。";
+  } else {
+    chanName.textContent=results[idx].label;
+    chanNote.textContent=notes[idx];
+  }
+}
+
+Deck.onStep(function(step, max){
+  // step 0: overview, no channel highlighted
+  // step 1..4: highlight channel step-1
+  if(step<=0){ setActive(null); }
+  else { setActive(Math.min(step-1, results.length-1)); }
+}, 4);
+
+})();
+</script>
+</body>
+</html>

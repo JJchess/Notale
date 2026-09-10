@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>稳健性证据更新：不同检验结果如何改变对特定识别威胁的判断</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F7;
+      --surface: #FFFFFF;
+      --soft: #E3ECEF;
+      --text: #17272D;
+      --muted: #52666E;
+      --observed: #245A74;
+      --cause: #B13F2A;
+      --uncertain: #7A5B12;
+      --supported: #2D694C;
+      --selected: #D6E8EE;
+      --focus: #B13F2A;
+      --fs-h1: 34px;
+      --fs-h2: 22px;
+      --fs-lead: 19px;
+      --fs-body: 18px;
+      --fs-sec: 16px;
+      --fs-label: 15px;
+      --fs-tick: 13px;
+      --r-sm: 8px;
+      --r-md: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: 38px 56px 36px 56px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 2px solid var(--soft);
+      padding-bottom: 12px;
+      flex-shrink: 0;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.5px;
+    }
+
+    .lead-tag {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    /* 主工作台：左侧操作检验矩阵，右侧威胁仪表盘与因果主张裁决 */
+    .workspace {
+      display: grid;
+      grid-template-columns: 840px 1fr;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .panel-box {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid var(--soft);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 16px rgba(23, 39, 45, 0.04);
+      min-height: 0;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-shrink: 0;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .panel-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 论文案例切换器 */
+    .paper-switcher {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+      flex-shrink: 0;
+    }
+
+    .paper-btn {
+      flex: 1;
+      padding: 9px 12px;
+      background: var(--bg);
+      border: 1.5px solid var(--soft);
+      border-radius: var(--r-sm);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      text-align: left;
+      transition: all 140ms ease;
+    }
+    .paper-btn.active {
+      background: var(--surface);
+      border-color: var(--observed);
+      color: var(--observed);
+      box-shadow: 0 2px 6px rgba(36, 90, 116, 0.12);
+    }
+
+    /* 检验项列表 */
+    .tests-container {
+      display: grid;
+      grid-template-rows: repeat(4, 1fr);
+      gap: 8px;
+      flex: 1;
+      min-height: 0;
+      padding-right: 0;
+    }
+
+    .test-card {
+      background: #FAFCFD;
+      border: 1px solid var(--soft);
+      border-radius: var(--r-sm);
+      padding: 8px 12px;
+      display: grid;
+      grid-template-columns: 210px 1fr 180px;
+      gap: 12px;
+      align-items: center;
+      transition: border-color 140ms ease;
+    }
+    .test-card:hover {
+      border-color: #BDD1D9;
+    }
+
+    .test-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .test-type {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--observed);
+    }
+
+    .test-name {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .test-target {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .test-target em {
+      font-style: normal;
+      font-weight: 600;
+      color: var(--cause);
+    }
+
+    .test-controls {
+      display: flex;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+
+    .toggle-btn {
+      padding: 6px 12px;
+      border-radius: var(--r-sm);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--soft);
+      background: #FFFFFF;
+      color: var(--muted);
+      transition: all 120ms ease;
+    }
+    .toggle-btn:focus-visible {
+      outline: 2px solid var(--focus);
+    }
+
+    .toggle-btn.btn-pass.active {
+      background: #E8F3ED;
+      border-color: var(--supported);
+      color: var(--supported);
+      font-weight: 700;
+    }
+
+    .toggle-btn.btn-fail.active {
+      background: #FCECE8;
+      border-color: var(--cause);
+      color: var(--cause);
+      font-weight: 700;
+    }
+
+    /* 快捷预设栏 */
+    .preset-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 12px;
+      margin-top: 10px;
+      border-top: 1px solid var(--soft);
+      flex-shrink: 0;
+    }
+
+    .preset-btns {
+      display: flex;
+      gap: 8px;
+    }
+
+    .preset-btn {
+      padding: 5px 12px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--observed);
+      background: var(--selected);
+      border: 1px solid transparent;
+      border-radius: var(--r-sm);
+      cursor: pointer;
+    }
+    .preset-btn:hover {
+      background: #C7E0E8;
+    }
+
+    .reset-btn {
+      padding: 5px 12px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid var(--soft);
+      border-radius: var(--r-sm);
+      cursor: pointer;
+    }
+    .reset-btn:hover {
+      background: var(--soft);
+      color: var(--text);
+    }
+
+    /* 右侧：因果裁决面板 */
+    .threat-monitor {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .verdict-banner {
+      border-radius: var(--r-sm);
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      border: 1px solid #BEE0CB;
+      background: #EAF4EE;
+      transition: all 200ms ease;
+      flex-shrink: 0;
+    }
+    .verdict-banner.compromised {
+      border-color: #F2BEB4;
+      background: #FDF0ED;
+    }
+    .verdict-banner.fragile {
+      border-color: #EADCB5;
+      background: #FAF5E6;
+    }
+
+    .verdict-status {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .verdict-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .verdict-badge {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 4px;
+    }
+    .verdict-banner.clean .verdict-badge {
+      background: #CBE6D5;
+      color: var(--supported);
+    }
+    .verdict-banner.compromised .verdict-badge {
+      background: #F7D0C8;
+      color: var(--cause);
+    }
+    .verdict-banner.fragile .verdict-badge {
+      background: #EFE4BF;
+      color: var(--uncertain);
+    }
+
+    .verdict-text {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 识别威胁条目仪表 */
+    .threats-list {
+      display: grid;
+      grid-template-rows: repeat(4, 1fr);
+      gap: 8px;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+    }
+
+    .threat-item {
+      background: #FAFCFD;
+      border: 1px solid var(--soft);
+      border-radius: var(--r-sm);
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: border-color 140ms ease;
+      min-width: 0;
+      width: 100%;
+    }
+    .threat-item.violated {
+      border-color: #E2ADA1;
+      background: #FFF9F8;
+    }
+    .threat-item.controlled {
+      border-color: #B2D8C3;
+      background: #F6FBF8;
+    }
+
+    .threat-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .threat-name {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .threat-level-label {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .threat-item.violated .threat-level-label { color: var(--cause); }
+    .threat-item.controlled .threat-level-label { color: var(--supported); }
+    .threat-item.neutral .threat-level-label { color: var(--uncertain); }
+
+    .meter-track {
+      height: 6px;
+      background: var(--soft);
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+      margin: 2px 0;
+    }
+
+    .meter-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 240ms cubic-bezier(0.2, 0.9, 0.4, 1), background-color 200ms ease;
+    }
+
+    .threat-note {
+      font-size: var(--fs-tick);
+      line-height: 1.35;
+      color: var(--muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* 底部学习洞察 */
+    .takeaway-box {
+      margin-top: auto;
+      background: #EBF2F5;
+      border-radius: var(--r-sm);
+      padding: 8px 12px;
+      font-size: var(--fs-tick);
+      line-height: 1.4;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+    .takeaway-box strong {
+      color: var(--observed);
+    }
+  </style>
+</head>
+<body data-page="20" data-total="24">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>稳健性证据更新：不同检验结果如何改变识别威胁的置信度</h1>
+      </div>
+      <div class="lead-tag">交互训练：点击切换检验结果，观察特定威胁风险的贝叶斯式更新</div>
+    </header>
+
+    <div class="workspace">
+      <!-- 左栏：实验控制与检验矩阵 -->
+      <section class="panel-box min0">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">实证检验清单与扰动结果</div>
+            <div class="panel-desc">改变任一检验状态（支持通过 / 证伪失败），观察右侧对应威胁评估的即时翻转</div>
+          </div>
+        </div>
+
+        <div class="paper-switcher" role="tablist" aria-label="典型论文识别设定">
+          <button class="paper-btn active" id="tab-did" data-case="did" role="tab" aria-selected="true">
+            <strong>案例 A：双重差分 (DID)</strong><br>最低工资与就业（Card & Krueger 设定）
+          </button>
+          <button class="paper-btn" id="tab-iv" data-case="iv" role="tab" aria-selected="false">
+            <strong>案例 B：工具变量 (IV)</strong><br>殖民地死亡率与制度（Acemoglu 等设定）
+          </button>
+        </div>
+
+        <div class="tests-container" id="testsList" role="region" aria-label="检验执行区">
+          <!-- 动态注入检验卡片 -->
+        </div>
+
+        <div class="preset-bar">
+          <div class="preset-btns">
+            <button class="preset-btn" id="btn-all-pass">全部通过（论文报告基准）</button>
+            <button class="preset-btn" id="btn-trend-fail">特定核心检验崩溃</button>
+          </div>
+          <button class="reset-btn" id="btn-reset">重置为基准</button>
+        </div>
+      </section>
+
+      <!-- 右栏：威胁仪表盘与因果裁决 -->
+      <section class="panel-box min0">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">识别威胁仪表盘与因果主张裁决</div>
+            <div class="panel-desc">检验失败并非均等摧毁论文：不同检验精确对应不同外生性假设</div>
+          </div>
+        </div>
+
+        <div class="threat-monitor">
+          <div class="verdict-banner clean" id="verdictBanner">
+            <div class="verdict-status">
+              <span class="verdict-title" id="verdictTitle">识别链条稳固</span>
+              <span class="verdict-badge" id="verdictBadge">因果主张成立</span>
+            </div>
+            <p class="verdict-text" id="verdictText">所有关键证伪检验均通过，前趋势平稳，没有发现明显的内生性混淆证据。</p>
+          </div>
+
+          <div class="threats-list" id="threatsList" role="region" aria-label="核心威胁监控">
+            <!-- 动态注入威胁条目 -->
+          </div>
+
+          <div class="takeaway-box" id="takeawayBox">
+            <strong>读论文法则：</strong>稳健性检验不是“数量越多越好”，而是<strong>“精准击中哪些潜在混杂通道”</strong>。若非核心假阳性检验失败，因果判断往往只是效率受损；但若直接否定外生识别假设，整篇因果推断便彻底瓦解。
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 预设两个经典实证场景的识别模型数据
+      const CASES = {
+        did: {
+          name: "双重差分 (DID) - 最低工资与就业",
+          tests: [
+            {
+              id: "t1",
+              type: "动态趋势",
+              name: "事件研究法：前趋势平稳性检验",
+              targetText: "针对核心威胁：<em>预先选择性趋势与同时期冲击</em>",
+              threatId: "parallel_trend",
+              defaultState: "pass",
+              weight: 0.45,
+              failImpact: 85,
+              passImpact: -30
+            },
+            {
+              id: "t2",
+              type: "安慰剂检验",
+              name: "伪处理组/伪处理年份置换检验",
+              targetText: "针对威胁：<em>偶然统计假阳性与空间自相关</em>",
+              threatId: "random_noise",
+              defaultState: "pass",
+              weight: 0.25,
+              failImpact: 60,
+              passImpact: -25
+            },
+            {
+              id: "t3",
+              type: "样本选择",
+              name: "剔除边界相邻郡与特大连锁店",
+              targetText: "针对威胁：<em>极端样本驱动与本地经济溢出效应</em>",
+              threatId: "spillover",
+              defaultState: "pass",
+              weight: 0.2,
+              failImpact: 50,
+              passImpact: -20
+            },
+            {
+              id: "t4",
+              type: "统计推断",
+              name: "区县/州级聚类稳健标准误 (Wild Bootstrap)",
+              targetText: "针对威胁：<em>聚类偏误导致置信区间过窄</em>",
+              threatId: "inference_bias",
+              defaultState: "pass",
+              weight: 0.2,
+              failImpact: 40,
+              passImpact: -20
+            }
+          ],
+          threats: [
+            {
+              id: "parallel_trend",
+              name: "核心假设：前期反事实发散（破坏平行趋势假定）",
+              baseRisk: 10,
+              critical: true,
+              passMsg: "处理前各期系数紧随 0 轴摆动，未见发散态势，平行趋势基本假定得到经验支撑。",
+              failMsg: "致命危机：处理前已存在系统性发散！差异是既有趋势顺延，因果推断彻底破产。"
+            },
+            {
+              id: "random_noise",
+              name: "推断风险：数据序列偶发性聚类或统计假阳性",
+              baseRisk: 15,
+              critical: false,
+              passMsg: "置换安慰剂分布呈以零为中心的钟形，真实效应位于分布外缘 1% 处，非偶发噪声驱动。",
+              failMsg: "虚假处理同样表现出显著性，说明当前结果可能是序列自相关或偶发冲击制造的伪结果。"
+            },
+            {
+              id: "spillover",
+              name: "SUTVA 威胁：劳动力越界流动或邻近间接溢出",
+              baseRisk: 20,
+              critical: false,
+              passMsg: "限制样本排除直接临界邻县后，效应量大小与方向保持稳定，溢出未稀释对照基准。",
+              failMsg: "剔除临界样本后效应量衰减过半，说明原估计混入了邻县劳动力跨界流动的替代效应。"
+            },
+            {
+              id: "inference_bias",
+              name: "标准误失真：州级组内序列相关导致假阳性率虚高",
+              baseRisk: 15,
+              critical: false,
+              passMsg: "聚类调整与 Bootstrap 后 p 值仍保持在 0.05 以下，推断置信度具有弹性。",
+              failMsg: "校正聚类自相关后标准误急剧膨胀，p 值升至 0.24，无法排除抽样变异造成的估计波动。"
+            }
+          ]
+        },
+        iv: {
+          name: "工具变量 (IV) - 历史死亡率与制度",
+          tests: [
+            {
+              id: "t1_iv",
+              type: "排他性检验",
+              name: "控制早期地理、流行病与现代卫生变量",
+              targetText: "针对核心威胁：<em>直接作用于经济的直接病理信道（破坏排他性）</em>",
+              threatId: "exclusion_bias",
+              defaultState: "pass",
+              weight: 0.5,
+              failImpact: 85,
+              passImpact: -35
+            },
+            {
+              id: "t2_iv",
+              type: "弱工具检验",
+              name: "第一阶段有效性 (Montiel Olea-Pflueger F 统计量)",
+              targetText: "针对威胁：<em>弱工具变量偏向 OLS 与估计方差爆炸</em>",
+              threatId: "weak_iv",
+              defaultState: "pass",
+              weight: 0.35,
+              failImpact: 75,
+              passImpact: -30
+            },
+            {
+              id: "t3_iv",
+              type: "样本敏感度",
+              name: "剔除少数新欧洲移民国家（澳、加、美、新）",
+              targetText: "针对威胁：<em>极少数离群大点主导整个协方差分布</em>",
+              threatId: "outliers",
+              defaultState: "pass",
+              weight: 0.25,
+              failImpact: 55,
+              passImpact: -25
+            },
+            {
+              id: "t4_iv",
+              type: "替代指标",
+              name: "使用不同时期定居者死亡率及原住民密度代理",
+              targetText: "针对威胁：<em>历史测量误差与指标构建的人工裁量</em>",
+              threatId: "measure_error",
+              defaultState: "pass",
+              weight: 0.2,
+              failImpact: 45,
+              passImpact: -20
+            }
+          ],
+          threats: [
+            {
+              id: "exclusion_bias",
+              name: "排他性破缺：死亡率通过病理直达现代收入",
+              baseRisk: 15,
+              critical: true,
+              passMsg: "引入纬度、疟疾生态后，第二阶段制度系数仍显著且点估计未大幅衰减，排他性假定存活。",
+              failMsg: "致命危机：控制现代疟疾后，制度系数锐减并失真，死亡率违背排他性约束！"
+            },
+            {
+              id: "weak_iv",
+              name: "弱工具偏差：第一阶段关联度不够导致严重失偏",
+              baseRisk: 10,
+              critical: true,
+              passMsg: "第一阶段有效 F 统计量远超阈值 (F > 20)，有限样本下 IV 偏向 OLS 的风险极低。",
+              failMsg: "严重警报：第一阶段 F 仅为 4.8，弱工具使估计方差膨胀，且偏误比 OLS 更严重。"
+            },
+            {
+              id: "outliers",
+              name: "高杠杆点：极少数欧裔定居样本主导全局斜率",
+              baseRisk: 18,
+              critical: false,
+              passMsg: "剔除新欧洲四大特例后回归斜率仍然稳固，结果并非四个离群值的人为几何效应。",
+              failMsg: "敏感性显露：剔除美加澳新后置信区间跨零，因果结论高度依赖少数超高样本点。"
+            },
+            {
+              id: "measure_error",
+              name: "历史测量偏误：早期欧洲士兵死亡率记录不均",
+              baseRisk: 15,
+              critical: false,
+              passMsg: "改用主教记录与早晚期均值，系数变动小于 15%，经验测量具备交叉一致性。",
+              failMsg: "替代数据源测算后符号发生变动，历史原始数据的选择性记录严重干扰估计。"
+            }
+          ]
+        }
+      };
+
+      let currentCaseKey = "did";
+      let testStates = {};
+
+      function initStates() {
+        const c = CASES[currentCaseKey];
+        testStates = {};
+        c.tests.forEach(t => {
+          testStates[t.id] = t.defaultState;
+        });
+      }
+
+      function computeThreatRisks() {
+        const c = CASES[currentCaseKey];
+        const riskMap = {};
+
+        c.threats.forEach(th => {
+          riskMap[th.id] = th.baseRisk;
+        });
+
+        c.tests.forEach(t => {
+          const st = testStates[t.id];
+          if (st === "pass") {
+            riskMap[t.threatId] = Math.max(5, riskMap[t.threatId] + t.passImpact);
+          } else {
+            riskMap[t.threatId] = Math.min(96, riskMap[t.threatId] + t.failImpact);
+          }
+        });
+
+        return riskMap;
+      }
+
+      function renderTests() {
+        const c = CASES[currentCaseKey];
+        const container = document.getElementById("testsList");
+        container.innerHTML = "";
+
+        c.tests.forEach(t => {
+          const card = document.createElement("div");
+          card.className = "test-card";
+
+          const meta = document.createElement("div");
+          meta.className = "test-meta";
+          meta.innerHTML = `
+            <span class="test-type">${t.type}</span>
+            <span class="test-name">${t.name}</span>
+          `;
+
+          const target = document.createElement("div");
+          target.className = "test-target";
+          target.innerHTML = t.targetText;
+
+          const controls = document.createElement("div");
+          controls.className = "test-controls";
+
+          const isPass = testStates[t.id] === "pass";
+
+          const passBtn = document.createElement("button");
+          passBtn.className = `toggle-btn btn-pass ${isPass ? "active" : ""}`;
+          passBtn.innerHTML = "✓ 通过支持";
+          passBtn.setAttribute("aria-pressed", isPass ? "true" : "false");
+          passBtn.onclick = () => {
+            if (testStates[t.id] !== "pass") {
+              testStates[t.id] = "pass";
+              updateUI();
+            }
+          };
+
+          const failBtn = document.createElement("button");
+          failBtn.className = `toggle-btn btn-fail ${!isPass ? "active" : ""}`;
+          failBtn.innerHTML = "✗ 检验失败";
+          failBtn.setAttribute("aria-pressed", !isPass ? "true" : "false");
+          failBtn.onclick = () => {
+            if (testStates[t.id] !== "fail") {
+              testStates[t.id] = "fail";
+              updateUI();
+            }
+          };
+
+          controls.appendChild(passBtn);
+          controls.appendChild(failBtn);
+
+          card.appendChild(meta);
+          card.appendChild(target);
+          card.appendChild(controls);
+
+          container.appendChild(card);
+        });
+      }
+
+      function renderThreats() {
+        const c = CASES[currentCaseKey];
+        const risks = computeThreatRisks();
+        const container = document.getElementById("threatsList");
+        container.innerHTML = "";
+
+        let criticalFail = false;
+        let moderateFailCount = 0;
+
+        c.threats.forEach(th => {
+          const riskVal = risks[th.id];
+          const isHigh = riskVal >= 60;
+          const isMid = riskVal >= 35 && riskVal < 60;
+
+          if (th.critical && isHigh) {
+            criticalFail = true;
+          } else if (isHigh || isMid) {
+            moderateFailCount++;
+          }
+
+          const item = document.createElement("div");
+          const stateClass = isHigh ? "violated" : (riskVal <= 25 ? "controlled" : "neutral");
+          item.className = `threat-item ${stateClass}`;
+
+          let levelText = "威胁已有效阻断 (风险低)";
+          let barColor = "var(--supported)";
+          if (isHigh) {
+            levelText = th.critical ? "致命假设违背！(极高危)" : "威胁显现 (高风险)";
+            barColor = "var(--cause)";
+          } else if (isMid) {
+            levelText = "存在存疑扰动 (中度风险)";
+            barColor = "var(--uncertain)";
+          }
+
+          item.innerHTML = `
+            <div class="threat-top">
+              <span class="threat-name">${th.name}</span>
+              <span class="threat-level-label">${levelText} · ${riskVal}%</span>
+            </div>
+            <div class="meter-track">
+              <div class="meter-fill" style="width: ${riskVal}%; background-color: ${barColor};"></div>
+            </div>
+            <p class="threat-note">${isHigh ? th.failMsg : th.passMsg}</p>
+          `;
+
+          container.appendChild(item);
+        });
+
+        // 更新总体裁决状态
+        const banner = document.getElementById("verdictBanner");
+        const vTitle = document.getElementById("verdictTitle");
+        const vBadge = document.getElementById("verdictBadge");
+        const vText = document.getElementById("verdictText");
+
+        if (criticalFail) {
+          banner.className = "verdict-banner compromised";
+          vTitle.textContent = "因果识别遭到根本性否定";
+          vBadge.textContent = "因果主张不成立";
+          vText.textContent = "核心外生性假设未能通过证伪检验。此时继续讨论统计显著性或增添控制变量已无意义，估计值已被严重内生性主导。";
+        } else if (moderateFailCount >= 2) {
+          banner.className = "verdict-banner fragile";
+          vTitle.textContent = "识别边界受限 · 结论脆弱";
+          vBadge.textContent = "仅部分稳健";
+          vText.textContent = "核心假设尚未完全证伪，但估计量对样本筛选或推断聚类方式极为敏感，证据外部效度与统计确定性存疑。";
+        } else if (moderateFailCount === 1) {
+          banner.className = "verdict-banner fragile";
+          vTitle.textContent = "存在局域扰动敏感";
+          vBadge.textContent = "基本稳健 (需限定边界)";
+          vText.textContent = "主因果路径尚能成立，但作者必须在正文中诚实交代该敏感维度，不得夸大结论的通用性。";
+        } else {
+          banner.className = "verdict-banner clean";
+          vTitle.textContent = "识别链条稳固 · 因果主张成立";
+          vBadge.textContent = "高度稳健";
+          vText.textContent = "所有针对关键替代解释与核心假设的证伪检验均告通过，证据在合理的外生扰动下保持存活。";
+        }
+      }
+
+      function updateUI() {
+        renderTests();
+        renderThreats();
+      }
+
+      // 事件绑定
+      document.getElementById("tab-did").addEventListener("click", () => {
+        if (currentCaseKey !== "did") {
+          currentCaseKey = "did";
+          document.getElementById("tab-did").classList.add("active");
+          document.getElementById("tab-did").setAttribute("aria-selected", "true");
+          document.getElementById("tab-iv").classList.remove("active");
+          document.getElementById("tab-iv").setAttribute("aria-selected", "false");
+          initStates();
+          updateUI();
+        }
+      });
+
+      document.getElementById("tab-iv").addEventListener("click", () => {
+        if (currentCaseKey !== "iv") {
+          currentCaseKey = "iv";
+          document.getElementById("tab-iv").classList.add("active");
+          document.getElementById("tab-iv").setAttribute("aria-selected", "true");
+          document.getElementById("tab-did").classList.remove("active");
+          document.getElementById("tab-did").setAttribute("aria-selected", "false");
+          initStates();
+          updateUI();
+        }
+      });
+
+      document.getElementById("btn-all-pass").addEventListener("click", () => {
+        const c = CASES[currentCaseKey];
+        c.tests.forEach(t => testStates[t.id] = "pass");
+        updateUI();
+      });
+
+      document.getElementById("btn-trend-fail").addEventListener("click", () => {
+        const c = CASES[currentCaseKey];
+        // 让核心检验失败，其余保持通过，制造典型的“核心识别崩溃”对比
+        c.tests.forEach((t, idx) => {
+          testStates[t.id] = (idx === 0) ? "fail" : "pass";
+        });
+        updateUI();
+      });
+
+      document.getElementById("btn-reset").addEventListener("click", () => {
+        initStates();
+        updateUI();
+      });
+
+      // 初始化
+      initStates();
+      updateUI();
+      Deck.init({ index: 20, total: 24, keys: false });
+    })();
+  </script>
+</body>
+</html>

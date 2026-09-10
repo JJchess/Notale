@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>城市热岛不是“城市总比郊区热”</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* 顶部标题区 */
+    header.page-head {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .page-title {
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin: 0;
+      color: var(--text);
+    }
+    .page-lead {
+      font-size: var(--fs-lead);
+      line-height: 1.4;
+      color: var(--muted);
+      margin: 0;
+    }
+    .page-lead strong {
+      color: var(--heat);
+      font-weight: 600;
+    }
+
+    /* 主工作区：双栏左右布局 */
+    .main-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 390px;
+      gap: 24px;
+      min-height: 0;
+    }
+
+    /* 左侧：图表舞台 */
+    .chart-stage {
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--muted);
+      border-radius: 4px;
+      padding: 16px 20px 12px;
+      position: relative;
+    }
+
+    .stage-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    .selector-label {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .target-tabs {
+      display: flex;
+      gap: 6px;
+    }
+
+    .target-btn {
+      appearance: none;
+      border: 1px solid var(--muted);
+      background: transparent;
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: 3px;
+      transition: all var(--dur) var(--ease);
+      font-weight: 500;
+    }
+    .target-btn:hover {
+      color: var(--text);
+      border-color: var(--text);
+    }
+    .target-btn[aria-pressed="true"] {
+      background: var(--surface-strong);
+      color: var(--text);
+      border-color: var(--focus);
+      font-weight: 700;
+      box-shadow: inset 0 0 0 1px var(--focus);
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-swatch {
+      width: 18px;
+      height: 3px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+    .legend-swatch.urban { background: var(--heat); }
+    .legend-swatch.rural { background: var(--observed); stroke-dasharray: 4; }
+    .legend-swatch.anom {
+      width: 14px;
+      height: 10px;
+      background: rgba(198, 63, 32, 0.25);
+      border: 1px solid var(--heat);
+      border-radius: 1px;
+    }
+
+    .plot-container {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      width: 100%;
+    }
+    #echart-host {
+      width: 100%;
+      height: 100%;
+    }
+
+    .plot-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 8px;
+      border-top: 1px dashed var(--surface-strong);
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    /* 右侧：测量解读面板 */
+    .evidence-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: var(--surface);
+      border: 1px solid var(--muted);
+      border-radius: 4px;
+      padding: 20px 22px;
+    }
+
+    .reading-box {
+      background: var(--surface-strong);
+      border-radius: 4px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .reading-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .reading-title {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .reading-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1;
+      color: var(--heat);
+    }
+    .reading-val.cool {
+      color: var(--cooling);
+    }
+    .reading-unit {
+      font-size: var(--fs-label);
+      font-weight: 500;
+      margin-left: 2px;
+      color: var(--muted);
+    }
+
+    .reading-sub {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .concept-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border-top: 1px solid var(--surface-strong);
+      padding-top: 12px;
+    }
+
+    .concept-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      color: var(--text);
+    }
+
+    .concept-desc {
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .diff-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-label);
+      margin-top: 4px;
+    }
+    .diff-table th {
+      text-align: left;
+      padding: 6px 8px;
+      background: var(--surface-strong);
+      color: var(--muted);
+      font-weight: 600;
+      border-bottom: 1px solid var(--muted);
+    }
+    .diff-table td {
+      padding: 8px 8px;
+      border-bottom: 1px solid var(--surface-strong);
+      color: var(--text);
+    }
+    .diff-table td.num-cell {
+      font-family: var(--font-num);
+      font-weight: 600;
+    }
+
+    .takeaway-box {
+      margin-top: auto;
+      background: var(--surface-strong);
+      border: 1px solid var(--muted);
+      border-radius: 4px;
+      padding: 12px 14px;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .takeaway-box strong {
+      color: var(--heat);
+    }
+  </style>
+</head>
+<body data-page="02" data-total="19">
+  <main id="stage" class="min0">
+    <header class="page-head min0">
+      <h1 class="page-title">城市热岛不是“城市总比郊区热”：它是随对象、地点与时段变化的城市—参照区温差</h1>
+      <p class="page-lead">热岛强度定义为 <strong>ΔT = T_urban − T_ref</strong>。地表温度与气温的日变化节奏截然不同：地表热岛在正午最剧烈，而气温热岛往往在日落数小时后才达到峰值。</p>
+    </header>
+
+    <div class="main-grid min0">
+      <!-- 左侧图表 -->
+      <section class="chart-stage min0" aria-label="城市与郊区24小时温度对比图">
+        <div class="stage-toolbar min0">
+          <div class="target-tabs" role="tablist" aria-label="观测对象切换">
+            <span class="selector-label" style="align-self:center; margin-right:4px;">观测对象：</span>
+            <button id="btn-air" class="target-btn" role="tab" aria-pressed="true" data-target="air">2m 气温热岛 (CLST)</button>
+            <button id="btn-surface" class="target-btn" role="tab" aria-pressed="false" data-target="surface">地表温度热岛 (SUHI)</button>
+            <button id="btn-oasis" class="target-btn" role="tab" aria-pressed="false" data-target="oasis">干旱绿洲城市（逆温差）</button>
+          </div>
+
+          <div class="legend-row">
+            <span class="legend-item"><span class="legend-swatch urban"></span>城区 (T_u)</span>
+            <span class="legend-item"><span class="legend-swatch rural"></span>郊区参照区 (T_r)</span>
+          </div>
+        </div>
+
+        <div class="plot-container min0">
+          <div id="echart-host"></div>
+        </div>
+
+        <div class="plot-footer min0">
+          <span>横轴：地方平时 00:00–24:00 (每小时实测基准)</span>
+          <span>纵轴：温度 (°C)</span>
+          <span>典型晴朗无风日观测廓线 (Oke, 1982; Voogt & Oke, 2003)</span>
+        </div>
+      </section>
+
+      <!-- 右侧解读与事实证据 -->
+      <aside class="evidence-panel min0" aria-label="温度差解读面板">
+        <div class="reading-box min0">
+          <div class="reading-row">
+            <span class="reading-title" id="stat-title">最大热岛强度 (ΔT_max)</span>
+            <span class="reading-val" id="stat-val">+4.6<span class="reading-unit">°C</span></span>
+          </div>
+          <div class="reading-sub" id="stat-sub">发生时刻：<strong>夜间 22:00–02:00</strong></div>
+        </div>
+
+        <div class="concept-card min0">
+          <h2 class="concept-title" id="mode-name">冠层气温热岛 (Canopy Layer UHI)</h2>
+          <p class="concept-desc" id="mode-desc">
+            白昼建筑物热容大、吸热潜伏，城区与农田气温差较小；傍晚至前半夜，郊区裸露植被快速辐射降温，而密集的城市街谷由于天空视角受限、人工材料缓慢放热，降温极其迟缓，拉开全天最大气温差。
+          </p>
+
+          <table class="diff-table">
+            <thead>
+              <tr>
+                <th>时段</th>
+                <th>城区 (T_u)</th>
+                <th>郊区 (T_r)</th>
+                <th>温差 (ΔT)</th>
+              </tr>
+            </thead>
+            <tbody id="diff-table-body">
+              <tr>
+                <td>清晨 06:00</td>
+                <td class="num-cell">19.2 °C</td>
+                <td class="num-cell">16.8 °C</td>
+                <td class="num-cell" style="color:var(--heat)">+2.4 °C</td>
+              </tr>
+              <tr>
+                <td>正午 13:00</td>
+                <td class="num-cell">31.4 °C</td>
+                <td class="num-cell">30.1 °C</td>
+                <td class="num-cell" style="color:var(--heat)">+1.3 °C</td>
+              </tr>
+              <tr>
+                <td>夜间 22:00</td>
+                <td class="num-cell">26.8 °C</td>
+                <td class="num-cell">22.2 °C</td>
+                <td class="num-cell" style="color:var(--heat); font-weight:700;">+4.6 °C</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="takeaway-box min0" id="takeaway-text">
+          <strong>关键辨析：</strong>离开“测的是什么对象（气温还是地表）”与“以什么为参照（农田还是荒漠）”，谈论“热岛有多强”在物理上是不严谨的。
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      // 24小时数据 (00:00 - 24:00)
+      var hours = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24];
+      var hourLabels = hours.map(function(h){ return (h<10 ? "0"+h : ""+h) + ":00"; });
+
+      // 数据集定义
+      var datasets = {
+        air: {
+          title: "2m 冠层气温热岛 (CLST)",
+          statTitle: "最大气温热岛强度 (ΔT_max)",
+          statVal: "+4.6",
+          statUnit: "°C",
+          statSub: "出现时刻：<strong>夜间 22:00–02:00</strong>",
+          desc: "白昼建筑物热容大、持续储热，城区与近郊气温差不显著；日落后郊区辐射冷却迅速，而城市街谷热量截留严重，导致最大温差出现在入夜后。",
+          takeaway: "<strong>关键辨析：</strong>气温热岛是<strong>夜间现象</strong>。日光强烈的白昼，大气乱流混合充分，气温热岛反而处于全天低谷。",
+          table: [
+            { time: "清晨 06:00", u: "19.2 °C", r: "16.8 °C", dt: "+2.4 °C", dtColor: "var(--heat)" },
+            { time: "正午 13:00", u: "31.4 °C", r: "30.1 °C", dt: "+1.3 °C", dtColor: "var(--heat)" },
+            { time: "夜间 22:00", u: "26.8 °C", r: "22.2 °C", dt: "+4.6 °C", dtColor: "var(--heat)" }
+          ],
+          urban: [23.8, 23.0, 22.2, 21.6, 21.0, 20.2, 19.2, 20.8, 23.2, 26.0, 28.5, 30.2, 31.2, 31.4, 31.0, 30.2, 29.3, 28.4, 27.8, 27.4, 27.1, 26.9, 26.8, 25.5, 23.8],
+          rural: [19.8, 19.0, 18.2, 17.5, 17.0, 16.5, 16.8, 19.2, 22.6, 25.8, 28.0, 29.5, 30.0, 30.1, 29.6, 28.5, 27.0, 25.2, 23.8, 23.0, 22.5, 22.3, 22.2, 21.0, 19.8]
+        },
+        surface: {
+          title: "地表辐射温度热岛 (SUHI)",
+          statTitle: "最大地表热岛强度 (ΔT_max)",
+          statVal: "+8.9",
+          statUnit: "°C",
+          statSub: "出现时刻：<strong>正午 12:00–14:00</strong>",
+          desc: "不透水人工下垫面（沥青、混凝土）对太阳短波辐射强烈吸收且缺乏植被蒸腾散热，正午表面温度可达 45°C 以上，形成极为强烈的白昼地表热岛。",
+          takeaway: "<strong>关键辨析：</strong>卫星热红外反演的是<strong>地表皮温 (LST)</strong> 而非人体接触的空气温度；地表热岛在白昼正午最强，与气温热岛相位错位。",
+          table: [
+            { time: "清晨 06:00", u: "17.5 °C", r: "16.0 °C", dt: "+1.5 °C", dtColor: "var(--heat)" },
+            { time: "正午 13:00", u: "46.2 °C", r: "37.3 °C", dt: "+8.9 °C", dtColor: "var(--heat)" },
+            { time: "夜间 22:00", u: "24.5 °C", r: "21.5 °C", dt: "+3.0 °C", dtColor: "var(--heat)" }
+          ],
+          urban: [22.0, 20.8, 19.8, 19.0, 18.2, 17.2, 17.5, 22.0, 28.5, 35.0, 41.2, 44.8, 46.0, 46.2, 45.0, 41.8, 37.0, 31.5, 27.5, 25.8, 25.0, 24.8, 24.5, 23.2, 22.0],
+          rural: [19.2, 18.2, 17.4, 16.8, 16.2, 15.6, 16.0, 19.5, 24.2, 29.0, 33.5, 36.2, 37.1, 37.3, 36.5, 34.0, 30.5, 26.2, 23.5, 22.4, 21.8, 21.6, 21.5, 20.3, 19.2]
+        },
+        oasis: {
+          title: "干旱区绿洲城市（白天冷岛效应）",
+          statTitle: "最大冷岛强度 (ΔT_min)",
+          statVal: "-3.8",
+          statUnit: "°C",
+          statSub: "出现时刻：<strong>午后 14:00–16:00</strong>",
+          desc: "若参照区是植被稀疏、极度干燥的戈壁沙漠，郊区吸热剧烈且无蒸发；而城区绿化与灌溉带来蒸发蒸腾，白昼城区温度显著低于郊区参照区（绿洲冷岛）。",
+          takeaway: "<strong>关键辨析：</strong>热岛强弱取决于<strong>参照区下垫面性质</strong>。若参照背景是沙漠戈壁，白昼甚至表现为“城市冷岛”，绝非恒定的“城市更热”。",
+          table: [
+            { time: "清晨 06:00", u: "18.5 °C", r: "17.0 °C", dt: "+1.5 °C", dtColor: "var(--heat)" },
+            { time: "午后 14:00", u: "34.2 °C", r: "38.0 °C", dt: "-3.8 °C", dtColor: "var(--cooling)" },
+            { time: "夜间 22:00", u: "26.5 °C", r: "24.2 °C", dt: "+2.3 °C", dtColor: "var(--heat)" }
+          ],
+          urban: [23.0, 22.0, 21.2, 20.5, 19.8, 18.8, 18.5, 21.0, 24.5, 27.8, 30.5, 32.5, 33.8, 34.2, 34.0, 33.2, 31.8, 29.8, 28.2, 27.5, 27.0, 26.8, 26.5, 24.8, 23.0],
+          rural: [21.0, 19.8, 18.8, 18.0, 17.4, 16.5, 17.0, 21.5, 26.8, 31.5, 35.2, 37.0, 37.8, 38.0, 37.6, 36.2, 33.5, 29.5, 26.8, 25.5, 24.8, 24.5, 24.2, 22.5, 21.0]
+        }
+      };
+
+      var currentMode = "air";
+      var chartHost = document.getElementById("echart-host");
+      var chart = null;
+
+      function getChartOption(data) {
+        var uData = data.urban;
+        var rData = data.rural;
+
+        // 生成差值用于标注
+        var diffData = uData.map(function(u, idx){
+          return parseFloat((u - rData[idx]).toFixed(1));
+        });
+
+        var minTemp = Math.min.apply(null, uData.concat(rData));
+        var maxTemp = Math.max.apply(null, uData.concat(rData));
+        var yMin = Math.floor(minTemp / 5) * 5;
+        var yMax = Math.ceil(maxTemp / 5) * 5 + 2;
+
+        return {
+          animation: !Deck.reduced(),
+          animationDuration: 450,
+          grid: {
+            top: 36,
+            right: 32,
+            bottom: 36,
+            left: 48,
+            containLabel: false
+          },
+          tooltip: {
+            trigger: "axis",
+            backgroundColor: "#F7FAFA",
+            borderColor: "#50646B",
+            borderWidth: 1,
+            textStyle: {
+              color: "#17282E",
+              fontFamily: "Noto Sans SC",
+              fontSize: 14
+            },
+            formatter: function(params) {
+              var time = params[0].axisValue;
+              var idx = params[0].dataIndex;
+              var u = uData[idx];
+              var r = rData[idx];
+              var dt = (u - r).toFixed(1);
+              var sign = dt > 0 ? "+" : "";
+              var dtColor = dt >= 0 ? "#C63F20" : "#176B82";
+              return "<strong>" + time + "</strong><br/>" +
+                "<span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#C63F20;margin-right:6px;'></span>城区温度: <b>" + u.toFixed(1) + " °C</b><br/>" +
+                "<span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#255F73;margin-right:6px;'></span>参照区温度: <b>" + r.toFixed(1) + " °C</b><br/>" +
+                "温差 ΔT: <b style='color:" + dtColor + ";'>" + sign + dt + " °C</b>";
+            }
+          },
+          xAxis: {
+            type: "category",
+            boundaryGap: false,
+            data: hourLabels,
+            axisLine: { lineStyle: { color: "#50646B" } },
+            axisTick: { alignWithLabel: true, interval: 2 },
+            axisLabel: {
+              color: "#50646B",
+              fontSize: 13,
+              fontFamily: "Bahnschrift",
+              interval: 2
+            },
+            splitLine: {
+              show: true,
+              lineStyle: { color: "rgba(80, 100, 107, 0.15)", type: "dashed" }
+            }
+          },
+          yAxis: {
+            type: "value",
+            min: yMin,
+            max: yMax,
+            name: "温度 (°C)",
+            nameTextStyle: {
+              color: "#50646B",
+              fontSize: 13,
+              align: "left",
+              padding: [0, 0, 8, -30]
+            },
+            axisLine: { show: true, lineStyle: { color: "#50646B" } },
+            axisLabel: {
+              color: "#50646B",
+              fontSize: 13,
+              fontFamily: "Bahnschrift"
+            },
+            splitLine: {
+              lineStyle: { color: "rgba(80, 100, 107, 0.18)" }
+            }
+          },
+          series: [
+            {
+              name: "参照区基线",
+              type: "line",
+              smooth: 0.3,
+              showSymbol: false,
+              data: rData,
+              lineStyle: {
+                color: "#255F73",
+                width: 2.8,
+                type: "dashed"
+              },
+              itemStyle: { color: "#255F73" }
+            },
+            {
+              name: "城区实测",
+              type: "line",
+              smooth: 0.3,
+              showSymbol: false,
+              data: uData,
+              lineStyle: {
+                color: "#C63F20",
+                width: 3.5
+              },
+              itemStyle: { color: "#C63F20" }
+            }
+          ]
+        };
+      }
+
+      function updatePanel(data) {
+        document.getElementById("stat-title").textContent = data.statTitle;
+        var valEl = document.getElementById("stat-val");
+        valEl.innerHTML = data.statVal + "<span class='reading-unit'>" + data.statUnit + "</span>";
+        if (data.statVal.indexOf("-") === 0) {
+          valEl.classList.add("cool");
+        } else {
+          valEl.classList.remove("cool");
+        }
+
+        document.getElementById("stat-sub").innerHTML = data.statSub;
+        document.getElementById("mode-name").textContent = data.title;
+        document.getElementById("mode-desc").textContent = data.desc;
+        document.getElementById("takeaway-text").innerHTML = data.takeaway;
+
+        var tbody = document.getElementById("diff-table-body");
+        tbody.innerHTML = data.table.map(function(row){
+          return "<tr>" +
+            "<td>" + row.time + "</td>" +
+            "<td class='num-cell'>" + row.u + "</td>" +
+            "<td class='num-cell'>" + row.r + "</td>" +
+            "<td class='num-cell' style='color:" + row.dtColor + "; font-weight:700;'>" + row.dt + "</td>" +
+            "</tr>";
+        }).join("");
+      }
+
+      function setMode(modeKey) {
+        currentMode = modeKey;
+        var buttons = document.querySelectorAll(".target-btn");
+        buttons.forEach(function(btn){
+          btn.setAttribute("aria-pressed", btn.getAttribute("data-target") === modeKey ? "true" : "false");
+        });
+
+        var data = datasets[modeKey];
+        updatePanel(data);
+        if (chart) {
+          chart.setOption(getChartOption(data), true);
+        }
+      }
+
+      // 初始化图表
+      try {
+        if (window.echarts) {
+          chart = echarts.init(chartHost, null, { renderer: "svg" });
+          setMode("air");
+
+          window.addEventListener("resize", function(){
+            if (chart) chart.resize();
+          });
+        }
+      } catch(e) {
+        console.error(e);
+      }
+
+      // 绑定按钮事件
+      document.getElementById("btn-air").addEventListener("click", function(){ setMode("air"); });
+      document.getElementById("btn-surface").addEventListener("click", function(){ setMode("surface"); });
+      document.getElementById("btn-oasis").addEventListener("click", function(){ setMode("oasis"); });
+
+      Deck.init({ index: 2, total: 19 });
+    })();
+  </script>
+</body>
+</html>

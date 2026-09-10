@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE6DF;
+      --text: #17251E;
+      --muted: #52655B;
+      --model: #21633F;
+      --focus: #E08A16;
+      --energy: #A65322;
+      --matter: #2E6680;
+      --rule: #81968A;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* 顶部标题区 */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 14px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-strong);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .lead-meta {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      font-weight: var(--weight-body);
+    }
+
+    /* 主图解区域 */
+    .map-container {
+      position: relative;
+      width: 100%;
+      height: 680px;
+      margin-top: 18px;
+    }
+
+    svg#chloroplast-map {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* SVG 内部排版与样式 */
+    .membrane-outer {
+      fill: #C9D8CD;
+      stroke: var(--model);
+      stroke-width: 3.5;
+    }
+
+    .membrane-inner {
+      fill: #D3E0D7;
+      stroke: var(--model);
+      stroke-width: 2;
+      stroke-dasharray: 6 3;
+    }
+
+    .stroma-zone {
+      fill: rgba(220, 230, 223, 0.45);
+    }
+
+    .grana-disc {
+      fill: #27774B;
+      stroke: #1B5335;
+      stroke-width: 1.5;
+      transition: fill var(--motion-fast), stroke var(--motion-fast);
+    }
+
+    .grana-disc.active {
+      fill: #1E6640;
+      stroke: var(--focus);
+      stroke-width: 2.5;
+    }
+
+    .grana-fret {
+      stroke: #2E8555;
+      stroke-width: 5;
+      stroke-linecap: round;
+      fill: none;
+    }
+
+    .zone-box {
+      cursor: pointer;
+      transition: transform var(--motion-fast) ease-out;
+    }
+
+    .label-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-strong);
+      fill: var(--text);
+    }
+
+    .label-sub {
+      font-size: var(--fs-sec);
+      fill: var(--muted);
+    }
+
+    .label-focus-action {
+      font-size: var(--fs-lead);
+      font-weight: var(--weight-strong);
+    }
+
+    .light-badge {
+      fill: var(--focus);
+    }
+
+    .carbon-badge {
+      fill: var(--matter);
+    }
+
+    .energy-badge {
+      fill: var(--energy);
+    }
+
+    /* 左右指示信息卡 */
+    .zone-card {
+      filter: drop-shadow(0 2px 8px rgba(23, 37, 30, 0.06));
+    }
+
+    /* 底部切换标签条 */
+    .nav-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 56px;
+      right: 56px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 14px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 12px;
+    }
+
+    .tab-btn {
+      appearance: none;
+      border: 1px solid var(--rule);
+      background: rgba(255, 255, 255, 0.5);
+      color: var(--text);
+      font-size: var(--fs-label);
+      font-weight: 500;
+      font-family: var(--font-sans);
+      padding: 6px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all var(--motion-fast);
+    }
+
+    .tab-btn:hover {
+      background: #ffffff;
+    }
+
+    .tab-btn[aria-pressed="true"] {
+      background: var(--model);
+      color: #FFFFFF;
+      border-color: var(--model);
+      font-weight: 600;
+    }
+
+    .caption-summary {
+      font-size: var(--fs-label);
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    /* 交互高亮状态 */
+    .highlight-light .stroma-group { opacity: 0.45; }
+    .highlight-dark .thyla-group { opacity: 0.45; }
+  </style>
+</head>
+<body data-page="04" data-total="22">
+  <div id="stage">
+    <header>
+      <h1>光反应在类囊体膜，暗反应在叶绿体基质</h1>
+    </header>
+
+    <div class="map-container" id="mapZone">
+      <svg id="chloroplast-map" viewBox="0 0 1488 640">
+        <defs>
+          <marker id="arrow-focus" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L7,3 z" fill="var(--focus)" />
+          </marker>
+          <marker id="arrow-matter" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L7,3 z" fill="var(--matter)" />
+          </marker>
+          <marker id="arrow-energy" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L7,3 z" fill="var(--energy)" />
+          </marker>
+          <linearGradient id="sun-beam" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#E08A16" stop-opacity="0.9" />
+            <stop offset="100%" stop-color="#E08A16" stop-opacity="0.15" />
+          </linearGradient>
+        </defs>
+
+        <!-- 叶绿体外轮廓与双层膜 -->
+        <g id="chloroplast-body">
+          <!-- 外膜 -->
+          <path class="membrane-outer" d="M 120 320 C 120 140, 360 50, 744 50 C 1128 50, 1368 140, 1368 320 C 1368 500, 1128 590, 744 590 C 360 590, 120 500, 120 320 Z" />
+          <!-- 内膜 -->
+          <path class="membrane-inner" d="M 135 320 C 135 152, 370 66, 744 66 C 1118 66, 1353 152, 1353 320 C 1353 488, 1118 574, 744 574 C 370 574, 135 488, 135 320 Z" />
+          <!-- 双层膜标注 -->
+          <text x="160" y="110" class="label-sub">双层被膜</text>
+          <line x1="235" y1="106" x2="285" y2="128" stroke="var(--rule)" stroke-width="1.5" />
+        </g>
+
+        <!-- 光反应区：左侧类囊体群与光子接入 -->
+        <g id="thyla-group" class="thyla-group">
+          <!-- 入射光束：签名暖光接入 -->
+          <polygon points="170,30 260,30 350,220 280,240" fill="url(#sun-beam)" opacity="0.45" />
+          <line x1="215" y1="30" x2="315" y2="230" stroke="var(--focus)" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#arrow-focus)" />
+          <text x="210" y="24" fill="var(--focus)" font-size="16" font-weight="600">光能</text>
+
+          <!-- 基粒连接桥（基质片层） -->
+          <path class="grana-fret" d="M 330 260 Q 420 250 510 270" />
+          <path class="grana-fret" d="M 330 360 Q 410 370 510 350" />
+          <path class="grana-fret" d="M 320 440 Q 420 450 500 430" />
+
+          <!-- 基粒 1（垛叠类囊体盘） -->
+          <g transform="translate(260, 210)">
+            <ellipse class="grana-disc active" cx="70" cy="18" rx="66" ry="14" />
+            <ellipse class="grana-disc active" cx="70" cy="38" rx="66" ry="14" />
+            <ellipse class="grana-disc active" cx="70" cy="58" rx="66" ry="14" />
+            <ellipse class="grana-disc active" cx="70" cy="78" rx="66" ry="14" />
+            <ellipse class="grana-disc active" cx="70" cy="98" rx="66" ry="14" />
+            <ellipse class="grana-disc active" cx="70" cy="118" rx="66" ry="14" />
+          </g>
+
+          <!-- 基粒 2 -->
+          <g transform="translate(450, 230)">
+            <ellipse class="grana-disc" cx="65" cy="18" rx="60" ry="13" />
+            <ellipse class="grana-disc" cx="65" cy="36" rx="60" ry="13" />
+            <ellipse class="grana-disc" cx="65" cy="54" rx="60" ry="13" />
+            <ellipse class="grana-disc" cx="65" cy="72" rx="60" ry="13" />
+            <ellipse class="grana-disc" cx="65" cy="90" rx="60" ry="13" />
+            <ellipse class="grana-disc" cx="65" cy="108" rx="60" ry="13" />
+          </g>
+
+          <!-- 水分解与氧气输出 -->
+          <path d="M 230 400 L 290 340" stroke="var(--matter)" stroke-width="2" marker-end="url(#arrow-matter)" fill="none" />
+          <text x="180" y="420" fill="var(--matter)" font-size="16" font-weight="600">H₂O 输入</text>
+
+          <path d="M 280 250 L 220 190" stroke="var(--matter)" stroke-width="2" marker-end="url(#arrow-matter)" fill="none" />
+          <text x="175" y="180" fill="var(--matter)" font-size="16" font-weight="600">O₂ 释放</text>
+
+          <!-- 左侧光反应解析说明框 -->
+          <g class="zone-box" id="box-light" transform="translate(190, 485)">
+            <rect x="0" y="0" width="370" height="74" rx="4" fill="rgba(255,255,255,0.85)" stroke="var(--model)" stroke-width="1.5" />
+            <text x="16" y="28" class="label-title" fill="var(--model)">类囊体膜（基粒）</text>
+            <text x="16" y="54" class="label-focus-action" fill="var(--focus)">光反应：裂解水并产生活性载体</text>
+          </g>
+        </g>
+
+        <!-- 载体物质流动桥（ATP / NADPH 传递与 ADP / NADP+ 循环） -->
+        <g id="shuttle-group">
+          <!-- 前向流动：ATP & NADPH -->
+          <path d="M 585 280 C 660 250, 750 250, 830 280" fill="none" stroke="var(--energy)" stroke-width="2.5" stroke-dasharray="5 3" marker-end="url(#arrow-energy)" />
+          <rect x="648" y="238" width="124" height="24" rx="3" fill="#DCE6DF" />
+          <text x="652" y="255" fill="var(--energy)" font-size="15" font-weight="600">ATP + NADPH</text>
+
+          <!-- 回流：ADP + Pi & NADP+ -->
+          <path d="M 830 380 C 750 410, 660 410, 585 380" fill="none" stroke="var(--rule)" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arrow-matter)" />
+          <rect x="640" y="386" width="138" height="24" rx="3" fill="#DCE6DF" />
+          <text x="644" y="403" fill="var(--muted)" font-size="13">ADP + Pi / NADP⁺</text>
+        </g>
+
+        <!-- 暗反应区：右侧叶绿体基质与卡尔文循环示意 -->
+        <g id="stroma-group" class="stroma-group">
+          <!-- 暗反应环路（基质内卡尔文循环轨道） -->
+          <circle cx="970" cy="330" r="100" fill="none" stroke="var(--matter)" stroke-width="2.5" stroke-dasharray="8 5" opacity="0.8" />
+          
+          <!-- 二氧化碳固定进入 -->
+          <path d="M 970 140 L 970 220" stroke="var(--matter)" stroke-width="2.5" marker-end="url(#arrow-matter)" fill="none" />
+          <text x="945" y="125" fill="var(--matter)" font-size="16" font-weight="600">CO₂ 输入</text>
+
+          <!-- 糖类有机物输出 -->
+          <path d="M 970 440 L 970 475" stroke="var(--matter)" stroke-width="2.5" marker-end="url(#arrow-matter)" fill="none" />
+          <text x="930" y="475" fill="var(--matter)" font-size="16" font-weight="600" text-anchor="end">(CH₂O) 糖类输出</text>
+
+          <text x="970" y="325" text-anchor="middle" fill="var(--matter)" font-size="16" font-weight="600">卡尔文循环</text>
+          <text x="970" y="348" text-anchor="middle" fill="var(--muted)" font-size="13">固定 CO₂ 合成糖</text>
+
+          <!-- 右侧暗反应解析说明框 -->
+          <g class="zone-box" id="box-dark" transform="translate(860, 485)">
+            <rect x="0" y="0" width="370" height="74" rx="4" fill="rgba(255,255,255,0.85)" stroke="var(--matter)" stroke-width="1.5" />
+            <text x="16" y="28" class="label-title" fill="var(--matter)">叶绿体基质</text>
+            <text x="16" y="54" class="label-focus-action" fill="var(--text)">暗反应：利用载体能量将 CO₂ 同化为糖</text>
+          </g>
+        </g>
+      </svg>
+    </div>
+
+    <!-- 底部控制与切换提示 -->
+    <div class="nav-bar">
+      <div class="tabs">
+        <button class="tab-btn" id="btn-all" aria-pressed="true">全景协同</button>
+        <button class="tab-btn" id="btn-light" aria-pressed="false">聚焦类囊体</button>
+        <button class="tab-btn" id="btn-dark" aria-pressed="false">聚焦基质</button>
+      </div>
+      <span class="caption-summary">膜上光能转化，基质碳水合成</span>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看这幅叶绿体内部结构地图。光合作用并不是在一个混合容器里随意发生的，它严格分为两个空间分区：
+    第一，左侧深绿色的基粒由一层层类囊体膜垛叠而成，膜上富集色素和光反应酶，光子照入后在这里驱动水光解并生成 ATP 与 NADPH。
+    第二，右侧充满胶状液体的叶绿体基质则是暗反应的工厂，卡尔文循环的各种酶都分散在基质里，承接来自膜上的能量载体，把外界吸入的二氧化碳固定还原为糖类。
+    膜与基质之间通过能量载体往返穿梭紧密配合。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      Deck.init({ index: 4, total: 22, keys: true });
+
+      const mapZone = document.getElementById('mapZone');
+      const btnAll = document.getElementById('btn-all');
+      const btnLight = document.getElementById('btn-light');
+      const btnDark = document.getElementById('btn-dark');
+      const boxLight = document.getElementById('box-light');
+      const boxDark = document.getElementById('box-dark');
+
+      function setState(mode) {
+        mapZone.classList.remove('highlight-light', 'highlight-dark');
+        btnAll.setAttribute('aria-pressed', 'false');
+        btnLight.setAttribute('aria-pressed', 'false');
+        btnDark.setAttribute('aria-pressed', 'false');
+
+        if (mode === 'light') {
+          mapZone.classList.add('highlight-light');
+          btnLight.setAttribute('aria-pressed', 'true');
+        } else if (mode === 'dark') {
+          mapZone.classList.add('highlight-dark');
+          btnDark.setAttribute('aria-pressed', 'true');
+        } else {
+          btnAll.setAttribute('aria-pressed', 'true');
+        }
+      }
+
+      btnAll.addEventListener('click', () => setState('all'));
+      btnLight.addEventListener('click', () => setState('light'));
+      btnDark.addEventListener('click', () => setState('dark'));
+      boxLight.addEventListener('click', () => setState('light'));
+      boxDark.addEventListener('click', () => setState('dark'));
+    })();
+  </script>
+</body>
+</html>

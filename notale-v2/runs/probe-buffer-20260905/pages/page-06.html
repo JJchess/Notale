@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>缓冲范围与缓冲容量</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 页面私有布局与化学专用样式 */
+    .header-block {
+      flex: 0 0 auto;
+      margin-bottom: 14px;
+    }
+    .header-block h1 {
+      margin-bottom: 6px;
+    }
+
+    .focus-grid {
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧主图区 */
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+      position: relative;
+      padding: 16px 20px 12px;
+      overflow: hidden;
+    }
+    .chart-panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .chart-panel-head .sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .chart-stage-box {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      border: 1px solid var(--muted);
+      border-radius: 8px;
+      background: #FAFCFC;
+      overflow: hidden;
+    }
+    #chart-host {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 坐标轴图例与刻度提示 */
+    .chart-foot {
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    /* 右侧控制与推导面板 */
+    .aside-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .card-block {
+      background: var(--paper);
+      border: 1.5px solid var(--muted);
+      border-radius: 10px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .readout-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .readout-item {
+      background: #F4F8F9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      border: 1px solid rgba(82, 105, 112, 0.25);
+    }
+    .readout-item .label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+    .readout-item .val {
+      font-family: var(--font-num);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+    }
+    .readout-item .val small {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-left: 4px;
+      font-family: var(--font-sans);
+    }
+
+    .slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .slider-item {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .slider-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+      font-weight: 700;
+    }
+    .slider-val {
+      font-family: var(--font-num);
+      color: var(--buffer);
+      font-size: var(--fs-body);
+    }
+
+    .preset-group {
+      display: flex;
+      gap: 8px;
+    }
+    .preset-btn {
+      flex: 1;
+      padding: 6px 4px;
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      border: 1.5px solid var(--muted);
+      border-radius: 6px;
+      background: var(--paper);
+      cursor: pointer;
+      color: var(--text);
+      text-align: center;
+    }
+    .preset-btn.active {
+      background: var(--buffer);
+      border-color: var(--buffer);
+      color: var(--paper);
+    }
+
+    .mechanism-note {
+      font-size: var(--fs-tick);
+      line-height: 1.45;
+      color: var(--text);
+      background: #F8FAFA;
+      border: 1px solid var(--muted);
+      padding: 8px 10px;
+      border-radius: 6px;
+    }
+
+    .status-alert {
+      font-size: var(--fs-tick);
+      padding: 5px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+    .status-alert.valid {
+      background: rgba(53, 106, 58, 0.12);
+      color: var(--correct);
+      border: 1px solid rgba(53, 106, 58, 0.3);
+    }
+    .status-alert.warn {
+      background: rgba(180, 63, 43, 0.12);
+      color: var(--acid);
+      border: 1px solid rgba(180, 63, 43, 0.3);
+    }
+  </style>
+</head>
+<body data-page="06" data-total="17">
+  <div id="stage">
+    <header class="header-block">
+      <h1>缓冲范围与缓冲容量：区间看比例，耐受看总量</h1>
+      <p class="lead">缓冲体系的有效区间由共轭碱与弱酸的摩尔比决定（±1 pH 单位）；抵抗外加酸碱扰动的总量则直接由总浓度决定。</p>
+    </header>
+
+    <main class="focus focus-grid">
+      <!-- 左栏：滴定/响应曲线与缓冲容量带 -->
+      <section class="panel chart-panel min0">
+        <div class="chart-panel-head">
+          <div>
+            <h2 style="font-size: 19px;">pH 变化曲线与缓冲容量 β(pH)</h2>
+            <span class="sub">以醋酸/醋酸钠体系（pKa = 4.76）为例</span>
+          </div>
+          <div class="legend">
+            <div class="li"><span class="sw line" style="color: var(--buffer);"></span>缓冲溶液响应曲线</div>
+            <div class="li"><span class="sw" style="background: rgba(8, 116, 110, 0.18); border-color: var(--buffer);"></span>有效缓冲范围 [pKa−1, pKa+1]</div>
+            <div class="li"><span class="sw" style="background: var(--focus); border-radius: 50%;"></span>当前配比工作点</div>
+          </div>
+        </div>
+
+        <div class="chart-stage-box min0">
+          <div id="chart-host" role="img" aria-label="展示弱酸共轭碱缓冲溶液在不同加入碱量下的 pH 曲线与有效缓冲范围"></div>
+        </div>
+
+        <div class="chart-foot">
+          <span>横轴：外加强碱量 b (mol/L)</span>
+          <span>纵轴：体系实时 pH</span>
+          <span>Van Slyke 缓冲容量公式：β = ln(10) · C_总 · α · (1 − α)</span>
+        </div>
+      </section>
+
+      <!-- 右栏：双维度解耦控制与读数 -->
+      <aside class="aside-panel min0">
+        <!-- 维度一：比例决定有效范围与当前工作点 -->
+        <div class="card-block">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <h3 style="color: var(--buffer); font-size: var(--fs-h2);">1. 比例决定有效范围</h3>
+            <span class="tag buffer" style="font-size: var(--fs-tick); min-height: 24px; padding: 2px 8px;">pH = pKa ± 1</span>
+          </div>
+          <p class="small">有效缓冲条件为 0.1 ≤ [A⁻]/[HA] ≤ 10。当比例为 1:1 时，体系恰好处于 pKa，抗酸与抗碱能力均衡。</p>
+          
+          <div class="slider-item">
+            <div class="slider-label-row">
+              <span>共轭碱与弱酸配比 [A⁻] / [HA]</span>
+              <span id="readout-ratio" class="slider-val">1.00 : 1</span>
+            </div>
+            <div class="ctl">
+              <input type="range" id="ratio-slider" min="-1.0" max="1.0" step="0.05" value="0.0" aria-label="共轭碱与弱酸比例（以对数值调节）">
+            </div>
+          </div>
+
+          <div class="preset-group">
+            <button type="button" class="preset-btn" data-log="-1.0">0.1 : 1 (下限)</button>
+            <button type="button" class="preset-btn active" data-log="0.0">1 : 1 (最大容量)</button>
+            <button type="button" class="preset-btn" data-log="1.0">10 : 1 (上限)</button>
+          </div>
+
+          <div id="ratio-status" class="status-alert valid">
+            当前处于最佳缓冲中心：抗酸与抗碱余量完全对称
+          </div>
+        </div>
+
+        <!-- 维度二：总浓度决定缓冲容量（能扛多少扰动） -->
+        <div class="card-block">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <h3 style="color: var(--focus); font-size: var(--fs-h2);">2. 总浓度决定缓冲容量</h3>
+            <span class="tag" style="font-size: var(--fs-tick); min-height: 24px; padding: 2px 8px; border-color: var(--focus); color: var(--focus);">容量 β ∝ C_总</span>
+          </div>
+          <p class="small">总浓度 C_总 = [HA] + [A⁻]。比例固定时，总浓度翻倍，所能中和的外加强酸或强碱量直接翻倍。</p>
+
+          <div class="slider-item">
+            <div class="slider-label-row">
+              <span>缓冲体系总浓度 C_总</span>
+              <span id="readout-ctot" class="slider-val" style="color: var(--focus);">0.10 mol/L</span>
+            </div>
+            <div class="ctl">
+              <input type="range" id="ctot-slider" min="0.02" max="0.30" step="0.02" value="0.10" aria-label="缓冲体系总浓度">
+            </div>
+          </div>
+
+          <div class="readout-row">
+            <div class="readout-item">
+              <div class="label">当前体系实时 pH</div>
+              <div class="val" id="readout-ph">4.76</div>
+            </div>
+            <div class="readout-item">
+              <div class="label">最大缓冲容量 β_max</div>
+              <div class="val" id="readout-beta">0.058<small>mol/(L·pH)</small></div>
+            </div>
+          </div>
+
+          <div class="readout-row">
+            <div class="readout-item">
+              <div class="label">可中和外加酸 (至下限)</div>
+              <div class="val" id="readout-acid-cap" style="color: var(--acid);">0.041<small>mol/L</small></div>
+            </div>
+            <div class="readout-item">
+              <div class="label">可中和外加碱 (至上限)</div>
+              <div class="val" id="readout-base-cap" style="color: var(--base);">0.041<small>mol/L</small></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mechanism-note">
+          <strong>教学结论：</strong>仅改变比例只平移当前工作点，不改变抵抗扰动的总物质的量；仅增加总浓度成倍拔高曲线坡度阻力，扩充缓冲容限。
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var pKa = 4.76; // 醋酸的 pKa
+      var state = {
+        logRatio: 0.0, // log10([A-]/[HA])，范围 -1.0 到 +1.0
+        cTot: 0.10     // 总浓度 mol/L，范围 0.02 到 0.30
+      };
+
+      var dom = {
+        ratioSlider: document.getElementById('ratio-slider'),
+        ctotSlider: document.getElementById('ctot-slider'),
+        readoutRatio: document.getElementById('readout-ratio'),
+        readoutCtot: document.getElementById('readout-ctot'),
+        readoutPh: document.getElementById('readout-ph'),
+        readoutBeta: document.getElementById('readout-beta'),
+        readoutAcidCap: document.getElementById('readout-acid-cap'),
+        readoutBaseCap: document.getElementById('readout-base-cap'),
+        ratioStatus: document.getElementById('ratio-status'),
+        presetBtns: document.querySelectorAll('.preset-btn'),
+        chartHost: document.getElementById('chart-host')
+      };
+
+      var chart = null;
+
+      function calcSystem() {
+        var ratio = Math.pow(10, state.logRatio);
+        var ph = pKa + state.logRatio;
+        // 共轭碱摩尔分数 alpha = [A-] / C_tot = ratio / (1 + ratio)
+        var alpha = ratio / (1 + ratio);
+        var cAcid = state.cTot * (1 - alpha); // [HA]
+        var cBase = state.cTot * alpha;       // [A-]
+
+        // 最大缓冲容量 β_max (在 alpha=0.5 即 pH=pKa 时): β = ln(10) * C_tot * 0.25 ≈ 0.5756 * C_tot
+        var betaMax = Math.LN10 * state.cTot * 0.25;
+        // 当前工作点的缓冲容量 β_cur = ln(10) * C_tot * alpha * (1 - alpha)
+        var betaCur = Math.LN10 * state.cTot * alpha * (1 - alpha);
+
+        // 达到有效缓冲范围极限能容纳的外加酸/碱量:
+        // 下限 logRatio = -1 => alpha_min = 1/11 ≈ 0.0909
+        // 上限 logRatio = +1 => alpha_max = 10/11 ≈ 0.9091
+        // 可中和外加强酸：当加酸使 A- 变成 HA，直到 alpha 降到 alpha_min:
+        var maxAcid = Math.max(0, cBase - (state.cTot * (1 / 11)));
+        // 可中和外加强碱：当加碱使 HA 变成 A-，直到 alpha 升到 alpha_max:
+        var maxBase = Math.max(0, (state.cTot * (10 / 11)) - cBase);
+
+        return {
+          ratio: ratio,
+          ph: ph,
+          alpha: alpha,
+          cAcid: cAcid,
+          cBase: cBase,
+          betaMax: betaMax,
+          betaCur: betaCur,
+          maxAcid: maxAcid,
+          maxBase: maxBase
+        };
+      }
+
+      function updateReadouts(sys) {
+        var rStr = sys.ratio >= 1 
+          ? sys.ratio.toFixed(2) + ' : 1' 
+          : '1 : ' + (1 / sys.ratio).toFixed(2);
+        dom.readoutRatio.textContent = rStr;
+        dom.readoutCtot.textContent = state.cTot.toFixed(2) + ' mol/L';
+        dom.readoutPh.textContent = sys.ph.toFixed(2);
+        dom.readoutBeta.innerHTML = sys.betaMax.toFixed(3) + '<small>mol/(L·pH)</small>';
+        dom.readoutAcidCap.innerHTML = sys.maxAcid.toFixed(3) + '<small>mol/L</small>';
+        dom.readoutBaseCap.innerHTML = sys.maxBase.toFixed(3) + '<small>mol/L</small>';
+
+        // 状态判定文案
+        if (Math.abs(state.logRatio) < 0.05) {
+          dom.ratioStatus.className = 'status-alert valid';
+          dom.ratioStatus.textContent = '处于最佳配比 (1:1)：抗酸与抗碱缓冲余量完全对等';
+        } else if (state.logRatio > 0) {
+          dom.ratioStatus.className = 'status-alert valid';
+          dom.ratioStatus.textContent = '共轭碱富余：抗酸缓冲能力强，但抗碱空间被压缩';
+        } else {
+          dom.ratioStatus.className = 'status-alert warn';
+          dom.ratioStatus.textContent = '弱酸富余：抗碱缓冲能力强，但抗酸空间被压缩';
+        }
+
+        dom.presetBtns.forEach(function (btn) {
+          var blog = parseFloat(btn.dataset.log);
+          if (Math.abs(blog - state.logRatio) < 0.04) {
+            btn.classList.add('active');
+          } else {
+            btn.classList.remove('active');
+          }
+        });
+      }
+
+      function generateCurveData() {
+        // 生成从纯弱酸溶液被强碱滴定/转化的全过程数据 (外加 NaOH 浓度 b 从 0 到 C_tot * 1.2)
+        // b 为加入的强碱量。体系中 [A-] = b (在有效缓冲范围内忽略水分离), [HA] = C_tot - b
+        // 当 b 很小或超出 C_tot 时作合理酸碱近似平滑过渡
+        var data = [];
+        var steps = 80;
+        var maxB = state.cTot;
+        
+        for (var i = 0; i <= steps; i++) {
+          var b = (i / steps) * maxB;
+          // 防止极限 log 溢出，加微小界限
+          var bEff = Math.max(0.0005 * state.cTot, Math.min(0.9995 * state.cTot, b));
+          var ha = state.cTot - bEff;
+          var curPh = pKa + Math.log10(bEff / ha);
+          data.push([parseFloat(b.toFixed(4)), parseFloat(curPh.toFixed(3))]);
+        }
+        return data;
+      }
+
+      function buildChartOption() {
+        var sys = calcSystem();
+        var curveData = generateCurveData();
+
+        // 当前工作点在曲线上的坐标：对应外加碱量为 cBase
+        var curPoint = [parseFloat(sys.cBase.toFixed(4)), parseFloat(sys.ph.toFixed(3))];
+
+        // 有效缓冲范围对应的加碱量区间：alpha = 1/11 到 10/11
+        var bMin = parseFloat((state.cTot * (1 / 11)).toFixed(4));
+        var bMax = parseFloat((state.cTot * (10 / 11)).toFixed(4));
+
+        return {
+          animation: false,
+          grid: {
+            left: 56,
+            right: 28,
+            top: 28,
+            bottom: 48
+          },
+          tooltip: {
+            show: true,
+            trigger: 'axis',
+            formatter: function (params) {
+              var p = params[0];
+              if (!p) return '';
+              return '外加碱量 b: ' + p.value[0] + ' mol/L<br>体系 pH: ' + p.value[1];
+            }
+          },
+          xAxis: {
+            type: 'value',
+            min: 0,
+            max: parseFloat((state.cTot).toFixed(3)),
+            name: '外加强碱 b (mol/L)',
+            nameLocation: 'middle',
+            nameGap: 28,
+            axisLine: { lineStyle: { color: '#526970', width: 1.5 } },
+            splitLine: { lineStyle: { color: 'rgba(82, 105, 112, 0.15)' } },
+            axisLabel: { color: '#142B33', fontSize: 13, fontFamily: 'Bahnschrift' }
+          },
+          yAxis: {
+            type: 'value',
+            min: 2.8,
+            max: 6.8,
+            interval: 0.5,
+            name: '体系 pH',
+            nameLocation: 'end',
+            nameGap: 10,
+            axisLine: { lineStyle: { color: '#526970', width: 1.5 } },
+            splitLine: { lineStyle: { color: 'rgba(82, 105, 112, 0.15)' } },
+            axisLabel: { color: '#142B33', fontSize: 13, fontFamily: 'Bahnschrift' }
+          },
+          series: [
+            // 缓冲作用有效窗口：在 pH = 3.76 到 5.76 之间
+            {
+              name: '缓冲范围标记',
+              type: 'line',
+              data: [],
+              markArea: {
+                silent: true,
+                itemStyle: {
+                  color: 'rgba(8, 116, 110, 0.10)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(8, 116, 110, 0.35)',
+                  borderType: 'dashed'
+                },
+                data: [
+                  [
+                    {
+                      yAxis: pKa - 1.0,
+                      xAxis: bMin
+                    },
+                    {
+                      yAxis: pKa + 1.0,
+                      xAxis: bMax
+                    }
+                  ]
+                ]
+              },
+              markLine: {
+                silent: true,
+                symbol: 'none',
+                lineStyle: {
+                  color: '#08746E',
+                  type: 'dashed',
+                  width: 1.5
+                },
+                data: [
+                  { yAxis: pKa, name: 'pKa 中心点', label: { formatter: 'pKa = 4.76 (最大容量线)', position: 'insideEndTop', color: '#08746E', fontSize: 13, fontWeight: 'bold' } },
+                  { yAxis: pKa + 1.0, label: { formatter: '上限 pKa+1 (5.76)', position: 'insideEndTop', color: '#526970', fontSize: 12 } },
+                  { yAxis: pKa - 1.0, label: { formatter: '下限 pKa-1 (3.76)', position: 'insideEndTop', color: '#526970', fontSize: 12 } }
+                ]
+              }
+            },
+            // 体系主响应曲线
+            {
+              name: 'pH 变化曲线',
+              type: 'line',
+              smooth: true,
+              showSymbol: false,
+              data: curveData,
+              lineStyle: {
+                color: '#08746E',
+                width: 3.5
+              }
+            },
+            // 当前工作点
+            {
+              name: '当前工作点',
+              type: 'scatter',
+              data: [curPoint],
+              symbolSize: 15,
+              itemStyle: {
+                color: '#C45A00',
+                borderColor: '#FFFFFF',
+                borderWidth: 3,
+                shadowColor: 'rgba(196, 90, 0, 0.4)',
+                shadowBlur: 6
+              },
+              label: {
+                show: true,
+                position: 'top',
+                distance: 8,
+                formatter: function () {
+                  return '当前 pH ' + sys.ph.toFixed(2);
+                },
+                fontSize: 13,
+                fontWeight: 'bold',
+                color: '#C45A00',
+                backgroundColor: '#FFFFFF',
+                borderColor: '#C45A00',
+                borderWidth: 1,
+                borderRadius: 4,
+                padding: [3, 6]
+              },
+              z: 10
+            }
+          ]
+        };
+      }
+
+      function render() {
+        var sys = calcSystem();
+        updateReadouts(sys);
+        if (chart) {
+          chart.setOption(buildChartOption(), { notMerge: true });
+        }
+      }
+
+      function init() {
+        Deck.init({ index: 6, total: 17, keys: false });
+
+        try {
+          if (window.echarts) {
+            chart = echarts.init(dom.chartHost, null, { renderer: 'canvas' });
+            var resizeChart = function () {
+              if (chart) {
+                chart.resize();
+              }
+            };
+            if (window.ResizeObserver) {
+              var ro = new ResizeObserver(resizeChart);
+              ro.observe(dom.chartHost);
+            }
+            window.addEventListener('resize', resizeChart);
+          }
+        } catch (e) {
+          console.error("ECharts init failed", e);
+        }
+
+        dom.ratioSlider.addEventListener('input', function (e) {
+          state.logRatio = parseFloat(e.target.value);
+          render();
+        });
+
+        dom.ctotSlider.addEventListener('input', function (e) {
+          state.cTot = parseFloat(e.target.value);
+          render();
+        });
+
+        dom.presetBtns.forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var val = parseFloat(btn.dataset.log);
+            state.logRatio = val;
+            dom.ratioSlider.value = val;
+            render();
+          });
+        });
+
+        render();
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root{ --bg:#EEF2F6; --text:#121821; --font-sans:"Noto Sans SC",system-ui,sans-serif; }
+
+  #stage{ padding:28px 56px; display:flex; flex-direction:column; gap:16px; }
+
+  h1{ font:700 var(--fs-h1)/1.15 var(--font-display); margin:0; }
+  .lead{ font-size:var(--fs-lead); color:var(--muted); margin:4px 0 0; max-width:1100px; line-height:1.5; }
+
+  .main{ flex:1; min-height:0; display:flex; gap:20px; }
+
+  .stagepanel{ flex:1.55; min-width:0; display:flex; flex-direction:column; }
+  .canvaswrap{ position:relative; flex:1; min-height:0; background:var(--surface); border-radius:16px; box-shadow:0 1px 0 rgba(18,24,33,.06); }
+  #cv{ position:absolute; inset:0; width:100%; height:100%; }
+
+  .side{ flex:1; min-width:0; display:flex; flex-direction:column; gap:14px; }
+
+  .panel{ background:var(--surface); border-radius:14px; padding:18px 20px; box-shadow:0 1px 0 rgba(18,24,33,.06); }
+
+  .formula-row{ display:flex; align-items:center; justify-content:center; gap:10px; font:600 22px/1.3 var(--font-num); flex-wrap:wrap; }
+  .formula-row .sym{ padding:2px 4px; border-radius:6px; transition:color .25s ease, background .25s ease; }
+  .formula-row .sym.hot{ background:rgba(217,115,13,.12); color:var(--focus); }
+  .formula-row .op{ color:var(--muted); font-weight:400; }
+
+  .readnote{ margin-top:10px; font-size:var(--fs-sec); color:var(--muted); line-height:1.55; min-height:64px; }
+  .readnote b{ color:var(--text); font-weight:700; }
+  .readnote .num{ font-family:var(--font-num); }
+
+  .steps{ display:flex; gap:8px; }
+  .step-btn{ flex:1; padding:9px 4px; border-radius:10px; border:1px solid rgba(18,24,33,.14); background:#fff; color:var(--muted); font-size:var(--fs-label); cursor:pointer; text-align:center; transition:border-color .15s, color .15s, background .15s; }
+  .step-btn[aria-current="step"]{ border-color:var(--focus); color:var(--focus); background:rgba(217,115,13,.08); font-weight:700; }
+  .step-btn:hover{ color:var(--text); }
+
+  .btnrow{ display:flex; gap:10px; margin-top:12px; }
+  .btn{ flex:1; padding:10px 0; border-radius:10px; border:1px solid rgba(18,24,33,.14); background:#fff; color:var(--text); font-size:var(--fs-label); cursor:pointer; }
+  .btn:hover{ border-color:var(--focus); color:var(--focus); }
+  .btn:disabled{ opacity:.4; cursor:default; }
+
+  .legend{ display:flex; gap:18px; flex-wrap:wrap; font-size:var(--fs-label); color:var(--muted); }
+  .legend .li{ display:flex; align-items:center; gap:6px; }
+  .legend .sw{ width:12px; height:12px; border-radius:3px; display:inline-block; }
+
+  .calc{ font-size:var(--fs-sec); line-height:1.7; color:var(--text); }
+  .calc .line{ display:flex; justify-content:space-between; gap:10px; }
+  .calc .line span:first-child{ color:var(--muted); }
+  .calc .line span:last-child{ font-family:var(--font-num); }
+  .calc .hi{ color:var(--current); font-weight:700; }
+</style>
+</head>
+<body data-page="05" data-total="8">
+<div id="stage">
+  <header>
+    <h1>被错分的样本，为什么下一轮会被"重点关注"</h1>
+    <p class="lead">同一批 8 个样本，权重从均匀出发。当前弱分类器分错了其中 3 个——更新一次权重，看错分样本的权重条如何被放大、正确样本的权重条如何被压缩。</p>
+  </header>
+
+  <div class="main">
+    <div class="stagepanel">
+      <div class="canvaswrap"><canvas id="cv"></canvas></div>
+      <div class="legend" style="margin-top:10px;">
+        <span class="li"><span class="sw" style="background:var(--current)"></span>被分错的样本（权重上调）</span>
+        <span class="li"><span class="sw" style="background:var(--weak)"></span>被分对的样本（权重下调）</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="panel">
+        <div class="formula-row" id="formula">
+          <span class="sym" data-p="D">D<sub>t+1</sub>(i)</span>
+          <span class="op">=</span>
+          <span class="sym" data-p="Dt">D<sub>t</sub>(i)</span>
+          <span class="op">·</span>
+          <span class="sym" data-p="exp">exp(±α<sub>t</sub>)</span>
+          <span class="op">/</span>
+          <span class="sym" data-p="Z">Z<sub>t</sub></span>
+        </div>
+        <p class="readnote" id="readnote">
+          8 个样本初始权重相等，均为 <b>1/8</b>。第 4、6、8 号被当前弱分类器分错。
+        </p>
+        <div class="steps" role="group" aria-label="更新步骤">
+          <button class="step-btn" data-i="0">初始权重</button>
+          <button class="step-btn" data-i="1">算 α<sub>t</sub></button>
+          <button class="step-btn" data-i="2">乘 exp(±α)</button>
+          <button class="step-btn" data-i="3">归一化</button>
+        </div>
+        <div class="btnrow">
+          <button class="btn" id="prev">上一步</button>
+          <button class="btn" id="next">下一步</button>
+          <button class="btn" id="reset">复位</button>
+        </div>
+      </div>
+
+      <div class="panel calc" id="calcpanel"></div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ---- 真实数据：8 个样本，均匀初始权重，3、4、5、6、7、8 index 中第 4/6/8(1-index) 号错分 ----
+  const N = 8;
+  const wrongIdx = [3, 5, 7]; // 0-index：对应第4、6、8号
+  const eps = wrongIdx.length / N; // 3/8
+  const alpha = 0.5 * Math.log((1 - eps) / eps); // 0.2554...
+  const w0 = 1 / N;
+  const rawWrong = w0 * Math.exp(alpha);
+  const rawRight = w0 * Math.exp(-alpha);
+  const Z = wrongIdx.length * rawWrong + (N - wrongIdx.length) * rawRight;
+  const normWrong = rawWrong / Z; // 1/6
+  const normRight = rawRight / Z; // 1/10
+
+  const initW = new Array(N).fill(w0);
+  const afterMul = initW.map((w, i) => wrongIdx.includes(i) ? w * Math.exp(alpha) : w * Math.exp(-alpha));
+  const afterNorm = afterMul.map(w => w / Z);
+
+  const steps = [
+    { name:'初始权重', part:'Dt',
+      note:'8 个样本初始权重相等，均为 <b>1/8</b>。第 4、6、8 号被当前弱分类器分错。' },
+    { name:'算 α_t', part:'exp',
+      note:`误差率 ε<sub>t</sub> = 3/8 = <b class="num">0.375</b>。分类器权重 α<sub>t</sub> = ½·ln((1-ε)/ε) = <b class="num">${alpha.toFixed(4)}</b>——误差率越低，α 越大，这一轮分类器说话的分量也越大。` },
+    { name:'乘 exp(±α)', part:'exp',
+      note:`错分样本乘 <b class="num">exp(+α)≈${Math.exp(alpha).toFixed(4)}</b>，权重被放大；分对样本乘 <b class="num">exp(−α)≈${Math.exp(-alpha).toFixed(4)}</b>，权重被压缩。两者此时还未重新求和为 1。` },
+    { name:'归一化', part:'Z',
+      note:`除以 Z<sub>t</sub> = <b class="num">${Z.toFixed(4)}</b> 让权重重新求和为 1。结果：错分样本权重变为 <b class="num">1/6 ≈ 0.1667</b>，分对样本变为 <b class="num">1/10 = 0.1</b>——错分样本被关注的力度是原来的 <b class="num">5/3</b> 倍。` }
+  ];
+
+  let cur = 0;
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const readnote = document.getElementById('readnote');
+  const calcpanel = document.getElementById('calcpanel');
+  const stepBtns = Array.from(document.querySelectorAll('.step-btn'));
+  const prevBtn = document.getElementById('prev');
+  const nextBtn = document.getElementById('next');
+  const resetBtn = document.getElementById('reset');
+  const formulaParts = Array.from(document.querySelectorAll('.formula-row .sym'));
+
+  function weightsAtStep(s){
+    if (s === 0) return initW;
+    if (s === 1) return initW;
+    if (s === 2) return afterMul;
+    return afterNorm;
+  }
+
+  function fmtFrac(w, s){
+    if (s <= 1) return '1/8';
+    if (s === 3) return wrongIdx.length ? null : null;
+    return null;
+  }
+
+  function render(){
+    const w = weightsAtStep(cur);
+    const maxW = Math.max(...initW, ...afterMul, ...afterNorm);
+    draw(w, maxW);
+    readnote.innerHTML = steps[cur].note;
+    stepBtns.forEach((b, i) => {
+      if (i === cur) b.setAttribute('aria-current', 'step');
+      else b.removeAttribute('aria-current');
+    });
+    formulaParts.forEach(p => p.classList.toggle('hot', p.dataset.p === steps[cur].part));
+    prevBtn.disabled = cur === 0;
+    nextBtn.disabled = cur === steps.length - 1;
+    renderCalc();
+  }
+
+  function renderCalc(){
+    let rows = '';
+    if (cur === 0){
+      rows = `<div class="line"><span>每个样本权重 D₀(i)</span><span>1/8 = 0.1250</span></div>`;
+    } else if (cur === 1){
+      rows = `
+        <div class="line"><span>错分数 / 总数</span><span>3 / 8</span></div>
+        <div class="line"><span>误差率 ε<sub>t</sub></span><span class="hi">${eps.toFixed(4)}</span></div>
+        <div class="line"><span>(1−ε)/ε</span><span>${((1-eps)/eps).toFixed(4)}</span></div>
+        <div class="line"><span>α<sub>t</sub> = ½·ln(...)</span><span class="hi">${alpha.toFixed(4)}</span></div>`;
+    } else if (cur === 2){
+      rows = `
+        <div class="line"><span>exp(+α<sub>t</sub>)　错分样本乘数</span><span class="hi">${Math.exp(alpha).toFixed(4)}</span></div>
+        <div class="line"><span>exp(−α<sub>t</sub>)　分对样本乘数</span><span class="hi">${Math.exp(-alpha).toFixed(4)}</span></div>
+        <div class="line"><span>错分样本：0.1250 × ${Math.exp(alpha).toFixed(3)}</span><span>${rawWrong.toFixed(4)}</span></div>
+        <div class="line"><span>分对样本：0.1250 × ${Math.exp(-alpha).toFixed(3)}</span><span>${rawRight.toFixed(4)}</span></div>`;
+    } else {
+      rows = `
+        <div class="line"><span>归一化常数 Z<sub>t</sub></span><span class="hi">${Z.toFixed(4)}</span></div>
+        <div class="line"><span>错分样本 D₁(i) = ${rawWrong.toFixed(4)} / Z</span><span class="hi">${normWrong.toFixed(4)} ＝ 1/6</span></div>
+        <div class="line"><span>分对样本 D₁(i) = ${rawRight.toFixed(4)} / Z</span><span class="hi">${normRight.toFixed(4)} ＝ 1/10</span></div>
+        <div class="line"><span>关注力度比（错分／分对）</span><span class="hi">${(normWrong/normRight).toFixed(3)} ＝ 5/3</span></div>`;
+    }
+    calcpanel.innerHTML = rows;
+  }
+
+  function draw(weights, maxW){
+    const W = cv.clientWidth, H = cv.clientHeight;
+    const dpr = window.devicePixelRatio || 1;
+    if (cv.width !== W*dpr || cv.height !== H*dpr){
+      cv.width = W*dpr; cv.height = H*dpr;
+    }
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,W,H);
+
+    const padL = 60, padR = 40, padT = 40, padB = 90;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const gap = plotW / N;
+    const barMaxH = plotH;
+
+    // baseline
+    ctx.strokeStyle = 'rgba(18,24,33,.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, padT+plotH);
+    ctx.lineTo(padL+plotW, padT+plotH);
+    ctx.stroke();
+
+    // reference line at uniform weight 1/8
+    const refY = padT + plotH - (w0/maxW)*barMaxH;
+    ctx.strokeStyle = 'rgba(18,24,33,.28)';
+    ctx.setLineDash([4,5]);
+    ctx.beginPath();
+    ctx.moveTo(padL, refY);
+    ctx.lineTo(padL+plotW, refY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(18,24,33,.45)';
+    ctx.font = '13px "Noto Sans SC",sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('初始 1/8', padL+plotW+6 > W-4 ? padL+6 : padL+plotW-56, refY-10);
+
+    const colorWrong = getComputedStyle(document.documentElement).getPropertyValue('--current').trim() || '#D9730D';
+    const colorRight = getComputedStyle(document.documentElement).getPropertyValue('--weak').trim() || '#2F8F82';
+
+    for (let i=0;i<N;i++){
+      const cx = padL + gap*i + gap/2;
+      const isWrong = wrongIdx.includes(i);
+      const barW = Math.min(46, gap*0.56);
+      const h = (weights[i]/maxW) * barMaxH;
+      const y = padT + plotH - h;
+      ctx.fillStyle = isWrong ? colorWrong : colorRight;
+      const rr = 6;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(cx-barW/2, y, barW, h, [rr,rr,0,0]);
+      else ctx.rect(cx-barW/2, y, barW, h);
+      ctx.fill();
+
+      // sample marker (circle) below axis
+      const my = padT + plotH + 26;
+      ctx.beginPath();
+      ctx.arc(cx, my, 13, 0, Math.PI*2);
+      ctx.fillStyle = isWrong ? 'rgba(217,115,13,.12)' : 'rgba(47,143,130,.12)';
+      ctx.fill();
+      ctx.strokeStyle = isWrong ? colorWrong : colorRight;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = isWrong ? colorWrong : colorRight;
+      ctx.font = '700 14px "Noto Sans SC",sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(isWrong ? '×' : '✓', cx, my+1);
+
+      // index number
+      ctx.fillStyle = 'rgba(18,24,33,.55)';
+      ctx.font = '12px "Noto Sans SC",sans-serif';
+      ctx.fillText('#'+(i+1), cx, my+28);
+
+      // weight value on top of bar
+      ctx.fillStyle = 'rgba(18,24,33,.82)';
+      ctx.font = '600 13px "JetBrains Mono","Noto Sans SC",monospace';
+      ctx.fillText(weights[i].toFixed(4), cx, y-12);
+    }
+  }
+
+  function goto(i){
+    cur = Math.max(0, Math.min(steps.length-1, i));
+    render();
+  }
+
+  stepBtns.forEach((b,i)=> b.addEventListener('click', ()=>goto(i)));
+  prevBtn.addEventListener('click', ()=>goto(cur-1));
+  nextBtn.addEventListener('click', ()=>goto(cur+1));
+  resetBtn.addEventListener('click', ()=>goto(0));
+
+  window.addEventListener('resize', render);
+
+  Deck.init({ index:5, total:8 });
+  render();
+}());
+</script>
+</body>
+</html>

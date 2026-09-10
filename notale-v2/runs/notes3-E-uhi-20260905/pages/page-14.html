@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>采样设计、参照区选择与热岛估计偏差</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 页面特定布局与组件微调 */
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      color: var(--text);
+      background: var(--bg);
+      font-family: var(--font-sans);
+      user-select: none;
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.01em;
+    }
+
+    .lead-rule {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主工作台分左右两列 */
+    .workbench {
+      display: flex;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：空间地理与站点布设世界 (880px) */
+    .spatial-panel {
+      flex: 0 0 890px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .map-frame {
+      position: relative;
+      width: 890px;
+      height: 480px;
+      background: #D5E2E6;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(23,40,46,0.12);
+    }
+
+    #spatial-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .station-node {
+      cursor: pointer;
+      transition: transform 0.15s var(--ease);
+    }
+    .station-node:hover circle {
+      stroke-width: 3px;
+    }
+
+    .station-label {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num), var(--font-sans);
+      fill: var(--text);
+      pointer-events: none;
+      font-weight: 600;
+    }
+
+    /* 空间图图例与控制条 */
+    .map-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--surface);
+      padding: 10px 16px;
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .ctrl-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .ctrl-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .btn-toggle {
+      background: transparent;
+      border: 1px solid var(--muted);
+      color: var(--text);
+      font-size: var(--fs-label);
+      padding: 5px 12px;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+    .btn-toggle[aria-pressed="true"] {
+      background: var(--text);
+      color: var(--surface);
+      border-color: var(--text);
+    }
+
+    /* 右侧：测量仪表、偏差推导与因果解构 (574px) */
+    .meter-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: var(--surface);
+      border-radius: 6px;
+      padding: 18px 22px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+
+    .meter-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+
+    .meter-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+    }
+
+    /* 读数对比栏 */
+    .readout-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin-top: 4px;
+    }
+
+    .readout-card {
+      background: var(--surface-strong);
+      padding: 12px 14px;
+      border-radius: 4px;
+      border: 1px solid rgba(23,40,46,0.08);
+    }
+    .readout-card.urban { border-top: 3px solid var(--heat); }
+    .readout-card.ref { border-top: 3px solid var(--cooling); }
+    .readout-card.result { border-top: 3px solid var(--focus); }
+
+    .readout-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .readout-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text);
+    }
+    .readout-unit {
+      font-size: var(--fs-sec);
+      font-weight: 400;
+      color: var(--muted);
+      margin-left: 2px;
+    }
+
+    /* 偏差分析视窗：真实热岛 vs 估算热岛 */
+    .bias-visual {
+      background: #EDF3F5;
+      border-radius: 4px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .delta-bar-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .delta-row {
+      display: flex;
+      align-items: center;
+      font-size: var(--fs-label);
+      gap: 10px;
+    }
+
+    .delta-tag {
+      width: 120px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .delta-track {
+      flex: 1;
+      height: 18px;
+      background: rgba(0,0,0,0.06);
+      border-radius: 9px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .delta-fill {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border-radius: 9px;
+      transition: all 0.3s var(--ease);
+    }
+    .delta-fill.true-val {
+      background: var(--observed);
+    }
+    .delta-fill.est-val {
+      background: var(--heat);
+    }
+
+    .delta-num {
+      width: 60px;
+      text-align: right;
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+    }
+
+    /* 混杂因素归因解构卡片 */
+    .confounder-box {
+      border: 1px dashed var(--muted);
+      border-radius: 4px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: var(--fs-sec);
+      background: rgba(255,255,255,0.4);
+    }
+
+    .confounder-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--focus);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .confounder-desc {
+      color: var(--text);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    .confounder-list {
+      display: flex;
+      gap: 16px;
+      margin-top: 4px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .confounder-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .confounder-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    /* 底部预设场景切片 */
+    .scenario-nav {
+      margin-top: auto;
+      display: flex;
+      gap: 8px;
+      padding-top: 10px;
+      border-top: 1px solid var(--surface-strong);
+    }
+    .scenario-btn {
+      flex: 1;
+      padding: 8px 6px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      border: 1px solid var(--surface-strong);
+      background: var(--surface);
+      color: var(--muted);
+      border-radius: 4px;
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--dur) var(--ease);
+    }
+    .scenario-btn:hover {
+      border-color: var(--muted);
+      color: var(--text);
+    }
+    .scenario-btn[aria-pressed="true"] {
+      background: var(--surface-strong);
+      border-color: var(--focus);
+      color: var(--text);
+      box-shadow: inset 0 0 0 1px var(--focus);
+    }
+  </style>
+</head>
+<body data-page="14" data-total="19">
+  <div id="stage">
+    <!-- 顶部状态栏 -->
+    <header class="top-bar">
+      <h1>热岛强度估计偏差：采样设计与参照区选择</h1>
+      <p class="lead-rule">参照区混入冷谷或水体高估热岛，城区样本漏测绿地高估强度</p>
+    </header>
+
+    <!-- 工作台 -->
+    <main class="workbench">
+      <!-- 左：空间地理与站点布设 -->
+      <section class="spatial-panel">
+        <div class="map-frame" id="map-wrap">
+          <svg id="spatial-svg" viewBox="0 0 890 480" aria-label="城市地表与站点分布图">
+            <defs>
+              <!-- 地形高度与背景渐变 -->
+              <radialGradient id="urban-heat-core" cx="420" cy="240" r="260" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#E8785E" stop-opacity="0.6" />
+                <stop offset="50%" stop-color="#E8A392" stop-opacity="0.35" />
+                <stop offset="100%" stop-color="#D5E2E6" stop-opacity="0" />
+              </radialGradient>
+              <linearGradient id="valley-cold" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#80A8B5" stop-opacity="0.45" />
+                <stop offset="100%" stop-color="#80A8B5" stop-opacity="0.05" />
+              </linearGradient>
+            </defs>
+
+            <!-- 背景地形与基底 -->
+            <rect width="890" height="480" fill="#D5E2E6" />
+
+            <!-- 北侧高海拔山地地形等高轮廓 -->
+            <path d="M 0,0 L 890,0 L 890,80 Q 600,140 400,90 Q 200,60 0,110 Z" fill="#B9CBD0" opacity="0.7" />
+            <text x="30" y="45" fill="#2E444B" font-size="var(--fs-tick)" font-weight="700">北侧山地丘陵（海拔 +320m）</text>
+
+            <!-- 南侧冷空气下沉河谷与水库 -->
+            <path d="M 680,480 C 720,380 770,300 890,260 L 890,480 Z" fill="url(#valley-cold)" />
+            <path d="M 740,480 C 770,400 810,340 890,310 L 890,480 Z" fill="#5F97A6" opacity="0.3" />
+            <text x="730" y="455" fill="#174E60" font-size="var(--fs-tick)" font-weight="700">冷谷/水体湿地</text>
+
+            <!-- 城市主城区热区与边缘 -->
+            <circle cx="420" cy="240" r="260" fill="url(#urban-heat-core)" />
+            <ellipse cx="420" cy="240" rx="210" ry="150" fill="none" stroke="#C63F20" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.4" />
+            <text x="420" y="115" text-anchor="middle" fill="#782312" font-size="var(--fs-tick)" font-weight="700">城市不透水主城区边界</text>
+
+            <!-- 城市内部大型森林公园（绿岛冷源） -->
+            <rect x="235" y="215" width="105" height="85" rx="8" fill="#588C68" opacity="0.35" />
+
+            <!-- 连线层 -->
+            <g id="svg-links"></g>
+
+            <!-- 站点交互图层 -->
+            <g id="svg-stations"></g>
+          </svg>
+        </div>
+
+        <div class="map-controls">
+          <div class="ctrl-group">
+            <span class="ctrl-title" style="color:var(--text)">布设操作</span>
+            <button type="button" class="btn-toggle" id="btn-select-all-urban">全选城区站</button>
+            <button type="button" class="btn-toggle" id="btn-reset-stations">重置基准</button>
+          </div>
+          <div class="ctrl-group">
+            <span class="ctrl-title" style="color:var(--text)">图例</span>
+            <span style="font-size:13px; color:var(--text); font-weight:500">● 橙红: 城区站 &nbsp; ● 蓝青: 参照站 &nbsp; ○ 灰色: 未启用</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右：仪器读数与偏差因果分析 -->
+      <section class="meter-panel">
+        <div class="meter-header">
+          <h2 class="meter-title">热岛强度计算器</h2>
+          <span class="tag" id="status-tag" data-kind="observed">设计合理</span>
+        </div>
+
+        <!-- 读数栏 -->
+        <div class="readout-grid">
+          <div class="readout-card urban">
+            <div class="readout-label">
+              <span>城区均温 T_u</span>
+              <span id="urban-count-badge">3 站</span>
+            </div>
+            <div class="readout-val" id="val-tu">28.2<span class="readout-unit">°C</span></div>
+          </div>
+          <div class="readout-card ref">
+            <div class="readout-label">
+              <span>参照均温 T_r</span>
+              <span id="ref-count-badge">1 站</span>
+            </div>
+            <div class="readout-val" id="val-tr">23.5<span class="readout-unit">°C</span></div>
+          </div>
+          <div class="readout-card result">
+            <div class="readout-label">
+              <span>估算热岛 ΔT_est</span>
+              <span>T_u - T_r</span>
+            </div>
+            <div class="readout-val" id="val-uhi">+4.7<span class="readout-unit">°C</span></div>
+          </div>
+        </div>
+
+        <!-- 偏差横向柱状直观对比 -->
+        <div class="bias-visual">
+          <div class="delta-bar-wrap">
+            <div class="delta-row">
+              <span class="delta-tag">基准真值 ΔT_true</span>
+              <div class="delta-track">
+                <div class="delta-fill true-val" style="left:0; width:50%;"></div>
+              </div>
+              <span class="delta-num" id="val-true-uhi">+2.5°C</span>
+            </div>
+            <div class="delta-row">
+              <span class="delta-tag">当前估计 ΔT_est</span>
+              <div class="delta-track">
+                <div class="delta-fill est-val" id="bar-est-fill" style="left:0; width:64%;"></div>
+              </div>
+              <span class="delta-num" id="val-est-num">+3.2°C</span>
+            </div>
+            <div class="delta-row" style="margin-top:2px;">
+              <span class="delta-tag" style="color:var(--focus)">估计偏差 Bias</span>
+              <div style="flex:1; font-family:var(--font-num); font-size:var(--fs-sec); font-weight:700;" id="bias-display">
+                +0.7°C (过高估计 28%)
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 混杂因素与误差诊断卡片 -->
+        <div class="confounder-box" id="diagnosis-card">
+          <div class="confounder-title">
+            <span id="diag-title">混杂机理解构</span>
+            <span id="diag-level" style="font-family:var(--font-num)">偏差 +0.7°C</span>
+          </div>
+          <p class="confounder-desc" id="diag-text">
+            参照站选在低洼水网冷区，水体蒸发降温混入乡村背景，导致热岛强度被高估。
+          </p>
+          <div class="confounder-list">
+            <div class="confounder-item">
+              <span class="confounder-dot" style="background:var(--heat)"></span>
+              <span id="factor-urban-desc" style="color:var(--text);font-weight:500">城区覆盖: 欠缺公园降温样点</span>
+            </div>
+            <div class="confounder-item">
+              <span class="confounder-dot" style="background:var(--cooling)"></span>
+              <span id="factor-ref-desc" style="color:var(--text);font-weight:500">参照环境: 水体微气候冷效应</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 预设探索情景 -->
+        <div class="scenario-nav" aria-label="典型采样缺陷模拟情景">
+          <button type="button" class="scenario-btn" data-scenario="ideal" aria-pressed="false">
+            规范标准设计<br><span style="font-size:12px;font-weight:400">同海拔平原乡村 + 城区混合</span>
+          </button>
+          <button type="button" class="scenario-btn" data-scenario="cold-valley" aria-pressed="true">
+            低估参照温(冷谷水体)<br><span style="font-size:12px;font-weight:400">背景偏冷导致热岛高估</span>
+          </button>
+          <button type="button" class="scenario-btn" data-scenario="mountain-ref" aria-pressed="false">
+            高海拔参照区<br><span style="font-size:12px;font-weight:400">垂直递减率伪造极端热岛</span>
+          </button>
+          <button type="button" class="scenario-btn" data-scenario="urban-canyon" aria-pressed="false">
+            城区极端密集峡谷<br><span style="font-size:12px;font-weight:400">排除公园绿地样点</span>
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <!-- 讲稿 -->
+    <aside class="notes" hidden>
+      测量热岛强度的核心并非单纯看城区温度有多高，而是看“城乡温差如何被定义”。
+      如果参照站设立在山地，高度引起的垂直气温递减率会伪造出巨大的虚假热岛；如果设立在水网湿地冷谷，局地冷空气湖也会人为拉大温差。
+      反之，如果城区采样全取自狭窄柏油峡谷而忽略城市内部绿地，城区平均气温也会被严重高估。可靠的热岛研究必须对齐站点暴露、地形高度与土地覆盖结构。
+    </aside>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 预定义各站点的环境参数与温度基线 (平原背景基准温: 25.0°C)
+      // 真实全域代表性平原乡村 T_r = 25.0°C; 真实平均全域城区 T_u = 27.5°C => 真实 ΔT_true = 2.5°C
+      const TRUE_UHI = 2.5;
+
+      const STATIONS = [
+        // 城区站点
+        { id: "u1", name: "商业密集中芯", type: "urban", x: 420, y: 200, temp: 28.6, desc: "高密度建筑，通风受阻，沥青下垫面" },
+        { id: "u2", name: "居住街区", type: "urban", x: 530, y: 290, temp: 27.8, desc: "中密度街区，少量行道树" },
+        { id: "u3", name: "城市绿岛公园", type: "urban", x: 285, y: 260, temp: 25.8, desc: "绿地蒸散与遮阴冷岛，明显降温" },
+        { id: "u4", name: "工业物流园区", type: "urban", x: 310, y: 310, temp: 28.2, desc: "大面积厂房屋顶与硬化场地" },
+        { id: "u5", name: "城郊过渡带", type: "urban", x: 230, y: 190, temp: 26.5, desc: "透水与不透水地表镶嵌过渡" },
+
+        // 参照/乡村站点
+        { id: "r1", name: "标准平原农田", type: "ref", x: 130, y: 380, temp: 25.0, desc: "开阔农田草地，与城区同海拔无遮挡（理想参照）" },
+        { id: "r2", name: "北侧山林站", type: "ref", x: 520, y: 55, temp: 22.8, desc: "海拔高320米，垂直递减率使气温自然偏低2.2°C" },
+        { id: "r3", name: "东南湿地冷谷", type: "ref", x: 800, y: 400, temp: 23.5, desc: "临近水网与低洼冷池，夜间冷空气汇聚且水体蒸发强" },
+        { id: "r4", name: "平原林地站", type: "ref", x: 110, y: 250, temp: 24.8, desc: "平原自然次生林，气温接近区域本底" }
+      ];
+
+      // 预设配置方案
+      const SCENARIOS = {
+        "ideal": {
+          urban: ["u1", "u2", "u3", "u4"],
+          ref: ["r1", "r4"],
+          name: "规范标准设计",
+          diag: "城区包含密集区、工业区与公园冷岛；参照站位于同海拔开阔平原，估计偏差极小。"
+        },
+        "cold-valley": {
+          urban: ["u1", "u2"],
+          ref: ["r3"],
+          name: "低估参照温 (湿地冷谷)",
+          diag: "参照站落入夜间冷湖与湿地蒸发区（T_r=23.5°C），显著低估乡村本底，热岛强度被虚增。"
+        },
+        "mountain-ref": {
+          urban: ["u1", "u2", "u4"],
+          ref: ["r2"],
+          name: "高海拔参照区 (山地递减)",
+          diag: "参照站位于海拔+320m山地，纯粹因地形抬升导致温度骤降，虚造出极大幅度伪热岛。"
+        },
+        "urban-canyon": {
+          urban: ["u1", "u4"],
+          ref: ["r1"],
+          name: "城区极端峡谷 (遗漏绿岛)",
+          diag: "城区仅布设于极端高热硬化区，完全遗漏公园冷岛（25.8°C），拉高城区平均估计。"
+        }
+      };
+
+      // 状态
+      let activeUrban = new Set(["u1", "u2"]);
+      let activeRef = new Set(["r3"]);
+      let currentScenario = "cold-valley";
+
+      const svgStationsG = document.getElementById("svg-stations");
+      const svgLinksG = document.getElementById("svg-links");
+
+      function calcStats() {
+        const uList = STATIONS.filter(s => activeUrban.has(s.id));
+        const rList = STATIONS.filter(s => activeRef.has(s.id));
+
+        const tu = uList.length > 0 ? (uList.reduce((acc, s) => acc + s.temp, 0) / uList.length) : 0;
+        const tr = rList.length > 0 ? (rList.reduce((acc, s) => acc + s.temp, 0) / rList.length) : 0;
+        const uhi = (uList.length > 0 && rList.length > 0) ? (tu - tr) : 0;
+        const bias = uhi - TRUE_UHI;
+
+        return { uList, rList, tu, tr, uhi, bias };
+      }
+
+      function updateUI() {
+        const stats = calcStats();
+
+        // 读数更新
+        document.getElementById("urban-count-badge").textContent = `${stats.uList.length} 站`;
+        document.getElementById("ref-count-badge").textContent = `${stats.rList.length} 站`;
+        document.getElementById("val-tu").innerHTML = `${stats.tu.toFixed(1)}<span class="readout-unit">°C</span>`;
+        document.getElementById("val-tr").innerHTML = `${stats.tr.toFixed(1)}<span class="readout-unit">°C</span>`;
+
+        const uhiSign = stats.uhi >= 0 ? "+" : "";
+        document.getElementById("val-uhi").innerHTML = `${uhiSign}${stats.uhi.toFixed(1)}<span class="readout-unit">°C</span>`;
+        document.getElementById("val-est-num").textContent = `${uhiSign}${stats.uhi.toFixed(1)}°C`;
+
+        // 偏差直方图比例 (最大量程 6°C)
+        const barEstFill = document.getElementById("bar-est-fill");
+        const maxScale = 6.0;
+        const fillPct = Math.min(100, Math.max(0, (stats.uhi / maxScale) * 100));
+        barEstFill.style.width = `${fillPct}%`;
+
+        const biasVal = stats.bias;
+        const biasSign = biasVal >= 0 ? "+" : "";
+        const biasPct = ((biasVal / TRUE_UHI) * 100).toFixed(0);
+        const biasDisplay = document.getElementById("bias-display");
+        const diagLevel = document.getElementById("diag-level");
+        const statusTag = document.getElementById("status-tag");
+
+        if (Math.abs(biasVal) <= 0.3) {
+          biasDisplay.textContent = `${biasSign}${biasVal.toFixed(1)}°C (偏差极小，设计合规)`;
+          biasDisplay.style.color = "var(--vegetation)";
+          diagLevel.textContent = "偏差控制良好";
+          diagLevel.style.color = "var(--vegetation)";
+          statusTag.textContent = "设计合规";
+          statusTag.setAttribute("data-kind", "vegetation");
+        } else if (biasVal > 0.3) {
+          biasDisplay.textContent = `${biasSign}${biasVal.toFixed(1)}°C (高估 ${biasPct}%)`;
+          biasDisplay.style.color = "var(--heat)";
+          diagLevel.textContent = `高估偏差 ${biasSign}${biasVal.toFixed(1)}°C`;
+          diagLevel.style.color = "var(--heat)";
+          statusTag.textContent = "显著高估";
+          statusTag.setAttribute("data-kind", "heat");
+        } else {
+          biasDisplay.textContent = `${biasSign}${biasVal.toFixed(1)}°C (低估 ${Math.abs(biasPct)}%)`;
+          biasDisplay.style.color = "var(--cooling)";
+          diagLevel.textContent = `低估偏差 ${biasSign}${biasVal.toFixed(1)}°C`;
+          diagLevel.style.color = "var(--cooling)";
+          statusTag.textContent = "显著低估";
+          statusTag.setAttribute("data-kind", "cooling");
+        }
+
+        // 诊断文本
+        const hasMountain = stats.rList.some(s => s.id === "r2");
+        const hasValley = stats.rList.some(s => s.id === "r3");
+        const hasPark = stats.uList.some(s => s.id === "u3");
+        const urbanText = document.getElementById("factor-urban-desc");
+        const refText = document.getElementById("factor-ref-desc");
+        const diagDesc = document.getElementById("diag-text");
+
+        if (hasPark) {
+          urbanText.textContent = "城区覆盖: 已采样公园绿岛";
+        } else {
+          urbanText.textContent = "城区覆盖: 遗漏公园绿地冷源";
+        }
+
+        if (hasMountain) {
+          refText.textContent = "参照环境: 混入山地海拔垂直递减";
+        } else if (hasValley) {
+          refText.textContent = "参照环境: 混入湿地冷谷低洼冷池";
+        } else {
+          refText.textContent = "参照环境: 同海拔标准平原乡村";
+        }
+
+        if (hasMountain) {
+          diagDesc.textContent = "山地站海拔高320米，垂直气温递减率造成自然降温2.2°C，错误估算时将地形降温归咎为城市热岛。";
+        } else if (hasValley) {
+          diagDesc.textContent = "低洼湿地参照站受夜间冷湖效应与水汽蒸散双重降温影响，乡村基线失真偏低，拉大名义温差。";
+        } else if (!hasPark && stats.uList.length > 0) {
+          diagDesc.textContent = "城区站点完全避开了城市绿地与水系冷岛，样点偏向极端硬化下垫面，城区均温被高估。";
+        } else {
+          diagDesc.textContent = "采样兼顾了城区主要功能区与冷源斑块，参照区排除地形与微气候干扰，估计结果逼近真实热岛。";
+        }
+
+        // 重绘 SVG 站点与连接线
+        renderSVGStations(stats);
+      }
+
+      function renderSVGStations(stats) {
+        svgStationsG.innerHTML = "";
+        svgLinksG.innerHTML = "";
+
+        // 如果城区和乡村都有选中，绘制中心连接虚线表示对比网络
+        if (stats.uList.length > 0 && stats.rList.length > 0) {
+          const avgUx = stats.uList.reduce((acc, s) => acc + s.x, 0) / stats.uList.length;
+          const avgUy = stats.uList.reduce((acc, s) => acc + s.y, 0) / stats.uList.length;
+          const avgRx = stats.rList.reduce((acc, s) => acc + s.x, 0) / stats.rList.length;
+          const avgRy = stats.rList.reduce((acc, s) => acc + s.y, 0) / stats.rList.length;
+
+          const linkLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          linkLine.setAttribute("x1", avgUx);
+          linkLine.setAttribute("y1", avgUy);
+          linkLine.setAttribute("x2", avgRx);
+          linkLine.setAttribute("y2", avgRy);
+          linkLine.setAttribute("stroke", "var(--focus)");
+          linkLine.setAttribute("stroke-width", "2");
+          linkLine.setAttribute("stroke-dasharray", "6 4");
+          linkLine.setAttribute("opacity", "0.7");
+          svgLinksG.appendChild(linkLine);
+        }
+
+        STATIONS.forEach(s => {
+          const isUrban = s.type === "urban";
+          const isSelected = isUrban ? activeUrban.has(s.id) : activeRef.has(s.id);
+
+          const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          g.setAttribute("class", "station-node");
+          g.dataset.id = s.id;
+
+          // 碰撞点击热区
+          const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          hitArea.setAttribute("cx", s.x);
+          hitArea.setAttribute("cy", s.y);
+          hitArea.setAttribute("r", "20");
+          hitArea.setAttribute("fill", "transparent");
+
+          // 主圆圈
+          const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          circle.setAttribute("cx", s.x);
+          circle.setAttribute("cy", s.y);
+          circle.setAttribute("r", isSelected ? "9" : "6");
+
+          if (isSelected) {
+            circle.setAttribute("fill", isUrban ? "var(--heat)" : "var(--cooling)");
+            circle.setAttribute("stroke", "#ffffff");
+            circle.setAttribute("stroke-width", "2.5");
+          } else {
+            circle.setAttribute("fill", "#9CB1B8");
+            circle.setAttribute("stroke", "#475F67");
+            circle.setAttribute("stroke-width", "1.5");
+            circle.setAttribute("opacity", "0.6");
+          }
+
+          // 文字标签
+          const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          text.setAttribute("x", s.x);
+          text.setAttribute("y", s.y - 14);
+          text.setAttribute("text-anchor", "middle");
+          text.setAttribute("class", "station-label");
+          text.textContent = `${s.name} (${s.temp}°C)`;
+
+          text.setAttribute("fill", "var(--text)");
+
+          g.appendChild(hitArea);
+          g.appendChild(circle);
+          g.appendChild(text);
+
+          g.addEventListener("click", () => {
+            toggleStation(s.id, s.type);
+          });
+
+          svgStationsG.appendChild(g);
+        });
+      }
+
+      function toggleStation(id, type) {
+        if (type === "urban") {
+          if (activeUrban.has(id)) {
+            if (activeUrban.size > 1) activeUrban.delete(id);
+          } else {
+            activeUrban.add(id);
+          }
+        } else {
+          if (activeRef.has(id)) {
+            if (activeRef.size > 1) activeRef.delete(id);
+          } else {
+            activeRef.add(id);
+          }
+        }
+        // 清除情景按钮激活态
+        document.querySelectorAll(".scenario-btn").forEach(btn => btn.setAttribute("aria-pressed", "false"));
+        updateUI();
+      }
+
+      function applyScenario(key) {
+        const sc = SCENARIOS[key];
+        if (!sc) return;
+        currentScenario = key;
+        activeUrban = new Set(sc.urban);
+        activeRef = new Set(sc.ref);
+
+        document.querySelectorAll(".scenario-btn").forEach(btn => {
+          btn.setAttribute("aria-pressed", String(btn.dataset.scenario === key));
+        });
+        updateUI();
+      }
+
+      // 事件绑定
+      document.querySelectorAll(".scenario-btn").forEach(btn => {
+        btn.addEventListener("click", () => applyScenario(btn.dataset.scenario));
+      });
+
+      document.getElementById("btn-select-all-urban").addEventListener("click", () => {
+        STATIONS.filter(s => s.type === "urban").forEach(s => activeUrban.add(s.id));
+        document.querySelectorAll(".scenario-btn").forEach(btn => btn.setAttribute("aria-pressed", "false"));
+        updateUI();
+      });
+
+      document.getElementById("btn-reset-stations").addEventListener("click", () => {
+        applyScenario("ideal");
+      });
+
+      // 初始化
+      applyScenario("cold-valley");
+      Deck.init({ index: 14, total: 19, keys: false });
+    })();
+  </script>
+</body>
+</html>

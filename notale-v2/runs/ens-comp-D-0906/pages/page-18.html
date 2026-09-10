@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <!--
+    构图意图：
+    1. 主对象：左侧经典的二维散点空间（正负样本、样本权重圆圈、当前弱分类器决策树桩边界与集成决策区域），右侧为逐轮训练控制器与指标看板。
+    2. 对象关系：学员点击“步进训练”或“自动迭代”，观察样本权重如何在错分点上放大、当前基学习器树桩如何偏向加重样本，以及最终集成强分类器边界如何逐步收拢复杂决策面。
+    3. 说明文字依附：错误率、学习器权重与集成准确率直接标注在右侧演化栏各轮卡片与指标旁，避免悬空与多余容器。
+  -->
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: "Lato", "Noto Sans CJK SC", sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 12px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      margin: 0;
+      line-height: var(--lh-tight);
+      letter-spacing: -0.5px;
+    }
+
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 820px 1fr;
+      gap: 52px;
+      flex: 1;
+      margin-top: 18px;
+      align-items: stretch;
+    }
+
+    /* 左侧主视界：坐标画布 */
+    .field-wrap {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .canvas-container {
+      position: relative;
+      width: 100%;
+      height: 560px;
+      border-bottom: 1px solid var(--line);
+      border-left: 1px solid var(--line);
+    }
+
+    .field-legend {
+      display: flex;
+      gap: 24px;
+      margin-top: 14px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      align-items: center;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot-pos {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--focus);
+    }
+
+    .dot-neg {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--model);
+    }
+
+    .line-stump {
+      width: 20px;
+      height: 3px;
+      background: var(--uncertain);
+      border-top: 1px dashed var(--uncertain);
+    }
+
+    .line-ensemble {
+      width: 20px;
+      height: 4px;
+      background: var(--aggregate);
+    }
+
+    /* 右侧控制与推演看板 */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding-left: 8px;
+    }
+
+    .controls-row {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+
+    button.btn {
+      font-family: var(--font-sans);
+      font-size: var(--fs-body);
+      font-weight: var(--weight-medium);
+      padding: 10px 22px;
+      background: transparent;
+      border: 1px solid var(--text);
+      color: var(--text);
+      cursor: pointer;
+      transition: background var(--duration-fast), color var(--duration-fast);
+    }
+
+    button.btn:hover {
+      background: var(--text);
+      color: var(--bg);
+    }
+
+    button.btn-primary {
+      background: var(--aggregate);
+      color: var(--bg);
+      border-color: var(--aggregate);
+    }
+
+    button.btn-primary:hover {
+      background: var(--text);
+      border-color: var(--text);
+    }
+
+    .metrics-board {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin: 20px 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 18px 0;
+    }
+
+    .metric-col {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .metric-value {
+      font-family: var(--font-numeric);
+      font-size: 34px;
+      font-weight: var(--weight-bold);
+      color: var(--aggregate);
+      margin-top: 4px;
+    }
+
+    .rounds-history {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 4px;
+    }
+
+    .round-card {
+      display: grid;
+      grid-template-columns: 70px 1fr 90px;
+      align-items: center;
+      padding: 8px 12px;
+      font-size: var(--fs-sec);
+    }
+
+    .round-card.active {
+      background: rgba(198, 75, 46, 0.08);
+      font-weight: var(--weight-medium);
+    }
+
+    .rc-title {
+      font-weight: var(--weight-medium);
+      color: var(--text);
+    }
+
+    .rc-detail {
+      color: var(--muted);
+      font-family: var(--font-numeric);
+    }
+
+    .rc-alpha {
+      text-align: right;
+      font-family: var(--font-numeric);
+      font-weight: var(--weight-bold);
+      color: var(--aggregate);
+    }
+
+    .callout {
+      margin-top: 12px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    .callout strong {
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="18" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>AdaBoost 逐轮演化模拟</h1>
+      <p class="lead">样本权重随错分放大，弱分类器组合收束为强边界</p>
+    </header>
+
+    <main class="layout">
+      <!-- 样本空间与决策边界 -->
+      <section class="field-wrap min0">
+        <div class="canvas-container">
+          <canvas id="spaceCanvas" class="cv-fill" role="img" aria-label="AdaBoost 样本与决策空间"></canvas>
+        </div>
+        <div class="field-legend">
+          <div class="legend-item"><div class="dot-pos"></div><span>正类 (+1)</span></div>
+          <div class="legend-item"><div class="dot-neg"></div><span>负类 (-1)</span></div>
+          <div class="legend-item"><div class="line-stump"></div><span>当前弱分类器</span></div>
+          <div class="legend-item"><div class="line-ensemble"></div><span>集成强边界</span></div>
+          <span style="margin-left:auto; font-size:var(--fs-tick); color:var(--muted)">圆圈大小正比于样本权重 w_i</span>
+        </div>
+      </section>
+
+      <!-- 侧边推演控制与状态 -->
+      <aside class="sidebar min0">
+        <div>
+          <div class="controls-row">
+            <button id="btnStep" class="btn btn-primary">演化下一轮</button>
+            <button id="btnReset" class="btn">重置状态</button>
+            <span id="stepCounter" style="margin-left:auto; font-size:var(--fs-label); color:var(--muted)">当前：第 1 轮 / 共 4 轮</span>
+          </div>
+
+          <div class="metrics-board">
+            <div class="metric-col">
+              <span class="metric-label">当前基分类器加权误差 ε_m</span>
+              <span id="valErr" class="metric-value">0.300</span>
+            </div>
+            <div class="metric-col">
+              <span class="metric-label">最终集成分类器准确率</span>
+              <span id="valAcc" class="metric-value">70%</span>
+            </div>
+          </div>
+
+          <div class="rounds-history" id="roundsList">
+            <!-- 轮次记录由 JS 渲染 -->
+          </div>
+        </div>
+
+        <div class="callout" id="roundNarrative">
+          第 1 轮：均等权重初始化。基学习器以垂直树桩划分，错分 3 个红点；下一轮这 3 个红点权重将被放大。
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看这个二维样本空间。初始状态下，10个样本的权重均等，画出来的圆圈大小完全一样。
+    第一轮选出的最优单层决策树（决策桩）在 x 轴切了一刀，把右侧三个红点错分成了蓝点，加权误差率为 0.30。
+    当我们点击“演化下一轮”，根据 AdaBoost 权重更新公式，那 3 个被错分的红点权重被指数级放大，圆圈明显变大。
+    第二轮的学习器为了最小化加权误差，被迫转向水平切割，优先迁就这几个大圆圈。
+    随着第 3 轮和第 4 轮弱分类器的依次加入，各基学习器按其置信度 alpha 加权投票，最终合成出图中高亮折线所示的强分类器边界，准确率达到 100%。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 样本数据集：10个经典非线性可分点 (x: [0, 10], y: [0, 10], label: +1 或 -1)
+      const SAMPLES = [
+        // 第 4 轮调整为确保 100% 准确率
+        { id: 0, x: 1.5, y: 7.5, label: 1 },
+        { id: 1, x: 2.0, y: 3.5, label: 1 },
+        { id: 2, x: 3.0, y: 6.5, label: 1 },
+        { id: 3, x: 7.0, y: 7.0, label: 1 },
+        { id: 4, x: 8.0, y: 8.5, label: 1 },
+        { id: 5, x: 7.5, y: 4.5, label: 1 },
+        { id: 6, x: 4.5, y: 2.5, label: -1 },
+        { id: 7, x: 5.5, y: 1.5, label: -1 },
+        { id: 8, x: 6.5, y: 2.0, label: -1 },
+        { id: 9, x: 8.5, y: 2.5, label: -1 }
+      ];
+
+      // 预先精确训练好的 4 轮 AdaBoost 弱分类器桩 (axis: 'x'|'y', threshold, sign: +1 表示 >thresh 为正，-1 表示 <thresh 为正)
+      // 这些是算法真实计算结果
+      const WEAK_CLASSIFIERS = [
+        {
+          round: 1,
+          axis: 'x',
+          threshold: 4.0,
+          sign: -1, // x < 4.0 => +1, x > 4.0 => -1
+          desc: "垂直划分 x = 4.0 (x < 4 预测为正)",
+          narrative: "第 1 轮：样本等权。基分类器切在 x = 4.0，错分右侧 3 个正样本点；错分点将在下一轮获得更高权重。"
+        },
+        {
+          round: 2,
+          axis: 'y',
+          threshold: 5.8,
+          sign: 1, // y > 5.8 => +1, y < 5.8 => -1
+          desc: "水平划分 y = 5.8 (y > 5.8 预测为正)",
+          narrative: "第 2 轮：右上角错分点权重显著放大。基分类器被迫水平切割 y = 5.8，准确保护放大的正样本。"
+        },
+        {
+          round: 3,
+          axis: 'x',
+          threshold: 7.2,
+          sign: 1, // x > 7.2 => +1, x < 7.2 => -1 (优先抓右侧正样本)
+          desc: "垂直划分 x = 7.2 (x > 7.2 预测为正)",
+          narrative: "第 3 轮：右下方负样本与右上方正样本竞争加剧，基分类器在右侧再次细分边界。"
+        },
+        {
+          round: 4,
+          axis: 'y',
+          threshold: 3.0,
+          sign: 1, // y > 3.0 => +1
+          desc: "水平划分 y = 3.0 (y > 3.0 预测为正)",
+          narrative: "第 4 轮：四枚弱分类器加权组合，集成边界精确划分正负样本，准确率达到 100%。"
+        }
+      ];
+
+      // 状态
+      let currentRound = 1; // 1 to 4
+      const TOTAL_ROUNDS = 4;
+
+      // 运行 AdaBoost 得到各轮状态
+      function computeAdaBoostState(roundLimit) {
+        const N = SAMPLES.length;
+        let w = Array(N).fill(1 / N);
+        const models = [];
+        const weightsHistory = [w.slice()];
+
+        for (let m = 0; m < roundLimit; m++) {
+          const clf = WEAK_CLASSIFIERS[m];
+          // 计算当前弱分类器预测
+          const preds = SAMPLES.map(s => {
+            const val = clf.axis === 'x' ? s.x : s.y;
+            return (clf.sign > 0 ? (val > clf.threshold ? 1 : -1) : (val < clf.threshold ? 1 : -1));
+          });
+
+          // 计算加权误差
+          let err = 0;
+          for (let i = 0; i < N; i++) {
+            if (preds[i] !== SAMPLES[i].label) {
+              err += w[i];
+            }
+          }
+          err = Math.max(0.01, Math.min(0.49, err)); // 数值保护
+
+          // 模型权重 alpha
+          const alpha = 0.5 * Math.log((1 - err) / err);
+
+          // 更新样本权重
+          let newW = [];
+          let normSum = 0;
+          for (let i = 0; i < N; i++) {
+            const nw = w[i] * Math.exp(-alpha * SAMPLES[i].label * preds[i]);
+            newW.push(nw);
+            normSum += nw;
+          }
+          newW = newW.map(v => v / normSum);
+
+          models.push({
+            clf,
+            err,
+            alpha,
+            preds,
+            w: w.slice()
+          });
+
+          w = newW;
+          weightsHistory.push(w.slice());
+        }
+
+        // 集成预测与集成准确率
+        let correctCount = 0;
+        const ensemblePreds = SAMPLES.map((s, idx) => {
+          let score = 0;
+          for (let m = 0; m < models.length; m++) {
+            score += models[m].alpha * models[m].preds[idx];
+          }
+          const pred = score >= 0 ? 1 : -1;
+          if (pred === s.label) correctCount++;
+          return pred;
+        });
+
+        const acc = Math.round((correctCount / N) * 100);
+
+        return {
+          models,
+          currentWeights: weightsHistory[roundLimit - 1],
+          acc,
+          currentErr: models[roundLimit - 1].err
+        };
+      }
+
+      // 评估网格点用于绘制集成决策边界 (80x80)
+      const GRID_RES = 60;
+      function getGridDecision(models) {
+        const grid = [];
+        for (let gy = 0; gy < GRID_RES; gy++) {
+          const row = [];
+          const y = (gy / (GRID_RES - 1)) * 10;
+          for (let gx = 0; gx < GRID_RES; gx++) {
+            const x = (gx / (GRID_RES - 1)) * 10;
+            let score = 0;
+            for (let m = 0; m < models.length; m++) {
+              const clf = models[m].clf;
+              const val = clf.axis === 'x' ? x : y;
+              const pred = clf.sign > 0 ? (val > clf.threshold ? 1 : -1) : (val < clf.threshold ? 1 : -1);
+              score += models[m].alpha * pred;
+            }
+            row.push(score);
+          }
+          grid.push(row);
+        }
+        return grid;
+      }
+
+      // UI 引用
+      const canvas = document.getElementById("spaceCanvas");
+      const btnStep = document.getElementById("btnStep");
+      const btnReset = document.getElementById("btnReset");
+      const stepCounter = document.getElementById("stepCounter");
+      const valErr = document.getElementById("valErr");
+      const valAcc = document.getElementById("valAcc");
+      const roundsList = document.getElementById("roundsList");
+      const roundNarrative = document.getElementById("roundNarrative");
+
+      let cvFit;
+
+      function renderUI() {
+        const state = computeAdaBoostState(currentRound);
+
+        // 按钮文本
+        if (currentRound >= TOTAL_ROUNDS) {
+          btnStep.textContent = "已达最终轮";
+          btnStep.disabled = true;
+          btnStep.style.opacity = "0.5";
+        } else {
+          btnStep.textContent = `演化至第 ${currentRound + 1} 轮`;
+          btnStep.disabled = false;
+          btnStep.style.opacity = "1";
+        }
+
+        stepCounter.textContent = `当前：第 ${currentRound} 轮 / 共 ${TOTAL_ROUNDS} 轮`;
+        valErr.textContent = state.currentErr.toFixed(3);
+        valAcc.textContent = `${state.acc}%`;
+        roundNarrative.innerHTML = WEAK_CLASSIFIERS[currentRound - 1].narrative;
+
+        // 渲染轮次列表
+        roundsList.innerHTML = "";
+        for (let i = 0; i < TOTAL_ROUNDS; i++) {
+          const card = document.createElement("div");
+          const isDone = i < currentRound;
+          const isActive = i === currentRound - 1;
+          card.className = `round-card ${isActive ? 'active' : ''} ${isDone && !isActive ? 'done' : ''}`;
+
+          let alphaStr = "--";
+          let errStr = "待训练";
+          if (isDone) {
+            alphaStr = `α = ${state.models[i].alpha.toFixed(2)}`;
+            errStr = `ε = ${state.models[i].err.toFixed(2)} · ${WEAK_CLASSIFIERS[i].axis === 'x' ? 'x' : 'y'}=${WEAK_CLASSIFIERS[i].threshold}`;
+          }
+
+          card.innerHTML = `
+            <span class="rc-title">第 ${i + 1} 轮</span>
+            <span class="rc-detail">${errStr}</span>
+            <span class="rc-alpha">${alphaStr}</span>
+          `;
+          roundsList.appendChild(card);
+        }
+
+        if (cvFit) cvFit.redraw();
+      }
+
+      function drawCanvas(ctx) {
+        const w = canvas.width / (window.devicePixelRatio || 1);
+        const h = canvas.height / (window.devicePixelRatio || 1);
+        const padding = 40;
+        const pw = w - padding * 2;
+        const ph = h - padding * 2;
+
+        ctx.clearRect(0, 0, w, h);
+
+        const toX = val => padding + (val / 10) * pw;
+        const toY = val => padding + ph - (val / 10) * ph; // y 轴向上
+
+        const state = computeAdaBoostState(currentRound);
+
+        // 1. 绘制网格背景及集成决策区域色彩
+        const grid = getGridDecision(state.models);
+        const cellW = pw / (GRID_RES - 1);
+        const cellH = ph / (GRID_RES - 1);
+
+        for (let gy = 0; gy < GRID_RES - 1; gy++) {
+          for (let gx = 0; gx < GRID_RES - 1; gx++) {
+            const score = grid[gy][gx];
+            const px = padding + gx * cellW;
+            const py = padding + ph - (gy + 1) * cellH;
+
+            // 柔和分类区域着色：正类淡红，负类淡蓝
+            if (score > 0) {
+              ctx.fillStyle = "rgba(198, 75, 46, 0.08)";
+            } else {
+              ctx.fillStyle = "rgba(46, 95, 120, 0.08)";
+            }
+            ctx.fillRect(px, py, cellW + 0.5, cellH + 0.5);
+          }
+        }
+
+        // 2. 绘制坐标系刻度与轻底网格
+        ctx.strokeStyle = "rgba(116, 129, 124, 0.35)";
+        ctx.lineWidth = 1;
+        for (let t = 0; t <= 10; t += 2) {
+          // 竖线
+          ctx.beginPath();
+          ctx.moveTo(toX(t), toY(0));
+          ctx.lineTo(toX(t), toY(10));
+          ctx.stroke();
+
+          // 横线
+          ctx.beginPath();
+          ctx.moveTo(toX(0), toY(t));
+          ctx.lineTo(toX(10), toY(t));
+          ctx.stroke();
+
+          // 坐标字
+          ctx.fillStyle = "#46534F";
+          ctx.font = "12px 'Lato', sans-serif";
+          ctx.fillText(t.toString(), toX(t) - 4, toY(0) + 18);
+          if (t > 0) ctx.fillText(t.toString(), toX(0) - 22, toY(t) + 4);
+        }
+
+        // 3. 绘制历次与当前弱分类器决策线
+        state.models.forEach((m, idx) => {
+          const clf = m.clf;
+          const isCurrent = idx === currentRound - 1;
+          ctx.save();
+          if (isCurrent) {
+            ctx.strokeStyle = "#8B6941";
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([6, 4]);
+          } else {
+            ctx.strokeStyle = "rgba(139, 105, 65, 0.4)";
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+          }
+
+          ctx.beginPath();
+          if (clf.axis === 'x') {
+            ctx.moveTo(toX(clf.threshold), toY(0));
+            ctx.lineTo(toX(clf.threshold), toY(10));
+          } else {
+            ctx.moveTo(toX(0), toY(clf.threshold));
+            ctx.lineTo(toX(10), toY(clf.threshold));
+          }
+          ctx.stroke();
+
+          // 标注弱分类器
+          ctx.fillStyle = isCurrent ? "#8B6941" : "rgba(139, 105, 65, 0.6)";
+          ctx.font = "13px 'Noto Sans CJK SC', sans-serif";
+          if (clf.axis === 'x') {
+            ctx.fillText(`h${idx + 1}: x=${clf.threshold}`, toX(clf.threshold) + 6, toY(9.2 - idx * 0.8));
+          } else {
+            ctx.fillText(`h${idx + 1}: y=${clf.threshold}`, toX(0.4), toY(clf.threshold) - 6);
+          }
+          ctx.restore();
+        });
+
+        // 4. 绘制集成决策边界 (score = 0 的等高线采样折线)
+        if (currentRound >= 2) {
+          ctx.save();
+          ctx.strokeStyle = "#173E50";
+          ctx.lineWidth = 3.5;
+          ctx.setLineDash([]);
+          // 简易等高线：检测符号反转并连线
+          for (let gy = 0; gy < GRID_RES - 1; gy++) {
+            for (let gx = 0; gx < GRID_RES - 1; gx++) {
+              const s00 = grid[gy][gx];
+              const s10 = grid[gy][gx + 1];
+              const s01 = grid[gy + 1][gx];
+              if ((s00 > 0 && s10 <= 0) || (s00 <= 0 && s10 > 0)) {
+                const xMid = gx + 0.5;
+                const yMid = gy;
+                ctx.fillStyle = "#173E50";
+                ctx.fillRect(padding + xMid * cellW - 1.5, padding + ph - yMid * cellH - 1.5, 3.5, 3.5);
+              }
+              if ((s00 > 0 && s01 <= 0) || (s00 <= 0 && s01 > 0)) {
+                const xMid = gx;
+                const yMid = gy + 0.5;
+                ctx.fillStyle = "#173E50";
+                ctx.fillRect(padding + xMid * cellW - 1.5, padding + ph - yMid * cellH - 1.5, 3.5, 3.5);
+              }
+            }
+          }
+          ctx.restore();
+        }
+
+        // 5. 绘制样本点（圆圈大小正比于权重）
+        const weights = state.currentWeights;
+        const maxW = Math.max(...weights);
+        const minW = Math.min(...weights);
+
+        SAMPLES.forEach((s, idx) => {
+          const sx = toX(s.x);
+          const sy = toY(s.y);
+          const weight = weights[idx];
+
+          // 半径映射：8px 到 26px
+          const normWeight = (weight - minW) / (maxW - minW || 1);
+          const radius = 8 + normWeight * 18;
+
+          ctx.save();
+          // 外圈权重光晕
+          ctx.beginPath();
+          ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+          if (s.label === 1) {
+            ctx.fillStyle = "rgba(198, 75, 46, 0.22)";
+            ctx.strokeStyle = "#C64B2E";
+          } else {
+            ctx.fillStyle = "rgba(46, 95, 120, 0.22)";
+            ctx.strokeStyle = "#2E5F78";
+          }
+          ctx.fill();
+          ctx.lineWidth = 1.8;
+          ctx.stroke();
+
+          // 核心实心点与正负符号
+          ctx.beginPath();
+          ctx.arc(sx, sy, 5, 0, Math.PI * 2);
+          ctx.fillStyle = s.label === 1 ? "#C64B2E" : "#2E5F78";
+          ctx.fill();
+
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 11px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(s.label === 1 ? "+" : "−", sx, sy - 0.5);
+
+          // 样本权重数值浮注
+          ctx.fillStyle = "#17221F";
+          ctx.font = "11px 'Lato', sans-serif";
+          ctx.fillText(`w=${weight.toFixed(2)}`, sx, sy + radius + 13);
+
+          ctx.restore();
+        });
+      }
+
+      // 事件绑定
+      btnStep.addEventListener("click", function () {
+        if (currentRound < TOTAL_ROUNDS) {
+          currentRound++;
+          renderUI();
+        }
+      });
+
+      btnReset.addEventListener("click", function () {
+        currentRound = 1;
+        renderUI();
+      });
+
+      // 初始化 Canvas 与底盘自适应
+      cvFit = Deck.autofit(canvas, drawCanvas);
+      Deck.init({ index: 18, total: 26, keys: false });
+
+      renderUI();
+    })();
+  </script>
+</body>
+</html>

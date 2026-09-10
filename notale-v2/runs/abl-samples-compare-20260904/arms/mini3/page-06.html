@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bagging 与随机森林</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      overflow: hidden;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* Generative Canvas behind */
+    #forest-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* Forefront composition */
+    .title-region {
+      position: relative;
+      z-index: 5;
+      max-width: 660px;
+      margin-top: 54px;
+    }
+
+    .chapter-tag {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--model);
+      margin-bottom: 18px;
+    }
+
+    h1.hero-title {
+      font-size: 56px;
+      line-height: 1.12;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      margin: 0 0 20px 0;
+    }
+
+    .hero-lead {
+      font-size: var(--fs-lead);
+      line-height: 1.55;
+      color: var(--muted);
+      max-width: 580px;
+      margin: 0 0 36px 0;
+    }
+
+    /* Chapter overview card list */
+    .chapter-nav-preview {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-width: 560px;
+    }
+
+    .nav-step {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(83, 106, 120, 0.12);
+      border-radius: 6px;
+      backdrop-filter: blur(4px);
+    }
+
+    .step-idx {
+      font-family: var(--font-num);
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      color: var(--model);
+      letter-spacing: 0.05em;
+      flex-shrink: 0;
+    }
+
+    .step-text {
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+      color: var(--text);
+    }
+
+    /* Concept signature / bottom bar */
+    .bottom-status {
+      position: relative;
+      z-index: 5;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+
+    .concept-pillars {
+      display: flex;
+      gap: 32px;
+    }
+
+    .pillar-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .pillar-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-num);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .pillar-val {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .pillar-val.sample-col {
+      color: var(--sample);
+    }
+    .pillar-val.model-col {
+      color: var(--model);
+    }
+    .pillar-val.agg-col {
+      color: var(--aggregate);
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 18px;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid rgba(18, 38, 52, 0.12);
+      border-radius: 6px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      backdrop-filter: blur(8px);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="06" data-total="27">
+  <div id="stage">
+    <canvas id="forest-canvas" class="cv-fill"></canvas>
+
+    <div class="title-region">
+      <div class="chapter-tag">CHAPTER 02 · PARALLEL ENSEMBLE</div>
+      <h1 class="hero-title">Bagging 与<br>随机森林</h1>
+      <p class="hero-lead">
+        通过自主重采样训练多棵各异的决策树，再让每棵树在随机特征子空间中生长。并行分散波动，平均削减方差。
+      </p>
+
+      <div class="chapter-nav-preview">
+        <div class="nav-step">
+          <span class="step-idx">P07–P09</span>
+          <span class="step-text">Bootstrap 有放回抽样机理、方差削减上限与袋外（OOB）无偏泛化评估</span>
+        </div>
+        <div class="nav-step">
+          <span class="step-idx">P10–P12</span>
+          <span class="step-text">随机子空间特征扰动机制、多样性仿真实验与集成重要性诊断代码</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottom-status">
+      <div class="concept-pillars">
+        <div class="pillar-item">
+          <span class="pillar-label">Principle 01</span>
+          <span class="pillar-val sample-col">Bootstrap 重采样</span>
+        </div>
+        <div class="pillar-item">
+          <span class="pillar-label">Principle 02</span>
+          <span class="pillar-val model-col">随机子空间投影</span>
+        </div>
+        <div class="pillar-item">
+          <span class="pillar-label">Convergence</span>
+          <span class="pillar-val agg-col">多数表决与平滑方差</span>
+        </div>
+      </div>
+
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        <span>B = 9 组基树正在多通道并行生长</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("forest-canvas");
+      let ctx;
+      const SEED = 20260904;
+      const rng = new Math.seedrandom(SEED);
+
+      // We will generate a structured forest visualization on the right side:
+      // Bootstrapped data source seeds -> parallel decision trees branching upward/outward -> converging onto an ensemble decision curve/boundary
+      const W = 1600;
+      const H = 900;
+
+      // Safe bounds: avoid title region (x: 56 to 700, y: 50 to 520)
+      function drawBackgroundGrid(context) {
+        // Technical coordinate accents
+        context.strokeStyle = "rgba(83, 106, 120, 0.08)";
+        context.lineWidth = 1;
+        for (let x = 700; x < W; x += 90) {
+          context.beginPath();
+          context.moveTo(x, 40);
+          context.lineTo(x, H - 40);
+          context.stroke();
+        }
+        for (let y = 60; y < H - 60; y += 90) {
+          context.beginPath();
+          context.moveTo(680, y);
+          context.lineTo(W - 40, y);
+          context.stroke();
+        }
+      }
+
+      // Generate deterministic trees
+      function buildTrees() {
+        const trees = [];
+        const treeCount = 9; // 9 prominent archetypal trees spanning the right hemisphere
+        const startXRange = [780, 1480];
+        const baseY = 730;
+
+        for (let i = 0; i < treeCount; i++) {
+          const t = i / (treeCount - 1);
+          const rootX = startXRange[0] + (startXRange[1] - startXRange[0]) * t + (rng() - 0.5) * 40;
+          const rootY = baseY - (rng() * 30);
+          
+          // Generate binary tree branching nodes
+          const nodes = [];
+          const links = [];
+
+          function addBranch(x, y, depth, maxDepth, angle, length, branchId) {
+            const nodeId = nodes.length;
+            nodes.push({ id: nodeId, x, y, depth, isLeaf: depth === maxDepth });
+
+            if (depth < maxDepth) {
+              const leftAngle = angle - (0.28 + rng() * 0.15);
+              const rightAngle = angle + (0.28 + rng() * 0.15);
+              const nextLen = length * (0.68 + rng() * 0.14);
+
+              const leftX = x + Math.sin(leftAngle) * nextLen;
+              const leftY = y - Math.cos(leftAngle) * nextLen;
+              const rightX = x + Math.sin(rightAngle) * nextLen;
+              const rightY = y - Math.cos(rightAngle) * nextLen;
+
+              const leftChildId = nodes.length;
+              addBranch(leftX, leftY, depth + 1, maxDepth, leftAngle, nextLen, branchId * 2);
+              links.push({ from: nodeId, to: leftChildId, depth });
+
+              const rightChildId = nodes.length;
+              addBranch(rightX, rightY, depth + 1, maxDepth, rightAngle, nextLen, branchId * 2 + 1);
+              links.push({ from: nodeId, to: rightChildId, depth });
+            }
+          }
+
+          const depth = 4 + Math.floor(rng() * 2); // 4 or 5 levels
+          const initialLength = 95 + rng() * 35;
+          addBranch(rootX, rootY, 0, depth, (rng() - 0.5) * 0.2, initialLength, 1);
+
+          trees.push({
+            id: i,
+            rootX,
+            rootY,
+            nodes,
+            links,
+            colorAlpha: 0.35 + rng() * 0.35
+          });
+        }
+        return trees;
+      }
+
+      // Generate bootstrap sample source dots in the tray below
+      function buildBootstrapPool() {
+        const points = [];
+        const count = 120;
+        for (let i = 0; i < count; i++) {
+          const x = 740 + rng() * 760;
+          const y = 740 + rng() * 90;
+          points.push({
+            x,
+            y,
+            r: 2.5 + rng() * 2.5,
+            class: rng() > 0.45 ? 1 : 0
+          });
+        }
+        return points;
+      }
+
+      // Ensemble decision boundary points converging at top
+      function buildEnsembleBoundary() {
+        const curve = [];
+        const step = 20;
+        for (let x = 720; x <= 1520; x += step) {
+          const normX = (x - 720) / 800;
+          // smooth ensemble curve with subtle sinusoidal inflection
+          const y = 160 + Math.sin(normX * Math.PI * 2.2) * 45 + Math.cos(normX * Math.PI * 4) * 15;
+          curve.push({ x, y });
+        }
+        return curve;
+      }
+
+      const forest = buildTrees();
+      const samples = buildBootstrapPool();
+      const boundary = buildEnsembleBoundary();
+
+      function draw(context) {
+        context.clearRect(0, 0, W, H);
+        drawBackgroundGrid(context);
+
+        // 1. Draw Bootstrap sample reservoir
+        const sampleColor = Deck.rgb("sample");
+        const modelColor = Deck.rgb("model");
+        const aggColor = Deck.rgb("aggregate");
+
+        // Reservoir boundary label & subtle base shelf
+        context.fillStyle = "rgba(47, 117, 104, 0.08)";
+        context.fillRect(720, 720, 800, 115);
+        context.strokeStyle = "rgba(47, 117, 104, 0.25)";
+        context.lineWidth = 1;
+        context.strokeRect(720, 720, 800, 115);
+
+        context.fillStyle = "rgba(47, 117, 104, 0.7)";
+        context.font = "600 13px system-ui, sans-serif";
+        context.fillText("BOOTSTRAP RESAMPLING RESERVOIR (D* ~ N)", 736, 742);
+
+        samples.forEach(pt => {
+          context.beginPath();
+          context.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2);
+          if (pt.class === 1) {
+            context.fillStyle = "rgba(39, 100, 143, 0.65)";
+          } else {
+            context.fillStyle = "rgba(47, 117, 104, 0.75)";
+          }
+          context.fill();
+        });
+
+        // 2. Draw Trees
+        forest.forEach(tree => {
+          // Draw links
+          tree.links.forEach(link => {
+            const p1 = tree.nodes[link.from];
+            const p2 = tree.nodes[link.to];
+            const branchAlpha = Math.max(0.2, 0.65 - link.depth * 0.1);
+
+            context.beginPath();
+            context.moveTo(p1.x, p1.y);
+            context.lineTo(p2.x, p2.y);
+            context.strokeStyle = `rgba(${modelColor.join(",")}, ${branchAlpha})`;
+            context.lineWidth = Math.max(1.2, 3.8 - link.depth * 0.65);
+            context.lineCap = "round";
+            context.stroke();
+          });
+
+          // Draw nodes
+          tree.nodes.forEach(node => {
+            context.beginPath();
+            context.arc(node.x, node.y, node.isLeaf ? 2.8 : 3.8, 0, Math.PI * 2);
+            if (node.isLeaf) {
+              // leaf color: classification votes
+              context.fillStyle = (node.id % 2 === 0) ? "rgba(195, 75, 34, 0.7)" : "rgba(39, 100, 143, 0.85)";
+            } else {
+              context.fillStyle = "rgba(255, 255, 255, 0.95)";
+              context.strokeStyle = `rgba(${modelColor.join(",")}, 0.9)`;
+              context.lineWidth = 1.6;
+              context.stroke();
+            }
+            context.fill();
+          });
+
+          // Draw projection line from tree leaves toward ensemble aggregation boundary
+          const topLeaves = tree.nodes.filter(n => n.isLeaf && n.depth >= 3);
+          topLeaves.forEach((leaf, idx) => {
+            if (idx % 2 === 0) {
+              context.beginPath();
+              context.setLineDash([2, 4]);
+              context.moveTo(leaf.x, leaf.y);
+              context.lineTo(leaf.x, 220 + (idx % 3) * 15);
+              context.strokeStyle = "rgba(83, 106, 120, 0.22)";
+              context.lineWidth = 1;
+              context.stroke();
+              context.setLineDash([]);
+            }
+          });
+        });
+
+        // 3. Draw Aggregation Ensemble Decision Boundary at the upper section
+        // Draw individual tree prediction faint curves first
+        forest.forEach((tree, idx) => {
+          context.beginPath();
+          for (let x = 720; x <= 1520; x += 30) {
+            const normX = (x - 720) / 800;
+            const noiseOffset = Math.sin(normX * Math.PI * (2 + idx * 0.5) + idx) * (18 + idx * 4);
+            const y = 175 + Math.sin(normX * Math.PI * 2.2) * 42 + noiseOffset;
+            if (x === 720) context.moveTo(x, y);
+            else context.lineTo(x, y);
+          }
+          context.strokeStyle = "rgba(39, 100, 143, 0.16)";
+          context.lineWidth = 1.2;
+          context.stroke();
+        });
+
+        // Main ensemble averaged boundary
+        context.beginPath();
+        boundary.forEach((pt, i) => {
+          if (i === 0) context.moveTo(pt.x, pt.y);
+          else context.lineTo(pt.x, pt.y);
+        });
+        context.strokeStyle = `rgba(${aggColor.join(",")}, 0.95)`;
+        context.lineWidth = 3.5;
+        context.stroke();
+
+        // Ensemble glow aura
+        context.beginPath();
+        boundary.forEach((pt, i) => {
+          if (i === 0) context.moveTo(pt.x, pt.y);
+          else context.lineTo(pt.x, pt.y);
+        });
+        context.strokeStyle = `rgba(${aggColor.join(",")}, 0.18)`;
+        context.lineWidth = 12;
+        context.stroke();
+
+        // Ensemble boundary label
+        context.fillStyle = `rgb(${aggColor.join(",")})`;
+        context.font = "700 13px system-ui, sans-serif";
+        context.fillText("ENSEMBLE BOUNDARY: f_ens(x) = (1/B) Σ h_b(x)", 740, 120);
+
+        // Arrow indicator showing aggregation convergence
+        context.fillStyle = "rgba(195, 75, 34, 0.85)";
+        context.beginPath();
+        context.arc(1140, 164, 5, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      ctx = Deck.autofit(canvas, draw);
+      Deck.init({ index: 6, total: 27, keys: false });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F7;
+      --surface: #FFFFFF;
+      --soft: #E3ECEF;
+      --text: #17272D;
+      --muted: #52666E;
+      --observed: #245A74;
+      --cause: #B13F2A;
+      --uncertain: #7A5B12;
+      --supported: #2D694C;
+      --selected: #D6E8EE;
+      --focus: #B13F2A;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: 48px 56px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.15;
+      margin: 0;
+    }
+
+    .subtitle {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 390px;
+      gap: 28px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .canvas-panel {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid var(--soft);
+      display: flex;
+      flex-direction: column;
+      padding: 20px 24px 16px;
+      position: relative;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-swatch {
+      width: 20px;
+      height: 3px;
+      border-radius: 1px;
+    }
+
+    .swatch-obs {
+      background: var(--observed);
+    }
+
+    .swatch-cf {
+      background: var(--cause);
+      border-top: 2px dashed var(--cause);
+      height: 0;
+    }
+
+    .plot-area {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    #chart-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid var(--soft);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .readout {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .readout-val {
+      font-size: var(--fs-h1);
+      font-weight: 800;
+      color: var(--cause);
+      font-feature-settings: "tnum";
+    }
+
+    .readout-unit {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .toggle-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      flex: 1;
+      height: 42px;
+      border: 1px solid var(--soft);
+      background: var(--bg);
+      border-radius: var(--r-sm);
+      color: var(--muted);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--fast) var(--ease);
+    }
+
+    .btn.active {
+      background: var(--selected);
+      color: var(--observed);
+      border-color: var(--observed);
+    }
+
+    .btn:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .explanation-box {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.5;
+      background: var(--soft);
+      border-radius: var(--r-sm);
+      padding: 14px 16px;
+    }
+
+    .explanation-box strong {
+      color: var(--text);
+    }
+
+    .footnote {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body data-page="06" data-total="24">
+  <div id="stage">
+    <header>
+      <h1 class="title">反事实与可信比较：回归式不是识别</h1>
+      <p class="subtitle">观测差异混杂选择性偏差，因果效应取决于未受处理时的潜在结果</p>
+    </header>
+
+    <div class="main-grid">
+      <div class="canvas-panel min0">
+        <div class="panel-head">
+          <span class="panel-title">处理组真实轨迹 vs 反事实对照</span>
+          <div class="legend-row">
+            <span class="legend-item"><span class="legend-swatch swatch-obs"></span>观测结果 Y</span>
+            <span class="legend-item"><span class="legend-swatch swatch-cf"></span>反事实 Y(0)</span>
+          </div>
+        </div>
+
+        <div class="plot-area" id="plot-container">
+          <svg id="chart-svg" viewBox="0 0 980 470" preserveAspectRatio="none">
+            <defs>
+              <!-- 箭头标记 -->
+              <marker id="arrow-down" markerWidth="6" markerHeight="6" refX="3" refY="5" orient="auto">
+                <polygon points="0 0, 6 0, 3 6" fill="var(--cause)"/>
+              </marker>
+              <marker id="arrow-up" markerWidth="6" markerHeight="6" refX="3" refY="1" orient="auto">
+                <polygon points="0 6, 6 6, 3 0" fill="var(--cause)"/>
+              </marker>
+            </defs>
+
+            <!-- 网格与坐标轴 -->
+            <line x1="90" y1="50" x2="90" y2="400" stroke="var(--soft)" stroke-width="1.5"/>
+            <line x1="90" y1="400" x2="920" y2="400" stroke="var(--soft)" stroke-width="1.5"/>
+            
+            <!-- 水平刻度线与标签 -->
+            <line x1="90" y1="320" x2="920" y2="320" stroke="var(--soft)" stroke-width="1" stroke-dasharray="3 3"/>
+            <text x="75" y="325" font-size="13" fill="var(--muted)" text-anchor="end">40k</text>
+
+            <line x1="90" y1="240" x2="920" y2="240" stroke="var(--soft)" stroke-width="1" stroke-dasharray="3 3"/>
+            <text x="75" y="245" font-size="13" fill="var(--muted)" text-anchor="end">60k</text>
+
+            <line x1="90" y1="160" x2="920" y2="160" stroke="var(--soft)" stroke-width="1" stroke-dasharray="3 3"/>
+            <text x="75" y="165" font-size="13" fill="var(--muted)" text-anchor="end">80k</text>
+
+            <line x1="90" y1="80" x2="920" y2="80" stroke="var(--soft)" stroke-width="1" stroke-dasharray="3 3"/>
+            <text x="75" y="85" font-size="13" fill="var(--muted)" text-anchor="end">100k</text>
+
+            <text x="40" y="45" font-size="13" fill="var(--muted)">年收入 ($)</text>
+
+            <!-- 干预时间虚线 -->
+            <line x1="505" y1="50" x2="505" y2="400" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
+            <text x="505" y="36" font-size="15" font-weight="600" fill="var(--muted)" text-anchor="middle">干预时点 (t = 0)</text>
+
+            <!-- X 轴刻度标签 -->
+            <text x="210" y="426" font-size="15" fill="var(--muted)" text-anchor="middle">干预前 (t = -2)</text>
+            <text x="505" y="426" font-size="15" fill="var(--muted)" text-anchor="middle">干预当年 (t = 0)</text>
+            <text x="800" y="426" font-size="15" fill="var(--muted)" text-anchor="middle">干预后 (t = +2)</text>
+
+            <!-- 动态轨迹部分通过脚本驱动渲染 -->
+            <g id="chart-content"></g>
+          </svg>
+        </div>
+      </div>
+
+      <aside class="side-panel min0">
+        <div class="card">
+          <div class="card-title">对照假设</div>
+          <div class="toggle-group">
+            <button class="btn active" id="btn-counterfactual" onclick="setMode('counterfactual')">真实反事实</button>
+            <button class="btn" id="btn-naive" onclick="setMode('naive')">朴素对照</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" id="effect-title">因果效应 (ATT)</div>
+          <div class="readout">
+            <span class="readout-val" id="effect-val">+18,000</span>
+            <span class="readout-unit">美元 / 年</span>
+          </div>
+          <div class="explanation-box" id="effect-desc">
+            <strong>真实效应：</strong>若未受处理，该群体产出为 $66k，净因果增益为 $18k。
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">分解关系</div>
+          <div class="explanation-box" id="decomp-desc">
+            观测差 ($36k) = 因果效应 ($18k) + 选择性偏差 ($18k)。
+          </div>
+        </div>
+
+        <div class="footnote">
+          反事实根本难题：同一主体在同一时点只能观测到一种潜在结果。
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页的核心在于澄清“因果识别不是跑一个 OLS 回归”。
+    任何因果推断的本质都在于构造可信的反事实对照：即如果处理组没有接受处理，他们的结果会是什么。
+    在左侧图中，读者可以看到处理组在干预后的真实观测轨迹达到了 84k。
+    如果我们用真实反事实（虚线）比较，因果效应是 18k。
+    但如果直接拿未受处理的低技能对照组（朴素比较）来对比，差额高达 36k，其中整整 18k 是选择性偏差。
+    实证研究的全部设计，都是为了消除这部分偏差、找回失落的反事实。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    const data = {
+      treated: [
+        { x: 210, y: 260, label: "55k" }, // t = -2
+        { x: 505, y: 220, label: "65k" }, // t = 0
+        { x: 800, y: 144, label: "84k" }  // t = +2 (treated outcome)
+      ],
+      counterfactual: [
+        { x: 505, y: 220 },
+        { x: 800, y: 216, label: "66k" }  // t = +2 (true untreated counterfactual)
+      ],
+      naiveControl: [
+        { x: 210, y: 340, label: "35k" },
+        { x: 505, y: 310, label: "42.5k" },
+        { x: 800, y: 288, label: "48k" }  // naive comparison
+      ]
+    };
+
+    let currentMode = 'counterfactual';
+
+    function renderChart() {
+      const g = document.getElementById('chart-content');
+      g.innerHTML = '';
+
+      // 1. 处理组历史及观测线 (t = -2 到 t = 0, 再到 t = +2)
+      const treatedPath = `M ${data.treated[0].x} ${data.treated[0].y} L ${data.treated[1].x} ${data.treated[1].y} L ${data.treated[2].x} ${data.treated[2].y}`;
+      const treatedLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      treatedLine.setAttribute("d", treatedPath);
+      treatedLine.setAttribute("stroke", "var(--observed)");
+      treatedLine.setAttribute("stroke-width", "4");
+      treatedLine.setAttribute("fill", "none");
+      g.appendChild(treatedLine);
+
+      // 处理组点
+      data.treated.forEach((pt, i) => {
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("cx", pt.x);
+        circle.setAttribute("cy", pt.y);
+        circle.setAttribute("r", "5");
+        circle.setAttribute("fill", "var(--observed)");
+        g.appendChild(circle);
+
+        const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        txt.setAttribute("x", pt.x);
+        txt.setAttribute("y", pt.y - 12);
+        txt.setAttribute("font-size", "15");
+        txt.setAttribute("font-weight", "600");
+        txt.setAttribute("fill", "var(--observed)");
+        txt.setAttribute("text-anchor", "middle");
+        txt.textContent = pt.label;
+        g.appendChild(txt);
+      });
+
+      // 处理组标签
+      const treatedLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      treatedLabel.setAttribute("x", data.treated[2].x + 12);
+      treatedLabel.setAttribute("y", data.treated[2].y + 5);
+      treatedLabel.setAttribute("font-size", "15");
+      treatedLabel.setAttribute("font-weight", "700");
+      treatedLabel.setAttribute("fill", "var(--observed)");
+      treatedLabel.textContent = "处理组 $84k";
+      g.appendChild(treatedLabel);
+
+      if (currentMode === 'counterfactual') {
+        // 2. 真实反事实虚线
+        const cfPath = `M ${data.counterfactual[0].x} ${data.counterfactual[0].y} L ${data.counterfactual[1].x} ${data.counterfactual[1].y}`;
+        const cfLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        cfLine.setAttribute("d", cfPath);
+        cfLine.setAttribute("stroke", "var(--cause)");
+        cfLine.setAttribute("stroke-width", "3");
+        cfLine.setAttribute("stroke-dasharray", "6 4");
+        cfLine.setAttribute("fill", "none");
+        g.appendChild(cfLine);
+
+        // 反事实终点
+        const cfPt = data.counterfactual[1];
+        const cfCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        cfCircle.setAttribute("cx", cfPt.x);
+        cfCircle.setAttribute("cy", cfPt.y);
+        cfCircle.setAttribute("r", "5");
+        cfCircle.setAttribute("fill", "var(--surface)");
+        cfCircle.setAttribute("stroke", "var(--cause)");
+        cfCircle.setAttribute("stroke-width", "3");
+        g.appendChild(cfCircle);
+
+        const cfTxt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        cfTxt.setAttribute("x", cfPt.x + 12);
+        cfTxt.setAttribute("y", cfPt.y + 5);
+        cfTxt.setAttribute("font-size", "15");
+        cfTxt.setAttribute("font-weight", "700");
+        cfTxt.setAttribute("fill", "var(--cause)");
+        cfTxt.textContent = "反事实 $66k";
+        g.appendChild(cfTxt);
+
+        // 效应垂直双向箭头线
+        const effectBracket = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        effectBracket.setAttribute("x1", "795");
+        effectBracket.setAttribute("y1", "144");
+        effectBracket.setAttribute("x2", "795");
+        effectBracket.setAttribute("y2", "216");
+        effectBracket.setAttribute("stroke", "var(--cause)");
+        effectBracket.setAttribute("stroke-width", "2");
+        g.appendChild(effectBracket);
+
+        const effectText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        effectText.setAttribute("x", "785");
+        effectText.setAttribute("y", "184");
+        effectText.setAttribute("font-size", "15");
+        effectText.setAttribute("font-weight", "700");
+        effectText.setAttribute("fill", "var(--cause)");
+        effectText.setAttribute("text-anchor", "end");
+        effectText.textContent = "因果效应 Δ = +$18k";
+        g.appendChild(effectText);
+
+      } else {
+        // 3. 朴素对照组（未经调整的其他个体）
+        const naivePath = `M ${data.naiveControl[0].x} ${data.naiveControl[0].y} L ${data.naiveControl[1].x} ${data.naiveControl[1].y} L ${data.naiveControl[2].x} ${data.naiveControl[2].y}`;
+        const naiveLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        naiveLine.setAttribute("d", naivePath);
+        naiveLine.setAttribute("stroke", "var(--muted)");
+        naiveLine.setAttribute("stroke-width", "3");
+        naiveLine.setAttribute("fill", "none");
+        g.appendChild(naiveLine);
+
+        // 朴素对照组点
+        data.naiveControl.forEach((pt) => {
+          const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          c.setAttribute("cx", pt.x);
+          c.setAttribute("cy", pt.y);
+          c.setAttribute("r", "4");
+          c.setAttribute("fill", "var(--muted)");
+          g.appendChild(c);
+        });
+
+        const naiveLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        naiveLabel.setAttribute("x", data.naiveControl[2].x + 12);
+        naiveLabel.setAttribute("y", data.naiveControl[2].y + 5);
+        naiveLabel.setAttribute("font-size", "15");
+        naiveLabel.setAttribute("fill", "var(--muted)");
+        naiveLabel.textContent = "未处理对照 $48k";
+        g.appendChild(naiveLabel);
+
+        // 真实反事实微弱保留作为对比
+        const cfPath = `M ${data.counterfactual[0].x} ${data.counterfactual[0].y} L ${data.counterfactual[1].x} ${data.counterfactual[1].y}`;
+        const cfLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        cfLine.setAttribute("d", cfPath);
+        cfLine.setAttribute("stroke", "var(--cause)");
+        cfLine.setAttribute("stroke-width", "2");
+        cfLine.setAttribute("stroke-dasharray", "4 4");
+        cfLine.setAttribute("opacity", "0.35");
+        cfLine.setAttribute("fill", "none");
+        g.appendChild(cfLine);
+
+        // 偏差区分括号
+        const totalBracket = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        totalBracket.setAttribute("x1", "795");
+        totalBracket.setAttribute("y1", "144");
+        totalBracket.setAttribute("x2", "795");
+        totalBracket.setAttribute("y2", "288");
+        totalBracket.setAttribute("stroke", "var(--cause)");
+        totalBracket.setAttribute("stroke-width", "2");
+        g.appendChild(totalBracket);
+
+        const naiveText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        naiveText.setAttribute("x", "785");
+        naiveText.setAttribute("y", "220");
+        naiveText.setAttribute("font-size", "15");
+        naiveText.setAttribute("font-weight", "700");
+        naiveText.setAttribute("fill", "var(--cause)");
+        naiveText.setAttribute("text-anchor", "end");
+        naiveText.textContent = "观测差异 = +$36k (高估一倍)";
+        g.appendChild(naiveText);
+      }
+    }
+
+    function setMode(mode) {
+      currentMode = mode;
+      document.getElementById('btn-counterfactual').classList.toggle('active', mode === 'counterfactual');
+      document.getElementById('btn-naive').classList.toggle('active', mode === 'naive');
+
+      const val = document.getElementById('effect-val');
+      const title = document.getElementById('effect-title');
+      const desc = document.getElementById('effect-desc');
+      const decomp = document.getElementById('decomp-desc');
+
+      if (mode === 'counterfactual') {
+        title.textContent = '因果效应 (ATT)';
+        val.textContent = '+$18,000';
+        val.style.color = 'var(--cause)';
+        desc.innerHTML = '<strong>真实效应：</strong>若未受处理，该群体产出为 $66k，净因果增益为 $18k。';
+        decomp.innerHTML = '观测差 ($36k) = 因果效应 ($18k) + 选择性偏差 ($18k)。';
+      } else {
+        title.textContent = '朴素均值差异 (OLS)';
+        val.textContent = '+$36,000';
+        val.style.color = 'var(--uncertain)';
+        desc.innerHTML = '<strong>选择性偏差：</strong>直接比较参训者与未参训者，将禀赋优势误计为政策增益。';
+        decomp.innerHTML = '简单回归系数只是条件均值差，缺乏可信反事实支撑时没有因果含义。';
+      }
+
+      renderChart();
+    }
+
+    // 初始化
+    Deck.init({ index: 6, total: 24, keys: false });
+    renderChart();
+  </script>
+</body>
+</html>

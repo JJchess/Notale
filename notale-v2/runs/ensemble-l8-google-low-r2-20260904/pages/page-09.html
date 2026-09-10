@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text);
+      margin: 0;
+    }
+    .page-lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+    .math-badge {
+      font-size: var(--fs-sec);
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 6px 14px;
+      color: var(--sample);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    /* 主展示区：双栏布局 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧主图区 */
+    .matrix-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+    .panel-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-h2 {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--text);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .legend-row {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+    .leg-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .leg-sw {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+    .leg-sw.in { background: #CFE4DC; border: 1px solid var(--sample); }
+    .leg-sw.oob { background: #FDE8E0; border: 1px solid var(--aggregate); }
+
+    /* SVG 交互图纸 */
+    .svg-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+    #matrix-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧推导与观察面板 */
+    .inspect-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px 18px;
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--text);
+      margin: 0 0 10px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .card-title .sub {
+      font-size: var(--fs-label);
+      font-weight: 400;
+      color: var(--muted);
+    }
+
+    /* 样本详情卡片 */
+    .sample-detail-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .sample-tag {
+      font-size: var(--fs-label);
+      background: var(--surface-strong);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .oob-ratio-val {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--aggregate);
+      line-height: 1;
+    }
+
+    .tree-tags-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .tree-badge {
+      font-size: var(--fs-tick);
+      padding: 3px 7px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .tree-badge.oob {
+      background: #FDE8E0;
+      color: var(--aggregate);
+      border: 1px solid rgba(195,75,34,0.3);
+    }
+    .tree-badge.in {
+      background: var(--surface-strong);
+      color: var(--muted);
+      border: 1px solid transparent;
+      opacity: 0.6;
+    }
+
+    /* 理论极限证明卡片 */
+    .proof-box {
+      font-size: var(--fs-body);
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .proof-formula {
+      font-size: 20px;
+      color: var(--sample);
+      font-weight: 600;
+      margin: 8px 0;
+      padding: 6px 12px;
+      background: #EDF5F3;
+      border-radius: 6px;
+      border-left: 3px solid var(--sample);
+      font-family: var(--font-sans);
+    }
+    .proof-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 对比表格卡片 */
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-sec);
+      margin-top: 6px;
+    }
+    .compare-table th {
+      text-align: left;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--surface-strong);
+      color: var(--muted);
+      font-weight: 600;
+      font-size: var(--fs-label);
+    }
+    .compare-table td {
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--surface-strong);
+      color: var(--text);
+      line-height: 1.35;
+    }
+    .compare-table tr:last-child td {
+      border-bottom: none;
+    }
+    .hl-col {
+      color: var(--aggregate);
+      font-weight: 600;
+    }
+
+    /* 样本选择交互指示条 */
+    .hint-bar {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: auto;
+      padding: 6px 12px;
+      background: var(--surface-strong);
+      border-radius: 6px;
+    }
+    .hint-bar span {
+      color: var(--focus);
+      font-weight: 600;
+    }
+
+    /* SVG 内部样式 */
+    .cell-rect {
+      cursor: pointer;
+      transition: stroke 0.15s, stroke-width 0.15s;
+    }
+    .cell-rect:hover {
+      stroke: var(--focus) !important;
+      stroke-width: 2px !important;
+    }
+    .row-highlight {
+      fill: rgba(155, 63, 17, 0.08);
+      pointer-events: none;
+    }
+    .sample-row-hit {
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body data-page="09" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题与核心判断 -->
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">袋外评估：无须独立验证集的内置评估机制</h1>
+        <div class="page-lead">每次 Bootstrap 有放回抽样平均留下约 36.8% 样本未进入训练，成为天然的袋外测试集（Out-Of-Bag）。</div>
+      </div>
+      <div class="math-badge">
+        极限留出率：lim (1 - 1/N)ᴺ = 1/e ≈ 36.79%
+      </div>
+    </header>
+
+    <!-- 主展示区 -->
+    <main class="main-grid min0">
+      <!-- 左栏：抽样分布矩阵 -->
+      <section class="matrix-panel min0">
+        <div class="panel-top">
+          <h2 class="panel-h2">
+            <span>观测样本与基学习器抽样矩阵 (N = 10 观测, B = 8 棵树)</span>
+          </h2>
+          <div class="legend-row">
+            <div class="leg-item"><div class="leg-sw in"></div><span>袋内 (参与训练)</span></div>
+            <div class="leg-item"><div class="leg-sw oob"></div><span>袋外 (未入选，做评估)</span></div>
+          </div>
+        </div>
+
+        <div class="svg-wrap min0">
+          <svg id="matrix-svg" viewBox="0 0 840 440" preserveAspectRatio="xMidYMid meet"></svg>
+        </div>
+
+        <div class="hint-bar">
+          💡 <span>点击或悬浮任意样本行</span>：查看该样本在哪些树中成为袋外评估数据，以及这批树形成的 OOB 聚合预测。
+        </div>
+      </section>
+
+      <!-- 右栏：机制推导与 OOB 评估逻辑 -->
+      <aside class="inspect-panel min0">
+        <!-- 实时样本袋外状态 -->
+        <div class="card">
+          <div class="sample-detail-head">
+            <span class="sample-tag" id="selected-sample-name">当前观测：样本 x₄</span>
+            <span style="font-size:var(--fs-label); color:var(--muted);">袋外树数量 / 总树数</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px;">
+            <div>
+              <span class="oob-ratio-val" id="selected-oob-count">3 棵</span>
+              <span style="font-size:var(--fs-body); color:var(--muted);" id="selected-oob-pct"> / 8 棵 (37.5%)</span>
+            </div>
+            <div style="font-size:var(--fs-sec); color:var(--aggregate); font-weight:600;" id="pred-status">
+              3 棵树共同给出袋外预测
+            </div>
+          </div>
+          <div style="font-size:var(--fs-sec); color:var(--muted); margin-top:8px; line-height:1.4;">
+            该样本未参与以下基学习器的训练，其真实标签对这些树严格不可见：
+          </div>
+          <div class="tree-tags-list" id="tree-tags">
+            <!-- 动态填充 -->
+          </div>
+        </div>
+
+        <!-- 36.8% 的数学成因 -->
+        <div class="card proof-box">
+          <div class="card-title">
+            <span>为什么每个样本都有约 1/3 袋外机会？</span>
+          </div>
+          <div class="proof-formula">
+            P(样本未被抽中) = (1 - 1/N)ᴺ → 1/e ≈ 0.368
+          </div>
+          <p class="proof-desc">
+            容量为 N 的数据集进行 N 次有放回抽样。某样本每次未被抽中的概率为 1 - 1/N。N 次全没抽中的概率趋于 1/e。当树数 B 足够大时，几乎每个观测都会在约 37% 的树上充当测试集。
+          </p>
+        </div>
+
+        <!-- OOB 评估 vs 传统交叉验证对比 -->
+        <div class="card" style="flex:1;">
+          <div class="card-title">
+            <span>OOB 评估与 K 折交叉验证对比</span>
+          </div>
+          <table class="compare-table">
+            <thead>
+              <tr>
+                <th>评估维度</th>
+                <th>K 折交叉验证 (K-Fold CV)</th>
+                <th>袋外评估 (OOB Score)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>训练成本</strong></td>
+                <td>需重复训练 K 次完整集成</td>
+                <td class="hl-col">0 额外计算，随集成单次完成</td>
+              </tr>
+              <tr>
+                <td><strong>数据利用率</strong></td>
+                <td>每次需割舍 1/K 数据做验证</td>
+                <td class="hl-col">100% 原始数据均参与集成</td>
+              </tr>
+              <tr>
+                <td><strong>评估效力</strong></td>
+                <td>严格的折外独立泛化指标</td>
+                <td class="hl-col">渐进等价于 Leave-One-Out CV</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      // 预设确定的有放回抽样矩阵: 10个样本, 8棵树
+      // 1 表示在袋内 (In-Bag), 0 表示袋外 (Out-Of-Bag)
+      // 保证平均袋外率约 36.8% (37/100 左右)
+      const matrixData = [
+        // Tree: T1, T2, T3, T4, T5, T6, T7, T8
+        [1, 0, 1, 1, 0, 1, 0, 1], // x1: 3 OOB (37.5%)
+        [0, 1, 1, 0, 1, 0, 1, 1], // x2: 3 OOB
+        [1, 1, 0, 1, 1, 0, 1, 0], // x3: 3 OOB
+        [0, 1, 0, 1, 0, 1, 1, 1], // x4: 3 OOB (默认选中项)
+        [1, 0, 1, 0, 1, 1, 0, 1], // x5: 3 OOB
+        [1, 1, 1, 0, 0, 1, 1, 0], // x6: 3 OOB
+        [0, 1, 0, 1, 1, 0, 1, 1], // x7: 3 OOB
+        [1, 0, 1, 1, 1, 0, 0, 1], // x8: 3 OOB
+        [0, 1, 1, 0, 1, 1, 0, 0], // x9: 4 OOB (50.0%)
+        [1, 0, 0, 1, 0, 1, 1, 0]  // x10: 4 OOB
+      ];
+
+      const numSamples = 10;
+      const numTrees = 8;
+      let selectedSample = 3; // 默认选中 x4
+
+      const svg = document.getElementById('matrix-svg');
+      const selectedSampleNameEl = document.getElementById('selected-sample-name');
+      const selectedOobCountEl = document.getElementById('selected-oob-count');
+      const selectedOobPctEl = document.getElementById('selected-oob-pct');
+      const treeTagsEl = document.getElementById('tree-tags');
+      const predStatusEl = document.getElementById('pred-status');
+
+      function drawMatrix() {
+        const svgW = 840;
+        const svgH = 440;
+        const margin = { top: 60, left: 110, right: 110, bottom: 45 };
+        const gridW = svgW - margin.left - margin.right;
+        const gridH = svgH - margin.top - margin.bottom;
+
+        const cellW = gridW / numTrees;
+        const cellH = gridH / numSamples;
+
+        let html = '';
+
+        // 1. 顶部树表头 (T1 ~ T8)
+        for (let j = 0; j < numTrees; j++) {
+          const cx = margin.left + j * cellW + cellW / 2;
+          html += `
+            <text x="${cx}" y="${margin.top - 24}" text-anchor="middle" font-size="14" font-weight="600" fill="#27648F">树 T${j + 1}</text>
+            <text x="${cx}" y="${margin.top - 8}" text-anchor="middle" font-size="12" fill="#536A78">Bootstrap ${j + 1}</text>
+          `;
+        }
+
+        // 2. 绘制行背景与单元格
+        for (let i = 0; i < numSamples; i++) {
+          const y = margin.top + i * cellH;
+          const isSelected = (i === selectedSample);
+
+          // 选中行的高亮背景
+          if (isSelected) {
+            html += `<rect x="${margin.left - 8}" y="${y + 2}" width="${gridW + 16}" height="${cellH - 4}" rx="4" fill="#9B3F11" fill-opacity="0.08" class="row-highlight" />`;
+          }
+
+          // 左侧样本名称
+          const textFill = isSelected ? '#9B3F11' : '#122634';
+          const textWeight = isSelected ? '700' : '500';
+          html += `
+            <text x="${margin.left - 18}" y="${y + cellH / 2 + 5}" text-anchor="end" font-size="14" font-weight="${textWeight}" fill="${textFill}" class="sample-row-hit" data-sample="${i}">
+              观测 x${i + 1}
+            </text>
+          `;
+
+          // 单元格绘制
+          let oobInRow = 0;
+          for (let j = 0; j < numTrees; j++) {
+            const x = margin.left + j * cellW;
+            const isIn = matrixData[i][j] === 1;
+            if (!isIn) oobInRow++;
+
+            const fill = isIn ? '#E3EFEA' : '#FDE8E0';
+            const stroke = isIn ? '#2F7568' : '#C34B22';
+            const strokeWidth = (isSelected && !isIn) ? '2' : '1';
+            const textCol = isIn ? '#2F7568' : '#C34B22';
+            const statusText = isIn ? '袋内' : 'OOB';
+
+            html += `
+              <g class="cell-rect" data-sample="${i}" data-tree="${j}">
+                <rect x="${x + 3}" y="${y + 3}" width="${cellW - 6}" height="${cellH - 6}" rx="5" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${isIn ? 0.4 : 0.8}" />
+                <text x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-size="12" font-weight="600" fill="${textCol}" pointer-events="none">${statusText}</text>
+              </g>
+            `;
+          }
+
+          // 右侧统计：该行 OOB 树数量
+          const pct = Math.round((oobInRow / numTrees) * 100);
+          const rightTextFill = isSelected ? '#C34B22' : '#536A78';
+          html += `
+            <text x="${margin.left + gridW + 16}" y="${y + cellH / 2 + 4}" font-size="13" font-weight="${isSelected ? '700' : '400'}" fill="${rightTextFill}" class="sample-row-hit" data-sample="${i}">
+              ${oobInRow} 树 (${pct}%)
+            </text>
+          `;
+        }
+
+        // 3. 底部树的 OOB 样本数汇总
+        html += `<text x="${margin.left - 18}" y="${margin.top + gridH + 26}" text-anchor="end" font-size="12" font-weight="600" fill="#536A78">各树 OOB 样本数</text>`;
+        for (let j = 0; j < numTrees; j++) {
+          const cx = margin.left + j * cellW + cellW / 2;
+          let colOob = 0;
+          for (let i = 0; i < numSamples; i++) {
+            if (matrixData[i][j] === 0) colOob++;
+          }
+          html += `<text x="${cx}" y="${margin.top + gridH + 26}" text-anchor="middle" font-size="12" font-weight="600" fill="#C34B22">${colOob} 个</text>`;
+        }
+
+        svg.innerHTML = html;
+
+        // 重新挂载事件
+        svg.querySelectorAll('[data-sample]').forEach(el => {
+          el.addEventListener('click', function() {
+            const idx = parseInt(this.getAttribute('data-sample'), 10);
+            updateSelected(idx);
+          });
+          el.addEventListener('mouseenter', function() {
+            const idx = parseInt(this.getAttribute('data-sample'), 10);
+            updateSelected(idx);
+          });
+        });
+      }
+
+      function updateSelected(idx) {
+        selectedSample = idx;
+        selectedSampleNameEl.textContent = `当前观测：样本 x${idx + 1}`;
+
+        const row = matrixData[idx];
+        let oobCount = 0;
+        let badgesHtml = '';
+
+        row.forEach((isIn, tIdx) => {
+          if (isIn === 0) {
+            oobCount++;
+            badgesHtml += `<span class="tree-badge oob">树 T${tIdx + 1} (袋外评估)</span>`;
+          } else {
+            badgesHtml += `<span class="tree-badge in">树 T${tIdx + 1} (已入袋)</span>`;
+          }
+        });
+
+        selectedOobCountEl.textContent = `${oobCount} 棵`;
+        const pct = ((oobCount / numTrees) * 100).toFixed(1);
+        selectedOobPctEl.textContent = ` / ${numTrees} 棵 (${pct}%)`;
+        predStatusEl.textContent = `${oobCount} 棵树共同给出袋外预测`;
+        treeTagsEl.innerHTML = badgesHtml;
+
+        drawMatrix();
+      }
+
+      Deck.init({ index: 9, total: 27 });
+      updateSelected(selectedSample);
+    })();
+  </script>
+</body>
+</html>

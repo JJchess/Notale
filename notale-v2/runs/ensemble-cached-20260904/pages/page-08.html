@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bagging 的方差收益</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --line: #CDD8DF;
+      --font-sans: "Noto Sans SC", system-ui, -apple-system, sans-serif;
+      --font-num: "JetBrains Mono", Consolas, Menlo, monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #stage {
+      box-sizing: border-box;
+      padding: 28px 56px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* 顶栏 */
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .header-block h1 {
+      margin: 0;
+      font-size: 30px;
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .header-block .lead-text {
+      margin: 0;
+      font-size: 17px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    /* 主内容分栏：左侧主图表 + 右侧公式与交互推演 */
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.95fr);
+      gap: 26px;
+    }
+
+    /* 图表卡片容器 */
+    .chart-panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px 14px 20px;
+      box-shadow: 0 4px 16px rgba(18, 38, 52, 0.04);
+      position: relative;
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .panel-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .chart-legend {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-dot {
+      width: 14px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .chart-host {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      position: relative;
+    }
+
+    .chart-foot-note {
+      margin-top: 6px;
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid var(--surface-strong);
+      padding-top: 6px;
+    }
+
+    /* 右侧面板：公式推导、交互调节、推论 */
+    .analysis-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .formula-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px 18px;
+      box-shadow: 0 4px 16px rgba(18, 38, 52, 0.04);
+    }
+    .formula-card .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .formula-display {
+      font-size: 20px;
+      padding: 6px 0;
+      color: var(--text);
+      text-align: center;
+    }
+    .formula-breakdown {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--surface-strong);
+    }
+    .term-box {
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--muted);
+      border-left: 2px solid var(--line);
+      padding-left: 8px;
+    }
+    .term-box strong {
+      display: block;
+      color: var(--text);
+      font-size: 14px;
+      margin-bottom: 2px;
+    }
+
+    /* 控制项卡片 */
+    .controls-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .ctrl-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ctrl-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .ctrl-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--model);
+    }
+    input[type=range] {
+      width: 100%;
+      accent-color: var(--model);
+      cursor: pointer;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--surface-strong);
+    }
+    .preset-btns {
+      display: flex;
+      gap: 8px;
+      margin-top: 2px;
+    }
+    .preset-btn {
+      flex: 1;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .preset-btn:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+    .preset-btn.active {
+      background: var(--surface-strong);
+      border-color: var(--model);
+      color: var(--model);
+    }
+
+    /* 实时核算读数与结论 */
+    .metric-summary {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      text-align: center;
+    }
+    .metric-cell {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 8px 6px;
+      border: 1px solid var(--surface-strong);
+    }
+    .metric-label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .metric-number {
+      font-family: var(--font-num);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .metric-cell.highlight .metric-number {
+      color: var(--aggregate);
+    }
+
+    .takeaway-box {
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--text);
+      background: rgba(39, 100, 143, 0.07);
+      border-radius: 6px;
+      padding: 10px 12px;
+      border-left: 3px solid var(--model);
+    }
+    .takeaway-box strong {
+      color: var(--model);
+    }
+  </style>
+</head>
+<body data-page="08" data-total="27">
+  <div id="stage">
+    <header class="header-block">
+      <h1>Bagging 的方差收益：平均能够削弱单模型波动，树间相关性决定收益上限</h1>
+      <p class="lead-text">通过 Bootstrap 抽样训练多棵基学习器并取平均，随机扰动被相互抵消；但同源数据使模型间存在正相关，方差无法降至零。</p>
+    </header>
+
+    <div class="main-grid">
+      <!-- 左栏：主量化曲线图 -->
+      <section class="chart-panel min0">
+        <div class="panel-head">
+          <div class="panel-title">
+            <span>集成方差随树数量 <i>B</i> 的衰减轨迹</span>
+          </div>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <span class="legend-dot" style="background: var(--aggregate); height: 2px; border-top: 2px dashed var(--aggregate);"></span>
+              <span>不可约下界 ρσ²</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot" style="background: var(--model); height: 3px;"></span>
+              <span>当前配置 (ρ = <span id="legRho">0.20</span>)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot" style="background: #9DB4C0; height: 2px;"></span>
+              <span>对照参考组</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="varianceChart" class="chart-host min0"></div>
+
+        <div class="chart-foot-note">
+          <span>横轴树数量 <i>B</i> ∈ [1, 100]；单树方差标准化为 σ² = 1.0</span>
+          <span id="asymptoteNote">渐近下界：当 B → ∞ 时，Var → 0.200</span>
+        </div>
+      </section>
+
+      <!-- 右栏：解析卡片、控制台与实时核算 -->
+      <aside class="analysis-panel min0">
+        <!-- 理论分解卡片 -->
+        <div class="formula-card">
+          <div class="card-title">理论方差拆解公式</div>
+          <div class="formula-display" id="katexFormula"></div>
+          <div class="formula-breakdown">
+            <div class="term-box">
+              <strong style="color: var(--aggregate);">不可削减项 ρσ²</strong>
+              源于基学习器之间的正相关。即使树数量趋于无穷，该项依然存在，决定方差缩减的下界。
+            </div>
+            <div class="term-box">
+              <strong style="color: var(--sample);">可平均削减项 ((1-ρ)/B)σ²</strong>
+              各树独立波动的方差。随树数量 <i>B</i> 增加按双曲速率衰减，最终趋近于零。
+            </div>
+          </div>
+        </div>
+
+        <!-- 交互滑块控制 -->
+        <div class="controls-card">
+          <div class="ctrl-row">
+            <div class="ctrl-header">
+              <label for="rhoRange">树间皮尔逊相关系数 ρ</label>
+              <span class="ctrl-val" id="rhoVal">0.20</span>
+            </div>
+            <input type="range" id="rhoRange" min="0.0" max="0.80" step="0.05" value="0.20">
+          </div>
+
+          <div class="ctrl-row">
+            <div class="ctrl-header">
+              <label for="treeRange">集成树数量 B</label>
+              <span class="ctrl-val" id="treeVal">25</span>
+            </div>
+            <input type="range" id="treeRange" min="1" max="100" step="1" value="25">
+          </div>
+
+          <div class="preset-btns">
+            <button type="button" class="preset-btn" data-rho="0.0" data-b="25" id="btnIndep">理想独立 (ρ = 0)</button>
+            <button type="button" class="preset-btn active" data-rho="0.2" data-b="25" id="btnBagging">标准 Bagging (ρ = 0.2)</button>
+            <button type="button" class="preset-btn" data-rho="0.6" data-b="25" id="btnCorr">强特征主导 (ρ = 0.6)</button>
+          </div>
+        </div>
+
+        <!-- 实时数值盘与教学判断 -->
+        <div class="metric-summary">
+          <div class="metrics-grid">
+            <div class="metric-cell">
+              <div class="metric-label">单树基准方差</div>
+              <div class="metric-number">1.000</div>
+            </div>
+            <div class="metric-cell highlight">
+              <div class="metric-label">当前集成方差</div>
+              <div class="metric-number" id="currVar">0.232</div>
+            </div>
+            <div class="metric-cell">
+              <div class="metric-label">方差削减比例</div>
+              <div class="metric-number" id="reducPct" style="color: var(--answer);">76.8%</div>
+            </div>
+          </div>
+
+          <div class="takeaway-box" id="insightText">
+            <strong>核心观察：</strong>当树数量 $B$ 达到 20 棵左右时，可平均削减项已降至极低水平；继续追加树数量边际收益微弱，总方差被 $\rho = 0.20$ 的下界锁住。
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      'use strict';
+
+      // 渲染 Katex 公式
+      const formulaEl = document.getElementById('katexFormula');
+      if (window.katex) {
+        katex.render(
+          '\\operatorname{Var}(\\bar{f}) = \\rho\\,\\sigma^2 + \\frac{1 - \\rho}{B}\\,\\sigma^2',
+          formulaEl,
+          { displayMode: true, throwOnError: false }
+        );
+      }
+
+      // 状态
+      let rho = 0.20;
+      let B = 25;
+      const sigma2 = 1.0;
+
+      const rhoRange = document.getElementById('rhoRange');
+      const treeRange = document.getElementById('treeRange');
+      const rhoVal = document.getElementById('rhoVal');
+      const treeVal = document.getElementById('treeVal');
+      const legRho = document.getElementById('legRho');
+      const asymptoteNote = document.getElementById('asymptoteNote');
+      const currVarEl = document.getElementById('currVar');
+      const reducPctEl = document.getElementById('reducPct');
+      const insightText = document.getElementById('insightText');
+      const presetBtns = document.querySelectorAll('.preset-btn');
+
+      // 初始化 ECharts
+      const chartHost = document.getElementById('varianceChart');
+      const chart = echarts.init(chartHost, null, { renderer: 'svg' });
+
+      function calcVar(b, r) {
+        return r * sigma2 + ((1 - r) / b) * sigma2;
+      }
+
+      function generateData(r) {
+        const pts = [];
+        for (let b = 1; b <= 100; b++) {
+          pts.push([b, calcVar(b, r)]);
+        }
+        return pts;
+      }
+
+      function updateMetrics() {
+        const cur = calcVar(B, rho);
+        const reduc = (1 - cur / sigma2) * 100;
+        currVarEl.textContent = cur.toFixed(3);
+        reducPctEl.textContent = reduc.toFixed(1) + '%';
+        rhoVal.textContent = rho.toFixed(2);
+        treeVal.textContent = B;
+        legRho.textContent = rho.toFixed(2);
+        asymptoteNote.textContent = '渐近线：当 B → ∞ 时，Var → ' + (rho * sigma2).toFixed(3);
+
+        if (rho < 0.05) {
+          insightText.innerHTML = '<strong>极端理想状态 (ρ = 0.00)：</strong>各模型完全独立时，方差以 1/B 速率持续衰减至 0。但同源训练样本天然存在相关性，该状态仅为理论参照。';
+        } else if (rho > 0.45) {
+          insightText.innerHTML = '<strong>强相关瓶颈 (ρ = ' + rho.toFixed(2) + ')：</strong>数据中存在强特征时，各树结构高度趋同。无论堆叠多少棵树，方差都无法低于 ' + (rho * sigma2).toFixed(2) + '；这促使随机森林引入特征随机子采样。';
+        } else {
+          insightText.innerHTML = '<strong>收益收敛规律：</strong>当树数量达到约 20 棵时，可削减波动已大部分被对冲；继续增加树数量的边际收益极低，方差稳定在 ρ = ' + rho.toFixed(2) + ' 的下界附近。';
+        }
+      }
+
+      function getOption() {
+        const curData = generateData(rho);
+        const curVarVal = calcVar(B, rho);
+        const asymptoteVal = rho * sigma2;
+
+        return {
+          animation: false,
+          grid: {
+            left: 56,
+            right: 28,
+            top: 32,
+            bottom: 46
+          },
+          tooltip: {
+            trigger: 'axis',
+            backgroundColor: '#FFFFFF',
+            borderColor: '#CDD8DF',
+            textStyle: { color: '#122634', fontSize: 13 },
+            formatter: function(params) {
+              const b = params[0].data[0];
+              const val = params[0].data[1];
+              return '<div style="font-weight:600;margin-bottom:4px;">树数量 B = ' + b + '</div>' +
+                     '<div>当前方差: <b style="color:#27648F;">' + val.toFixed(3) + '</b></div>' +
+                     '<div style="color:#C34B22;">理论下界: ' + (rho * sigma2).toFixed(3) + '</div>';
+            }
+          },
+          xAxis: {
+            type: 'value',
+            min: 1,
+            max: 100,
+            name: '树数量 (B)',
+            nameLocation: 'middle',
+            nameGap: 28,
+            nameTextStyle: { color: '#536A78', fontSize: 13 },
+            axisLine: { lineStyle: { color: '#536A78' } },
+            splitLine: { lineStyle: { color: '#E2EBF0', type: 'dashed' } },
+            axisLabel: { color: '#536A78', fontSize: 12 }
+          },
+          yAxis: {
+            type: 'value',
+            min: 0,
+            max: 1.05,
+            name: '集成方差 Var(f)',
+            nameLocation: 'end',
+            nameGap: 14,
+            nameTextStyle: { color: '#536A78', fontSize: 13, align: 'left' },
+            axisLine: { lineStyle: { color: '#536A78' } },
+            splitLine: { lineStyle: { color: '#E2EBF0', type: 'dashed' } },
+            axisLabel: { color: '#536A78', fontSize: 12 }
+          },
+          series: [
+            // 参考线：理想独立 rho = 0
+            {
+              name: '完全独立 (ρ=0)',
+              type: 'line',
+              data: generateData(0.0),
+              showSymbol: false,
+              lineStyle: { color: '#9DB4C0', width: 1.5, type: 'dotted' },
+              silent: true
+            },
+            // 参考线：强相关 rho = 0.5
+            {
+              name: '高相关对照 (ρ=0.5)',
+              type: 'line',
+              data: generateData(0.5),
+              showSymbol: false,
+              lineStyle: { color: '#9DB4C0', width: 1.5, type: 'dotted' },
+              silent: true
+            },
+            // 下界渐近线
+            {
+              name: '不可削减下界',
+              type: 'line',
+              data: [[1, asymptoteVal], [100, asymptoteVal]],
+              showSymbol: false,
+              lineStyle: { color: '#C34B22', width: 2, type: 'dashed' },
+              markPoint: {
+                silent: true,
+                symbol: 'none'
+              }
+            },
+            // 当前配置主曲线
+            {
+              name: '当前配置',
+              type: 'line',
+              data: curData,
+              showSymbol: false,
+              lineStyle: { color: '#27648F', width: 3 },
+              areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                  { offset: 0, color: 'rgba(39, 100, 143, 0.18)' },
+                  { offset: 1, color: 'rgba(39, 100, 143, 0.01)' }
+                ])
+              },
+              markPoint: {
+                symbol: 'circle',
+                symbolSize: 12,
+                itemStyle: { color: '#27648F', borderColor: '#FFFFFF', borderWidth: 2 },
+                data: [{ coord: [B, curVarVal] }],
+                label: {
+                  show: true,
+                  position: 'top',
+                  formatter: 'B=' + B + '\nVar=' + curVarVal.toFixed(3),
+                  color: '#27648F',
+                  fontSize: 12,
+                  fontWeight: 'bold',
+                  backgroundColor: 'rgba(255,255,255,0.85)',
+                  padding: [3, 6],
+                  borderRadius: 4,
+                  borderColor: '#CDD8DF',
+                  borderWidth: 1
+                }
+              }
+            }
+          ]
+        };
+      }
+
+      function updateChart() {
+        chart.setOption(getOption());
+        updateMetrics();
+      }
+
+      rhoRange.addEventListener('input', function(e) {
+        rho = parseFloat(e.target.value);
+        presetBtns.forEach(b => b.classList.remove('active'));
+        updateChart();
+      });
+
+      treeRange.addEventListener('input', function(e) {
+        B = parseInt(e.target.value, 10);
+        presetBtns.forEach(b => b.classList.remove('active'));
+        updateChart();
+      });
+
+      presetBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+          presetBtns.forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          rho = parseFloat(this.getAttribute('data-rho'));
+          B = parseInt(this.getAttribute('data-b'), 10);
+          rhoRange.value = rho;
+          treeRange.value = B;
+          updateChart();
+        });
+      });
+
+      Deck.init({ index: 8, total: 27, keys: false });
+      Deck.onResize(function() {
+        chart.resize();
+      });
+
+      updateChart();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      box-sizing: border-box;
+    }
+
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2px solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+    .header-titles h1 {
+      font-size: var(--fs-h1);
+      margin: 0;
+      line-height: 1.15;
+      color: var(--text);
+      font-weight: 700;
+    }
+    .header-titles p {
+      font-size: var(--fs-sec);
+      margin: 4px 0 0;
+      color: var(--muted);
+    }
+    .top-formula {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 6px 16px;
+    }
+    .formula-tag {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .formula-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--learner);
+    }
+
+    /* 主工作台：左侧 960px 仿真视窗 + 样本矩阵，右侧 480px 控制与对比指标 */
+    .workspace {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 960px 1fr;
+      gap: 20px;
+      min-height: 0;
+    }
+
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    /* 模拟样本预测矩阵面板 */
+    .matrix-panel {
+      flex: 1;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 2px solid var(--surface-strong);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      position: relative;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-head h2 {
+      font-size: var(--fs-h2);
+      margin: 0;
+      color: var(--text);
+    }
+    .legend-group {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      font-size: var(--fs-label);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+    .dot.correct { background: var(--correct); }
+    .dot.wrong { background: var(--aggregate); }
+    .dot.learner { background: var(--learner); }
+
+    /* Canvas 容器：绘制 25 个学习器在 40 个测试样本上的错误矩阵和集成表决 */
+    .canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      border-radius: 8px;
+      background: #FFFFFF;
+      border: 1px solid var(--surface-strong);
+      overflow: hidden;
+    }
+
+    /* 样本探查与单样本多数表决读数条 */
+    .inspect-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: var(--fs-sec);
+    }
+    .sample-pill {
+      font-family: var(--font-num);
+      font-weight: 700;
+      padding: 2px 8px;
+      background: var(--surface);
+      border-radius: 4px;
+      margin-left: 6px;
+    }
+    .vote-summary {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+    .vote-pill {
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 4px;
+    }
+    .vote-pill.pass {
+      background: #E4F1E9;
+      color: var(--correct);
+    }
+    .vote-pill.fail {
+      background: #FBECE9;
+      color: var(--aggregate);
+    }
+
+    /* 右侧控制与测量栏 */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 2px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .card h3 {
+      font-size: var(--fs-h2);
+      margin: 0;
+      color: var(--text);
+    }
+
+    /* 调节控件 */
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .control-label b {
+      color: var(--text);
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+    }
+    input[type=range] {
+      width: 100%;
+      height: 6px;
+      accent-color: var(--focus);
+      cursor: pointer;
+    }
+
+    .preset-btns {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .preset-btns button {
+      padding: 7px 0;
+      font-size: var(--fs-label);
+      border: 1px solid var(--surface-strong);
+      background: var(--surface);
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--text);
+      font-weight: 500;
+      transition: all var(--dur) var(--ease);
+    }
+    .preset-btns button:hover {
+      border-color: var(--focus);
+      background: #EDF3F7;
+    }
+    .preset-btns button[aria-pressed="true"] {
+      background: var(--focus);
+      color: #FFF;
+      border-color: var(--focus);
+      font-weight: 700;
+    }
+
+    /* 实时测量大卡片 */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .stat-box {
+      background: #FFFFFF;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .stat-box.target {
+      border-color: var(--aggregate);
+      background: #FFF9F8;
+    }
+    .stat-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .stat-val {
+      font-family: var(--font-num);
+      font-size: 34px;
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text);
+    }
+    .stat-box.target .stat-val {
+      color: var(--aggregate);
+    }
+    .stat-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    /* 诊断与结论提示条 */
+    .insight-box {
+      border-left: 4px solid var(--focus);
+      background: #EBF4F6;
+      padding: 12px 14px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .insight-box strong {
+      color: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="06" data-total="27">
+  <div id="stage">
+    <header class="header-row">
+      <div class="header-titles">
+        <h1>相关错误如何削弱多数表决</h1>
+        <p>基分类器个体准确率恒定为 65%（错误率 35%），考察 25 个分类器在不同错误相关度下的投票稳定性</p>
+      </div>
+      <div class="top-formula">
+        <span class="formula-tag">Condorcet 多数票定理假定</span>
+        <span class="formula-val">独立性 &rho; = 0</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <!-- 左列：错误分布与多数表决矩阵图 -->
+      <section class="left-col min0">
+        <div class="matrix-panel min0">
+          <div class="panel-head">
+            <h2>40 个测试样本的预测与投票矩阵</h2>
+            <div class="legend-group">
+              <span class="legend-item"><span class="dot correct"></span>预测正确 (&ge;13票)</span>
+              <span class="legend-item"><span class="dot wrong"></span>表决失败 / 错误集簇</span>
+              <span class="legend-item"><span class="dot learner"></span>基学习器行</span>
+            </div>
+          </div>
+
+          <div class="canvas-wrap min0">
+            <canvas id="matrixCanvas" class="cv-fill"></canvas>
+          </div>
+
+          <div class="inspect-bar" id="inspectBar">
+            <div>
+              <span>选定测试样本：</span>
+              <span class="sample-pill" id="samplePill">#14</span>
+              <span style="color:var(--muted); margin-left:10px;" id="sampleDetail">基学习器正确票数：18 / 25</span>
+            </div>
+            <div class="vote-summary">
+              <span>集成表决结果：</span>
+              <span class="vote-pill pass" id="voteResultPill">多数正确 (72%)</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右列：参数调节与误差结构影响分析 -->
+      <section class="right-col min0">
+        <div class="card">
+          <h3>调节误差相关系数 (&rho;)</h3>
+          <div class="control-row">
+            <div class="control-label">
+              <span>基学习器间错误相关性 &rho;</span>
+              <b id="rhoVal">0.00</b>
+            </div>
+            <input type="range" id="rhoSlider" min="0" max="0.85" step="0.05" value="0.00">
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">预设典型工况：</span>
+            <div class="preset-btns">
+              <button data-rho="0.00" aria-pressed="true" id="btnIndep">完全独立 (0.0)</button>
+              <button data-rho="0.35" aria-pressed="false" id="btnMed">同源特征 (0.35)</button>
+              <button data-rho="0.75" aria-pressed="false" id="btnHigh">强耦合 (0.75)</button>
+            </div>
+          </div>
+
+          <div class="control-row" style="margin-top: 4px;">
+            <button class="btn" id="btnReseed" style="width:100%; padding:8px 0; border:1px solid var(--surface-strong); background:var(--surface-strong); border-radius:6px; cursor:pointer; font-size:var(--fs-sec); font-weight:600; color:var(--text);">
+              重新生成测试样本模拟集
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>集成预测测量对比</h3>
+          <div class="stat-grid">
+            <div class="stat-box">
+              <span class="stat-label">单学习器期望准确率</span>
+              <span class="stat-val">65.0%</span>
+              <span class="stat-desc">个体错误率基线 35.0%</span>
+            </div>
+            <div class="stat-box target">
+              <span class="stat-label">集成多数表决准确率</span>
+              <span class="stat-val" id="ensAccVal">93.8%</span>
+              <span class="stat-desc" id="ensAccDelta">相比单模型提升 +28.8%</span>
+            </div>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat-box">
+              <span class="stat-label">集体同步出错样本数</span>
+              <span class="stat-val" id="collabFailCount">1 / 40</span>
+              <span class="stat-desc">多数学习器同时失误</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">表决票数标准差</span>
+              <span class="stat-val" id="voteStdVal">2.4</span>
+              <span class="stat-desc">相关性推高票数摇摆度</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="insight-box" id="insightMsg">
+          <strong>独立状态：</strong>个体错误呈泊松二项分散分布。只要多数表决门槛（&ge;13票）成立，集成就将个体 35% 的失误率大幅压制至约 6%。
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 教学模型规格：
+      // N = 25 个基分类器，进行硬投票多数表决（>12 票即正确）
+      // S = 40 个测试样本，每个样本难度遵循真实分布
+      // 单模型基础错误率 p = 0.35（准确率 65%）
+      // 相关系数 rho 控制共同潜在噪声（Latent factor model）：
+      // 对样本 s，存在共享难度冲击 Z_s ~ N(0, 1)
+      // 每个学习器 i 产生潜在变量 X_is = sqrt(rho)*Z_s + sqrt(1 - rho)*E_is，其中 E_is ~ N(0, 1)
+      // X_is > threshold 视为出错。阈值由标准正态分位数确立使得边缘 P(Error) = 0.35
+      
+      const NUM_LEARNERS = 25;
+      const NUM_SAMPLES = 40;
+      const BASE_ERR_RATE = 0.35; // 65% 准确率
+      const ERR_THRESH = 0.3853; // Phi(0.3853) approx 0.65, so P(X > 0.3853) = 0.35
+
+      let currentRho = 0.0;
+      let seed = 42;
+      let selectedSampleIdx = 14;
+      let matrixData = []; // [NUM_LEARNERS][NUM_SAMPLES] boolean (true = 正确, false = 错误)
+      let sampleConsensus = []; // [NUM_SAMPLES] number of correct votes
+
+      const ui = {
+        canvas: document.getElementById("matrixCanvas"),
+        rhoSlider: document.getElementById("rhoSlider"),
+        rhoVal: document.getElementById("rhoVal"),
+        btnIndep: document.getElementById("btnIndep"),
+        btnMed: document.getElementById("btnMed"),
+        btnHigh: document.getElementById("btnHigh"),
+        btnReseed: document.getElementById("btnReseed"),
+        samplePill: document.getElementById("samplePill"),
+        sampleDetail: document.getElementById("sampleDetail"),
+        voteResultPill: document.getElementById("voteResultPill"),
+        ensAccVal: document.getElementById("ensAccVal"),
+        ensAccDelta: document.getElementById("ensAccDelta"),
+        collabFailCount: document.getElementById("collabFailCount"),
+        voteStdVal: document.getElementById("voteStdVal"),
+        insightMsg: document.getElementById("insightMsg"),
+      };
+
+      // 伪随机生成器 (Box-Muller 法生成标准正态分布)
+      function createRng(s) {
+        let state = s;
+        return function() {
+          state = (state * 9301 + 49297) % 233280;
+          return state / 233280;
+        };
+      }
+
+      function randn(rng) {
+        let u = 0, v = 0;
+        while (u === 0) u = rng();
+        while (v === 0) v = rng();
+        return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+      }
+
+      // 生成矩阵数据
+      function simulate(rho, s) {
+        const rng = createRng(s);
+        const data = [];
+        const consensus = new Array(NUM_SAMPLES).fill(0);
+
+        // 为每个样本生成共享因子
+        const sharedFactors = [];
+        for (let j = 0; j < NUM_SAMPLES; j++) {
+          sharedFactors.push(randn(rng));
+        }
+
+        const sqrtRho = Math.sqrt(rho);
+        const sqrtOneMinusRho = Math.sqrt(1 - rho);
+
+        for (let i = 0; i < NUM_LEARNERS; i++) {
+          const row = [];
+          for (let j = 0; j < NUM_SAMPLES; j++) {
+            const zShared = sharedFactors[j];
+            const eIndep = randn(rng);
+            const latent = sqrtRho * zShared + sqrtOneMinusRho * eIndep;
+            const isError = latent > ERR_THRESH; // 满足单模型边缘错误率 35%
+            const isCorrect = !isError;
+            row.push(isCorrect);
+            if (isCorrect) consensus[j]++;
+          }
+          data.push(row);
+        }
+
+        return { data, consensus };
+      }
+
+      function updateData() {
+        const sim = simulate(currentRho, seed);
+        matrixData = sim.data;
+        sampleConsensus = sim.consensus;
+
+        // 计算指标
+        let ensCorrectCount = 0;
+        let sumVotes = 0;
+        let sumVotesSq = 0;
+
+        for (let j = 0; j < NUM_SAMPLES; j++) {
+          const votes = sampleConsensus[j];
+          if (votes >= 13) ensCorrectCount++;
+          sumVotes += votes;
+          sumVotesSq += votes * votes;
+        }
+
+        const ensAcc = (ensCorrectCount / NUM_SAMPLES) * 100;
+        const ensDelta = ensAcc - (1 - BASE_ERR_RATE) * 100;
+        const meanVotes = sumVotes / NUM_SAMPLES;
+        const stdVotes = Math.sqrt(Math.max(0, (sumVotesSq / NUM_SAMPLES) - (meanVotes * meanVotes)));
+        const failedCount = NUM_SAMPLES - ensCorrectCount;
+
+        // 更新 UI
+        ui.rhoVal.textContent = currentRho.toFixed(2);
+        ui.ensAccVal.textContent = `${ensAcc.toFixed(1)}%`;
+        ui.ensAccDelta.textContent = `相比单模型 ${ensDelta >= 0 ? '+' : ''}${ensDelta.toFixed(1)}%`;
+        ui.collabFailCount.textContent = `${failedCount} / ${NUM_SAMPLES}`;
+        ui.voteStdVal.textContent = stdVotes.toFixed(1);
+
+        // 更新按钮状态
+        [ui.btnIndep, ui.btnMed, ui.btnHigh].forEach(btn => {
+          const bRho = parseFloat(btn.dataset.rho);
+          btn.setAttribute("aria-pressed", Math.abs(bRho - currentRho) < 0.04 ? "true" : "false");
+        });
+
+        // 诊断说明
+        if (currentRho < 0.15) {
+          ui.insightMsg.innerHTML = '<strong>独立状态 (&rho; &asymp; 0)：</strong>个体错误均匀离散，互相抵消。25 个模型在绝大部分样本上轻松超过 13 票半数阈值，集成准确率显著突破单模型极限。';
+        } else if (currentRho < 0.55) {
+          ui.insightMsg.innerHTML = '<strong>中度相关 (&rho; &asymp; 0.35)：</strong>同源特征或相似算法结构导致错误开始出现「列状聚集」。若干较难样本上，多个学习器同时犯错，集成优势明显收窄。';
+        } else {
+          ui.insightMsg.innerHTML = '<strong>高度相关 (&rho; &ge; 0.70)：</strong>学习器集体趋同，犯错步调高度一致！多数表决退化为「放大群体偏见」，集成准确率跌回甚至逼近单模型 65% 的水准。';
+        }
+
+        updateInspectBar();
+      }
+
+      function updateInspectBar() {
+        ui.samplePill.textContent = `#${selectedSampleIdx + 1}`;
+        const votes = sampleConsensus[selectedSampleIdx];
+        const pct = Math.round((votes / NUM_LEARNERS) * 100);
+        ui.sampleDetail.textContent = `基学习器正确票数：${votes} / ${NUM_LEARNERS} (${pct}%)`;
+
+        if (votes >= 13) {
+          ui.voteResultPill.className = "vote-pill pass";
+          ui.voteResultPill.textContent = `多数正确 (${votes}票)`;
+        } else {
+          ui.voteResultPill.className = "vote-pill fail";
+          ui.voteResultPill.textContent = `表决失误 (${votes}票)`;
+        }
+      }
+
+      // Canvas 矩阵绘制
+      function drawMatrix(ctx) {
+        const w = ui.canvas.offsetWidth;
+        const h = ui.canvas.offsetHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        if (!matrixData || matrixData.length === 0) return;
+
+        const leftMargin = 72;
+        const rightMargin = 16;
+        const topMargin = 26;
+        const bottomAreaHeight = 62; // 底部留给集成多数表决汇总行
+        const innerW = w - leftMargin - rightMargin;
+        const innerH = h - topMargin - bottomAreaHeight;
+
+        const cellW = innerW / NUM_SAMPLES;
+        const cellH = innerH / NUM_LEARNERS;
+
+        // 绘制样本列背景与选定指示
+        for (let j = 0; j < NUM_SAMPLES; j++) {
+          const x = leftMargin + j * cellW;
+          if (j === selectedSampleIdx) {
+            ctx.fillStyle = "rgba(0, 107, 114, 0.15)";
+            ctx.fillRect(x - 1, topMargin - 4, cellW + 2, innerH + bottomAreaHeight + 4);
+            ctx.strokeStyle = "#006B72";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x - 1, topMargin - 4, cellW + 2, innerH + bottomAreaHeight + 4);
+          }
+        }
+
+        // 绘制 25 个学习器的矩阵单元格
+        for (let i = 0; i < NUM_LEARNERS; i++) {
+          const y = topMargin + i * cellH;
+
+          // 左侧学习器标签
+          if (i === 0 || i === 12 || i === 24) {
+            ctx.fillStyle = "#536777";
+            ctx.font = "13px sans-serif";
+            ctx.textAlign = "right";
+            ctx.textBaseline = "middle";
+            ctx.fillText(`M${i + 1}`, leftMargin - 10, y + cellH / 2);
+          }
+
+          for (let j = 0; j < NUM_SAMPLES; j++) {
+            const x = leftMargin + j * cellW;
+            const isCorrect = matrixData[i][j];
+
+            ctx.fillStyle = isCorrect ? "#2E6A45" : "#B63B24";
+            ctx.fillRect(x + 1, y + 1, Math.max(1, cellW - 2), Math.max(1, cellH - 2));
+          }
+        }
+
+        // 分割线：基学习器与集成总表决行
+        const splitY = topMargin + innerH + 8;
+        ctx.strokeStyle = "#D7E1E8";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(leftMargin, splitY);
+        ctx.lineTo(w - rightMargin, splitY);
+        ctx.stroke();
+
+        // 底部集成表决汇总行
+        const summaryY = splitY + 12;
+        const summaryH = 26;
+
+        ctx.fillStyle = "#142533";
+        ctx.font = "bold 13px sans-serif";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillText("多数表决", leftMargin - 10, summaryY + summaryH / 2);
+
+        for (let j = 0; j < NUM_SAMPLES; j++) {
+          const x = leftMargin + j * cellW;
+          const votes = sampleConsensus[j];
+          const isPass = votes >= 13;
+
+          ctx.fillStyle = isPass ? "#2E6A45" : "#B63B24";
+          Deck.rr(ctx, x + 1, summaryY, Math.max(2, cellW - 2), summaryH, 3);
+          ctx.fill();
+
+          // 样本序号（底部刻度，每隔 5 个）
+          if (j === 0 || (j + 1) % 5 === 0 || j === NUM_SAMPLES - 1) {
+            ctx.fillStyle = "#536777";
+            ctx.font = "12px Bahnschrift, DIN Alternate, sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText(`${j + 1}`, x + cellW / 2, summaryY + summaryH + 13);
+          }
+        }
+      }
+
+      // 初始化 Canvas autofit
+      let canvasFit;
+
+      // 交互事件绑定
+      ui.rhoSlider.addEventListener("input", (e) => {
+        currentRho = parseFloat(e.target.value);
+        updateData();
+        if (canvasFit) canvasFit.redraw();
+      });
+
+      function setRho(val) {
+        currentRho = val;
+        ui.rhoSlider.value = val;
+        updateData();
+        if (canvasFit) canvasFit.redraw();
+      }
+
+      ui.btnIndep.addEventListener("click", () => setRho(0.0));
+      ui.btnMed.addEventListener("click", () => setRho(0.35));
+      ui.btnHigh.addEventListener("click", () => setRho(0.75));
+
+      ui.btnReseed.addEventListener("click", () => {
+        seed = Math.floor(Math.random() * 10000);
+        updateData();
+        if (canvasFit) canvasFit.redraw();
+      });
+
+      // 画布点击选择样本测试列
+      ui.canvas.addEventListener("pointerdown", (e) => {
+        const pt = Deck.pt(ui.canvas, e);
+        const leftMargin = 70;
+        const rightMargin = 20;
+        const innerW = ui.canvas.offsetWidth - leftMargin - rightMargin;
+        const cellW = innerW / NUM_SAMPLES;
+
+        const clickX = pt.x;
+        if (clickX >= leftMargin && clickX <= ui.canvas.offsetWidth - rightMargin) {
+          const clickedIdx = Math.floor((clickX - leftMargin) / cellW);
+          if (clickedIdx >= 0 && clickedIdx < NUM_SAMPLES) {
+            selectedSampleIdx = clickedIdx;
+            updateInspectBar();
+            if (canvasFit) canvasFit.redraw();
+          }
+        }
+      });
+
+      // 初始化数据后启动 canvasFit
+      updateData();
+      canvasFit = Deck.autofit(ui.canvas, drawMatrix);
+      Deck.init({ index: 6, total: 27 });
+    })();
+  </script>
+</body>
+</html>

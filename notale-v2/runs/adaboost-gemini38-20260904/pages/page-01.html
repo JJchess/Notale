@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AdaBoosting 算法：让一组略胜随机的弱分类器形成可靠判断</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      overflow: hidden;
+      background: var(--bg);
+      display: block;
+      padding: 0;
+    }
+
+    /* 背景细微网格与刻度结构 */
+    .field-grid {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: .45;
+    }
+
+    /* 左侧题头区 */
+    .title-block {
+      position: absolute;
+      left: var(--pad-x);
+      top: 110px;
+      width: 580px;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .title-header {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .title-main {
+      font-size: 58px;
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -.03em;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .title-main span.accent {
+      color: var(--ensemble);
+      display: inline-block;
+    }
+
+    .title-sub {
+      margin: 0;
+      font-size: 23px;
+      line-height: 1.45;
+      font-weight: 500;
+      color: var(--muted);
+      max-width: 24ch;
+    }
+
+    .concept-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-top: 12px;
+    }
+
+    .concept-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 14px;
+      background: rgba(227, 235, 239, .65);
+      border: 1px solid rgba(80, 101, 109, .25);
+      border-radius: var(--radius);
+      backdrop-filter: blur(4px);
+    }
+
+    .concept-num {
+      font-family: var(--font-num);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--muted);
+      width: 24px;
+      text-align: center;
+    }
+
+    .concept-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .concept-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .concept-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .title-foot {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: var(--fs-label);
+    }
+
+    /* 右侧图解舞台 */
+    .composition-stage {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* 交互触发浮标 */
+    .stage-interactive {
+      position: absolute;
+      right: var(--pad-x);
+      bottom: var(--pad-y);
+      z-index: 6;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* 动画与过渡 */
+    .anim-branch {
+      transition: stroke-dashoffset 1.2s var(--ease), opacity .8s var(--ease);
+    }
+
+    .is-entering .title-main { animation: title-in 0.9s var(--ease) both; }
+    .is-entering .title-sub { animation: title-in 0.9s 0.15s var(--ease) both; }
+    .is-entering .concept-row { animation: card-in 0.8s 0.3s var(--ease) both; }
+    .is-entering .composition-svg { animation: stage-in 1.1s 0.1s var(--ease) both; }
+
+    @keyframes title-in {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes card-in {
+      from { opacity: 0; transform: translateX(-12px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes stage-in {
+      from { opacity: 0; transform: scale(.985); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .is-entering * { animation: none !important; }
+    }
+  </style>
+</head>
+<body data-page="01" data-total="5">
+  <div id="stage" class="is-entering" tabindex="0" role="region" aria-label="AdaBoosting 算法讲义扉页">
+    <!-- 背景网格坐标 -->
+    <svg class="field-grid" width="1600" height="900" viewBox="0 0 1600 900" aria-hidden="true">
+      <defs>
+        <pattern id="gridPattern" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#50656D" stroke-opacity="0.12" stroke-width="1"/>
+        </pattern>
+        <linearGradient id="gridFade" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#F2F6F8" stop-opacity="0.95"/>
+          <stop offset="45%" stop-color="#F2F6F8" stop-opacity="0.7"/>
+          <stop offset="100%" stop-color="#F2F6F8" stop-opacity="0.2"/>
+        </linearGradient>
+      </defs>
+      <rect width="1600" height="900" fill="url(#gridPattern)"/>
+      <rect width="1600" height="900" fill="url(#gridFade)"/>
+    </svg>
+
+    <!-- 左侧标题与导读 -->
+    <header class="title-block">
+      <div class="title-header">
+        <h1 class="title-main">
+          AdaBoost<br>
+          <span class="accent">自适应提升</span>
+        </h1>
+        <p class="title-sub">
+          让一组略胜随机的弱分类器，在连续纠错与加权表决中沉淀为可靠判断
+        </p>
+      </div>
+
+      <div class="concept-cards" role="list">
+        <div class="concept-row" role="listitem">
+          <span class="concept-num">01</span>
+          <div class="concept-text">
+            <span class="concept-title">关注难点：错分加权</span>
+            <span class="concept-desc">每一轮提高上一轮错分样本的采样权重，强迫后续弱分类器攻坚盲区</span>
+          </div>
+        </div>
+        <div class="concept-row" role="listitem">
+          <span class="concept-num">02</span>
+          <div class="concept-text">
+            <span class="concept-title">能力量化：系数分配</span>
+            <span class="concept-desc">误差率更低的弱分类器获得更高投票发言权，兼听且有所偏重</span>
+          </div>
+        </div>
+        <div class="concept-row" role="listitem">
+          <span class="concept-num">03</span>
+          <div class="concept-text">
+            <span class="concept-title">非线性突围：集成决策</span>
+            <span class="concept-desc">多道极简单轴判决桩线性叠加，围合出高维清晰的非线性边界</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="title-foot">
+        <span class="vote-mark" aria-hidden="true">
+          <i></i><i></i><i></i>
+        </span>
+        <span>加权表决架构 · 5 节交互进阶</span>
+      </div>
+    </header>
+
+    <!-- 右侧核心图解构图：从弱桩到强边界的演化折射 -->
+    <div class="composition-stage">
+      <svg class="composition-svg" width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <!-- 强分类器平滑决策区域渐变底色 -->
+          <linearGradient id="posAreaGrad" x1="1060" y1="200" x2="1480" y2="700" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#17617B" stop-opacity="0.14"/>
+            <stop offset="100%" stop-color="#17617B" stop-opacity="0.03"/>
+          </linearGradient>
+          <linearGradient id="negAreaGrad" x1="1060" y1="700" x2="1480" y2="200" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#B43A13" stop-opacity="0.12"/>
+            <stop offset="100%" stop-color="#B43A13" stop-opacity="0.02"/>
+          </linearGradient>
+
+          <!-- 弱分类器桩连接束 -->
+          <linearGradient id="beam1" x1="840" y1="210" x2="1140" y2="450" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#526A73" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="#17617B" stop-opacity="0.8"/>
+          </linearGradient>
+          <linearGradient id="beam2" x1="840" y1="450" x2="1140" y2="450" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#526A73" stop-opacity="0.5"/>
+            <stop offset="100%" stop-color="#17617B" stop-opacity="0.85"/>
+          </linearGradient>
+          <linearGradient id="beam3" x1="840" y1="690" x2="1140" y2="450" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#526A73" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="#17617B" stop-opacity="0.8"/>
+          </linearGradient>
+
+          <filter id="shadowPlate" x="-10%" y="-10%" width="120%" height="120%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#14272E" flood-opacity="0.08"/>
+          </filter>
+        </defs>
+
+        <!-- 背景连接导线：弱桩向集成中心的汇聚 -->
+        <g class="flow-connectors" stroke-linecap="round">
+          <path d="M 870 230 C 970 230, 1020 380, 1140 450" stroke="url(#beam1)" stroke-width="2.5" stroke-dasharray="6 6"/>
+          <path d="M 870 450 L 1140 450" stroke="url(#beam2)" stroke-width="3"/>
+          <path d="M 870 670 C 970 670, 1020 520, 1140 450" stroke="url(#beam3)" stroke-width="2.5" stroke-dasharray="6 6"/>
+        </g>
+
+        <!-- 左/中侧三枚微型弱分类器板块 (h1, h2, h3) -->
+        <!-- 板块 1: h_1 垂直切分 -->
+        <g id="stump-1" transform="translate(640, 140)" filter="url(#shadowPlate)">
+          <rect width="230" height="180" rx="8" fill="#E3EBEF" stroke="#50656D" stroke-width="1.5"/>
+          <!-- 坐标轴底线 -->
+          <line x1="30" y1="150" x2="200" y2="150" stroke="#50656D" stroke-width="1" stroke-opacity="0.4"/>
+          <line x1="30" y1="30" x2="30" y2="150" stroke="#50656D" stroke-width="1" stroke-opacity="0.4"/>
+          <!-- 单轴切分桩 (x = 110) -->
+          <line x1="115" y1="26" x2="115" y2="154" stroke="#526A73" stroke-width="2.5" stroke-dasharray="4 3"/>
+          <!-- 判定方向箭头 -->
+          <path d="M 115 45 L 85 45 M 95 39 L 85 45 L 95 51" stroke="#526A73" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- 样本点分布 -->
+          <circle cx="65" cy="70" r="5" fill="#17617B"/>
+          <circle cx="85" cy="115" r="5" fill="#17617B"/>
+          <circle cx="70" cy="130" r="5" fill="#17617B"/>
+          <circle cx="150" cy="65" r="5" fill="#50656D"/>
+          <circle cx="170" cy="100" r="5" fill="#50656D"/>
+          <!-- 错分样本被着重放大并标记权重色 -->
+          <circle cx="95" cy="90" r="9" fill="none" stroke="#B43A13" stroke-width="2"/>
+          <circle cx="95" cy="90" r="4.5" fill="#B43A13"/>
+          <!-- 标签 -->
+          <rect x="12" y="10" width="46" height="20" rx="4" fill="#526A73"/>
+          <text x="35" y="24" fill="#F2F6F8" font-size="12" font-family="var(--font-sans)" font-weight="700" text-anchor="middle">h₁(x)</text>
+          <text x="210" y="24" fill="#50656D" font-size="13" font-family="var(--font-num)" font-weight="700" text-anchor="end">α₁ = 0.42</text>
+        </g>
+
+        <!-- 板块 2: h_2 水平切分 -->
+        <g id="stump-2" transform="translate(640, 360)" filter="url(#shadowPlate)">
+          <rect width="230" height="180" rx="8" fill="#E3EBEF" stroke="#50656D" stroke-width="1.5"/>
+          <line x1="30" y1="150" x2="200" y2="150" stroke="#50656D" stroke-width="1" stroke-opacity="0.4"/>
+          <line x1="30" y1="30" x2="30" y2="150" stroke="#50656D" stroke-width="1" stroke-opacity="0.4"/>
+          <!-- 水平切分桩 (y = 95) -->
+          <line x1="26" y1="90" x2="204" y2="90" stroke="#526A73" stroke-width="2.5" stroke-dasharray="4 3"/>
+          <!-- 判定方向箭头 -->
+          <path d="M 115 90 L 115 60 M 109 70 L 115 60 L 121 70" stroke="#526A73" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- 样本点分布 -->
+          <circle cx="65" cy="70" r="5" fill="#17617B"/>
+          <circle cx="150" cy="65" r="5" fill="#17617B"/>
+          <circle cx="170" cy="125" r="5" fill="#50656D"/>
+          <circle cx="135" cy="140" r="5" fill="#50656D"/>
+          <!-- 受到上一轮权重驱动放大的关键点 -->
+          <circle cx="95" cy="90" r="11" fill="none" stroke="#17617B" stroke-width="2"/>
+          <circle cx="95" cy="90" r="6" fill="#17617B"/>
+          <!-- 错分点 -->
+          <circle cx="165" cy="75" r="8" fill="none" stroke="#B43A13" stroke-width="2"/>
+          <circle cx="165" cy="75" r="4" fill="#B43A13"/>
+          <!-- 标签 -->
+          <rect x="12" y="10" width="46" height="20" rx="4" fill="#526A73"/>
+          <text x="35" y="24" fill="#F2F6F8" font-size="12" font-family="var(--font-sans)" font-weight="700" text-anchor="middle">h₂(x)</text>
+          <text x="210" y="24" fill="#50656D" font-size="13" font-family="var(--font-num)" font-weight="700" text-anchor="end">α₂ = 0.65</text>
+        </g>
+
+        <!-- 板块 3: h_3 垂直切分（后段攻坚） -->
+        <g id="stump-3" transform="translate(640, 580)" filter="url(#shadowPlate)">
+          <rect width="230" height="180" rx="8" fill="#E3EBEF" stroke="#50656D" stroke-width="1.5"/>
+          <line x1="30" y1="150" x2="200" y2="150" stroke="#50656D" stroke-width="1" stroke-opacity="0.4"/>
+          <line x1="30" y1="30" x2="30" y2="150" stroke="#50656D" stroke-width="1" stroke-opacity="0.4"/>
+          <!-- 右侧垂直切分桩 (x = 155) -->
+          <line x1="155" y1="26" x2="155" y2="154" stroke="#526A73" stroke-width="2.5" stroke-dasharray="4 3"/>
+          <!-- 判定方向箭头 -->
+          <path d="M 155 110 L 185 110 M 175 104 L 185 110 L 175 116" stroke="#526A73" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- 样本点分布 -->
+          <circle cx="65" cy="70" r="5" fill="#50656D"/>
+          <circle cx="95" cy="90" r="5" fill="#50656D"/>
+          <circle cx="170" cy="125" r="5" fill="#17617B"/>
+          <circle cx="180" cy="65" r="5" fill="#17617B"/>
+          <circle cx="130" cy="135" r="5" fill="#50656D"/>
+          <!-- 标签 -->
+          <rect x="12" y="10" width="46" height="20" rx="4" fill="#526A73"/>
+          <text x="35" y="24" fill="#F2F6F8" font-size="12" font-family="var(--font-sans)" font-weight="700" text-anchor="middle">h₃(x)</text>
+          <text x="210" y="24" fill="#50656D" font-size="13" font-family="var(--font-num)" font-weight="700" text-anchor="end">α₃ = 0.92</text>
+        </g>
+
+        <!-- 聚合计算中枢节点：加权求和与符号函数 -->
+        <g id="aggregator" transform="translate(1010, 400)">
+          <!-- 环形汇聚光晕 -->
+          <circle cx="50" cy="50" r="48" fill="#F2F6F8" stroke="#17617B" stroke-width="2.5"/>
+          <circle cx="50" cy="50" r="38" fill="#E3EBEF" stroke="#50656D" stroke-width="1" stroke-opacity="0.3"/>
+          <!-- 加权符号公式 -->
+          <text x="50" y="44" fill="#17617B" font-size="18" font-family="var(--font-sans)" font-weight="800" text-anchor="middle">∑ αₜhₜ</text>
+          <text x="50" y="64" fill="#50656D" font-size="12" font-family="var(--font-sans)" font-weight="600" text-anchor="middle">加权表决</text>
+          <!-- 聚合指向大图的强力主导线 -->
+          <path d="M 100 50 L 150 50" stroke="#17617B" stroke-width="3.5" stroke-linecap="round"/>
+          <polygon points="150,45 160,50 150,55" fill="#17617B"/>
+        </g>
+
+        <!-- 右侧大画幅：集成强分类器决策边界 H(x) -->
+        <g id="ensemble-board" transform="translate(1180, 180)" filter="url(#shadowPlate)">
+          <!-- 板面基底 -->
+          <rect width="360" height="540" rx="12" fill="#E3EBEF" stroke="#17617B" stroke-width="2"/>
+          
+          <!-- 标题标签栏 -->
+          <rect x="20" y="20" width="108" height="26" rx="6" fill="#17617B"/>
+          <text x="74" y="38" fill="#F2F6F8" font-size="14" font-family="var(--font-sans)" font-weight="700" text-anchor="middle">强分类器 H(x)</text>
+          <text x="340" y="38" fill="#50656D" font-size="14" font-family="var(--font-num)" font-weight="700" text-anchor="end">准确率: 100%</text>
+
+          <!-- 坐标系与网格 -->
+          <g transform="translate(30, 70)">
+            <rect width="300" height="420" rx="6" fill="#F2F6F8" stroke="#50656D" stroke-width="1" stroke-opacity="0.3"/>
+            
+            <!-- 决策面区域填色：正类区域与负类区域 -->
+            <!-- 组合多道切分桩围合出的非线性台阶状平滑边界 -->
+            <path d="M 0 0 L 160 0 L 160 170 L 300 170 L 300 420 L 0 420 Z" fill="url(#posAreaGrad)"/>
+            <path d="M 160 0 L 300 0 L 300 170 L 160 170 Z" fill="url(#negAreaGrad)"/>
+
+            <!-- 组合决策边界 (分段复合边界) -->
+            <path d="M 160 0 L 160 170 L 300 170" fill="none" stroke="#17617B" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+            <path d="M 160 0 L 160 170 L 300 170" fill="none" stroke="#17617B" stroke-width="12" stroke-opacity="0.25" stroke-linejoin="round"/>
+
+            <!-- 多元样本点全景 (分类清晰无误) -->
+            <!-- 正类点群 (+) -->
+            <g fill="#17617B">
+              <circle cx="50" cy="60" r="7"/>
+              <circle cx="110" cy="50" r="6"/>
+              <circle cx="80" cy="120" r="8"/>
+              <circle cx="130" cy="140" r="6"/>
+              <circle cx="60" cy="220" r="7"/>
+              <circle cx="120" cy="280" r="8"/>
+              <circle cx="70" cy="350" r="7"/>
+              <circle cx="140" cy="380" r="6"/>
+              <circle cx="210" cy="250" r="7"/>
+              <circle cx="250" cy="320" r="8"/>
+              <circle cx="270" cy="370" r="6"/>
+            </g>
+
+            <!-- 负类点群 (-) -->
+            <g fill="#B43A13">
+              <circle cx="200" cy="50" r="7"/>
+              <circle cx="260" cy="60" r="8"/>
+              <circle cx="220" cy="110" r="6"/>
+              <circle cx="270" cy="120" r="7"/>
+            </g>
+
+            <!-- 几何说明标签 -->
+            <rect x="175" y="85" width="105" height="22" rx="4" fill="#B43A13" fill-opacity="0.12"/>
+            <text x="227" y="101" fill="#B43A13" font-size="12" font-family="var(--font-sans)" font-weight="700" text-anchor="middle">负类判定空间</text>
+
+            <rect x="25" y="375" width="105" height="22" rx="4" fill="#17617B" fill-opacity="0.12"/>
+            <text x="77" y="391" fill="#17617B" font-size="12" font-family="var(--font-sans)" font-weight="700" text-anchor="middle">正类判定空间</text>
+          </g>
+
+          <!-- 底部注记 -->
+          <text x="180" y="518" fill="#50656D" font-size="13" font-family="var(--font-sans)" font-weight="500" text-anchor="middle">
+            H(x) = sign( 0.42·h₁ + 0.65·h₂ + 0.92·h₃ )
+          </text>
+        </g>
+      </svg>
+    </div>
+
+    <!-- 右下角控制条 -->
+    <div class="stage-interactive">
+      <button class="btn" id="btn-replay" aria-label="重新演示构建动效">
+        重新观察形成过程
+      </button>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      Deck.init({ index: 1, total: 5 });
+
+      var stage = document.getElementById('stage');
+      var replayBtn = document.getElementById('btn-replay');
+
+      function replay() {
+        stage.classList.remove('is-entering');
+        void stage.offsetWidth;
+        stage.classList.add('is-entering');
+      }
+
+      if (replayBtn) {
+        replayBtn.addEventListener('click', replay);
+      }
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'r' || e.key === 'R') {
+          replay();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

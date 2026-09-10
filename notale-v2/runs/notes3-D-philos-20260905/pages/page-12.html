@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>样本随机性与特征随机性的分工</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF2;
+      --text: #142533;
+      --muted: #536777;
+      --surface: #F7FAFC;
+      --surface-strong: #D7E1E8;
+      --learner: #275D91;
+      --aggregate: #B63B24;
+      --correct: #2E6A45;
+      --focus: #006B72;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "DIN Alternate", Bahnschrift, "Noto Sans SC", sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    .page-header {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 2px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+    .page-sub {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 4px 0 0 0;
+    }
+
+    /* 主交互网格 */
+    .workbench {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 360px 1fr 430px;
+      gap: 16px;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 2px solid var(--surface-strong);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 18px;
+      box-sizing: border-box;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      color: var(--text);
+    }
+    .badge-sub {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    /* 左侧控制台 */
+    .ctl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .ctl-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ctl-label-wrap {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+    }
+    .ctl-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      color: var(--focus);
+      font-weight: 700;
+    }
+    .slider-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .slider-wrap input[type="range"] {
+      flex: 1;
+      accent-color: var(--focus);
+      cursor: pointer;
+      height: 6px;
+    }
+    .slider-scale {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+
+    .presets-box {
+      background: rgba(215, 225, 232, 0.35);
+      border: 1px dashed var(--muted);
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 4px;
+    }
+    .preset-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: var(--muted);
+    }
+    .preset-btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .btn-preset {
+      background: var(--surface);
+      border: 1.5px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--dur) var(--ease);
+    }
+    .btn-preset:hover {
+      border-color: var(--focus);
+      color: var(--focus);
+    }
+    .btn-preset[aria-pressed="true"] {
+      background: var(--focus);
+      color: #fff;
+      border-color: var(--focus);
+    }
+
+    .formula-card {
+      margin-top: auto;
+      background: #fff;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--muted);
+    }
+    .formula-card strong {
+      color: var(--text);
+      font-family: var(--font-num);
+    }
+
+    /* 中间：基学习器决策矩阵与投影 */
+    .center-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .matrix-board {
+      flex: 1;
+      background: #fff;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .matrix-title-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
+      flex: 1;
+      align-content: start;
+    }
+    .tree-card {
+      background: var(--surface);
+      border: 1.5px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 8px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 4px;
+      transition: border-color var(--dur);
+    }
+    .tree-card.active {
+      border-color: var(--learner);
+      background: rgba(39, 93, 145, 0.05);
+    }
+    .tree-card-id {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      color: var(--learner);
+      font-family: var(--font-num);
+    }
+    .tree-svg-thumb {
+      width: 44px;
+      height: 38px;
+    }
+    .tree-feat-tags {
+      display: flex;
+      gap: 2px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .feat-tag {
+      font-size: var(--fs-tick);
+      padding: 1px 4px;
+      border-radius: 3px;
+      background: #E2E8F0;
+      color: #334155;
+      font-family: var(--font-num);
+      font-weight: 600;
+    }
+    .feat-tag.dominant {
+      background: #FEE2E2;
+      color: #991B1B;
+      font-weight: 700;
+    }
+
+    .matrix-canvas-box {
+      flex: 1;
+      min-height: 180px;
+      position: relative;
+      background: #FCFDFD;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .canvas-desc {
+      position: absolute;
+      top: 8px;
+      left: 10px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      z-index: 2;
+      background: rgba(255, 255, 255, 0.85);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    /* 右侧：测量与误差分解柱状图 */
+    .metrics-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .metric-row-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .metric-card {
+      background: #fff;
+      border: 1.5px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+    }
+    .m-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .m-num {
+      font-family: var(--font-num);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .m-num.accent-blue { color: var(--learner); }
+    .m-num.accent-red { color: var(--aggregate); }
+    .m-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .chart-container {
+      flex: 1;
+      background: #fff;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .chart-head {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chart-canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+
+    .analysis-callout {
+      background: var(--surface);
+      border: 1.5px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .analysis-callout b {
+      color: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="12" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题 -->
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">样本随机性与特征随机性的分工</h1>
+        <p class="page-sub">通过双滑块调节重采样率与特征子采样比，观察树间相关性 ρ 与单树方差 σ² 对集成总误差的协同裁减</p>
+      </div>
+    </header>
+
+    <!-- 主交互工作区 -->
+    <main class="workbench">
+      <!-- 左栏：控制面板 -->
+      <section class="panel min0" aria-label="随机性控制参数">
+        <div class="panel-head">
+          <h2 class="panel-title">双重随机源设置</h2>
+          <span class="badge-sub">实时模拟 12 棵决策树</span>
+        </div>
+
+        <div class="ctl-group">
+          <!-- 样本重采样率 -->
+          <div class="ctl-row">
+            <div class="ctl-label-wrap">
+              <label for="slider-sample">样本抽样比例 (Bootstrap)</label>
+              <span class="ctl-val" id="val-sample">100% (有放回)</span>
+            </div>
+            <div class="slider-wrap">
+              <input type="range" id="slider-sample" min="20" max="100" step="10" value="100" aria-label="样本抽样比例">
+            </div>
+            <div class="slider-scale">
+              <span>20% (高样本差异)</span>
+              <span>60%</span>
+              <span>100% (标准Bootstrap)</span>
+            </div>
+          </div>
+
+          <!-- 特征子采样数 m/d -->
+          <div class="ctl-row">
+            <div class="ctl-label-wrap">
+              <label for="slider-feat">特征分裂子采样比 (m / p)</label>
+              <span class="ctl-val" id="val-feat">3 / 10 特征 (30%)</span>
+            </div>
+            <div class="slider-wrap">
+              <input type="range" id="slider-feat" min="1" max="10" step="1" value="3" aria-label="候选特征数">
+            </div>
+            <div class="slider-scale">
+              <span>m=1 (极大解耦)</span>
+              <span>m=√p≈3 (典型RF)</span>
+              <span>m=p=10 (纯Bagging)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 典型工况预设 -->
+        <div class="presets-box">
+          <div class="preset-title">典型参数组合对比</div>
+          <div class="preset-btns">
+            <button type="button" class="btn-preset" id="preset-rf" aria-pressed="true">随机森林 (m=√p)</button>
+            <button type="button" class="btn-preset" id="preset-bagging" aria-pressed="false">标准 Bagging (m=p)</button>
+            <button type="button" class="btn-preset" id="preset-decouple" aria-pressed="false">极限去耦 (m=1)</button>
+            <button type="button" class="btn-preset" id="preset-identical" aria-pressed="false">无随机性基准</button>
+          </div>
+        </div>
+
+        <!-- 理论公式卡片 -->
+        <div class="formula-card">
+          <div style="font-weight:700; margin-bottom:4px; color:var(--text);">集成方差公式 (Breiman 误差分解)</div>
+          <div>Var(集成) = <strong>ρ · σ²</strong> + <strong>(1 - ρ)/B · σ²</strong></div>
+          <div style="margin-top:4px;">
+            当树数 B=12 增大时，第二项趋向 0，剩余误差由 <strong>ρ · σ²</strong> 绝对主导。特征随机性压低 <strong>ρ</strong>，而样本抽样保障 <strong>σ²</strong> 可控。
+          </div>
+        </div>
+      </section>
+
+      <!-- 中栏：基学习器树群结构与特征占有率 -->
+      <section class="panel min0 center-col" aria-label="12棵决策树的内部差异呈现">
+        <div class="panel-head">
+          <h2 class="panel-title">基学习器多样性图谱</h2>
+          <span class="badge-sub">观察强特征是否垄断首层分裂</span>
+        </div>
+
+        <!-- 12 棵树卡片网格 -->
+        <div class="matrix-board min0">
+          <div class="matrix-title-bar">
+            <span>基树分裂主特征分布 (F1~F10)</span>
+            <span style="font-size:var(--fs-tick); color:var(--muted); font-weight:normal;">
+              <span style="display:inline-block; width:8px; height:8px; background:#FEE2E2; border:1px solid #991B1B; margin-right:2px; vertical-align:middle;"></span>
+              F1/F2 为全局强特征
+            </span>
+          </div>
+          <div class="matrix-grid" id="tree-grid">
+            <!-- 由 JS 渲染 12 棵树 -->
+          </div>
+        </div>
+
+        <!-- 决策边界扰动图 Canvas -->
+        <div class="matrix-canvas-box min0">
+          <div class="canvas-desc">
+            <strong>12 棵树在二维主平面的决策切分线重叠度</strong>（线条越分散，相关性 ρ 越低）
+          </div>
+          <canvas id="cv-boundary" class="cv-fill"></canvas>
+        </div>
+      </section>
+
+      <!-- 右栏：量化指标与集成误差分解图 -->
+      <section class="panel min0 metrics-col" aria-label="指标读数与误差分解">
+        <div class="panel-head">
+          <h2 class="panel-title">误差与多样性定量测量</h2>
+          <span class="badge-sub">真模型数值推导</span>
+        </div>
+
+        <div class="metric-row-cards">
+          <div class="metric-card">
+            <span class="m-label">树间平均相关性 (ρ)</span>
+            <span class="m-num accent-blue" id="val-rho">0.28</span>
+            <span class="m-desc" id="desc-rho">显著去耦 (多样性高)</span>
+          </div>
+          <div class="metric-card">
+            <span class="m-label">单树平均方差 (σ²)</span>
+            <span class="m-num" id="val-sigma">0.42</span>
+            <span class="m-desc" id="desc-sigma">子采样导致轻微增加</span>
+          </div>
+          <div class="metric-card">
+            <span class="m-label">单树平均误差 (E_single)</span>
+            <span class="m-num" id="val-esingle">18.4%</span>
+            <span class="m-desc">个体弱/中等学习器</span>
+          </div>
+          <div class="metric-card">
+            <span class="m-label">集成总泛化误差 (E_ens)</span>
+            <span class="m-num accent-red" id="val-eens">11.8%</span>
+            <span class="m-desc" id="desc-eens">相对单树削减 35.8%</span>
+          </div>
+        </div>
+
+        <!-- ECharts 误差柱状对比图 -->
+        <div class="chart-container min0">
+          <div class="chart-head">
+            <span>误差项结构拆解</span>
+            <div style="font-size:var(--fs-tick); display:flex; gap:8px; align-items:center;">
+              <span style="display:inline-flex; align-items:center; gap:3px;"><i style="display:inline-block; width:8px; height:8px; background:#94A3B8; border-radius:2px;"></i>Bias²</span>
+              <span style="display:inline-flex; align-items:center; gap:3px;"><i style="display:inline-block; width:8px; height:8px; background:#B63B24; border-radius:2px;"></i>ρ·σ²</span>
+              <span style="display:inline-flex; align-items:center; gap:3px;"><i style="display:inline-block; width:8px; height:8px; background:#275D91; border-radius:2px;"></i>(1-ρ)σ²/B</span>
+            </div>
+          </div>
+          <div class="chart-canvas-wrap min0" id="chart-error"></div>
+        </div>
+
+        <!-- 教学机制解析卡片 -->
+        <div class="analysis-callout" id="callout-text">
+          <strong>机制分工结论：</strong> 当保留全部特征 (m=10) 时，强特征 F1 几乎垄断所有树的根节点，使得树间高度相关（ρ &gt; 0.75），集成误差无法随树数增加而进一步下降；引入特征子采样 (m=3) 强制各树探索次优特征，虽略微抬高单树方差，但通过大幅拉低 ρ，将总集成方差压缩了近一半。
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    本页是随机森林“双重随机性”的核心交互实验。
+    大家在上一页已经了解了特征子采样的定义，但核心问题是：既然特征子采样会丢掉一部分信息，让单棵树的预测能力略微下降，为什么集成之后的总误差反而能大幅下降？
+    请大家看中央的基学习器树群：当我们在左边将特征比调到 10/10（即纯 Bagging）时，因为数据里有一两个极强的特征，几乎所有树的第一层都在分裂同一个特征，12 棵树切出的决策边界高度重合，树间相关系数 ρ 飙升到 0.8 以上。
+    此时右侧的误差分解柱状图里，“树间协方差项”占了绝大多数，即使你加到 100 棵树也除不掉。
+    而当我们切换到“随机森林典型参数 m=√p（即 3 个特征）”时，每棵树被迫去考察其他特征，决策边界向四面八方展开，ρ 迅速骤降到 0.28。虽然单树误差从 16% 稍升到 18%，但总集成误差反而从 14.5% 暴降到 11.8%！这就是“样本随机性负责稳住训练集方差，特征随机性负责彻底打破学习器间相关性”的分工本质。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 1. 确定性数据源与仿真模型
+      // 假设整体有 10 个特征，其中 F1 (权重 0.45), F2 (权重 0.30) 为决定性强特征，F3~F10 为中弱特征
+      const P_TOTAL = 10;
+      const TREE_COUNT = 12;
+
+      // 伪随机生成器 (固定种子保证可复现)
+      function mulberry32(a) {
+        return function() {
+          let t = a += 0x6D2B79F5;
+          t = Math.imul(t ^ t >>> 15, t | 1);
+          t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+      }
+
+      // 状态
+      let state = {
+        sampleRatio: 100, // 20 ~ 100
+        featCount: 3,     // 1 ~ 10
+        preset: "rf"
+      };
+
+      // 状态演化与计算逻辑
+      function calculateMetrics(sampleRatio, featCount) {
+        // m/p 比例
+        const mRatio = featCount / P_TOTAL;
+        const sRatio = sampleRatio / 100;
+
+        // 强特征 F1 参与被选中的概率: 1 - C(8, m)/C(10, m)
+        let probStrong = 1 - Math.pow(1 - mRatio, 1.8);
+        probStrong = Math.min(1, Math.max(0.1, probStrong));
+
+        // 树间相关性 rho 计算:
+        // 当特征全选 (m=10) 时，强特征导致每棵树在主要分支高度重合，rho 达到 0.78~0.82
+        // 当 m=3 时，特征被严重打散，rho 降至 0.25~0.30
+        // 样本重采样 (Bootstrap 约 63.2% 独有样本) 提供底线扰动
+        const sampleCoherence = 0.45 + 0.55 * sRatio;
+        const featCoherence = Math.pow(mRatio, 1.25);
+        const rho = Math.min(0.85, Math.max(0.12, 0.15 + 0.65 * featCoherence * sampleCoherence));
+
+        // 单树方差 sigma^2:
+        // 特征子采样稍微增加单树方差，但幅度受控 (0.35 ~ 0.44)
+        const sigma2 = 0.35 + 0.08 * (1 - mRatio) + 0.04 * (1 - sRatio);
+
+        // 单树偏差 (Bias^2):
+        // 候选特征极少时 (m=1) 偏差上升较多，m>=3 时偏差迅速接近全特征基线
+        const bias2 = 0.065 + 0.06 * Math.pow(1 - mRatio, 2);
+
+        // 单树不可约噪声
+        const noise = 0.04;
+
+        // 集成方差: Var = rho * sigma^2 + (1 - rho)/B * sigma^2
+        const B = TREE_COUNT;
+        const varInter = rho * sigma2;
+        const varDecomp = ((1 - rho) / B) * sigma2;
+        const varTotal = varInter + varDecomp;
+
+        // 单树误差与集成总误差
+        const eSingle = bias2 + sigma2 * 0.32 + noise;
+        const eEns = bias2 + varTotal * 0.32 + noise;
+
+        return {
+          rho: rho,
+          sigma2: sigma2,
+          bias2: bias2,
+          varInter: varInter,
+          varDecomp: varDecomp,
+          eSingle: eSingle,
+          eEns: eEns,
+          probStrong: probStrong
+        };
+      }
+
+      // 生成每棵树的分裂特征与切分参数
+      function generateTrees(sampleRatio, featCount) {
+        const trees = [];
+        const rng = mulberry32(12345 + featCount * 100 + sampleRatio);
+
+        for (let i = 0; i < TREE_COUNT; i++) {
+          // 挑选 m 个候选特征
+          const feats = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+          // shuffle
+          for (let j = feats.length - 1; j > 0; j--) {
+            const k = Math.floor(rng() * (j + 1));
+            [feats[j], feats[k]] = [feats[k], feats[j]];
+          }
+          const chosen = feats.slice(0, featCount).sort((a,b)=>a-b);
+
+          // 决定根节点分裂特征: 如果 F1 或 F2 在 chosen 中，它们更可能被选中为首要分裂
+          let rootFeat = chosen[0];
+          if (chosen.includes(1) && rng() < 0.85) {
+            rootFeat = 1;
+          } else if (chosen.includes(2) && rng() < 0.75) {
+            rootFeat = 2;
+          } else {
+            rootFeat = chosen[Math.floor(rng() * chosen.length)];
+          }
+
+          // 生成切分阈值与方向
+          const splitVal = 0.3 + 0.4 * rng();
+          const splitAngle = (rootFeat === 1 ? 0 : (rootFeat === 2 ? Math.PI/2 : rng() * Math.PI));
+          const subSplit = 0.2 + 0.6 * rng();
+
+          trees.push({
+            id: i + 1,
+            chosenFeats: chosen,
+            rootFeat: rootFeat,
+            splitVal: splitVal,
+            splitAngle: splitAngle,
+            subSplit: subSplit
+          });
+        }
+        return trees;
+      }
+
+      // DOM 元素
+      const sliderSample = document.getElementById("slider-sample");
+      const sliderFeat = document.getElementById("slider-feat");
+      const valSample = document.getElementById("val-sample");
+      const valFeat = document.getElementById("val-feat");
+
+      const valRho = document.getElementById("val-rho");
+      const valSigma = document.getElementById("val-sigma");
+      const valEsingle = document.getElementById("val-esingle");
+      const valEens = document.getElementById("val-eens");
+      const descRho = document.getElementById("desc-rho");
+      const descSigma = document.getElementById("desc-sigma");
+      const descEens = document.getElementById("desc-eens");
+
+      const treeGrid = document.getElementById("tree-grid");
+      const calloutText = document.getElementById("callout-text");
+
+      const presetRf = document.getElementById("preset-rf");
+      const presetBagging = document.getElementById("preset-bagging");
+      const presetDecouple = document.getElementById("preset-decouple");
+      const presetIdentical = document.getElementById("preset-identical");
+
+      // Canvas
+      const cvBoundary = document.getElementById("cv-boundary");
+
+      // ECharts 初始化
+      const chartDom = document.getElementById("chart-error");
+      const chartInstance = echarts.init(chartDom, null, { renderer: 'svg' });
+
+      function renderTreeCards(trees) {
+        treeGrid.innerHTML = "";
+        trees.forEach(t => {
+          const card = document.createElement("div");
+          card.className = "tree-card";
+          const isF12 = t.rootFeat <= 2;
+
+          let featTagsHtml = t.chosenFeats.slice(0, 4).map(f => {
+            const isD = f <= 2;
+            return `<span class="feat-tag ${isD ? 'dominant' : ''}">F${f}</span>`;
+          }).join("");
+          if (t.chosenFeats.length > 4) {
+            featTagsHtml += `<span class="feat-tag">+${t.chosenFeats.length - 4}</span>`;
+          }
+
+          // SVG 缩略树简图
+          const rootColor = t.rootFeat === 1 ? "#B63B24" : (t.rootFeat === 2 ? "#D97706" : "#275D91");
+          const svgTree = `
+            <svg class="tree-svg-thumb" viewBox="0 0 50 42">
+              <line x1="25" y1="8" x2="12" y2="24" stroke="#94A3B8" stroke-width="2"/>
+              <line x1="25" y1="8" x2="38" y2="24" stroke="#94A3B8" stroke-width="2"/>
+              <line x1="12" y1="24" x2="6" y2="36" stroke="#CBD5E1" stroke-width="1.5"/>
+              <line x1="12" y1="24" x2="18" y2="36" stroke="#CBD5E1" stroke-width="1.5"/>
+              <line x1="38" y1="24" x2="32" y2="36" stroke="#CBD5E1" stroke-width="1.5"/>
+              <line x1="38" y1="24" x2="44" y2="36" stroke="#CBD5E1" stroke-width="1.5"/>
+              <circle cx="25" cy="8" r="5.5" fill="${rootColor}"/>
+              <text x="25" y="11" font-size="8" font-family="sans-serif" font-weight="bold" fill="#fff" text-anchor="middle">F${t.rootFeat}</text>
+              <circle cx="12" cy="24" r="3.5" fill="#64748B"/>
+              <circle cx="38" cy="24" r="3.5" fill="#64748B"/>
+            </svg>
+          `;
+
+          card.innerHTML = `
+            <div class="tree-card-id">Tree #${t.id}</div>
+            ${svgTree}
+            <div class="tree-feat-tags">${featTagsHtml}</div>
+          `;
+          treeGrid.appendChild(card);
+        });
+      }
+
+      function drawBoundaryCanvas(trees, metrics) {
+        const ctx = Deck.fit(cvBoundary);
+        const w = cvBoundary.offsetWidth;
+        const h = cvBoundary.offsetHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        // 绘制轻量背景网格
+        ctx.strokeStyle = "#F1F5F9";
+        ctx.lineWidth = 1;
+        for (let x = 30; x < w; x += 30) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+        }
+        for (let y = 30; y < h; y += 30) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+        }
+
+        // 绘制 12 棵树在 F1-F2 投影平面上的决策切分线
+        // 观察重点：当 m=10 时，线全挤在中央垂直带；当 m=3 时，线在横纵方向交错分散
+        const centerX = w * 0.52;
+        const centerY = h * 0.52;
+
+        trees.forEach(t => {
+          ctx.save();
+          ctx.beginPath();
+          if (t.rootFeat === 1) {
+            // 主要竖切线
+            const px = w * (0.35 + (t.splitVal - 0.5) * 0.45);
+            ctx.strokeStyle = "rgba(182, 59, 36, 0.45)";
+            ctx.lineWidth = 2.5;
+            ctx.moveTo(px, 15);
+            ctx.lineTo(px, h - 15);
+            ctx.stroke();
+
+            // 子分支水平切线
+            ctx.strokeStyle = "rgba(182, 59, 36, 0.25)";
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(px, h * t.subSplit);
+            ctx.lineTo(w - 20, h * t.subSplit);
+            ctx.stroke();
+          } else if (t.rootFeat === 2) {
+            // 主要横切线
+            const py = h * (0.35 + (t.splitVal - 0.5) * 0.45);
+            ctx.strokeStyle = "rgba(217, 119, 6, 0.55)";
+            ctx.lineWidth = 2.5;
+            ctx.moveTo(25, py);
+            ctx.lineTo(w - 25, py);
+            ctx.stroke();
+
+            // 子分支垂直切线
+            ctx.strokeStyle = "rgba(217, 119, 6, 0.3)";
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(w * t.subSplit, py);
+            ctx.lineTo(w * t.subSplit, h - 15);
+            ctx.stroke();
+          } else {
+            // 其他次级特征引起的斜向/局部投影分割
+            ctx.strokeStyle = "rgba(39, 93, 145, 0.45)";
+            ctx.lineWidth = 2;
+            const angle = t.splitAngle;
+            const dx = Math.cos(angle) * (w * 0.4);
+            const dy = Math.sin(angle) * (h * 0.4);
+            const ox = w * (0.2 + t.subSplit * 0.6);
+            const oy = h * (0.2 + t.splitVal * 0.6);
+            ctx.moveTo(ox - dx, oy - dy);
+            ctx.lineTo(ox + dx, oy + dy);
+            ctx.stroke();
+          }
+          ctx.restore();
+        });
+
+        // 最终集成决策平滑边界示意 (粗黑/深红虚线)
+        ctx.save();
+        ctx.strokeStyle = "var(--text)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        // 拟合出一个典型的平滑 L 型或双曲轮廓
+        ctx.moveTo(w * 0.42, 20);
+        ctx.quadraticCurveTo(w * 0.44, h * 0.48, w - 30, h * 0.5);
+        ctx.stroke();
+
+        // 标注图注
+        ctx.fillStyle = "#142533";
+        ctx.font = "bold 12px 'Noto Sans SC', sans-serif";
+        ctx.fillText("集成综合平滑边界", w * 0.58, h * 0.45);
+
+        ctx.restore();
+      }
+
+      function updateChart(metrics) {
+        const option = {
+          animationDuration: 250,
+          grid: {
+            top: 30,
+            bottom: 26,
+            left: 54,
+            right: 20
+          },
+          legend: {
+            show: false
+          },
+          grid: {
+            top: 24,
+            bottom: 28,
+            left: 50,
+            right: 16
+          },
+          xAxis: {
+            type: 'category',
+            data: ['单基树平均', '当前配置集成', '理想极限(B→∞)'],
+            axisLabel: { fontSize: 13, color: '#142533', fontWeight: 'bold' },
+            axisLine: { lineStyle: { color: '#CBD5E1' } }
+          },
+          yAxis: {
+            type: 'value',
+            min: 0,
+            max: 0.5,
+            name: '误差贡献量',
+            nameTextStyle: { fontSize: 12, color: '#536777' },
+            axisLabel: { fontSize: 12, color: '#536777' },
+            splitLine: { lineStyle: { stroke: '#E2E8F0', type: 'dashed' } }
+          },
+          series: [
+            {
+              name: '偏差平方 (Bias²)',
+              type: 'bar',
+              stack: 'total',
+              barWidth: 38,
+              data: [
+                Number(metrics.bias2.toFixed(3)),
+                Number(metrics.bias2.toFixed(3)),
+                Number(metrics.bias2.toFixed(3))
+              ],
+              itemStyle: { color: '#94A3B8' }
+            },
+            {
+              name: '树间残余协方差 (ρ·σ²)',
+              type: 'bar',
+              stack: 'total',
+              data: [
+                0, // 单树无此项
+                Number(metrics.varInter.toFixed(3)),
+                Number(metrics.varInter.toFixed(3))
+              ],
+              itemStyle: { color: '#B63B24' }
+            },
+            {
+              name: '可消除方差 ((1-ρ)σ²/B)',
+              type: 'bar',
+              stack: 'total',
+              data: [
+                Number(metrics.sigma2.toFixed(3)), // 单树承担全部方差
+                Number(metrics.varDecomp.toFixed(3)),
+                0 // 极限情况下被 1/B 消除至 0
+              ],
+              itemStyle: { color: '#275D91' }
+            }
+          ]
+        };
+        chartInstance.setOption(option);
+      }
+
+      function syncUI() {
+        const metrics = calculateMetrics(state.sampleRatio, state.featCount);
+        const trees = generateTrees(state.sampleRatio, state.featCount);
+
+        // 读数刷新
+        valSample.textContent = `${state.sampleRatio}% ${state.sampleRatio === 100 ? '(标准Bootstrap)' : '(欠采样)'}`;
+        valFeat.textContent = `${state.featCount} / 10 特征 (${Math.round(state.featCount/P_TOTAL*100)}%)`;
+
+        valRho.textContent = metrics.rho.toFixed(2);
+        valSigma.textContent = metrics.sigma2.toFixed(2);
+        valEsingle.textContent = (metrics.eSingle * 100).toFixed(1) + "%";
+        valEens.textContent = (metrics.eEns * 100).toFixed(1) + "%";
+
+        // 描述性状态
+        if (metrics.rho > 0.65) {
+          descRho.textContent = "强特征统治根节点，树间同质化严重";
+          descRho.style.color = "var(--aggregate)";
+        } else if (metrics.rho < 0.3) {
+          descRho.textContent = "深度去耦，树间显著差异化";
+          descRho.style.color = "var(--correct)";
+        } else {
+          descRho.textContent = "均衡相关性，集成增益显著";
+          descRho.style.color = "var(--learner)";
+        }
+
+        const dropPct = ((metrics.eSingle - metrics.eEns) / metrics.eSingle * 100).toFixed(1);
+        descEens.textContent = `相比单树误差削减 ${dropPct}%`;
+
+        // 渲染树图谱
+        renderTreeCards(trees);
+
+        // 绘制 Canvas 边界投影
+        drawBoundaryCanvas(trees, metrics);
+
+        // 刷新 ECharts 图表
+        updateChart(metrics);
+
+        // 动态教学提示更新
+        if (state.featCount === 10) {
+          calloutText.innerHTML = `<strong>标准 Bagging 诊断 (m=10)：</strong>虽然样本 Bootstrap 创造了数据扰动，但由于未做特征子采样，强特征 F1、F2 在每棵树都表现最优，导致 12 棵树全在类似位置落刀。<strong>相关性高达 ρ=${metrics.rho.toFixed(2)}</strong>，柱状图红色的“树间协方差”成为无法消除的误差硬底墙。`;
+        } else if (state.featCount === 3) {
+          calloutText.innerHTML = `<strong>经典随机森林状态 (m=√p≈3)：</strong>特征子采样强制部分树无法使用 F1，迫使它们发掘次优特征组合。虽然单树方差轻微上升至 σ²=${metrics.sigma2.toFixed(2)}，但 <strong>ρ 骤降至 ${metrics.rho.toFixed(2)}</strong>，两者的乘积（残余方差底墙）大幅缩减，取得了最佳的总集成误差。`;
+        } else if (state.featCount === 1) {
+          calloutText.innerHTML = `<strong>极度随机化树状态 (m=1)：</strong>每步只能看 1 个随机特征，树间相关性降至极限 (${metrics.rho.toFixed(2)})，但此时单树拟合能力被过分削弱，单树方差与偏差均显著抬高，总误差反而出现反弹。`;
+        } else {
+          calloutText.innerHTML = `<strong>参数调节中：</strong>观察当调节候选特征数 m 从 10 减小至 3 时，中央图谱中的红色 F1 标签如何逐渐让位于多色杂居，同时柱状图右侧的红色协方差柱显著压低。`;
+        }
+
+        // 预设按钮状态同步
+        presetRf.setAttribute("aria-pressed", state.featCount === 3 && state.sampleRatio === 100 ? "true" : "false");
+        presetBagging.setAttribute("aria-pressed", state.featCount === 10 && state.sampleRatio === 100 ? "true" : "false");
+        presetDecouple.setAttribute("aria-pressed", state.featCount === 1 ? "true" : "false");
+        presetIdentical.setAttribute("aria-pressed", state.featCount === 10 && state.sampleRatio === 20 ? "true" : "false");
+      }
+
+      // 事件绑定
+      sliderSample.addEventListener("input", (e) => {
+        state.sampleRatio = parseInt(e.target.value, 10);
+        syncUI();
+      });
+
+      sliderFeat.addEventListener("input", (e) => {
+        state.featCount = parseInt(e.target.value, 10);
+        syncUI();
+      });
+
+      presetRf.addEventListener("click", () => {
+        state.sampleRatio = 100;
+        state.featCount = 3;
+        sliderSample.value = 100;
+        sliderFeat.value = 3;
+        syncUI();
+      });
+
+      presetBagging.addEventListener("click", () => {
+        state.sampleRatio = 100;
+        state.featCount = 10;
+        sliderSample.value = 100;
+        sliderFeat.value = 10;
+        syncUI();
+      });
+
+      presetDecouple.addEventListener("click", () => {
+        state.sampleRatio = 100;
+        state.featCount = 1;
+        sliderSample.value = 100;
+        sliderFeat.value = 1;
+        syncUI();
+      });
+
+      presetIdentical.addEventListener("click", () => {
+        state.sampleRatio = 20;
+        state.featCount = 10;
+        sliderSample.value = 20;
+        sliderFeat.value = 10;
+        syncUI();
+      });
+
+      // 自适应重绘
+      Deck.onResize(() => {
+        chartInstance.resize();
+        const metrics = calculateMetrics(state.sampleRatio, state.featCount);
+        const trees = generateTrees(state.sampleRatio, state.featCount);
+        drawBoundaryCanvas(trees, metrics);
+      });
+
+      // 初始化
+      syncUI();
+      Deck.init({ index: 12, total: 27 });
+    })();
+  </script>
+</body>
+</html>

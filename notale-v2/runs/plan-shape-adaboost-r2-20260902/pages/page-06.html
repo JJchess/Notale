@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{
+  --bg:#EEF2F6;
+  --text:#121821;
+  --font-sans:"Noto Sans SC", system-ui, sans-serif;
+}
+
+#stage{
+  display:flex;
+  flex-direction:column;
+  padding:28px 56px;
+  gap:14px;
+  box-sizing:border-box;
+}
+
+.hd{ flex:0 0 auto; }
+.hd h1{
+  font-family:var(--font-display,var(--font-sans));
+  font-size:var(--fs-h1,34px);
+  font-weight:800;
+  margin:0 0 4px;
+  color:var(--text);
+}
+.hd p{
+  margin:0;
+  font-size:var(--fs-lead,19px);
+  color:var(--muted);
+  line-height:1.4;
+}
+
+.body{
+  flex:1;
+  min-height:0;
+  display:flex;
+  gap:24px;
+}
+
+/* ---- 舞台：散点 + 决策边界 ---- */
+.stageWrap{
+  flex:1 1 auto;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.boardHead{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  flex:0 0 auto;
+}
+.boardHead h2{
+  font-size:var(--fs-h2,22px);
+  font-weight:700;
+  margin:0;
+  color:var(--text);
+}
+.boardHead .legend{
+  display:flex;
+  gap:18px;
+  list-style:none;
+  margin:0;
+  padding:0;
+  font-size:var(--fs-label,15px);
+  color:var(--muted);
+}
+.boardHead .legend .li{ display:flex; align-items:center; gap:6px; }
+.boardHead .sw{ width:12px; height:12px; border-radius:50%; display:inline-block; }
+.boardHead .sw.line{ width:18px; height:3px; border-radius:2px; }
+
+.board{
+  flex:1;
+  min-height:0;
+  position:relative;
+  background:var(--surface);
+  border-radius:var(--r-card,16px);
+  box-shadow:0 1px 2px rgb(18 24 33 / 0.08);
+}
+.board canvas{ position:absolute; inset:0; width:100%; height:100%; }
+
+.stepStrip{
+  flex:0 0 auto;
+  display:flex;
+  gap:8px;
+}
+.stepDot{
+  flex:1;
+  height:34px;
+  border-radius:10px;
+  border:1px solid var(--muted);
+  background:transparent;
+  color:var(--muted);
+  font-family:var(--font-num,monospace);
+  font-size:var(--fs-label,15px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition:background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+.stepDot.done{
+  background:var(--strong);
+  border-color:var(--strong);
+  color:#fff;
+}
+.stepDot.active{
+  border-color:var(--focus);
+  color:var(--focus);
+  font-weight:700;
+}
+
+/* ---- 侧栏 ---- */
+.side{
+  flex:0 0 420px;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  overflow:auto;
+}
+
+.panel{
+  background:var(--surface);
+  border-radius:var(--r-card,16px);
+  padding:18px 20px;
+  box-shadow:0 1px 2px rgb(18 24 33 / 0.08);
+  flex:0 0 auto;
+}
+
+.panel h3{
+  margin:0 0 12px;
+  font-size:var(--fs-h2,22px);
+  font-weight:700;
+  color:var(--text);
+}
+
+.readrow{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  padding:7px 0;
+  border-bottom:1px solid rgb(18 24 33 / 0.06);
+  font-size:var(--fs-body,18px);
+}
+.readrow:last-child{ border-bottom:none; }
+.readrow .k{ color:var(--muted); font-size:var(--fs-label,15px); }
+.readrow .v{
+  font-family:var(--font-num,monospace);
+  font-weight:700;
+  color:var(--text);
+  font-size:var(--fs-body,18px);
+}
+.readrow .v.hi{ color:var(--current); }
+.readrow .v.strong{ color:var(--strong); }
+
+.btnRow{
+  display:flex;
+  gap:10px;
+  margin-top:6px;
+}
+.btn{
+  flex:1;
+  height:46px;
+  border-radius:10px;
+  border:none;
+  background:var(--focus);
+  color:#fff;
+  font-size:var(--fs-body,18px);
+  font-weight:700;
+  cursor:pointer;
+  transition:filter 140ms ease, transform 100ms ease;
+}
+.btn:hover{ filter:brightness(1.06); }
+.btn:active{ transform:translateY(1px); }
+.btn:disabled{
+  background:var(--muted);
+  opacity:0.5;
+  cursor:not-allowed;
+}
+.btn.ghost{
+  background:transparent;
+  border:1px solid var(--muted);
+  color:var(--muted);
+}
+.btn.ghost:hover{ filter:none; border-color:var(--text); color:var(--text); }
+
+.hint{
+  margin-top:10px;
+  font-size:var(--fs-label,15px);
+  color:var(--muted);
+  line-height:1.45;
+}
+
+.histList{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.histRow{
+  display:flex;
+  align-items:baseline;
+  gap:10px;
+  font-family:var(--font-num,monospace);
+  font-size:var(--fs-label,15px);
+  color:var(--text);
+  padding:6px 8px;
+  border-radius:8px;
+  background:rgb(18 24 33 / 0.04);
+}
+.histRow .tag{
+  flex:0 0 auto;
+  font-weight:800;
+  color:var(--weak);
+  font-family:var(--font-sans);
+}
+.histRow .sep{ color:var(--muted); }
+
+</style>
+</head>
+<body data-page="06" data-total="8">
+<div id="stage">
+
+  <div class="hd">
+    <h1>模拟一次 AdaBoost 训练</h1>
+    <p>14 个样本分两类，单条竖线或横线切不干净。点击「训练下一个弱分类器」，观察算法怎样一轮一轮把注意力移向错分的点。</p>
+  </div>
+
+  <div class="body">
+
+    <div class="stageWrap min0">
+      <div class="boardHead">
+        <h2>样本权重与当前决策边界</h2>
+        <ul class="legend">
+          <li class="li"><span class="sw" style="background:var(--weak)"></span>真实类别 +1</li>
+          <li class="li"><span class="sw" style="background:var(--strong)"></span>真实类别 −1</li>
+          <li class="li"><span class="sw line" style="background:var(--current)"></span>本轮弱分类器</li>
+          <li class="li"><span class="sw" style="background:none;border:2px solid var(--bad)"></span>被错分</li>
+        </ul>
+      </div>
+      <div class="board min0">
+        <canvas id="cv" class="cv-fill no-pan"></canvas>
+      </div>
+      <div class="stepStrip" id="stepStrip"></div>
+      <p id="liveStat" class="sr-only" aria-live="polite"></p>
+    </div>
+
+    <div class="side min0">
+
+      <div class="panel">
+        <h3>本轮读数</h3>
+        <div class="readrow"><span class="k">弱分类器规则</span><span class="v" id="rRule">—</span></div>
+        <div class="readrow"><span class="k">加权误差率 ε</span><span class="v hi" id="rErr">—</span></div>
+        <div class="readrow"><span class="k">分类器权重 α = ½ln((1−ε)/ε)</span><span class="v hi" id="rAlpha">—</span></div>
+        <div class="readrow"><span class="k">组合后训练准确率</span><span class="v strong" id="rAcc">6/14</span></div>
+        <div class="btnRow">
+          <button class="btn" id="btnStep">训练下一个弱分类器</button>
+          <button class="btn ghost" id="btnReset">重置</button>
+        </div>
+        <p class="hint" id="hint">初始状态：全部样本权重相等，各占 1/14。点击按钮开始第 1 轮。</p>
+      </div>
+
+      <div class="panel">
+        <h3>训练历史</h3>
+        <div class="histList" id="histList">
+          <div class="histRow" style="color:var(--muted)">尚未开始训练</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  // ---- 数据：14 个样本，单一轴对齐阈值无法完全分开 ----
+  const RAW = [
+    [1,1,1],[1.5,2,1],[1,3,1],[2,1.5,1],[1.8,3.2,1],[2.3,2.3,1],
+    [5,1,-1],[5.5,2,-1],[5,3,-1],[6,1.5,-1],[5.8,3.2,-1],[6.3,2.3,-1],
+    [5.2,4.6,1],
+    [1.6,4.4,-1],
+  ];
+  const N = RAW.length;
+  const X = RAW.map(r => [r[0], r[1]]);
+  const Y = RAW.map(r => r[2]);
+  const DOMAIN = { xmin:0.3, xmax:7, ymin:0.3, ymax:5.3 };
+  const MAX_ROUNDS = 3;
+
+  function byId(id){ return document.getElementById(id); }
+  const ui = {
+    cv: byId("cv"),
+    rRule: byId("rRule"),
+    rErr: byId("rErr"),
+    rAlpha: byId("rAlpha"),
+    rAcc: byId("rAcc"),
+    btnStep: byId("btnStep"),
+    btnReset: byId("btnReset"),
+    hint: byId("hint"),
+    histList: byId("histList"),
+    stepStrip: byId("stepStrip"),
+    liveStat: byId("liveStat"),
+  };
+
+  // ---- canonical state ----
+  function createInitialState(){
+    return {
+      round: 0,               // 已完成轮数 0..MAX_ROUNDS
+      w: new Array(N).fill(1/N),
+      stumps: [],              // {dim, th, dir, err, alpha, preds, correct[]}
+      history: [],
+    };
+  }
+
+  let state = createInitialState();
+
+  function evalStump(dim, th, dir){
+    const preds = X.map(p => {
+      const raw = p[dim] < th ? 1 : -1;
+      return dir === -1 ? -raw : raw;
+    });
+    return preds;
+  }
+
+  function weightedErr(preds, w){
+    let e = 0;
+    for (let i=0;i<N;i++) if (preds[i] !== Y[i]) e += w[i];
+    return e;
+  }
+
+  function bestStump(w){
+    let best = null;
+    for (let dim=0; dim<2; dim++){
+      const vals = Array.from(new Set(X.map(p=>p[dim]))).sort((a,b)=>a-b);
+      const ths = [vals[0]-1];
+      for (let i=0;i<vals.length-1;i++) ths.push((vals[i]+vals[i+1])/2);
+      ths.push(vals[vals.length-1]+1);
+      for (const th of ths){
+        for (const dir of [1,-1]){
+          const preds = evalStump(dim, th, dir);
+          const err = weightedErr(preds, w);
+          if (!best || err < best.err - 1e-12){
+            best = { dim, th, dir, err, preds };
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  function strongPredict(upto, p){
+    let s = 0;
+    for (let k=0;k<upto;k++){
+      const st = state.stumps[k];
+      const raw = p[st.dim] < st.th ? 1 : -1;
+      const pred = st.dir === -1 ? -raw : raw;
+      s += st.alpha * pred;
+    }
+    return s;
+  }
+
+  function trainAcc(upto){
+    let c = 0;
+    for (let i=0;i<N;i++){
+      const s = strongPredict(upto, X[i]);
+      const pred = s >= 0 ? 1 : -1;
+      if (pred === Y[i]) c++;
+    }
+    return c;
+  }
+
+  // ---- transition ----
+  function stepTrain(){
+    if (state.round >= MAX_ROUNDS) return;
+    const w = state.w;
+    const best = bestStump(w);
+    const err = Math.max(best.err, 1e-6);
+    const alpha = 0.5 * Math.log((1-err)/err);
+
+    const newW = new Array(N);
+    let Z = 0;
+    for (let i=0;i<N;i++){
+      const v = w[i] * Math.exp(-alpha * Y[i] * best.preds[i]);
+      newW[i] = v;
+      Z += v;
+    }
+    for (let i=0;i<N;i++) newW[i] /= Z;
+
+    const stumpRec = {
+      dim: best.dim, th: best.th, dir: best.dir,
+      err: best.err, alpha,
+      preds: best.preds,
+      wBefore: w.slice(),
+    };
+    state.stumps.push(stumpRec);
+    state.round += 1;
+    state.w = newW;
+
+    const acc = trainAcc(state.round);
+    state.history.push({
+      round: state.round,
+      dim: best.dim, th: best.th, dir: best.dir,
+      err: best.err, alpha, acc,
+    });
+  }
+
+  function resetState(){
+    state = createInitialState();
+  }
+
+  // ---- rendering: board ----
+  const fit = Deck.autofit(ui.cv, (ctx, w, h) => drawBoard(ctx, w, h));
+
+  function toPx(x, y, w, h){
+    const px = (x - DOMAIN.xmin) / (DOMAIN.xmax - DOMAIN.xmin) * w;
+    const py = h - (y - DOMAIN.ymin) / (DOMAIN.ymax - DOMAIN.ymin) * h;
+    return [px, py];
+  }
+
+  function drawBoard(ctx, w, h){
+    ctx.clearRect(0,0,w,h);
+
+    // 组合边界背景着色：按当前累计强分类器符号，浅色区域
+    const upto = state.round;
+    if (upto > 0){
+      const res = 22;
+      for (let gx=0; gx<res; gx++){
+        for (let gy=0; gy<res; gy++){
+          const x = DOMAIN.xmin + (gx+0.5)/res * (DOMAIN.xmax-DOMAIN.xmin);
+          const y = DOMAIN.ymin + (gy+0.5)/res * (DOMAIN.ymax-DOMAIN.ymin);
+          const s = strongPredict(upto, [x,y]);
+          const [px, py] = toPx(x, y, w, h);
+          const cw = w/res, ch = h/res;
+          ctx.fillStyle = s >= 0
+            ? Deck.rgba("weak", 0.10)
+            : Deck.rgba("strong", 0.10);
+          ctx.fillRect(px - cw/2, py - ch/2, cw, ch);
+        }
+      }
+    } else {
+      ctx.fillStyle = Deck.rgba("muted", 0.04);
+      ctx.fillRect(0,0,w,h);
+    }
+
+    // 当前这一轮的候选弱分类器边界线（若正在展示最新一轮）
+    if (state.stumps.length > 0){
+      const last = state.stumps[state.stumps.length - 1];
+      ctx.save();
+      ctx.strokeStyle = Deck.rgb ? `rgb(${Deck.rgb("focus").join(",")})` : "#D9730D";
+      ctx.strokeStyle = Deck.token("focus");
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10,6]);
+      if (last.dim === 0){
+        const [px] = toPx(last.th, 0, w, h);
+        ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
+      } else {
+        const [, py] = toPx(0, last.th, w, h);
+        ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(w, py); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // 样本点：半径按当前权重，描边表示是否被当前累计强分类器判错
+    const w0 = state.w;
+    const maxW = Math.max(...w0);
+    for (let i=0;i<N;i++){
+      const [px, py] = toPx(X[i][0], X[i][1], w, h);
+      const r = 9 + (w0[i] / maxW) * 15;
+      const fillColor = Y[i] === 1 ? Deck.token("weak") : Deck.token("strong");
+      let misclassified = false;
+      if (state.round > 0){
+        const s = strongPredict(state.round, X[i]);
+        misclassified = (s >= 0 ? 1 : -1) !== Y[i];
+      }
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI*2);
+      ctx.fillStyle = fillColor;
+      ctx.globalAlpha = 0.88;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      if (misclassified){
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = Deck.token("bad");
+        ctx.stroke();
+      }
+    }
+  }
+
+  // ---- rendering: panels ----
+  function fmtPt(dim, th, dir){
+    const axis = dim === 0 ? "x" : "y";
+    const symLT = dir === 1 ? "+1" : "−1";
+    const symGE = dir === 1 ? "−1" : "+1";
+    return `${axis} < ${th.toFixed(2)} → ${symLT}，否则 → ${symGE}`;
+  }
+
+  function renderSteps(){
+    ui.stepStrip.innerHTML = "";
+    for (let i=1;i<=MAX_ROUNDS;i++){
+      const d = document.createElement("div");
+      d.className = "stepDot" + (i <= state.round ? " done" : (i === state.round+1 ? " active" : ""));
+      d.textContent = "第 " + i + " 轮";
+      ui.stepStrip.appendChild(d);
+    }
+  }
+
+  function renderPanels(){
+    if (state.stumps.length === 0){
+      ui.rRule.textContent = "—";
+      ui.rErr.textContent = "—";
+      ui.rAlpha.textContent = "—";
+      ui.rAcc.textContent = trainAcc(0) + "/" + N;
+      ui.hint.textContent = "初始状态：全部样本权重相等，各占 1/" + N + "。点击按钮开始第 1 轮。";
+    } else {
+      const last = state.stumps[state.stumps.length - 1];
+      ui.rRule.textContent = fmtPt(last.dim, last.th, last.dir);
+      ui.rErr.textContent = last.err.toFixed(4);
+      ui.rAlpha.textContent = last.alpha.toFixed(4);
+      const acc = trainAcc(state.round);
+      ui.rAcc.textContent = acc + "/" + N;
+      if (state.round >= MAX_ROUNDS){
+        ui.hint.textContent = "已完成全部 " + MAX_ROUNDS + " 轮。误差率越低的弱分类器获得越大的 α，三轮组合后训练准确率达到 "
+          + acc + "/" + N + "。错分样本的权重被持续放大，迫使后续弱分类器专注于它们。";
+      } else {
+        ui.hint.textContent = "上一轮被错分的样本（红色描边、点变大）权重已提高，下一轮弱分类器会更在意它们。";
+      }
+    }
+
+    ui.btnStep.disabled = state.round >= MAX_ROUNDS;
+    ui.btnStep.textContent = state.round >= MAX_ROUNDS
+      ? "已训练完全部弱分类器"
+      : "训练下一个弱分类器（第 " + (state.round+1) + " 轮）";
+
+    if (state.history.length === 0){
+      ui.histList.innerHTML = '<div class="histRow" style="color:var(--muted)">尚未开始训练</div>';
+    } else {
+      ui.histList.innerHTML = state.history.map(h => {
+        const axis = h.dim === 0 ? "x" : "y";
+        return `<div class="histRow">`
+          + `<span class="tag">轮${h.round}</span>`
+          + `<span>${axis}<${h.th.toFixed(2)}</span>`
+          + `<span class="sep">|</span>`
+          + `<span>ε=${h.err.toFixed(3)}</span>`
+          + `<span class="sep">|</span>`
+          + `<span>α=${h.alpha.toFixed(3)}</span>`
+          + `<span class="sep">|</span>`
+          + `<span>准确率${h.acc}/${N}</span>`
+          + `</div>`;
+      }).join("");
+    }
+
+    renderSteps();
+
+    ui.liveStat.textContent = state.stumps.length === 0
+      ? "尚未训练。"
+      : "第 " + state.round + " 轮完成。误差率 " + state.stumps[state.stumps.length-1].err.toFixed(3)
+        + "，分类器权重 " + state.stumps[state.stumps.length-1].alpha.toFixed(3)
+        + "，当前组合训练准确率 " + trainAcc(state.round) + "/" + N + "。";
+  }
+
+  function renderAll(){
+    fit.redraw();
+    renderPanels();
+  }
+
+  // ---- events ----
+  ui.btnStep.addEventListener("click", () => {
+    stepTrain();
+    renderAll();
+  });
+  ui.btnReset.addEventListener("click", () => {
+    resetState();
+    renderAll();
+  });
+
+  renderAll();
+})();
+</script>
+</body>
+</html>

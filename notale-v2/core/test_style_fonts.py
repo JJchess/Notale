@@ -22,10 +22,11 @@ class FontTests(unittest.TestCase):
             with self.subTest(style=row[0]):
                 text, images = catalog.detail(row[0])
                 self.assertTrue(all(role in text for role in roles))
-                self.assertIn('## 配色结合', text)
-                self.assertIn('## 形状与材质', text)
-                self.assertIn('## 构图与阅读', text)
-                self.assertIn('## 边界与来源', text)
+                for heading in ('核心特征', '参考图观察', '字体建议', '可变表达', '项目应用建议', '来源与定义边界'):
+                    self.assertIn('## ' + heading, text)
+                self.assertIn(row[2], text)  # index and detail share the definition
+                self.assertIn('### 形状与材质', text)
+                self.assertIn('### 构图与阅读', text)
                 self.assertEqual(sum(x['type'] == 'input_image' for x in images), 1)
                 for key in catalog.font_keys(text):
                     record = inventory[key]
@@ -40,6 +41,15 @@ class FontTests(unittest.TestCase):
         self.assertNotIn('中文标题', text)
         self.assertEqual(catalog.match(' Swiss '), '02-swiss')
         self.assertIsNone(catalog.match('手绘与拼贴结合'))
+        self.assertEqual(catalog.match('日式与北欧融合风'), '32-japandi')
+
+    def test_conditional_fonts_remain_lazy_and_available(self):
+        for key in ('05-bento-grid', '25-dashboard', '37-split-screen'):
+            text, _ = catalog.detail(key)
+            self.assertIn('条件备选', text)
+            self.assertIn('NTF-noto-serif-sc', text)
+            self.assertIn('NTF-zcool-qingke', text)
+            self.assertNotIn('NTF-fusion-pixel', text)
 
     def test_explicit_detail_preload_and_legacy_read(self):
         for value in ('Pixel', '像素游戏风', '20-pixel'):
@@ -174,7 +184,8 @@ class DetailHistoryTests(unittest.TestCase):
              patch.object(director, 'gates', side_effect=gate):
             director.theme(self.run, [], 'low', planner.skills.WORKFLOWS)
         self.assertEqual(self.run._style_calls, 1)
-        self.assertEqual((self.assets / 'theme.css').read_text(), css)
+        self.assertEqual((self.assets / 'theme.css').read_text(),
+                         css.replace('==== /INTERFACE ====', 'reference style:20-pixel\n==== /INTERFACE ===='))
 
 
 if __name__ == '__main__': unittest.main()

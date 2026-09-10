@@ -1,0 +1,326 @@
+<!doctype html>
+<!--
+构图意图：
+1. 主对象是两棵决策树分裂过程的并列对照：Bagging 树（贪心全选强特征）与随机森林树（节点随机抽样特征子集）。
+2. 两者之间的关系通过在每个分裂节点处的候选特征矩阵与分叉结果直接对比，展现强特征垄断如何被打破，从而使树间相关性显著下降。
+3. 说明文字直接附着在首个分裂节点的特征候选集与底部的分歧度/相关性测度上，不设额外容器框。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>随机森林：双重随机性降低树间相关性</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    header {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: var(--weight-bold);
+      color: var(--text);
+    }
+
+    .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      max-width: 1300px;
+    }
+
+    .lead strong {
+      color: var(--focus);
+      font-weight: var(--weight-medium);
+    }
+
+    .comparison {
+      position: absolute;
+      top: 148px;
+      left: 56px;
+      width: 1488px;
+      height: 680px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+    }
+
+    .column {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .col-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      border-bottom: 1.5px solid var(--line);
+      padding-bottom: 10px;
+    }
+
+    .col-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--text);
+    }
+
+    .col-tag {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .col-tag strong {
+      color: var(--model);
+      font-weight: var(--weight-medium);
+    }
+
+    .col-tag.rf strong {
+      color: var(--focus);
+    }
+
+    .diagram {
+      position: relative;
+      width: 100%;
+      height: 520px;
+      margin-top: 16px;
+    }
+
+    svg.tree-view {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: auto;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .stat-num {
+      font-family: var(--font-numeric);
+      font-size: 22px;
+      font-weight: var(--weight-bold);
+      color: var(--aggregate);
+    }
+
+    .stat-num.rf {
+      color: var(--focus);
+    }
+
+    .divider-line {
+      position: absolute;
+      left: 744px;
+      top: 190px;
+      width: 1px;
+      height: 620px;
+      background: var(--line);
+      opacity: 0.35;
+    }
+  </style>
+</head>
+<body data-page="10" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>随机森林：节点级特征抽样打破强特征垄断</h1>
+      <p class="lead">普通 Bagging 候选全量特征导致结构趋同；随机森林在<strong>节点处随机采样特征子集</strong>，使次选特征主导分支。</p>
+    </header>
+
+    <div class="divider-line"></div>
+
+    <div class="comparison">
+      <!-- 左栏：普通 Bagging -->
+      <section class="column min0">
+        <div class="col-header">
+          <div class="col-title">传统 Bagging 决策树</div>
+          <div class="col-tag">特征池：<strong>全部 d 个特征</strong></div>
+        </div>
+
+        <div class="diagram">
+          <svg class="tree-view" viewBox="0 0 720 500">
+            <!-- 节点1：根节点 -->
+            <g transform="translate(360, 50)">
+              <!-- 候选特征栏 -->
+              <g transform="translate(-160, -28)">
+                <text x="0" y="16" font-size="15" fill="var(--muted)" font-family="var(--font-sans)">候选特征池:</text>
+                <!-- 6个特征方块 -->
+                <rect x="95" y="0" width="34" height="24" rx="4" fill="var(--model)" />
+                <text x="112" y="17" font-size="13" fill="#FFF" text-anchor="middle" font-family="var(--font-numeric)">x₁*</text>
+                
+                <rect x="135" y="0" width="30" height="24" rx="4" fill="#FFF" stroke="var(--line)" />
+                <text x="150" y="17" font-size="13" fill="var(--muted)" text-anchor="middle" font-family="var(--font-numeric)">x₂</text>
+                
+                <rect x="171" y="0" width="30" height="24" rx="4" fill="#FFF" stroke="var(--line)" />
+                <text x="186" y="17" font-size="13" fill="var(--muted)" text-anchor="middle" font-family="var(--font-numeric)">x₃</text>
+                
+                <rect x="207" y="0" width="30" height="24" rx="4" fill="#FFF" stroke="var(--line)" />
+                <text x="222" y="17" font-size="13" fill="var(--muted)" text-anchor="middle" font-family="var(--font-numeric)">x₄</text>
+
+                <rect x="243" y="0" width="30" height="24" rx="4" fill="#FFF" stroke="var(--line)" />
+                <text x="258" y="17" font-size="13" fill="var(--muted)" text-anchor="middle" font-family="var(--font-numeric)">x₅</text>
+
+                <rect x="279" y="0" width="30" height="24" rx="4" fill="#FFF" stroke="var(--line)" />
+                <text x="294" y="17" font-size="13" fill="var(--muted)" text-anchor="middle" font-family="var(--font-numeric)">x₆</text>
+              </g>
+
+              <!-- 根节点圆与文本 -->
+              <circle cx="0" cy="50" r="28" fill="var(--model)" />
+              <text x="0" y="56" font-size="16" font-weight="700" fill="#FFF" text-anchor="middle" font-family="var(--font-numeric)">x₁</text>
+              <text x="46" y="56" font-size="16" fill="var(--text)" font-family="var(--font-sans)">强特征主导分裂</text>
+            </g>
+
+            <!-- 连线到第二层 -->
+            <path d="M 360 128 L 180 215" stroke="var(--line)" stroke-width="2" fill="none" />
+            <path d="M 360 128 L 540 215" stroke="var(--line)" stroke-width="2" fill="none" />
+
+            <!-- 第二层左节点 -->
+            <g transform="translate(180, 245)">
+              <circle cx="0" cy="0" r="26" fill="var(--model)" opacity="0.9" />
+              <text x="0" y="6" font-size="15" font-weight="700" fill="#FFF" text-anchor="middle" font-family="var(--font-numeric)">x₂</text>
+              <text x="-38" y="6" font-size="15" fill="var(--muted)" text-anchor="end" font-family="var(--font-sans)">次强特征</text>
+            </g>
+
+            <!-- 第二层右节点 -->
+            <g transform="translate(540, 245)">
+              <circle cx="0" cy="0" r="26" fill="var(--model)" opacity="0.9" />
+              <text x="0" y="6" font-size="15" font-weight="700" fill="#FFF" text-anchor="middle" font-family="var(--font-numeric)">x₂</text>
+              <text x="38" y="6" font-size="15" fill="var(--muted)" text-anchor="start" font-family="var(--font-sans)">次强特征</text>
+            </g>
+
+            <!-- 连线到叶子 -->
+            <path d="M 180 271 L 110 345" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4,4" fill="none" />
+            <path d="M 180 271 L 250 345" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4,4" fill="none" />
+            <path d="M 540 271 L 470 345" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4,4" fill="none" />
+            <path d="M 540 271 L 610 345" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4,4" fill="none" />
+
+            <!-- 叶节点 -->
+            <rect x="90" y="345" width="40" height="24" rx="4" fill="var(--aggregate)" opacity="0.25" stroke="var(--aggregate)" />
+            <rect x="230" y="345" width="40" height="24" rx="4" fill="var(--aggregate)" opacity="0.25" stroke="var(--aggregate)" />
+            <rect x="450" y="345" width="40" height="24" rx="4" fill="var(--aggregate)" opacity="0.25" stroke="var(--aggregate)" />
+            <rect x="590" y="345" width="40" height="24" rx="4" fill="var(--aggregate)" opacity="0.25" stroke="var(--aggregate)" />
+
+            <!-- 结构说明标签 -->
+            <g transform="translate(360, 420)">
+              <text x="0" y="0" font-size="16" fill="var(--muted)" text-anchor="middle" font-family="var(--font-sans)">多数树在顶层选相同特征，形态趋同</text>
+            </g>
+          </svg>
+        </div>
+
+        <div class="stat-row">
+          <span>树间预测相关系数 ρ</span>
+          <span class="stat-num">~ 0.68</span>
+        </div>
+      </section>
+
+      <!-- 右栏：随机森林 -->
+      <section class="column min0">
+        <div class="col-header">
+          <div class="col-title">随机森林</div>
+          <div class="col-tag rf">特征池：<strong>随机子集 k = √d</strong></div>
+        </div>
+
+        <div class="diagram">
+          <svg class="tree-view" viewBox="0 0 720 500">
+            <!-- 节点1：根节点 -->
+            <g transform="translate(360, 50)">
+              <!-- 候选特征栏：抽样2个 -->
+              <g transform="translate(-160, -28)">
+                <text x="0" y="16" font-size="15" fill="var(--muted)" font-family="var(--font-sans)">随机抽样特征子集:</text>
+                
+                <rect x="135" y="0" width="34" height="24" rx="4" fill="var(--focus)" />
+                <text x="152" y="17" font-size="13" fill="#FFF" text-anchor="middle" font-family="var(--font-numeric)">x₃*</text>
+
+                <rect x="175" y="0" width="30" height="24" rx="4" fill="#FFF" stroke="var(--focus)" stroke-width="1.5" />
+                <text x="190" y="17" font-size="13" fill="var(--focus)" text-anchor="middle" font-family="var(--font-numeric)">x₅</text>
+
+                <text x="216" y="16" font-size="13" fill="var(--muted)" font-family="var(--font-sans)">(未抽中 x₁)</text>
+              </g>
+
+              <!-- 根节点圆与文本 -->
+              <circle cx="0" cy="50" r="28" fill="var(--focus)" />
+              <text x="0" y="56" font-size="16" font-weight="700" fill="#FFF" text-anchor="middle" font-family="var(--font-numeric)">x₃</text>
+              <text x="46" y="56" font-size="16" fill="var(--text)" font-family="var(--font-sans)">次选特征获得生长机会</text>
+            </g>
+
+            <!-- 连线到第二层 -->
+            <path d="M 360 128 L 180 215" stroke="var(--line)" stroke-width="2" fill="none" />
+            <path d="M 360 128 L 540 215" stroke="var(--line)" stroke-width="2" fill="none" />
+
+            <!-- 第二层左节点 -->
+            <g transform="translate(180, 245)">
+              <circle cx="0" cy="0" r="26" fill="var(--model)" />
+              <text x="0" y="6" font-size="15" font-weight="700" fill="#FFF" text-anchor="middle" font-family="var(--font-numeric)">x₁</text>
+              <text x="-38" y="6" font-size="15" fill="var(--muted)" text-anchor="end" font-family="var(--font-sans)">子节点抽中 x₁</text>
+            </g>
+
+            <!-- 第二层右节点 -->
+            <g transform="translate(540, 245)">
+              <circle cx="0" cy="0" r="26" fill="var(--focus)" opacity="0.9" />
+              <text x="0" y="6" font-size="15" font-weight="700" fill="#FFF" text-anchor="middle" font-family="var(--font-numeric)">x₄</text>
+              <text x="38" y="6" font-size="15" fill="var(--muted)" text-anchor="start" font-family="var(--font-sans)">探索新子空间</text>
+            </g>
+
+            <!-- 连线到叶子 -->
+            <path d="M 180 271 L 110 345" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4,4" fill="none" />
+            <path d="M 180 271 L 250 345" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4,4" fill="none" />
+            <path d="M 540 271 L 470 345" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4,4" fill="none" />
+            <path d="M 540 271 L 610 345" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4,4" fill="none" />
+
+            <!-- 叶节点 -->
+            <rect x="90" y="345" width="40" height="24" rx="4" fill="var(--focus)" opacity="0.2" stroke="var(--focus)" />
+            <rect x="230" y="345" width="40" height="24" rx="4" fill="var(--focus)" opacity="0.2" stroke="var(--focus)" />
+            <rect x="450" y="345" width="40" height="24" rx="4" fill="var(--focus)" opacity="0.2" stroke="var(--focus)" />
+            <rect x="570" y="345" width="40" height="24" rx="4" fill="var(--focus)" opacity="0.2" stroke="var(--focus)" />
+
+            <!-- 结构说明标签 -->
+            <g transform="translate(360, 420)">
+              <text x="0" y="0" font-size="16" fill="var(--focus)" text-anchor="middle" font-family="var(--font-sans)">各树形态互补，显著降低集成方差</text>
+            </g>
+          </svg>
+        </div>
+
+        <div class="stat-row">
+          <span>树间预测相关系数 ρ</span>
+          <span class="stat-num rf">~ 0.23</span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    上一节我们看到，Bagging 的方差降低幅度受到基学习器之间相关性 ρ 的严格制约。如果数据中存在几个特别强的特征，传统的决策树在贪心分裂时，几乎每棵树的根节点和浅层节点都会挑选同样的强特征。这使得 Bootstrap 抽样出来的树虽然数据不同，但长相高度相似，树之间的相关系数居高不下。
+    随机森林在样本随机性的基础上，引入了“节点特征随机抽样”。在每个节点分裂时，不再从全部 d 个特征中挑选最优，而是先随机抽取一个大小为 k 的特征子集，再从中选出最优分裂属性。这样，即使存在极强特征，也有相当概率不进入候选池，从而让次优特征获得探索机会。这极大地丰富了树的多样性，把相关系数从高位拉低，使集成平均的降方差效果充分释放。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 10, total: 26 });
+  </script>
+</body>
+</html>

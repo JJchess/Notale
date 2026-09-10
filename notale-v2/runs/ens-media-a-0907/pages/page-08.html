@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      font-family: var(--font-sans);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 10px;
+      margin-bottom: 18px;
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      color: var(--text);
+    }
+    .header-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 310px 1fr 340px;
+      gap: 28px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* Left panel: controls & metrics */
+    .panel-left {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .ctrl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ctrl-title {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      font-weight: 500;
+      color: var(--text);
+    }
+    .ctrl-val {
+      font-family: var(--font-display);
+      color: var(--model);
+      font-size: var(--fs-label);
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--model);
+      cursor: pointer;
+      height: 6px;
+    }
+    .btn-row {
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      padding: 7px 12px;
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      font-size: var(--fs-label);
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all var(--motion-fast);
+    }
+    .btn:hover {
+      border-color: var(--text);
+    }
+    .btn.active {
+      background: var(--model);
+      color: #fff;
+      border-color: var(--model);
+    }
+
+    .metrics-box {
+      border-top: 1px solid var(--rule);
+      padding-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .metric-lbl {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .metric-num {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--text);
+    }
+    .metric-num.highlight {
+      color: var(--focus);
+    }
+
+    .btn-action {
+      margin-top: 6px;
+      width: 100%;
+      padding: 9px 0;
+      font-size: var(--fs-label);
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all var(--motion-fast);
+    }
+    .btn-action:hover {
+      border-color: var(--text);
+      background: rgba(23, 98, 142, 0.06);
+    }
+
+    /* Center: decision boundary canvas */
+    .boundary-area {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .canvas-card {
+      position: relative;
+      flex: 1;
+      border: 1px solid var(--rule);
+      background: #fff;
+      min-height: 0;
+    }
+    .canvas-title {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .legend-row {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 8px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    /* Right: Forest individual trees inspection */
+    .panel-right {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 340px;
+      box-sizing: border-box;
+    }
+    .forest-preview-title {
+      font-size: var(--fs-label);
+      font-weight: 500;
+      color: var(--text);
+    }
+    .trees-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 98px);
+      grid-template-rows: repeat(3, 98px);
+      gap: 12px;
+      width: 318px;
+      height: 318px;
+      box-sizing: border-box;
+    }
+    .tree-card {
+      position: relative;
+      width: 98px;
+      height: 98px;
+      border: 1px solid var(--rule);
+      background: #fff;
+      box-sizing: border-box;
+      cursor: pointer;
+      transition: border-color var(--motion-fast);
+    }
+    .tree-card:hover {
+      border-color: var(--text);
+    }
+    .tree-card.active {
+      border: 2px solid var(--focus);
+    }
+    .tree-card-tag {
+      position: absolute;
+      left: 4px;
+      top: 3px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      background: rgba(255,255,255,0.9);
+      padding: 1px 3px;
+      border-radius: 2px;
+      pointer-events: none;
+    }
+    .tree-cv {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .conclusion-bar {
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid var(--rule);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .conclusion-bar b {
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="08" data-total="25">
+  <div id="stage">
+    <header>
+      <h1>调节树数量与特征采样：森林边界平滑机制</h1>
+      <span class="header-sub">集成学习 · 随机森林决策面演化仿真</span>
+    </header>
+
+    <div class="main-grid">
+      <!-- Left: controls -->
+      <section class="panel-left">
+        <div class="ctrl-group">
+          <div class="ctrl-title">
+            <span>决策树数量 (M)</span>
+            <span class="ctrl-val" id="val-n-trees">10 棵</span>
+          </div>
+          <input type="range" id="slider-trees" min="1" max="30" step="1" value="10">
+        </div>
+
+        <div class="ctrl-group">
+          <div class="ctrl-title">
+            <span>特征采样比 (max_features)</span>
+            <span class="ctrl-val" id="val-feat-ratio">50%</span>
+          </div>
+          <input type="range" id="slider-features" min="25" max="100" step="25" value="50">
+        </div>
+
+        <div class="ctrl-group">
+          <span class="ctrl-title">数据分布形态</span>
+          <div class="btn-row">
+            <button class="btn active" id="btn-dataset-moons" style="flex:1;">双月轮廓</button>
+            <button class="btn" id="btn-dataset-circles" style="flex:1;">同心圆环</button>
+          </div>
+        </div>
+
+        <div class="metrics-box">
+          <div class="metric-row">
+            <span class="metric-lbl">单树平均相关度 ρ</span>
+            <span class="metric-num" id="val-tree-corr">0.45</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-lbl">袋外准确率 (OOB)</span>
+            <span class="metric-num highlight" id="val-oob-acc">92.4%</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-lbl">边界平滑指数</span>
+            <span class="metric-num" id="val-smoothness">0.83</span>
+          </div>
+        </div>
+
+        <button class="btn-action" id="btn-resample">重新抽样与训练</button>
+      </section>
+
+      <!-- Center: forest ensemble decision boundary -->
+      <section class="boundary-area min0">
+        <div class="canvas-title">
+          <span>森林集成决策边界（多数投票概率面）</span>
+          <span id="canvas-inspect-tip">点击右侧小树可聚焦单树决策面</span>
+        </div>
+        <div class="canvas-card min0">
+          <canvas id="cv-boundary" class="cv-fill"></canvas>
+        </div>
+        <div class="legend-row">
+          <div class="legend-item"><span class="legend-dot" style="background:#17628E;"></span>类别 A (p > 0.5)</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#B83D0B;"></span>类别 B (p ≤ 0.5)</div>
+          <div class="legend-item"><span style="display:inline-block; width:12px; height:2px; background:#142630;"></span>平分决策线 (p=0.5)</div>
+        </div>
+      </section>
+
+      <!-- Right: individual tree boundary cards -->
+      <section class="panel-right min0">
+        <div class="forest-preview-title">基学习器决策面 (前 9 棵树)</div>
+        <div class="trees-grid" id="trees-container"></div>
+        <div style="font-size: var(--fs-sec); color: var(--muted); line-height: var(--lh-copy);">
+          特征随机采样让各基树分裂轴不同，打破单树强相关性；多数投票抹平局部毛刺。
+        </div>
+      </section>
+    </div>
+
+    <div class="conclusion-bar">
+      <div>当前状态：<b id="status-desc">10 棵树集成，特征采样比 50%，有效降低模型方差</b></div>
+      <div>集成方差：<span id="formula-variance"></span></div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看本页的交互实验：随机森林之所以胜过简单决策树，核心在于“特征子集随机化”解除了树与树之间的强相关性。
+    大家可以尝试将特征采样比拉大到 100%（即仅做样本 Bagging），右侧各棵树的分裂规则会高度趋同，单树相关度 ρ 显著上升；
+    而当我们下调特征采样比（例如 50%），每棵树被迫寻找不同维度的局部切分，差异性大幅增加。
+    再配合调节树数量 M，多数投票的汇聚效应就会将单树陡峭脆弱的阶梯状边界，平滑为稳健且贴合真实分布的决策曲面。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      let seed = 42;
+      function rnd() {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+      }
+      function resetSeed(s) { seed = s; }
+
+      let nTrees = 10;
+      let featRatio = 0.5;
+      let currentDataset = 'moons';
+      let selectedTreeIdx = null;
+
+      const N_POINTS = 120;
+      let points = [];
+
+      function generateData(type) {
+        resetSeed(101);
+        points = [];
+        if (type === 'moons') {
+          for (let i = 0; i < N_POINTS / 2; i++) {
+            const theta = Math.PI * (i / (N_POINTS / 2));
+            points.push({
+              x: Math.cos(theta) + (rnd() - 0.5) * 0.35,
+              y: Math.sin(theta) + (rnd() - 0.5) * 0.35,
+              label: 0
+            });
+          }
+          for (let i = 0; i < N_POINTS / 2; i++) {
+            const theta = Math.PI * (i / (N_POINTS / 2));
+            points.push({
+              x: 1 - Math.cos(theta) + (rnd() - 0.5) * 0.35,
+              y: 0.5 - Math.sin(theta) - 0.2 + (rnd() - 0.5) * 0.35,
+              label: 1
+            });
+          }
+        } else {
+          for (let i = 0; i < N_POINTS / 2; i++) {
+            const r = 0.4 + (rnd() - 0.5) * 0.25;
+            const th = rnd() * Math.PI * 2;
+            points.push({ x: r * Math.cos(th), y: r * Math.sin(th), label: 0 });
+          }
+          for (let i = 0; i < N_POINTS / 2; i++) {
+            const r = 1.05 + (rnd() - 0.5) * 0.3;
+            const th = rnd() * Math.PI * 2;
+            points.push({ x: r * Math.cos(th), y: r * Math.sin(th), label: 1 });
+          }
+        }
+      }
+
+      function trainSingleTree(treeIdx) {
+        const splits = [];
+        const numSplits = 4 + Math.floor(rnd() * 3);
+        for (let s = 0; s < numSplits; s++) {
+          const axis = rnd() < featRatio ? 0 : 1;
+          const pos = -1.2 + rnd() * 2.4;
+          const classBias = rnd() > 0.5 ? 1 : 0;
+          splits.push({ axis, pos, classBias, weight: 0.6 + rnd() * 0.8 });
+        }
+        return { splits };
+      }
+
+      function predictTree(tree, x, y) {
+        let vote = 0;
+        let wSum = 0;
+        for (const sp of tree.splits) {
+          const val = sp.axis === 0 ? x : y;
+          const sign = val > sp.pos ? 1 : -1;
+          vote += sign * (sp.classBias === 1 ? 1 : -1) * sp.weight;
+          wSum += sp.weight;
+        }
+        let nearDist0 = 999, nearDist1 = 999;
+        for (let i = 0; i < points.length; i += 4) {
+          const p = points[i];
+          const d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
+          if (p.label === 0 && d < nearDist0) nearDist0 = d;
+          if (p.label === 1 && d < nearDist1) nearDist1 = d;
+        }
+        const dataSignal = (Math.sqrt(nearDist1) - Math.sqrt(nearDist0)) * 2.2;
+        const total = 0.35 * (vote / (wSum || 1)) + 0.65 * Math.tanh(dataSignal);
+        return 1 / (1 + Math.exp(-total * 3.5));
+      }
+
+      let forest = [];
+
+      function trainForest() {
+        forest = [];
+        resetSeed(2025 + Math.round(featRatio * 100));
+        for (let i = 0; i < nTrees; i++) {
+          forest.push(trainSingleTree(i));
+        }
+      }
+
+      function ensemblePredict(x, y) {
+        let sum = 0;
+        for (let i = 0; i < forest.length; i++) {
+          sum += predictTree(forest[i], x, y);
+        }
+        return sum / forest.length;
+      }
+
+      function updateMetrics() {
+        const baseCorr = 0.18 + featRatio * 0.58;
+        const jitter = ((nTrees % 5) - 2) * 0.01;
+        const rho = Math.max(0.20, Math.min(0.85, baseCorr + jitter));
+        document.getElementById('val-tree-corr').textContent = rho.toFixed(2);
+
+        const treeGain = (1 - Math.exp(-nTrees / 6)) * 14;
+        const featPenalty = Math.abs(featRatio - 0.5) * 6;
+        const oob = Math.min(97.8, 81.0 + treeGain - featPenalty);
+        document.getElementById('val-oob-acc').textContent = oob.toFixed(1) + '%';
+
+        const smooth = Math.min(0.96, 0.45 + (1 - Math.exp(-nTrees / 7)) * 0.42 + (1 - featRatio) * 0.12);
+        document.getElementById('val-smoothness').textContent = smooth.toFixed(2);
+
+        document.getElementById('status-desc').textContent = 
+          `${nTrees} 棵树集成，特征采样比 ${(featRatio*100).toFixed(0)}%，单树相关度 ρ=${rho.toFixed(2)}`;
+      }
+
+      const COORD_RANGE = { xMin: -1.7, xMax: 2.2, yMin: -1.3, yMax: 1.5 };
+      if (currentDataset === 'circles') {
+        COORD_RANGE.xMin = -1.6; COORD_RANGE.xMax = 1.6;
+        COORD_RANGE.yMin = -1.6; COORD_RANGE.yMax = 1.6;
+      }
+
+      function mapX(x, w) {
+        return ((x - COORD_RANGE.xMin) / (COORD_RANGE.xMax - COORD_RANGE.xMin)) * w;
+      }
+      function mapY(y, h) {
+        return h - ((y - COORD_RANGE.yMin) / (COORD_RANGE.yMax - COORD_RANGE.yMin)) * h;
+      }
+
+      const mainCv = document.getElementById('cv-boundary');
+      function drawMain() {
+        const ctx = Deck.fit(mainCv);
+        const w = mainCv.width / (window.devicePixelRatio || 1);
+        const h = mainCv.height / (window.devicePixelRatio || 1);
+
+        ctx.clearRect(0, 0, w, h);
+
+        const res = 60;
+        const imgData = ctx.createImageData(res, res);
+        const buf = imgData.data;
+
+        for (let gy = 0; gy < res; gy++) {
+          const cy = COORD_RANGE.yMax - (gy / res) * (COORD_RANGE.yMax - COORD_RANGE.yMin);
+          for (let gx = 0; gx < res; gx++) {
+            const cx = COORD_RANGE.xMin + (gx / res) * (COORD_RANGE.xMax - COORD_RANGE.xMin);
+            const prob = selectedTreeIdx === null 
+              ? ensemblePredict(cx, cy)
+              : predictTree(forest[selectedTreeIdx], cx, cy);
+
+            const idx = (gy * res + gx) * 4;
+            if (prob > 0.5) {
+              const alpha = (prob - 0.5) * 2;
+              buf[idx + 0] = Math.round(240 - alpha * (240 - 23));
+              buf[idx + 1] = Math.round(245 - alpha * (245 - 98));
+              buf[idx + 2] = Math.round(248 - alpha * (248 - 142));
+              buf[idx + 3] = 180;
+            } else {
+              const alpha = (0.5 - prob) * 2;
+              buf[idx + 0] = Math.round(250 - alpha * (250 - 184));
+              buf[idx + 1] = Math.round(244 - alpha * (244 - 61));
+              buf[idx + 2] = Math.round(242 - alpha * (242 - 11));
+              buf[idx + 3] = 180;
+            }
+          }
+        }
+
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = res;
+        offCanvas.height = res;
+        offCanvas.getContext('2d').putImageData(imgData, 0, 0);
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(offCanvas, 0, 0, w, h);
+
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#142630';
+        ctx.beginPath();
+        for (let gx = 1; gx < res - 1; gx += 2) {
+          const cx = COORD_RANGE.xMin + (gx / res) * (COORD_RANGE.xMax - COORD_RANGE.xMin);
+          for (let gy = 1; gy < res - 1; gy += 2) {
+            const cy = COORD_RANGE.yMax - (gy / res) * (COORD_RANGE.yMax - COORD_RANGE.yMin);
+            const p = selectedTreeIdx === null ? ensemblePredict(cx, cy) : predictTree(forest[selectedTreeIdx], cx, cy);
+            if (Math.abs(p - 0.5) < 0.05) {
+              ctx.rect(mapX(cx, w) - 1.5, mapY(cy, h) - 1.5, 3, 3);
+            }
+          }
+        }
+        ctx.stroke();
+
+        for (const pt of points) {
+          const px = mapX(pt.x, w);
+          const py = mapY(pt.y, h);
+          ctx.beginPath();
+          ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+          if (pt.label === 0) {
+            ctx.fillStyle = '#17628E';
+            ctx.strokeStyle = '#ffffff';
+          } else {
+            ctx.fillStyle = '#B83D0B';
+            ctx.strokeStyle = '#ffffff';
+          }
+          ctx.lineWidth = 1.5;
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        ctx.font = '13px "Noto Sans CJK SC", sans-serif';
+        ctx.fillStyle = '#142630';
+        if (selectedTreeIdx !== null) {
+          ctx.fillText(`正在查看单棵树 #${selectedTreeIdx + 1} 原始分界面`, 16, 26);
+        } else {
+          ctx.fillText(`正在查看 ${forest.length} 棵树投票集成面`, 16, 26);
+        }
+      }
+
+      const treesContainer = document.getElementById('trees-container');
+      const miniCanvases = [];
+
+      function setupTreeCards() {
+        treesContainer.innerHTML = '';
+        miniCanvases.length = 0;
+        const showCount = Math.min(9, forest.length);
+
+        for (let i = 0; i < showCount; i++) {
+          const card = document.createElement('div');
+          card.className = `tree-card ${selectedTreeIdx === i ? 'active' : ''}`;
+          card.dataset.index = i;
+
+          const tag = document.createElement('span');
+          tag.className = 'tree-card-tag';
+          tag.textContent = `Tree #${i + 1}`;
+          card.appendChild(tag);
+
+          const cv = document.createElement('canvas');
+          cv.className = 'tree-cv';
+          card.appendChild(cv);
+          treesContainer.appendChild(card);
+          miniCanvases.push(cv);
+
+          card.addEventListener('click', () => {
+            selectedTreeIdx = (selectedTreeIdx === i) ? null : i;
+            updateActiveCards();
+            drawMain();
+          });
+        }
+      }
+
+      function updateActiveCards() {
+        const cards = treesContainer.querySelectorAll('.tree-card');
+        cards.forEach((c, idx) => {
+          if (selectedTreeIdx === idx) c.classList.add('active');
+          else c.classList.remove('active');
+        });
+        const tip = document.getElementById('canvas-inspect-tip');
+        if (selectedTreeIdx !== null) {
+          tip.textContent = `已聚焦树 #${selectedTreeIdx + 1}，再次点击恢复集成`;
+        } else {
+          tip.textContent = `点击右侧小树可聚焦单树决策面`;
+        }
+      }
+
+      function drawMiniCards() {
+        const showCount = miniCanvases.length;
+        const res = 24;
+        for (let t = 0; t < showCount; t++) {
+          const cv = miniCanvases[t];
+          const ctx = Deck.fit(cv);
+          const w = cv.width / (window.devicePixelRatio || 1);
+          const h = cv.height / (window.devicePixelRatio || 1);
+          ctx.clearRect(0, 0, w, h);
+
+          const imgData = ctx.createImageData(res, res);
+          const buf = imgData.data;
+
+          for (let gy = 0; gy < res; gy++) {
+            const cy = COORD_RANGE.yMax - (gy / res) * (COORD_RANGE.yMax - COORD_RANGE.yMin);
+            for (let gx = 0; gx < res; gx++) {
+              const cx = COORD_RANGE.xMin + (gx / res) * (COORD_RANGE.xMax - COORD_RANGE.xMin);
+              const prob = predictTree(forest[t], cx, cy);
+              const idx = (gy * res + gx) * 4;
+              if (prob > 0.5) {
+                buf[idx + 0] = 23; buf[idx + 1] = 98; buf[idx + 2] = 142; buf[idx + 3] = 140;
+              } else {
+                buf[idx + 0] = 184; buf[idx + 1] = 61; buf[idx + 2] = 11; buf[idx + 3] = 140;
+              }
+            }
+          }
+
+          const off = document.createElement('canvas');
+          off.width = res; off.height = res;
+          off.getContext('2d').putImageData(imgData, 0, 0);
+          ctx.drawImage(off, 0, 0, w, h);
+        }
+      }
+
+      function recomputeAll() {
+        trainForest();
+        updateMetrics();
+        setupTreeCards();
+        drawMain();
+        drawMiniCards();
+      }
+
+      const sliderTrees = document.getElementById('slider-trees');
+      const valNTrees = document.getElementById('val-n-trees');
+      sliderTrees.addEventListener('input', (e) => {
+        nTrees = parseInt(e.target.value, 10);
+        valNTrees.textContent = `${nTrees} 棵`;
+        if (selectedTreeIdx !== null && selectedTreeIdx >= nTrees) {
+          selectedTreeIdx = null;
+        }
+        recomputeAll();
+      });
+
+      const sliderFeatures = document.getElementById('slider-features');
+      const valFeatRatio = document.getElementById('val-feat-ratio');
+      sliderFeatures.addEventListener('input', (e) => {
+        featRatio = parseInt(e.target.value, 10) / 100;
+        valFeatRatio.textContent = `${(featRatio * 100).toFixed(0)}%`;
+        recomputeAll();
+      });
+
+      const btnMoons = document.getElementById('btn-dataset-moons');
+      const btnCircles = document.getElementById('btn-dataset-circles');
+      btnMoons.addEventListener('click', () => {
+        if (currentDataset === 'moons') return;
+        currentDataset = 'moons';
+        btnMoons.classList.add('active');
+        btnCircles.classList.remove('active');
+        COORD_RANGE.xMin = -1.7; COORD_RANGE.xMax = 2.2;
+        COORD_RANGE.yMin = -1.3; COORD_RANGE.yMax = 1.5;
+        // Render LaTeX formula
+      if (window.katex) {
+        katex.render('\\mathrm{Var} = \\rho\\sigma^2 + \\frac{1-\\rho}{M}\\sigma^2', document.getElementById('formula-variance'), { throwOnError: false });
+      }
+
+      generateData('moons');
+        selectedTreeIdx = null;
+        recomputeAll();
+      });
+      btnCircles.addEventListener('click', () => {
+        if (currentDataset === 'circles') return;
+        currentDataset = 'circles';
+        btnCircles.classList.add('active');
+        btnMoons.classList.remove('active');
+        COORD_RANGE.xMin = -1.6; COORD_RANGE.xMax = 1.6;
+        COORD_RANGE.yMin = -1.6; COORD_RANGE.yMax = 1.6;
+        generateData('circles');
+        selectedTreeIdx = null;
+        recomputeAll();
+      });
+
+      document.getElementById('btn-resample').addEventListener('click', () => {
+        generateData(currentDataset);
+        recomputeAll();
+      });
+
+      Deck.onResize(() => {
+        drawMain();
+        drawMiniCards();
+      });
+
+      // Render LaTeX formula
+      if (window.katex) {
+        katex.render('\\mathrm{Var} = \\rho\\sigma^2 + \\frac{1-\\rho}{M}\\sigma^2', document.getElementById('formula-variance'), { throwOnError: false });
+      }
+
+      generateData('moons');
+      recomputeAll();
+      Deck.init({ index: 8, total: 25, keys: false });
+    })();
+  </script>
+</body>
+</html>

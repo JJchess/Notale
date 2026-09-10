@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>“太史公曰”的位置与声音</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 局部专用布局与高亮样式 */
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .header-block h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      letter-spacing: -0.01em;
+    }
+    .header-block .lead {
+      margin: 0;
+      color: var(--muted);
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+    }
+
+    .layout-grid {
+      display: grid;
+      grid-template-columns: 800px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：篇卷文本剖面 */
+    .scroll-col {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+    .chapter-switch {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .chapter-switch .btn {
+      padding: 6px 12px;
+      min-height: 34px;
+      font-size: var(--fs-label);
+    }
+
+    .scroll-pane {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--paper);
+      border: var(--line) solid var(--muted);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      gap: 12px;
+      overflow-y: hidden;
+      position: relative;
+    }
+
+    /* 正文叙事层：冷静、客观、隐身 */
+    .narrative-tier {
+      padding: 12px 16px;
+      background: #F8FAF7;
+      border: 1px dashed #B8C4BE;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .narrative-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: var(--fs-tick);
+      font-weight: 600;
+    }
+    .narrative-body {
+      font-family: var(--font-display);
+      font-size: var(--fs-sec);
+      line-height: 1.58;
+      color: #3C4A45;
+    }
+
+    /* 显身分界线：太史公曰标记 */
+    .threshold {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 2px 0;
+    }
+    .threshold-tag {
+      background: var(--judgment);
+      color: #FFF;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--fs-label);
+      padding: 3px 10px;
+      border-radius: 3px;
+      letter-spacing: 0.08em;
+    }
+    .threshold-rule {
+      flex: 1;
+      height: 1px;
+      background: #D5DDD8;
+      position: relative;
+    }
+    .threshold-desc {
+      font-size: var(--fs-tick);
+      color: var(--judgment);
+      font-weight: 600;
+    }
+
+    /* 论赞剖析区 */
+    .appraisal-body {
+      flex: 1;
+      min-height: 0;
+      font-family: var(--font-display);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #FCFCFA;
+      border: 1px solid #E4EBE6;
+      border-radius: 4px;
+      padding: 14px 16px;
+      justify-content: space-evenly;
+    }
+
+    /* 每一层发声条目 */
+    .voice-sentence-row {
+      display: grid;
+      grid-template-columns: 52px 1fr;
+      gap: 10px;
+      align-items: baseline;
+      padding: 6px 8px;
+      border-radius: 4px;
+      transition: background-color var(--ease), box-shadow var(--ease);
+      cursor: pointer;
+    }
+    .voice-sentence-row:hover {
+      background: #F0F4F2;
+    }
+    .voice-badge {
+      font-family: var(--font-sans);
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      text-align: center;
+      padding: 2px 0;
+      border-radius: 2px;
+      border: 1px solid currentColor;
+      user-select: none;
+    }
+    .voice-sentence-text {
+      font-size: var(--fs-body);
+      line-height: 1.62;
+    }
+
+    .voice-sentence-row[data-type="observe"] .voice-badge {
+      color: #0F506F;
+      border-color: #0F506F;
+    }
+    .voice-sentence-row[data-type="observe"] .voice-sentence-text {
+      color: #0F506F;
+    }
+
+    .voice-sentence-row[data-type="history"] .voice-badge {
+      color: #1A594E;
+      border-color: #1A594E;
+    }
+    .voice-sentence-row[data-type="history"] .voice-sentence-text {
+      color: #1A594E;
+    }
+
+    .voice-sentence-row[data-type="emotion"] .voice-badge {
+      color: #8C4718;
+      border-color: #8C4718;
+    }
+    .voice-sentence-row[data-type="emotion"] .voice-sentence-text {
+      color: #8C4718;
+    }
+
+    .voice-sentence-row[data-type="verdict"] .voice-badge {
+      color: var(--judgment);
+      border-color: var(--judgment);
+    }
+    .voice-sentence-row[data-type="verdict"] .voice-sentence-text {
+      color: var(--judgment);
+    }
+
+    .voice-sentence-row.active[data-type="observe"] {
+      background: #DCEEF5;
+      box-shadow: 0 0 0 1.5px #0F506F;
+    }
+    .voice-sentence-row.active[data-type="observe"] .voice-badge {
+      background: #0F506F;
+      color: #FFF;
+    }
+
+    .voice-sentence-row.active[data-type="history"] {
+      background: #D9EFEA;
+      box-shadow: 0 0 0 1.5px #1A594E;
+    }
+    .voice-sentence-row.active[data-type="history"] .voice-badge {
+      background: #1A594E;
+      color: #FFF;
+    }
+
+    .voice-sentence-row.active[data-type="emotion"] {
+      background: #FAEDDF;
+      box-shadow: 0 0 0 1.5px #8C4718;
+    }
+    .voice-sentence-row.active[data-type="emotion"] .voice-badge {
+      background: #8C4718;
+      color: #FFF;
+    }
+
+    .voice-sentence-row.active[data-type="verdict"] {
+      background: #F8DFDC;
+      box-shadow: 0 0 0 1.5px var(--judgment);
+    }
+    .voice-sentence-row.active[data-type="verdict"] .voice-badge {
+      background: var(--judgment);
+      color: #FFF;
+    }
+
+    /* 右侧：四重发声分析模型 */
+    .voice-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .voice-nav {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .voice-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      padding: 8px 10px;
+      border: var(--line) solid #CCD5CF;
+      border-radius: var(--radius);
+      background: var(--paper);
+      cursor: pointer;
+      text-align: left;
+      transition: all var(--ease);
+    }
+    .voice-btn:hover {
+      border-color: var(--text);
+    }
+    .voice-btn .v-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .voice-btn .v-tag {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+
+    .voice-btn[data-type="observe"][aria-selected="true"] {
+      border-color: #0F506F;
+      background: #EAF3F7;
+    }
+    .voice-btn[data-type="observe"][aria-selected="true"] .v-title {
+      color: #0F506F;
+    }
+
+    .voice-btn[data-type="history"][aria-selected="true"] {
+      border-color: #1A594E;
+      background: #EAF4F1;
+    }
+    .voice-btn[data-type="history"][aria-selected="true"] .v-title {
+      color: #1A594E;
+    }
+
+    .voice-btn[data-type="emotion"][aria-selected="true"] {
+      border-color: #8C4718;
+      background: #FAF2EA;
+    }
+    .voice-btn[data-type="emotion"][aria-selected="true"] .v-title {
+      color: #8C4718;
+    }
+
+    .voice-btn[data-type="verdict"][aria-selected="true"] {
+      border-color: var(--judgment);
+      background: #F9EBEA;
+    }
+    .voice-btn[data-type="verdict"][aria-selected="true"] .v-title {
+      color: var(--judgment);
+    }
+
+    /* 发声机制卡片 */
+    .detail-card {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: var(--paper);
+      border: var(--line) solid var(--muted);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+    }
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid #E2E8E4;
+      padding-bottom: 8px;
+    }
+    .card-head h2 {
+      margin: 0;
+      font-size: var(--fs-h2);
+    }
+    .card-head .badge {
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .card-body {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      flex: 1;
+      min-height: 0;
+      justify-content: space-around;
+    }
+    .card-row {
+      display: grid;
+      grid-template-columns: 80px 1fr;
+      gap: 10px;
+      font-size: var(--fs-label);
+      line-height: 1.5;
+    }
+    .row-k {
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .row-v {
+      color: var(--text);
+    }
+    .row-v mark {
+      background: #E8ECE7;
+      color: var(--text);
+      padding: 0 4px;
+      border-radius: 2px;
+      font-weight: 600;
+    }
+
+    /* 四维对照表格 */
+    .paradigm-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-tick);
+      border: 1px solid #D6E0DA;
+      border-radius: 4px;
+      overflow: hidden;
+      background: #F8FAF8;
+    }
+    .paradigm-table th {
+      background: #EAEFEA;
+      color: var(--text);
+      padding: 5px 8px;
+      text-align: left;
+      font-weight: 700;
+      border-bottom: 1px solid #D6E0DA;
+    }
+    .paradigm-table td {
+      padding: 5px 8px;
+      border-bottom: 1px solid #E2EAE4;
+      color: #3C4A45;
+    }
+    .paradigm-table tr:last-child td {
+      border-bottom: 0;
+    }
+    .paradigm-table td.tag-col {
+      color: var(--muted);
+      font-weight: 600;
+      width: 72px;
+    }
+  </style>
+</head>
+<body data-page="10" data-total="15">
+  <div id="stage">
+    <header class="header-block">
+      <h1>“太史公曰”的位置与声音：篇末论赞连接史事、传闻、感慨与裁断</h1>
+      <p class="lead">司马迁在正文退居第三人称纪传叙事，在篇末以“太史公曰”显身出场。它不是单向度的道德说教，而是由见闻实录、史事归纳、个人感慨与历史裁断四重声音咬合而成的解释装置。</p>
+    </header>
+
+    <div class="layout-grid">
+      <!-- 左列：文本剖面 -->
+      <section class="scroll-col min0">
+        <div class="chapter-switch">
+          <span class="hint" style="margin-right: 4px; font-weight: 600;">典范篇目：</span>
+          <button class="btn" id="btn-huaiyin" aria-selected="true" data-ch="huaiyin">《淮阴侯列传》</button>
+          <button class="btn" id="btn-liuhou" aria-selected="false" data-ch="liuhou">《留侯世家》</button>
+          <button class="btn" id="btn-kongzi" aria-selected="false" data-ch="kongzi">《孔子世家》</button>
+          <button class="btn" id="btn-xiangyu" aria-selected="false" data-ch="xiangyu">《项羽本纪》</button>
+        </div>
+
+        <div class="scroll-pane min0">
+          <!-- 正文叙事层 -->
+          <div class="narrative-tier">
+            <div class="narrative-meta">
+              <span id="ch-narrative-label">纪传正文片段（第三人称编年记述）</span>
+              <span>叙事者：隐身克制 · 事辞相副</span>
+            </div>
+            <div class="narrative-body" id="ch-narrative-text">
+              汉十年，陈豨果反。信称疾不从……信乃谋与家臣夜诈诏赦诸官徒奴，欲发以袭吕后、太子。信入，吕后使武士缚信，斩之长乐钟室。信方斩，曰：“吾悔不用蒯通之计，乃为儿女子所诈，岂非天哉！”遂夷信三族。
+            </div>
+          </div>
+
+          <!-- 叙事分水岭 -->
+          <div class="threshold">
+            <div class="threshold-tag">太史公曰</div>
+            <div class="threshold-rule"></div>
+            <div class="threshold-desc">篇末界标：叙事者从正文隐退转为第一人称显身发言</div>
+          </div>
+
+          <!-- 篇末论赞全文与四重声音拆解 -->
+          <div class="appraisal-body min0" id="ch-appraisal-text">
+            <!-- 由 JS 填充带高亮标记的句子 -->
+          </div>
+        </div>
+      </section>
+
+      <!-- 右列：四重声音模型与机制 -->
+      <aside class="voice-col min0">
+        <!-- 四重发声切换卡 -->
+        <nav class="voice-nav" aria-label="声音类型">
+          <button class="voice-btn" data-type="observe" aria-selected="true">
+            <span class="v-title">① 见闻传闻</span>
+            <span class="v-tag">走访 / 见图 / 传说</span>
+          </button>
+          <button class="voice-btn" data-type="history" aria-selected="false">
+            <span class="v-title">② 史事归纳</span>
+            <span class="v-tag">全篇 / 枢纽 / 源流</span>
+          </button>
+          <button class="voice-btn" data-type="emotion" aria-selected="false">
+            <span class="v-title">③ 个人感慨</span>
+            <span class="v-tag">叹惋 / 假令 / 嗟乎</span>
+          </button>
+          <button class="voice-btn" data-type="verdict" aria-selected="false">
+            <span class="v-title">④ 史家裁断</span>
+            <span class="v-tag">功过 / 因果 / 定评</span>
+          </button>
+        </nav>
+
+        <!-- 详细剖析卡片 -->
+        <div class="detail-card min0">
+          <div class="card-head">
+            <h2 id="card-voice-name">见闻与传闻：史官亲历的田野与物证</h2>
+            <span class="badge" id="card-voice-tag">第一人称感知介入</span>
+          </div>
+
+          <div class="card-body">
+            <div class="card-row">
+              <span class="row-k">标识句式</span>
+              <span class="row-v" id="card-voice-markers"><mark>吾如淮阴</mark>、<mark>市人言</mark>、<mark>至见其图</mark>、<mark>余读孔氏书</mark></span>
+            </div>
+            <div class="card-row">
+              <span class="row-k">信息源头</span>
+              <span class="row-v" id="card-voice-source">司马迁二十岁南游江淮、考察故邑遗迹，采撷民间口碑、方言俗语及图谱画像，突破官方简牍遮蔽。</span>
+            </div>
+            <div class="card-row">
+              <span class="row-k">叙事功能</span>
+              <span class="row-v" id="card-voice-function">引入可检验的个人经验。史官以调查者姿态进入现场，用“我见、我闻”校准历史传说的真实质感。</span>
+            </div>
+            <div class="card-row">
+              <span class="row-k">本篇印证</span>
+              <span class="row-v" id="card-voice-evidence">特意提及淮阴母坟旁“留万人地”的市井口碑，证韩信少年时已有雄异之志，非平庸无谋之徒。</span>
+            </div>
+          </div>
+
+          <!-- 四维范式对照表 -->
+          <table class="paradigm-table">
+            <thead>
+              <tr>
+                <th style="width: 72px;">维度</th>
+                <th>纪传正文（隐身叙事）</th>
+                <th>篇末论赞（显身立论）</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="tag-col">主体位置</td>
+                <td>第三人称隐匿于材料后，事辞相副</td>
+                <td>第一人称“太史公曰 / 吾 / 余”显身发言</td>
+              </tr>
+              <tr>
+                <td class="tag-col">时空视野</td>
+                <td>按编年展开局部生灭与事件原委</td>
+                <td>站在百年终局俯瞰全局因果与兴衰枢纽</td>
+              </tr>
+              <tr>
+                <td class="tag-col">证据谱系</td>
+                <td>官方簿籍、石室秘府、战阵公文</td>
+                <td>实地走访、图谱遗存、故老口碑与儒典</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    本页聚焦《史记》核心论述装置“太史公曰”的空间位置与发声解剖。
+    老师讲解时需强调三点：
+    第一，位置策略：为什么“太史公曰”总在篇末？正文叙事遵循“春秋笔法”，司马迁退隐在材料之后，让事件因果自行运转；篇末论赞则是叙事者突破隐身、以第一人称显身的制度化关口。
+    第二，四重声音构成：篇末绝非空洞的褒贬定评，而是复合了见闻传闻（田野调查）、史事归纳（跨越时空的因果总览）、主体感慨（“假令”“嗟乎”的痛惜与假设）以及最终的道德因果裁断。
+    第三，这四种声音的配合，解释了韩信、张良、孔子等不同人物命运。在韩信一案中，传闻证其早慧雄心，史事显其功盖天下，感慨惜其未学道谦让，裁断则斩钉截铁定其“夷灭宗族不亦宜乎”，推翻了韩信死前将覆亡归咎于“天”的托词。这一结构为后一页剖析《项羽本纪》驳斥“天亡我”奠定了通用的分析框架。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      // 篇章数据
+      const CHAPTERS = {
+        huaiyin: {
+          title: "《淮阴侯列传》",
+          narrative: "汉十年，陈豨果反。信称疾不从……信乃谋与家臣夜诈诏赦诸官徒奴，欲发以袭吕后、太子。信入，吕后使武士缚信，斩之长乐钟室。信方斩，曰：“吾悔不用蒯通之计，乃为儿女子所诈，岂非天哉！”遂夷信三族。",
+          appraisal: [
+            { type: "observe", tag: "见闻", text: "吾如淮阴，市人言始微时其志与众异。其母死，贫无以葬，然乃行营高燥地，令旁可置万家。余视其母冢，良然。" },
+            { type: "history", tag: "归纳", text: "于汉家勋可以比周、召、太公之徒，后世血食矣。" },
+            { type: "emotion", tag: "感慨", text: "假令韩信学道谦让，不伐己功，不矜其能，则庶几哉！" },
+            { type: "verdict", tag: "裁断", text: "不务出此，而天下已集，乃谋畔逆，夷灭宗族，不亦宜乎！" }
+          ]
+        },
+        liuhou: {
+          title: "《留侯世家》",
+          narrative: "汉王问诸侯莫能安齐者，留侯曰：“张良非不能也，但齐人狡黠，非留侯亲行不可。”留侯策谋帷幄，所言皆中。汉帝置酒洛阳南宫，高祖曰：“夫运筹策帷幄之中，决胜于千里之外，吾不如子房。”",
+          appraisal: [
+            { type: "observe", tag: "见闻", text: "学者多言无鬼神，然言有物。至如留侯之见疑于圯上老父，亦异矣！余以为其人计魁梧奇伟，至见其图，状貌如妇人好女。" },
+            { type: "history", tag: "归纳", text: "高祖离困者数矣，而留侯常有功力焉。" },
+            { type: "emotion", tag: "感慨", text: "岂可谓非天乎？" },
+            { type: "verdict", tag: "裁断", text: "高祖曰“运筹策帷幄中，决胜千里外”，留侯之谓也！" }
+          ]
+        },
+        kongzi: {
+          title: "《孔子世家》",
+          narrative: "孔子厄于陈、蔡之间，七日不尝粒，弦歌不绝。孔子知弟子有愠心，乃召子路而问曰：“《诗》云‘匪兕匪虎，率彼旷野’。吾道非邪？吾何为于此？”子贡、颜回进言，孔子欣然笑曰：“回，使尔多财，吾为尔宰。”",
+          appraisal: [
+            { type: "observe", tag: "见闻", text: "余读孔氏书，想见其为人。适鲁，观仲尼庙堂车服礼器，诸生以时习礼其家，余祗回留之不能去云。" },
+            { type: "history", tag: "归纳", text: "《诗》有之：“高山仰止，景行行止。”虽不能至，然心乡往之。" },
+            { type: "emotion", tag: "感慨", text: "天下君王至于贤人众矣，当时则荣，没则已焉。" },
+            { type: "verdict", tag: "裁断", text: "孔子布衣，传十余世，学者宗之。自天子王侯，中国言六艺者折中于夫子，可谓至圣矣！" }
+          ]
+        },
+        xiangyu: {
+          title: "《项羽本纪》",
+          narrative: "项王军壁垓下，兵少食尽，汉军及诸侯兵围之数重……项王自度不得脱，谓其骑曰：“吾起兵至今八岁矣，身七十余战，所当者破，所击者服，未尝败北，遂霸有天下。然今卒困于此，此天之亡我，非战之罪也。”乃自刎。",
+          appraisal: [
+            { type: "observe", tag: "见闻", text: "吾闻之周生曰“舜目盖重瞳子”，又闻项羽亦重瞳子。羽岂其苗裔邪？何兴之暴也！" },
+            { type: "history", tag: "归纳", text: "夫秦失其政，陈涉首难，豪杰蜂起……项羽起陇亩之中，三年，遂将五诸侯灭秦，分裂天下，而封王侯，政由羽出，号为“霸王”，位虽不终，近古以来未尝有也。" },
+            { type: "emotion", tag: "感慨", text: "及羽背关怀楚，放逐义帝而自立，怨王侯叛己，难矣。自矜功伐，奋其私智而不师古，谓霸王之业，欲以力征经营天下。" },
+            { type: "verdict", tag: "裁断", text: "五年卒亡其国，身死东城，尚不觉寤而不自责，过矣。乃引“天亡我，非用兵之罪也”，岂不谬哉！" }
+          ]
+        }
+      };
+
+      // 四重发声理论解说配置
+      const VOICE_EXPLAIN = {
+        observe: {
+          name: "见闻与传闻：史官亲历的田野与物证",
+          tag: "第一人称感知介入",
+          markers: "<mark>吾如淮阴</mark>、<mark>市人言</mark>、<mark>至见其图</mark>、<mark>余读孔氏书</mark>、<mark>吾闻之周生</mark>",
+          source: "司马迁二十岁南游江淮、考察故邑遗迹，采撷民间口碑、方言俗语及图谱画像，突破官方简牍遮蔽。",
+          func: "引入可检验的个人经验。史官以调查者姿态进入现场，用“我见、我闻”校准历史传说的真实质感。",
+          evidence: {
+            huaiyin: "特意提及淮阴母坟旁“留万人地”的市井口碑，证韩信少年时已有雄异之志，非平庸无谋之徒。",
+            liuhou: "打破“运筹帷幄之士必魁梧奇伟”的常态想象，以亲见画像呈现“状貌如妇人好女”的反差。",
+            kongzi: "亲至曲阜瞻仰仲尼车服礼器，记录“诸生以时习礼”的流风余韵，以实景见闻强化圣人感召力。",
+            xiangyu: "引入周生关于舜与项羽“皆重瞳子”的奇人传闻，探讨英雄非凡体貌与其暴兴暴亡的隐秘关系。"
+          }
+        },
+        history: {
+          name: "史事之归纳：全局视角的因果脉络",
+          tag: "宏观时空源流重构",
+          markers: "<mark>天下已集</mark>、<mark>高祖离困者数矣</mark>、<mark>三年灭秦</mark>、<mark>传十余世</mark>",
+          source: "依托皇家石室金匮典籍，统摄全书十二本纪、世家、列传所载横向事件与纵向演变链条。",
+          func: "跳出单篇具体情节的琐碎纠缠，站在帝国建立与政权更替的枢纽节点，归纳决定性力量。",
+          evidence: {
+            huaiyin: "点出天下初定、四海已集的历史大局，标明韩信起兵已失民心与时势大势。",
+            liuhou: "概括刘邦多次陷入绝境（彭城、荥阳）的历史事实，凸显张良力挽狂澜的定国基石作用。",
+            kongzi: "追溯数百年间诸侯霸业之消亡与孔门儒术之代代传衍，对比权力与学术的持久力量。",
+            xiangyu: "以“三年灭秦，分裂天下，政由羽出，号为霸王”概括霸业顶峰，奠定盛极而衰的因果参照。"
+          }
+        },
+        emotion: {
+          name: "个人感慨：主观悲悯与假设推演",
+          tag: "史家主体痛感注入",
+          markers: "<mark>假令</mark>、<mark>庶几哉</mark>、<mark>岂可谓非天乎</mark>、<mark>当时则荣，没则已焉</mark>、<mark>怨王侯叛己，难矣</mark>",
+          source: "司马迁自身蒙受宫刑、身陷绝境的生命创伤与对英雄罹难的深刻同情心境。",
+          func: "使用虚拟假设（假令）与感叹句式，打破机械宿命论，呈现人物选择的未竟可能与历史沉沦之痛。",
+          evidence: {
+            huaiyin: "连用“假令……庶几哉”，设想韩信若能谦退守分当如周公太公，充满对一代军神的痛惜。",
+            liuhou: "发问“岂可谓非天乎”，在肯定人事谋略之余，注入对历史机缘暗合的神秘叹赏。",
+            kongzi: "叹息历代君王“当时则荣，没则已焉”，以权力短暂衬托人格与思想的永恒。",
+            xiangyu: "直指其“自矜功伐，奋其私智而不师古”，在痛惜其英雄气概的同时剖开其认知盲区。"
+          }
+        },
+        verdict: {
+          name: "史家之裁断：拨乱反正的道德定评",
+          tag: "历史责任与因果定案",
+          markers: "<mark>夷灭宗族不亦宜乎</mark>、<mark>留侯之谓也</mark>、<mark>可谓至圣矣</mark>、<mark>岂不谬哉</mark>",
+          source: "融贯儒家道义裁断与司马迁独立的人格是非准则，重构事件真正的因果责任。",
+          func: "驳斥当事人将覆亡甩锅给“天命”或“时运”的托词，将个人成败彻底收束于行止功罪之内。",
+          evidence: {
+            huaiyin: "严正判定“夷灭宗族，不亦宜乎”，剥夺韩信受诛前“乃为儿女子所诈”的自辩正当性。",
+            liuhou: "引高祖“决胜千里外”定评，为汉初功臣排序立下无可争议的终局结论。",
+            kongzi: "最终裁定“可谓至圣矣”，为全篇对孔子一生颠沛流离的历史遭遇作出最高历史加冕。",
+            xiangyu: "严厉驳斥项羽临终“天亡我非用兵之罪”的托词，以“岂不谬哉”斩断英雄覆亡的虚妄神话。"
+          }
+        }
+      };
+
+      let currentChapter = "huaiyin";
+      let currentVoice = "observe";
+
+      const btnHuaiyin = document.getElementById("btn-huaiyin");
+      const btnLiuhou = document.getElementById("btn-liuhou");
+      const btnKongzi = document.getElementById("btn-kongzi");
+      const btnXiangyu = document.getElementById("btn-xiangyu");
+      const chNarrativeLabel = document.getElementById("ch-narrative-label");
+      const chNarrativeText = document.getElementById("ch-narrative-text");
+      const chAppraisalText = document.getElementById("ch-appraisal-text");
+
+      const voiceBtns = document.querySelectorAll(".voice-btn");
+      const cardVoiceName = document.getElementById("card-voice-name");
+      const cardVoiceTag = document.getElementById("card-voice-tag");
+      const cardVoiceMarkers = document.getElementById("card-voice-markers");
+      const cardVoiceSource = document.getElementById("card-voice-source");
+      const cardVoiceFunction = document.getElementById("card-voice-function");
+      const cardVoiceEvidence = document.getElementById("card-voice-evidence");
+
+      function renderAppraisalSpans() {
+        const chapter = CHAPTERS[currentChapter];
+        chNarrativeLabel.textContent = chapter.title + " · 正文片段";
+        chNarrativeText.textContent = chapter.narrative;
+
+        // 渲染论赞带交互行
+        chAppraisalText.innerHTML = "";
+        chapter.appraisal.forEach(item => {
+          const row = document.createElement("div");
+          row.className = "voice-sentence-row" + (item.type === currentVoice ? " active" : "");
+          row.dataset.type = item.type;
+          row.setAttribute("tabindex", "0");
+          row.setAttribute("role", "button");
+          row.setAttribute("aria-label", "点击剖析" + item.tag + "发声");
+
+          const badge = document.createElement("span");
+          badge.className = "voice-badge";
+          badge.textContent = item.tag;
+
+          const textSpan = document.createElement("span");
+          textSpan.className = "voice-sentence-text";
+          textSpan.textContent = item.text;
+
+          row.appendChild(badge);
+          row.appendChild(textSpan);
+
+          row.addEventListener("click", () => {
+            selectVoice(item.type);
+          });
+          row.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              selectVoice(item.type);
+            }
+          });
+          chAppraisalText.appendChild(row);
+        });
+      }
+
+      function updateVoiceCard() {
+        const info = VOICE_EXPLAIN[currentVoice];
+        cardVoiceName.textContent = info.name;
+        cardVoiceTag.textContent = info.tag;
+        cardVoiceMarkers.innerHTML = info.markers;
+        cardVoiceSource.textContent = info.source;
+        cardVoiceFunction.textContent = info.func;
+        cardVoiceEvidence.textContent = info.evidence[currentChapter];
+
+        // 更新按钮与高亮
+        voiceBtns.forEach(btn => {
+          btn.setAttribute("aria-selected", btn.dataset.type === currentVoice ? "true" : "false");
+        });
+
+        const rows = chAppraisalText.querySelectorAll(".voice-sentence-row");
+        rows.forEach(r => {
+          if (r.dataset.type === currentVoice) {
+            r.classList.add("active");
+          } else {
+            r.classList.remove("active");
+          }
+        });
+      }
+
+      function selectChapter(key) {
+        currentChapter = key;
+        btnHuaiyin.setAttribute("aria-selected", key === "huaiyin" ? "true" : "false");
+        btnLiuhou.setAttribute("aria-selected", key === "liuhou" ? "true" : "false");
+        btnKongzi.setAttribute("aria-selected", key === "kongzi" ? "true" : "false");
+        btnXiangyu.setAttribute("aria-selected", key === "xiangyu" ? "true" : "false");
+        renderAppraisalSpans();
+        updateVoiceCard();
+      }
+
+      function selectVoice(type) {
+        currentVoice = type;
+        updateVoiceCard();
+      }
+
+      btnHuaiyin.addEventListener("click", () => selectChapter("huaiyin"));
+      btnLiuhou.addEventListener("click", () => selectChapter("liuhou"));
+      btnKongzi.addEventListener("click", () => selectChapter("kongzi"));
+      btnXiangyu.addEventListener("click", () => selectChapter("xiangyu"));
+
+      voiceBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          selectVoice(btn.dataset.type);
+        });
+      });
+
+      // 初始化
+      selectChapter("huaiyin");
+
+      voiceBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          selectVoice(btn.dataset.type);
+        });
+      });
+
+      // 初始化
+      selectChapter("huaiyin");
+
+      // Deck 初始化
+      Deck.init({ index: 10, total: 15, keys: false });
+    })();
+  </script>
+</body>
+</html>

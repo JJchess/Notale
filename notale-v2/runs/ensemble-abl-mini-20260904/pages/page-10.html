@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>随机森林的额外随机性：特征子采样降低强特征造成的树间相关性</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, -apple-system, sans-serif;
+      --font-num: "JetBrains Mono", ui-monospace, monospace;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.15;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+
+    .lead-text {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1.35fr 0.95fr;
+      gap: 20px;
+    }
+
+    /* 左侧：对比画布与树结构演示 */
+    .compare-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px;
+      min-height: 0;
+      gap: 12px;
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .segmented-ctl {
+      display: flex;
+      background: var(--surface-strong);
+      padding: 3px;
+      border-radius: 6px;
+      gap: 2px;
+    }
+
+    .seg-btn {
+      border: none;
+      background: transparent;
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all var(--duration) var(--ease);
+    }
+
+    .seg-btn.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(18, 38, 52, 0.12);
+    }
+
+    .trees-preview {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      background: #FAFCFD;
+      border: 1px solid #E6EDF1;
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+
+    .tree-box {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .tree-box-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--model);
+    }
+
+    .tree-box-header span {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .tree-svg-container {
+      height: 110px;
+      width: 100%;
+    }
+
+    .tree-desc {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.35;
+      background: #F4F7F9;
+      padding: 6px 8px;
+      border-radius: 4px;
+      min-height: 36px;
+    }
+
+    /* 模拟对比图表区 */
+    .chart-container {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+    }
+
+    #echarts-host {
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+    }
+
+    /* 右侧：机制与推导 */
+    .theory-col {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .math-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .math-card h3 {
+      font-size: var(--fs-h2);
+      margin: 0;
+      color: var(--text);
+    }
+
+    .formula-box {
+      background: #FAFBFD;
+      border-left: 3px solid var(--aggregate);
+      padding: 10px 14px;
+      font-family: var(--font-num);
+      font-size: 17px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .stat-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .stat-pill {
+      background: #F4F8FA;
+      padding: 10px 12px;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .stat-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .stat-val {
+      font-size: 20px;
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    .stat-sub {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .steps-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 18px 20px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .steps-card h3 {
+      font-size: var(--fs-h2);
+      margin: 0;
+      color: var(--text);
+    }
+
+    .mech-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .mech-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    .dot-badge {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--surface-strong);
+      color: var(--model);
+      font-weight: 700;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .rule-box {
+      margin-top: auto;
+      background: #F1F7F4;
+      border: 1px solid #D0E3D9;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 14px;
+      color: var(--sample);
+      line-height: 1.45;
+    }
+
+    .rule-box strong {
+      color: #175447;
+    }
+  </style>
+</head>
+<body data-page="10" data-total="27">
+  <div id="stage">
+    <header>
+      <h1 class="page-title">随机森林的额外随机性：特征子采样降低树间相关性</h1>
+      <p class="lead-text">普通 Bagging 树若面临强特征，所有树的根节点都会选择相同特征切分，导致树结构高度相似；在分裂节点随机限制候选特征集，能实质打破树间同质化。</p>
+    </header>
+
+    <div class="main-grid">
+      <!-- 左列：交互式机制对比与集成方差曲线 -->
+      <section class="compare-card min0">
+        <div class="card-head">
+          <h2 class="card-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--model)"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/><path d="M3 9h18"/><path d="M3 15h18"/></svg>
+            候选特征选择机制对比
+          </h2>
+          <div class="segmented-ctl" role="group" aria-label="特征采样模式">
+            <button id="btn-bagging" class="seg-btn" type="button">标准 Bagging (所有 p 特征)</button>
+            <button id="btn-rf" class="seg-btn active" type="button">随机森林 (随机子集 m ≈ √p)</button>
+          </div>
+        </div>
+
+        <!-- 3 棵抽样决策树分裂形态预览 -->
+        <div class="trees-preview">
+          <div class="tree-box">
+            <div class="tree-box-header">
+              <span>基学习器 Tree #1</span>
+            </div>
+            <div class="tree-svg-container" id="tree-svg-1"></div>
+            <div class="tree-desc" id="tree-desc-1">根节点分裂特征...</div>
+          </div>
+          <div class="tree-box">
+            <div class="tree-box-header">
+              <span>基学习器 Tree #2</span>
+            </div>
+            <div class="tree-svg-container" id="tree-svg-2"></div>
+            <div class="tree-desc" id="tree-desc-2">根节点分裂特征...</div>
+          </div>
+          <div class="tree-box">
+            <div class="tree-box-header">
+              <span>基学习器 Tree #3</span>
+            </div>
+            <div class="tree-svg-container" id="tree-svg-3"></div>
+            <div class="tree-desc" id="tree-desc-3">根节点分裂特征...</div>
+          </div>
+        </div>
+
+        <!-- 集成方差随树数量衰减图表 -->
+        <div class="chart-container min0">
+          <div class="chart-header">
+            <span>集成方差随树数量衰减曲线</span>
+            <div class="chart-legend">
+              <div class="legend-item">
+                <span class="legend-swatch" style="background: #27648F;"></span>
+                <span>Bagging 曲线</span>
+              </div>
+              <div class="legend-item">
+                <span class="legend-swatch" style="background: #C34B22;"></span>
+                <span>随机森林曲线</span>
+              </div>
+              <div class="legend-item">
+                <span class="legend-swatch" style="background: #9AADC0; border-top: 2px dashed #9AADC0; height:0;"></span>
+                <span id="asymptote-label">当前下限 0.22</span>
+              </div>
+            </div>
+          </div>
+          <div id="echarts-host"></div>
+        </div>
+      </section>
+
+      <!-- 右列：理论解析与数量关系 -->
+      <aside class="theory-col min0">
+        <div class="math-card">
+          <h3>方差下限公式</h3>
+          <div class="formula-box">
+            Var(f̄) = ρ · σ² + <span style="display:inline-block; vertical-align:middle; text-align:center; font-size:15px; margin:0 4px;"><span style="display:block; border-bottom:1px solid currentColor;">1 - ρ</span><span style="display:block;">B</span></span> · σ²
+          </div>
+          <p style="font-size:14px; color:var(--muted); margin:0; line-height:1.4;">
+            当基树数量 <span style="font-family:var(--font-num)">B → ∞</span> 时，第二项趋近于 0，集成的方差被锁死在下限 <strong style="color:var(--text)"><span style="font-family:var(--font-num)">ρ · σ²</span></strong>。
+          </p>
+          <div class="stat-row">
+            <div class="stat-pill">
+              <span class="stat-label">平均相关系数 ρ</span>
+              <span class="stat-val" id="stat-rho">0.22</span>
+              <span class="stat-sub" id="stat-rho-sub">特征子集限制有效脱钩</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-label">渐近方差下限 (B=100)</span>
+              <span class="stat-val" id="stat-var">0.228</span>
+              <span class="stat-sub" id="stat-var-sub">相比 Bagging 降幅显著</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="steps-card">
+          <h3>关键机制与分裂规则</h3>
+          <ul class="mech-list">
+            <li class="mech-item">
+              <span class="dot-badge">1</span>
+              <div>
+                <strong>强特征垄断（Masking Effect）</strong>：若存在一个预测能力极强的特征（如面积或收入），普通决策树总会在根节点处选择它，导致所有树分支构型高度趋同。
+              </div>
+            </li>
+            <li class="mech-item">
+              <span class="dot-badge">2</span>
+              <div>
+                <strong>节点级特征子抽样（Feature Subsampling）</strong>：每次分裂时不考虑全部 <span style="font-family:var(--font-num)">p</span> 个特征，而是随机抽取 <span style="font-family:var(--font-num)">m</span> 个候选特征（分类常取 <span style="font-family:var(--font-num)">√p</span>，回归常取 <span style="font-family:var(--font-num)">p/3</span>）。
+              </div>
+            </li>
+            <li class="mech-item">
+              <span class="dot-badge">3</span>
+              <div>
+                <strong>次优特征获得探索机会</strong>：强特征大约有 <span style="font-family:var(--font-num)">1 - m/p</span> 的概率不在候选集中，迫使树学习其他次优特征，直接压低树间预测相关性 <span style="font-family:var(--font-num)">ρ</span>。
+              </div>
+            </li>
+          </ul>
+
+          <div class="rule-box">
+            <strong>经验默认值法则</strong>：设总特征数为 <span style="font-family:var(--font-num)">p</span>，分类任务取 <span style="font-family:var(--font-num)">m = ⌊√p⌋</span>；回归任务通常取 <span style="font-family:var(--font-num)">m = ⌊p / 3⌋</span>，配合深树能最大化集成收益。
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var mode = "rf"; // "bagging" | "rf"
+      var B_max = 60;
+      var sigma2 = 1.0;
+
+      // 参数：Bagging 下强特征主导，ρ 高（约 0.65）；RF 下特征打散，ρ 低（约 0.22）
+      var params = {
+        bagging: {
+          rho: 0.65,
+          color: "#27648F",
+          label: "Bagging (ρ = 0.65)",
+          trees: [
+            { root: "特征 X₁ (强特征)", left: "X₁ ≤ 4.2", right: "X₂ ≤ 8.0", match: true },
+            { root: "特征 X₁ (强特征)", left: "X₁ ≤ 3.9", right: "X₃ ≤ 1.5", match: true },
+            { root: "特征 X₁ (强特征)", left: "X₁ ≤ 4.1", right: "X₂ ≤ 7.6", match: true }
+          ],
+          desc: [
+            "强特征 X₁ 每次都在候选集，全部树锁定 X₁ 为根节点，结构高度同质化。",
+            "根节点相同，次级节点也频繁重复选择 X₂，树间预测高度相关。",
+            "即使样本 Bootstrap 重抽样，仍无法阻挡强特征的垄断效应。"
+          ]
+        },
+        rf: {
+          rho: 0.22,
+          color: "#C34B22",
+          label: "随机森林 (ρ = 0.22)",
+          trees: [
+            { root: "特征 X₁ (入选候选集)", left: "X₁ ≤ 4.0", right: "X₄ ≤ 2.1", match: true },
+            { root: "特征 X₃ (X₁未被抽中)", left: "X₃ ≤ 1.2", right: "X₅ ≤ 5.0", match: false },
+            { root: "特征 X₂ (X₁未被抽中)", left: "X₂ ≤ 8.5", right: "X₆ ≤ 0.8", match: false }
+          ],
+          desc: [
+            "随机抽中 X₁，以 X₁ 切分；次级切分随机考虑其他属性。",
+            "候选集无 X₁（概率 1-m/p），由次优特征 X₃ 担当主切分，形成独特视角。",
+            "根节点由 X₂ 主导，捕获完全不同的决策边界，树间多样性显著提高。"
+          ]
+        }
+      };
+
+      // 渲染树状图 SVG
+      function renderTreeSvg(containerId, treeInfo) {
+        var host = document.getElementById(containerId);
+        if (!host) return;
+        var isDominant = treeInfo.match;
+        var nodeFill = isDominant ? "#E8F0F6" : "#F8EFEA";
+        var nodeStroke = isDominant ? "#27648F" : "#C34B22";
+        var rootText = treeInfo.root;
+
+        var svgHtml = `
+          <svg viewBox="0 0 200 110" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <line x1="100" y1="28" x2="52" y2="68" stroke="#CBD8E2" stroke-width="2"/>
+            <line x1="100" y1="28" x2="148" y2="68" stroke="#CBD8E2" stroke-width="2"/>
+            
+            <!-- 根节点 -->
+            <rect x="10" y="6" width="180" height="26" rx="4" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="1.5"/>
+            <text x="100" y="24" text-anchor="middle" font-size="12" font-weight="bold" fill="${nodeStroke}" font-family="sans-serif">${rootText}</text>
+            
+            <!-- 左叶/子节点 -->
+            <rect x="12" y="68" width="80" height="24" rx="4" fill="#FFFFFF" stroke="#9AADC0" stroke-width="1"/>
+            <text x="52" y="84" text-anchor="middle" font-size="12" fill="#122634" font-family="sans-serif">${treeInfo.left}</text>
+            
+            <!-- 右叶/子节点 -->
+            <rect x="108" y="68" width="80" height="24" rx="4" fill="#FFFFFF" stroke="#9AADC0" stroke-width="1"/>
+            <text x="148" y="84" text-anchor="middle" font-size="12" fill="#122634" font-family="sans-serif">${treeInfo.right}</text>
+          </svg>
+        `;
+        host.innerHTML = svgHtml;
+      }
+
+      function updateTreeDisplays() {
+        var cfg = params[mode];
+        for (var i = 0; i < 3; i++) {
+          renderTreeSvg("tree-svg-" + (i + 1), cfg.trees[i]);
+          var descEl = document.getElementById("tree-desc-" + (i + 1));
+          if (descEl) descEl.textContent = cfg.desc[i];
+        }
+      }
+
+      // ECharts 初始化
+      var chartHost = document.getElementById("echarts-host");
+      var chart = echarts.init(chartHost, null, { renderer: "svg" });
+
+      function calcVarianceData(rho) {
+        var data = [];
+        for (var b = 1; b <= B_max; b++) {
+          var v = rho * sigma2 + ((1 - rho) / b) * sigma2;
+          data.push([b, Number(v.toFixed(4))]);
+        }
+        return data;
+      }
+
+      function updateChart() {
+        var baggingData = calcVarianceData(params.bagging.rho);
+        var rfData = calcVarianceData(params.rf.rho);
+
+        var activeRho = params[mode].rho;
+        var asymptoteBagging = params.bagging.rho * sigma2;
+        var asymptoteRF = params.rf.rho * sigma2;
+
+        var option = {
+          animationDuration: 300,
+          grid: {
+            left: 50,
+            right: 25,
+            top: 25,
+            bottom: 35
+          },
+          tooltip: {
+            trigger: "axis",
+            formatter: function (pts) {
+              if (!pts || !pts.length) return "";
+              var b = pts[0].value[0];
+              var str = "<b>树数量 B = " + b + "</b><br/>";
+              pts.forEach(function (p) {
+                str += p.marker + p.seriesName + ": <b>" + p.value[1] + "</b><br/>";
+              });
+              return str;
+            }
+          },
+          xAxis: {
+            type: "value",
+            min: 1,
+            max: B_max,
+            name: "基学习器数量 B",
+            nameLocation: "middle",
+            nameGap: 24,
+            nameTextStyle: { color: "#536A78", fontSize: 12 },
+            axisLine: { lineStyle: { color: "#536A78" } },
+            axisLabel: { color: "#536A78", fontSize: 11 },
+            splitLine: { show: false }
+          },
+          yAxis: {
+            type: "value",
+            min: 0,
+            max: 1.05,
+            name: "集成方差 Var(f̄)",
+            nameTextStyle: { color: "#536A78", fontSize: 12 },
+            axisLine: { lineStyle: { color: "#536A78" } },
+            axisLabel: { color: "#536A78", fontSize: 11 },
+            splitLine: { lineStyle: { color: "#E6EDF1", type: "dashed" } }
+          },
+          series: [
+            {
+              name: "标准 Bagging (ρ=0.65)",
+              type: "line",
+              data: baggingData,
+              showSymbol: false,
+              lineStyle: {
+                width: mode === "bagging" ? 3.5 : 2,
+                color: mode === "bagging" ? "#27648F" : "#9AADC0",
+                type: mode === "bagging" ? "solid" : "dashed"
+              },
+              itemStyle: { color: "#27648F" }
+            },
+            {
+              name: "随机森林 (ρ=0.22)",
+              type: "line",
+              data: rfData,
+              showSymbol: false,
+              lineStyle: {
+                width: mode === "rf" ? 3.5 : 2,
+                color: mode === "rf" ? "#C34B22" : "#9AADC0",
+                type: mode === "rf" ? "solid" : "dashed"
+              },
+              itemStyle: { color: "#C34B22" }
+            },
+            {
+              name: "当前渐近线 ρσ²",
+              type: "line",
+              data: [[1, activeRho], [B_max, activeRho]],
+              lineStyle: {
+                color: mode === "rf" ? "#C34B22" : "#27648F",
+                width: 1.5,
+                type: "dotted"
+              },
+              symbol: "none"
+            }
+          ]
+        };
+
+        chart.setOption(option);
+      }
+
+      function updateStats() {
+        var cfg = params[mode];
+        var b100Var = cfg.rho * sigma2 + ((1 - cfg.rho) / 100) * sigma2;
+        document.getElementById("stat-rho").textContent = cfg.rho.toFixed(2);
+        document.getElementById("stat-var").textContent = b100Var.toFixed(3);
+
+        if (mode === "bagging") {
+          document.getElementById("stat-rho-sub").textContent = "强特征导致各树预测高度雷同";
+          document.getElementById("stat-var-sub").textContent = "受制于高相关性，方差压不下去";
+          document.getElementById("stat-rho").style.color = "#27648F";
+          document.getElementById("stat-var").style.color = "#27648F";
+          document.getElementById("asymptote-label").textContent = "当前下限 0.65";
+        } else {
+          document.getElementById("stat-rho-sub").textContent = "特征子抽样打破强特征垄断";
+          document.getElementById("stat-var-sub").textContent = "下限显著下移，方差削减达 62%";
+          document.getElementById("stat-rho").style.color = "#C34B22";
+          document.getElementById("stat-var").style.color = "#C34B22";
+          document.getElementById("asymptote-label").textContent = "当前下限 0.22";
+        }
+      }
+
+      function setMode(newMode) {
+        mode = newMode;
+        document.getElementById("btn-bagging").classList.toggle("active", mode === "bagging");
+        document.getElementById("btn-rf").classList.toggle("active", mode === "rf");
+        updateTreeDisplays();
+        updateChart();
+        updateStats();
+      }
+
+      document.getElementById("btn-bagging").addEventListener("click", function () {
+        setMode("bagging");
+      });
+      document.getElementById("btn-rf").addEventListener("click", function () {
+        setMode("rf");
+      });
+
+      window.addEventListener("resize", function () {
+        if (chart) chart.resize();
+      });
+
+      // 初始化调用
+      updateTreeDisplays();
+      updateChart();
+      updateStats();
+
+      Deck.init({ index: 10, total: 27 });
+    })();
+  </script>
+</body>
+</html>

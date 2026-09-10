@@ -1,0 +1,872 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>任务条件决定集成策略：模拟训练验证预期收益</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 严格遵守主题与 1600x900 布局 */
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    header.intro {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: var(--line) solid var(--surface-strong);
+      padding-bottom: 12px;
+      flex: none;
+    }
+    .header-titles h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.15;
+    }
+    .header-titles p {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .header-preset {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .preset-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    /* 主内容区双栏 */
+    .workspace {
+      display: flex;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧控制台：任务环境配置与计算模型设置 */
+    .control-panel {
+      flex: 0 0 460px;
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 2px 8px rgba(20,37,51,0.04);
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin: 0;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+    .panel-title span {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    .slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .param-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .param-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+    }
+    .param-name {
+      font-weight: 600;
+      color: var(--text);
+    }
+    .param-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--focus);
+    }
+    .param-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.3;
+    }
+    input[type=range] {
+      width: 100%;
+      accent-color: var(--focus);
+      cursor: pointer;
+      margin: 2px 0;
+    }
+
+    /* 右侧画布展示实测与误差分解 */
+    .evidence-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    /* 顶部决策对比卡片网格 */
+    .model-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      flex: none;
+    }
+    .card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      position: relative;
+      transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card.winner {
+      border-color: var(--aggregate);
+      box-shadow: 0 0 0 1px var(--aggregate);
+    }
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .tag-method {
+      display: inline-block;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .tag-bagging { background: #dceaf7; color: var(--learner); }
+    .tag-boosting { background: #fbe5e1; color: var(--aggregate); }
+    .tag-stacking { background: #e3ede7; color: var(--correct); }
+
+    .card-badge {
+      font-size: var(--fs-tick);
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--surface-strong);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .card.winner .card-badge {
+      background: var(--aggregate);
+      color: #fff;
+    }
+
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-top: 4px;
+    }
+    .error-metric {
+      font-family: var(--font-num);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .error-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .cost-metric {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .cost-metric b {
+      font-family: var(--font-num);
+      color: var(--text);
+    }
+
+    /* 误差分解堆叠柱状对比区 */
+    .charts-container {
+      flex: 1;
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chart-title {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .chart-legend {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+    }
+
+    .canvas-box {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      width: 100%;
+    }
+
+    /* 底部诊断分析条 */
+    .diagnostic-footer {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex: none;
+    }
+    .diag-icon {
+      font-weight: 700;
+      font-size: var(--fs-label);
+      padding: 4px 10px;
+      background: var(--focus);
+      color: #fff;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .diag-text {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+      flex: 1;
+    }
+    .diag-text strong {
+      color: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="26" data-total="27">
+  <div id="stage">
+    <!-- 顶部概括与典型场景快捷切换 -->
+    <header class="intro min0">
+      <div class="header-titles min0">
+        <h1>任务条件决定集成策略：预期收益模拟器</h1>
+        <p>集成方法没有绝对优胜者：样本噪声、单模型偏差、基模型相关度与算力预算的联合约束决定了最优方案。</p>
+      </div>
+      <div class="header-preset">
+        <span class="preset-label">典型场景:</span>
+        <button type="button" class="btn" id="preset-noisy" aria-pressed="false">高噪声散乱</button>
+        <button type="button" class="btn" id="preset-complex" aria-pressed="false">高偏差欠拟合</button>
+        <button type="button" class="btn" id="preset-diverse" aria-pressed="false">异构模型互补</button>
+        <button type="button" class="btn" id="preset-budget" aria-pressed="false">紧缩算力限制</button>
+      </div>
+    </header>
+
+    <div class="workspace min0">
+      <!-- 左侧：参数控制器 -->
+      <section class="control-panel min0" aria-label="环境与约束控制台">
+        <div class="panel-title">
+          <span>任务与数据环境参数</span>
+          <span>实时计算预期误差</span>
+        </div>
+
+        <div class="slider-group">
+          <!-- 噪声水平 -->
+          <div class="param-item">
+            <div class="param-header">
+              <span class="param-name">1. 数据噪声强度 (Noise Variance)</span>
+              <span class="param-val" id="val-noise">0.25</span>
+            </div>
+            <input type="range" id="range-noise" min="0.05" max="0.70" step="0.05" value="0.25">
+            <div class="param-desc">高噪声增加不可约误差，严重惩罚强拟合算法（如 Boosting 的过拟合倾向）。</div>
+          </div>
+
+          <!-- 单模型偏差 -->
+          <div class="param-item">
+            <div class="param-header">
+              <span class="param-name">2. 单学习器偏差 (Base Model Bias)</span>
+              <span class="param-val" id="val-bias">0.30</span>
+            </div>
+            <input type="range" id="range-bias" min="0.10" max="0.60" step="0.05" value="0.30">
+            <div class="param-desc">基学习器结构简单造成的系统性欠拟合，Bagging 无法压缩偏差，而 Boosting 针对性削减。</div>
+          </div>
+
+          <!-- 模型间相关度 -->
+          <div class="param-item">
+            <div class="param-header">
+              <span class="param-name">3. 基模型相关度 (Error Correlation ρ)</span>
+              <span class="param-val" id="val-corr">0.45</span>
+            </div>
+            <input type="range" id="range-corr" min="0.05" max="0.85" step="0.05" value="0.45">
+            <div class="param-desc">相关度越低（模型异构或样本多样），平均与 Stacking 二层融合获得的方差消除增益越显著。</div>
+          </div>
+
+          <!-- 算力预算约束 -->
+          <div class="param-item">
+            <div class="param-header">
+              <span class="param-name">4. 算力/延迟预算 (Compute Budget)</span>
+              <span class="param-val" id="val-budget">60 FLOPs</span>
+            </div>
+            <input type="range" id="range-budget" min="15" max="100" step="5" value="60">
+            <div class="param-desc">算力受限时，耗费多折交叉验证的 Stacking 或深层迭代 Boosting 性能被强力截断。</div>
+          </div>
+        </div>
+
+        <div style="margin-top:auto; padding-top: 10px; border-top: 1px solid var(--surface-strong); font-size: var(--fs-tick); color: var(--muted); line-height: 1.35;">
+          基于泛化误差结构分解模型：总误差 = 不可约噪声 + 偏差项 + 方差项（含相关性惩罚因子与算力折损惩罚）。
+        </div>
+      </section>
+
+      <!-- 右侧：方案对比与图表 -->
+      <section class="evidence-area min0" aria-label="策略对比与误差分解">
+        <!-- 3 款经典方案对比卡 -->
+        <div class="model-cards">
+          <!-- Bagging / RF -->
+          <div class="card" id="card-bagging">
+            <div class="card-top">
+              <div class="card-title">
+                <span class="tag-method tag-bagging">并行平均</span>
+                <span>Bagging / 随机森林</span>
+              </div>
+              <span class="card-badge" id="badge-bagging">可选</span>
+            </div>
+            <div class="metric-row">
+              <div>
+                <div class="error-metric" id="err-bagging">0.38</div>
+                <div class="error-label">预期泛化误差 (MSE)</div>
+              </div>
+              <div class="cost-metric">
+                算力开销: <b id="cost-bagging">28</b><br>
+                并行潜力: <b>极高</b>
+              </div>
+            </div>
+          </div>
+
+          <!-- Boosting -->
+          <div class="card" id="card-boosting">
+            <div class="card-top">
+              <div class="card-title">
+                <span class="tag-method tag-boosting">串行残差</span>
+                <span>Boosting (GBDT/Ada)</span>
+              </div>
+              <span class="card-badge" id="badge-boosting">最优推荐</span>
+            </div>
+            <div class="metric-row">
+              <div>
+                <div class="error-metric" id="err-boosting">0.32</div>
+                <div class="error-label">预期泛化误差 (MSE)</div>
+              </div>
+              <div class="cost-metric">
+                算力开销: <b id="cost-boosting">42</b><br>
+                并行潜力: <b>低 (串行依赖)</b>
+              </div>
+            </div>
+          </div>
+
+          <!-- Stacking -->
+          <div class="card" id="card-stacking">
+            <div class="card-top">
+              <div class="card-title">
+                <span class="tag-method tag-stacking">异构元学习</span>
+                <span>Stacking 分层堆叠</span>
+              </div>
+              <span class="card-badge" id="badge-stacking">可选</span>
+            </div>
+            <div class="metric-row">
+              <div>
+                <div class="error-metric" id="err-stacking">0.35</div>
+                <div class="error-label">预期泛化误差 (MSE)</div>
+              </div>
+              <div class="cost-metric">
+                算力开销: <b id="cost-stacking">75</b><br>
+                OOF 开销: <b>高 (K折交叉)</b>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 误差分解对比图表 -->
+        <div class="charts-container min0">
+          <div class="chart-header">
+            <span class="chart-title">误差成分分解与模型承载能力分析</span>
+            <div class="chart-legend">
+              <div class="legend-item">
+                <span class="legend-color" style="background:#536777;"></span>
+                <span>不可约噪声</span>
+              </div>
+              <div class="legend-item">
+                <span class="legend-color" style="background:#275D91;"></span>
+                <span>模型偏差 (Bias²)</span>
+              </div>
+              <div class="legend-item">
+                <span class="legend-color" style="background:#d9822b;"></span>
+                <span>模型方差 (Variance)</span>
+              </div>
+              <div class="legend-item">
+                <span class="legend-color" style="background:#B63B24;"></span>
+                <span>预算超限/截断惩罚</span>
+              </div>
+            </div>
+          </div>
+          <div class="canvas-box">
+            <canvas id="chart-cv" class="cv-fill"></canvas>
+          </div>
+        </div>
+
+        <!-- 诊断分析与行动建议 -->
+        <div class="diagnostic-footer min0">
+          <span class="diag-icon" id="diag-rec-name">策略诊断</span>
+          <div class="diag-text" id="diag-text">
+            当前环境下，<strong>Boosting</strong> 表现最稳定：基学习器存在明显偏差，串行梯度迭代有效消除系统误差，且未超过算力惩罚红线。
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 状态模型定义
+      const state = {
+        noise: 0.25,
+        bias: 0.30,
+        corr: 0.45,
+        budget: 60,
+        preset: null
+      };
+
+      // 获取 DOM 元素
+      const rangeNoise = document.getElementById("range-noise");
+      const rangeBias = document.getElementById("range-bias");
+      const rangeCorr = document.getElementById("range-corr");
+      const rangeBudget = document.getElementById("range-budget");
+
+      const valNoise = document.getElementById("val-noise");
+      const valBias = document.getElementById("val-bias");
+      const valCorr = document.getElementById("val-corr");
+      const valBudget = document.getElementById("val-budget");
+
+      const presetBtns = {
+        noisy: document.getElementById("preset-noisy"),
+        complex: document.getElementById("preset-complex"),
+        diverse: document.getElementById("preset-diverse"),
+        budget: document.getElementById("preset-budget")
+      };
+
+      const cardBagging = document.getElementById("card-bagging");
+      const cardBoosting = document.getElementById("card-boosting");
+      const cardStacking = document.getElementById("card-stacking");
+
+      const badgeBagging = document.getElementById("badge-bagging");
+      const badgeBoosting = document.getElementById("badge-boosting");
+      const badgeStacking = document.getElementById("badge-stacking");
+
+      const errBaggingEl = document.getElementById("err-bagging");
+      const errBoostingEl = document.getElementById("err-boosting");
+      const errStackingEl = document.getElementById("err-stacking");
+
+      const costBaggingEl = document.getElementById("cost-bagging");
+      const costBoostingEl = document.getElementById("cost-boosting");
+      const costStackingEl = document.getElementById("cost-stacking");
+
+      const diagRecName = document.getElementById("diag-rec-name");
+      const diagText = document.getElementById("diag-text");
+
+      const canvas = document.getElementById("chart-cv");
+      let ctx = null;
+
+      // 泛化误差计算模型：基于统计学习理论的闭式近似
+      function evaluateModels(s) {
+        // 1. 基准方差（单模型）假定与偏差和噪声相关
+        const baseVariance = 0.22 + s.noise * 0.2;
+        const irreducible = s.noise * 0.65; // 不可约误差
+
+        // Bagging:
+        // - 偏差几乎等于基模型偏差: Bias² = s.bias^2
+        // - 方差受相关度限制: Var = ρ * σ² + (1-ρ)/M * σ²; 设等效 M=10
+        // - 算力消耗轻度 (可并行): 成本约 25 FLOPs
+        const baggingBias = Math.pow(s.bias, 1.85);
+        const baggingEffectiveM = Math.min(15, Math.max(3, s.budget / 4));
+        const baggingVar = (s.corr * baseVariance) + ((1 - s.corr) / baggingEffectiveM) * baseVariance;
+        const baggingCost = 25;
+        const baggingBudgetPenalty = s.budget < baggingCost ? (baggingCost - s.budget) * 0.008 : 0;
+        const baggingTotal = irreducible + baggingBias + baggingVar + baggingBudgetPenalty;
+
+        // Boosting:
+        // - 强力削减偏差: Bias² 随迭代指数下降，但受算力制约
+        // - 高噪声时容易拟合噪声，导致方差大幅膨胀: Var_boost = baseVar * (1 + noise * 1.8)
+        // - 算力开销中等 (迭代不可完全并行): 成本约 45 FLOPs
+        const boostingCost = 45;
+        const effectiveIterDepth = Math.min(1.0, s.budget / boostingCost);
+        // 如果算力不足，迭代提早停止，残余偏差较高
+        const boostingBias = Math.pow(s.bias, 1.85) * (1 - 0.72 * effectiveIterDepth);
+        // 噪声会严重毒化 Boosting
+        const boostingNoisePenalty = Math.pow(s.noise, 1.5) * 0.6;
+        const boostingVar = (baseVariance * 0.45) + boostingNoisePenalty;
+        const boostingBudgetPenalty = s.budget < boostingCost ? (boostingCost - s.budget) * 0.007 : 0;
+        const boostingTotal = irreducible + boostingBias + boostingVar + boostingBudgetPenalty;
+
+        // Stacking:
+        // - 元学习器能整合不同假说，偏差削减优于 Bagging
+        // - 充分利用基模型非相关性 (1-corr) 带来的互补信息
+        // - 代价昂贵: K 折 OOF 带来高算力开销: 成本约 70 FLOPs
+        const stackingCost = 70;
+        const stackingBias = Math.pow(s.bias, 1.85) * 0.55;
+        // 当相关度越低时，Stacking 收益越大
+        const diversityBonus = (1 - s.corr) * 0.16;
+        const stackingVar = Math.max(0.04, baseVariance * 0.65 - diversityBonus);
+        // 若算力预算低于成本，OOF折数不足或弱化基学习器导致巨大惩罚
+        const stackingBudgetPenalty = s.budget < stackingCost ? Math.pow((stackingCost - s.budget) / 25, 2) * 0.07 : 0;
+        const stackingTotal = irreducible + stackingBias + stackingVar + stackingBudgetPenalty;
+
+        return {
+          bagging: {
+            irreducible,
+            bias: baggingBias,
+            variance: baggingVar,
+            penalty: baggingBudgetPenalty,
+            total: baggingTotal,
+            cost: baggingCost
+          },
+          boosting: {
+            irreducible,
+            bias: boostingBias,
+            variance: boostingVar,
+            penalty: boostingBudgetPenalty,
+            total: boostingTotal,
+            cost: boostingCost
+          },
+          stacking: {
+            irreducible,
+            bias: stackingBias,
+            variance: stackingVar,
+            penalty: stackingBudgetPenalty,
+            total: stackingTotal,
+            cost: stackingCost
+          }
+        };
+      }
+
+      function updateUI() {
+        // 更新滑块显示
+        valNoise.textContent = Number(state.noise).toFixed(2);
+        valBias.textContent = Number(state.bias).toFixed(2);
+        valCorr.textContent = Number(state.corr).toFixed(2);
+        valBudget.textContent = state.budget + " FLOPs";
+
+        // 更新预设按钮状态
+        Object.keys(presetBtns).forEach(key => {
+          presetBtns[key].setAttribute("aria-pressed", state.preset === key ? "true" : "false");
+        });
+
+        // 重新计算评估
+        const evalResults = evaluateModels(state);
+
+        // 填入误差数值
+        errBaggingEl.textContent = evalResults.bagging.total.toFixed(3);
+        errBoostingEl.textContent = evalResults.boosting.total.toFixed(3);
+        errStackingEl.textContent = evalResults.stacking.total.toFixed(3);
+
+        costBaggingEl.textContent = evalResults.bagging.cost + " FLOPs";
+        costBoostingEl.textContent = evalResults.boosting.cost + " FLOPs";
+        costStackingEl.textContent = evalResults.stacking.cost + " FLOPs";
+
+        // 判定赢家
+        const totals = [
+          { name: "bagging", val: evalResults.bagging.total },
+          { name: "boosting", val: evalResults.boosting.total },
+          { name: "stacking", val: evalResults.stacking.total }
+        ];
+        totals.sort((a, b) => a.val - b.val);
+        const best = totals[0].name;
+
+        // 设置卡片高亮
+        [cardBagging, cardBoosting, cardStacking].forEach(c => c.classList.remove("winner"));
+        badgeBagging.textContent = "可选";
+        badgeBoosting.textContent = "可选";
+        badgeStacking.textContent = "可选";
+
+        if (best === "bagging") {
+          cardBagging.classList.add("winner");
+          badgeBagging.textContent = "预期最优";
+        } else if (best === "boosting") {
+          cardBoosting.classList.add("winner");
+          badgeBoosting.textContent = "预期最优";
+        } else {
+          cardStacking.classList.add("winner");
+          badgeStacking.textContent = "预期最优";
+        }
+
+        // 生成诊断评述
+        generateDiagnosis(best, evalResults);
+
+        // 重绘画布
+        drawChart(evalResults);
+      }
+
+      function generateDiagnosis(best, results) {
+        if (best === "bagging") {
+          diagRecName.textContent = "推荐：Bagging / 随机森林";
+          diagRecName.style.background = "var(--learner)";
+          if (state.noise > 0.4) {
+            diagText.innerHTML = `数据噪声偏高（<strong>${state.noise.toFixed(2)}</strong>），Boosting 极易把噪声当作残差反复拟合并导致方差炸裂；而 Bagging 通过重采样与并行投票强力压制方差，表现出更优的鲁棒性。`;
+          } else if (state.budget < 45) {
+            diagText.innerHTML = `算力预算极为紧迫（<strong>${state.budget} FLOPs</strong>），无法支撑 Boosting 的深度迭代或 Stacking 的多折验证；Bagging 各基模型独立，算力开销极低且支持高度并行，是性价比最高的策略。`;
+          } else {
+            diagText.innerHTML = `当前基模型方差占主导，Bagging 的随机子空间与样本扰动能够以最低复杂度最大化方差削减效益。`;
+          }
+        } else if (best === "boosting") {
+          diagRecName.textContent = "推荐：Boosting (GBDT/AdaBoost)";
+          diagRecName.style.background = "var(--aggregate)";
+          diagText.innerHTML = `当前单模型偏差严重（<strong>${state.bias.toFixed(2)}</strong>）且噪声适中（<strong>${state.noise.toFixed(2)}</strong>）。Bagging 无法压缩系统偏差，而 Boosting 沿负梯度方向串行纠错，能在算力允许内高效逼近真实目标。`;
+        } else {
+          diagRecName.textContent = "推荐：Stacking 堆叠融合";
+          diagRecName.style.background = "var(--correct)";
+          diagText.innerHTML = `基模型相关度低（<strong>${state.corr.toFixed(2)}</strong>）且算力充裕（<strong>${state.budget} FLOPs</strong>）。元学习器能够精准捕获异构模型的差异化优势区间，二层融合取得超越单一集成范式的泛化精度。`;
+        }
+      }
+
+      function drawChart(evalResults) {
+        if (!ctx) return;
+        const w = canvas.parentElement.clientWidth;
+        const h = canvas.parentElement.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        // 绘制坐标轴基线
+        const paddingLeft = 190;
+        const paddingRight = 70;
+        const paddingTop = 25;
+        const paddingBottom = 40;
+        const chartW = w - paddingLeft - paddingRight;
+        const chartH = h - paddingTop - paddingBottom;
+
+        // X轴刻度：3个类别，绘制水平堆叠柱
+        const models = [
+          { key: "bagging", label: "Bagging (随机森林)", data: evalResults.bagging },
+          { key: "boosting", label: "Boosting (梯度提升)", data: evalResults.boosting },
+          { key: "stacking", label: "Stacking (二层堆叠)", data: evalResults.stacking }
+        ];
+
+        const barHeight = Math.min(46, chartH / 4);
+        const rowGap = (chartH - barHeight * 3) / 2;
+
+        // 最大刻度
+        const maxVal = 0.95;
+
+        // 绘制背景竖网格与数值刻度
+        ctx.strokeStyle = "#D7E1E8";
+        ctx.lineWidth = 1;
+        ctx.fillStyle = "#536777";
+        ctx.font = "12px Bahnschrift, system-ui";
+        ctx.textAlign = "center";
+
+        for (let v = 0; v <= 1.0; v += 0.2) {
+          const x = paddingLeft + (v / maxVal) * chartW;
+          if (x <= w - paddingRight + 5) {
+            ctx.beginPath();
+            ctx.moveTo(x, paddingTop - 5);
+            ctx.lineTo(x, h - paddingBottom + 5);
+            ctx.stroke();
+            ctx.fillText(v.toFixed(1), x, h - paddingBottom + 20);
+          }
+        }
+
+        // 颜色映射
+        const colors = {
+          noise: "#536777",      // 灰蓝
+          bias: "#275D91",       // 蓝
+          variance: "#d9822b",   // 橙黄
+          penalty: "#B63B24"     // 红
+        };
+
+        models.forEach((m, idx) => {
+          const y = paddingTop + idx * (barHeight + rowGap);
+          const d = m.data;
+
+          // 绘制行标题
+          ctx.fillStyle = "#142533";
+          ctx.font = "bold 15px 'Noto Sans SC', system-ui";
+          ctx.textAlign = "right";
+          ctx.textBaseline = "middle";
+          ctx.fillText(m.label, paddingLeft - 18, y + barHeight / 2);
+
+          // 堆叠计算
+          let currX = paddingLeft;
+
+          // 1. 不可约噪声
+          const wNoise = (d.irreducible / maxVal) * chartW;
+          ctx.fillStyle = colors.noise;
+          ctx.fillRect(currX, y, wNoise, barHeight);
+          currX += wNoise;
+
+          // 2. 偏差
+          const wBias = (d.bias / maxVal) * chartW;
+          ctx.fillStyle = colors.bias;
+          ctx.fillRect(currX, y, wBias, barHeight);
+          currX += wBias;
+
+          // 3. 方差
+          const wVar = (d.variance / maxVal) * chartW;
+          ctx.fillStyle = colors.variance;
+          ctx.fillRect(currX, y, wVar, barHeight);
+          currX += wVar;
+
+          // 4. 惩罚项
+          if (d.penalty > 0.001) {
+            const wPen = (d.penalty / maxVal) * chartW;
+            ctx.fillStyle = colors.penalty;
+            ctx.fillRect(currX, y, wPen, barHeight);
+            currX += wPen;
+          }
+
+          // 绘制总数值标签
+          ctx.fillStyle = "#142533";
+          ctx.font = "bold 15px Bahnschrift, system-ui";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(`${d.total.toFixed(3)}`, currX + 10, y + barHeight / 2);
+        });
+      }
+
+      function setupEvents() {
+        // 滑块输入
+        rangeNoise.addEventListener("input", (e) => {
+          state.noise = parseFloat(e.target.value);
+          state.preset = null;
+          updateUI();
+        });
+        rangeBias.addEventListener("input", (e) => {
+          state.bias = parseFloat(e.target.value);
+          state.preset = null;
+          updateUI();
+        });
+        rangeCorr.addEventListener("input", (e) => {
+          state.corr = parseFloat(e.target.value);
+          state.preset = null;
+          updateUI();
+        });
+        rangeBudget.addEventListener("input", (e) => {
+          state.budget = parseInt(e.target.value, 10);
+          state.preset = null;
+          updateUI();
+        });
+
+        // 典型场景预设
+        presetBtns.noisy.addEventListener("click", () => {
+          state.noise = 0.60;
+          state.bias = 0.20;
+          state.corr = 0.35;
+          state.budget = 70;
+          state.preset = "noisy";
+          syncRanges();
+          updateUI();
+        });
+
+        presetBtns.complex.addEventListener("click", () => {
+          state.noise = 0.15;
+          state.bias = 0.55;
+          state.corr = 0.50;
+          state.budget = 80;
+          state.preset = "complex";
+          syncRanges();
+          updateUI();
+        });
+
+        presetBtns.diverse.addEventListener("click", () => {
+          state.noise = 0.20;
+          state.bias = 0.30;
+          state.corr = 0.10;
+          state.budget = 85;
+          state.preset = "diverse";
+          syncRanges();
+          updateUI();
+        });
+
+        presetBtns.budget.addEventListener("click", () => {
+          state.noise = 0.25;
+          state.bias = 0.35;
+          state.corr = 0.40;
+          state.budget = 20;
+          state.preset = "budget";
+          syncRanges();
+          updateUI();
+        });
+      }
+
+      function syncRanges() {
+        rangeNoise.value = state.noise;
+        rangeBias.value = state.bias;
+        rangeCorr.value = state.corr;
+        rangeBudget.value = state.budget;
+      }
+
+      // 初始化
+      window.addEventListener("DOMContentLoaded", () => {
+        Deck.autofit(canvas, (c) => {
+          ctx = c;
+          const evalResults = evaluateModels(state);
+          drawChart(evalResults);
+        });
+        setupEvents();
+        updateUI();
+        Deck.init({ index: 26, total: 27 });
+      });
+    })();
+  </script>
+</body>
+</html>

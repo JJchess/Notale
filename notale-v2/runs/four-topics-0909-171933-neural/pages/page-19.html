@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    #field-canvas {
+      z-index: 1;
+      cursor: crosshair;
+    }
+
+    .layout-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 64px 72px 56px 72px;
+    }
+
+    .header-block {
+      max-width: 820px;
+    }
+
+    .meta-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #112847;
+      margin-bottom: 18px;
+    }
+
+    .meta-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #c84b31;
+    }
+
+    h1.page-title {
+      font-family: var(--font-title);
+      font-size: 58px;
+      line-height: 1.08;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      margin: 0 0 20px 0;
+    }
+
+    .lead-text {
+      font-family: var(--font-sans);
+      font-size: var(--fs-lead);
+      line-height: 1.45;
+      color: #2c3a33;
+      max-width: 780px;
+      margin: 0;
+    }
+
+    .footer-block {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+    }
+
+    .formula-badge {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .formula-badge code {
+      font-family: "NTF-inter", monospace;
+      font-size: 15px;
+      color: #16201b;
+      background: rgba(255, 255, 255, 0.65);
+      border: 1px solid rgba(22, 32, 27, 0.15);
+      padding: 6px 12px;
+      border-radius: 2px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+
+    .footnote {
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      color: rgba(22, 32, 27, 0.72);
+      letter-spacing: 0.02em;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="19">
+  <div id="stage">
+    <canvas id="field-canvas" class="cv-fill no-pan"></canvas>
+    <div class="layout-overlay">
+      <header class="header-block">
+        <div class="meta-tag">
+          <span class="meta-dot"></span>
+          <span>Chapter 19 · Final Overview</span>
+        </div>
+        <h1 class="page-title">从分段线性折线<br>到任意连续函数拟合</h1>
+        <p class="lead-text">
+          简单神经元以超平面割裂空间，激活函数赋予局部非线性；多层堆叠将折线拼合为平滑流形，梯度反传指导参数自适应收敛。
+        </p>
+      </header>
+
+      <footer class="footer-block">
+        <div class="formula-badge">
+          <code>F(x) = &Sigma; w_j &sigma;(w_j^T x + b_j) + b</code>
+          <span class="footnote">通用近似定理 · Universal Approximation Property</span>
+        </div>
+        <div class="footnote">
+          交互提示：移动指针扰动激活平面
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们好，今天我们完成了整个全连接神经网络基础模块的学习。
+    从第一课单一神经元的线性加权，到引入 ReLU 和 Sigmoid 激活函数；
+    从单层感知机无法解决 XOR 异或问题的困境，到引入隐层堆叠实现任意决策边界的分离；
+    再到损失函数的定义、梯度下降方向的求取以及反向传播算法的链式法则推导。
+    大家在画面上看到的这个平滑函数场，正是由若干个分段线性超平面在多层权重组合下逼近出来的连续三维曲面。
+    只要隐层神经元数量足够，简单的加权求和与非线性激活就能以任意精度逼近紧致集上的任何连续函数——这就是神经网络作为通用函数拟合器的力量。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+      if (!window.Deck) return;
+
+      const W = 1600, H = 900;
+      const canvas = document.getElementById("field-canvas");
+      let ctx = Deck.fit(canvas);
+      if (!ctx) return;
+
+      const SEED = 20240919;
+      function seededRandom(s) {
+        let state = s >>> 0;
+        return () => {
+          state = (state + 0x6d2b79f5) >>> 0;
+          let n = state;
+          n = Math.imul(n ^ (n >>> 15), n | 1);
+          n ^= n + Math.imul(n ^ (n >>> 7), n | 61);
+          return ((n ^ (n >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      // 隐层神经元模拟通用函数拟合 (Universal Approximation)
+      // 生成 6 个具有特定方向和偏置的神经元平面
+      const rng = seededRandom(SEED);
+      const NEURONS = [];
+      const NUM_NEURONS = 7;
+      for (let i = 0; i < NUM_NEURONS; i++) {
+        const angle = (i / NUM_NEURONS) * Math.PI * 2 + (rng() - 0.5) * 0.4;
+        NEURONS.push({
+          wx: Math.cos(angle) * (1.2 + rng() * 0.8),
+          wy: Math.sin(angle) * (1.2 + rng() * 0.8),
+          bias: (rng() * 2 - 1) * 0.8,
+          weight: (rng() > 0.4 ? 1 : -1) * (0.8 + rng() * 0.7)
+        });
+      }
+
+      let pointer = { x: 1150, y: 520, active: false };
+
+      function relu(v) {
+        return Math.max(0, v);
+      }
+
+      function sigmoid(v) {
+        return 1 / (1 + Math.exp(-v));
+      }
+
+      // 计算空间某点的神经网络输出值
+      function forward(normX, normY, time) {
+        let sum = 0;
+        // 动态微动
+        const tOffset = time * 0.0006;
+        for (let i = 0; i < NEURONS.length; i++) {
+          const n = NEURONS[i];
+          const dynamicBias = n.bias + Math.sin(tOffset + i * 1.1) * 0.18;
+          const z = n.wx * normX + n.wy * normY + dynamicBias;
+          // 激活函数：融合 ReLU 与平滑激活
+          const a = (i % 2 === 0) ? relu(z) : sigmoid(z * 3) * 1.5;
+          sum += n.weight * a;
+        }
+
+        // 指针扰动影响局部隐层响应
+        if (pointer.active) {
+          const pNormX = (pointer.x - 800) / 400;
+          const pNormY = (pointer.y - 450) / 300;
+          const distSq = (normX - pNormX) ** 2 + (normY - pNormY) ** 2;
+          sum += Math.exp(-distSq * 3.5) * 1.2;
+        }
+
+        return sum;
+      }
+
+      // 绘制等高线与网格线
+      // 网格覆盖主要集中在右侧与右下方，左上方文字区保持极低密度或避让
+      const GRID_COLS = 54;
+      const GRID_ROWS = 32;
+      const START_X = 50, END_X = 1550;
+      const START_Y = 50, END_Y = 850;
+
+      function render(time) {
+        ctx.clearRect(0, 0, W, H);
+
+        const stepX = (END_X - START_X) / GRID_COLS;
+        const stepY = (END_Y - START_Y) / GRID_ROWS;
+
+        // 计算全网格各点高程与坐标
+        const gridPoints = [];
+        for (let r = 0; r <= GRID_ROWS; r++) {
+          gridPoints[r] = [];
+          for (let c = 0; c <= GRID_COLS; c++) {
+            const x = START_X + c * stepX;
+            const y = START_Y + r * stepY;
+            const normX = (x - 850) / 450;
+            const normY = (y - 480) / 320;
+            const val = forward(normX, normY, time);
+            gridPoints[r][c] = { x, y, val };
+          }
+        }
+
+        // 绘制三维拟合曲面的透视网格线与等高线
+        // 水平线（横切面曲线）
+        for (let r = 0; r <= GRID_ROWS; r++) {
+          ctx.beginPath();
+          let started = false;
+          for (let c = 0; c <= GRID_COLS; c++) {
+            const pt = gridPoints[r][c];
+            // 依据拟合值沿 Y 轴抬升高度形成三维曲面感
+            const elevatedY = pt.y - pt.val * 38;
+            
+            // 左上标题保护区衰减
+            const inTitleArea = pt.x < 820 && pt.y < 360;
+            if (inTitleArea) {
+              if (started) {
+                ctx.stroke();
+                ctx.beginPath();
+                started = false;
+              }
+              continue;
+            }
+
+            if (!started) {
+              ctx.moveTo(pt.x, elevatedY);
+              started = true;
+            } else {
+              ctx.lineTo(pt.x, elevatedY);
+            }
+          }
+          if (started) {
+            ctx.strokeStyle = "rgba(22, 32, 27, 0.12)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+
+        // 纵向连接线
+        for (let c = 0; c <= GRID_COLS; c += 2) {
+          ctx.beginPath();
+          let started = false;
+          for (let r = 0; r <= GRID_ROWS; r++) {
+            const pt = gridPoints[r][c];
+            const elevatedY = pt.y - pt.val * 38;
+
+            const inTitleArea = pt.x < 820 && pt.y < 360;
+            if (inTitleArea) {
+              if (started) {
+                ctx.stroke();
+                ctx.beginPath();
+                started = false;
+              }
+              continue;
+            }
+
+            if (!started) {
+              ctx.moveTo(pt.x, elevatedY);
+              started = true;
+            } else {
+              ctx.lineTo(pt.x, elevatedY);
+            }
+          }
+          if (started) {
+            ctx.strokeStyle = "rgba(22, 32, 27, 0.08)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+
+        // 绘制决策超平面的折线切痕（分段线性特征）
+        for (let i = 0; i < NEURONS.length; i++) {
+          const n = NEURONS[i];
+          ctx.beginPath();
+          let activeCut = false;
+          for (let c = 0; c <= GRID_COLS; c++) {
+            const x = START_X + c * stepX;
+            const normX = (x - 850) / 450;
+            // 求特定平面的零截距位置
+            const targetNormY = -(n.wx * normX + n.bias) / n.wy;
+            const y = targetNormY * 320 + 480;
+            if (y >= START_Y && y <= END_Y) {
+              const val = forward(normX, targetNormY, time);
+              const elevatedY = y - val * 38;
+              if (x < 800 && y < 340) continue; // 避让文字
+
+              if (!activeCut) {
+                ctx.moveTo(x, elevatedY);
+                activeCut = true;
+              } else {
+                ctx.lineTo(x, elevatedY);
+              }
+            }
+          }
+          if (activeCut) {
+            ctx.strokeStyle = i % 2 === 0 ? "rgba(59, 89, 152, 0.45)" : "rgba(200, 75, 49, 0.45)";
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+        }
+
+        // 绘制散落的特征样点与响应高亮
+        for (let r = 2; r < GRID_ROWS; r += 3) {
+          for (let c = 4; c < GRID_COLS; c += 3) {
+            const pt = gridPoints[r][c];
+            if (pt.x < 820 && pt.y < 360) continue; // 保护标题
+
+            const elevatedY = pt.y - pt.val * 38;
+            const isPositive = pt.val > 0.5;
+            const isNegative = pt.val < -0.3;
+
+            if (isPositive || isNegative) {
+              ctx.beginPath();
+              ctx.arc(pt.x, elevatedY, Math.min(4.5, Math.abs(pt.val) * 2.5 + 1), 0, Math.PI * 2);
+              ctx.fillStyle = isPositive ? "rgba(59, 89, 152, 0.85)" : "rgba(200, 75, 49, 0.85)";
+              ctx.fill();
+            } else {
+              // 鞍点与微小特征
+              ctx.fillStyle = "rgba(22, 32, 27, 0.25)";
+              ctx.fillRect(pt.x - 1, elevatedY - 1, 2, 2);
+            }
+          }
+        }
+
+        // 交互点光标反馈
+        if (pointer.active) {
+          ctx.beginPath();
+          ctx.arc(pointer.x, pointer.y, 8, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(22, 32, 27, 0.5)";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
+
+      function onPointer(e) {
+        const pt = Deck.pt(canvas, e);
+        pointer.x = Deck.clamp(pt.x, 0, W);
+        pointer.y = Deck.clamp(pt.y, 0, H);
+        pointer.active = true;
+      }
+
+      function onPointerLeave() {
+        pointer.active = false;
+      }
+
+      canvas.addEventListener("pointermove", onPointer);
+      canvas.addEventListener("pointerdown", onPointer);
+      canvas.addEventListener("pointerleave", onPointerLeave);
+
+      Deck.onResize(() => {
+        ctx = Deck.fit(canvas);
+        render(0);
+      });
+
+      // 启动渲染循环
+      Deck.loop((time) => {
+        render(time);
+      }, { still: 1200 });
+
+    })();
+  </script>
+</body>
+</html>

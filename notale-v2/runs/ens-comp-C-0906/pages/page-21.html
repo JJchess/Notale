@@ -1,0 +1,346 @@
+<!doctype html>
+<!--
+  构图意图：
+  1. 主对象为右侧展开的三重分支向聚合汇流的生成式轨迹场，对应 Bagging、Boosting、Stacking 到评估决策的收束过程；
+  2. 左侧安排稳定清爽的章节大标题与导语，生成式矢量线流通过斥力场优雅绕开文字安全区并在右侧交汇聚合；
+  3. 概念注脚与分类标签紧贴各自主干轴线，形成开阔、克制且具数学秩序感的章节首页。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      position: relative;
+    }
+
+    #field-canvas {
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .title-block {
+      position: absolute;
+      left: 120px;
+      top: 240px;
+      width: 540px;
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .chapter-tag {
+      font-size: var(--fs-label);
+      font-weight: var(--weight-medium);
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chapter-tag::before {
+      content: "";
+      display: inline-block;
+      width: 28px;
+      height: 2px;
+      background: var(--focus);
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-size: 58px;
+      line-height: 1.15;
+      font-weight: var(--weight-bold);
+      color: var(--text);
+      letter-spacing: -0.01em;
+      margin: 0 0 24px 0;
+    }
+
+    .lead-text {
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      max-width: 480px;
+      margin: 0;
+    }
+
+    /* 右侧流场结构上的标注 */
+    .stream-labels {
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      pointer-events: none;
+      font-size: var(--fs-label);
+      font-weight: var(--weight-medium);
+    }
+
+    .branch-label {
+      position: absolute;
+      color: var(--model);
+      font-size: var(--fs-sec);
+      font-weight: var(--weight-medium);
+      font-family: var(--font-sans);
+      letter-spacing: 0.04em;
+    }
+
+    .sink-label {
+      position: absolute;
+      color: var(--aggregate);
+      font-family: var(--font-display);
+      font-weight: var(--weight-bold);
+      font-size: var(--fs-body);
+      letter-spacing: 0.05em;
+    }
+  </style>
+</head>
+<body data-page="21" data-total="26">
+  <div id="stage">
+    <canvas id="field-canvas" class="cv-fill" aria-hidden="true"></canvas>
+
+    <div class="title-block">
+      <div class="chapter-tag">Part 04 · 综合决策</div>
+      <h1>选择、评估<br>与拓展</h1>
+      <p class="lead-text">在方差与偏差、单机与分布式、原始样本与元特征之间，建立系统性的集成范式裁决准则。</p>
+    </div>
+
+    <div class="stream-labels">
+      <span class="branch-label" style="left: 780px; top: 185px;">Bagging · 并行降方差</span>
+      <span class="branch-label" style="left: 780px; top: 430px;">Boosting · 串行降偏差</span>
+      <span class="branch-label" style="left: 780px; top: 675px;">Stacking · 折外元学习</span>
+      <span class="sink-label" style="left: 1330px; top: 388px;">泛化性能与工程约束</span>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，欢迎来到集成学习模块的第四部分——选择、评估与拓展。
+    在前几节课中，我们分别拆解了 Bagging 的自助采样与随机森林，以及 Boosting 的序列纠错与 AdaBoost。
+    面对一个真实的机器学习任务，我们究竟该在何时选用哪种策略？如何避免特征穿越与数据泄漏？元学习器 Stacking 又该如何正确训练？
+    在接下来的四讲中，我们将从并行与串行的理论机理对比出发，厘清严密的验证协议与多模型选型权衡。
+  </aside>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      Deck.init({ index: 21, total: 26 });
+
+      const canvas = document.getElementById("field-canvas");
+      const SEED = "ensemble-eval-part4";
+      const W = 1600, H = 900;
+      const TITLE_SAFE = { x: 90, y: 180, w: 540, h: 420 };
+
+      // 三大分支源头与聚合目标点
+      const SOURCES = [
+        { x: 920, y: 220, type: "bagging" },
+        { x: 920, y: 450, type: "boosting" },
+        { x: 920, y: 680, type: "stacking" }
+      ];
+      const SINK = { x: 1420, y: 450 };
+
+      let ctx = null;
+      let staticCanvas = document.createElement("canvas");
+      let staticCtx = null;
+      let model = null;
+      let stopLoop = () => {};
+
+      function seededRandom(seedStr) {
+        if (Math.seedrandom) return new Math.seedrandom(seedStr);
+        let s = 123456789;
+        return () => {
+          s = (1103515245 * s + 12345) & 0x7fffffff;
+          return s / 0x7fffffff;
+        };
+      }
+
+      function buildTrajectories() {
+        const rng = seededRandom(SEED);
+        const paths = [];
+        const tracers = [];
+
+        // 生成从三条主要支流向右侧聚合点收束的流线
+        SOURCES.forEach((src, sIdx) => {
+          const count = 38;
+          for (let i = 0; i < count; i++) {
+            const spreadY = (rng() - 0.5) * 110;
+            const startX = src.x - 240 + (rng() - 0.5) * 60;
+            const startY = src.y + spreadY;
+
+            // 控制点形成平滑贝塞尔汇入
+            const cp1X = src.x + 100 + (rng() - 0.5) * 40;
+            const cp1Y = startY * 0.7 + SINK.y * 0.3;
+            const cp2X = 1280 + (rng() - 0.5) * 50;
+            const cp2Y = SINK.y + (spreadY * 0.15);
+            const targetX = SINK.x - 30 + (rng() - 0.5) * 20;
+            const targetY = SINK.y + (rng() - 0.5) * 24;
+
+            // 采样路径点
+            const pts = [];
+            const steps = 60;
+            for (let t = 0; t <= steps; t++) {
+              const u = t / steps;
+              const u2 = u * u;
+              const u3 = u2 * u;
+              const omt = 1 - u;
+              const omt2 = omt * omt;
+              const omt3 = omt2 * omt;
+
+              const px = omt3 * startX + 3 * omt2 * u * cp1X + 3 * omt * u2 * cp2X + u3 * targetX;
+              const py = omt3 * startY + 3 * omt2 * u * cp1Y + 3 * omt * u2 * cp2Y + u3 * targetY;
+              pts.push({ x: px, y: py });
+            }
+
+            const alpha = 0.16 + rng() * 0.22;
+            const width = 0.9 + rng() * 0.8;
+            paths.push({ pts, alpha, width, type: src.type });
+
+            if (i % 9 === 0) {
+              tracers.push({
+                pts,
+                phase: rng(),
+                speed: 0.00018 + rng() * 0.00012,
+                color: sIdx === 1 ? Deck.rgba("focus", 0.9) : Deck.rgba("aggregate", 0.9)
+              });
+            }
+          }
+        });
+
+        // 少量背景微弱辅助网格流线（避开左侧文字区域）
+        const ambientPaths = [];
+        for (let j = 0; j < 18; j++) {
+          const ay = 100 + j * 42;
+          const ax1 = 660 + (rng() - 0.5) * 60;
+          const ax2 = 1520;
+          ambientPaths.push({
+            x1: ax1,
+            y1: ay,
+            x2: ax2,
+            y2: ay + (rng() - 0.5) * 16,
+            alpha: 0.06
+          });
+        }
+
+        return { paths, tracers, ambientPaths };
+      }
+
+      function drawStatic() {
+        staticCanvas.width = canvas.width;
+        staticCanvas.height = canvas.height;
+        staticCtx = staticCanvas.getContext("2d");
+        const ratio = canvas.__r || 1;
+        staticCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+        staticCtx.clearRect(0, 0, W, H);
+
+        const modelColor = Deck.rgb("model");
+        const lineCol = Deck.rgb("line");
+
+        // 绘制背景微弱水平参考虚线
+        staticCtx.lineWidth = 1;
+        staticCtx.setLineDash([4, 12]);
+        for (const ap of model.ambientPaths) {
+          staticCtx.strokeStyle = `rgba(${lineCol.join(",")},${ap.alpha})`;
+          staticCtx.beginPath();
+          staticCtx.moveTo(ap.x1, ap.y1);
+          staticCtx.lineTo(ap.x2, ap.y2);
+          staticCtx.stroke();
+        }
+        staticCtx.setLineDash([]);
+
+        // 绘制多条收拢轨迹
+        for (const p of model.paths) {
+          staticCtx.lineWidth = p.width;
+          staticCtx.strokeStyle = `rgba(${modelColor.join(",")},${p.alpha})`;
+          staticCtx.beginPath();
+          staticCtx.moveTo(p.pts[0].x, p.pts[0].y);
+          for (let i = 1; i < p.pts.length; i++) {
+            staticCtx.lineTo(p.pts[i].x, p.pts[i].y);
+          }
+          staticCtx.stroke();
+        }
+
+        // 绘制三个分支节点与聚合汇流终点
+        const aggColor = Deck.rgb("aggregate");
+        const focusColor = Deck.rgb("focus");
+
+        SOURCES.forEach((s, idx) => {
+          staticCtx.fillStyle = idx === 1 ? `rgba(${focusColor.join(",")}, 0.9)` : `rgba(${modelColor.join(",")}, 0.9)`;
+          staticCtx.beginPath();
+          staticCtx.arc(s.x - 220, s.y, 5.5, 0, Math.PI * 2);
+          staticCtx.fill();
+
+          staticCtx.strokeStyle = `rgba(${lineCol.join(",")}, 0.5)`;
+          staticCtx.lineWidth = 1.5;
+          staticCtx.beginPath();
+          staticCtx.arc(s.x - 220, s.y, 11, 0, Math.PI * 2);
+          staticCtx.stroke();
+        });
+
+        // 聚合终点
+        staticCtx.fillStyle = `rgba(${aggColor.join(",")}, 1)`;
+        staticCtx.beginPath();
+        staticCtx.arc(SINK.x - 20, SINK.y, 8, 0, Math.PI * 2);
+        staticCtx.fill();
+
+        staticCtx.strokeStyle = `rgba(${focusColor.join(",")}, 0.85)`;
+        staticCtx.lineWidth = 2;
+        staticCtx.beginPath();
+        staticCtx.arc(SINK.x - 20, SINK.y, 16, 0, Math.PI * 2);
+        staticCtx.stroke();
+      }
+
+      function render(time) {
+        if (!ctx || !model) return;
+        ctx.clearRect(0, 0, W, H);
+        ctx.drawImage(staticCanvas, 0, 0, W, H);
+
+        // 动态流动粒子（Tracer）
+        for (const tr of model.tracers) {
+          const prog = (tr.phase + time * tr.speed) % 1;
+          const posIdx = prog * (tr.pts.length - 1);
+          const i0 = Math.floor(posIdx);
+          const i1 = Math.min(i0 + 1, tr.pts.length - 1);
+          const frac = posIdx - i0;
+
+          const cx = tr.pts[i0].x + (tr.pts[i1].x - tr.pts[i0].x) * frac;
+          const cy = tr.pts[i0].y + (tr.pts[i1].y - tr.pts[i0].y) * frac;
+
+          ctx.fillStyle = tr.color;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      function init() {
+        ctx = Deck.fit(canvas);
+        if (!ctx) return;
+        model = buildTrajectories();
+        drawStatic();
+
+        stopLoop = Deck.loop(time => {
+          render(time);
+        }, { still: 2400 });
+      }
+
+      Deck.onResize(() => {
+        ctx = Deck.fit(canvas);
+        if (model) {
+          drawStatic();
+          render(2400);
+        }
+      });
+
+      init();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,393 @@
+<!doctype html>
+<!--
+构图意图：
+1. 主对象：分类与回归中三类最基础的集成汇聚机制——硬投票（多数表决）、软投票（概率平均）与回归平均（数值平均）。
+2. 关系呈现：左中右三列并列对比，自上而下统一展现「基学习器预测输入 → 聚合算子处理 → 最终集成输出」的流向，并通过同一个典型样本反差显现软投票相比硬投票对置信度的保留。
+3. 说明文字依附：公式与算子直接钉在汇聚节点正中，对比要点与判决结果贴合在输出层底端，无多余包装板。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>分类与回归中的组合方式</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF1;
+      --text: #142630;
+      --muted: #50616B;
+      --model: #17628E;
+      --focus: #B83D0B;
+      --rule: #71828B;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans CJK SC", sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    header {
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      margin: 0 0 6px 0;
+      font-style: normal;
+    }
+
+    .subhead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 三列并列舞台 */
+    .combination-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 36px;
+      flex: 1;
+      margin-top: 14px;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+    }
+
+    .column-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      border-bottom: 2px solid var(--rule);
+      padding-bottom: 8px;
+    }
+
+    .column-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--text);
+      margin: 0;
+    }
+
+    .task-tag {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 图解流式图 (SVG) */
+    .flow-svg {
+      width: 100%;
+      height: 480px;
+      overflow: visible;
+    }
+
+    /* 文本细节与对比结论 */
+    .column-summary {
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      min-height: 44px;
+    }
+
+    .column-summary strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .key-diff {
+      color: var(--focus);
+      font-weight: 600;
+    }
+
+    /* SVG 内部排版样式 */
+    .tree-box {
+      fill: none;
+      stroke: var(--model);
+      stroke-width: var(--stroke);
+      rx: 4px;
+    }
+
+    .tree-box.focus-box {
+      stroke: var(--focus);
+    }
+
+    .agg-circle {
+      fill: #FFFFFF;
+      stroke: var(--model);
+      stroke-width: var(--stroke);
+    }
+
+    .res-box {
+      fill: none;
+      stroke: var(--model);
+      stroke-width: var(--stroke-strong);
+      rx: 4px;
+    }
+
+    .flow-path {
+      fill: none;
+      stroke: var(--model);
+      stroke-width: var(--stroke);
+    }
+
+    .flow-path-strong {
+      fill: none;
+      stroke: var(--model);
+      stroke-width: var(--stroke-strong);
+    }
+
+    .svg-title {
+      font-family: var(--font-sans);
+      font-size: 15px;
+      font-weight: 600;
+      fill: var(--text);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .svg-data {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      fill: var(--muted);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .svg-focus-data {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      fill: var(--focus);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .svg-math {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 600;
+      fill: var(--model);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .svg-result {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 600;
+      fill: var(--text);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .svg-result-highlight {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 700;
+      fill: var(--focus);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .svg-stage-label {
+      font-family: var(--font-sans);
+      font-size: 15px;
+      fill: var(--muted);
+      dominant-baseline: central;
+    }
+  </style>
+</head>
+<body data-page="06" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>分类与回归中的组合方式</h1>
+      <p class="subhead">离散类别取表决，置信概率取平滑，连续数值取平均</p>
+    </header>
+
+    <div class="combination-grid">
+      <!-- 列 1：硬投票 -->
+      <section class="column min0" id="col-hard">
+        <div class="column-header">
+          <h2 class="column-title">硬投票 (多数投票)</h2>
+          <span class="task-tag">分类任务</span>
+        </div>
+        <svg class="flow-svg" viewBox="0 0 450 480">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#17628E" />
+            </marker>
+            <marker id="arrow-focus" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#B83D0B" />
+            </marker>
+          </defs>
+
+          <!-- 阶段 1：基学习器预测 -->
+          <text x="14" y="24" class="svg-stage-label">基模型预测类别</text>
+
+          <!-- 模型 1 -->
+          <rect x="20" y="48" width="115" height="52" class="tree-box" />
+          <text x="77" y="66" class="svg-title">模型 h₁</text>
+          <text x="77" y="86" class="svg-data">类 A</text>
+
+          <!-- 模型 2 -->
+          <rect x="167" y="48" width="115" height="52" class="tree-box" />
+          <text x="224" y="66" class="svg-title">模型 h₂</text>
+          <text x="224" y="86" class="svg-data">类 A</text>
+
+          <!-- 模型 3 -->
+          <rect x="314" y="48" width="115" height="52" class="tree-box" />
+          <text x="371" y="66" class="svg-title">模型 h₃</text>
+          <text x="371" y="86" class="svg-focus-data">类 B</text>
+
+          <!-- 连接线 -->
+          <path d="M 77 100 L 77 170 Q 77 195 200 230" class="flow-path" />
+          <path d="M 224 100 L 224 200" class="flow-path" />
+          <path d="M 371 100 L 371 170 Q 371 195 248 230" class="flow-path" />
+
+          <!-- 阶段 2：聚合节点 -->
+          <circle cx="224" cy="245" r="38" class="agg-circle" />
+          <text x="224" y="238" class="svg-math">Mode</text>
+          <text x="224" y="260" class="svg-data">票数统计</text>
+          <text x="278" y="245" class="svg-stage-label">A: 2票 / B: 1票</text>
+
+          <!-- 向下汇聚输出线 -->
+          <path d="M 224 283 L 224 350" class="flow-path-strong" marker-end="url(#arrow)" />
+
+          <!-- 阶段 3：集成输出 -->
+          <rect x="144" y="358" width="160" height="64" class="res-box" />
+          <text x="224" y="380" class="svg-title">集成判决 H(x)</text>
+          <text x="224" y="404" class="svg-result">类别 A (胜出)</text>
+        </svg>
+        <div class="column-summary">
+          仅依据各模型<strong>离散预测标签</strong>投票，忽略输出把握大小。
+        </div>
+      </section>
+
+      <!-- 列 2：软投票 -->
+      <section class="column min0" id="col-soft">
+        <div class="column-header">
+          <h2 class="column-title">软投票 (概率均值)</h2>
+          <span class="task-tag">分类任务</span>
+        </div>
+        <svg class="flow-svg" viewBox="0 0 450 480">
+          <!-- 阶段 1：基学习器概率预测 -->
+          <text x="14" y="24" class="svg-stage-label">基模型输出概率分布 P(y|x)</text>
+
+          <!-- 模型 1 -->
+          <rect x="20" y="48" width="115" height="52" class="tree-box" />
+          <text x="77" y="66" class="svg-title">模型 h₁</text>
+          <text x="77" y="86" class="svg-data">A 0.51 : B 0.49</text>
+
+          <!-- 模型 2 -->
+          <rect x="167" y="48" width="115" height="52" class="tree-box" />
+          <text x="224" y="66" class="svg-title">模型 h₂</text>
+          <text x="224" y="86" class="svg-data">A 0.51 : B 0.49</text>
+
+          <!-- 模型 3 -->
+          <rect x="314" y="48" width="115" height="52" class="tree-box focus-box" />
+          <text x="371" y="66" class="svg-title">模型 h₃</text>
+          <text x="371" y="86" class="svg-focus-data">A 0.10 : B 0.90</text>
+
+          <!-- 连接线 -->
+          <path d="M 77 100 L 77 170 Q 77 195 200 230" class="flow-path" />
+          <path d="M 224 100 L 224 200" class="flow-path" />
+          <path d="M 371 100 L 371 170 Q 371 195 248 230" class="flow-path" stroke="#B83D0B" />
+
+          <!-- 阶段 2：聚合节点 -->
+          <circle cx="224" cy="245" r="38" class="agg-circle" />
+          <text x="224" y="238" class="svg-math">P̄(Cₖ)</text>
+          <text x="224" y="260" class="svg-data">概率均值</text>
+          <text x="278" y="245" class="svg-stage-label">P(B)=0.63 &gt; 0.37</text>
+
+          <!-- 向下汇聚输出线 -->
+          <path d="M 224 283 L 224 350" class="flow-path-strong" marker-end="url(#arrow)" />
+
+          <!-- 阶段 3：集成输出 -->
+          <rect x="144" y="358" width="160" height="64" class="res-box" />
+          <text x="224" y="380" class="svg-title">集成判决 H(x)</text>
+          <text x="224" y="404" class="svg-result-highlight">类别 B (翻转)</text>
+        </svg>
+        <div class="column-summary">
+          综合每个类的<strong>预测概率</strong>；<span class="key-diff">高确信度模型</span>可修正微弱多数的平庸误判。
+        </div>
+      </section>
+
+      <!-- 列 3：回归平均 -->
+      <section class="column min0" id="col-reg">
+        <div class="column-header">
+          <h2 class="column-title">简单/加权平均</h2>
+          <span class="task-tag">回归任务</span>
+        </div>
+        <svg class="flow-svg" viewBox="0 0 450 480">
+          <!-- 阶段 1：基学习器数值预测 -->
+          <text x="14" y="24" class="svg-stage-label">基模型预测连续值 ŷᵢ</text>
+
+          <!-- 模型 1 -->
+          <rect x="20" y="48" width="115" height="52" class="tree-box" />
+          <text x="77" y="66" class="svg-title">模型 h₁</text>
+          <text x="77" y="86" class="svg-data">ŷ₁ = 10.2</text>
+
+          <!-- 模型 2 -->
+          <rect x="167" y="48" width="115" height="52" class="tree-box" />
+          <text x="224" y="66" class="svg-title">模型 h₂</text>
+          <text x="224" y="86" class="svg-data">ŷ₂ = 11.5</text>
+
+          <!-- 模型 3 -->
+          <rect x="314" y="48" width="115" height="52" class="tree-box" />
+          <text x="371" y="66" class="svg-title">模型 h₃</text>
+          <text x="371" y="86" class="svg-data">ŷ₃ = 12.5</text>
+
+          <!-- 连接线 -->
+          <path d="M 77 100 L 77 170 Q 77 195 200 230" class="flow-path" />
+          <path d="M 224 100 L 224 200" class="flow-path" />
+          <path d="M 371 100 L 371 170 Q 371 195 248 230" class="flow-path" />
+
+          <!-- 阶段 2：聚合节点 -->
+          <circle cx="224" cy="245" r="38" class="agg-circle" />
+          <text x="224" y="238" class="svg-math">¹⁄T Σ</text>
+          <text x="224" y="259" class="svg-data">算术均值</text>
+          <text x="282" y="245" class="svg-stage-label">(10.2+11.5+12.5)/3</text>
+
+          <!-- 向下汇聚输出线 -->
+          <path d="M 224 283 L 224 350" class="flow-path-strong" marker-end="url(#arrow)" />
+
+          <!-- 阶段 3：集成输出 -->
+          <rect x="144" y="358" width="160" height="64" class="res-box" />
+          <text x="224" y="380" class="svg-title">集成输出 H(x)</text>
+          <text x="224" y="404" class="svg-result">11.4 (平滑极值)</text>
+        </svg>
+        <div class="column-summary">
+          多估计值抵消<strong>随机抖动</strong>与极端误差，降低预测方差。
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们好，今天我们来看集成学习在获得多个基模型后，具体如何把它们的输出结合成最终的决策。
+    
+    对于分类任务，最容易想到的方式是多数投票，也就是硬投票。例如三个模型，前两个以很微弱的把握认为属于 A 类，第三个以极大把握认定为 B 类。按硬投票的话，二比一，最终直接判决为 A。
+    
+    但注意看中间的软投票：如果模型能够给出置信度概率，前两个模型只是 0.51 偏向 A，而第三个模型给出了 0.90 的高置信度支持 B。取均值后，B 的平均概率达到 0.63，反而胜出。在实践中，软投票通常比硬投票表现更稳健、更充分地利用了模型信息。
+    
+    对于连续值的回归任务，我们通常采用简单平均或加权平均。各个模型由于抽样或局部差异产生的正负偏差在求和平均中相互抵消，从而有效平滑了极值，大幅降低了整体方差。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 6, total: 32 });
+  </script>
+</body>
+</html>

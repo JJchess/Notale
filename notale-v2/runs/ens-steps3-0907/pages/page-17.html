@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh">
+<!--
+构图意图：
+1. 主对象：B（树数量）与 m（候选特征数）对泛化误差与树间相关性的双维权衡坐标图，配合 Breiman 误差分解公式（误差 ∝ ρ(1-s²)/s²）。
+2. 对象关系：左侧通过双折线呈现树数递增后误差单调收敛、不发生过拟合的基线；右侧通过热力矩阵/曲面展示 m 太小（欠拟合/单树过弱）与 m 太大（相关性高/失去差异）之间的平衡谷底。
+3. 说明依附：核心判断置于标题与结论条，标注线直接钉在收敛平台与最佳 m 谷底，推导与讲授放入 aside notes。
+-->
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF1;
+      --text: #142630;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+      --focus: #B83D0B;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      margin: 0;
+      overflow: hidden;
+      user-select: none;
+    }
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: var(--stroke) solid var(--rule);
+      padding-bottom: 12px;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      color: var(--text);
+      font-weight: 600;
+    }
+    .kicker {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 56px;
+      height: 680px;
+      margin-top: 20px;
+    }
+    .panel {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .panel-head {
+      margin-bottom: 12px;
+    }
+    .panel-head h2 {
+      font-size: var(--fs-h2);
+      margin: 0 0 6px 0;
+      color: var(--text);
+      font-weight: 600;
+    }
+    .panel-head p {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+      line-height: var(--lh-copy);
+    }
+    .chart-box {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+    .chart-box svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    .callout-badge {
+      position: absolute;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 4px 8px;
+      line-height: 1;
+    }
+    .badge-focus {
+      color: var(--focus);
+    }
+    .badge-model {
+      color: var(--model);
+    }
+    .formula-banner {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 12px 18px;
+      border-left: var(--stroke-strong) solid var(--model);
+      font-size: var(--fs-sec);
+      color: var(--text);
+      margin-top: 10px;
+    }
+    .formula-banner strong {
+      color: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="17" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>随机森林的关键权衡：树数收敛与特征子集最优谷</h1>
+    </header>
+
+    <div class="main-grid">
+      <!-- 左图：树的数量 B -->
+      <section class="panel min0">
+        <div class="panel-head">
+          <h2>树数增加只收敛方差，不导致过拟合</h2>
+          <p>袋外误差（OOB）随树数单调下降并趋于上界常数</p>
+        </div>
+        <div class="chart-box" id="plot-trees">
+          <svg viewBox="0 0 680 470" id="svg-trees">
+            <!-- 坐标轴 -->
+            <line x1="70" y1="410" x2="650" y2="410" stroke="var(--rule)" stroke-width="2" />
+            <line x1="70" y1="50" x2="70" y2="410" stroke="var(--rule)" stroke-width="2" />
+            <!-- 刻度与标签 -->
+            <text x="650" y="445" font-size="13" fill="var(--muted)" text-anchor="end">树数量 B</text>
+            <text x="70" y="36" font-size="13" fill="var(--muted)">泛化误差 / OOB</text>
+            
+            <text x="70" y="432" font-size="13" fill="var(--muted)" text-anchor="middle">1</text>
+            <text x="180" y="432" font-size="13" fill="var(--muted)" text-anchor="middle">50</text>
+            <text x="300" y="432" font-size="13" fill="var(--muted)" text-anchor="middle">150</text>
+            <text x="470" y="432" font-size="13" fill="var(--muted)" text-anchor="middle">300</text>
+            <text x="610" y="432" font-size="13" fill="var(--muted)" text-anchor="middle">500</text>
+
+            <line x1="70" y1="120" x2="650" y2="120" stroke="var(--rule)" stroke-width="1" stroke-dasharray="4 4" opacity="0.4" />
+            
+            <!-- 渐近线界限 -->
+            <line x1="70" y1="280" x2="650" y2="280" stroke="var(--focus)" stroke-width="1.5" stroke-dasharray="6 6" />
+            <text x="645" y="268" font-size="13" fill="var(--focus)" text-anchor="end" font-weight="600">理论误差极限（大数定律保障不发散）</text>
+
+            <!-- 单树误差参考线 -->
+            <line x1="70" y1="120" x2="650" y2="120" stroke="var(--muted)" stroke-width="2" stroke-dasharray="3 3" />
+            <text x="630" y="108" font-size="13" fill="var(--muted)" text-anchor="end">单棵决策树误差</text>
+
+            <!-- 森林曲线：单调下降并平滑贴近渐近线 -->
+            <path d="M 70 120 C 100 240 180 286 260 282 C 340 279 480 280 650 280" fill="none" stroke="var(--model)" stroke-width="4" />
+
+            <!-- 关键点标记 -->
+            <circle cx="70" cy="120" r="5" fill="var(--model)" />
+            <circle cx="260" cy="282" r="5" fill="var(--focus)" />
+            <line x1="260" y1="282" x2="260" y2="410" stroke="var(--focus)" stroke-width="1.5" stroke-dasharray="3 3" />
+            <text x="275" y="325" font-size="15" fill="var(--focus)" font-weight="600">收益饱和拐点 (约 100~200 棵)</text>
+            <text x="275" y="348" font-size="13" fill="var(--muted)">继续增树只增加算力，不降误差</text>
+          </svg>
+        </div>
+        <div class="formula-banner">
+          <span>定理支撑：随着 <strong>B → ∞</strong>，误差由大数定律几乎处处收敛，<strong>无过拟合风险</strong>。</span>
+        </div>
+      </section>
+
+      <!-- 右图：候选特征数 m -->
+      <section class="panel min0">
+        <div class="panel-head">
+          <h2>特征子集规模 m 的“准确性-多样性”权衡</h2>
+          <p>过小单树过弱，过大树间相关性过高</p>
+        </div>
+        <div class="chart-box" id="plot-features">
+          <svg viewBox="0 0 680 470" id="svg-features">
+            <!-- 坐标轴 -->
+            <line x1="70" y1="410" x2="650" y2="410" stroke="var(--rule)" stroke-width="2" />
+            <line x1="70" y1="50" x2="70" y2="410" stroke="var(--rule)" stroke-width="2" />
+            <!-- 刻度与标签 -->
+            <text x="650" y="450" font-size="13" fill="var(--muted)" text-anchor="end">候选特征数 m</text>
+            <text x="70" y="36" font-size="13" fill="var(--muted)">指标值</text>
+
+            <text x="70" y="432" font-size="13" fill="var(--muted)" text-anchor="middle">m=1</text>
+            <text x="260" y="432" font-size="13" fill="var(--focus)" font-weight="600" text-anchor="middle">m = √p (推荐)</text>
+            <text x="610" y="432" font-size="13" fill="var(--muted)" text-anchor="middle">m=p (Bagging)</text>
+
+            <!-- 1. 树间相关性 rho (单调递增) -->
+            <path d="M 70 380 Q 250 320 630 140" fill="none" stroke="var(--rule)" stroke-width="2" stroke-dasharray="5 4" />
+            <text x="630" y="125" font-size="13" fill="var(--muted)" text-anchor="end">树间相关性 ρ</text>
+
+            <!-- 2. 单树误差 (单调下降) -->
+            <path d="M 70 140 Q 250 250 630 350" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="3 3" />
+            <text x="630" y="375" font-size="13" fill="var(--muted)" text-anchor="end">单树误差 (强度提升)</text>
+
+            <!-- 3. 森林泛化总误差 U型/V型谷底曲线 -->
+            <path d="M 70 230 C 130 300 200 355 260 355 C 330 355 480 295 630 260" fill="none" stroke="var(--model)" stroke-width="4" />
+
+            <!-- 最优点竖线与注释 -->
+            <line x1="260" y1="50" x2="260" y2="410" stroke="var(--focus)" stroke-width="1.5" stroke-dasharray="4 4" />
+            <circle cx="260" cy="355" r="6" fill="var(--focus)" />
+            
+            <text x="275" y="350" font-size="15" fill="var(--focus)" font-weight="600">泛化误差谷底 (折中最佳)</text>
+
+            <!-- 左右两极的注解：放平贴轴 -->
+            <text x="80" y="398" font-size="13" fill="var(--focus)">单树过弱 (欠拟合)</text>
+            <text x="480" y="240" font-size="13" fill="var(--model)">相关性高 (失去差异)</text>
+          </svg>
+        </div>
+        <div class="formula-banner">
+          <span>误差界：<strong>泛化误差 ∝ ρ · (1 - s²) / s²</strong>（ρ为相关性，s为单树分类强度）。</span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页我们讨论随机森林在工程落地中最核心的两个调参旋钮：树的数量 B，以及每次分裂随机抽取的候选特征数 m。
+    左边这张图回答了初学者最关心的问题：“树是不是越多越好？树多了会不会过拟合？”
+    答案非常确定：随机森林增加树的数量，绝不会导致模型过拟合。因为每一棵树都是独立采样训练的，根据大数定律，当 B 趋于无穷大时，森林的泛化误差会处处收敛到一个理论极限常数。通常在 100 到 300 棵树之后，继续加树只能浪费算力和时间，而不再带来任何精度的显著提升。
+    右边这张图展现了特征子采样规模 m 的决定性权衡。如果 m 选得极小（比如每次只看 1 个特征），树与树之间差异最大、相关性 ρ 极低，但单棵树的预测强度太弱，导致整体欠拟合；反之如果 m=p，就退化成了普通 Bagging，强特征将主导所有树的分裂，树间相关系数飙升，集成的方差缩减收益被抵消。
+    分类任务通常默认取根号 p，回归任务通常默认取 p/3，这个折中点恰好在理论误差界上达到最平稳的低谷。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 17, total: 32, keys: false });
+  </script>
+</body>
+</html>

@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="assets/lib/echarts.min.js"></script>
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, -apple-system, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, -apple-system, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      padding: var(--pad-y) var(--pad-x);
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      gap: 16px;
+    }
+
+    /* 顶部标题区 */
+    .header-zone {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .header-zone h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.25;
+      letter-spacing: -0.5px;
+    }
+    .header-zone .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主体网格：左侧图表与数学论证，右侧对比实验与机制剖析 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 22px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 12px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      box-sizing: border-box;
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex-shrink: 0;
+    }
+
+    .card-title .badge {
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      color: var(--model);
+      background: #E8F1F6;
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+
+    /* 左卡片内部 */
+    .chart-container {
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      position: relative;
+    }
+
+    .formula-banner {
+      margin-top: 10px;
+      background: #F7FAFC;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+      flex-shrink: 0;
+    }
+    .formula-banner strong {
+      color: var(--text);
+    }
+    .formula-banner span.formula {
+      font-family: monospace;
+      color: var(--aggregate);
+      font-weight: 700;
+      background: #FDF2EE;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #F6D6CA;
+    }
+
+    /* 右卡片内部：对比矩阵与结论 */
+    .compare-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 场景切换按钮条 */
+    .scenario-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .scenario-btn {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      text-align: left;
+      transition: all var(--duration) var(--ease);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .scenario-btn:hover {
+      border-color: var(--model);
+    }
+    .scenario-btn.active {
+      border-color: var(--model);
+      background: #F0F6FA;
+    }
+    .scenario-btn .btn-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .scenario-btn .btn-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    /* 样本预测矩阵表格 */
+    .matrix-box {
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      overflow: hidden;
+      flex-shrink: 0;
+      background: #FFFFFF;
+    }
+    .matrix-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-label);
+      text-align: center;
+    }
+    .matrix-table th {
+      background: #F7FAFC;
+      color: var(--muted);
+      font-weight: 600;
+      padding: 7px 4px;
+      border-bottom: 1px solid var(--surface-strong);
+      font-size: var(--fs-tick);
+    }
+    .matrix-table td {
+      padding: 7px 4px;
+      border-bottom: 1px solid var(--surface-strong);
+      color: var(--text);
+      font-family: var(--font-num);
+    }
+    .matrix-table tr:last-child td {
+      border-bottom: none;
+    }
+    .cell-pass {
+      color: var(--answer);
+      font-weight: 700;
+      background: #EBF6F1;
+      border-radius: 4px;
+      padding: 2px 6px;
+      display: inline-block;
+    }
+    .cell-fail {
+      color: var(--aggregate);
+      font-weight: 700;
+      background: #FCEFEA;
+      border-radius: 4px;
+      padding: 2px 6px;
+      display: inline-block;
+    }
+    .cell-vote-pass {
+      color: var(--answer);
+      font-weight: 800;
+      background: #D8EFE5;
+      padding: 3px 8px;
+      border-radius: 4px;
+      display: inline-block;
+    }
+    .cell-vote-fail {
+      color: var(--aggregate);
+      font-weight: 800;
+      background: #FADBD0;
+      padding: 3px 8px;
+      border-radius: 4px;
+      display: inline-block;
+    }
+
+    /* 结论解说卡 */
+    .insight-box {
+      flex: 1;
+      background: #F7FAFC;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 0;
+    }
+    .insight-headline {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .insight-headline::before {
+      content: "";
+      width: 4px;
+      height: 15px;
+      background: var(--model);
+      border-radius: 2px;
+      display: inline-block;
+    }
+    .insight-body {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .stats-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--surface-strong);
+    }
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+    }
+    .stat-item .label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .stat-item .val {
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      font-family: var(--font-num);
+    }
+    .stat-item.good .val {
+      color: var(--answer);
+    }
+    .stat-item.bad .val {
+      color: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="03" data-total="27">
+  <div id="stage">
+    <!-- 顶部导语 -->
+    <header class="header-zone">
+      <h1>集成有效的前提：好而不同（准确性与多样性）</h1>
+      <p class="lead">
+        单靠增加模型数量并不能保证提升效果。唯有当基学习器具备基本判断力（错误率 &epsilon; &lt; 0.5），且各成员的错误分布相互独立时，多数投票才能指数级压低整体错误。
+      </p>
+    </header>
+
+    <!-- 主区 -->
+    <div class="main-grid">
+      <!-- 左栏：ECharts 孔多塞陪审团定理曲线与二项分布推演 -->
+      <section class="card min0">
+        <div class="card-title">
+          <span>多数表决错误率随集成规模演化（孔多塞陪审团定理）</span>
+          <span class="badge">二项分布理论界</span>
+        </div>
+
+        <div id="chart-jury" class="chart-container"></div>
+
+        <div class="formula-banner">
+          <strong>数学机制：</strong>假设有 <span class="formula">T</span> 个独立二分类器，单模型错误率为 <span class="formula">&epsilon;</span>。
+          集成多数表决出错当且仅当半数以上分类器同时犯错：
+          <div style="margin-top: 4px;">
+            <span class="formula">P(集成错误) = &sum;<sub>k=[T/2]</sub><sup>T</sup> C(T, k) &epsilon;<sup>k</sup> (1 - &epsilon;)<sup>T-k</sup></span>。
+            当 <strong>&epsilon; &lt; 0.5</strong> 时，随 T&rarr;&infin; 错误率趋于 <strong>0</strong>；反之当 <strong>&epsilon; &gt; 0.5</strong> 时，错误率趋于 <strong>1</strong>。
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：多样性对比实测与样本纠错矩阵 -->
+      <section class="card min0">
+        <div class="card-title">
+          <span>多样性决定成败：错误是否互补</span>
+          <span class="badge" id="case-badge">对照演示</span>
+        </div>
+
+        <div class="compare-container">
+          <!-- 切换控制 -->
+          <div class="scenario-tabs">
+            <button type="button" class="scenario-btn active" id="btn-diverse">
+              <span class="btn-title">情景 A：错误相互独立 (好而不同)</span>
+              <span class="btn-desc">各成员独立判断，错在不同样本</span>
+            </button>
+            <button type="button" class="scenario-btn" id="btn-correlated">
+              <span class="btn-title">情景 B：错误高度同质 (同质共犯)</span>
+              <span class="btn-desc">结构完全同质，错在相同样本</span>
+            </button>
+          </div>
+
+          <!-- 5个样本在3个基模型下的预测矩阵 -->
+          <div class="matrix-box">
+            <table class="matrix-table">
+              <thead>
+                <tr>
+                  <th>样本</th>
+                  <th>基学习器 h<sub>1</sub></th>
+                  <th>基学习器 h<sub>2</sub></th>
+                  <th>基学习器 h<sub>3</sub></th>
+                  <th>集成投票 (多数决)</th>
+                </tr>
+              </thead>
+              <tbody id="matrix-tbody">
+                <!-- 由JS动态渲染 -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 分析结论 -->
+          <div class="insight-box">
+            <div class="insight-headline" id="insight-title">相互独立时的纠错机制</div>
+            <div class="insight-body" id="insight-text">
+              在 5 个测试样本中，每个基模型各自犯错 1~2 次（错误率约为 20%~40%）。
+              但由于错误分布互不重叠，任意样本最多只有 1 个模型犯错，多数票（2:1）依然指向正确答案。
+            </div>
+
+            <div class="stats-row">
+              <div class="stat-item">
+                <span class="label">基模型平均错误率</span>
+                <span class="val" id="stat-base-err">33.3%</span>
+              </div>
+              <div class="stat-item good" id="stat-box-ens">
+                <span class="label">集成模型最终错误率</span>
+                <span class="val" id="stat-ens-err">0.0%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 3, total: 27 });
+
+    // 计算二项分布组合数与多数投票错误率
+    function comb(n, k) {
+      if (k < 0 || k > n) return 0;
+      if (k === 0 || k === n) return 1;
+      let c = 1;
+      for (let i = 1; i <= k; i++) {
+        c = (c * (n - (k - i))) / i;
+      }
+      return c;
+    }
+
+    function ensembleError(T, eps) {
+      const half = Math.ceil((T + 1) / 2);
+      let sum = 0;
+      for (let k = half; k <= T; k++) {
+        sum += comb(T, k) * Math.pow(eps, k) * Math.pow(1 - eps, T - k);
+      }
+      return sum;
+    }
+
+    // 初始化 ECharts
+    const chartEl = document.getElementById('chart-jury');
+    const chart = echarts.init(chartEl, null, { renderer: 'svg' });
+
+    // T 取值：1, 3, 5, 7, ..., 25
+    const T_values = [];
+    for (let t = 1; t <= 25; t += 2) {
+      T_values.push(t);
+    }
+
+    // 四条典型曲线：eps = 0.25, 0.40, 0.50, 0.60
+    const seriesData = {
+      eps025: T_values.map(t => +(ensembleError(t, 0.25) * 100).toFixed(2)),
+      eps040: T_values.map(t => +(ensembleError(t, 0.40) * 100).toFixed(2)),
+      eps050: T_values.map(t => +(ensembleError(t, 0.50) * 100).toFixed(2)),
+      eps060: T_values.map(t => +(ensembleError(t, 0.60) * 100).toFixed(2)),
+    };
+
+    const option = {
+      animation: false,
+      grid: {
+        top: 48,
+        right: 32,
+        bottom: 46,
+        left: 56,
+        containLabel: false
+      },
+      legend: {
+        top: 0,
+        right: 12,
+        itemGap: 16,
+        textStyle: {
+          color: '#536A78',
+          fontSize: 12
+        },
+        data: ['ε = 0.25 (较强基模型)', 'ε = 0.40 (略优于随机)', 'ε = 0.50 (随机猜硬币)', 'ε = 0.60 (劣于随机)']
+      },
+      tooltip: {
+        trigger: 'axis',
+        formatter: function (params) {
+          let s = `<strong>集成规模 T = ${params[0].name}</strong><br/>`;
+          params.forEach(p => {
+            s += `${p.marker} ${p.seriesName}: <strong>${p.value}%</strong><br/>`;
+          });
+          return s;
+        }
+      },
+      xAxis: {
+        type: 'category',
+        name: '基模型数量 (T)',
+        nameLocation: 'middle',
+        nameGap: 26,
+        nameTextStyle: {
+          color: '#536A78',
+          fontSize: 13,
+          fontWeight: 600
+        },
+        data: T_values,
+        axisLine: { lineStyle: { color: '#E2EBF0' } },
+        axisTick: { alignWithLabel: true },
+        axisLabel: { color: '#536A78', fontSize: 12 }
+      },
+      yAxis: {
+        type: 'value',
+        name: '集成错误率 (%)',
+        nameLocation: 'end',
+        nameTextStyle: {
+          color: '#536A78',
+          fontSize: 12,
+          fontWeight: 600,
+          padding: [0, 20, 8, 0]
+        },
+        min: 0,
+        max: 100,
+        interval: 20,
+        splitLine: { lineStyle: { color: '#EDF3F6' } },
+        axisLabel: {
+          color: '#536A78',
+          fontSize: 12,
+          formatter: '{value}%'
+        }
+      },
+      series: [
+        {
+          name: 'ε = 0.25 (较强基模型)',
+          type: 'line',
+          data: seriesData.eps025,
+          smooth: true,
+          symbolSize: 6,
+          itemStyle: { color: '#237052' },
+          lineStyle: { width: 3, color: '#237052' },
+          markPoint: {
+            symbol: 'pin',
+            symbolSize: 46,
+            data: [
+              {
+                coord: [12, seriesData.eps025[12]],
+                value: '0.04%',
+                itemStyle: { color: '#237052' },
+                label: { fontSize: 11, color: '#ffffff', fontWeight: 600 }
+              }
+            ]
+          }
+        },
+        {
+          name: 'ε = 0.40 (略优于随机)',
+          type: 'line',
+          data: seriesData.eps040,
+          smooth: true,
+          symbolSize: 6,
+          itemStyle: { color: '#27648F' },
+          lineStyle: { width: 3, color: '#27648F' }
+        },
+        {
+          name: 'ε = 0.50 (随机猜硬币)',
+          type: 'line',
+          data: seriesData.eps050,
+          lineStyle: { width: 2, type: 'dashed', color: '#8BA0AD' },
+          itemStyle: { color: '#8BA0AD' },
+          symbol: 'none'
+        },
+        {
+          name: 'ε = 0.60 (劣于随机)',
+          type: 'line',
+          data: seriesData.eps060,
+          smooth: true,
+          symbolSize: 6,
+          itemStyle: { color: '#C34B22' },
+          lineStyle: { width: 3, color: '#C34B22' }
+        }
+      ]
+    };
+
+    chart.setOption(option);
+
+    // 右侧情景数据
+    const scenarios = {
+      diverse: {
+        badge: '理想独立分布 (好而不同)',
+        data: [
+          { sample: '样本 x₁', h1: 1, h2: 1, h3: 0, vote: 1 },
+          { sample: '样本 x₂', h1: 1, h2: 0, h3: 1, vote: 1 },
+          { sample: '样本 x₃', h1: 0, h2: 1, h3: 1, vote: 1 },
+          { sample: '样本 x₄', h1: 1, h2: 1, h3: 1, vote: 1 },
+          { sample: '样本 x₅', h1: 0, h2: 1, h3: 1, vote: 1 }
+        ],
+        baseErr: '33.3%',
+        ensErr: '0.0%',
+        title: '错误互不重叠：多数表决彻底纠偏',
+        desc: '5 个样本中，各基模型虽然个别犯错（h₁ 错2次、h₂ 错1次、h₃ 错1次，错误率 20%~40%），但因为错误分布互补，每一个样本始终有至少 2 个模型做出正确判定。集成表决后错误率为 0%。',
+        isGood: true
+      },
+      correlated: {
+        badge: '高度相关同质 (同质共犯)',
+        data: [
+          { sample: '样本 x₁', h1: 1, h2: 1, h3: 1, vote: 1 },
+          { sample: '样本 x₂', h1: 0, h2: 0, h3: 0, vote: 0 },
+          { sample: '样本 x₃', h1: 1, h2: 1, h3: 1, vote: 1 },
+          { sample: '样本 x₄', h1: 0, h2: 0, h3: 0, vote: 0 },
+          { sample: '样本 x₅', h1: 1, h2: 1, h3: 1, vote: 1 }
+        ],
+        baseErr: '40.0%',
+        ensErr: '40.0%',
+        title: '错误完全同步：多数表决毫无增益',
+        desc: '若 3 个模型结构完全雷同且未做差异化训练，面对疑难样本 x₂ 与 x₄ 时，它们会步调一致地同时犯错。多数表决完全无法纠偏，集成后的错误率仍然高达 40.0%，集成失去意义。',
+        isGood: false
+      }
+    };
+
+    function renderScenario(key) {
+      const s = scenarios[key];
+      document.getElementById('case-badge').textContent = s.badge;
+      document.getElementById('insight-title').textContent = s.title;
+      document.getElementById('insight-text').textContent = s.desc;
+      document.getElementById('stat-base-err').textContent = s.baseErr;
+      
+      const ensEl = document.getElementById('stat-ens-err');
+      ensEl.textContent = s.ensErr;
+      const boxEns = document.getElementById('stat-box-ens');
+      if (s.isGood) {
+        boxEns.className = 'stat-item good';
+      } else {
+        boxEns.className = 'stat-item bad';
+      }
+
+      const tbody = document.getElementById('matrix-tbody');
+      tbody.innerHTML = '';
+      s.data.forEach(row => {
+        const tr = document.createElement('tr');
+        
+        const h1Tag = row.h1 === 1 ? '<span class="cell-pass">正确 ✓</span>' : '<span class="cell-fail">错误 ✗</span>';
+        const h2Tag = row.h2 === 1 ? '<span class="cell-pass">正确 ✓</span>' : '<span class="cell-fail">错误 ✗</span>';
+        const h3Tag = row.h3 === 1 ? '<span class="cell-pass">正确 ✓</span>' : '<span class="cell-fail">错误 ✗</span>';
+        const voteTag = row.vote === 1 ? '<span class="cell-vote-pass">正确 (多数决胜)</span>' : '<span class="cell-vote-fail">错误 (集成失守)</span>';
+
+        tr.innerHTML = `
+          <td><strong>${row.sample}</strong></td>
+          <td>${h1Tag}</td>
+          <td>${h2Tag}</td>
+          <td>${h3Tag}</td>
+          <td>${voteTag}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    const btnDiverse = document.getElementById('btn-diverse');
+    const btnCorrelated = document.getElementById('btn-correlated');
+
+    btnDiverse.addEventListener('click', () => {
+      btnDiverse.classList.add('active');
+      btnCorrelated.classList.remove('active');
+      renderScenario('diverse');
+    });
+
+    btnCorrelated.addEventListener('click', () => {
+      btnCorrelated.classList.add('active');
+      btnDiverse.classList.remove('active');
+      renderScenario('correlated');
+    });
+
+    // 默认展示多样性有效
+    renderScenario('diverse');
+
+    window.addEventListener('resize', () => {
+      chart.resize();
+    });
+  </script>
+</body>
+</html>

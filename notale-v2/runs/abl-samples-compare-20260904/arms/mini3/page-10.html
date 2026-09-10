@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    header.deck-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      flex-shrink: 0;
+    }
+
+    .title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      margin: 0;
+      color: var(--text);
+    }
+
+    .subtitle {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主工作区左右两列 */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .panel-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      position: relative;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge {
+      font-size: var(--fs-label);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .badge.bagging {
+      background: #e8eef3;
+      color: var(--model);
+    }
+
+    .badge.forest {
+      background: #e6f2ed;
+      color: var(--sample);
+    }
+
+    .panel-metrics {
+      display: flex;
+      gap: 24px;
+      font-size: var(--fs-sec);
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .metric-lbl {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .metric-val {
+      font-size: var(--fs-lead);
+      font-weight: 700;
+    }
+
+    .val-alert {
+      color: var(--aggregate);
+    }
+
+    .val-good {
+      color: var(--sample);
+    }
+
+    /* 树群对比展示区 */
+    .tree-stage {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .tree-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      flex: 1;
+    }
+
+    .tree-box {
+      background: #F9FBFC;
+      border: 1px solid #E2EBF0;
+      border-radius: 6px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+    }
+
+    .tree-box.dominated {
+      border-color: rgba(195, 75, 34, 0.4);
+    }
+
+    .tree-box.decorrelated {
+      border-color: rgba(47, 117, 104, 0.4);
+    }
+
+    .tree-box-title {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .tree-svg-container {
+      width: 100%;
+      height: 220px;
+      position: relative;
+    }
+
+    .feature-pool-bar {
+      width: 100%;
+      display: flex;
+      gap: 6px;
+      padding: 6px 0;
+      border-top: 1px dashed #D6E2E8;
+      margin-top: 6px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pool-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-right: 4px;
+      white-space: nowrap;
+    }
+
+    .feat-tag {
+      font-size: 12px;
+      padding: 2px 7px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+
+    .feat-tag.strong {
+      background: #FBEAE3;
+      color: var(--aggregate);
+      border: 1px solid rgba(195, 75, 34, 0.3);
+    }
+
+    .feat-tag.weak {
+      background: #EAF0F4;
+      color: var(--model);
+      border: 1px solid rgba(39, 100, 143, 0.3);
+    }
+
+    .feat-tag.excluded {
+      opacity: 0.35;
+      text-decoration: line-through;
+    }
+
+    /* 下方分析与数学关系 */
+    .footer-bar {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 22px;
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 28px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .formula-explanation {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .formula-line {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .math-core {
+      font-family: var(--font-num);
+      font-size: 19px;
+      background: #F0F4F7;
+      padding: 4px 10px;
+      border-radius: 4px;
+      color: var(--text);
+      letter-spacing: 0.5px;
+    }
+
+    .formula-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .takeaway {
+      border-left: 2px solid var(--aggregate);
+      padding-left: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .takeaway-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .takeaway-p {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    /* 交互切换控制 */
+    .controls-wrapper {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .toggle-btn {
+      background: var(--surface-strong);
+      border: 1px solid transparent;
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .toggle-btn.active {
+      background: var(--text);
+      color: #fff;
+    }
+
+    /* 树节点样式 */
+    .node-strong {
+      fill: #C34B22;
+    }
+    .node-other {
+      fill: #27648F;
+    }
+    .node-leaf {
+      fill: #8E9FA9;
+    }
+    .branch-line {
+      stroke: #8E9FA9;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+    }
+  </style>
+</head>
+<body data-page="10" data-total="27">
+  <div id="stage">
+    <header class="deck-head">
+      <div class="title-group">
+        <h1>特征子采样：阻断强特征诱发的树间同质化</h1>
+        <p class="subtitle">单纯 Bootstrap 无法避开统治性特征；随机构造特征候选子集迫使基学习器探索差异化决策空间</p>
+      </div>
+      <div class="controls-wrapper">
+
+        <button id="btn-default" class="toggle-btn active" type="button">典型样本特征观测</button>
+        <button id="btn-subsample" class="toggle-btn" type="button">改变子采样比例 (m = √p)</button>
+      </div>
+    </header>
+
+    <div class="comparison-grid">
+      <!-- 左列：常规 Bagging (全特征分裂) -->
+      <section class="panel-card" aria-label="常规 Bagging">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>标准 Bagging（全特征参与）</span>
+            <span class="badge bagging">p = 5 全部候选</span>
+          </div>
+          <div class="panel-metrics">
+            <div class="metric-item">
+              <span class="metric-lbl">树间相关系数 ρ</span>
+              <span class="metric-val val-alert" id="bagging-rho">0.78</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-lbl">方差削减下限</span>
+              <span class="metric-val" id="bagging-var-limit">~ 0.78 σ²</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tree-stage">
+          <div class="tree-row">
+            <!-- 树 1 -->
+            <div class="tree-box dominated">
+              <div class="tree-box-title">
+                <span>决策树 T₁</span>
+                <span class="val-alert" style="font-size:12px;">根节点：x₁</span>
+              </div>
+              <svg class="tree-svg-container" viewBox="0 0 160 140" aria-label="树1结构">
+                <line x1="80" y1="24" x2="40" y2="68" class="branch-line" />
+                <line x1="80" y1="24" x2="120" y2="68" class="branch-line" />
+                <line x1="40" y1="68" x2="22" y2="114" class="branch-line" />
+                <line x1="40" y1="68" x2="58" y2="114" class="branch-line" />
+                <line x1="120" y1="68" x2="102" y2="114" class="branch-line" />
+                <line x1="120" y1="68" x2="138" y2="114" class="branch-line" />
+                
+                <!-- 根节点 (强特征 x1) -->
+                <circle cx="80" cy="24" r="16" class="node-strong" />
+                <text x="80" y="30" fill="#FFF" font-size="14" font-weight="700" text-anchor="middle">x₁</text>
+                
+                <!-- 次级节点 -->
+                <circle cx="40" cy="68" r="13" class="node-other" />
+                <text x="40" y="73" fill="#FFF" font-size="12" font-weight="600" text-anchor="middle">x₃</text>
+                <circle cx="120" cy="68" r="13" class="node-other" />
+                <text x="120" y="73" fill="#FFF" font-size="12" font-weight="600" text-anchor="middle">x₂</text>
+
+                <!-- 叶节点 -->
+                <rect x="13" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="49" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="93" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="129" y="108" width="18" height="12" rx="2" class="node-leaf" />
+              </svg>
+              <div class="feature-pool-bar">
+                <span class="pool-label">可用:</span>
+                <span class="feat-tag strong">x₁</span>
+                <span class="feat-tag weak">x₂</span>
+                <span class="feat-tag weak">x₃</span>
+                <span class="feat-tag weak">x₄</span>
+                <span class="feat-tag weak">x₅</span>
+              </div>
+            </div>
+
+            <!-- 树 2 -->
+            <div class="tree-box dominated">
+              <div class="tree-box-title">
+                <span>决策树 T₂</span>
+                <span class="val-alert" style="font-size:12px;">根节点：x₁</span>
+              </div>
+              <svg class="tree-svg-container" viewBox="0 0 160 140" aria-label="树2结构">
+                <line x1="80" y1="24" x2="40" y2="68" class="branch-line" />
+                <line x1="80" y1="24" x2="120" y2="68" class="branch-line" />
+                <line x1="40" y1="68" x2="22" y2="114" class="branch-line" />
+                <line x1="40" y1="68" x2="58" y2="114" class="branch-line" />
+                <line x1="120" y1="68" x2="102" y2="114" class="branch-line" />
+                <line x1="120" y1="68" x2="138" y2="114" class="branch-line" />
+                
+                <circle cx="80" cy="24" r="16" class="node-strong" />
+                <text x="80" y="30" fill="#FFF" font-size="14" font-weight="700" text-anchor="middle">x₁</text>
+                
+                <circle cx="40" cy="68" r="13" class="node-other" />
+                <text x="40" y="73" fill="#FFF" font-size="12" font-weight="600" text-anchor="middle">x₄</text>
+                <circle cx="120" cy="68" r="13" class="node-other" />
+                <text x="120" y="73" fill="#FFF" font-size="12" font-weight="600" text-anchor="middle">x₂</text>
+
+                <rect x="13" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="49" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="93" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="129" y="108" width="18" height="12" rx="2" class="node-leaf" />
+              </svg>
+              <div class="feature-pool-bar">
+                <span class="pool-label">可用:</span>
+                <span class="feat-tag strong">x₁</span>
+                <span class="feat-tag weak">x₂</span>
+                <span class="feat-tag weak">x₃</span>
+                <span class="feat-tag weak">x₄</span>
+                <span class="feat-tag weak">x₅</span>
+              </div>
+            </div>
+
+            <!-- 树 3 -->
+            <div class="tree-box dominated">
+              <div class="tree-box-title">
+                <span>决策树 T₃</span>
+                <span class="val-alert" style="font-size:12px;">根节点：x₁</span>
+              </div>
+              <svg class="tree-svg-container" viewBox="0 0 160 140" aria-label="树3结构">
+                <line x1="80" y1="24" x2="40" y2="68" class="branch-line" />
+                <line x1="80" y1="24" x2="120" y2="68" class="branch-line" />
+                <line x1="40" y1="68" x2="22" y2="114" class="branch-line" />
+                <line x1="40" y1="68" x2="58" y2="114" class="branch-line" />
+                <line x1="120" y1="68" x2="102" y2="114" class="branch-line" />
+                <line x1="120" y1="68" x2="138" y2="114" class="branch-line" />
+                
+                <circle cx="80" cy="24" r="16" class="node-strong" />
+                <text x="80" y="30" fill="#FFF" font-size="14" font-weight="700" text-anchor="middle">x₁</text>
+                
+                <circle cx="40" cy="68" r="13" class="node-other" />
+                <text x="40" y="73" fill="#FFF" font-size="12" font-weight="600" text-anchor="middle">x₂</text>
+                <circle cx="120" cy="68" r="13" class="node-other" />
+                <text x="120" y="73" fill="#FFF" font-size="12" font-weight="600" text-anchor="middle">x₅</text>
+
+                <rect x="13" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="49" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="93" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="129" y="108" width="18" height="12" rx="2" class="node-leaf" />
+              </svg>
+              <div class="feature-pool-bar">
+                <span class="pool-label">可用:</span>
+                <span class="feat-tag strong">x₁</span>
+                <span class="feat-tag weak">x₂</span>
+                <span class="feat-tag weak">x₃</span>
+                <span class="feat-tag weak">x₄</span>
+                <span class="feat-tag weak">x₅</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="takeaway-p" style="font-size:13px; color:var(--muted);">
+          <strong>结构同质性陷阱：</strong>由于特征 x₁ 信息增益极显著，所有树在顶层首选相同分裂，导致各子树结构高同质化，树间预测高度相关。
+        </p>
+      </section>
+
+      <!-- 右列：随机森林 (特征子采样) -->
+      <section class="panel-card" aria-label="随机森林">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>随机森林（特征子集采样）</span>
+            <span class="badge forest" id="rf-badge">m = 2 随机特征</span>
+          </div>
+          <div class="panel-metrics">
+            <div class="metric-item">
+              <span class="metric-lbl">树间相关系数 ρ</span>
+              <span class="metric-val val-good" id="rf-rho">0.24</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-lbl">方差削减下限</span>
+              <span class="metric-val val-good" id="rf-var-limit">~ 0.24 σ²</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tree-stage">
+          <div class="tree-row" id="rf-tree-row">
+            <!-- 树 1 (抽中 x2, x3) -->
+            <div class="tree-box decorrelated">
+              <div class="tree-box-title">
+                <span>随机树 T₁</span>
+                <span class="val-good" style="font-size:12px;">根节点：x₂</span>
+              </div>
+              <svg class="tree-svg-container" viewBox="0 0 160 140" aria-label="随机树1结构">
+                <line x1="80" y1="24" x2="40" y2="68" class="branch-line" />
+                <line x1="80" y1="24" x2="120" y2="68" class="branch-line" />
+                <line x1="40" y1="68" x2="22" y2="114" class="branch-line" />
+                <line x1="40" y1="68" x2="58" y2="114" class="branch-line" />
+                <line x1="120" y1="68" x2="102" y2="114" class="branch-line" />
+                <line x1="120" y1="68" x2="138" y2="114" class="branch-line" />
+                
+                <!-- 根节点 (避开 x1，由 x2 胜出) -->
+                <circle cx="80" cy="24" r="16" class="node-other" />
+                <text x="80" y="30" fill="#FFF" font-size="14" font-weight="700" text-anchor="middle">x₂</text>
+                
+                <!-- 次级节点 -->
+                <circle cx="40" cy="68" r="13" class="node-other" />
+                <text x="40" y="73" fill="#FFF" font-size="12" font-weight="600" text-anchor="middle">x₃</text>
+                <circle cx="120" cy="68" r="13" class="node-other" />
+                <text x="120" y="73" fill="#FFF" font-size="12" font-weight="600" text-anchor="middle">x₅</text>
+
+                <!-- 叶节点 -->
+                <rect x="13" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="49" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="93" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="129" y="108" width="18" height="12" rx="2" class="node-leaf" />
+              </svg>
+              <div class="feature-pool-bar">
+                <span class="pool-label">候选:</span>
+                <span class="feat-tag strong excluded">x₁</span>
+                <span class="feat-tag weak">x₂</span>
+                <span class="feat-tag weak">x₃</span>
+                <span class="feat-tag weak excluded">x₄</span>
+                <span class="feat-tag weak excluded">x₅</span>
+              </div>
+            </div>
+
+            <!-- 树 2 (抽中 x1, x4) -->
+            <div class="tree-box decorrelated">
+              <div class="tree-box-title">
+                <span>随机树 T₂</span>
+                <span class="val-alert" style="font-size:12px;">根节点：x₁</span>
+              </div>
+              <svg class="tree-svg-container" viewBox="0 0 160 140" aria-label="随机树2结构">
+                <line x1="80" y1="24" x2="40" y2="68" class="branch-line" />
+                <line x1="80" y1="24" x2="120" y2="68" class="branch-line" />
+                <line x1="40" y1="68" x2="22" y2="114" class="branch-line" />
+                <line x1="40" y1="68" x2="58" y2="114" class="branch-line" />
+                <line x1="120" y1="68" x2="102" y2="114" class="branch-line" />
+                <line x1="120" y1="68" x2="138" y2="114" class="branch-line" />
+                
+                <!-- 根节点 (抽到 x1) -->
+                <circle cx="80" cy="24" r="16" class="node-strong" />
+                <text x="80" y="30" fill="#FFF" font-size="14" font-weight="700" text-anchor="middle">x₁</text>
+                
+                <!-- 次级节点 -->
+                <circle cx="40" cy="68" r="13" class="node-other" />
+                <text x="40" y="73" fill="#FFF" font-size="12" font-weight="600" text-anchor="middle">x₄</text>
+                <circle cx="120" cy="68" r="13" class="node-other" />
+                <text x="120" y="73" fill="#FFF" font-size="12" font-weight="600" text-anchor="middle">x₃</text>
+
+                <rect x="13" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="49" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="93" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="129" y="108" width="18" height="12" rx="2" class="node-leaf" />
+              </svg>
+              <div class="feature-pool-bar">
+                <span class="pool-label">候选:</span>
+                <span class="feat-tag strong">x₁</span>
+                <span class="feat-tag weak excluded">x₂</span>
+                <span class="feat-tag weak excluded">x₃</span>
+                <span class="feat-tag weak">x₄</span>
+                <span class="feat-tag weak excluded">x₅</span>
+              </div>
+            </div>
+
+            <!-- 树 3 (抽中 x3, x5) -->
+            <div class="tree-box decorrelated">
+              <div class="tree-box-title">
+                <span>随机树 T₃</span>
+                <span class="val-good" style="font-size:12px;">根节点：x₃</span>
+              </div>
+              <svg class="tree-svg-container" viewBox="0 0 160 140" aria-label="随机树3结构">
+                <line x1="80" y1="24" x2="40" y2="68" class="branch-line" />
+                <line x1="80" y1="24" x2="120" y2="68" class="branch-line" />
+                <line x1="40" y1="68" x2="22" y2="114" class="branch-line" />
+                <line x1="40" y1="68" x2="58" y2="114" class="branch-line" />
+                <line x1="120" y1="68" x2="102" y2="114" class="branch-line" />
+                <line x1="120" y1="68" x2="138" y2="114" class="branch-line" />
+                
+                <!-- 根节点 (避开 x1，由 x3 胜出) -->
+                <circle cx="80" cy="24" r="16" class="node-other" />
+                <text x="80" y="30" fill="#FFF" font-size="14" font-weight="700" text-anchor="middle">x₃</text>
+                
+                <!-- 次级节点 -->
+                <circle cx="40" cy="68" r="13" class="node-other" />
+                <text x="40" y="73" fill="#FFF" font-size="12" font-weight="600" text-anchor="middle">x₅</text>
+                <circle cx="120" cy="68" r="13" class="node-other" />
+                <text x="120" y="73" fill="#FFF" font-size="12" font-weight="600" text-anchor="middle">x₂</text>
+
+                <rect x="13" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="49" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="93" y="108" width="18" height="12" rx="2" class="node-leaf" />
+                <rect x="129" y="108" width="18" height="12" rx="2" class="node-leaf" />
+              </svg>
+              <div class="feature-pool-bar">
+                <span class="pool-label">候选:</span>
+                <span class="feat-tag strong excluded">x₁</span>
+                <span class="feat-tag weak excluded">x₂</span>
+                <span class="feat-tag weak">x₃</span>
+                <span class="feat-tag weak excluded">x₄</span>
+                <span class="feat-tag weak">x₅</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="takeaway-p" style="font-size:13px; color:var(--muted);" id="rf-desc">
+          <strong>去相关效应：</strong>在部分分裂节点强制排除 x₁，迫使其余次优特征（x₂、x₃）获得主导分裂的机会，形成真正多样的判定路径。
+        </p>
+      </section>
+    </div>
+
+    <!-- 底部结论与方差公式 -->
+    <footer class="footer-bar">
+      <div class="formula-explanation">
+        <div class="formula-line">
+          <span>集成方差理论极限：</span>
+          <span class="math-core">Var(f_ens) = ρ · σ² + ((1 - ρ) / B) · σ²</span>
+        </div>
+        <div class="formula-desc">
+          树的数量 B 趋于无穷时，第二项 ((1-ρ)/B)σ² 趋近于 0；整体方差无法逾越首项 <strong>ρ · σ²</strong>。只有压低相关系数 ρ，集成的理论上限才能被打开。
+        </div>
+      </div>
+      <div class="takeaway">
+        <span class="takeaway-title">特征子采样如何降低 ρ？</span>
+        <p class="takeaway-p">
+          每个节点随机选取候选子集（分类通常取 m ≈ √p，回归取 m ≈ p/3）。强特征仅有 m/p 的概率进入候选池，从而将单棵树的“微弱牺牲”转化为集成整体的“方差骤降”。
+        </p>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 10, total: 27 });
+
+      const btnDefault = document.getElementById("btn-default");
+      const btnSubsample = document.getElementById("btn-subsample");
+      const rfBadge = document.getElementById("rf-badge");
+      const rfRho = document.getElementById("rf-rho");
+      const rfVarLimit = document.getElementById("rf-var-limit");
+      const rfDesc = document.getElementById("rf-desc");
+
+      let mode = 0; // 0: m=2 (约 sqrt(5)), 1: m=1 (极度随机)
+
+      function setMode(newMode) {
+        mode = newMode;
+        if (mode === 0) {
+          btnDefault.classList.add("active");
+          btnSubsample.classList.remove("active");
+          rfBadge.textContent = "m = 2 (约 √p)";
+          rfRho.textContent = "0.24";
+          rfVarLimit.textContent = "~ 0.24 σ²";
+          rfDesc.innerHTML = "<strong>标准子采样 (m=2)：</strong>约有 60% 的节点排除强特征 x₁，在保留单树充足表达力的同时，大幅削弱树间同质化。";
+        } else {
+          btnDefault.classList.remove("active");
+          btnSubsample.classList.add("active");
+          rfBadge.textContent = "m = 1 (极端子采样)";
+          rfRho.textContent = "0.08";
+          rfVarLimit.textContent = "~ 0.08 σ²";
+          rfDesc.innerHTML = "<strong>极端子采样 (m=1)：</strong>强特征仅有 20% 几率被选，树间完全解耦（ρ 降至 0.08），但单树自身偏差会明显上升。";
+        }
+      }
+
+      btnDefault.addEventListener("click", () => setMode(0));
+      btnSubsample.addEventListener("click", () => setMode(1));
+    })();
+  </script>
+</body>
+</html>

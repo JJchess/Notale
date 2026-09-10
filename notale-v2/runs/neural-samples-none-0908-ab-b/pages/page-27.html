@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>注意力权重与动态加权</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      display: flex;
+      flex-direction: column;
+      padding: 44px 56px;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    header {
+      margin-bottom: 28px;
+    }
+    h1 {
+      margin: 0 0 10px 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text);
+    }
+    .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主布局 */
+    .workspace {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 56px;
+      flex: 1;
+      min-height: 0;
+      align-content: start;
+    }
+
+    .attn-system {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .section-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--text);
+      margin: 0 0 16px 0;
+    }
+
+    .query-selector-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .query-tabs {
+      display: flex;
+      gap: 10px;
+    }
+    .q-btn {
+      padding: 6px 16px;
+      font-size: var(--fs-body);
+      border: 1px solid var(--rule);
+      background: transparent;
+      color: var(--text);
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .q-btn.active {
+      border-color: var(--signal);
+      color: var(--signal);
+      font-weight: 600;
+      background: rgba(212, 56, 17, 0.06);
+    }
+
+    .tokens-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+    }
+    .token-col {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border-left: 2px solid var(--rule);
+      padding-left: 14px;
+    }
+    .token-col.focus-item {
+      border-left-color: var(--signal);
+    }
+    .token-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .token-word {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .token-role {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: monospace;
+    }
+
+    .score-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-body);
+    }
+    .score-row .score-val {
+      font-family: monospace;
+      font-weight: 700;
+      color: var(--structure);
+    }
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      background: var(--rule);
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+      margin: 6px 0;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--structure);
+      cursor: pointer;
+      border: 2px solid var(--bg);
+    }
+    input[type=range]:active::-webkit-slider-thumb {
+      background: var(--signal);
+    }
+
+    .weight-bar-bg {
+      height: 12px;
+      background: rgba(186, 196, 191, 0.35);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .weight-bar-fill {
+      height: 100%;
+      background: var(--structure);
+    }
+    .focus-item .weight-bar-fill {
+      background: var(--signal);
+    }
+    .weight-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .weight-meta .pct {
+      font-family: monospace;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .canvas-wrapper {
+      position: relative;
+      height: 240px;
+      width: 100%;
+      margin-top: 8px;
+    }
+    #flowCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .context-result {
+      border-left: 2px solid var(--rule);
+      padding-left: 44px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    .formula-badge {
+      font-family: monospace;
+      font-size: var(--fs-lead);
+      color: var(--structure);
+      font-weight: 700;
+      margin-top: 8px;
+    }
+
+    .vector-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-top: 24px;
+    }
+    .dim-row {
+      display: grid;
+      grid-template-columns: 80px 1fr 64px;
+      gap: 16px;
+      align-items: center;
+      font-size: var(--fs-body);
+    }
+    .dim-name {
+      color: var(--text);
+      font-weight: 600;
+      font-size: var(--fs-sec);
+    }
+    .dim-bar-bg {
+      height: 18px;
+      background: rgba(186, 196, 191, 0.35);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .dim-bar-fill {
+      height: 100%;
+      background: var(--structure);
+    }
+    .dim-val {
+      font-family: monospace;
+      font-size: var(--fs-lead);
+      text-align: right;
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .diagnosis-card {
+      border-top: 1px solid var(--rule);
+      padding-top: 20px;
+    }
+    .diagnosis-title {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--signal);
+      margin-bottom: 8px;
+    }
+    .diagnosis-text {
+      font-size: var(--fs-body);
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .btn-reset {
+      font-size: var(--fs-body);
+      padding: 6px 14px;
+      background: transparent;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      color: var(--text);
+      cursor: pointer;
+      margin-left: auto;
+    }
+    .btn-reset:hover {
+      border-color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>注意力权重与动态加权：打通任意位置的上下文向量</h1>
+      <p class="lead">通过点积相关度经 Softmax 归一化为分配权重，直接聚合任意历史词元特征，消除固定隐状态瓶颈。</p>
+    </header>
+
+    <div class="workspace">
+      <!-- 左侧：计算机制 -->
+      <div class="attn-system">
+        <div>
+          <div class="section-title">1. 相似度打分与注意力分配</div>
+
+          <!-- 预设查询位置 -->
+          <div class="query-selector-row">
+            <div class="query-tabs">
+              <button class="q-btn active" data-q="0" id="q0">it (指代消解)</button>
+              <button class="q-btn" data-q="1" id="q1">tired (因果修饰)</button>
+              <button class="q-btn" data-q="2" id="q2">street (空间定位)</button>
+            </div>
+            <button class="btn-reset" id="btnReset">重置打分</button>
+          </div>
+
+          <!-- 4 个历史输入词元 -->
+          <div class="tokens-grid" id="tokensContainer"></div>
+        </div>
+
+        <!-- 汇聚连线 Canvas -->
+        <div class="canvas-wrapper">
+          <canvas id="flowCanvas"></canvas>
+        </div>
+      </div>
+
+      <!-- 右侧：动态合成的上下文向量 c -->
+      <div class="context-result">
+        <div>
+          <div class="section-title">2. 加权合成上下文向量</div>
+          <div class="formula-badge">c = Σ (αᵢ · hᵢ)</div>
+
+          <div class="vector-bars">
+            <div class="dim-row">
+              <span class="dim-name">生命特征</span>
+              <div class="dim-bar-bg"><div class="dim-bar-fill" id="dim0-fill"></div></div>
+              <span class="dim-val" id="dim0-val">0.00</span>
+            </div>
+            <div class="dim-row">
+              <span class="dim-name">动作强度</span>
+              <div class="dim-bar-bg"><div class="dim-bar-fill" id="dim1-fill"></div></div>
+              <span class="dim-val" id="dim1-val">0.00</span>
+            </div>
+            <div class="dim-row">
+              <span class="dim-name">物理实物</span>
+              <div class="dim-bar-bg"><div class="dim-bar-fill" id="dim2-fill"></div></div>
+              <span class="dim-val" id="dim2-val">0.00</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="diagnosis-card">
+          <div class="diagnosis-title" id="diagTitle">代词消解：IT → ANIMAL</div>
+          <p class="diagnosis-text" id="diagDesc">动物具备生命与动作属性，注意力聚焦在 animal (90%)，上下文向量直接提取其语义特征，消除代词歧义。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学看白板。上节课我们讲到 RNN 的核心痛点：随着时间步增长，固定维度的隐状态就像一个容量有限的小瓶子，前面的信息被后来的状态不断冲刷覆盖，这就是所谓的信息瓶颈。
+    注意力机制的核心思路非常直观——不要强迫网络把所有记忆塞进一个向量，而是在需要做出决策时，回头看整个历史序列，算一算当前位置和过去每个词的相关性。
+    大家在白板左侧可以自由拖动这四个历史词元的相关性得分。当当前词是“it”时，模型通过学习到的投影计算，将最高权重分配给“animal”，计算出来的上下文向量 c 就会继承 animal 的高生命特征。如果注意力滑向“street”，上下文向量就立刻被物理实体特征主导。
+    这就是“动态寻址”：权重 α 实时相加为 1，直接按比例读取任意距离的原始隐状态，长程遗忘问题就此被打破。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    const TOKENS = [
+      { id: 0, word: "The", role: "h₁ 冠词", h: [0.05, 0.05, 0.10] },
+      { id: 1, word: "animal", role: "h₂ 主语", h: [0.92, 0.45, 0.20] },
+      { id: 2, word: "crossed", role: "h₃ 谓语", h: [0.15, 0.95, 0.10] },
+      { id: 3, word: "street", role: "h₄ 宾语", h: [0.05, 0.10, 0.88] }
+    ];
+
+    const PRESETS = [
+      { name: "it", scores: [0.5, 4.2, 1.2, 0.8], title: "代词消解：IT → ANIMAL", desc: "动物具备生命与动作属性，注意力聚焦在 animal (90%)，上下文向量直接提取其语义特征，消除代词歧义。" },
+      { name: "tired", scores: [0.2, 3.8, 2.5, 0.4], title: "状态修饰：TIRED → ANIMAL", desc: "疲劳修饰生物体，注意力主要流向 animal，谓语 crossed 获次级关联，街道特征被过滤。" },
+      { name: "street", scores: [0.2, 0.5, 1.5, 4.5], title: "空间定位：CROSSED → STREET", desc: "穿过动作需要空间目标，注意力聚焦于 physical 属性的 street，物理实物维度响应占优。" }
+    ];
+
+    let currentPreset = 0;
+    let scores = [...PRESETS[0].scores];
+
+    function calcSoftmax(arr) {
+      const max = Math.max(...arr);
+      const exps = arr.map(v => Math.exp(v - max));
+      const sum = exps.reduce((a, b) => a + b, 0);
+      return exps.map(v => v / sum);
+    }
+
+    const tokensContainer = document.getElementById("tokensContainer");
+    function buildTokenElements() {
+      tokensContainer.innerHTML = "";
+      TOKENS.forEach((tok, i) => {
+        const col = document.createElement("div");
+        col.className = "token-col";
+        col.id = `tok-col-${i}`;
+
+        col.innerHTML = `
+          <div class="token-header">
+            <span class="token-word">${tok.word}</span>
+            <span class="token-role">${tok.role}</span>
+          </div>
+          <div>
+            <div class="score-row">
+              <span style="font-size:var(--fs-tick); color:var(--muted);">打分 s_${i+1}</span>
+              <span class="score-val" id="score-val-${i}">${scores[i].toFixed(1)}</span>
+            </div>
+            <input type="range" min="0" max="6" step="0.1" value="${scores[i]}" id="slider-${i}" aria-label="${tok.word} 关联分">
+          </div>
+          <div>
+            <div class="weight-bar-bg">
+              <div class="weight-bar-fill" id="weight-fill-${i}"></div>
+            </div>
+            <div class="weight-meta">
+              <span>权重 α_${i+1}</span>
+              <span class="pct" id="weight-pct-${i}">0%</span>
+            </div>
+          </div>
+        `;
+        tokensContainer.appendChild(col);
+
+        const slider = col.querySelector(`#slider-${i}`);
+        slider.addEventListener("input", (e) => {
+          scores[i] = parseFloat(e.target.value);
+          document.getElementById(`score-val-${i}`).textContent = scores[i].toFixed(1);
+          updateAll();
+        });
+      });
+    }
+
+    function updateAll() {
+      const alphas = calcSoftmax(scores);
+
+      let c = [0, 0, 0];
+      alphas.forEach((alpha, i) => {
+        const h = TOKENS[i].h;
+        c[0] += alpha * h[0];
+        c[1] += alpha * h[1];
+        c[2] += alpha * h[2];
+
+        const fill = document.getElementById(`weight-fill-${i}`);
+        const pct = document.getElementById(`weight-pct-${i}`);
+        const col = document.getElementById(`tok-col-${i}`);
+
+        const pctVal = (alpha * 100).toFixed(1);
+        if (fill) fill.style.width = `${pctVal}%`;
+        if (pct) pct.textContent = `${pctVal}%`;
+
+        if (col) {
+          col.classList.toggle("focus-item", alpha > 0.4);
+        }
+      });
+
+      for (let d = 0; d < 3; d++) {
+        const fill = document.getElementById(`dim${d}-fill`);
+        const val = document.getElementById(`dim${d}-val`);
+        if (fill) fill.style.width = `${Math.min(100, Math.round(c[d] * 100))}%`;
+        if (val) val.textContent = c[d].toFixed(2);
+      }
+
+      drawFlow(alphas);
+    }
+
+    const canvas = document.getElementById("flowCanvas");
+    function drawFlow(alphas) {
+      if (!canvas) return;
+      const ctx = Deck.fit(canvas);
+      const w = canvas.parentElement.clientWidth;
+      const h = canvas.parentElement.clientHeight;
+      ctx.clearRect(0, 0, w, h);
+
+      const colWidth = w / 4;
+      const targetX = w - 30;
+      const targetY = h - 18;
+
+      ctx.fillStyle = Deck.token("--structure");
+      ctx.beginPath();
+      ctx.arc(targetX, targetY, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.font = "14px sans-serif";
+      ctx.fillStyle = Deck.token("--muted");
+      ctx.textAlign = "right";
+      ctx.fillText("上下文向量 c 汇聚点", targetX - 14, targetY + 5);
+
+      alphas.forEach((alpha, i) => {
+        const startX = colWidth * i + colWidth / 2;
+        const startY = 12;
+
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.bezierCurveTo(startX, h * 0.65, targetX - 60, startY + 20, targetX, targetY);
+
+        ctx.lineWidth = 1.5 + alpha * 12;
+        if (alpha > 0.35) {
+          ctx.strokeStyle = Deck.rgba("--signal", 0.5 + alpha * 0.5);
+        } else {
+          ctx.strokeStyle = Deck.rgba("--structure", 0.15 + alpha * 0.5);
+        }
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(startX, startY, 4.5, 0, Math.PI * 2);
+        ctx.fillStyle = alpha > 0.35 ? Deck.token("--signal") : Deck.token("--structure");
+        ctx.fill();
+      });
+    }
+
+    function switchPreset(idx) {
+      currentPreset = idx;
+      scores = [...PRESETS[idx].scores];
+      document.querySelectorAll(".q-btn").forEach((btn, i) => {
+        btn.classList.toggle("active", i === idx);
+      });
+      document.getElementById("diagTitle").textContent = PRESETS[idx].title;
+      document.getElementById("diagDesc").textContent = PRESETS[idx].desc;
+
+      scores.forEach((s, i) => {
+        const slider = document.getElementById(`slider-${i}`);
+        const val = document.getElementById(`score-val-${i}`);
+        if (slider) slider.value = s;
+        if (val) val.textContent = s.toFixed(1);
+      });
+      updateAll();
+    }
+
+    buildTokenElements();
+    switchPreset(0);
+
+    document.querySelectorAll(".q-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const q = parseInt(btn.getAttribute("data-q"), 10);
+        switchPreset(q);
+      });
+    });
+
+    document.getElementById("btnReset").addEventListener("click", () => {
+      switchPreset(currentPreset);
+    });
+
+    Deck.onResize(() => {
+      updateAll();
+    });
+
+    Deck.init({ index: 27, total: 32 });
+  </script>
+</body>
+</html>

@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Boosting 的串行思想：弱学习器按轮次加入</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    :root {
+      --bg: #E8EEF2;
+      --text: #142533;
+      --muted: #536777;
+      --surface: #F7FAFC;
+      --surface-strong: #D7E1E8;
+      --learner: #275D91;
+      --aggregate: #B63B24;
+      --correct: #2E6A45;
+      --focus: #006B72;
+      --font-sans: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      --font-num: "DIN Alternate", "Bahnschrift", system-ui, sans-serif;
+    }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y, 28px) var(--pad-x, 56px);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    .header-block {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .page-title {
+      margin: 0;
+      font-size: var(--fs-h1, 34px);
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .page-lead {
+      margin: 0;
+      font-size: var(--fs-lead, 19px);
+      line-height: 1.4;
+      color: var(--muted);
+      max-width: 1420px;
+    }
+
+    /* 主体双栏 */
+    .main-layout {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      gap: 22px;
+    }
+
+    /* 左侧理论对比与控制栏 */
+    .theory-col {
+      width: 380px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius, 12px);
+      border: 1px solid rgba(83, 103, 119, 0.2);
+      padding: 16px 18px;
+      box-shadow: 0 2px 8px rgba(20, 37, 51, 0.04);
+    }
+
+    .card-title {
+      font-size: var(--fs-sec, 16px);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* 对比列表 */
+    .paradigm-compare {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .compare-item {
+      padding: 9px 12px;
+      border-radius: 8px;
+      background: #EDF3F7;
+      border-left: 3px solid var(--muted);
+      font-size: var(--fs-label, 15px);
+      line-height: 1.4;
+    }
+
+    .compare-item.bagging {
+      border-left-color: var(--learner);
+    }
+
+    .compare-item.boosting {
+      border-left-color: var(--aggregate);
+      background: #F8ECE9;
+    }
+
+    .compare-tag {
+      font-weight: 700;
+      margin-right: 6px;
+    }
+
+    .compare-tag.bagging-t { color: var(--learner); }
+    .compare-tag.boosting-t { color: var(--aggregate); }
+
+    /* 公式卡片 */
+    .formula-box {
+      background: #EDF3F7;
+      border-radius: 8px;
+      padding: 10px 14px;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+
+    .formula-desc {
+      font-size: var(--fs-tick, 13px);
+      line-height: 1.45;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 状态步进卡片 */
+    .stepper-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .step-buttons {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 5px;
+    }
+
+    .step-btn {
+      appearance: none;
+      border: 1px solid rgba(83, 103, 119, 0.28);
+      background: var(--surface);
+      color: var(--text);
+      padding: 7px 2px;
+      font-size: var(--fs-tick, 13px);
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all var(--dur, 180ms) var(--ease, ease);
+      text-align: center;
+    }
+
+    .step-btn:hover {
+      background: var(--surface-strong);
+    }
+
+    .step-btn.active {
+      background: var(--focus);
+      color: #fff;
+      border-color: var(--focus);
+    }
+
+    .playback-bar {
+      display: flex;
+      gap: 8px;
+    }
+
+    .action-btn {
+      flex: 1;
+      appearance: none;
+      border: 1px solid rgba(83, 103, 119, 0.35);
+      background: var(--surface);
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: var(--fs-tick, 13px);
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 160ms;
+    }
+
+    .action-btn:hover {
+      background: var(--surface-strong);
+    }
+
+    .step-detail-box {
+      background: #F1F6F9;
+      border-radius: 8px;
+      padding: 10px 12px;
+      border: 1px dashed rgba(83, 103, 119, 0.35);
+    }
+
+    .step-detail-title {
+      font-weight: 700;
+      font-size: var(--fs-tick, 13px);
+      color: var(--text);
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .step-detail-desc {
+      font-size: var(--fs-tick, 13px);
+      line-height: 1.45;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 右侧四阶段演进展化区 */
+    .pipeline-col {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .pipeline-flow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .stage-card {
+      background: var(--surface);
+      border-radius: var(--radius, 12px);
+      border: 2px solid rgba(83, 103, 119, 0.16);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 2px 8px rgba(20, 37, 51, 0.04);
+      transition: all var(--dur, 180ms) var(--ease, ease);
+      position: relative;
+      cursor: pointer;
+    }
+
+    .stage-card:hover {
+      border-color: rgba(0, 107, 114, 0.45);
+    }
+
+    .stage-card.highlighted {
+      border-color: var(--focus);
+      background: #FFFFFF;
+      box-shadow: 0 4px 16px rgba(0, 107, 114, 0.12);
+    }
+
+    .stage-card.final-stage {
+      background: #FFFDFD;
+      border-color: rgba(182, 59, 36, 0.3);
+    }
+
+    .stage-card.final-stage.highlighted {
+      border-color: var(--aggregate);
+      box-shadow: 0 4px 16px rgba(182, 59, 36, 0.14);
+    }
+
+    .stage-badge-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(83, 103, 119, 0.12);
+      padding-bottom: 6px;
+    }
+
+    .stage-number {
+      font-size: var(--fs-tick, 13px);
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    .stage-name {
+      font-size: var(--fs-label, 15px);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .stage-card.final-stage .stage-name {
+      color: var(--aggregate);
+    }
+
+    .error-tag {
+      font-family: var(--font-num);
+      font-size: var(--fs-tick, 13px);
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #EAEFF2;
+      color: var(--muted);
+    }
+
+    .error-tag.alert {
+      background: #FBEBE8;
+      color: var(--aggregate);
+    }
+
+    .error-tag.zero {
+      background: #EAF3EC;
+      color: var(--correct);
+    }
+
+    /* SVG 视图区 */
+    .svg-wrapper {
+      height: 250px;
+      position: relative;
+      background: #F1F5F8;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stage-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 卡片底部署名与要点 */
+    .stage-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .stage-role {
+      font-size: var(--fs-tick, 13px);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .stage-role-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--learner);
+    }
+
+    .stage-card.final-stage .stage-role-dot {
+      background: var(--aggregate);
+    }
+
+    .stage-summary {
+      font-size: var(--fs-tick, 13px);
+      line-height: 1.35;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 底部三条串行精要 */
+    .summary-strip {
+      background: var(--surface);
+      border-radius: var(--radius, 12px);
+      border: 1px solid rgba(83, 103, 119, 0.2);
+      padding: 12px 18px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      box-shadow: 0 2px 8px rgba(20, 37, 51, 0.04);
+    }
+
+    .summary-box {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .summary-num {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: #DFE8EE;
+      color: var(--text);
+      font-size: var(--fs-tick, 13px);
+      font-weight: 700;
+      font-family: var(--font-num);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .summary-text-block h4 {
+      margin: 0 0 2px 0;
+      font-size: var(--fs-label, 15px);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .summary-text-block p {
+      margin: 0;
+      font-size: var(--fs-tick, 13px);
+      line-height: 1.35;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body data-page="15" data-total="27">
+  <main id="stage">
+    <!-- 顶栏标题 -->
+    <header class="header-block">
+      <h1 class="page-title">Boosting 的串行机制：弱学习器按轮次叠加，后序模型专攻前序盲区</h1>
+      <p class="page-lead">不同于 Bagging 并行训练独立模型，Boosting 采用严格的串行链条：每一轮弱学习器只做极简粗分，暴露出错分样本与未决盲区；后续学习器根据误差信号针对性切分，最终加权累加成高精度非线性判决面。</p>
+    </header>
+
+    <!-- 主体双栏 -->
+    <div class="main-layout min0">
+      <!-- 左栏：范式对比、公式与步进控制 -->
+      <aside class="theory-col min0">
+        <!-- 范式对比卡 -->
+        <div class="card">
+          <div class="card-title">
+            <span>集成范式本质差异</span>
+            <span class="compare-tag boosting-t" style="font-size: var(--fs-tick, 13px);">串行 vs 并行</span>
+          </div>
+          <div class="paradigm-compare">
+            <div class="compare-item bagging">
+              <span class="compare-tag bagging-t">Bagging 并行</span>
+              基学习器地位对等且相互独立，从自主采样集上并行拟合，主要目标是<b>平抑方差</b>。
+            </div>
+            <div class="compare-item boosting">
+              <span class="compare-tag boosting-t">Boosting 串行</span>
+              后序学习器依赖前序结果，算力针对性倾斜至上一轮未决残差，核心目标是<b>降低偏差</b>。
+            </div>
+          </div>
+        </div>
+
+        <!-- 串行累加公式 -->
+        <div class="card">
+          <div class="card-title">
+            <span>加法模型递推关系</span>
+            <span style="font-size: var(--fs-tick, 13px); color:var(--muted);">Additive Model</span>
+          </div>
+          <div class="formula-box" id="math-formula"></div>
+          <p class="formula-desc">
+            每一轮学习器 h<sub>m</sub>(x) 并不是全盘推翻上一轮，而是在当前集成基底 H<sub>m-1</sub>(x) 之上做微小增量补偿。
+          </p>
+        </div>
+
+        <!-- 轮次聚焦控制器 -->
+        <div class="card stepper-card">
+          <div class="card-title">
+            <span>轮次检验与盲区追踪</span>
+            <span style="font-size: var(--fs-tick, 13px); color:var(--focus);" id="stage-status-label">全部总览</span>
+          </div>
+
+          <div class="step-buttons">
+            <button class="step-btn active" data-step="0">全部</button>
+            <button class="step-btn" data-step="1">第 1 轮</button>
+            <button class="step-btn" data-step="2">第 2 轮</button>
+            <button class="step-btn" data-step="3">第 3 轮</button>
+            <button class="step-btn" data-step="4">集成</button>
+          </div>
+
+          <div class="playback-bar">
+            <button class="action-btn" id="btn-prev">上一阶段</button>
+            <button class="action-btn" id="btn-next">下一阶段</button>
+            <button class="action-btn" id="btn-play">自动演进</button>
+          </div>
+
+          <div class="step-detail-box" id="step-detail-content">
+            <div class="step-detail-title">
+              <span id="detail-round-title">四阶段串行流水线一览</span>
+              <span id="detail-round-tag" style="color:var(--focus); font-family:var(--font-num);">100% 完整图谱</span>
+            </div>
+            <p class="step-detail-desc" id="detail-round-body">
+              从基准弱分类器 h₁ 的粗暴单一切分，到 h₂ 攻克错分样本、再到 h₃ 收束死角，错误率从 30% 逐步降至 0%。
+            </p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 右栏：四张串行切分卡片横向陈列 -->
+      <section class="pipeline-col min0">
+        <div class="pipeline-flow min0">
+          <!-- 阶段 1 -->
+          <article class="stage-card highlighted" data-index="1" id="card-1">
+            <div class="stage-badge-row">
+              <span class="stage-number">ROUND 01</span>
+              <span class="error-tag alert">错分 3 个 (30%)</span>
+            </div>
+            <div class="stage-name">第 1 轮：基准粗分 h₁</div>
+            <div class="svg-wrapper">
+              <svg class="stage-svg" viewBox="0 0 250 240" id="svg-1"></svg>
+            </div>
+            <div class="stage-meta">
+              <div class="stage-role">
+                <span class="stage-role-dot"></span>
+                <span>弱切分：水平阈值 y ≥ 4.0</span>
+              </div>
+              <p class="stage-summary">树桩仅能单向切分，遗漏右下正样本，且误判了左上与右上两个负样本，产生 3 处未决误差。</p>
+            </div>
+          </article>
+
+          <!-- 阶段 2 -->
+          <article class="stage-card highlighted" data-index="2" id="card-2">
+            <div class="stage-badge-row">
+              <span class="stage-number">ROUND 02</span>
+              <span class="error-tag alert">错分 1 个 (10%)</span>
+            </div>
+            <div class="stage-name">第 2 轮：转攻盲区 h₂</div>
+            <div class="svg-wrapper">
+              <svg class="stage-svg" viewBox="0 0 250 240" id="svg-2"></svg>
+            </div>
+            <div class="stage-meta">
+              <div class="stage-role">
+                <span class="stage-role-dot"></span>
+                <span>弱切分：垂直阈值 x ≤ 8.0</span>
+              </div>
+              <p class="stage-summary">根据上一轮残差信号，优先分离右上负样本与右下正样本。两轮叠加后形成 L 形区域，仅余 1 处冲突。</p>
+            </div>
+          </article>
+
+          <!-- 阶段 3 -->
+          <article class="stage-card highlighted" data-index="3" id="card-3">
+            <div class="stage-badge-row">
+              <span class="stage-number">ROUND 03</span>
+              <span class="error-tag zero">错分 0 个 (0%)</span>
+            </div>
+            <div class="stage-name">第 3 轮：修补死角 h₃</div>
+            <div class="svg-wrapper">
+              <svg class="stage-svg" viewBox="0 0 250 240" id="svg-3"></svg>
+            </div>
+            <div class="stage-meta">
+              <div class="stage-role">
+                <span class="stage-role-dot"></span>
+                <span>弱切分：垂直阈值 x ≥ 2.2</span>
+              </div>
+              <p class="stage-summary">精准剔除左侧残留的负样本死角。三轮弱决策桩各司其职，已无任何未能分类的盲区。</p>
+            </div>
+          </article>
+
+          <!-- 阶段 4：最终集成 -->
+          <article class="stage-card final-stage highlighted" data-index="4" id="card-4">
+            <div class="stage-badge-row">
+              <span class="stage-number" style="color:var(--aggregate);">CONSENSUS</span>
+              <span class="error-tag zero">全样本准确 (100%)</span>
+            </div>
+            <div class="stage-name">加权集成判决面 H₃</div>
+            <div class="svg-wrapper">
+              <svg class="stage-svg" viewBox="0 0 250 240" id="svg-4"></svg>
+            </div>
+            <div class="stage-meta">
+              <div class="stage-role">
+                <span class="stage-role-dot"></span>
+                <span>加权合成：非线性闭合包络</span>
+              </div>
+              <p class="stage-summary">三个极简的线性弱学习器，通过加权表决形成凹凸适应的多维非线性边界，完美包围正类分布。</p>
+            </div>
+          </article>
+        </div>
+
+        <!-- 底部要点总结 -->
+        <footer class="summary-strip min0">
+          <div class="summary-box">
+            <div class="summary-num">1</div>
+            <div class="summary-text-block">
+              <h4>基学习器无需强大</h4>
+              <p>每一轮只需性能略优于随机猜测的极浅模型（如单层决策桩），极具计算经济性。</p>
+            </div>
+          </div>
+          <div class="summary-box">
+            <div class="summary-num">2</div>
+            <div class="summary-text-block">
+              <h4>后序模型专攻漏洞</h4>
+              <p>后续模型绝不重复拟合已知规律，而是从前序集成中提取未决残差，集中火力突破难点。</p>
+            </div>
+          </div>
+          <div class="summary-box">
+            <div class="summary-num">3</div>
+            <div class="summary-text-block">
+              <h4>代数累加收敛非线性</h4>
+              <p>弱学习器的线性判决平面通过权重累加组合，在样本空间中拼装出高精度复杂边界。</p>
+            </div>
+          </div>
+        </footer>
+      </section>
+    </div>
+  </main>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 1. 排版 KaTeX 公式
+      const formulaEl = document.getElementById("math-formula");
+      if (formulaEl && window.katex) {
+        katex.render("H_m(x) = H_{m-1}(x) + \\alpha_m h_m(x)", formulaEl, {
+          throwOnError: false,
+          displayMode: true
+        });
+      }
+
+      // 2. 真实确定性数据集 (10 个固定二维样本点)
+      const points = [
+        // 正样本 (+1): 聚集在中部靠右侧
+        { id: "P1", x: 2.5, y: 7.2, label: 1 },
+        { id: "P2", x: 4.2, y: 8.2, label: 1 },
+        { id: "P3", x: 5.2, y: 5.6, label: 1 },
+        { id: "P4", x: 7.0, y: 7.0, label: 1 },
+        { id: "P5", x: 7.2, y: 3.2, label: 1 }, // 第 1 轮遗漏的弱项
+
+        // 负样本 (-1): 环绕在外围
+        { id: "N1", x: 1.5, y: 2.0, label: -1 },
+        { id: "N2", x: 3.2, y: 1.8, label: -1 },
+        { id: "N3", x: 8.6, y: 8.2, label: -1 }, // 第 1 轮误切为正类的点
+        { id: "N4", x: 8.4, y: 2.2, label: -1 },
+        { id: "N5", x: 1.8, y: 5.2, label: -1 }  // 第 2 轮后遗留的难点
+      ];
+
+      // 坐标换算函数: 250 x 240 视口
+      function mapX(x) { return 22 + x * 20.6; }
+      function mapY(y) { return 215 - y * 19.5; }
+
+      // 弱分类器定义
+      function h1(p) { return p.y >= 4.0 ? 1 : -1; }
+      function h2(p) { return p.x <= 8.0 ? 1 : -1; }
+      function h3(p) { return p.x >= 2.2 ? 1 : -1; }
+
+      // 3. 绘制 4 张 SVG 阶段图
+      function createSVGContent(stageIndex) {
+        let svg = '';
+
+        // 背景网格与边框 (250 x 240)
+        svg += `<rect x="12" y="12" width="226" height="216" rx="8" fill="#F8FAFC" stroke="#D3DEE6" stroke-width="1.5" />`;
+        // 坐标微细网格
+        for (let i = 1; i < 5; i++) {
+          const gx = 12 + i * 45;
+          const gy = 12 + i * 43;
+          svg += `<line x1="${gx}" y1="12" x2="${gx}" y2="228" stroke="#E6EEF3" stroke-width="1" stroke-dasharray="2 2" />`;
+          svg += `<line x1="12" y1="${gy}" x2="238" y2="${gy}" stroke="#E6EEF3" stroke-width="1" stroke-dasharray="2 2" />`;
+        }
+
+        // 阶段特定的切分线和决策阴影区
+        if (stageIndex === 1) {
+          const cutY = mapY(4.0);
+          svg += `<rect x="12" y="12" width="226" height="${cutY - 12}" fill="rgba(39, 93, 145, 0.09)" />`;
+          svg += `<line x1="12" y1="${cutY}" x2="238" y2="${cutY}" stroke="#275D91" stroke-width="2.5" stroke-dasharray="5 3" />`;
+          svg += `<text x="20" y="${cutY - 7}" font-size="13" font-weight="700" fill="#275D91">h₁ 判定线: y ≥ 4.0 (+1)</text>`;
+        } else if (stageIndex === 2) {
+          const cutY = mapY(4.0);
+          const cutX = mapX(8.0);
+          svg += `<rect x="12" y="12" width="${cutX - 12}" height="${cutY - 12}" fill="rgba(39, 93, 145, 0.12)" />`;
+          svg += `<line x1="12" y1="${cutY}" x2="238" y2="${cutY}" stroke="#7B93A8" stroke-width="1.5" stroke-dasharray="3 3" />`;
+          svg += `<line x1="${cutX}" y1="12" x2="${cutX}" y2="228" stroke="#006B72" stroke-width="2.5" />`;
+          svg += `<text x="${cutX - 132}" y="30" font-size="13" font-weight="700" fill="#006B72">h₂ 增量切分: x ≤ 8.0</text>`;
+        } else if (stageIndex === 3) {
+          const cutY = mapY(4.0);
+          const cutX2 = mapX(8.0);
+          const cutX3 = mapX(2.2);
+          svg += `<rect x="${cutX3}" y="12" width="${cutX2 - cutX3}" height="${cutY - 12}" fill="rgba(39, 93, 145, 0.16)" />`;
+          svg += `<line x1="12" y1="${cutY}" x2="238" y2="${cutY}" stroke="#7B93A8" stroke-width="1.2" stroke-dasharray="2 2" />`;
+          svg += `<line x1="${cutX2}" y1="12" x2="${cutX2}" y2="228" stroke="#7B93A8" stroke-width="1.2" stroke-dasharray="2 2" />`;
+          svg += `<line x1="${cutX3}" y1="12" x2="${cutX3}" y2="228" stroke="#2E6A45" stroke-width="2.5" />`;
+          svg += `<text x="${cutX3 + 6}" y="215" font-size="13" font-weight="700" fill="#2E6A45">h₃ 补刀: x ≥ 2.2</text>`;
+        } else if (stageIndex === 4) {
+          const x1 = mapX(2.2), x2 = mapX(8.0), y1 = mapY(4.0);
+          const polyPath = `M ${x1} 12 L ${x2} 12 L ${x2} ${y1 - 10} Q ${x2} ${y1 + 42} ${x2 - 20} ${y1 + 52} L ${x1 + 75} ${y1 + 52} Q ${x1 + 35} ${y1 + 25} ${x1} ${y1} Z`;
+          svg += `<path d="${polyPath}" fill="rgba(182, 59, 36, 0.18)" stroke="#B63B24" stroke-width="2.5" />`;
+          svg += `<text x="40" y="32" font-size="13" font-weight="700" fill="#B63B24">H₃(x) 加权非线性决策面</text>`;
+        }
+
+        // 绘制样本点与错分标识
+        points.forEach(p => {
+          const px = mapX(p.x);
+          const py = mapY(p.y);
+          const isPos = p.label === 1;
+
+          let isError = false;
+          if (stageIndex === 1) {
+            isError = (h1(p) !== p.label);
+          } else if (stageIndex === 2) {
+            isError = (p.id === "N5");
+          }
+
+          // 错分高亮光圈
+          if (isError) {
+            svg += `<circle cx="${px}" cy="${py}" r="12" fill="none" stroke="#B63B24" stroke-width="2" stroke-dasharray="3 2" />`;
+          }
+
+          // 点图形
+          if (isPos) {
+            svg += `<circle cx="${px}" cy="${py}" r="6.5" fill="#275D91" stroke="#FFFFFF" stroke-width="1.8" />`;
+          } else {
+            svg += `<rect x="${px - 6}" y="${py - 6}" width="12" height="12" rx="2" fill="#4B6375" stroke="#FFFFFF" stroke-width="1.8" />`;
+          }
+
+          // 重点难点标签
+          if (p.id === "N3" || p.id === "P5" || p.id === "N5") {
+            const dy = (p.id === "N3") ? -9 : 17;
+            const labelColor = isError ? "#B63B24" : "#4B6375";
+            svg += `<text x="${px}" y="${py + dy}" font-size="13" font-family="var(--font-num)" font-weight="700" fill="${labelColor}" text-anchor="middle">${p.id}</text>`;
+          }
+        });
+
+        return svg;
+      }
+
+      // 渲染所有 SVG
+      for (let s = 1; s <= 4; s++) {
+        const svgEl = document.getElementById("svg-" + s);
+        if (svgEl) {
+          svgEl.innerHTML = createSVGContent(s);
+        }
+      }
+
+      // 4. 轮次切换状态管理
+      const stepDetails = {
+        0: {
+          label: "全部总览",
+          tag: "100% 完整图谱",
+          title: "四阶段串行流水线一览",
+          body: "从基准弱分类器 h₁ 的粗暴单一切分，到 h₂ 专攻错分、再到 h₃ 补刀死角，错误率从 30% 逐步降至 0%。"
+        },
+        1: {
+          label: "第 1 轮基准",
+          tag: "错误率 30%",
+          title: "第 1 轮：极简单向决策桩 h₁",
+          body: "水平线 y ≥ 4.0 仅完成了方向粗分，直接遗漏了右下角正样本 P5，同时误判了 N3 与 N5。这 3 个未决样本被赋予更高权重传递给下一轮。"
+        },
+        2: {
+          label: "第 2 轮纠偏",
+          tag: "错误率 10%",
+          title: "第 2 轮：瞄准盲区切出 h₂",
+          body: "弱学习器 h₂ 被迫聚焦前序错分的 P5 和 N3，切出垂直线 x ≤ 8.0 成功化解两处错误。两轮加权后形成直角组合，仅残留 N5 一处死角。"
+        },
+        3: {
+          label: "第 3 轮补刀",
+          tag: "错误率 0%",
+          title: "第 3 轮：清除最后顽疾 h₃",
+          body: "前序已攻克 90% 样本，弱学习器 h₃ 专心切分左侧 x ≥ 2.2，精准剔除唯一的顽固样本 N5。至此所有样本均被正确划分。"
+        },
+        4: {
+          label: "集成收敛",
+          tag: "准确率 100%",
+          title: "最终集成：非线性多边包络 H₃",
+          body: "加法模型 H₃(x) = ∑ αₘ hₘ(x) 将三个极浅的线性切分通过加权代数和叠加，在二维平面上构筑出高度自适应的封闭决策轮廓。"
+        }
+      };
+
+      let currentStep = 0;
+      let isPlaying = false;
+      let playTimer = null;
+
+      const stepBtns = document.querySelectorAll(".step-btn");
+      const stageCards = document.querySelectorAll(".stage-card");
+      const statusLabel = document.getElementById("stage-status-label");
+      const detailTitle = document.getElementById("detail-round-title");
+      const detailTag = document.getElementById("detail-round-tag");
+      const detailBody = document.getElementById("detail-round-body");
+      const btnPrev = document.getElementById("btn-prev");
+      const btnNext = document.getElementById("btn-next");
+      const btnPlay = document.getElementById("btn-play");
+
+      function updateUI(step) {
+        currentStep = step;
+
+        stepBtns.forEach(btn => {
+          const s = parseInt(btn.getAttribute("data-step"), 10);
+          btn.classList.toggle("active", s === step);
+        });
+
+        stageCards.forEach(card => {
+          const idx = parseInt(card.getAttribute("data-index"), 10);
+          if (step === 0) {
+            card.classList.add("highlighted");
+          } else {
+            card.classList.toggle("highlighted", idx === step);
+          }
+        });
+
+        const d = stepDetails[step] || stepDetails[0];
+        statusLabel.textContent = d.label;
+        detailTitle.textContent = d.title;
+        detailTag.textContent = d.tag;
+        detailBody.textContent = d.body;
+      }
+
+      stepBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          stopPlay();
+          const s = parseInt(btn.getAttribute("data-step"), 10);
+          updateUI(s);
+        });
+      });
+
+      stageCards.forEach(card => {
+        card.addEventListener("click", () => {
+          stopPlay();
+          const idx = parseInt(card.getAttribute("data-index"), 10);
+          updateUI(idx);
+        });
+      });
+
+      btnPrev.addEventListener("click", () => {
+        stopPlay();
+        const next = (currentStep - 1 + 5) % 5;
+        updateUI(next);
+      });
+
+      btnNext.addEventListener("click", () => {
+        stopPlay();
+        const next = (currentStep + 1) % 5;
+        updateUI(next);
+      });
+
+      function stopPlay() {
+        if (isPlaying) {
+          isPlaying = false;
+          clearInterval(playTimer);
+          btnPlay.textContent = "自动演进";
+        }
+      }
+
+      btnPlay.addEventListener("click", () => {
+        if (isPlaying) {
+          stopPlay();
+        } else {
+          isPlaying = true;
+          btnPlay.textContent = "暂停";
+          playTimer = setInterval(() => {
+            const next = currentStep === 4 ? 1 : (currentStep + 1);
+            updateUI(next);
+          }, 1800);
+        }
+      });
+
+      Deck.init({ index: 15, total: 27 });
+    })();
+  </script>
+</body>
+</html>

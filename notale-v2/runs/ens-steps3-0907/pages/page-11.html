@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="zh">
+<!--
+构图意图：
+1. 主对象：左侧为泛化误差分解堆叠柱与基学习器对比，右侧为基学习器数量 T 与相关系数 ρ 驱动的误差曲面/衰减曲线图。
+2. 对象关系：单棵树的高方差在集成过程中随基学习器累加被快速压缩，而偏差几乎恒定；聚焦标注显示极限方差 floor 仅由相关性 ρ 决定。
+3. 说明依附：核心推导恒等式与结论紧邻右侧曲线渐近线，随步序展现单模型与集成的对照。
+-->
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    :root {
+      --bg: #E8EEF1;
+      --text: #142630;
+      --muted: #50616B;
+      --model: #17628E;
+      --focus: #B83D0B;
+      --rule: #71828B;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans CJK SC", sans-serif;
+    }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    header.page-header {
+      margin-top: 6px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      margin: 0 0 6px 0;
+      font-weight: 600;
+    }
+
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      margin: 0;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 60px;
+      height: 680px;
+      align-items: stretch;
+    }
+
+    /* 左侧：对比柱状图与分解条 */
+    .decomp-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding-top: 10px;
+    }
+
+    .math-card {
+      padding: 0 0 16px 0;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .formula-row {
+      font-size: var(--fs-h2);
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .formula-note {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      margin: 0;
+    }
+
+    .bars-comparison {
+      display: flex;
+      justify-content: space-around;
+      align-items: flex-end;
+      height: 380px;
+      padding-bottom: 24px;
+      position: relative;
+    }
+
+    .bar-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 170px;
+      height: 100%;
+      justify-content: flex-end;
+      position: relative;
+    }
+
+    .bar-stack {
+      width: 80px;
+      display: flex;
+      flex-direction: column-reverse;
+      position: relative;
+      transition: height var(--motion-step) var(--ease-out);
+    }
+
+    .bar-segment {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      box-sizing: border-box;
+      position: relative;
+    }
+
+    .seg-bias {
+      height: 70px;
+      background: rgba(20, 38, 48, 0.22);
+      color: #142630;
+      border-top: 2px solid var(--text);
+    }
+
+    .seg-noise {
+      height: 35px;
+      background: rgba(80, 97, 107, 0.3);
+      color: #142630;
+      border-top: 1px dashed var(--rule);
+    }
+
+    .seg-variance-single {
+      height: 220px;
+      background: rgba(184, 61, 11, 0.22);
+      border: 2px solid var(--focus);
+      color: #8c2a04;
+    }
+
+    .seg-variance-ens {
+      height: 65px;
+      background: rgba(23, 98, 142, 0.25);
+      border: 2px solid var(--model);
+      color: #0d4668;
+    }
+
+    .bar-label {
+      margin-top: 14px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      text-align: center;
+      color: var(--text);
+    }
+
+    .bar-sublabel {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .baseline-axis {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 24px;
+      height: 2px;
+      background: var(--rule);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      align-items: center;
+      justify-content: center;
+      padding-top: 8px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+    }
+
+    /* 右侧：方差曲线与相关系数分析 */
+    .chart-col {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 470px;
+    }
+
+    #curve-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .asymptote-line {
+      stroke: var(--focus);
+      stroke-width: 2px;
+      stroke-dasharray: 6 4;
+    }
+
+    .curve-var {
+      stroke: var(--model);
+      stroke-width: 4px;
+      fill: none;
+    }
+
+    .curve-ideal {
+      stroke: var(--muted);
+      stroke-width: 2px;
+      stroke-dasharray: 4 4;
+      fill: none;
+    }
+
+    .chart-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      padding-top: 20px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .summary-item h3 {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      margin: 0 0 6px 0;
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .summary-item p {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      margin: 0;
+    }
+
+    .tick text {
+      font-size: var(--fs-tick);
+      fill: var(--muted);
+      font-family: var(--font-sans);
+    }
+
+    .axis-line {
+      stroke: var(--rule);
+      stroke-width: 2px;
+    }
+
+    .tag-callout {
+      fill: var(--focus);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      font-family: var(--font-sans);
+    }
+
+    .tag-blue {
+      fill: var(--model);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      font-family: var(--font-sans);
+    }
+  </style>
+</head>
+<body data-page="11" data-total="32">
+  <div id="stage">
+    <header class="page-header">
+      <h1>Bagging 的偏差—方差视角</h1>
+      <p class="lead">单模型偏差不变，集成通过平均大幅削减方差；下限受限于基模型相关性。</p>
+    </header>
+
+    <div class="main-grid min0">
+      <!-- 左栏：误差分解 -->
+      <div class="decomp-col min0">
+        <div class="math-card">
+          <div class="formula-row" id="eq-decomp"></div>
+          <p class="formula-note">基学习器充分生长时偏差较低但方差极高。</p>
+        </div>
+
+        <div class="bars-comparison">
+          <div class="baseline-axis"></div>
+
+          <!-- 单模型 -->
+          <div class="bar-group">
+            <div class="bar-stack">
+              <div class="bar-segment seg-noise">噪声</div>
+              <div class="bar-segment seg-bias">偏差²</div>
+              <div class="bar-segment seg-variance-single">高方差 σ²</div>
+            </div>
+            <div class="bar-label">单棵充分生长树</div>
+            <div class="bar-sublabel">过拟合 · 波动大</div>
+          </div>
+
+          <!-- Bagging 集成 (分步出现) -->
+          <div class="bar-group" data-step="1">
+            <div class="bar-stack">
+              <div class="bar-segment seg-noise">噪声</div>
+              <div class="bar-segment seg-bias">偏差²</div>
+              <div class="bar-segment seg-variance-ens">残余方差</div>
+            </div>
+            <div class="bar-label">Bagging (T=50)</div>
+            <div class="bar-sublabel">偏差持平 · 方差锐减</div>
+          </div>
+        </div>
+
+        <div class="legend-row">
+          <div class="legend-item"><div class="legend-dot" style="background:rgba(20,38,48,0.3)"></div>偏差</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--focus)"></div>单模型方差</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--model)"></div>集成后方差</div>
+        </div>
+      </div>
+
+      <!-- 右栏：方差衰减规律与极限 -->
+      <div class="chart-col min0">
+        <div class="chart-container min0">
+          <svg id="curve-svg" viewBox="0 0 940 470">
+            <!-- 坐标系 -->
+            <line x1="80" y1="410" x2="860" y2="410" class="axis-line" />
+            <line x1="80" y1="410" x2="80" y2="40" class="axis-line" />
+
+            <!-- 刻度与轴名 -->
+            <g class="tick">
+              <text x="80" y="435" text-anchor="middle">1</text>
+              <text x="240" y="435" text-anchor="middle">10</text>
+              <text x="440" y="435" text-anchor="middle">25</text>
+              <text x="640" y="435" text-anchor="middle">50</text>
+              <text x="800" y="435" text-anchor="middle">100</text>
+              <text x="860" y="435" text-anchor="end">基学习器数量 T</text>
+
+              <text x="65" y="415" text-anchor="end">0</text>
+              <text x="65" y="325" text-anchor="end">0.25σ²</text>
+              <text x="65" y="240" text-anchor="end">0.5σ²</text>
+              <text x="65" y="155" text-anchor="end">0.75σ²</text>
+              <text x="65" y="70" text-anchor="end">σ²</text>
+              <text x="75" y="30" text-anchor="end">集成方差 Var(H)</text>
+            </g>
+
+            <!-- 辅助参考线 -->
+            <line x1="80" y1="240" x2="820" y2="240" stroke="#CBD5DC" stroke-dasharray="3 3" />
+
+            <!-- 极限渐近线 (step 2) -->
+            <g data-step="2">
+              <line x1="80" y1="325" x2="840" y2="325" class="asymptote-line" />
+              <text x="840" y="345" class="tag-callout" text-anchor="end">方差下限 ρσ² (ρ≈0.25)</text>
+            </g>
+
+            <!-- 理想独立模型曲线: Var = σ²/T (淡灰虚线) -->
+            <path id="curve-ideal" class="curve-ideal" />
+            <text x="500" y="382" fill="var(--muted)" font-size="14">完全独立基模型 (ρ = 0)</text>
+
+            <!-- 实际有相关性的 Bagging 曲线: Var = ρσ² + (1-ρ)σ²/T (step 1 起出现) -->
+            <path id="curve-real" class="curve-var" data-step="1" />
+
+            <!-- 标注单模型点 -->
+            <circle cx="80" cy="70" r="6" fill="var(--focus)" />
+            <text x="96" y="75" class="tag-callout">T=1 (单模型方差 σ²)</text>
+
+            <!-- 标注集成收益点 (step 1) -->
+            <g data-step="1">
+              <circle cx="640" cy="331.8" r="6" fill="var(--model)" />
+              <text x="640" y="275" class="tag-blue" text-anchor="middle">T=50：方差接近极限</text>
+            </g>
+          </svg>
+        </div>
+
+        <div class="chart-summary">
+          <div class="summary-item">
+            <h3>方差收敛上限公式</h3>
+            <div id="eq-variance" style="font-size:18px;margin-bottom:4px;"></div>
+            <p>随 T 增大，第二项趋向 0，方差渐近下限为 ρσ²。</p>
+          </div>
+          <div class="summary-item" data-step="2">
+            <h3>为什么需要随机森林</h3>
+            <p>抽样使基模型正相关 (ρ>0)；打破属性相似性才能压低下限。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页我们从偏差-方差分解的角度严格剖析 Bagging 的有效性。
+    首先看左侧：泛化误差包含偏差平方、方差和不可消除的噪声。充分生长的决策树拟合能力强，偏差较低，但极易受到样本扰动，方差极高。
+    Bagging 采用多模型平均：各基模型的期望一致，因而集成的期望偏差基本不变；但平均显著压制了随机扰动。
+    再看右侧的数理规律：当基模型方差为 σ²、两两相关系数为 ρ 时，集成方差等于 ρσ² 加上 T 分之 (1-ρ)σ²。
+    当基模型数量 T 增加时，可消减的方差部分迅速衰减，但整体方差无法降为 0，而是逼近渐近线下限 ρσ²。
+    这也自然引出了下一节的核心动机：为了突破这个下限，仅靠增加树的数量是不够的，必须进一步降低树与树之间的相关性 ρ——这就是随机森林的由来了。
+  </aside>
+
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      Deck.init({ index: 11, total: 32 });
+
+      // 计算真实准确的方差曲线路径
+      // x 映射: T 从 1 到 100，使用对数坐标刻度 (1->80, 10->240, 25->440, 50->640, 100->800)
+      // 具体映射: x = 80 + 720 * (log10(T) / 2)
+      // y 映射: 0 -> 410, 1.0 -> 70 (即 y = 410 - 340 * v)
+      const xOf = T => 80 + 720 * (Math.log10(T) / 2);
+      const yOf = v => 410 - 340 * v;
+
+      const T_values = [];
+      for (let t = 1; t <= 100; t++) {
+        T_values.push(t);
+      }
+
+      // 理想独立曲线: v = 1/T
+      const idealPts = T_values.map(t => `${xOf(t).toFixed(1)},${yOf(1 / t).toFixed(1)}`);
+      document.getElementById("curve-ideal").setAttribute("d", "M " + idealPts.join(" L "));
+
+      // 真实 Bagging 曲线: v = rho + (1 - rho) / T, rho = 0.25
+      const rho = 0.25;
+      const realPts = T_values.map(t => `${xOf(t).toFixed(1)},${yOf(rho + (1 - rho) / t).toFixed(1)}`);
+      document.getElementById("curve-real").setAttribute("d", "M " + realPts.join(" L "));
+
+      // 渲染数学公式
+      const eqDecomp = document.getElementById("eq-decomp");
+      if (eqDecomp && window.katex) {
+        katex.render("E = \\text{Bias}^2 + \\text{Var} + \\varepsilon^2", eqDecomp, { throwOnError: false });
+      }
+
+      const eqVar = document.getElementById("eq-variance");
+      if (eqVar && window.katex) {
+        katex.render("\\text{Var}(\\bar{H}) = \\rho\\sigma^2 + \\frac{1-\\rho}{T}\\sigma^2", eqVar, { throwOnError: false });
+      }
+    });
+  </script>
+</body>
+</html>

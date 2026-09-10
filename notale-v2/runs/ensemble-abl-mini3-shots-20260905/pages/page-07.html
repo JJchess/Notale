@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bootstrap 重采样：从同一训练集生成多份有重叠但不相同的训练样本</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      background: var(--bg);
+      user-select: none;
+    }
+
+    /* 顶部标题栏 */
+    .header-area {
+      flex: 0 0 auto;
+      margin-bottom: 14px;
+    }
+    .header-area h1 {
+      margin: 0 0 6px 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.25;
+    }
+    .header-desc {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主实验面板容器 */
+    .main-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 390px 1fr;
+      gap: 20px;
+      min-height: 0;
+    }
+
+    /* 左侧控制与数学事实面板 */
+    .panel-left {
+      background: var(--surface);
+      border: 1px solid #D6E2E9;
+      border-radius: 8px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .source-summary {
+      background: var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .source-summary .meta-lbl {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .source-summary .meta-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: var(--fs-body);
+      color: var(--sample);
+    }
+
+    /* 抽样子步进器与控制 */
+    .ctl-box {
+      background: #F7FAFC;
+      border: 1px solid #E1EAF0;
+      border-radius: 6px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .ctl-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-label);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .step-pill {
+      font-family: var(--font-num);
+      font-size: var(--fs-tick);
+      color: var(--model);
+      background: #E6EFF5;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .step-btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .btn {
+      appearance: none;
+      border: 1px solid #C4D6E2;
+      background: var(--surface);
+      color: var(--text);
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease);
+    }
+    .btn:hover {
+      background: #EDF4F8;
+      border-color: var(--model);
+    }
+    .btn:active {
+      background: #DFECF3;
+    }
+    .btn.primary {
+      background: var(--model);
+      border-color: var(--model);
+      color: #FFF;
+      font-weight: 600;
+    }
+    .btn.primary:hover {
+      background: #1F5174;
+    }
+
+    /* 样本集选择 Tab */
+    .subset-tabs {
+      display: flex;
+      gap: 6px;
+    }
+    .subset-tab {
+      flex: 1;
+      padding: 6px 4px;
+      text-align: center;
+      font-size: var(--fs-label);
+      border: 1px solid #CCDCE6;
+      border-radius: 6px;
+      background: var(--surface);
+      cursor: pointer;
+      color: var(--muted);
+      font-weight: 500;
+      transition: all var(--duration) var(--ease);
+    }
+    .subset-tab.active {
+      background: var(--model);
+      border-color: var(--model);
+      color: #FFF;
+      font-weight: 700;
+    }
+
+    /* 指标卡组 */
+    .metric-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .metric-card {
+      border: 1px solid #E3EBF0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: var(--surface);
+    }
+    .metric-name {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text);
+    }
+    .metric-val .den {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .metric-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* 概率事实推导卡 */
+    .math-callout {
+      margin-top: auto;
+      border-left: 3px solid var(--aggregate);
+      background: #FCF5F2;
+      border-radius: 0 6px 6px 0;
+      padding: 10px 12px;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: #5A3525;
+    }
+    .math-callout b {
+      color: var(--aggregate);
+      font-family: var(--font-num);
+    }
+
+    /* 右侧舞台画板 */
+    .panel-right {
+      background: var(--surface);
+      border: 1px solid #D6E2E9;
+      border-radius: 8px;
+      padding: 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+      position: relative;
+    }
+
+    .stage-section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .sw-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    /* 原始样本带 */
+    .source-pool-card {
+      border: 1px dashed #B8CCD8;
+      border-radius: 8px;
+      padding: 10px 14px;
+      background: #F8FBFC;
+    }
+    .source-pool-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .token-grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 6px;
+    }
+    .token {
+      height: 38px;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface);
+      border: 1.5px solid #CCDCE6;
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      transition: all 0.22s var(--ease);
+      position: relative;
+    }
+    .token .t-idx {
+      font-size: var(--fs-tick);
+      font-weight: 500;
+      color: var(--muted);
+      line-height: 1;
+    }
+    .token .t-val {
+      line-height: 1.1;
+    }
+    .token.sampled-flash {
+      background: #FFF4E5;
+      border-color: var(--aggregate);
+      box-shadow: 0 0 0 2px rgba(195, 75, 34, 0.25);
+      transform: translateY(-2px);
+    }
+
+    /* 动态连线与抽样流展示区 */
+    .flow-bridge {
+      position: relative;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .flow-bridge svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 3 组重采样并置展示 (Bootstrap 样本 D1, D2, D3) */
+    .subsets-container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      min-height: 0;
+    }
+    .subset-col {
+      border: 1.5px solid #D6E2E9;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #FAFDFE;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+    }
+    .subset-col.current-focus {
+      border-color: var(--model);
+      box-shadow: 0 2px 10px rgba(39, 100, 143, 0.12);
+      background: #FFFFFF;
+    }
+    .subset-col-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .subset-col-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .subset-badge {
+      font-family: var(--font-num);
+      font-size: var(--fs-tick);
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--model);
+    }
+    .subset-col-body {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 6px;
+      align-content: stretch;
+    }
+    .slot-item {
+      border-radius: 5px;
+      border: 1px solid #D5E1E8;
+      background: #FFF;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      position: relative;
+      transition: all 0.2s var(--ease);
+    }
+    .slot-item.empty {
+      border-style: dashed;
+      border-color: #DDE5EA;
+      background: transparent;
+      color: transparent;
+    }
+    .slot-item.dup {
+      background: #FFF7ED;
+      border-color: #FDBA74;
+      color: #9A3412;
+    }
+    .slot-item.dup::after {
+      content: attr(data-rep);
+      position: absolute;
+      top: 2px;
+      right: 4px;
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      color: #C2410C;
+    }
+
+    /* 底部统计栏 */
+    .subset-col-footer {
+      border-top: 1px solid #E3EDF2;
+      padding-top: 6px;
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .subset-col-footer b {
+      font-family: var(--font-num);
+      color: var(--text);
+    }
+
+    /* 底部并置重叠矩阵分析条 */
+    .overlap-matrix {
+      flex: 0 0 auto;
+      border-top: 1px solid #E1EAF0;
+      padding-top: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .overlap-matrix strong {
+      color: var(--text);
+    }
+    .jaccard-tags {
+      display: flex;
+      gap: 12px;
+    }
+    .j-tag {
+      font-size: var(--fs-tick);
+      background: #EDF3F7;
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-family: var(--font-num);
+      color: var(--model);
+    }
+  </style>
+</head>
+<body data-page="07" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题与导语 -->
+    <header class="header-area">
+      <h1>Bootstrap 重采样：从同一训练集生成多份有重叠但不相同的训练样本</h1>
+      <p class="header-desc">
+        有放回抽样（Sample with Replacement）打破了传统单份划分的限制：每次抽取后放回，使得每个样本集规模保持与原集一致（N = 12），同时天然产生重复观测与未被抽取的袋外观测。
+      </p>
+    </header>
+
+    <!-- 主展示网格 -->
+    <div class="main-layout">
+      <!-- 左栏：交互控制与统计解析 -->
+      <aside class="panel-left">
+        <h2 class="panel-title">
+          <span>抽样控制台</span>
+          <span class="step-pill" id="global-status">就绪</span>
+        </h2>
+
+        <div class="source-summary">
+          <span class="meta-lbl">原始训练集规模 N</span>
+          <span class="meta-val">12 个不同观测 (x₁ ~ x₁₂)</span>
+        </div>
+
+        <div class="ctl-box">
+          <div class="ctl-label-row">
+            <span>当前聚焦训练子集</span>
+            <span id="target-subset-label" class="step-pill">第 1 份子集 (D₁)</span>
+          </div>
+
+          <div class="subset-tabs" role="tablist">
+            <button class="subset-tab active" data-tab="0" role="tab" aria-selected="true">子集 D₁</button>
+            <button class="subset-tab" data-tab="1" role="tab" aria-selected="false">子集 D₂</button>
+            <button class="subset-tab" data-tab="2" role="tab" aria-selected="false">子集 D₃</button>
+          </div>
+
+          <div class="step-btns">
+            <button id="btn-step" class="btn primary">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>抽取一次 (有放回)</span>
+            </button>
+            <button id="btn-fill" class="btn">
+              <span>一键补全当前集</span>
+            </button>
+          </div>
+          <div class="step-btns">
+            <button id="btn-resample-all" class="btn">
+              <span>重新生成全部 3 份</span>
+            </button>
+            <button id="btn-reset" class="btn">
+              <span>重置状态</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 实时指标卡 -->
+        <div class="metric-cards">
+          <div class="metric-card">
+            <div class="metric-name">独立覆盖种数 (当前集)</div>
+            <div class="metric-val" id="metric-unique">8 <span class="den">/ 12</span></div>
+            <div class="metric-sub" id="metric-unique-rate">覆盖率 66.7%</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-name">未抽中观测数 (OOB)</div>
+            <div class="metric-val" id="metric-oob" style="color:var(--aggregate);">4 <span class="den">/ 12</span></div>
+            <div class="metric-sub" id="metric-oob-rate">比例 33.3%</div>
+          </div>
+        </div>
+
+        <!-- 理论数学推演卡片 -->
+        <div class="math-callout">
+          <strong>极限数学定理：</strong>
+          单次未被抽中概率为 <b>(1 - 1/N)</b>。当容量 N 趋近无穷大时：
+          <br>
+          lim <sub>N→∞</sub> (1 - 1/N)<sup>N</sup> = 1/e ≈ <b>36.8%</b>
+          <br>
+          因此任意一份 Bootstrap 样本平均约包含 <b>63.2%</b> 原样本，剩余 <b>36.8%</b> 自然保留为袋外数据。
+        </div>
+      </aside>
+
+      <!-- 右栏：主可视化舞台 -->
+      <section class="panel-right">
+        <div class="stage-section-title">
+          <span>同一母本与三份并行 Bootstrap 样本</span>
+          <div class="legend-row">
+            <div class="legend-item"><span class="sw-dot" style="background:#CCDCE6;"></span><span>唯一命中</span></div>
+            <div class="legend-item"><span class="sw-dot" style="background:#FDBA74;"></span><span>多次重复命中 (有放回)</span></div>
+            <div class="legend-item"><span class="sw-dot" style="background:var(--aggregate);"></span><span>高亮当前抽取</span></div>
+          </div>
+        </div>
+
+        <!-- 母本：原始数据集展示 -->
+        <div class="source-pool-card">
+          <div class="source-pool-header">
+            <span><strong>原始训练集 D</strong> (N = 12，全集互异观测)</span>
+            <span id="source-hit-tip">每个观测被抽中概率恒为 1/12 ≈ 8.33%</span>
+          </div>
+          <div class="token-grid" id="source-tokens">
+            <!-- 12个原始元素由JS生成 -->
+          </div>
+        </div>
+
+        <!-- 连线与动画指示区 -->
+        <div class="flow-bridge">
+          <svg id="arrow-canvas">
+            <defs>
+              <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6 Z" fill="var(--model)"/>
+              </marker>
+            </defs>
+            <path id="stream-path" d="" fill="none" stroke="var(--model)" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrowhead)"/>
+          </svg>
+        </div>
+
+        <!-- 三组并置 Bootstrap 重采样样本 -->
+        <div class="subsets-container">
+          <!-- 子集 1 -->
+          <div class="subset-col current-focus" id="col-0">
+            <div class="subset-col-header">
+              <span class="subset-col-title">
+                <span>训练集 D₁</span>
+                <span class="subset-badge">Tree #1</span>
+              </span>
+              <span class="step-pill" id="col-count-0">12 / 12</span>
+            </div>
+            <div class="subset-col-body" id="grid-0"></div>
+            <div class="subset-col-footer">
+              <span>覆盖独有观测: <b id="col-uniq-0">8</b></span>
+              <span>未选观测 (袋外): <b id="col-oob-0" style="color:var(--aggregate);">4</b></span>
+            </div>
+          </div>
+
+          <!-- 子集 2 -->
+          <div class="subset-col" id="col-1">
+            <div class="subset-col-header">
+              <span class="subset-col-title">
+                <span>训练集 D₂</span>
+                <span class="subset-badge">Tree #2</span>
+              </span>
+              <span class="step-pill" id="col-count-1">12 / 12</span>
+            </div>
+            <div class="subset-col-body" id="grid-1"></div>
+            <div class="subset-col-footer">
+              <span>覆盖独有观测: <b id="col-uniq-1">7</b></span>
+              <span>未选观测 (袋外): <b id="col-oob-1" style="color:var(--aggregate);">5</b></span>
+            </div>
+          </div>
+
+          <!-- 子集 3 -->
+          <div class="subset-col" id="col-2">
+            <div class="subset-col-header">
+              <span class="subset-col-title">
+                <span>训练集 D₃</span>
+                <span class="subset-badge">Tree #3</span>
+              </span>
+              <span class="step-pill" id="col-count-2">12 / 12</span>
+            </div>
+            <div class="subset-col-body" id="grid-2"></div>
+            <div class="subset-col-footer">
+              <span>覆盖独有观测: <b id="col-uniq-2">8</b></span>
+              <span>未选观测 (袋外): <b id="col-oob-2" style="color:var(--aggregate);">4</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部集成多样性与重叠度分析条 -->
+        <div class="overlap-matrix">
+          <div>
+            <strong>多样本间相关性：</strong>
+            各子集来自同一母本，必有交集；但重叠非完全重合，保障基学习器既学到共同规律又具备差异。
+          </div>
+          <div class="jaccard-tags">
+            <span class="j-tag" id="j-12">D₁ ∩ D₂: 6 个共有</span>
+            <span class="j-tag" id="j-23">D₂ ∩ D₃: 5 个共有</span>
+            <span class="j-tag" id="j-13">D₁ ∩ D₃: 6 个共有</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const N = 12; // 样本量
+      const LABELS = Array.from({ length: N }, (_, i) => `x${i + 1}`);
+      
+      // 预设稳定、教学友好的初始 3 组抽样子集，确保初次呈现完美契合 ~63.2%
+      // D1: 8 unique, 4 OOB; D2: 7 unique, 5 OOB; D3: 8 unique, 4 OOB
+      const INITIAL_SUBSETS = [
+        [1, 2, 2, 4, 5, 7, 7, 8, 9, 9, 11, 12],      // OOB: 3, 6, 10
+        [2, 3, 3, 3, 5, 6, 8, 8, 10, 10, 11, 12],    // OOB: 1, 4, 7, 9
+        [1, 3, 4, 4, 6, 7, 8, 9, 10, 10, 12, 12]     // OOB: 2, 5, 11
+      ];
+
+      // 状态机模型
+      const state = {
+        activeTab: 0,
+        subsets: JSON.parse(JSON.stringify(INITIAL_SUBSETS)),
+        lastSampledSource: null,
+        lastTargetCol: null,
+        seed: 42
+      };
+
+      // PRNG
+      function pseudoRandom() {
+        const x = Math.sin(state.seed++) * 10000;
+        return x - Math.floor(x);
+      }
+
+      // DOM 获取
+      const sourceContainer = document.getElementById("source-tokens");
+      const tabs = document.querySelectorAll(".subset-tab");
+      const targetLabel = document.getElementById("target-subset-label");
+      const globalStatus = document.getElementById("global-status");
+      const btnStep = document.getElementById("btn-step");
+      const btnFill = document.getElementById("btn-fill");
+      const btnResampleAll = document.getElementById("btn-resample-all");
+      const btnReset = document.getElementById("btn-reset");
+      const metricUnique = document.getElementById("metric-unique");
+      const metricUniqueRate = document.getElementById("metric-unique-rate");
+      const metricOob = document.getElementById("metric-oob");
+      const metricOobRate = document.getElementById("metric-oob-rate");
+      const streamPath = document.getElementById("stream-path");
+      const j12 = document.getElementById("j-12");
+      const j23 = document.getElementById("j-23");
+      const j13 = document.getElementById("j-13");
+
+      // 渲染母本列表
+      function buildSourceTokens() {
+        sourceContainer.innerHTML = "";
+        for (let i = 1; i <= N; i++) {
+          const div = document.createElement("div");
+          div.className = "token";
+          div.id = `src-token-${i}`;
+          div.innerHTML = `
+            <span class="t-idx">#${i}</span>
+            <span class="t-val">x<sub>${i}</sub></span>
+          `;
+          sourceContainer.appendChild(div);
+        }
+      }
+
+      // 渲染三个子集的内容
+      function renderSubsets() {
+        for (let colIdx = 0; colIdx < 3; colIdx++) {
+          const grid = document.getElementById(`grid-${colIdx}`);
+          const colEl = document.getElementById(`col-${colIdx}`);
+          grid.innerHTML = "";
+          const list = state.subsets[colIdx];
+
+          // 统计频数
+          const counts = {};
+          list.forEach(v => counts[v] = (counts[v] || 0) + 1);
+
+          for (let slot = 0; slot < N; slot++) {
+            const item = document.createElement("div");
+            if (slot < list.length) {
+              const val = list[slot];
+              const rep = counts[val];
+              item.className = "slot-item";
+              if (rep > 1) {
+                item.classList.add("dup");
+                item.setAttribute("data-rep", `×${rep}`);
+              }
+              item.innerHTML = `<span>x<sub>${val}</sub></span>`;
+            } else {
+              item.className = "slot-item empty";
+              item.textContent = "+";
+            }
+            grid.appendChild(item);
+          }
+
+          // 更新列标头与列脚
+          const uniqueSet = new Set(list);
+          const uniqCount = uniqueSet.size;
+          const oobCount = N - uniqCount;
+
+          document.getElementById(`col-count-${colIdx}`).textContent = `${list.length} / ${N}`;
+          document.getElementById(`col-uniq-${colIdx}`).textContent = uniqCount;
+          document.getElementById(`col-oob-${colIdx}`).textContent = oobCount;
+
+          if (colIdx === state.activeTab) {
+            colEl.classList.add("current-focus");
+          } else {
+            colEl.classList.remove("current-focus");
+          }
+        }
+
+        // 更新激活 Tab 的面板读数
+        updateMetrics();
+        updateIntersections();
+      }
+
+      function updateMetrics() {
+        const activeList = state.subsets[state.activeTab];
+        const uniqueSet = new Set(activeList);
+        const uCount = uniqueSet.size;
+        const oobCount = N - uCount;
+
+        metricUnique.innerHTML = `${uCount} <span class="den">/ ${N}</span>`;
+        metricUniqueRate.textContent = `覆盖率 ${((uCount / N) * 100).toFixed(1)}%`;
+
+        metricOob.innerHTML = `${oobCount} <span class="den">/ ${N}</span>`;
+        metricOobRate.textContent = `比例 ${((oobCount / N) * 100).toFixed(1)}%`;
+
+        targetLabel.textContent = `第 ${state.activeTab + 1} 份子集 (D${state.activeTab + 1})`;
+      }
+
+      // 计算子集两两交集
+      function updateIntersections() {
+        const s1 = new Set(state.subsets[0]);
+        const s2 = new Set(state.subsets[1]);
+        const s3 = new Set(state.subsets[2]);
+
+        const inter = (a, b) => [...a].filter(x => b.has(x)).length;
+        j12.textContent = `D₁ ∩ D₂: ${inter(s1, s2)} 个共有`;
+        j23.textContent = `D₂ ∩ D₃: ${inter(s2, s3)} 个共有`;
+        j13.textContent = `D₁ ∩ D₃: ${inter(s1, s3)} 个共有`;
+      }
+
+      // 切换活跃子集
+      function setActiveTab(index) {
+        state.activeTab = index;
+        tabs.forEach((tab, idx) => {
+          const isActive = idx === index;
+          tab.classList.toggle("active", isActive);
+          tab.setAttribute("aria-selected", isActive);
+        });
+        renderSubsets();
+      }
+
+      // 有放回单步抽取
+      function stepSample() {
+        const targetList = state.subsets[state.activeTab];
+        if (targetList.length >= N) {
+          // 若已满则清空重新抽，或平滑滚动替换
+          targetList.length = 0;
+        }
+
+        const pickedVal = Math.floor(pseudoRandom() * N) + 1;
+        targetList.push(pickedVal);
+
+        // 闪烁母本
+        highlightSourceToken(pickedVal);
+        globalStatus.textContent = `抽中 x${pickedVal} 并放回`;
+
+        renderSubsets();
+      }
+
+      function highlightSourceToken(val) {
+        document.querySelectorAll(".token").forEach(t => t.classList.remove("sampled-flash"));
+        const token = document.getElementById(`src-token-${val}`);
+        if (token) {
+          token.classList.add("sampled-flash");
+          setTimeout(() => token.classList.remove("sampled-flash"), 600);
+        }
+      }
+
+      // 补全当前集
+      function fillCurrent() {
+        const targetList = state.subsets[state.activeTab];
+        while (targetList.length < N) {
+          const picked = Math.floor(pseudoRandom() * N) + 1;
+          targetList.push(picked);
+        }
+        globalStatus.textContent = `D${state.activeTab + 1} 已补齐 12 个样本`;
+        renderSubsets();
+      }
+
+      // 全部重新重采样
+      function resampleAll() {
+        for (let col = 0; col < 3; col++) {
+          const list = [];
+          for (let i = 0; i < N; i++) {
+            list.push(Math.floor(pseudoRandom() * N) + 1);
+          }
+          list.sort((a, b) => a - b);
+          state.subsets[col] = list;
+        }
+        globalStatus.textContent = "全量生成新 Bootstrap 样本";
+        renderSubsets();
+      }
+
+      // 复位
+      function reset() {
+        state.subsets = JSON.parse(JSON.stringify(INITIAL_SUBSETS));
+        state.activeTab = 0;
+        setActiveTab(0);
+        globalStatus.textContent = "恢复基准状态";
+        renderSubsets();
+      }
+
+      // 事件绑定
+      tabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+          setActiveTab(parseInt(tab.dataset.tab, 10));
+        });
+      });
+
+      btnStep.addEventListener("click", stepSample);
+      btnFill.addEventListener("click", fillCurrent);
+      btnResampleAll.addEventListener("click", resampleAll);
+      btnReset.addEventListener("click", reset);
+
+      // 初始化
+      Deck.init({ index: 7, total: 27 });
+      buildSourceTokens();
+      renderSubsets();
+    })();
+  </script>
+</body>
+</html>

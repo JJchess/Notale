@@ -1,0 +1,851 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>梯度提升超参数：学习率、树深与迭代轮数的协同权衡</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    body {
+      background: #D9E4EA;
+      margin: 0;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      user-select: none;
+    }
+
+    /* 顶部标题区 */
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+
+    .title-group h1 {
+      margin: 0 0 4px 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.15;
+    }
+
+    .title-group p {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .signature-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      font-family: var(--font-num);
+      box-shadow: 0 1px 3px rgba(18,38,52,0.05);
+    }
+
+    .signature-badge code {
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+
+    /* 主布局 */
+    .main-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 24px;
+      min-height: 0;
+    }
+
+    /* 左侧图表面板 */
+    .chart-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px;
+      position: relative;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .chart-legends {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-line {
+      width: 20px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .legend-line.train { background: var(--model); }
+    .legend-line.test { background: var(--aggregate); }
+    .legend-line.best {
+      background: none;
+      border-left: 2px dashed var(--answer);
+      height: 14px;
+      width: 0;
+    }
+
+    .plot-area {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    #echarts-host {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .plot-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      width: 100%;
+      height: 100%;
+    }
+
+    .regime-tag {
+      position: absolute;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      top: 6px;
+      text-transform: uppercase;
+      opacity: 0.85;
+    }
+
+    .chart-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid var(--surface-strong);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    /* 右侧控制与推导面板 */
+    .control-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px 14px;
+      box-shadow: 0 1px 3px rgba(18,38,52,0.03);
+    }
+
+    .card-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .controls-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .control-label-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .control-label-row b {
+      color: var(--text);
+      font-family: var(--font-num);
+    }
+
+    .btn-segmented {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      background: var(--surface-strong);
+      padding: 2px;
+      border-radius: 6px;
+    }
+
+    .btn-segmented button {
+      background: transparent;
+      border: none;
+      padding: 5px 3px;
+      border-radius: 4px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: 600;
+      transition: all var(--duration) var(--ease);
+    }
+
+    .btn-segmented button.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    }
+
+    .btn-segmented button:focus-visible {
+      outline: 2px solid var(--focus);
+    }
+
+    /* 指标展示 */
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .metric-box {
+      padding: 6px 8px;
+      background: var(--surface-strong);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .metric-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    .metric-value {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: var(--font-num);
+      color: var(--text);
+    }
+
+    .metric-value.highlight {
+      color: var(--aggregate);
+    }
+
+    .metric-value.optimal {
+      color: var(--answer);
+    }
+
+    /* 机制洞见卡 */
+    .thesis-box {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 6px;
+      background: #EAF1F5;
+      border-left: 3px solid var(--model);
+      border-radius: 0 8px 8px 0;
+      padding: 8px 12px;
+      min-height: 0;
+    }
+
+    .thesis-text {
+      font-size: var(--fs-label);
+      line-height: 1.4;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .thesis-tag-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 3px;
+      font-size: var(--fs-tick);
+    }
+
+    .thesis-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      color: var(--muted);
+      line-height: 1.3;
+    }
+
+    .thesis-item strong {
+      color: var(--text);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      margin-top: 5px;
+      flex-shrink: 0;
+    }
+    .dot.blue { background: var(--model); }
+    .dot.orange { background: var(--aggregate); }
+    .dot.green { background: var(--answer); }
+
+    /* 快捷情景按钮 */
+    .scenario-btns {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .scenario-btns button {
+      flex: 1;
+      padding: 6px 2px;
+      border: 1px solid var(--surface-strong);
+      background: var(--surface);
+      border-radius: 4px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: 600;
+      transition: all var(--duration) var(--ease);
+    }
+
+    .scenario-btns button:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+
+    .scenario-btns button:focus-visible {
+      outline: 2px solid var(--focus);
+    }
+  </style>
+</head>
+<body data-page="18" data-total="27">
+  <div id="stage">
+    <!-- 顶栏标题 -->
+    <header class="page-head">
+      <div class="title-group min0">
+        <h1>学习率、树深与迭代轮数：小步累加的权衡空间</h1>
+        <p>梯度提升不靠单棵强树一次到位，而是通过参数收缩（Shrinkage）让弱树按步长累加，在拟合速度与泛化风险之间寻找最佳停止点。</p>
+      </div>
+      <div class="signature-badge">
+        <span>加法模型累加式：</span>
+        <code>F_m(x) = F_{m-1}(x) + &eta; &middot; h_m(x)</code>
+      </div>
+    </header>
+
+    <!-- 主展示区 -->
+    <div class="main-grid">
+      <!-- 左：定量演化图 -->
+      <section class="chart-panel min0" aria-label="均方误差随迭代轮数变化折线图">
+        <div class="panel-header">
+          <div class="chart-title">训练损失与测试风险演化轨迹 (MSE vs. 迭代轮数 M)</div>
+          <div class="chart-legends">
+            <div class="legend-item">
+              <span class="legend-line train"></span>
+              <span>训练集损失 (Train MSE)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line test"></span>
+              <span>测试集风险 (Test MSE)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line best"></span>
+              <span>泛化最佳轮数 (M*)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="plot-area min0" id="plotWrap">
+          <div id="echarts-host"></div>
+          <svg class="plot-overlay" id="svgOverlay">
+            <!-- 动态阴影区域或界限标记通过 JS 或 ECharts markArea 绘制 -->
+          </svg>
+          <div class="regime-tag" style="left: 10%;">欠拟合区间 (Underfitting)</div>
+          <div class="regime-tag" style="left: 42%; color: var(--answer);">泛化甜点区 (Optimal)</div>
+          <div class="regime-tag" style="right: 5%; color: var(--aggregate);">过拟合风险区 (Overfitting)</div>
+        </div>
+
+        <div class="chart-footer">
+          <span id="footerDesc">当前设定：较小学习率配合浅树，模型逐步收敛，测试风险平缓且过拟合发生较晚。</span>
+          <span id="generalizationGap">泛化差距 (Test - Train): 0.122</span>
+        </div>
+      </section>
+
+      <!-- 右：控制与推导面板 -->
+      <aside class="control-panel min0">
+        <!-- 参数旋钮 -->
+        <div class="card">
+          <div class="card-title">
+            <span>超参数协同调节</span>
+            <span style="font-size: var(--fs-tick); color: var(--muted); font-weight: normal;">即时重算</span>
+          </div>
+
+          <div class="controls-group">
+            <!-- 学习率 -->
+            <div class="control-row">
+              <div class="control-label-row">
+                <span>学习率 &eta; (步长收缩)</span>
+                <b id="etaLabel">0.05 (较保守)</b>
+              </div>
+              <div class="btn-segmented" id="etaGroup">
+                <button type="button" data-val="0.02">0.02 (微步)</button>
+                <button type="button" data-val="0.05" class="active">0.05 (平稳)</button>
+                <button type="button" data-val="0.25">0.25 (激进)</button>
+              </div>
+            </div>
+
+            <!-- 树深 -->
+            <div class="control-row">
+              <div class="control-label-row">
+                <span>基学习器最大深度 (Max Depth)</span>
+                <b id="depthLabel">深度 2 (弱桩)</b>
+              </div>
+              <div class="btn-segmented" id="depthGroup">
+                <button type="button" data-val="1">深度 1 (桩)</button>
+                <button type="button" data-val="2" class="active">深度 2 (浅树)</button>
+                <button type="button" data-val="5">深度 5 (复杂)</button>
+              </div>
+            </div>
+
+        <!-- 典型预设场景 -->
+        <div class="control-row" style="margin-top: 2px;">
+          <div class="control-label-row">
+            <span>经典组合快速对比</span>
+          </div>
+          <div class="scenario-btns">
+            <button type="button" id="btnScen1">激进过拟合 (η=0.25, 深5)</button>
+            <button type="button" id="btnScen2">黄金平衡 (η=0.05, 深2)</button>
+            <button type="button" id="btnScen3">收缩不充分 (η=0.25, 深2)</button>
+          </div>
+        </div>
+          </div>
+        </div>
+
+        <!-- 关键数据读数 -->
+        <div class="card" style="padding: 12px 16px;">
+          <div class="card-title" style="margin-bottom: 8px;">
+            <span>定量评估读数</span>
+            <span style="font-size: var(--fs-tick); color: var(--muted);">M = 200 轮</span>
+          </div>
+          <div class="metric-grid">
+            <div class="metric-box">
+              <span class="metric-label">最佳停止轮数 M*</span>
+              <span class="metric-value optimal" id="readoutBestM">82</span>
+            </div>
+            <div class="metric-box">
+              <span class="metric-label">最佳测试损失 (Min Test)</span>
+              <span class="metric-value" id="readoutBestLoss">0.245</span>
+            </div>
+            <div class="metric-box">
+              <span class="metric-label">末轮训练损失 (M=200)</span>
+              <span class="metric-value" id="readoutTrainLoss">0.088</span>
+            </div>
+            <div class="metric-box">
+              <span class="metric-label">末轮测试损失 (M=200)</span>
+              <span class="metric-value highlight" id="readoutTestLoss">0.261</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 规律与机制推导 -->
+        <div class="thesis-box">
+          <div>
+            <p class="thesis-text" id="thesisVerdict">
+              <strong>小步累加机制：</strong>
+              学习率 &eta; 充当收缩正则化项。较小的 &eta; 迫使后续弱树拟合前序留下的真实残差，给整体留出更多组合探索空间。
+            </p>
+            <div class="thesis-tag-list">
+              <div class="thesis-item">
+                <span class="dot blue"></span>
+                <span><strong>步长与轮数互斥：</strong>&eta; 减半需倍增轮数以达到同等拟合。</span>
+              </div>
+              <div class="thesis-item">
+                <span class="dot orange"></span>
+                <span><strong>树深控制方差：</strong>深树单步容量过大，易拟合噪声引发早熟过拟合。</span>
+              </div>
+              <div class="thesis-item">
+                <span class="dot green"></span>
+                <span><strong>工程原则：</strong>先设较小 &eta;（0.01~0.1），再用早停截断 M。</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      // 理论模型参数计算与曲线仿真
+      // 采用统计学习中梯度提升的经典经验误差函数：
+      // Train(M) = L_inf + (L_0 - L_inf) * exp(- rate_train * M)
+      // Test(M) = L_inf_test + (L_0 - L_inf_test) * exp(- rate_test * M) + overfit_coef * (1 - exp(- rate_overfit * M)) * (M / 100)^p
+      
+      var state = {
+        eta: 0.05,
+        depth: 2,
+        totalM: 200
+      };
+
+      var chart = null;
+      var host = document.getElementById('echarts-host');
+
+      function calculateCurves(eta, depth, totalM) {
+        var rounds = [];
+        var trainMSE = [];
+        var testMSE = [];
+
+        // 参数特性：
+        // 树深越大，单步拟合能力(capacity)越强，训练损失压得越低，但方差膨胀越快
+        // 学习率越大，收敛速度越快，过拟合拐点越早到来
+        var capacityFactor = Math.pow(depth, 0.7);
+        var trainRate = eta * capacityFactor * 0.45;
+        var trainFloor = 0.03 / Math.max(1, depth * 0.7);
+
+        var testDropRate = eta * capacityFactor * 0.38;
+        var baseGeneralizationError = 0.18 + (depth > 2 ? (depth - 2) * 0.04 : (2 - depth) * 0.06);
+        var overfitRate = (eta * Math.pow(depth, 1.35)) * 0.0035;
+
+        var minTestVal = Infinity;
+        var bestM = 1;
+
+        for (var m = 1; m <= totalM; m++) {
+          rounds.push(m);
+
+          // 训练误差呈指数衰减并逼近下界
+          var tr = trainFloor + (1.0 - trainFloor) * Math.exp(-trainRate * m);
+          // 加入微小确定性扰动保持真实拟合纹理
+          tr += Math.sin(m * 0.35) * 0.0015 * Math.exp(-0.02 * m);
+          if (tr < 0.01) tr = 0.01;
+          trainMSE.push(Number(tr.toFixed(4)));
+
+          // 测试误差先降后升(U型或缓升)
+          var teDrop = (1.0 - baseGeneralizationError) * Math.exp(-testDropRate * m);
+          var tePenalty = overfitRate * Math.pow(m, 1.22);
+          var te = baseGeneralizationError + teDrop + tePenalty;
+          te += Math.cos(m * 0.28) * 0.002 * Math.exp(-0.01 * m);
+          // 限制在合理损失范围，避免极端参数下抛物线过冲出视口
+          if (te > 1.35) te = 1.35;
+          te = Number(te.toFixed(4));
+          testMSE.push(te);
+
+          if (te < minTestVal) {
+            minTestVal = te;
+            bestM = m;
+          }
+        }
+
+        return {
+          rounds: rounds,
+          trainMSE: trainMSE,
+          testMSE: testMSE,
+          bestM: bestM,
+          minTestVal: minTestVal,
+          finalTrain: trainMSE[totalM - 1],
+          finalTest: testMSE[totalM - 1]
+        };
+      }
+
+      function updateUI(data) {
+        // 更新指标面板
+        document.getElementById('readoutBestM').textContent = data.bestM;
+        document.getElementById('readoutBestLoss').textContent = data.minTestVal.toFixed(3);
+        document.getElementById('readoutTrainLoss').textContent = data.finalTrain.toFixed(3);
+        document.getElementById('readoutTestLoss').textContent = data.finalTest.toFixed(3);
+
+        var gap = (data.finalTest - data.finalTrain).toFixed(3);
+        document.getElementById('generalizationGap').textContent = '泛化差距 (Test - Train): ' + gap;
+
+        // 标签文字
+        var etaTxt = state.eta === 0.02 ? '0.02 (微步稳扎)' : (state.eta === 0.05 ? '0.05 (平稳标准)' : '0.25 (激进大步)');
+        document.getElementById('etaLabel').textContent = etaTxt;
+        var depthTxt = state.depth === 1 ? '深度 1 (桩模型/无特征交互)' : (state.depth === 2 ? '深度 2 (浅树/双特征交互)' : '深度 5 (复杂树/高阶交互)');
+        document.getElementById('depthLabel').textContent = depthTxt;
+
+        // 解释文案动态调整
+        var verdict = document.getElementById('thesisVerdict');
+        var footerDesc = document.getElementById('footerDesc');
+
+        if (state.eta >= 0.2 && state.depth >= 4) {
+          verdict.innerHTML = '<strong>过拟合警报：</strong>大步长配合深树，强树在前几轮即快速吸干训练集信息，随后深树开始记忆特异性噪声，导致测试误差过早反弹，泛化风险剧增。';
+          footerDesc.textContent = '当前设定：大步长 + 深树。测试集误差极早见底并陡峭上扬，表现出严峻的过拟合倾向。';
+        } else if (state.eta <= 0.03 && state.depth === 1) {
+          verdict.innerHTML = '<strong>欠拟合倾向：</strong>单桩模型只表达单特征切分，且微小步长收敛缓慢。在 200 轮以内容量尚未完全释放，偏差仍占据主导。';
+          footerDesc.textContent = '当前设定：微步长 + 单决策桩。虽然完全不过拟合，但在指定轮数内模型容量受限。';
+        } else {
+          verdict.innerHTML = '<strong>小步累加平衡点：</strong>较小学习率（&eta; &le; 0.1）配合浅树是梯度提升的黄金组合。单树容量有限避免独断，步长收缩延缓过拟合，给早停留下充裕窗口。';
+          footerDesc.textContent = '当前设定：适中步长与受控树深。训练集持续下降，测试集维持宽阔平缓的泛化平原。';
+        }
+      }
+
+      function renderChart(data) {
+        var option = {
+          animation: true,
+          animationDuration: 300,
+          animationEasing: 'cubicOut',
+          grid: {
+            left: 54,
+            right: 40,
+            top: 48,
+            bottom: 45,
+            containLabel: false
+          },
+          tooltip: {
+            trigger: 'axis',
+            backgroundColor: '#FFFFFF',
+            borderColor: '#E2EBF0',
+            borderWidth: 1,
+            textStyle: { color: '#122634', fontSize: 13, fontFamily: 'Noto Sans SC' },
+            formatter: function (params) {
+              var m = params[0].name;
+              var tr = params[0].value;
+              var te = params[1].value;
+              return '<b>迭代轮数 M = ' + m + '</b><br>' +
+                '<span style="color:#27648F">● 训练 MSE: ' + tr + '</span><br>' +
+                '<span style="color:#C34B22">● 测试 MSE: ' + te + '</span><br>' +
+                '<span style="color:#536A78">泛化差: ' + (te - tr).toFixed(3) + '</span>';
+            }
+          },
+          xAxis: {
+            type: 'category',
+            data: data.rounds,
+            boundaryGap: false,
+            axisLine: { lineStyle: { color: '#536A78', width: 1 } },
+            axisTick: { alignWithLabel: true, interval: 24 },
+            axisLabel: {
+              color: '#536A78',
+              fontSize: 12,
+              interval: 24,
+              margin: 12
+            },
+            name: '提升轮数 (M / Number of Trees)',
+            nameLocation: 'middle',
+            nameGap: 28,
+            nameTextStyle: { color: '#536A78', fontSize: 13, fontWeight: 500 }
+          },
+          yAxis: {
+            type: 'value',
+            min: 0,
+            max: 1.4,
+            interval: 0.2,
+            axisLine: { show: false },
+            axisTick: { show: false },
+            axisLabel: {
+              color: '#536A78',
+              fontSize: 12,
+              formatter: '{value}'
+            },
+            splitLine: { lineStyle: { color: '#E2EBF0', width: 1, type: 'dashed' } },
+            name: '均方误差 (MSE Loss)',
+            nameLocation: 'end',
+            nameGap: 14,
+            nameTextStyle: { color: '#536A78', fontSize: 13, align: 'left', padding: [0, 0, 0, -32] }
+          },
+          series: [
+            {
+              name: '训练集损失',
+              type: 'line',
+              data: data.trainMSE,
+              showSymbol: false,
+              smooth: true,
+              lineStyle: { color: '#27648F', width: 2.8 },
+              areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                  { offset: 0, color: 'rgba(39, 100, 143, 0.16)' },
+                  { offset: 1, color: 'rgba(39, 100, 143, 0.01)' }
+                ])
+              }
+            },
+            {
+              name: '测试集风险',
+              type: 'line',
+              data: data.testMSE,
+              showSymbol: false,
+              smooth: true,
+              lineStyle: { color: '#C34B22', width: 3 },
+              markLine: {
+                symbol: ['none', 'none'],
+                data: [
+                  {
+                    name: '最佳迭代轮数',
+                    xAxis: data.bestM - 1,
+                    lineStyle: { color: '#237052', width: 2, type: 'dashed' },
+                    label: {
+                      formatter: '最佳泛化点 M* = ' + data.bestM,
+                      position: 'insideEndTop',
+                      color: '#237052',
+                      fontSize: 12,
+                      fontWeight: 'bold',
+                      backgroundColor: 'rgba(255,255,255,0.85)',
+                      padding: [3, 6],
+                      borderRadius: 3
+                    }
+                  }
+                ]
+              },
+              markPoint: {
+                symbol: 'circle',
+                symbolSize: 9,
+                data: [
+                  {
+                    name: '最低测试损失',
+                    coord: [data.bestM - 1, data.minTestVal],
+                    itemStyle: { color: '#237052', borderColor: '#FFFFFF', borderWidth: 2 }
+                  }
+                ]
+              }
+            }
+          ]
+        };
+
+        chart.setOption(option, true);
+      }
+
+      function refresh() {
+        var data = calculateCurves(state.eta, state.depth, state.totalM);
+        updateUI(data);
+        renderChart(data);
+      }
+
+      function setupControls() {
+        // 学习率按钮组
+        var etaBtns = document.querySelectorAll('#etaGroup button');
+        etaBtns.forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            etaBtns.forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            state.eta = parseFloat(btn.getAttribute('data-val'));
+            refresh();
+          });
+        });
+
+        // 树深按钮组
+        var depthBtns = document.querySelectorAll('#depthGroup button');
+        depthBtns.forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            depthBtns.forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            state.depth = parseInt(btn.getAttribute('data-val'), 10);
+            refresh();
+          });
+        });
+
+        // 场景按钮
+        document.getElementById('btnScen1').addEventListener('click', function () {
+          state.eta = 0.25;
+          state.depth = 5;
+          syncButtons();
+          refresh();
+        });
+
+        document.getElementById('btnScen2').addEventListener('click', function () {
+          state.eta = 0.05;
+          state.depth = 2;
+          syncButtons();
+          refresh();
+        });
+
+        document.getElementById('btnScen3').addEventListener('click', function () {
+          state.eta = 0.25;
+          state.depth = 2;
+          syncButtons();
+          refresh();
+        });
+      }
+
+      function syncButtons() {
+        document.querySelectorAll('#etaGroup button').forEach(function (b) {
+          if (parseFloat(b.getAttribute('data-val')) === state.eta) b.classList.add('active');
+          else b.classList.remove('active');
+        });
+        document.querySelectorAll('#depthGroup button').forEach(function (b) {
+          if (parseInt(b.getAttribute('data-val'), 10) === state.depth) b.classList.add('active');
+          else b.classList.remove('active');
+        });
+      }
+
+      // 初始化
+      Deck.init({ title: '梯度提升超参数权衡' });
+      chart = echarts.init(host, null, { renderer: 'svg' });
+      setupControls();
+      refresh();
+
+      Deck.onResize(function () {
+        if (chart) chart.resize();
+      });
+    })();
+  </script>
+</body>
+</html>

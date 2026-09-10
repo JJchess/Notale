@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>多数票与软投票的分歧：成员置信度会改变同一组分类结果的最终判断</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      font-family: var(--font-sans);
+      height: 900px;
+      overflow: hidden;
+      gap: 16px;
+    }
+
+    /* 顶部标题区 */
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .header-block h1 {
+      font-size: var(--fs-h1);
+      margin: 0;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .header-block p {
+      font-size: var(--fs-sec);
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主工作台：左右结构 */
+    .workspace {
+      display: grid;
+      grid-template-columns: 820px 1fr;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：3个基学习器的概率控制与投票对比 */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    /* 预设场景切换 */
+    .preset-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 16px;
+      flex-shrink: 0;
+    }
+    .preset-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .preset-btn {
+      background: var(--surface-strong);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 14px;
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all var(--duration) var(--ease);
+      white-space: nowrap;
+    }
+    .preset-btn:hover {
+      background: #d4e2ea;
+    }
+    .preset-btn.active {
+      background: var(--model);
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    /* 模型卡片容器 */
+    .models-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+
+    .model-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 10px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 1px 3px rgba(18, 38, 52, 0.04);
+    }
+
+    .model-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .model-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .model-badge {
+      background: #E8F0F5;
+      color: var(--model);
+      font-weight: 700;
+      font-size: var(--fs-sec);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: var(--font-num);
+    }
+    .model-name {
+      font-size: var(--fs-body);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .model-vote-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+    }
+    .vote-pill {
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: var(--fs-label);
+    }
+    .pill-a {
+      background: rgba(39, 100, 143, 0.12);
+      color: var(--model);
+    }
+    .pill-b {
+      background: rgba(195, 75, 34, 0.12);
+      color: var(--aggregate);
+    }
+
+    /* 概率滑杆与双条展示 */
+    .slider-row {
+      display: grid;
+      grid-template-columns: 80px 1fr 80px;
+      align-items: center;
+      gap: 12px;
+    }
+    .prob-metric {
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      font-weight: 600;
+    }
+    .prob-metric.left {
+      color: var(--model);
+      text-align: right;
+    }
+    .prob-metric.right {
+      color: var(--aggregate);
+      text-align: left;
+    }
+
+    .dual-bar-wrap {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .prob-track {
+      height: 18px;
+      background: #e2ebf0;
+      border-radius: 9px;
+      overflow: hidden;
+      display: flex;
+      position: relative;
+    }
+    .bar-a {
+      height: 100%;
+      background: var(--model);
+      transition: width 80ms ease-out;
+    }
+    .bar-b {
+      height: 100%;
+      background: var(--aggregate);
+      transition: width 80ms ease-out;
+    }
+
+    .range-input {
+      width: 100%;
+      margin-top: 6px;
+      cursor: pointer;
+      accent-color: var(--model);
+      height: 8px;
+    }
+
+    /* 右侧：集成聚合结果与深层机制 */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    /* 结果对比卡片 */
+    .result-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 2px 6px rgba(18, 38, 52, 0.05);
+    }
+    .result-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+    .result-head h2 {
+      font-size: var(--fs-h2);
+      margin: 0;
+      font-weight: 700;
+    }
+    .divergence-tag {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tag-conflict {
+      background: #FDF3EB;
+      color: var(--aggregate);
+      border: 1px solid rgba(195, 75, 34, 0.3);
+    }
+    .tag-agree {
+      background: #EDF7F2;
+      color: var(--answer);
+      border: 1px solid rgba(35, 112, 82, 0.3);
+    }
+
+    /* 两种投票具体结果对比网格 */
+    .voting-methods {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .method-box {
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #FAFCFD;
+      position: relative;
+    }
+    .method-box.highlight {
+      border-color: var(--aggregate);
+      background: #FFFBF9;
+    }
+    .method-title {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 600;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .method-title-top {
+      color: var(--text);
+      font-weight: 700;
+    }
+    .method-title-sub {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: normal;
+    }
+    .method-pred {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .pred-winner {
+      font-size: 24px;
+      font-weight: 800;
+      font-family: var(--font-num);
+    }
+    .pred-winner.winner-a { color: var(--model); }
+    .pred-winner.winner-b { color: var(--aggregate); }
+    .pred-detail {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+
+    /* 软投票均值条 */
+    .soft-avg-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .soft-avg-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      font-family: var(--font-num);
+      color: var(--text);
+    }
+    .soft-bar-track {
+      height: 16px;
+      background: #e2ebf0;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+    }
+
+    /* 机制洞察解析区 */
+    .insight-box {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+    }
+    .insight-box h3 {
+      font-size: 18px;
+      margin: 0;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .insight-content {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.55;
+      margin: 0;
+    }
+    .insight-details {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #F7FAFC;
+      border-radius: 6px;
+      padding: 12px 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      border: 1px solid #E8F0F5;
+      line-height: 1.5;
+    }
+    .insight-details strong {
+      color: var(--text);
+    }
+
+    /* 底部操作指导条 */
+    .bottom-hint {
+      background: #EBF4F6;
+      border: 1px solid #D5E7EC;
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-size: var(--fs-label);
+      color: #1c4b57;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      line-height: 1.45;
+    }
+    .bottom-hint b {
+      color: #0E3641;
+    }
+  </style>
+</head>
+<body data-page="05" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题 -->
+    <div class="header-block min0">
+      <h1>多数票与软投票的分歧模拟</h1>
+      <p>成员置信度会改变同一组分类结果的最终判断：硬投票只点票数，软投票加权平均后验概率。</p>
+    </div>
+
+    <!-- 主工作区 -->
+    <div class="workspace min0">
+      <!-- 左列：基学习器调节 -->
+      <div class="left-col min0">
+        <!-- 典型预设场景 -->
+        <div class="preset-row">
+          <span class="preset-label">探索场景：</span>
+          <button class="preset-btn active" id="btn-scenario-1">典型分歧（2票险胜 vs 1票高置信）</button>
+          <button class="preset-btn" id="btn-scenario-2">结论协同（票数与置信度一致）</button>
+          <button class="preset-btn" id="btn-scenario-3">均势微调（50%边界敏感区）</button>
+        </div>
+
+        <!-- 3个模型交互卡片 -->
+        <div class="models-list" id="models-container">
+          <!-- 模型 1 -->
+          <div class="model-card" data-id="1">
+            <div class="model-top">
+              <div class="model-info">
+                <span class="model-badge">M1</span>
+                <span class="model-name">基学习器 1</span>
+              </div>
+              <div class="model-vote-status">
+                <span>硬投票去向：</span>
+                <span class="vote-pill pill-a" id="m1-vote-pill">类别 A</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <div class="prob-metric left" id="m1-pa-text">P(A) = 52%</div>
+              <div class="dual-bar-wrap">
+                <div class="prob-track">
+                  <div class="bar-a" id="m1-bar-a" style="width: 52%;"></div>
+                  <div class="bar-b" id="m1-bar-b" style="width: 48%;"></div>
+                </div>
+                <input type="range" class="range-input" id="m1-slider" min="1" max="99" value="52" aria-label="模型1类别A概率">
+              </div>
+              <div class="prob-metric right" id="m1-pb-text">P(B) = 48%</div>
+            </div>
+          </div>
+
+          <!-- 模型 2 -->
+          <div class="model-card" data-id="2">
+            <div class="model-top">
+              <div class="model-info">
+                <span class="model-badge">M2</span>
+                <span class="model-name">基学习器 2</span>
+              </div>
+              <div class="model-vote-status">
+                <span>硬投票去向：</span>
+                <span class="vote-pill pill-a" id="m2-vote-pill">类别 A</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <div class="prob-metric left" id="m2-pa-text">P(A) = 54%</div>
+              <div class="dual-bar-wrap">
+                <div class="prob-track">
+                  <div class="bar-a" id="m2-bar-a" style="width: 54%;"></div>
+                  <div class="bar-b" id="m2-bar-b" style="width: 46%;"></div>
+                </div>
+                <input type="range" class="range-input" id="m2-slider" min="1" max="99" value="54" aria-label="模型2类别A概率">
+              </div>
+              <div class="prob-metric right" id="m2-pb-text">P(B) = 46%</div>
+            </div>
+          </div>
+
+          <!-- 模型 3 -->
+          <div class="model-card" data-id="3">
+            <div class="model-top">
+              <div class="model-info">
+                <span class="model-badge">M3</span>
+                <span class="model-name">基学习器 3</span>
+              </div>
+              <div class="model-vote-status">
+                <span>硬投票去向：</span>
+                <span class="vote-pill pill-b" id="m3-vote-pill">类别 B</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <div class="prob-metric left" id="m3-pa-text">P(A) = 15%</div>
+              <div class="dual-bar-wrap">
+                <div class="prob-track">
+                  <div class="bar-a" id="m3-bar-a" style="width: 15%;"></div>
+                  <div class="bar-b" id="m3-bar-b" style="width: 85%;"></div>
+                </div>
+                <input type="range" class="range-input" id="m3-slider" min="1" max="99" value="15" aria-label="模型3类别A概率">
+              </div>
+              <div class="prob-metric right" id="m3-pb-text">P(B) = 85%</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部提示 -->
+        <div class="bottom-hint">
+          <span>💡 <b>实时观察点：</b>拖动滑块调节任意模型的输出概率。注意观察当两票仅以 51% 险胜，而另一票以 90% 极高置信度坚定反对时，硬投票与软投票的选择如何走向对立。</span>
+        </div>
+      </div>
+
+      <!-- 右列：聚合结果与分歧剖析 -->
+      <div class="right-col min0">
+        <!-- 聚合结果看板 -->
+        <div class="result-card">
+          <div class="result-head">
+            <h2>决策汇聚结果</h2>
+            <span class="divergence-tag tag-conflict" id="status-tag">⚠️ 两种规则产生分歧</span>
+          </div>
+
+          <div class="voting-methods">
+            <!-- 硬投票 -->
+            <div class="method-box" id="box-hard">
+              <div class="method-title">
+                <span class="method-title-top">多数票原则（硬投票）</span>
+                <span class="method-title-sub">只统计类别离散票数</span>
+              </div>
+              <div class="method-pred">
+                <span class="pred-winner winner-a" id="hard-winner">类别 A 胜出</span>
+                <span class="pred-detail" id="hard-detail">2 票 vs 1 票</span>
+              </div>
+            </div>
+
+            <!-- 软投票 -->
+            <div class="method-box highlight" id="box-soft">
+              <div class="method-title">
+                <span class="method-title-top">概率加权原则（软投票）</span>
+                <span class="method-title-sub">计算平均后验概率</span>
+              </div>
+              <div class="method-pred">
+                <span class="pred-winner winner-b" id="soft-winner">类别 B 胜出</span>
+                <span class="pred-detail" id="soft-detail">59.7% vs 40.3%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 软投票连续量对比条 -->
+          <div class="soft-avg-row">
+            <div class="soft-avg-meta">
+              <span id="avg-pa-label" style="color:var(--model); font-weight:700;">类别 A 平均置信度：40.3%</span>
+              <span id="avg-pb-label" style="color:var(--aggregate); font-weight:700;">类别 B 平均置信度：59.7%</span>
+            </div>
+            <div class="soft-bar-track">
+              <div class="bar-a" id="avg-bar-a" style="width: 40.3%;"></div>
+              <div class="bar-b" id="avg-bar-b" style="width: 59.7%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 数理机制解析卡片 -->
+        <div class="insight-box">
+          <h3 id="insight-title">分歧成因解析：微弱多数被压倒性置信度反超</h3>
+          <p class="insight-content" id="insight-desc">
+            此时 M1 和 M2 虽然都把票投给类别 A，但它们的判定近乎随机猜测（概率仅略高于 50%）。相反，M3 对类别 B 具有高达 85% 的极高把握。硬投票丢弃了所有「把握程度」的细微信息，盲目按人头表决；软投票则充分吸收了每个模型的风险评价，让真正笃定的模型发挥决定性权重。
+          </p>
+          <div class="insight-details">
+            <div><strong>硬投票假设：</strong>每个模型的每个选票权重完全平等（1 票 = 1 票），抗极端异常概率鲁棒，但对边界附近的模糊判断非常敏感。</div>
+            <div><strong>软投票假设：</strong>各基学习器输出的概率是良好校准（Calibrated）的置信度，能平滑单次决策的方差，通常带来更优的期望风险控制。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 5, total: 27, keys: false });
+
+    // 核心状态管理
+    const state = {
+      probs: [52, 54, 15], // 存 P(A)，单位 %
+      activeScenario: 1
+    };
+
+    // DOM 引用
+    const sliders = [
+      document.getElementById('m1-slider'),
+      document.getElementById('m2-slider'),
+      document.getElementById('m3-slider')
+    ];
+
+    const elements = {
+      m1VotePill: document.getElementById('m1-vote-pill'),
+      m2VotePill: document.getElementById('m2-vote-pill'),
+      m3VotePill: document.getElementById('m3-vote-pill'),
+      m1Pa: document.getElementById('m1-pa-text'),
+      m2Pa: document.getElementById('m2-pa-text'),
+      m3Pa: document.getElementById('m3-pa-text'),
+      m1Pb: document.getElementById('m1-pb-text'),
+      m2Pb: document.getElementById('m2-pb-text'),
+      m3Pb: document.getElementById('m3-pb-text'),
+      m1BarA: document.getElementById('m1-bar-a'),
+      m2BarA: document.getElementById('m2-bar-a'),
+      m3BarA: document.getElementById('m3-bar-a'),
+      m1BarB: document.getElementById('m1-bar-b'),
+      m2BarB: document.getElementById('m2-bar-b'),
+      m3BarB: document.getElementById('m3-bar-b'),
+
+      statusTag: document.getElementById('status-tag'),
+      hardWinner: document.getElementById('hard-winner'),
+      hardDetail: document.getElementById('hard-detail'),
+      softWinner: document.getElementById('soft-winner'),
+      softDetail: document.getElementById('soft-detail'),
+      avgPaLabel: document.getElementById('avg-pa-label'),
+      avgPbLabel: document.getElementById('avg-pb-label'),
+      avgBarA: document.getElementById('avg-bar-a'),
+      avgBarB: document.getElementById('avg-bar-b'),
+      boxHard: document.getElementById('box-hard'),
+      boxSoft: document.getElementById('box-soft'),
+
+      insightTitle: document.getElementById('insight-title'),
+      insightDesc: document.getElementById('insight-desc'),
+
+      btnSc1: document.getElementById('btn-scenario-1'),
+      btnSc2: document.getElementById('btn-scenario-2'),
+      btnSc3: document.getElementById('btn-scenario-3')
+    };
+
+    function update() {
+      // 1. 各学习器独立判定
+      let votesA = 0;
+      let votesB = 0;
+      let sumPa = 0;
+
+      state.probs.forEach((pa, idx) => {
+        const pb = 100 - pa;
+        sumPa += pa;
+
+        const isA = pa >= 50;
+        if (isA) votesA++; else votesB++;
+
+        // 更新单学习器 DOM
+        const pill = idx === 0 ? elements.m1VotePill : (idx === 1 ? elements.m2VotePill : elements.m3VotePill);
+        const paText = idx === 0 ? elements.m1Pa : (idx === 1 ? elements.m2Pa : elements.m3Pa);
+        const pbText = idx === 0 ? elements.m1Pb : (idx === 1 ? elements.m2Pb : elements.m3Pb);
+        const barA = idx === 0 ? elements.m1BarA : (idx === 1 ? elements.m2BarA : elements.m3BarA);
+        const barB = idx === 0 ? elements.m1BarB : (idx === 1 ? elements.m2BarB : elements.m3BarB);
+
+        pill.textContent = isA ? '类别 A' : '类别 B';
+        pill.className = 'vote-pill ' + (isA ? 'pill-a' : 'pill-b');
+        paText.textContent = `P(A) = ${pa}%`;
+        pbText.textContent = `P(B) = ${pb}%`;
+        barA.style.width = `${pa}%`;
+        barB.style.width = `${pb}%`;
+      });
+
+      // 2. 多数票（硬投票）
+      let hardChoice = '平局';
+      if (votesA > votesB) hardChoice = 'A';
+      else if (votesB > votesA) hardChoice = 'B';
+
+      elements.hardDetail.textContent = `${votesA} 票 A vs ${votesB} 票 B`;
+      if (hardChoice === 'A') {
+        elements.hardWinner.textContent = '类别 A 胜出';
+        elements.hardWinner.className = 'pred-winner winner-a';
+      } else if (hardChoice === 'B') {
+        elements.hardWinner.textContent = '类别 B 胜出';
+        elements.hardWinner.className = 'pred-winner winner-b';
+      } else {
+        elements.hardWinner.textContent = '平票 (1:1)';
+        elements.hardWinner.className = 'pred-winner';
+      }
+
+      // 3. 软投票（平均概率）
+      const avgPa = (sumPa / 3);
+      const avgPb = (100 - avgPa);
+      const avgPaFmt = avgPa.toFixed(1);
+      const avgPbFmt = avgPb.toFixed(1);
+
+      elements.avgPaLabel.textContent = `类别 A 平均置信度：${avgPaFmt}%`;
+      elements.avgPbLabel.textContent = `类别 B 平均置信度：${avgPbFmt}%`;
+      elements.avgBarA.style.width = `${avgPa}%`;
+      elements.avgBarB.style.width = `${avgPb}%`;
+
+      let softChoice = '平局';
+      if (avgPa > 50) softChoice = 'A';
+      else if (avgPa < 50) softChoice = 'B';
+
+      elements.softDetail.textContent = `${avgPaFmt}% vs ${avgPbFmt}%`;
+      if (softChoice === 'A') {
+        elements.softWinner.textContent = '类别 A 胜出';
+        elements.softWinner.className = 'pred-winner winner-a';
+      } else if (softChoice === 'B') {
+        elements.softWinner.textContent = '类别 B 胜出';
+        elements.softWinner.className = 'pred-winner winner-b';
+      } else {
+        elements.softWinner.textContent = '势均力敌 (50%:50%)';
+        elements.softWinner.className = 'pred-winner';
+      }
+
+      // 4. 分歧检测与解释生成
+      const isConflict = (hardChoice !== softChoice) && hardChoice !== '平局' && softChoice !== '平局';
+
+      if (isConflict) {
+        elements.statusTag.className = 'divergence-tag tag-conflict';
+        elements.statusTag.textContent = '⚠️ 两种规则产生分歧';
+        elements.boxHard.classList.remove('highlight');
+        elements.boxSoft.classList.add('highlight');
+
+        elements.insightTitle.textContent = `分歧成因：多数人轻微倾向 ${hardChoice}，却被少数人的坚定 ${softChoice} 逆转`;
+        elements.insightDesc.textContent = `此时投给 ${hardChoice} 的模型多数处于犹豫不决的临界边缘（置信度略过半），而支持 ${softChoice} 的模型给出了压倒性的极高置信度。硬投票将置信度统一截断为离散 0/1 票，忽略了这种强弱差；软投票把概率全量计入加权，因而颠覆了票数多数。`;
+      } else {
+        elements.statusTag.className = 'divergence-tag tag-agree';
+        elements.statusTag.textContent = '✓ 两种规则结论一致';
+        elements.boxHard.classList.remove('highlight');
+        elements.boxSoft.classList.remove('highlight');
+
+        elements.insightTitle.textContent = `协同共识：投票计数与后验概率呈现相同指向`;
+        elements.insightDesc.textContent = `此时票数多数与概率均值的倾斜方向一致。无论是离散投票还是连续概率汇总，整体集成系统都得出了确定的 ${softChoice === '平局' ? '平局判定' : '类别 ' + softChoice} 预测，表明基学习器群体的置信分布没有发生极端对冲。`;
+      }
+    }
+
+    // 绑定滑块交互
+    sliders.forEach((slider, idx) => {
+      slider.addEventListener('input', (e) => {
+        state.probs[idx] = parseInt(e.target.value, 10);
+        // 清除 scenario 按钮的高亮
+        [elements.btnSc1, elements.btnSc2, elements.btnSc3].forEach(b => b.classList.remove('active'));
+        update();
+      });
+    });
+
+    // 绑定预设场景
+    function setScenario(p1, p2, p3, btn) {
+      state.probs = [p1, p2, p3];
+      sliders[0].value = p1;
+      sliders[1].value = p2;
+      sliders[2].value = p3;
+      [elements.btnSc1, elements.btnSc2, elements.btnSc3].forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      update();
+    }
+
+    elements.btnSc1.addEventListener('click', () => setScenario(52, 54, 15, elements.btnSc1));
+    elements.btnSc2.addEventListener('click', () => setScenario(75, 82, 35, elements.btnSc2));
+    elements.btnSc3.addEventListener('click', () => setScenario(49, 51, 52, elements.btnSc3));
+
+    // 初态初始化
+    update();
+  </script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>06 · 随机森林</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+  .lab{ position:absolute; left:64px; top:196px; width:980px; height:580px; }
+  .main{ position:absolute; left:0; top:0; width:640px; height:580px; }
+  .main .ttl, .mini .ttl{ display:flex; justify-content:space-between; align-items:baseline; height:30px; font-size:15px; font-weight:700; }
+  .main .ttl span, .mini .ttl span{ font-size:13px; color:var(--muted); font-weight:500; font-family:var(--font-num); }
+  .main canvas, .mini canvas{ position:absolute; left:0; top:36px; border-radius:12px; border:1px solid var(--rule); background:var(--paper); }
+  .main canvas{ width:640px; height:544px; }
+  .mini{ position:absolute; left:672px; top:0; width:308px; height:270px; }
+  .mini canvas{ width:308px; height:234px; }
+  .errs{ position:absolute; left:672px; top:292px; width:308px; height:288px; }
+  .errs h3{ font-size:15px; font-weight:700; height:30px; }
+  .errs svg{ width:308px; height:250px; overflow:visible; }
+  .side{ position:absolute; left:1084px; top:196px; width:452px; height:580px; display:grid; grid-template-rows:auto auto 1fr; gap:16px; }
+  .side .panel{ padding:20px 24px; }
+  .ctls{ display:grid; gap:14px; }
+  .sw{ display:grid; grid-template-columns:1fr auto; align-items:center; gap:8px; }
+  .sw label{ font-size:15px; font-weight:600; }
+  .sw .hint{ grid-column:1/-1; font-size:13px; color:var(--quiet); line-height:1.45; }
+  .why p{ font-size:15px; line-height:1.6; padding-left:14px; border-left:3px solid var(--bag-lt); margin-top:10px; }
+  .why h2{ font-size:18px; }
+  .legend i.dot{ border:2px solid var(--paper); box-shadow:0 0 0 1px var(--c); }
+</style>
+</head>
+<body>
+<main id="stage">
+  <header class="hd">
+    <div class="kicker"><b>02 · 随机森林</b>BAGGING + RANDOM FEATURE SUBSPACE</div>
+    <h1>随机森林 = Bagging 的树，再加<em class="bag">第二重随机</em>：每次切分只看一部分特征</h1>
+    <p class="lede">样本随机让树们各不相同，特征随机让它们<b>更加</b>不相同。分类时每棵树投一票，多数决。观察决策边界怎么从锯齿变圆润。</p>
+  </header>
+
+  <figure class="lab" aria-label="随机森林决策边界演示">
+    <div class="main">
+      <div class="ttl">随机森林 · 多数投票的边界 <span id="mainTag">B = 1</span></div>
+      <canvas id="forest"></canvas>
+    </div>
+    <div class="mini">
+      <div class="ttl">对照：单棵树（全部数据）<span>同样深度</span></div>
+      <canvas id="single"></canvas>
+    </div>
+    <div class="errs">
+      <h3>错误率随 B 的变化 <span class="legend" style="display:inline-flex;margin-left:8px"><span><i style="--c:var(--bag)"></i>测试</span><span><i class="dash" style="--c:var(--gold)"></i>袋外 OOB</span></span></h3>
+      <svg id="svg" viewBox="0 0 308 250"></svg>
+    </div>
+  </figure>
+
+  <aside class="side">
+    <div class="panel ctls">
+      <div class="ctl" style="--acc:var(--bag)">
+        <label for="B">树的数量 B</label><output for="B">1</output>
+        <input id="B" type="range" min="1" max="100" step="1" value="1">
+      </div>
+      <div class="ctl" style="--acc:var(--single)">
+        <label for="D">每棵树最大深度</label><output for="D">8</output>
+        <input id="D" type="range" min="1" max="12" step="1" value="8">
+      </div>
+      <div class="sw">
+        <label>每次切分可用的特征</label>
+        <div class="seg bag" id="feat"><button aria-pressed="false" data-f="2">全部 2 个</button><button aria-pressed="true" data-f="1">随机 1 个</button></div>
+        <div class="hint">真实数据有几十上百个特征，常取 √d 个。这里只有 2 维，「随机 1 个」就是最强的去相关。</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="kv" style="grid-template-columns:1fr 1fr 1fr">
+        <div><div class="k">单棵树 · 测试错误率</div><div class="v single" id="e1">–</div></div>
+        <div><div class="k">森林 · 测试错误率</div><div class="v bag" id="e2">–</div></div>
+        <div><div class="k">森林 · 袋外错误率</div><div class="v" style="color:var(--gold)" id="e3">–</div></div>
+      </div>
+    </div>
+    <div class="panel why">
+      <h2>三件事同时发生</h2>
+      <p><b>树不剪枝</b>：单棵越深越抖，正合 Bagging 的胃口。</p>
+      <p><b>OOB 误差贴着测试误差走</b>：森林自带验证集，B 加到曲线平了就够。</p>
+      <p><b>B 再大也不会过拟合</b>：平均的东西越多越稳，只是算得慢。</p>
+    </div>
+  </aside>
+</main>
+<script src="assets/base.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/ens.js"></script>
+<script>
+Ens.footer(6);
+var train = Ens.moons(120, 0.3, Ens.rng("rf-06")), test = Ens.moons(600, 0.3, Ens.rng("rf-06-test"));
+var BMAX = 100, Bi = document.getElementById('B'), Di = document.getElementById('D'), featSeg = document.getElementById('feat'), feat = 1;
+var forest, single, oobCurve, testCurve, bags;
+var A = Deck.rgb('--cls-a'), Bc = Deck.rgb('--cls-b');
+function refit() {
+  var depth = +Di.value, r = Ens.rng('rf-06-fit');
+  single = Ens.clsTree(train.X, train.y, { maxDepth: depth, minLeaf: 1 });
+  forest = []; bags = [];
+  var n = train.X.length, oobS = new Float64Array(n), oobC = new Float64Array(n), tS = new Float64Array(test.X.length);
+  oobCurve = []; testCurve = [];
+  for (var b = 0; b < BMAX; b++) {
+    var idx = Ens.bootstrap(n, r), inbag = new Uint8Array(n); idx.forEach(function (i) { inbag[i] = 1; });
+    var t = Ens.clsTree(train.X, train.y, { maxDepth: depth, minLeaf: 1, feat: feat, rng: r, idx: idx });
+    forest.push(t);
+    var wrong = 0, cnt = 0;
+    for (var i = 0; i < n; i++) { if (!inbag[i]) { oobS[i] += t(train.X[i]) > 0.5 ? 1 : 0; oobC[i]++; } if (oobC[i]) { cnt++; if ((oobS[i] / oobC[i] > 0.5 ? 1 : 0) !== train.y[i]) wrong++; } }
+    oobCurve.push(cnt ? wrong / cnt : NaN);
+    var tw = 0; for (var j = 0; j < test.X.length; j++) { tS[j] += t(test.X[j]) > 0.5 ? 1 : 0; if ((tS[j] / (b + 1) > 0.5 ? 1 : 0) !== test.y[j]) tw++; }
+    testCurve.push(tw / test.X.length);
+  }
+  var sw = 0; for (var k = 0; k < test.X.length; k++) if ((single(test.X[k]) > 0.5 ? 1 : 0) !== test.y[k]) sw++;
+  document.getElementById('e1').innerHTML = (sw / test.X.length * 100).toFixed(1) + '<small>%</small>';
+  drawSingle(); drawCurve(); draw();
+}
+function points(ctx, W, H) {
+  for (var i = 0; i < train.X.length; i++) {
+    var p = train.X[i]; ctx.beginPath(); ctx.arc(p[0] * W, (1 - p[1]) * H, 4, 0, 7);
+    ctx.fillStyle = train.y[i] ? 'rgb(' + Bc.join(',') + ')' : 'rgb(' + A.join(',') + ')'; ctx.fill(); ctx.strokeStyle = 'rgba(250,248,242,.9)'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+}
+var fcv = document.getElementById('forest'), scv = document.getElementById('single'), fctx = Deck.fit(fcv), sctx = Deck.fit(scv);
+function draw() {
+  var B = +Bi.value, W = 640, H = 544; fctx.clearRect(0, 0, W, H);
+  Ens.field(fctx, W, H, function (x, y) { var s = 0; for (var b = 0; b < B; b++) s += forest[b]([x, y]) > 0.5 ? 1 : 0; return s / B; }, 5, A, Bc, 0.42);
+  points(fctx, W, H);
+  document.getElementById('mainTag').textContent = 'B = ' + B + (B === 1 ? '（一棵树的一次投票）' : '');
+  document.getElementById('e2').innerHTML = (testCurve[B - 1] * 100).toFixed(1) + '<small>%</small>';
+  document.getElementById('e3').innerHTML = isNaN(oobCurve[B - 1]) ? '–' : (oobCurve[B - 1] * 100).toFixed(1) + '<small>%</small>';
+  mark.attr('cx', sx(B)).attr('cy', sy(testCurve[B - 1]));
+}
+function drawSingle() { var W = 308, H = 234; sctx.clearRect(0, 0, W, H); Ens.field(sctx, W, H, function (x, y) { return single([x, y]) > 0.5 ? 1 : 0; }, 4, A, Bc, 0.42); sctx.save(); sctx.scale(1, 1); points(sctx, W, H); sctx.restore(); }
+var svg = d3.select('#svg'), SW = 308, SH = 250, SM = { l: 40, r: 10, t: 10, b: 30 };
+var sx = d3.scaleLinear().domain([1, BMAX]).range([SM.l, SW - SM.r]), sy = d3.scaleLinear().range([SH - SM.b, SM.t]);
+var gx = svg.append('g').attr('class', 'axis').attr('transform', 'translate(0,' + (SH - SM.b) + ')'), gy = svg.append('g').attr('class', 'axis').attr('transform', 'translate(' + SM.l + ',0)');
+svg.append('text').attr('class', 'axis-title').attr('x', SW - SM.r).attr('y', SH - 2).attr('text-anchor', 'end').text('B');
+var pT = svg.append('path').attr('fill', 'none').attr('stroke', Deck.token('--bag')).attr('stroke-width', 2.5);
+var pO = svg.append('path').attr('fill', 'none').attr('stroke', Deck.token('--gold')).attr('stroke-width', 2).attr('stroke-dasharray', '5 4');
+var sl = svg.append('line').attr('stroke', Deck.token('--single')).attr('stroke-width', 1.5).attr('stroke-dasharray', '3 4');
+var st = svg.append('text').attr('class', 'note').attr('text-anchor', 'end').attr('fill', Deck.token('--single'));
+var mark = svg.append('circle').attr('r', 6).attr('fill', Deck.token('--paper')).attr('stroke', Deck.token('--bag')).attr('stroke-width', 3);
+function drawCurve() {
+  var sw = parseFloat(document.getElementById('e1').textContent) / 100;
+  var hi = Math.max(sw, d3.max(testCurve), d3.max(oobCurve.filter(function (v) { return !isNaN(v); }))) * 1.15;
+  sy.domain([0, hi]);
+  gx.call(d3.axisBottom(sx).ticks(5).tickSize(-(SH - SM.t - SM.b)).tickPadding(8)).select('.domain').remove();
+  gy.call(d3.axisLeft(sy).ticks(4, '.0%').tickSize(-(SW - SM.l - SM.r)).tickPadding(6)).select('.domain').remove();
+  var ln = d3.line().defined(function (d) { return !isNaN(d); }).x(function (d, i) { return sx(i + 1); }).y(function (d) { return sy(d); });
+  pT.attr('d', ln(testCurve)); pO.attr('d', ln(oobCurve));
+  sl.attr('x1', SM.l).attr('x2', SW - SM.r).attr('y1', sy(sw)).attr('y2', sy(sw)); st.attr('x', SW - SM.r).attr('y', sy(sw) - 5).text('单棵树');
+  mark.raise();
+}
+Ens.slider(Bi, null, draw); Ens.slider(Di, null, refit);
+featSeg.addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; feat = +b.dataset.f; featSeg.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); refit(); });
+Deck.onResize(function () { fctx = Deck.fit(fcv); sctx = Deck.fit(scv); drawSingle(); draw(); });
+refit();
+if (!Deck.reduced()) { var stop = Deck.loop(function (t) { var B = Math.min(30, 1 + Math.floor(t / 120)); if (+Bi.value !== B) { Bi.value = B; Bi.dispatchEvent(new Event('input')); } if (B >= 30) stop(); }); }
+</script>
+</body>
+</html>

@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 32px 56px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: var(--text);
+      user-select: none;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .header-desc {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 460px 420px 480px;
+      gap: 36px;
+      align-items: start;
+      height: 660px;
+    }
+
+    .col-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .col-title span {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: monospace;
+    }
+
+    /* Grid boards */
+    .board-wrap {
+      position: relative;
+    }
+
+    .grid-board {
+      display: grid;
+      gap: 3px;
+      background: var(--rule);
+      border: 2px solid var(--rule);
+      position: relative;
+    }
+
+    .cell {
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      position: relative;
+      transition: background 0.12s ease;
+    }
+    .cell.pad {
+      color: var(--muted);
+      background: #E2E8E4;
+      font-style: italic;
+    }
+    .cell.highlight {
+      background: rgba(28, 68, 54, 0.12);
+      color: var(--structure);
+    }
+
+    /* Sliding kernel window */
+    .kernel-window {
+      position: absolute;
+      border: 3px solid var(--signal);
+      box-sizing: border-box;
+      pointer-events: none;
+      transition: top 0.12s cubic-bezier(0.2, 0, 0, 1), left 0.12s cubic-bezier(0.2, 0, 0, 1);
+      background: rgba(212, 56, 17, 0.08);
+      z-index: 10;
+    }
+
+    /* Kernel matrix selector */
+    .kernel-card {
+      margin-top: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .kernel-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3px;
+      width: 168px;
+      background: var(--rule);
+      border: 2px solid var(--structure);
+    }
+    .k-cell {
+      background: var(--bg);
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--structure);
+    }
+
+    /* Button groups */
+    .btn-group {
+      display: inline-flex;
+      border: 1.5px solid var(--rule);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .btn-group button {
+      background: var(--bg);
+      border: none;
+      border-right: 1.5px solid var(--rule);
+      padding: 5px 14px;
+      font-size: var(--fs-label);
+      cursor: pointer;
+      color: var(--text);
+      font-weight: 500;
+      transition: all 0.12s ease;
+    }
+    .btn-group button:last-child {
+      border-right: none;
+    }
+    .btn-group button.active {
+      background: var(--structure);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    /* Math column */
+    .calc-box {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .formula-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: monospace;
+      font-size: var(--fs-label);
+    }
+    .formula-table th {
+      text-align: left;
+      border-bottom: 1.5px solid var(--rule);
+      padding: 4px 6px;
+      color: var(--text);
+      font-weight: 600;
+    }
+    .formula-table td {
+      padding: 4px 6px;
+      border-bottom: 1px solid rgba(186, 196, 191, 0.5);
+    }
+    .formula-table tr.sum-row td {
+      border-top: 2px solid var(--structure);
+      font-weight: 700;
+      font-size: var(--fs-body);
+      color: var(--signal);
+      padding-top: 8px;
+    }
+
+    .nav-buttons {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .nav-btn {
+      flex: 1;
+      padding: 7px 0;
+      background: var(--bg);
+      border: 1.5px solid var(--rule);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text);
+      border-radius: 4px;
+    }
+    .nav-btn:hover:not(:disabled) {
+      border-color: var(--structure);
+      color: var(--structure);
+    }
+    .nav-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    /* Output board */
+    .out-cell {
+      cursor: pointer;
+    }
+    .out-cell.selected {
+      background: var(--signal);
+      color: #fff !important;
+      font-weight: 700;
+    }
+    .out-cell.computed {
+      color: var(--structure);
+    }
+
+    .rule-pill {
+      margin-top: 10px;
+      padding: 10px 14px;
+      background: rgba(28, 68, 54, 0.08);
+      border-radius: 4px;
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+    }
+    .rule-pill b {
+      color: var(--structure);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>单步卷积与特征提取</h1>
+      </div>
+      <p class="header-desc">核对局部窗口的元素点乘与累加结果</p>
+    </header>
+
+    <div class="workspace">
+      <!-- 1. Input Image -->
+      <div class="min0">
+        <div class="col-title">
+          输入张量 X
+          <div class="btn-group" id="pad-group">
+            <button class="active" id="btn-pad-0" data-pad="0">Padding = 0</button>
+            <button id="btn-pad-1" data-pad="1">Padding = 1</button>
+          </div>
+        </div>
+        <div class="board-wrap">
+          <div id="input-board" class="grid-board"></div>
+          <div id="kernel-win" class="kernel-window"></div>
+        </div>
+
+        <div class="kernel-card">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:var(--fs-label); font-weight:600; color:var(--structure);">卷积核 W (3×3)</div>
+            <div class="btn-group" id="kernel-group">
+              <button class="active" id="btn-k-edge" data-k="edge">垂直边缘</button>
+              <button id="btn-k-sharp" data-k="sharp">拉普拉斯锐化</button>
+            </div>
+          </div>
+          <div style="display:flex; gap:16px; align-items:center;">
+            <div class="kernel-grid" id="kernel-view"></div>
+            <div style="font-size:var(--fs-sec); color:var(--text); line-height:1.45;">
+              滑动窗口内 9 个位置两两相乘求和，产生输出对应坐标的标量响应。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Calculation Breakdown -->
+      <div class="min0 calc-box">
+        <div class="col-title">
+          单步乘加分解
+          <span id="step-pos">Y[0, 0]</span>
+        </div>
+        <table class="formula-table">
+          <thead>
+            <tr>
+              <th>坐标 (i, j)</th>
+              <th>输入值 x</th>
+              <th>核权重 w</th>
+              <th style="text-align:right">乘积 x·w</th>
+            </tr>
+          </thead>
+          <tbody id="calc-body"></tbody>
+        </table>
+
+        <div class="nav-buttons">
+          <button class="nav-btn" id="btn-prev">上一个位置</button>
+          <button class="nav-btn" id="btn-next">下一个位置</button>
+        </div>
+
+        <div class="rule-pill">
+          输出尺寸：<b>(W - K + 2P) / S + 1</b><br>
+          <span id="size-calc-text">P = 0: (5 - 3 + 0) + 1 = 3×3</span>
+        </div>
+      </div>
+
+      <!-- 3. Output Feature Map -->
+      <div class="min0">
+        <div class="col-title">
+          特征图 Y
+          <span id="out-shape-tag">3 × 3</span>
+        </div>
+        <div class="board-wrap">
+          <div id="output-board" class="grid-board"></div>
+        </div>
+        <div style="margin-top: 14px; font-size:var(--fs-sec); color:var(--muted); line-height:1.4;">
+          点击任意输出单元格可直接跳转核对局部滑动窗口对应关系。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    卷积操作的核心在于局部感受野与权重共享。无论输入图像有多大，同一个 3x3 卷积核都在以步幅 1 在空间网格上依次滑动。
+    读者可以点击不同的输出位置，或者切换 Padding，观察输出特征图尺寸如何从 3x3 变为 5x5。
+    同时，中间的乘加分解表展示了每一个输出像素究竟是由哪 9 个输入像素与核权重相乘相加得到的。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    const KERNELS = {
+      edge: [
+        [-1, 0, 1],
+        [-2, 0, 2],
+        [-1, 0, 1]
+      ],
+      sharp: [
+        [ 0, -1,  0],
+        [-1,  5, -1],
+        [ 0, -1,  0]
+      ]
+    };
+
+    const RAW_IMG = [
+      [10, 10, 80, 80, 80],
+      [10, 10, 80, 80, 80],
+      [10, 10, 80, 80, 80],
+      [10, 10, 80, 80, 80],
+      [10, 10, 80, 80, 80]
+    ];
+
+    let state = {
+      padding: 0,
+      kernelType: 'edge',
+      outR: 0,
+      outC: 0
+    };
+
+    function getPaddedImage(pad) {
+      if (pad === 0) return RAW_IMG;
+      const res = [];
+      const H = RAW_IMG.length + 2;
+      const W = RAW_IMG[0].length + 2;
+      for (let r = 0; r < H; r++) {
+        const row = [];
+        for (let c = 0; c < W; c++) {
+          if (r === 0 || r === H - 1 || c === 0 || c === W - 1) {
+            row.push(0);
+          } else {
+            row.push(RAW_IMG[r - 1][c - 1]);
+          }
+        }
+        res.push(row);
+      }
+      return res;
+    }
+
+    function getOutputSize(pad) {
+      return (5 - 3 + 2 * pad) + 1;
+    }
+
+    function computeFeatureMap(img, k) {
+      const outSize = img.length - 3 + 1;
+      const out = [];
+      for (let r = 0; r < outSize; r++) {
+        const row = [];
+        for (let c = 0; c < outSize; c++) {
+          let sum = 0;
+          for (let kr = 0; kr < 3; kr++) {
+            for (let kc = 0; kc < 3; kc++) {
+              sum += img[r + kr][c + kc] * k[kr][kc];
+            }
+          }
+          row.push(sum);
+        }
+        out.push(row);
+      }
+      return out;
+    }
+
+    const inputBoard = document.getElementById('input-board');
+    const kernelWin = document.getElementById('kernel-win');
+    const kernelView = document.getElementById('kernel-view');
+    const outputBoard = document.getElementById('output-board');
+    const calcBody = document.getElementById('calc-body');
+    const stepPos = document.getElementById('step-pos');
+    const outShapeTag = document.getElementById('out-shape-tag');
+    const sizeCalcText = document.getElementById('size-calc-text');
+    const btnPrev = document.getElementById('btn-prev');
+    const btnNext = document.getElementById('btn-next');
+
+    function renderKernelGrid() {
+      const k = KERNELS[state.kernelType];
+      kernelView.innerHTML = '';
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+          const div = document.createElement('div');
+          div.className = 'k-cell';
+          div.textContent = k[r][c];
+          kernelView.appendChild(div);
+        }
+      }
+    }
+
+    function render() {
+      const pad = state.padding;
+      const img = getPaddedImage(pad);
+      const k = KERNELS[state.kernelType];
+      const outSize = getOutputSize(pad);
+
+      if (state.outR >= outSize) state.outR = outSize - 1;
+      if (state.outC >= outSize) state.outC = outSize - 1;
+
+      const featureMap = computeFeatureMap(img, k);
+
+      // Render Input Board
+      const cellSize = pad === 0 ? 76 : 56;
+      const boardDim = cellSize * img.length + (img.length - 1) * 3;
+      inputBoard.style.width = boardDim + 'px';
+      inputBoard.style.height = boardDim + 'px';
+      inputBoard.style.gridTemplateColumns = `repeat(${img.length}, 1fr)`;
+      inputBoard.innerHTML = '';
+
+      const winStartR = state.outR;
+      const winStartC = state.outC;
+
+      for (let r = 0; r < img.length; r++) {
+        for (let c = 0; c < img.length; c++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          const isPaddedCell = pad === 1 && (r === 0 || r === img.length - 1 || c === 0 || c === img.length - 1);
+          if (isPaddedCell) cell.classList.add('pad');
+
+          const inWindow = r >= winStartR && r < winStartR + 3 && c >= winStartC && c < winStartC + 3;
+          if (inWindow) cell.classList.add('highlight');
+
+          cell.textContent = img[r][c];
+          inputBoard.appendChild(cell);
+        }
+      }
+
+      // Position Kernel Window Overlay
+      const cellStep = cellSize + 3;
+      kernelWin.style.width = (cellSize * 3 + 6) + 'px';
+      kernelWin.style.height = (cellSize * 3 + 6) + 'px';
+      kernelWin.style.top = (winStartR * cellStep) + 'px';
+      kernelWin.style.left = (winStartC * cellStep) + 'px';
+
+      // Render Output Board
+      const outCellSize = pad === 0 ? 116 : 72;
+      const outDim = outCellSize * outSize + (outSize - 1) * 3;
+      outputBoard.style.width = outDim + 'px';
+      outputBoard.style.height = outDim + 'px';
+      outputBoard.style.gridTemplateColumns = `repeat(${outSize}, 1fr)`;
+      outputBoard.innerHTML = '';
+
+      for (let r = 0; r < outSize; r++) {
+        for (let c = 0; c < outSize; c++) {
+          const oCell = document.createElement('div');
+          oCell.className = 'cell out-cell computed';
+          if (r === state.outR && c === state.outC) {
+            oCell.classList.add('selected');
+          }
+          oCell.textContent = featureMap[r][c];
+          oCell.addEventListener('click', () => {
+            state.outR = r;
+            state.outC = c;
+            render();
+          });
+          outputBoard.appendChild(oCell);
+        }
+      }
+
+      // Calculation breakdown
+      stepPos.textContent = `Y[${state.outR}, ${state.outC}]`;
+      outShapeTag.textContent = `${outSize} × ${outSize}`;
+      sizeCalcText.textContent = pad === 0 
+        ? 'P = 0: (5 - 3 + 0) + 1 = 3×3' 
+        : 'P = 1: (5 - 3 + 2) + 1 = 5×5';
+
+      let sum = 0;
+      let rowsHtml = '';
+      for (let kr = 0; kr < 3; kr++) {
+        for (let kc = 0; kc < 3; kc++) {
+          const ir = winStartR + kr;
+          const ic = winStartC + kc;
+          const xVal = img[ir][ic];
+          const wVal = k[kr][kc];
+          const prod = xVal * wVal;
+          sum += prod;
+          rowsHtml += `
+            <tr>
+              <td>(${kr}, ${kc})</td>
+              <td>${xVal}</td>
+              <td>${wVal}</td>
+              <td style="text-align:right">${prod}</td>
+            </tr>
+          `;
+        }
+      }
+      rowsHtml += `
+        <tr class="sum-row">
+          <td colspan="3">点乘累加结果</td>
+          <td style="text-align:right">${sum}</td>
+        </tr>
+      `;
+      calcBody.innerHTML = rowsHtml;
+
+      const currentIndex = state.outR * outSize + state.outC;
+      btnPrev.disabled = currentIndex === 0;
+      btnNext.disabled = currentIndex === (outSize * outSize - 1);
+    }
+
+    btnPrev.addEventListener('click', () => {
+      const outSize = getOutputSize(state.padding);
+      let idx = state.outR * outSize + state.outC;
+      if (idx > 0) {
+        idx--;
+        state.outR = Math.floor(idx / outSize);
+        state.outC = idx % outSize;
+        render();
+      }
+    });
+
+    btnNext.addEventListener('click', () => {
+      const outSize = getOutputSize(state.padding);
+      let idx = state.outR * outSize + state.outC;
+      if (idx < outSize * outSize - 1) {
+        idx++;
+        state.outR = Math.floor(idx / outSize);
+        state.outC = idx % outSize;
+        render();
+      }
+    });
+
+    document.querySelectorAll('#pad-group button').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('#pad-group button').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        state.padding = parseInt(e.target.dataset.pad, 10);
+        render();
+      });
+    });
+
+    document.querySelectorAll('#kernel-group button').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('#kernel-group button').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        state.kernelType = e.target.dataset.k;
+        renderKernelGrid();
+        render();
+      });
+    });
+
+    renderKernelGrid();
+    render();
+    Deck.init({ index: 14, total: 32 });
+  </script>
+</body>
+</html>

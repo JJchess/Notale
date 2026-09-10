@@ -1,0 +1,320 @@
+<!doctype html>
+<!--
+构图意图：
+1. 主对象：两组并列对比的集成树群（常规 Bagging 与 特征子采样随机森林）及其分裂节点对强弱特征的选取分布。
+2. 关系可见性：左侧无子采样时强特征 f₁ 主导所有树根节点，树结构趋同、相关性高达 ρ=0.82；右侧随机子采样强制排除 f₁，迫使模型发掘次优特征，树形多样、相关性降至 ρ=0.28，由虚线与对比柱直接映射到集成方差公式 Var = ρσ² + (1-ρ)/M·σ²。
+3. 说明依附：核心推论与公式紧随相关系数对比柱下沿；讲稿收束完整推导，界面仅留关键量与判定。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>特征子采样打破强特征主导</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      background: var(--bg);
+      font-family: var(--font-sans);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    header {
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0 0 8px 0;
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: var(--lh-tight);
+    }
+
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 56px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      margin: 0;
+    }
+
+    .badge {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .trees-canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 380px;
+    }
+
+    .tree-diagram {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .stat-card {
+      margin-top: 24px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-top: 1px solid var(--rule);
+    }
+
+    .stat-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .stat-value {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat-value.high {
+      color: var(--focus);
+    }
+
+    .stat-value.low {
+      color: var(--model);
+    }
+
+    .footer-bar {
+      margin-top: 20px;
+      padding-top: 14px;
+      border-top: 1px solid var(--rule);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .formula {
+      font-family: var(--font-display);
+      color: var(--text);
+      font-size: var(--fs-body);
+    }
+
+    .formula em {
+      color: var(--focus);
+      font-style: normal;
+    }
+
+    .conclusion-tag {
+      font-family: var(--font-display);
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="16" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>特征子采样打破强特征主导</h1>
+      <p class="lead">当所有树共享全量特征时，最优特征将克隆出高度同构的决策树。</p>
+    </header>
+
+    <div class="comparison-grid">
+      <!-- 左栏：全量特征 Bagging -->
+      <section class="panel min0">
+        <div class="panel-header">
+          <h2 class="panel-title">常规 Bagging（全特征可选）</h2>
+          <span class="badge">每节点考察 p 个特征</span>
+        </div>
+        <div class="trees-canvas-wrap">
+          <svg class="tree-diagram" viewBox="0 0 680 370" aria-label="常规 Bagging 中树结构高度同构">
+            <!-- Tree 1 -->
+            <g transform="translate(60, 30)">
+              <line x1="60" y1="32" x2="20" y2="105" stroke="var(--rule)" stroke-width="2" />
+              <line x1="60" y1="32" x2="100" y2="105" stroke="var(--rule)" stroke-width="2" />
+              <line x1="20" y1="105" x2="0" y2="175" stroke="var(--rule)" stroke-width="2" />
+              <line x1="20" y1="105" x2="40" y2="175" stroke="var(--rule)" stroke-width="2" />
+              
+              <!-- Root: dominant feature f1 -->
+              <rect x="20" y="8" width="80" height="38" rx="4" fill="var(--bg)" stroke="var(--focus)" stroke-width="2.5" />
+              <text x="60" y="32" text-anchor="middle" font-size="16" font-weight="bold" fill="var(--focus)">f₁ (强)</text>
+              
+              <rect x="-3" y="86" width="46" height="32" rx="4" fill="var(--bg)" stroke="var(--rule)" stroke-width="1.5" />
+              <text x="20" y="107" text-anchor="middle" font-size="13" fill="var(--text)">f₂</text>
+              <rect x="77" y="86" width="46" height="32" rx="4" fill="var(--bg)" stroke="var(--rule)" stroke-width="1.5" />
+              <text x="100" y="107" text-anchor="middle" font-size="13" fill="var(--text)">f₃</text>
+              <text x="60" y="240" text-anchor="middle" font-size="15" fill="var(--muted)">树 1</text>
+            </g>
+
+            <!-- Tree 2 -->
+            <g transform="translate(280, 30)">
+              <line x1="60" y1="32" x2="20" y2="105" stroke="var(--rule)" stroke-width="2" />
+              <line x1="60" y1="32" x2="100" y2="105" stroke="var(--rule)" stroke-width="2" />
+              <line x1="100" y1="105" x2="80" y2="175" stroke="var(--rule)" stroke-width="2" />
+              <line x1="100" y1="105" x2="120" y2="175" stroke="var(--rule)" stroke-width="2" />
+              
+              <rect x="20" y="8" width="80" height="38" rx="4" fill="var(--bg)" stroke="var(--focus)" stroke-width="2.5" />
+              <text x="60" y="32" text-anchor="middle" font-size="16" font-weight="bold" fill="var(--focus)">f₁ (强)</text>
+              
+              <rect x="-3" y="86" width="46" height="32" rx="4" fill="var(--bg)" stroke="var(--rule)" stroke-width="1.5" />
+              <text x="20" y="107" text-anchor="middle" font-size="13" fill="var(--text)">f₂</text>
+              <rect x="77" y="86" width="46" height="32" rx="4" fill="var(--bg)" stroke="var(--rule)" stroke-width="1.5" />
+              <text x="100" y="107" text-anchor="middle" font-size="13" fill="var(--text)">f₄</text>
+              <text x="60" y="240" text-anchor="middle" font-size="15" fill="var(--muted)">树 2</text>
+            </g>
+
+            <!-- Tree 3 -->
+            <g transform="translate(500, 30)">
+              <line x1="60" y1="32" x2="20" y2="105" stroke="var(--rule)" stroke-width="2" />
+              <line x1="60" y1="32" x2="100" y2="105" stroke="var(--rule)" stroke-width="2" />
+              <line x1="20" y1="105" x2="0" y2="175" stroke="var(--rule)" stroke-width="2" />
+              <line x1="20" y1="105" x2="40" y2="175" stroke="var(--rule)" stroke-width="2" />
+              
+              <rect x="20" y="8" width="80" height="38" rx="4" fill="var(--bg)" stroke="var(--focus)" stroke-width="2.5" />
+              <text x="60" y="32" text-anchor="middle" font-size="16" font-weight="bold" fill="var(--focus)">f₁ (强)</text>
+              
+              <rect x="-3" y="86" width="46" height="32" rx="4" fill="var(--bg)" stroke="var(--rule)" stroke-width="1.5" />
+              <text x="20" y="107" text-anchor="middle" font-size="13" fill="var(--text)">f₃</text>
+              <rect x="77" y="86" width="46" height="32" rx="4" fill="var(--bg)" stroke="var(--rule)" stroke-width="1.5" />
+              <text x="100" y="107" text-anchor="middle" font-size="13" fill="var(--text)">f₅</text>
+              <text x="60" y="240" text-anchor="middle" font-size="15" fill="var(--muted)">树 3</text>
+            </g>
+
+            <text x="340" y="315" text-anchor="middle" font-size="16" fill="var(--focus)">
+              首要分裂点均被 f₁ 占据，各树预测高度同构
+            </text>
+          </svg>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">基学习器平均相关系数 ρ</span>
+          <span class="stat-value high">0.82（高耦合）</span>
+        </div>
+      </section>
+
+      <!-- 右栏：随机森林 特征子采样 -->
+      <section class="panel rf min0" data-step="1">
+        <div class="panel-header">
+          <h2 class="panel-title">随机森林（节点特征子采样）</h2>
+          <span class="badge">每节点随机候选 m ≈ √p 个</span>
+        </div>
+        <div class="trees-canvas-wrap">
+          <svg class="tree-diagram" viewBox="0 0 680 370" aria-label="随机森林中各树产生多样结构">
+            <!-- Tree 1: has f1 -->
+            <g transform="translate(60, 30)">
+              <line x1="60" y1="32" x2="20" y2="105" stroke="var(--model)" stroke-width="2" />
+              <line x1="60" y1="32" x2="100" y2="105" stroke="var(--model)" stroke-width="2" />
+              <line x1="20" y1="105" x2="0" y2="175" stroke="var(--model)" stroke-width="2" />
+              <line x1="20" y1="105" x2="40" y2="175" stroke="var(--model)" stroke-width="2" />
+              
+              <rect x="20" y="8" width="80" height="38" rx="4" fill="var(--bg)" stroke="var(--focus)" stroke-width="2" />
+              <text x="60" y="32" text-anchor="middle" font-size="16" font-weight="bold" fill="var(--focus)">f₁ (强)</text>
+              
+              <rect x="-3" y="86" width="46" height="32" rx="4" fill="var(--bg)" stroke="var(--model)" stroke-width="1.5" />
+              <text x="20" y="107" text-anchor="middle" font-size="13" fill="var(--model)">f₄</text>
+              <rect x="77" y="86" width="46" height="32" rx="4" fill="var(--bg)" stroke="var(--model)" stroke-width="1.5" />
+              <text x="100" y="107" text-anchor="middle" font-size="13" fill="var(--model)">f₂</text>
+              <text x="60" y="240" text-anchor="middle" font-size="15" fill="var(--muted)">树 1</text>
+            </g>
+
+            <!-- Tree 2: f1 absent, uses f3 -->
+            <g transform="translate(280, 30)">
+              <line x1="60" y1="32" x2="20" y2="105" stroke="var(--model)" stroke-width="2" />
+              <line x1="60" y1="32" x2="100" y2="105" stroke="var(--model)" stroke-width="2" />
+              <line x1="100" y1="105" x2="80" y2="175" stroke="var(--model)" stroke-width="2" />
+              <line x1="100" y1="105" x2="120" y2="175" stroke="var(--model)" stroke-width="2" />
+              
+              <rect x="20" y="8" width="80" height="38" rx="4" fill="var(--bg)" stroke="var(--model)" stroke-width="2.5" />
+              <text x="60" y="32" text-anchor="middle" font-size="16" font-weight="bold" fill="var(--model)">f₃ (次优)</text>
+              
+              <rect x="-3" y="86" width="46" height="32" rx="4" fill="var(--bg)" stroke="var(--model)" stroke-width="1.5" />
+              <text x="20" y="107" text-anchor="middle" font-size="13" fill="var(--model)">f₅</text>
+              <rect x="77" y="86" width="46" height="32" rx="4" fill="var(--bg)" stroke="var(--model)" stroke-width="1.5" />
+              <text x="100" y="107" text-anchor="middle" font-size="13" fill="var(--model)">f₂</text>
+              <text x="60" y="240" text-anchor="middle" font-size="15" fill="var(--muted)">树 2</text>
+            </g>
+
+            <!-- Tree 3: f1 absent, uses f2 -->
+            <g transform="translate(500, 30)">
+              <line x1="60" y1="32" x2="20" y2="105" stroke="var(--model)" stroke-width="2" />
+              <line x1="60" y1="32" x2="100" y2="105" stroke="var(--model)" stroke-width="2" />
+              <line x1="20" y1="105" x2="0" y2="175" stroke="var(--model)" stroke-width="2" />
+              <line x1="20" y1="105" x2="40" y2="175" stroke="var(--model)" stroke-width="2" />
+              
+              <rect x="20" y="8" width="80" height="38" rx="4" fill="var(--bg)" stroke="var(--model)" stroke-width="2.5" />
+              <text x="60" y="32" text-anchor="middle" font-size="16" font-weight="bold" fill="var(--model)">f₂ (次优)</text>
+              
+              <rect x="-3" y="86" width="46" height="32" rx="4" fill="var(--bg)" stroke="var(--model)" stroke-width="1.5" />
+              <text x="20" y="107" text-anchor="middle" font-size="13" fill="var(--model)">f₄</text>
+              <rect x="77" y="86" width="46" height="32" rx="4" fill="var(--bg)" stroke="var(--model)" stroke-width="1.5" />
+              <text x="100" y="107" text-anchor="middle" font-size="13" fill="var(--model)">f₆</text>
+              <text x="60" y="240" text-anchor="middle" font-size="15" fill="var(--muted)">树 3</text>
+            </g>
+
+            <text x="340" y="315" text-anchor="middle" font-size="16" fill="var(--model)">
+              部分候选集排除 f₁，迫使其余预测特征显现
+            </text>
+          </svg>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">基学习器平均相关系数 ρ</span>
+          <span class="stat-value low">0.28（强解耦）</span>
+        </div>
+      </section>
+    </div>
+
+    <footer class="footer-bar" data-step="2">
+      <div class="formula">
+        Var(集) = <em>ρ</em>·σ² + ((1 - <em>ρ</em>) / M)·σ²
+      </div>
+      <div class="conclusion-tag">
+        降低树间相关性 ρ，实质性压低集成方差的理论下界
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+各位同学请看：在标准 Bagging 里，虽然我们对样本进行了有放回重采样，但如果数据集中存在一到两个强预测特征，比如这里的特征 1，贪心分裂算法在几乎每一棵树的根节点都会选它。这导致所有基决策树结构高度相似，彼此之间的预测相关系数非常高，往往达到 0.8 以上。
+
+而随机森林引入的特征子采样机制，在每次选择分裂节点时只随机抽取一部分候选特征。这意味着在很多分裂节点上，强特征被有意排除在外，算法被迫去挖掘其他次优特征的潜在分类能力。
+
+通过这种“强迫多样化”，基学习器之间的相关系数大幅压低。代入集成的方差公式我们可以看到：即便基学习器数量 M 趋向无穷大，集成的方差仍受限于 ρ 乘 σ 平方。只有削减相关系数 ρ，才能真正打破瓶颈，压低集成的方差下界。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 16, total: 32 });
+  </script>
+</body>
+</html>

@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    /* 页面精密布局与几何配置 */
+    #stage {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      padding: 48px 64px 44px;
+      box-sizing: border-box;
+      gap: 24px;
+    }
+
+    .header-zone {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+    }
+
+    .header-titles {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .formula-banner {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .formula-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-left-width: 4px;
+    }
+    .formula-card.is-bce {
+      border-left-color: var(--class-a);
+    }
+    .formula-card.is-mse {
+      border-left-color: var(--class-b);
+    }
+    .formula-card .tag-lbl {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      font-family: var(--font-mono);
+    }
+
+    /* 主比较区 */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      min-height: 0;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      position: relative;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--border-light);
+      padding-bottom: 8px;
+    }
+
+    .chart-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      border: 1px solid var(--border-light);
+      background: rgba(255, 255, 255, 0.28);
+    }
+
+    svg.plot-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+
+    .chart-annotations {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .metric-badge {
+      position: absolute;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 4px 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    .key-callout {
+      margin-top: 2px;
+      padding: 8px 12px;
+      border: 1px solid var(--border-light);
+      border-left: 3px solid var(--text);
+      font-size: 14px;
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .key-callout strong {
+      font-weight: 700;
+    }
+
+    .scrubber-panel {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 6px 12px;
+      background: rgba(22, 32, 27, 0.04);
+      border: 1px solid var(--border-light);
+    }
+    .scrubber-slider {
+      flex: 1;
+      height: 4px;
+      -webkit-appearance: none;
+      background: var(--border);
+      outline: none;
+      cursor: ew-resize;
+    }
+    .scrubber-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      background: var(--text);
+      cursor: ew-resize;
+    }
+    .scrubber-val {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      width: 90px;
+    }
+
+    /* SVG 内部几何与刻度 */
+    .axis-line { stroke: var(--border); stroke-width: 1.2px; }
+    .grid-line { stroke: var(--border-light); stroke-dasharray: 2 3; }
+    .curve-bce { stroke: var(--class-a); stroke-width: 2.8px; fill: none; }
+    .curve-mse { stroke: var(--class-b); stroke-width: 2.8px; fill: none; }
+    .tangent-line { stroke-width: 1.8px; stroke-dasharray: 3 3; }
+    .inspect-point { r: 5.5px; stroke: var(--bg); stroke-width: 2px; }
+    .tick-lbl { font-family: var(--font-mono); font-size: 11px; fill: var(--text-sub); }
+  </style>
+</head>
+<body data-page="NN" data-total="19">
+  <div id="stage">
+    <header class="header-zone">
+      <div class="header-titles">
+        <h1 class="nt-title">二分类损失：交叉熵与均方误差</h1>
+        <p class="nt-lead">严重预测错误时，交叉熵提供陡峭惩罚梯度；均方误差陷入平缓饱和区。</p>
+      </div>
+      <div class="formula-banner">
+        <div class="formula-card is-bce">
+          <span class="tag-lbl" style="color:var(--class-a)">BCE</span>
+          <span id="eq-bce"></span>
+        </div>
+        <div class="formula-card is-mse">
+          <span class="tag-lbl" style="color:var(--class-b)">MSE</span>
+          <span id="eq-mse"></span>
+        </div>
+      </div>
+    </header>
+
+    <main class="compare-grid">
+      <!-- BCE Panel -->
+      <section class="panel">
+        <div class="panel-head">
+          <div class="nt-section-title">对数损失与梯度保持 (BCE)</div>
+          <span class="nt-tag nt-tag-a">无梯度饱和</span>
+        </div>
+        <div class="chart-container" id="host-bce">
+          <svg class="plot-canvas" id="svg-bce" viewBox="0 0 716 460"></svg>
+          <div class="metric-badge" id="badge-bce" style="top:18px; left:96px;">
+            损失 <span id="val-bce-loss">2.30</span> ｜ 曲线斜率 <span id="val-bce-grad" style="color:var(--class-a); font-weight:700;">-10.0</span>
+          </div>
+        </div>
+        <div class="key-callout">
+          <strong>严重误判区（p → 0）：</strong>损失对数激增，残差导数恒定维持更新推力。
+        </div>
+      </section>
+
+      <!-- MSE Panel -->
+      <section class="panel">
+        <div class="panel-head">
+          <div class="nt-section-title">二次损失与导数饱和 (MSE)</div>
+          <span class="nt-tag nt-tag-b">学习停滞隐患</span>
+        </div>
+        <div class="chart-container" id="host-mse">
+          <svg class="plot-canvas" id="svg-mse" viewBox="0 0 716 460"></svg>
+          <div class="metric-badge" id="badge-mse" style="top:18px; left:96px;">
+            损失 <span id="val-mse-loss">0.81</span> ｜ 曲线斜率 <span id="val-mse-grad" style="color:var(--class-b); font-weight:700;">-1.80</span>
+          </div>
+        </div>
+        <div class="key-callout">
+          <strong>严重误判区（p → 0）：</strong>Sigmoid 饱和使复合导数衰减至零，网络大错却停滞不前。
+        </div>
+      </section>
+    </main>
+
+    <footer class="scrubber-panel">
+      <span class="nt-label" style="color:var(--text)">真实标签 y = 1 时探查概率：</span>
+      <input type="range" class="scrubber-slider" id="prob-slider" min="0.02" max="0.98" step="0.01" value="0.10" aria-label="模型预测概率 p">
+      <span class="scrubber-val" id="prob-display">p = 0.10</span>
+      <span class="nt-tick" style="color:var(--text-muted)">拖动滑块对比极端错误下的梯度与更新动力</span>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    在二分类任务中，模型最后一层通常用 Sigmoid 函数将实数映射为 (0, 1) 的概率值 p。
+    当我们设定真实标签 y=1 时，如果模型给出了非常荒谬的预测（例如 p 接近 0），损失函数应该如何惩罚它？
+    均方误差（MSE）由于包含 (p-y)^2，其对网络原始权重的梯度中会乘以 Sigmoid 函数本身的导数 p(1-p)。当 p 趋近于 0 时，Sigmoid 进入两端饱和区，导数极其微弱，导致参数几乎无法更新，陷入虚假的停滞。
+    而二分类交叉熵（BCE）通过对数形式消除了 Sigmoid 的导数分母，使得对原始权重的梯度直接正比于真实残差 (p - y)。在严重错误时提供巨大且线性的纠偏动力，因此成为分类问题的通用标准。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 渲染 Katex 紧凑公式
+      const eqBce = document.getElementById("eq-bce");
+      const eqMse = document.getElementById("eq-mse");
+      if (window.katex) {
+        katex.render("L_{\\text{BCE}} = -\\ln(p)", eqBce, { throwOnError: false });
+        katex.render("L_{\\text{MSE}} = (1 - p)^2", eqMse, { throwOnError: false });
+      }
+
+      const W = 716, H = 460;
+      const pad = { top: 60, right: 40, bottom: 48, left: 70 };
+      const plotW = W - pad.left - pad.right;
+      const plotH = H - pad.top - pad.bottom;
+
+      // 坐标映射
+      // X 轴：p ∈ [0, 1]
+      function scaleX(p) {
+        return pad.left + p * plotW;
+      }
+      // BCE Y 轴：L ∈ [0, 4.2]
+      const maxBceY = 4.0;
+      function scaleBceY(l) {
+        const clamped = Math.max(0, Math.min(l, maxBceY));
+        return pad.top + plotH - (clamped / maxBceY) * plotH;
+      }
+      // MSE Y 轴：L ∈ [0, 1.05]
+      const maxMseY = 1.05;
+      function scaleMseY(l) {
+        const clamped = Math.max(0, Math.min(l, maxMseY));
+        return pad.top + plotH - (clamped / maxMseY) * plotH;
+      }
+
+      // 生成静态网格和轴刻度
+      function buildGridSvg(isBce) {
+        let out = "";
+        // 垂直网格 (p: 0, 0.2, 0.4, 0.6, 0.8, 1.0)
+        for (let i = 0; i <= 10; i += 2) {
+          const p = i / 10;
+          const x = scaleX(p);
+          out += `<line class="grid-line" x1="${x}" y1="${pad.top}" x2="${x}" y2="${pad.top + plotH}"/>`;
+          out += `<text class="tick-lbl" x="${x}" y="${pad.top + plotH + 18}" text-anchor="middle">${p.toFixed(1)}</text>`;
+        }
+        out += `<text class="tick-lbl" x="${pad.left + plotW}" y="${pad.top + plotH + 34}" text-anchor="end">预测概率 p (真实值 y = 1)</text>`;
+
+        // 水平网格
+        if (isBce) {
+          const ticks = [0, 1, 2, 3, 4];
+          ticks.forEach(l => {
+            const y = scaleBceY(l);
+            out += `<line class="grid-line" x1="${pad.left}" y1="${y}" x2="${pad.left + plotW}" y2="${y}"/>`;
+            out += `<text class="tick-lbl" x="${pad.left - 12}" y="${y + 4}" text-anchor="end">${l.toFixed(1)}</text>`;
+          });
+          out += `<text class="tick-lbl" x="${pad.left}" y="${pad.top - 16}" text-anchor="start">BCE 损失值</text>`;
+        } else {
+          const ticks = [0, 0.25, 0.5, 0.75, 1.0];
+          ticks.forEach(l => {
+            const y = scaleMseY(l);
+            out += `<line class="grid-line" x1="${pad.left}" y1="${y}" x2="${pad.left + plotW}" y2="${y}"/>`;
+            out += `<text class="tick-lbl" x="${pad.left - 12}" y="${y + 4}" text-anchor="end">${l.toFixed(2)}</text>`;
+          });
+          out += `<text class="tick-lbl" x="${pad.left}" y="${pad.top - 16}" text-anchor="start">MSE 损失值</text>`;
+        }
+
+        // 主轴底线
+        out += `<line class="axis-line" x1="${pad.left}" y1="${pad.top + plotH}" x2="${pad.left + plotW}" y2="${pad.top + plotH}"/>`;
+        out += `<line class="axis-line" x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${pad.top + plotH}"/>`;
+        return out;
+      }
+
+      // 预计算曲线路径
+      // BCE 曲线：L = -ln(p), p ∈ [0.018, 0.99]
+      let bceD = "";
+      for (let i = 2; i <= 99; i++) {
+        const p = i / 100;
+        const l = -Math.log(p);
+        const x = scaleX(p);
+        const y = scaleBceY(l);
+        bceD += (i === 2 ? `M ${x.toFixed(1)} ${y.toFixed(1)}` : ` L ${x.toFixed(1)} ${y.toFixed(1)}`);
+      }
+
+      // MSE 曲线：L = (1 - p)^2, p ∈ [0.01, 0.99]
+      let mseD = "";
+      for (let i = 1; i <= 99; i++) {
+        const p = i / 100;
+        const l = Math.pow(1 - p, 2);
+        const x = scaleX(p);
+        const y = scaleMseY(l);
+        mseD += (i === 1 ? `M ${x.toFixed(1)} ${y.toFixed(1)}` : ` L ${x.toFixed(1)} ${y.toFixed(1)}`);
+      }
+
+      const svgBce = document.getElementById("svg-bce");
+      const svgMse = document.getElementById("svg-mse");
+
+      // 组装静态背景
+      svgBce.innerHTML = `
+        <g id="grid-bce">${buildGridSvg(true)}</g>
+        <path class="curve-bce" d="${bceD}"/>
+        <g id="dynamic-bce"></g>
+      `;
+
+      svgMse.innerHTML = `
+        <g id="grid-mse">${buildGridSvg(false)}</g>
+        <path class="curve-mse" d="${mseD}"/>
+        <g id="dynamic-mse"></g>
+      `;
+
+      const dynBce = document.getElementById("dynamic-bce");
+      const dynMse = document.getElementById("dynamic-mse");
+
+      const slider = document.getElementById("prob-slider");
+      const probDisplay = document.getElementById("prob-display");
+      const valBceLoss = document.getElementById("val-bce-loss");
+      const valBceGrad = document.getElementById("val-bce-grad");
+      const valMseLoss = document.getElementById("val-mse-loss");
+      const valMseGrad = document.getElementById("val-mse-grad");
+
+      function update(p) {
+        probDisplay.textContent = `p = ${p.toFixed(2)}`;
+
+        // BCE:
+        // L = -ln(p)
+        // dL/dp = -1/p
+        // 对输出层 z 的综合有效梯度 (假设 Sigmoid 输出 p = sigma(z)):
+        // dL/dz_BCE = p - 1  (干净的残差推力)
+        // 在损失曲线切线斜率上：dL/dp = -1/p
+        const bceLoss = -Math.log(p);
+        const bceSlope = -1 / p; 
+        const bceEffectiveGrad = p - 1; // 对 z 的反向传播梯度
+
+        // MSE:
+        // L = (1 - p)^2
+        // dL/dp = 2(p - 1)
+        // 对输出层 z 的综合有效梯度 (含 Sigmoid 饱和项 p(1-p)):
+        // dL/dz_MSE = 2(p - 1) * p * (1 - p)
+        const mseLoss = Math.pow(1 - p, 2);
+        const mseSlope = 2 * (p - 1);
+        const mseEffectiveGrad = 2 * (p - 1) * p * (1 - p);
+
+        valBceLoss.textContent = bceLoss.toFixed(2);
+        valBceGrad.textContent = `${bceSlope.toFixed(1)} (权重导数: ${bceEffectiveGrad.toFixed(2)})`;
+
+        valMseLoss.textContent = mseLoss.toFixed(2);
+        valMseGrad.textContent = `${mseSlope.toFixed(2)} (权重导数: ${mseEffectiveGrad.toFixed(3)})`;
+
+        // 绘制 BCE 动向元素 (切线 + 探测点)
+        const bx = scaleX(p);
+        const by = scaleBceY(bceLoss);
+        // 切线段
+        const bTangSpan = 0.12;
+        const p1B = Math.max(0.015, p - bTangSpan);
+        const p2B = Math.min(0.99, p + bTangSpan);
+        const l1B = bceLoss + bceSlope * (p1B - p);
+        const l2B = bceLoss + bceSlope * (p2B - p);
+
+        dynBce.innerHTML = `
+          <line class="tangent-line" stroke="var(--class-a)" x1="${scaleX(p1B)}" y1="${scaleBceY(l1B)}" x2="${scaleX(p2B)}" y2="${scaleBceY(l2B)}"/>
+          <line stroke="var(--class-a)" stroke-dasharray="2 2" x1="${bx}" y1="${by}" x2="${bx}" y2="${pad.top + plotH}"/>
+          <circle class="inspect-point" cx="${bx}" cy="${by}" fill="var(--class-a)"/>
+        `;
+
+        // 绘制 MSE 动向元素
+        const mx = scaleX(p);
+        const my = scaleMseY(mseLoss);
+        const p1M = Math.max(0.01, p - 0.2);
+        const p2M = Math.min(0.99, p + 0.2);
+        const l1M = mseLoss + mseSlope * (p1M - p);
+        const l2M = mseLoss + mseSlope * (p2M - p);
+
+        dynMse.innerHTML = `
+          <line class="tangent-line" stroke="var(--class-b)" x1="${scaleX(p1M)}" y1="${scaleMseY(l1M)}" x2="${scaleX(p2M)}" y2="${scaleMseY(l2M)}"/>
+          <line stroke="var(--class-b)" stroke-dasharray="2 2" x1="${mx}" y1="${my}" x2="${mx}" y2="${pad.top + plotH}"/>
+          <circle class="inspect-point" cx="${mx}" cy="${my}" fill="var(--class-b)"/>
+        `;
+      }
+
+      slider.addEventListener("input", function (e) {
+        update(parseFloat(e.target.value));
+      });
+
+      // 初始化
+      update(0.10);
+
+      Deck.init({ index: 11, total: 19 });
+    })();
+  </script>
+</body>
+</html>

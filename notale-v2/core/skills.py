@@ -88,25 +88,8 @@ def _aux_sample_catalog(name: str, root: Path) -> str:
 
 
 
-# ── 样本消融开关 ─────────────────────────────────────────────────────
-# 2026-09-04 加的。问的是一个没人量过的问题:样本到底值多少钱?
-# 在 27 页那轮里,reference + Main 首次进入是全价、之后每步重发,可归因成本
-# 约 $0.77,占全轮 $3.26 的 24%。而「Main 用 full 还是 mini」「一份还是多份」
-# 这两个选择从来没有对照过 —— 现有的 full 优先是判断,不是测量。
-#
-# 三档在两类 workflow 上的含义不同,因为它们的样本形状本来就不同:
-#   视觉页(cover/page/interaction)  full = 完整实例(中位 21k 字符)
-#                                   mini = 紧凑版本；原本足够短的 full 可同源复用
-#                                   none = 只读 reference,不给实例
-#   代码页(build-code)              full = code-core-bundle 的四个作者层
-#                                   mini = 只给一个作者层(one)
-#                                   none = 只读 reference + CodeScaffold
-# 代码页没有 mini 变体,它的「减量」维度是作者层数,所以 mini 在那边等于 one。
-SAMPLE_MODES = ("full", "mini", "none")
-
-# name -> 在 mini 臂里因为缺 mini 而回退成 full 的样本 id。跑完写进 manifest,
-# 统计时把用到它们的页剔除,否则那几页混着对照条件。
-MINI_FALLBACKS: dict[str, list[str]] = {}
+# Visual examples use mini; code uses one retained author layer.
+SAMPLE_MODES = ("mini", "none")
 
 _READ_BOTH = (
     "then issue parallel `Read` calls for exactly one reference and one Main "
@@ -116,13 +99,6 @@ _READ_REFERENCE_ONLY = (
     "then `Read` exactly one reference for that category. This run supplies no "
     "worked sample; do not look for one, and build from the reference alone."
 )
-_CODE_THREE = """In your first response, issue these three calls in parallel:
-
-- `Read(<skill-dir>/references/code.md)`
-- `Read(<skill-dir>/samples/bundles/code/code-core-bundle.full.md)`
-- `CodeScaffold()`
-
-The sample bundle contains four contrasting author layers: edit-distance dynamic programming, Euclidean recursion, grid BFS, and tree traversal. Select the closest state/trace/evidence architecture; do not mix their metaphors or copy their learner code, data, labels, or styling."""
 _CODE_ONE = """In your first response, issue these three calls in parallel:
 
 - `Read(<skill-dir>/references/code.md)`
@@ -145,34 +121,15 @@ def _apply_sample_mode(name: str, body: str, mode: str) -> str:
     its anchor: a silently-unchanged body would run an ablation arm that is
     secretly the control, which is worse than a crash.
     """
-    if mode == "full":
+    if mode == "mini":
         return body
     if name == "build-code":
-        want = _CODE_ONE if mode == "mini" else _CODE_NONE
-        if _CODE_THREE not in body:
+        if _CODE_ONE not in body:
             raise ValueError("build-code/SKILL.md no longer carries the三-call block")
-        return body.replace(_CODE_THREE, want, 1)
+        return body.replace(_CODE_ONE, _CODE_NONE, 1)
 
     if _READ_BOTH not in body:
         raise ValueError(f"{name}/SKILL.md no longer carries the Main-read sentence")
-    if mode == "mini":
-        out = body.replace(".full.md`", ".mini.md`")
-        if out == body:
-            raise ValueError(f"{name}/SKILL.md lists no .full.md Main to swap")
-        # 有几份 Main 至今没有 mini。**回退到 full,但要吵。** 悄悄换菜单
-        # (把没 mini 的样本从列表里删掉) 会改变模型的选择集,那是第二个变量;
-        # 回退只让这几份在 mini 臂里仍是 full,是可记录、可从统计里剔除的混合。
-        fell_back = []
-        for rel in re.findall(r"<skill-dir>(/[^`]+\.mini\.md)", out):
-            if not (WORKFLOWS / name / rel.lstrip("/")).is_file():
-                fell_back.append(Path(rel).name.replace(".mini.md", ""))
-                out = out.replace(f"<skill-dir>{rel}",
-                                  f"<skill-dir>{rel[:-len('.mini.md')]}.full.md")
-        if fell_back:
-            MINI_FALLBACKS[name] = sorted(fell_back)
-            print(f"  ⚠ {name}: 这些 Main 没有 mini,本臂仍用 full —— "
-                  + ", ".join(sorted(fell_back)), flush=True)
-        return out
     # none —— 删掉整个 Samples 目录,并把读样本那句改成只读 reference
     start = body.find("## Samples")
     if start < 0:

@@ -1,0 +1,59 @@
+const fs=require('fs'),postcss=require('/tmp/notale-size-tools/node_modules/postcss');
+module.exports=function(ast){
+ ast.walkRules(r=>{let matches=r.selectors.map(s=>s.match(/^(a|button|select)(:focus.*)$/));if(matches.length===3&&matches.every(Boolean)&&new Set(matches.map(m=>m[1])).size===3&&new Set(matches.map(m=>m[2])).size===1)r.selector=':is(a,button,select)'+matches[0][2]});
+ ast.walkRules(r=>{if(r.selector==='::-webkit-scrollbar-thumb')r.walkDecls('background',d=>d.value=d.value.replace('currentcolor 28%','currentcolor var(--sb,28%)'));for(let [selector,value]of [['::-webkit-scrollbar-thumb:hover','46%'],['::-webkit-scrollbar-thumb:active','62%']])if(r.selector===selector){r.removeAll();r.append({prop:'--sb',value})}});
+ const remove={
+  'svg.svelte-w3cmaj':['width','height','transform-origin'],
+  '.modal .top-wrapper':['width','display','justify-content','flex-direction'],
+  '.modal .info':['width'],
+  '.modal .maze':['width'],
+  '.modal .contents':['flex-direction','width'],
+  '.modal .learn':['width'],
+  '#dashboard .grid-wrapper':['width'],
+  '.bar .select':['width'],
+  '#pick .directions':['flex-direction'],
+  '#pick .directions p':['flex-direction'],
+  '#pick .stories':['flex-flow','max-width'],
+  '#methodology':['min-height','padding','position'],
+  '.modal':['max-width'],
+  '#pick .story':['max-width'],
+  '#pick .title':['max-width'],
+  '#pick .desc':['max-width'],
+  '.mini-intro':['max-width'],
+  '#dashboard figure':['height'],
+  '#dashboard .tracker.hasBorder':['height'],
+  '#dashboard .bar':['position'],
+  '.bar':['bottom','width'],
+  '#grid .state':['grid-area'],
+  '#grid .state .abbrev':['font-family'],
+  '.bar label':['font-family','display'],
+  '.bar .methods .text-only':['display'],
+  '.bar select':['font-family','appearance'],
+  '.keyboard .text':['font-family'],
+  // Arrow keys are fixed-size original SVG images, with no flex children or text.
+  '.keyboard .key':['display','align-items','justify-content','font-size','color'],
+  '.below button.solve':['font-family','transition'],
+  '.below button.start':['font-family','transition'],
+  '.modal .clipboard':['font-family'],
+  '#pick h2':['font-family','max-width'],
+  '#dashboard h3':['font-family'],
+  '.state-info h2':['font-family'],
+  '#methodology h4':['color','font-family'],
+  '#methodology p':['color'],
+  '#methodology .activity:hover .book-img':['color'],
+  '#methodology table':['table-layout'],
+  'body':['margin'],
+  'a':['background-color'],
+  'button':['border-image'],
+  'select':['border-image'],
+  'button,select':['border-image'],
+ };
+ ast.walkRules(r=>{
+  r.selectors=r.selectors.filter(s=>!(/^(?:video|picture|h5|h6|table caption)$/.test(s)||/^#methodology td:nth-child\(3\)$/.test(s)||/svg (?:path|line|polyline)$/.test(s)||s.startsWith('h2 .icon:hover')||s==='line.svelte-1x81kz0'));if(!r.selectors.length){r.remove();return}
+  // Split only when declarations differ between members; preserve source order.
+  let groups=new Map;
+  for(let selector of r.selectors){let decls=r.nodes.filter(d=>d.type!=='decl'||!(remove[selector]||[]).includes(d.prop));let key=decls.map(d=>d.toString()).join(';');if(!groups.has(key))groups.set(key,{selectors:[],decls});groups.get(key).selectors.push(selector)}
+  if(groups.size===1){let g=[...groups.values()][0];r.removeAll();for(let d of g.decls)r.append(d)}else {for(let g of groups.values()){if(!g.decls.length)continue;let n=postcss.rule({selector:g.selectors.join(',')});for(let d of g.decls)n.append(d.clone());r.before(n)}r.remove()}
+ });
+ ast.walkRules(r=>{if(r.selector==='.modal')r.walkDecls('width',d=>d.value='1000px');if(r.selector==='.modal .contents'){r.walkDecls('display',d=>d.value='grid');r.append({prop:'grid-template-columns',value:'repeat(2,minmax(0,1fr))'});r.append({prop:'column-gap',value:'2rem'})}if(r.selector==='.modal .learn')r.append({prop:'grid-column',value:'1/-1'});r.selectors=r.selectors.map(s=>s.replace(/^\.bar \.select$/,'.bar .select-control').replaceAll('.keyboard span.','.keyboard .').replaceAll('.svelte-1997q0u','').replaceAll('g.svelte-1x81kz0','.svelte-1x81kz0').replaceAll('g.fade.svelte-1x81kz0','.fade.svelte-1x81kz0').replaceAll('svg.svelte-w3cmaj','svg.feather').replace(/^#grid (?=\.state\b)/,'').replace(/^\.state (?=\.(?:abbrev|shortened|check)\b)/,'').replace(/^\.state-info (?=\.(?:state-title|plus-icon)\b)/,'').replace(/^#methodology (?=\.(?:inner|book-img)\b)/,'').replace(/^\.bar (?=\.(?:select-control|selects)\b)/,'').replace(/^\.keyboard (?=(?:img)?\.(?:keys|key)\b)/,'').replace(/^\.maze-container (?=\.buttons\b)/,'').replace(/^\.overlay (?=\.complete\b)/,'').replace(/^#dashboard (?=\.(?:tracker|tracker-sentence|maze-directions|grid-wrapper)\b)/,'').replace(/^#dashboard figure/,'#grid').replace(/^#dashboard h3/,'#grid h3').replace(/^#pick (?=\.(?:img-bg|img-maze|img-person|img-absolute|plus-add|directions|stories|desc)\b)/,'').replace(/^\.modal (?=\.(?:contents|top-wrapper|maze|learn|clipboard|share|close)\b)/,''))});ast.append(postcss.rule({selector:'h2,h3,h4'}).append({prop:'font-family',value:'var(--serif)'}));return ast;
+};

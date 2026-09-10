@@ -1,0 +1,6 @@
+from pathlib import Path
+import csv,json,shutil,hashlib,subprocess
+b=Path(__file__).resolve().parents[1];s=b/'sources/shelters';d=b/'review/dog-flow-atlas';d.mkdir(exist_ok=True);assets=[]
+for p in list((s/'src/assets/images/profiles').glob('*.png'))+[s/'src/assets/data/exportedDogs.csv',s/'src/assets/data/importExport.csv']:
+ rel=p.relative_to(s/'src');out=d/rel;out.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,out);assets.append({'path':str(rel),'source':str(p.relative_to(s)),'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'bytes':p.stat().st_size})
+dogs=list(csv.DictReader((s/'src/assets/data/exportedDogs.csv').open()));states=[r['location'] for r in csv.DictReader((s/'src/assets/data/importExport.csv').open()) if r['inUS']=='true'];(d/'data.json').write_text(json.dumps({'dogs':dogs,'states':sorted(states)},ensure_ascii=False)+'\n');shutil.copy2(s/'LICENSE',d/'LICENSE.source');(d/'assets.json').write_text(json.dumps({'repo':'https://github.com/the-pudding/shelters','commit':subprocess.check_output(['git','-C',str(s),'rev-parse','HEAD'],text=True).strip(),'assets':assets,'derived_data_sha256':hashlib.sha256((d/'data.json').read_bytes()).hexdigest()},indent=2)+'\n');print(len(dogs),len(states),len(assets))

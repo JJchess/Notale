@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      gap: 20px;
+      user-select: none;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      color: var(--text);
+    }
+    .header-sub {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 40px;
+      align-items: stretch;
+      min-height: 0;
+    }
+
+    /* 左侧主视界：矩阵与投票收束 */
+    .lab-stage {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .board-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    /* 右侧控制与推导板 */
+    .control-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      padding-left: 10px;
+    }
+
+    .stat-strip {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 24px;
+    }
+
+    .stat-box {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .stat-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .stat-value {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      line-height: var(--lh-tight);
+      color: var(--text);
+    }
+    .stat-value.highlight {
+      color: var(--focus);
+    }
+    .stat-note {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .param-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .param-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+    .param-header span.val {
+      font-family: var(--font-display);
+      font-weight: bold;
+      color: var(--model);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      background: #c8d4db;
+      border-radius: 3px;
+      outline: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--model);
+      cursor: pointer;
+      border: 2px solid #fff;
+    }
+    input[type="range"]:focus-visible::-webkit-slider-thumb {
+      background: var(--focus);
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .presets {
+      display: flex;
+      gap: 12px;
+    }
+    .presets button {
+      flex: 1;
+      padding: 8px 12px;
+      font-size: var(--fs-label);
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      cursor: pointer;
+      transition: background var(--motion-fast), border-color var(--motion-fast);
+    }
+    .presets button:hover {
+      background: rgba(23, 98, 142, 0.08);
+      border-color: var(--model);
+    }
+    .presets button.active {
+      border-color: var(--model);
+      background: var(--model);
+      color: #fff;
+      font-weight: bold;
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 24px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+    .swatch.correct {
+      background: #c2d8e4;
+      border: 1px solid var(--model);
+    }
+    .swatch.wrong {
+      background: var(--focus);
+    }
+
+    .theorem-box {
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      padding-top: 14px;
+      border-top: 1px solid var(--rule);
+    }
+    .theorem-box strong {
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="03" data-total="22">
+  <div id="stage">
+    <header>
+      <h1>投票消除独立误差</h1>
+      <span class="header-sub">Condorcet 陪审团定理验证平台</span>
+    </header>
+
+    <div class="main-grid">
+      <!-- 视界画布：展示基分类器矩阵及最终投票判定 -->
+      <section class="lab-stage">
+        <div class="legend-row">
+          <span class="legend-item"><span class="swatch correct"></span>正确预测 (+1)</span>
+          <span class="legend-item"><span class="swatch wrong"></span>错误预测 (-1)</span>
+          <span class="legend-item" style="margin-left:auto;">横轴：25 个独立测试样本 ｜ 纵轴：基分类器</span>
+        </div>
+        <div class="board-container min0">
+          <canvas id="cvLab" class="cv-fill"></canvas>
+        </div>
+      </section>
+
+      <!-- 调节与量测指标 -->
+      <section class="control-panel">
+        <div class="stat-strip">
+          <div class="stat-box">
+            <span class="stat-label">单基分类器错误率</span>
+            <span class="stat-value" id="valBaseErr">35.0%</span>
+            <span class="stat-note">单模型准确率 65.0%</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">集成多数表决错误率</span>
+            <span class="stat-value highlight" id="valEnsembleErr">1.2%</span>
+            <span class="stat-note" id="valTheoryErr">二项分布理论值: 1.1%</span>
+          </div>
+        </div>
+
+        <div class="param-group">
+          <div class="param-header">
+            <span>基分类器数量 (T)</span>
+            <span class="val" id="numT">15</span>
+          </div>
+          <input type="range" id="rngT" min="3" max="31" step="2" value="15" aria-label="基分类器数量">
+        </div>
+
+        <div class="param-group">
+          <div class="param-header">
+            <span>单模型错误率 (ε)</span>
+            <span class="val" id="numE">0.35</span>
+          </div>
+          <input type="range" id="rngE" min="0.10" max="0.60" step="0.02" value="0.35" aria-label="单模型错误率">
+        </div>
+
+        <div class="param-group">
+          <div class="param-header">
+            <span>模型间相关性 (多样性)</span>
+            <span class="val" id="numR">0.00 (完全独立)</span>
+          </div>
+          <input type="range" id="rngR" min="0.0" max="0.8" step="0.1" value="0.0" aria-label="模型相关性">
+        </div>
+
+        <div class="presets">
+          <button id="btnGood" class="active">弱学习器集成<br>(ε=0.35, 独立)</button>
+          <button id="btnBad">劣于随机猜测<br>(ε=0.55, 逆向失效)</button>
+          <button id="btnCorr">高度相关同质<br>(ρ=0.7, 多样性溃散)</button>
+        </div>
+
+        <div class="theorem-box">
+          <strong>关键法则：</strong>当单个分类器优于随机猜测（ε &lt; 0.5）且误差相互独立时，随分类器数量增加，多数表决的集成本体错误率呈指数衰减趋向于 0。
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看这个交互实验。集成学习能起作用，最根本的底座是 Condorcet 陪审团定理。
+    当我们有多个弱分类器时，即便每一个单体的错误率高达 35%，只要它们的错误是各自独立的，多数表决就能把错误率压制到 1% 左右。
+    通过右侧滑块，你可以尝试改变基分类器数量、单体错误率，以及相关性。
+    特别注意：一旦错误率超过 0.5，集成反而会以指数级速度必然犯错；而若相关性过高、失去多样性，再多的投票也无法降低误差。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      // 状态工厂
+      const N_SAMPLES = 25;
+      let state = {
+        T: 15,
+        eps: 0.35,
+        rho: 0.0,
+        seed: 42
+      };
+
+      // 伪随机生成器保持确定性
+      function pseudoRandom(s) {
+        let x = Math.sin(s++) * 10000;
+        return x - Math.floor(x);
+      }
+
+      // 计算二项分布累计上尾：P(K >= ceil(T/2))
+      function binomialTail(n, p) {
+        const kStart = Math.floor(n / 2) + 1;
+        let totalProb = 0;
+        function comb(n, k) {
+          if (k < 0 || k > n) return 0;
+          if (k === 0 || k === n) return 1;
+          let c = 1;
+          for (let i = 1; i <= k; i++) {
+            c = c * (n - i + 1) / i;
+          }
+          return c;
+        }
+        for (let k = kStart; k <= n; k++) {
+          totalProb += comb(n, k) * Math.pow(p, k) * Math.pow(1 - p, n - k);
+        }
+        return totalProb;
+      }
+
+      // 模拟计算矩阵与集成结果
+      function computeSimulation(st) {
+        const matrix = []; // T 行, N_SAMPLES 列, 1为错, 0为对
+        let seedCursor = st.seed;
+
+        // 共享潜变量驱动相关性
+        const sharedNoise = [];
+        for (let j = 0; j < N_SAMPLES; j++) {
+          seedCursor++;
+          sharedNoise.push(pseudoRandom(seedCursor) < st.eps ? 1 : 0);
+        }
+
+        for (let i = 0; i < st.T; i++) {
+          const row = [];
+          for (let j = 0; j < N_SAMPLES; j++) {
+            seedCursor++;
+            const indepNoise = pseudoRandom(seedCursor) < st.eps ? 1 : 0;
+            // 混合潜变量模拟正相关
+            seedCursor++;
+            const useShared = pseudoRandom(seedCursor) < st.rho;
+            const isError = useShared ? sharedNoise[j] : indepNoise;
+            row.push(isError);
+          }
+          matrix.push(row);
+        }
+
+        // 多数表决集成判定
+        const ensembleErrors = [];
+        let totalEnsembleWrong = 0;
+        for (let j = 0; j < N_SAMPLES; j++) {
+          let errCount = 0;
+          for (let i = 0; i < st.T; i++) {
+            if (matrix[i][j] === 1) errCount++;
+          }
+          const isWrong = errCount > (st.T / 2);
+          ensembleErrors.push({ isWrong, errCount });
+          if (isWrong) totalEnsembleWrong++;
+        }
+
+        const simEnsembleRate = totalEnsembleWrong / N_SAMPLES;
+        const theoryRate = st.rho === 0 ? binomialTail(st.T, st.eps) : null;
+
+        return {
+          matrix,
+          ensembleErrors,
+          totalEnsembleWrong,
+          simEnsembleRate,
+          theoryRate
+        };
+      }
+
+      // UI 控件绑定
+      const rngT = document.getElementById("rngT");
+      const rngE = document.getElementById("rngE");
+      const rngR = document.getElementById("rngR");
+      const numT = document.getElementById("numT");
+      const numE = document.getElementById("numE");
+      const numR = document.getElementById("numR");
+      const valBaseErr = document.getElementById("valBaseErr");
+      const valEnsembleErr = document.getElementById("valEnsembleErr");
+      const valTheoryErr = document.getElementById("valTheoryErr");
+      const btnGood = document.getElementById("btnGood");
+      const btnBad = document.getElementById("btnBad");
+      const btnCorr = document.getElementById("btnCorr");
+      const cvLab = document.getElementById("cvLab");
+
+      let currentSim = computeSimulation(state);
+
+      function updateUI() {
+        numT.textContent = state.T;
+        numE.textContent = state.eps.toFixed(2);
+        numR.textContent = state.rho === 0 ? "0.00 (完全独立)" : state.rho.toFixed(1);
+
+        valBaseErr.textContent = (state.eps * 100).toFixed(1) + "%";
+        valBaseErr.nextElementSibling.textContent = `单模型准确率 ${((1 - state.eps) * 100).toFixed(1)}%`;
+
+        valEnsembleErr.textContent = (currentSim.simEnsembleRate * 100).toFixed(1) + "%";
+        if (currentSim.theoryRate !== null) {
+          valTheoryErr.textContent = `二项分布理论值: ${(currentSim.theoryRate * 100).toFixed(1)}%`;
+        } else {
+          valTheoryErr.textContent = `高相关下独立假定失效`;
+        }
+
+        // 预设高亮
+        btnGood.classList.toggle("active", state.eps === 0.35 && state.rho === 0);
+        btnBad.classList.toggle("active", state.eps === 0.55 && state.rho === 0);
+        btnCorr.classList.toggle("active", state.rho >= 0.6);
+
+        if (canvasFit) canvasFit.redraw();
+      }
+
+      function onParamChange() {
+        state.T = parseInt(rngT.value, 10);
+        state.eps = parseFloat(rngE.value);
+        state.rho = parseFloat(rngR.value);
+        currentSim = computeSimulation(state);
+        updateUI();
+      }
+
+      rngT.addEventListener("input", onParamChange);
+      rngE.addEventListener("input", onParamChange);
+      rngR.addEventListener("input", onParamChange);
+
+      btnGood.addEventListener("click", () => {
+        rngT.value = 15;
+        rngE.value = 0.35;
+        rngR.value = 0.0;
+        onParamChange();
+      });
+
+      btnBad.addEventListener("click", () => {
+        rngT.value = 15;
+        rngE.value = 0.55;
+        rngR.value = 0.0;
+        onParamChange();
+      });
+
+      btnCorr.addEventListener("click", () => {
+        rngT.value = 15;
+        rngE.value = 0.35;
+        rngR.value = 0.7;
+        onParamChange();
+      });
+
+      // 绘图渲染
+      function draw(ctx) {
+        const W = cvLab.width;
+        const H = cvLab.height;
+        ctx.clearRect(0, 0, W, H);
+
+        const padLeft = 90;
+        const padRight = 30;
+        const padTop = 30;
+        const padBottom = 80;
+
+        const availW = W - padLeft - padRight;
+        const availH = H - padTop - padBottom - 50; // 留出底部投票收束行
+
+        const cellW = availW / N_SAMPLES;
+        const cellH = Math.min(18, availH / state.T);
+
+        // 绘制基分类器行
+        for (let i = 0; i < state.T; i++) {
+          const y = padTop + i * (cellH + 2);
+
+          // 标注分类器名称
+          ctx.fillStyle = Deck.token("--muted");
+          ctx.font = '12px ' + Deck.token("--font-sans");
+          ctx.textAlign = "right";
+          ctx.textBaseline = "middle";
+          if (state.T <= 17 || i % 2 === 0 || i === state.T - 1) {
+            ctx.fillText(`M${i+1}`, padLeft - 10, y + cellH / 2);
+          }
+
+          // 绘制每个样本的预测块
+          for (let j = 0; j < N_SAMPLES; j++) {
+            const isErr = currentSim.matrix[i][j] === 1;
+            const x = padLeft + j * cellW;
+
+            ctx.fillStyle = isErr ? Deck.token("--focus") : "#c2d8e4";
+            ctx.fillRect(x + 1, y, cellW - 2, cellH);
+          }
+        }
+
+        // 汇聚投票连线与漏斗层
+        const matrixBottom = padTop + state.T * (cellH + 2) + 8;
+        const ensembleY = H - padBottom + 12;
+
+        ctx.strokeStyle = Deck.token("--rule");
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, matrixBottom);
+        ctx.lineTo(padLeft + availW, matrixBottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 集成结果行标签
+        ctx.fillStyle = Deck.token("--model");
+        ctx.font = 'bold 13px ' + Deck.token("--font-display");
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillText("多数表决", padLeft - 10, ensembleY + 12);
+
+        // 绘制集成后的结果行 (粗 4px 签名风格)
+        for (let j = 0; j < N_SAMPLES; j++) {
+          const x = padLeft + j * cellW;
+          const res = currentSim.ensembleErrors[j];
+
+          // 收束汇聚线
+          ctx.strokeStyle = res.isWrong ? Deck.token("--focus") : Deck.token("--model");
+          ctx.lineWidth = res.isWrong ? 2 : 1;
+          ctx.beginPath();
+          ctx.moveTo(x + cellW / 2, matrixBottom);
+          ctx.lineTo(x + cellW / 2, ensembleY - 4);
+          ctx.stroke();
+
+          // 结果方块
+          ctx.fillStyle = res.isWrong ? Deck.token("--focus") : Deck.token("--model");
+          ctx.fillRect(x + 1, ensembleY, cellW - 2, 24);
+
+          // 标记符号
+          ctx.fillStyle = "#ffffff";
+          ctx.font = 'bold 12px ' + Deck.token("--font-display");
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(res.isWrong ? "×" : "✓", x + cellW / 2, ensembleY + 12);
+        }
+
+        // 底部样本刻度
+        ctx.fillStyle = Deck.token("--muted");
+        ctx.font = '11px ' + Deck.token("--font-sans");
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        for (let j = 0; j < N_SAMPLES; j += 4) {
+          const x = padLeft + j * cellW + cellW / 2;
+          ctx.fillText(`S${j+1}`, x, ensembleY + 30);
+        }
+      }
+
+      const canvasFit = Deck.autofit(cvLab, draw);
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

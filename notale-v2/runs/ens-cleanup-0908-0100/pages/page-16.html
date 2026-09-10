@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #stage {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      color: var(--text);
+      background: var(--bg);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      line-height: var(--lh-tight);
+      font-weight: 600;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: var(--fs-sec);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 390px;
+      gap: 40px;
+      min-height: 0;
+    }
+
+    .left-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .chart-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+
+    #chart-host {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-left: 1px solid var(--rule);
+      padding-left: 32px;
+    }
+
+    .concept-block {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .formula-card {
+      padding: 10px 0;
+      border: none;
+      background: none;
+    }
+
+    .formula-title {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .formula-body {
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+    }
+
+    .step-list {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      margin-top: 10px;
+    }
+
+    .step-item {
+      display: flex;
+      gap: 12px;
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+    }
+
+    .step-num {
+      color: var(--model);
+      font-weight: 700;
+      font-family: var(--font-display);
+    }
+
+    .step-item.active-step .step-num {
+      color: var(--focus);
+    }
+
+    .step-desc b {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .conclusion-box {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--rule);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    .conclusion-box strong {
+      color: var(--text);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      margin-top: 10px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot-raw {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--text);
+    }
+
+    .line-f0 {
+      width: 20px;
+      height: 2px;
+      border-top: 2px dashed var(--muted);
+    }
+
+    .line-tree {
+      width: 20px;
+      height: 2px;
+      background: var(--focus);
+    }
+
+    .line-f1 {
+      width: 20px;
+      height: 3px;
+      background: var(--model);
+    }
+  </style>
+</head>
+<body data-page="16" data-total="25">
+  <div id="stage">
+    <header>
+      <h1>GBDT：负梯度拟合残差</h1>
+    </header>
+
+    <div class="main-grid">
+      <div class="left-panel">
+        <div class="chart-container">
+          <div id="chart-host" role="img" aria-label="GBDT拟合真实函数、初始预测及负梯度的演化曲线"></div>
+        </div>
+        <div class="legend-row">
+          <div class="legend-item"><span class="dot-raw"></span>真实样本</div>
+          <div class="legend-item"><span class="line-f0"></span>初值 <span id="leg-f0"></span></div>
+          <div class="legend-item"><span class="line-tree"></span>弱树拟合梯度</div>
+          <div class="legend-item"><span class="line-f1"></span>更新后 <span id="leg-f1"></span></div>
+        </div>
+      </div>
+
+      <div class="right-panel">
+        <div class="concept-block">
+          <div class="formula-card">
+            <div class="formula-title">伪残差定义（损失函数的负梯度）</div>
+            <div class="formula-body" id="math-grad"></div>
+          </div>
+
+          <div class="step-list">
+            <div class="step-item">
+              <span class="step-num">01</span>
+              <div class="step-desc"><b>求伪残差</b>：损失函数负梯度</div>
+            </div>
+            <div class="step-item active-step">
+              <span class="step-num">02</span>
+              <div class="step-desc"><b>拟合梯度</b>：浅回归树预测步长</div>
+            </div>
+            <div class="step-item">
+              <span class="step-num">03</span>
+              <div class="step-desc"><b>步进累加</b>：<span id="s3-f"></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="conclusion-box">
+          <strong>优化实质</strong>：通用损失下，树拟合伪残差即在函数空间执行梯度下降。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，上节课我们讲了 AdaBoost 是通过改变样本权重来让后续分类器关注错题。
+    而由 Jerome Friedman 提出的 GBDT（梯度提升树）则把视角直接升华到了函数空间的最优化。
+    对于任意可导损失函数，最陡峭的下降方向就是负梯度方向。
+    我们看左图：样本真实分布有一条起伏的曲线，初始模型只能预测一个平均值 F0；
+    计算每个点在该处的负梯度后，用一棵深度极浅的回归树去拟合这个负梯度，也就是橙色折线；
+    最后把带有学习率的树累加回原模型，得到蓝色的 F1。这样无论损失函数是绝对误差还是逻辑回归损失，提升框架都能完全统一。
+  </aside>
+
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    katex.render(
+      "r_{im} = -\\left[ \\frac{\\partial L(y_i, F(x_i))}{\\partial F(x_i)} \\right]_{F=F_{m-1}}",
+      document.getElementById('math-grad'),
+      { throwOnError: false, displayMode: true }
+    );
+    katex.render("F_0(x)", document.getElementById('leg-f0'), { throwOnError: false });
+    katex.render("F_1(x)", document.getElementById('leg-f1'), { throwOnError: false });
+    katex.render("F_m = F_{m-1} + \\eta \\cdot h_m", document.getElementById('s3-f'), { throwOnError: false });
+
+    // 真实函数及观测样本生成
+    const X_MIN = 0;
+    const X_MAX = 10;
+    const N_SAMPLES = 25;
+
+    // 伪随机种子
+    function pseudoRandom(seed) {
+      let x = Math.sin(seed++) * 10000;
+      return x - Math.floor(x);
+    }
+
+    const rawPoints = [];
+    let sumY = 0;
+    for (let i = 0; i < N_SAMPLES; i++) {
+      const x = X_MIN + (X_MAX - X_MIN) * (i / (N_SAMPLES - 1));
+      const trueCurve = Math.sin(x * 0.7) * 2.5 + Math.cos(x * 0.3) * 1.5;
+      const noise = (pseudoRandom(i * 17 + 3) - 0.5) * 0.8;
+      const y = Number((trueCurve + noise).toFixed(2));
+      rawPoints.push([Number(x.toFixed(2)), y]);
+      sumY += y;
+    }
+
+    const f0 = Number((sumY / N_SAMPLES).toFixed(2)); // 常数初值
+
+    // 构造一棵三叶子回归树拟合负梯度 (即平方损失下的残差 y - f0)
+    // 分割点设在 x = 3.5 和 x = 7.0
+    const leaf1 = [], leaf2 = [], leaf3 = [];
+    rawPoints.forEach(pt => {
+      const x = pt[0];
+      const r = pt[1] - f0;
+      if (x < 3.5) leaf1.push(r);
+      else if (x < 7.0) leaf2.push(r);
+      else leaf3.push(r);
+    });
+
+    const v1 = leaf1.reduce((a,b)=>a+b, 0) / leaf1.length;
+    const v2 = leaf2.reduce((a,b)=>a+b, 0) / leaf2.length;
+    const v3 = leaf3.reduce((a,b)=>a+b, 0) / leaf3.length;
+
+    const eta = 0.8; // 学习率
+
+    // 拟合树与更新后曲线的点
+    const treePoints = [
+      [0, Number((v1).toFixed(2))],
+      [3.5, Number((v1).toFixed(2))],
+      [3.5, Number((v2).toFixed(2))],
+      [7.0, Number((v2).toFixed(2))],
+      [7.0, Number((v3).toFixed(2))],
+      [10.0, Number((v3).toFixed(2))]
+    ];
+
+    const f1Points = [
+      [0, Number((f0 + eta * v1).toFixed(2))],
+      [3.5, Number((f0 + eta * v1).toFixed(2))],
+      [3.5, Number((f0 + eta * v2).toFixed(2))],
+      [7.0, Number((f0 + eta * v2).toFixed(2))],
+      [7.0, Number((f0 + eta * v3).toFixed(2))],
+      [10.0, Number((f0 + eta * v3).toFixed(2))]
+    ];
+
+    // 残差箭头线对
+    const residualLines = rawPoints.map(pt => {
+      return [
+        { coord: [pt[0], f0] },
+        { coord: [pt[0], pt[1]] }
+      ];
+    });
+
+    const host = document.getElementById('chart-host');
+    const chart = echarts.init(host, null, { renderer: 'svg' });
+
+    const option = {
+      animation: false,
+      grid: {
+        top: 36,
+        right: 30,
+        bottom: 40,
+        left: 50
+      },
+      xAxis: {
+        type: 'value',
+        min: 0,
+        max: 10,
+        name: '特征 x',
+        nameLocation: 'end',
+        nameTextStyle: { color: '#50616B', fontSize: 15 },
+        axisLine: { lineStyle: { color: '#71828B' } },
+        splitLine: { show: false },
+        axisLabel: { color: '#50616B', fontSize: 13 }
+      },
+      yAxis: {
+        type: 'value',
+        min: -4.5,
+        max: 5,
+        name: '目标值 / 残差',
+        nameTextStyle: { color: '#50616B', fontSize: 15 },
+        axisLine: { lineStyle: { color: '#71828B' } },
+        splitLine: { lineStyle: { color: '#dbe3e8', type: 'dashed' } },
+        axisLabel: { color: '#50616B', fontSize: 13 }
+      },
+      series: [
+        // 初始模型 F0
+        {
+          name: 'F0',
+          type: 'line',
+          data: [[0, f0], [10, f0]],
+          lineStyle: { color: '#50616B', width: 2, type: 'dashed' },
+          symbol: 'none',
+          z: 2
+        },
+        // 残差线段 (markLine)
+        {
+          type: 'line',
+          markLine: {
+            silent: true,
+            symbol: ['none', 'arrow'],
+            symbolSize: 6,
+            lineStyle: {
+              color: 'rgba(184, 61, 11, 0.45)',
+              width: 1.5,
+              type: 'solid'
+            },
+            data: residualLines
+          }
+        },
+        // 真实样本
+        {
+          name: '样本',
+          type: 'scatter',
+          data: rawPoints,
+          itemStyle: { color: '#142630' },
+          symbolSize: 8,
+          z: 5
+        },
+        // 回归树拟合的负梯度方向 (按残差尺度平移后观察或直接作为树步长)
+        {
+          name: '回归树拟合',
+          type: 'line',
+          data: treePoints,
+          step: false,
+          lineStyle: { color: '#B83D0B', width: 2.5 },
+          symbol: 'none',
+          z: 3
+        },
+        // 累加后模型 F1
+        {
+          name: 'F1',
+          type: 'line',
+          data: f1Points,
+          step: false,
+          lineStyle: { color: '#17628E', width: 4 },
+          symbol: 'none',
+          z: 4
+        }
+      ]
+    };
+
+    chart.setOption(option);
+
+    const ro = new ResizeObserver(() => chart.resize());
+    ro.observe(host);
+
+    Deck.init({ index: 16, total: 25 });
+  </script>
+</body>
+</html>

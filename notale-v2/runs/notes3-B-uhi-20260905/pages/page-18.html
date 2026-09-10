@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      background: var(--bg);
+      user-select: none;
+    }
+
+    /* 顶部标题区 */
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--muted);
+      padding-bottom: 10px;
+    }
+    .header-row h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+    }
+
+    /* 主工作区：左 720px 街区多目标控制与微气候剖面，右 720px 多目标权衡指标与折线/雷达反馈 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 780px 1fr;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .col {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      padding: 16px 20px;
+      position: relative;
+    }
+
+    /* 街区微气候视口 */
+    .district-view {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px 18px;
+    }
+
+    .district-svg-wrap {
+      position: relative;
+      flex: 1;
+      min-height: 250px;
+      background: #e1ebed;
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    /* 调节滑块面板 */
+    .sliders-panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 20px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      padding: 14px 18px;
+    }
+
+    .ctl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .ctl-label-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+    .ctl-label-row .val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--observed);
+    }
+    .ctl-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.25;
+    }
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      accent-color: var(--observed);
+      cursor: pointer;
+      margin: 4px 0 2px;
+    }
+
+    /* 预设策略按钮组 */
+    .preset-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .preset-btn {
+      flex: 1;
+      padding: 7px 10px;
+      background: var(--surface);
+      border: 1px solid var(--muted);
+      border-radius: 3px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 500;
+      transition: all var(--dur) var(--ease);
+      text-align: center;
+    }
+    .preset-btn:hover {
+      border-color: var(--focus);
+    }
+    .preset-btn.active {
+      background: var(--surface-strong);
+      border-color: var(--observed);
+      font-weight: 700;
+      color: var(--observed);
+      box-shadow: 0 0 0 1px var(--observed);
+    }
+
+    /* 右侧权衡指标网格 */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .metric-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .metric-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+    .metric-unit {
+      font-size: 14px;
+      font-weight: 400;
+      margin-left: 2px;
+      color: var(--muted);
+    }
+    .metric-bar-bg {
+      height: 6px;
+      background: var(--surface-strong);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .metric-bar-fill {
+      height: 100%;
+      transition: width var(--dur) var(--ease), background var(--dur) var(--ease);
+    }
+    .metric-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    /* 右侧机制分析与多目标权衡雷达/条形图 */
+    .radar-panel {
+      flex: 1;
+      min-height: 0;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .radar-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .radar-svg-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    /* 权衡警示说明条 */
+    .tradeoff-note {
+      background: #fdf5ec;
+      border: 1px solid #ebd7bf;
+      border-radius: 4px;
+      padding: 10px 14px;
+      font-size: var(--fs-sec);
+      color: #7a4f1d;
+      line-height: 1.4;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .tradeoff-note b {
+      color: var(--heat);
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body data-page="18" data-total="19">
+  <div id="stage">
+    <div class="header-row">
+      <h1>街区缓解组合、降温机制与协同代价的多目标权衡</h1>
+    </div>
+
+    <div class="main-grid">
+      <!-- 左列：街区参数控制与切片视口 -->
+      <div class="col min0">
+        <!-- 预设配置 -->
+        <div class="preset-bar">
+          <button type="button" class="preset-btn active" id="btn-pre-base" data-preset="base">常规基线街区</button>
+          <button type="button" class="preset-btn" id="btn-pre-green" data-preset="green">高绿化生态型</button>
+          <button type="button" class="preset-btn" id="btn-pre-cool" data-preset="cool">高反射材料型</button>
+          <button type="button" class="preset-btn" id="btn-pre-bal" data-preset="balanced">综合权衡协同方案</button>
+        </div>
+
+        <!-- 街区微气候剖面 SVG 图解 -->
+        <div class="card district-view min0">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:var(--fs-h2); font-weight:700;">典型街区微环境剖面模拟</span>
+            <div class="legend" style="display:flex; gap:16px; font-size:var(--fs-tick); color:var(--muted);">
+              <span><span style="display:inline-block;width:10px;height:10px;background:#39704A;border-radius:2px;margin-right:4px;"></span>树冠与草地</span>
+              <span><span style="display:inline-block;width:10px;height:10px;background:#255F73;border-radius:2px;margin-right:4px;"></span>冷反射/透水面</span>
+              <span><span style="display:inline-block;width:10px;height:10px;background:#C63F20;border-radius:2px;margin-right:4px;"></span>热辐射与蓄热</span>
+            </div>
+          </div>
+          <div class="district-svg-wrap min0" id="district-svg-wrap">
+            <svg id="district-svg" viewBox="0 0 740 260" style="width:100%; height:100%; display:block;"></svg>
+          </div>
+        </div>
+
+        <!-- 滑块控制面板 -->
+        <div class="sliders-panel">
+          <div class="ctl-group">
+            <div class="ctl-label-row">
+              <span>街道树冠覆盖率</span>
+              <span class="val" id="val-tree">15%</span>
+            </div>
+            <input type="range" id="ctl-tree" min="0" max="60" step="1" value="15">
+            <span class="ctl-sub">蒸散与遮阴降温；增加后期灌溉耗水</span>
+          </div>
+
+          <div class="ctl-group">
+            <div class="ctl-label-row">
+              <span>屋顶高反射涂层</span>
+              <span class="val" id="val-roof">20%</span>
+            </div>
+            <input type="range" id="ctl-roof" min="0" max="90" step="1" value="20">
+            <span class="ctl-sub">抑制地表蓄热；冬季略增采暖负荷</span>
+          </div>
+
+          <div class="ctl-group">
+            <div class="ctl-label-row">
+              <span>地面透水冷铺装</span>
+              <span class="val" id="val-pave">10%</span>
+            </div>
+            <input type="range" id="ctl-pave" min="0" max="80" step="1" value="10">
+            <span class="ctl-sub">保水降温与减排；高反光率伴生眩光</span>
+          </div>
+
+          <div class="ctl-group">
+            <div class="ctl-label-row">
+              <span>建筑高宽比 (H/W)</span>
+              <span class="val" id="val-hw">1.2</span>
+            </div>
+            <input type="range" id="ctl-hw" min="0.5" max="3.0" step="0.1" value="1.2">
+            <span class="ctl-sub">深峡谷强化阴影但削弱近地通风</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右列：权衡与评价指标 -->
+      <div class="col min0">
+        <!-- 4 核心指标网格 -->
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-header">
+              <span class="metric-title">行人体感生理等效温度 (PET)</span>
+              <span class="metric-val" id="metric-pet" style="color:var(--heat);">38.2<span class="metric-unit">°C</span></span>
+            </div>
+            <div class="metric-bar-bg">
+              <div class="metric-bar-fill" id="bar-pet" style="width:75%; background:var(--heat);"></div>
+            </div>
+            <span class="metric-sub" id="sub-pet">处于重度热应激区</span>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-header">
+              <span class="metric-title">地表表面温度降幅 (ΔTs)</span>
+              <span class="metric-val" id="metric-ts" style="color:var(--cooling);">-1.4<span class="metric-unit">°C</span></span>
+            </div>
+            <div class="metric-bar-bg">
+              <div class="metric-bar-fill" id="bar-ts" style="width:20%; background:var(--cooling);"></div>
+            </div>
+            <span class="metric-sub" id="sub-ts">主要由屋顶与地面材料反射驱动</span>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-header">
+              <span class="metric-title">全街区年化水耗成本</span>
+              <span class="metric-val" id="metric-water" style="color:var(--observed);">120<span class="metric-unit">m³/月</span></span>
+            </div>
+            <div class="metric-bar-bg">
+              <div class="metric-bar-fill" id="bar-water" style="width:25%; background:var(--observed);"></div>
+            </div>
+            <span class="metric-sub" id="sub-water">树木维持健康蒸散的灌溉刚性支出</span>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-header">
+              <span class="metric-title">行人人行道眩光风险指数</span>
+              <span class="metric-val" id="metric-glare" style="color:var(--uncertain);">18<span class="metric-unit">低</span></span>
+            </div>
+            <div class="metric-bar-bg">
+              <div class="metric-bar-fill" id="bar-glare" style="width:18%; background:var(--uncertain);"></div>
+            </div>
+            <span class="metric-sub" id="sub-glare">铺装与立面反光引起的视觉不适</span>
+          </div>
+        </div>
+
+        <!-- 机制协同与多目标蛛网图/柱状分析 -->
+        <div class="radar-panel min0">
+          <div class="radar-title">
+            <span>多维度效能与约束雷达对比</span>
+            <span style="font-size:var(--fs-tick); font-weight:400; color:var(--muted);">深色：当前组合 ｜ 虚线：基线基准</span>
+          </div>
+          <div class="radar-svg-wrap min0">
+            <svg id="radar-svg" viewBox="0 0 680 230" style="width:100%; height:100%; display:block;"></svg>
+          </div>
+        </div>
+
+        <!-- 关键动态诊断条 -->
+        <div class="tradeoff-note" id="tradeoff-note">
+          <span style="font-size:20px; flex-shrink:0;">⚖️</span>
+          <span id="tradeoff-text">当前基线街区遮阴不足，日间太阳直射使体感温度偏高；建议适度提高树冠覆盖或冷反射材料。</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      // 物理/经验模型参数计算
+      // 街区基线环境：气温 34°C，太阳辐射 800 W/m²
+      const presets = {
+        base: { tree: 15, roof: 20, pave: 10, hw: 1.2 },
+        green: { tree: 55, roof: 25, pave: 25, hw: 1.4 },
+        cool: { tree: 10, roof: 85, pave: 70, hw: 1.0 },
+        balanced: { tree: 35, roof: 60, pave: 40, hw: 1.6 }
+      };
+
+      let current = { ...presets.base };
+
+      // DOM 元素
+      const ctlTree = document.getElementById('ctl-tree');
+      const ctlRoof = document.getElementById('ctl-roof');
+      const ctlPave = document.getElementById('ctl-pave');
+      const ctlHw = document.getElementById('ctl-hw');
+
+      const valTree = document.getElementById('val-tree');
+      const valRoof = document.getElementById('val-roof');
+      const valPave = document.getElementById('val-pave');
+      const valHw = document.getElementById('val-hw');
+
+      const metricPet = document.getElementById('metric-pet');
+      const barPet = document.getElementById('bar-pet');
+      const subPet = document.getElementById('sub-pet');
+
+      const metricTs = document.getElementById('metric-ts');
+      const barTs = document.getElementById('bar-ts');
+      const subTs = document.getElementById('sub-ts');
+
+      const metricWater = document.getElementById('metric-water');
+      const barWater = document.getElementById('bar-water');
+      const subWater = document.getElementById('sub-water');
+
+      const metricGlare = document.getElementById('metric-glare');
+      const barGlare = document.getElementById('bar-glare');
+      const subGlare = document.getElementById('sub-glare');
+
+      const tradeoffText = document.getElementById('tradeoff-text');
+      const districtSvg = document.getElementById('district-svg');
+      const radarSvg = document.getElementById('radar-svg');
+
+      // 多目标权衡计算核心
+      function computeModel(p) {
+        // 1. 体感温度 PET (°C)
+        // 树冠遮阴效果最为显著，H/W 提高增加自遮阴但降低风速；冷铺装提高反射辐射反而微弱提升行人人体辐射吸收(MRT)
+        const basePet = 42.0;
+        const shadeCooling = (p.tree * 0.16) + (Math.min(p.hw, 2.5) * 2.2);
+        const paveMrtPenalty = (p.pave * 0.035); // 冷铺面反光打到人体
+        const roofEffect = (p.roof * 0.025); // 屋顶降温微弱影响行人层
+        const pet = Math.max(26, basePet - shadeCooling - roofEffect + paveMrtPenalty);
+
+        // 2. 地表温度降幅 ΔTs (°C)
+        // 屋顶与地面反照率显著降低地表升温
+        const deltaTs = -1 * (p.roof * 0.09 + p.pave * 0.08 + p.tree * 0.06);
+
+        // 3. 灌溉水耗 (m³/月)
+        // 树木蒸散对水资源需求呈线性上升
+        const water = Math.round(40 + p.tree * 5.2 + p.pave * 0.4);
+
+        // 4. 眩光风险指数 (0 - 100)
+        // 高反光材料直接导致日间眩光
+        const glare = Math.round(p.pave * 0.75 + p.roof * 0.15 - p.tree * 0.3);
+        const glareClamped = Math.max(5, Math.min(95, glare));
+
+        // 5. 街区风速比 (0 - 1)
+        const windRatio = Math.max(0.18, 1.0 - (p.hw - 0.5) * 0.28 - (p.tree * 0.005));
+
+        // 6. 综合改造成本评分 (1 - 10)
+        const cost = (p.tree * 0.08 + p.roof * 0.06 + p.pave * 0.1).toFixed(1);
+
+        return { pet, deltaTs, water, glare: glareClamped, windRatio, cost };
+      }
+
+      // 绘制街区剖面
+      function renderDistrict(p) {
+        // 画布 740 × 260
+        // 左建筑、峡谷街道、右建筑
+        const streetWidth = 280;
+        const canyonLeft = 230;
+        const canyonRight = canyonLeft + streetWidth;
+        const groundY = 220;
+        
+        // 建筑高度按 H/W 计算: H = streetWidth * (H/W) * 0.25 (视觉比例尺)
+        const bHeight = Math.min(170, Math.max(40, streetWidth * (p.hw / 3.0) * 1.5));
+        const buildingTopY = groundY - bHeight;
+
+        // 屋顶颜色根据反射率 (高反射变冷白，低反射深灰)
+        const roofBrightness = Math.round(70 + p.roof * 1.7);
+        const roofFill = `rgb(${roofBrightness},${roofBrightness + 10},${roofBrightness + 15})`;
+
+        // 地面铺装颜色根据透水冷铺装比例
+        const paveR = Math.round(90 + p.pave * 1.2);
+        const paveG = Math.round(100 + p.pave * 1.3);
+        const paveB = Math.round(110 + p.pave * 1.4);
+        const groundFill = `rgb(${paveR},${paveG},${paveB})`;
+
+        // 树木数量与冠幅
+        const treeCount = Math.floor(p.tree / 12);
+        const treeRadius = 14 + (p.tree % 12);
+
+        let svg = `
+          <!-- 天空底 -->
+          <rect x="0" y="0" width="740" height="260" fill="#e8eff1"/>
+          
+          <!-- 太阳与日照光束 -->
+          <circle cx="100" cy="40" r="22" fill="#E89635" opacity="0.85"/>
+          <line x1="120" y1="55" x2="350" y2="180" stroke="#E89635" stroke-dasharray="4 4" stroke-width="1.5" opacity="0.6"/>
+
+          <!-- 左侧建筑 -->
+          <rect x="30" y="${buildingTopY}" width="200" height="${bHeight}" fill="#BCCCD0" stroke="#7A939A" stroke-width="2"/>
+          <!-- 左侧屋顶涂层 -->
+          <rect x="25" y="${buildingTopY - 6}" width="210" height="6" fill="${roofFill}" stroke="#50646B" stroke-width="1"/>
+          <text x="130" y="${buildingTopY - 10}" font-size="13" fill="#50646B" text-anchor="middle">屋顶反射 ${p.roof}%</text>
+
+          <!-- 右侧建筑 -->
+          <rect x="${canyonRight}" y="${buildingTopY}" width="210" height="${bHeight}" fill="#BCCCD0" stroke="#7A939A" stroke-width="2"/>
+          <!-- 右侧屋顶涂层 -->
+          <rect x="${canyonRight - 5}" y="${buildingTopY - 6}" width="220" height="6" fill="${roofFill}" stroke="#50646B" stroke-width="1"/>
+          <text x="${canyonRight + 105}" y="${buildingTopY - 10}" font-size="13" fill="#50646B" text-anchor="middle">屋顶反射 ${p.roof}%</text>
+
+          <!-- 街道地面 -->
+          <rect x="0" y="${groundY}" width="740" height="40" fill="${groundFill}"/>
+          <line x1="0" y1="${groundY}" x2="740" y2="${groundY}" stroke="#50646B" stroke-width="2"/>
+          <text x="370" y="248" font-size="13" fill="#17282E" text-anchor="middle">透水与冷铺地面 ${p.pave}%</text>
+
+          <!-- 峡谷高宽标注 -->
+          <line x1="${canyonLeft}" y1="210" x2="${canyonRight}" y2="210" stroke="#7A939A" stroke-width="1.5" stroke-dasharray="2 2"/>
+          <text x="370" y="204" font-size="13" fill="#50646B" text-anchor="middle">街谷宽 W ｜ H/W = ${p.hw}</text>
+        `;
+
+        // 绘制街道树木
+        const spacing = streetWidth / (treeCount + 1);
+        for (let i = 1; i <= treeCount; i++) {
+          const tx = canyonLeft + spacing * i;
+          const ty = groundY;
+          svg += `
+            <!-- 树干 -->
+            <line x1="${tx}" y1="${ty}" x2="${tx}" y2="${ty - 35}" stroke="#5c4434" stroke-width="4"/>
+            <!-- 树冠 (遮阴与蒸散) -->
+            <ellipse cx="${tx}" cy="${ty - 45}" rx="${treeRadius + 6}" ry="${treeRadius + 2}" fill="#39704A" opacity="0.9"/>
+            <!-- 树下阴影区 -->
+            <ellipse cx="${tx}" cy="${ty + 1}" rx="${treeRadius + 8}" ry="3" fill="#223326" opacity="0.3"/>
+          `;
+        }
+
+        // 绘制行人
+        const px = canyonLeft + 45;
+        const py = groundY - 15;
+        svg += `
+          <circle cx="${px}" cy="${py - 10}" r="4" fill="#C63F20"/>
+          <line x1="${px}" y1="${py - 6}" x2="${px}" y2="${py + 12}" stroke="#C63F20" stroke-width="2.5"/>
+          <line x1="${px - 4}" y1="${py}" x2="${px + 4}" y2="${py}" stroke="#C63F20" stroke-width="2"/>
+          <text x="${px}" y="${py - 16}" font-size="13" fill="#C63F20" font-weight="700" text-anchor="middle">行人</text>
+        `;
+
+        // 绘制热辐射与眩光箭头暗示
+        if (p.pave > 40) {
+          svg += `
+            <path d="M 330 215 Q 310 170 ${px + 5} ${py}" fill="none" stroke="#C63F20" stroke-width="1.5" stroke-dasharray="3 3"/>
+            <text x="300" y="165" font-size="13" fill="#C63F20">地面反射辐射</text>
+          `;
+        }
+
+        districtSvg.innerHTML = svg;
+      }
+
+      // 绘制多维度雷达图
+      function renderRadar(res, baseRes) {
+        // 5 个轴向：1. 行人舒适度 (PET反向), 2. 地表降温效果 (abs(ΔTs)), 3. 节水节约度 (Water反向), 4. 视觉防眩光 (Glare反向), 5. 通风适宜度 (WindRatio)
+        const cx = 340;
+        const cy = 115;
+        const rMax = 85;
+        const axes = [
+          { label: "体感热舒适", get: m => (45 - m.pet) / 16 }, // 30°C左右为满分
+          { label: "地表降温幅度", get: m => Math.abs(m.deltaTs) / 12 }, // 降 12°C 为满分
+          { label: "水资源节约", get: m => (400 - m.water) / 350 }, // 水耗越少得分越高
+          { label: "低眩光舒适", get: m => (100 - m.glare) / 95 }, // 眩光越低得分越高
+          { label: "近地自然通风", get: m => m.windRatio / 1.0 } // 通风越好得分越高
+        ];
+
+        const totalAxes = axes.length;
+        const angleStep = (Math.PI * 2) / totalAxes;
+
+        let svg = `
+          <!-- 背景同心网格 -->
+          <circle cx="${cx}" cy="${cy}" r="${rMax * 0.33}" fill="none" stroke="#DCE7EA" stroke-width="1"/>
+          <circle cx="${cx}" cy="${cy}" r="${rMax * 0.66}" fill="none" stroke="#DCE7EA" stroke-width="1"/>
+          <circle cx="${cx}" cy="${cy}" r="${rMax}" fill="none" stroke="#DCE7EA" stroke-width="1"/>
+        `;
+
+        // 轴线与标签
+        axes.forEach((axis, i) => {
+          const angle = i * angleStep - Math.PI / 2;
+          const x = cx + Math.cos(angle) * rMax;
+          const y = cy + Math.sin(angle) * rMax;
+          svg += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="#DCE7EA" stroke-width="1.5"/>`;
+
+          // 文本位置
+          const tx = cx + Math.cos(angle) * (rMax + 24);
+          const ty = cy + Math.sin(angle) * (rMax + 14);
+          const anchor = Math.abs(Math.cos(angle)) < 0.2 ? "middle" : (Math.cos(angle) > 0 ? "start" : "end");
+          svg += `<text x="${tx}" y="${ty}" font-size="13" fill="#50646B" text-anchor="${anchor}">${axis.label}</text>`;
+        });
+
+        // 绘制基线对比多边形 (虚线)
+        const basePoints = axes.map((axis, i) => {
+          const score = Math.max(0.1, Math.min(1.0, axis.get(baseRes)));
+          const angle = i * angleStep - Math.PI / 2;
+          return `${cx + Math.cos(angle) * rMax * score},${cy + Math.sin(angle) * rMax * score}`;
+        }).join(" ");
+        svg += `<polygon points="${basePoints}" fill="none" stroke="#7A939A" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+
+        // 绘制当前方案多边形
+        const currPoints = axes.map((axis, i) => {
+          const score = Math.max(0.1, Math.min(1.0, axis.get(res)));
+          const angle = i * angleStep - Math.PI / 2;
+          return `${cx + Math.cos(angle) * rMax * score},${cy + Math.sin(angle) * rMax * score}`;
+        }).join(" ");
+        svg += `
+          <polygon points="${currPoints}" fill="rgba(23, 107, 130, 0.25)" stroke="#176B82" stroke-width="2.5"/>
+        `;
+
+        radarSvg.innerHTML = svg;
+      }
+
+      // 更新界面指标与反馈
+      function update() {
+        valTree.textContent = current.tree + '%';
+        valRoof.textContent = current.roof + '%';
+        valPave.textContent = current.pave + '%';
+        valHw.textContent = current.hw.toFixed(1);
+
+        ctlTree.value = current.tree;
+        ctlRoof.value = current.roof;
+        ctlPave.value = current.pave;
+        ctlHw.value = current.hw;
+
+        const res = computeModel(current);
+        const baseRes = computeModel(presets.base);
+
+        // 1. PET
+        metricPet.innerHTML = `${res.pet.toFixed(1)}<span class="metric-unit">°C</span>`;
+        const petPct = Math.min(100, Math.max(10, ((res.pet - 24) / 20) * 100));
+        barPet.style.width = petPct + '%';
+        if (res.pet > 37) {
+          metricPet.style.color = 'var(--heat)';
+          barPet.style.background = 'var(--heat)';
+          subPet.textContent = '重度热应激（易引发中暑风险）';
+        } else if (res.pet > 31) {
+          metricPet.style.color = '#c97c1a';
+          barPet.style.background = '#c97c1a';
+          subPet.textContent = '中度热应激（户外舒适度一般）';
+        } else {
+          metricPet.style.color = 'var(--cooling)';
+          barPet.style.background = 'var(--cooling)';
+          subPet.textContent = '舒适生理温度范围';
+        }
+
+        // 2. ΔTs
+        metricTs.innerHTML = `${res.deltaTs.toFixed(1)}<span class="metric-unit">°C</span>`;
+        const tsPct = Math.min(100, (Math.abs(res.deltaTs) / 12) * 100);
+        barTs.style.width = tsPct + '%';
+        subTs.textContent = res.deltaTs < -6 ? '地表蓄热显著削弱' : '地表降温较温和';
+
+        // 3. 水耗
+        metricWater.innerHTML = `${res.water}<span class="metric-unit">m³/月</span>`;
+        const waterPct = Math.min(100, (res.water / 380) * 100);
+        barWater.style.width = waterPct + '%';
+        if (res.water > 250) {
+          subWater.textContent = '高蒸散伴生严峻的抗旱补水与维护成本';
+          subWater.style.color = 'var(--heat)';
+        } else {
+          subWater.textContent = '水资源需求在市政可持续负荷内';
+          subWater.style.color = 'var(--muted)';
+        }
+
+        // 4. 眩光
+        metricGlare.innerHTML = `${res.glare}<span class="metric-unit">${res.glare > 50 ? '高' : '低'}</span>`;
+        barGlare.style.width = res.glare + '%';
+        if (res.glare > 50) {
+          subGlare.textContent = '冷铺装反光强烈，对行人造成眩光干扰';
+          subGlare.style.color = 'var(--heat)';
+          metricGlare.style.color = 'var(--heat)';
+        } else {
+          subGlare.textContent = '地面反光在人体视觉耐受阈值内';
+          subGlare.style.color = 'var(--muted)';
+          metricGlare.style.color = 'var(--uncertain)';
+        }
+
+        // 动态权衡诊断文字
+        if (current.pave >= 60 && current.tree < 20) {
+          tradeoffText.innerHTML = `<b>次生权衡警告：</b>虽然高反光地面大幅拉低了地表温度，但缺乏树木遮蔽时，反射短波辐射直接入射行人体表，反倒加剧体感 PET 热应激并引发严重日间眩光。`;
+        } else if (current.tree >= 50 && current.hw >= 2.0) {
+          tradeoffText.innerHTML = `<b>微气候与通风制约：</b>密集高树冠配合深峡谷 (H/W=${current.hw}) 带来良好阴影，但也严重削弱了近地风速，造成湿热空气在街区底部滞留，蒸散降温边际收益递减。`;
+        } else if (current.tree >= 45 && res.water > 260) {
+          tradeoffText.innerHTML = `<b>资源瓶颈警告：</b>大面积植被带来极佳的舒适度降温，但月均用水高达 <b>${res.water} m³</b>，干旱季节若缺乏再生水灌溉将导致树木枯萎衰败。`;
+        } else if (current.roof >= 50 && current.tree >= 30 && current.pave >= 30) {
+          tradeoffText.innerHTML = `<b>协同优化方案：</b>屋顶分担大面积宏观地表辐射，适度树冠直接给行人提供遮阴，配合适量透水地面，达成多目标效能的均衡最优。`;
+        } else {
+          tradeoffText.innerHTML = `当前街区配置处于典型状态，尝试拖动滑块探索“降温幅度、行人舒适、维护用水与眩光代价”之间的制约关系。`;
+        }
+
+        renderDistrict(current);
+        renderRadar(res, baseRes);
+      }
+
+      // 事件绑定
+      ctlTree.addEventListener('input', (e) => {
+        current.tree = parseInt(e.target.value, 10);
+        clearPresetActive();
+        update();
+      });
+      ctlRoof.addEventListener('input', (e) => {
+        current.roof = parseInt(e.target.value, 10);
+        clearPresetActive();
+        update();
+      });
+      ctlPave.addEventListener('input', (e) => {
+        current.pave = parseInt(e.target.value, 10);
+        clearPresetActive();
+        update();
+      });
+      ctlHw.addEventListener('input', (e) => {
+        current.hw = parseFloat(e.target.value);
+        clearPresetActive();
+        update();
+      });
+
+      function clearPresetActive() {
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      }
+
+      document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          clearPresetActive();
+          btn.classList.add('active');
+          const preKey = btn.getAttribute('data-preset');
+          if (presets[preKey]) {
+            current = { ...presets[preKey] };
+            update();
+          }
+        });
+      });
+
+      // 初始化
+      update();
+      Deck.init({ index: 18, total: 19 });
+    })();
+  </script>
+</body>
+</html>

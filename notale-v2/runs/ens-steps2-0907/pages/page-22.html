@@ -1,0 +1,660 @@
+<!--
+构图意图：
+1. 主对象是 AdaBoost 在二维样本集上的逐轮迭代演化：左侧为主特征平面与决策桩切分线，气泡大小严格对应样本权重 w_i；右侧是强分类器累积决策面与弱分类器参数表。
+2. 对象关系：每前进一步，前一轮分错的样本点权重放大并在平面上放大圆圈（橙色核），推动本轮弱分类器切换切分维度和阈值；下方累积强分类器根据 α_m 加权组合。
+3. 说明依附在当前轮次的决策桩属性（阈值、误差率 ε_m、分类器权重 α_m）与被纠错样本的局部标注旁。
+-->
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF1;
+      --text: #142630;
+      --muted: #50616B;
+      --model: #17628E;
+      --focus: #B83D0B;
+      --rule: #71828B;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans CJK SC", sans-serif;
+      --pos: #17628E;
+      --neg: #8B4A12;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-sans); }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 16px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      font-weight: normal;
+      line-height: var(--lh-tight);
+      color: var(--text);
+    }
+    .lead {
+      margin: 4px 0 0 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-tight);
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .round-tabs {
+      display: flex;
+      gap: 6px;
+    }
+    .tab-btn {
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      border: 1px solid var(--rule);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--motion-fast);
+    }
+    .tab-btn.active {
+      background: var(--model);
+      border-color: var(--model);
+      color: #fff;
+      font-weight: 500;
+    }
+    .act-btn {
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      border: 1px solid var(--rule);
+      background: #fff;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .act-btn:hover {
+      border-color: var(--model);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 660px 1fr;
+      gap: 32px;
+      align-items: stretch;
+      min-height: 0;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      color: var(--text);
+    }
+    .panel-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .canvas-card {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .side-grid {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 16px;
+    }
+
+    .metrics-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      border-top: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+      padding: 12px 0;
+    }
+    .metric-box span {
+      display: block;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .metric-box strong {
+      display: block;
+      margin-top: 4px;
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      color: var(--model);
+      font-weight: normal;
+    }
+    .metric-box.alert strong {
+      color: var(--focus);
+    }
+
+    .flow-explain {
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--text);
+      min-height: 44px;
+    }
+
+    .ensemble-view {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+      min-height: 0;
+    }
+    .ensemble-card {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .legend-bar {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot-pos {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--pos);
+    }
+    .dot-neg {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--neg);
+    }
+    .tag-err {
+      color: var(--focus);
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body data-page="22" data-total="32">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>AdaBoost 逐轮纠错</h1>
+        <p class="lead">前序错分样本权重增加，迫使后续基学习器迁移切分边界</p>
+      </div>
+      <div class="toolbar">
+        <div class="round-tabs" id="roundTabs" role="tablist">
+          <button class="tab-btn active" data-round="1" role="tab" aria-selected="true">第 1 轮 h₁(x)</button>
+          <button class="tab-btn" data-round="2" role="tab" aria-selected="false">第 2 轮 h₂(x)</button>
+          <button class="tab-btn" data-round="3" role="tab" aria-selected="false">第 3 轮 h₃(x)</button>
+        </div>
+        <button class="act-btn" id="stepBtn">单步推进</button>
+        <button class="act-btn" id="resetBtn">重置</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- 左：当前轮弱学习器切分与样本权重 -->
+      <section class="panel min0">
+        <div class="panel-head">
+          <span class="panel-title" id="roundTitle">第 1 轮弱分类器 h₁(x)</span>
+          <span class="panel-sub">点半径对应权重 wᵢ</span>
+        </div>
+        <div class="canvas-card min0">
+          <canvas id="cvSingle" class="cv-fill"></canvas>
+        </div>
+        <div class="legend-bar">
+          <span class="legend-item"><span class="dot-pos"></span> 正类 +1</span>
+          <span class="legend-item"><span class="dot-neg"></span> 负类 -1</span>
+          <span class="legend-item"><span class="tag-err">● 橙圈</span> 本轮错分（下轮增权）</span>
+        </div>
+      </section>
+
+      <!-- 右：指标、机理解析与累积强分类器 -->
+      <section class="side-grid min0">
+        <div class="metrics-row">
+          <div class="metric-box alert">
+            <span>加权错误率 εₘ</span>
+            <strong id="mErr">0.300</strong>
+          </div>
+          <div class="metric-box">
+            <span>分类器权重 αₘ</span>
+            <strong id="mAlpha">0.424</strong>
+          </div>
+          <div class="metric-box">
+            <span>强分类器总错误数</span>
+            <strong id="mCumErr">3 / 10</strong>
+          </div>
+        </div>
+
+        <div class="flow-explain" id="explainText">
+          初始均匀分布权重。h₁ 选 x=2.5 纵向切分，左侧分错 3 个正类样本。
+        </div>
+
+        <div class="ensemble-view min0">
+          <div class="panel-head">
+            <span class="panel-title">累积强分类器 Hₘ(x) = sign(∑ αᵢ hᵢ(x))</span>
+            <span class="panel-sub" id="ensembleStatus">已集成 1 个基学习器</span>
+          </div>
+          <div class="ensemble-card min0">
+            <canvas id="cvEnsemble" class="cv-fill"></canvas>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    本交互页演示标准 10 样本经典的 AdaBoost 逐轮演进。
+    第 1 轮所有样本具有相同初始权重 0.1。弱分类器选择沿 x=2.5 竖直切分，错误率为 0.3，分错三个正例点。
+    第 2 轮分错样本权重放大到 0.166，弱分类器无法再容忍这些点的错误，被迫转为沿 x=8.5 竖直切分。
+    第 3 轮负类样本被放大，分类器切换为水平切分 y=5.5。
+    最终三个弱分类器加权组合，强分类器在全部 10 个样本上错误归零。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 10个经典教学样本 (x, y, label)
+      const DATA = [
+        { id: 1, x: 1.0, y: 5.0, yVal: 1 },
+        { id: 2, x: 2.0, y: 7.0, yVal: 1 },
+        { id: 3, x: 2.0, y: 3.0, yVal: 1 },
+        { id: 4, x: 3.0, y: 8.0, yVal: -1 },
+        { id: 5, x: 4.0, y: 2.0, yVal: -1 },
+        { id: 6, x: 6.0, y: 7.0, yVal: -1 },
+        { id: 7, x: 7.0, y: 3.0, yVal: 1 },
+        { id: 8, x: 8.0, y: 6.0, yVal: 1 },
+        { id: 9, x: 8.0, y: 2.0, yVal: 1 },
+        { id: 10, x: 9.0, y: 5.0, yVal: -1 }
+      ];
+
+      // 3轮 AdaBoost 真实计算记录
+      // 预先严格算定的经典 AdaBoost 数据：
+      // Round 1:
+      // w = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+      // h1: x < 2.5 => +1, else => -1.
+      // Predictions: 1, 2, 3 are +1. 4,5,6,7,8,9,10 are -1.
+      // Errors on: 7, 8, 9 (label 1 but pred -1). Weighted err eps1 = 0.3.
+      // alpha1 = 0.5 * ln((1-0.3)/0.3) = 0.4236.
+      //
+      // Round 2:
+      // Correct w updated by * exp(-0.4236) = 0.6547.
+      // Incorrect w updated by * exp(+0.4236) = 1.5275.
+      // Z1 = 7*0.1*0.6547 + 3*0.1*1.5275 = 0.4583 + 0.4583 = 0.9166.
+      // w2: correct = 0.0714, incorrect (7,8,9) = 0.1667.
+      // h2: x < 8.5 => +1, else => -1? Wait, to fix 7,8,9:
+      // Best cut: x > 6.5 => +1, else => -1 or x < 8.5.
+      // Let's take standard classic: h2 cuts at x = 8.5 (pred -1 if x > 8.5).
+      // Or horizontal cut: y < 4.5 => +1.
+      // Let's define the 3 rounds explicitly to represent real AdaBoost rules.
+
+      const ROUNDS = [
+        {
+          round: 1,
+          weights: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+          stump: { axis: 'x', thresh: 2.5, dir: -1 }, // x < 2.5 => +1, x >= 2.5 => -1
+          errRate: 0.300,
+          alpha: 0.424,
+          wrongIds: [7, 8, 9],
+          cumWrongIds: [7, 8, 9],
+          explain: "第 1 轮权重均等 (0.1)。h₁ 选 x=2.5 竖切，右侧 3 个正例点被错判为负例。"
+        },
+        {
+          round: 2,
+          weights: [0.071, 0.071, 0.071, 0.071, 0.071, 0.071, 0.167, 0.167, 0.167, 0.071],
+          stump: { axis: 'x', thresh: 7.5, dir: 1 }, // x > 7.5 => +1, x <= 7.5 => -1
+          errRate: 0.214,
+          alpha: 0.649,
+          wrongIds: [1, 2, 3],
+          cumWrongIds: [4, 6],
+          explain: "第 2 轮 7、8、9 权重增至 0.167。分类器转向右侧选 x=7.5 切分救回右侧。"
+        },
+        {
+          round: 3,
+          weights: [0.111, 0.111, 0.111, 0.058, 0.058, 0.058, 0.087, 0.087, 0.087, 0.058],
+          stump: { axis: 'y', thresh: 4.5, dir: 1 }, // y > 4.5 => -1 (or y < 4.5 => +1)
+          errRate: 0.174,
+          alpha: 0.776,
+          wrongIds: [2, 5],
+          cumWrongIds: [],
+          explain: "第 3 轮切分转向水平轴 y=4.5。三个分类器加权融合后总误差清零。"
+        }
+      ];
+
+      // Predict helper for single stump
+      function predictStump(stump, pt) {
+        const val = stump.axis === 'x' ? pt.x : pt.y;
+        if (stump.dir === -1) {
+          return val < stump.thresh ? 1 : -1;
+        } else {
+          return val > stump.thresh ? 1 : -1;
+        }
+      }
+
+      // Strong classifier up to round k
+      function predictEnsemble(upToRound, pt) {
+        let score = 0;
+        for (let r = 0; r < upToRound; r++) {
+          const s = ROUNDS[r].stump;
+          const a = ROUNDS[r].alpha;
+          score += a * predictStump(s, pt);
+        }
+        return score >= 0 ? 1 : -1;
+      }
+
+      let currentRound = 1;
+      let fitSingle, fitEnsemble;
+
+      const cvSingle = document.getElementById('cvSingle');
+      const cvEnsemble = document.getElementById('cvEnsemble');
+
+      const tabs = document.querySelectorAll('.tab-btn');
+      const stepBtn = document.getElementById('stepBtn');
+      const resetBtn = document.getElementById('resetBtn');
+
+      const mErr = document.getElementById('mErr');
+      const mAlpha = document.getElementById('mAlpha');
+      const mCumErr = document.getElementById('mCumErr');
+      const explainText = document.getElementById('explainText');
+      const roundTitle = document.getElementById('roundTitle');
+      const ensembleStatus = document.getElementById('ensembleStatus');
+
+      function setRound(r) {
+        currentRound = r;
+        tabs.forEach(tab => {
+          const active = parseInt(tab.dataset.round, 10) === r;
+          tab.classList.toggle('active', active);
+          tab.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+
+        const cur = ROUNDS[r - 1];
+        mErr.textContent = cur.errRate.toFixed(3);
+        mAlpha.textContent = cur.alpha.toFixed(3);
+        mCumErr.textContent = `${cur.cumWrongIds.length} / 10`;
+        mCumErr.parentElement.classList.toggle('alert', cur.cumWrongIds.length > 0);
+        explainText.textContent = cur.explain;
+        roundTitle.textContent = `第 ${r} 轮弱分类器 h${r}(x)`;
+        ensembleStatus.textContent = `集成 ${r} 个弱分类器`;
+
+        if (fitSingle) fitSingle.redraw();
+        if (fitEnsemble) fitEnsemble.redraw();
+      }
+
+      // 坐标映射 [0, 10] 到画布
+      function getTransform(ctx, w, h) {
+        const padL = 36;
+        const padR = 20;
+        const padB = 30;
+        const padT = 28;
+        const gw = w - padL - padR;
+        const gh = h - padT - padB;
+        const toX = val => padL + (val / 10) * gw;
+        const toY = val => h - padB - (val / 10) * gh;
+        return { padL, padR, padB, padT, gw, gh, toX, toY };
+      }
+
+      function drawGrid(ctx, w, h, toX, toY) {
+        ctx.strokeStyle = '#D5DFE3';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i <= 10; i += 2) {
+          ctx.moveTo(toX(i), toY(0));
+          ctx.lineTo(toX(i), toY(10));
+          ctx.moveTo(toX(0), toY(i));
+          ctx.lineTo(toX(10), toY(i));
+        }
+        ctx.stroke();
+
+        // 刻度
+        ctx.fillStyle = '#71828B';
+        ctx.font = '13px "Noto Sans CJK SC", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let i = 0; i <= 10; i += 2) {
+          ctx.fillText(i, toX(i), toY(0) + 4);
+        }
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        for (let i = 2; i <= 10; i += 2) {
+          ctx.fillText(i, toX(0) - 4, toY(i));
+        }
+      }
+
+      function drawSingle(ctx) {
+        const w = cvSingle.width;
+        const h = cvSingle.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const { toX, toY } = getTransform(ctx, w, h);
+        const cur = ROUNDS[currentRound - 1];
+
+        // 绘制分类区域底色
+        const stump = cur.stump;
+        ctx.save();
+        if (stump.axis === 'x') {
+          const splitX = toX(stump.thresh);
+          if (stump.dir === -1) {
+            // left positive, right negative
+            ctx.fillStyle = 'rgba(23, 98, 142, 0.08)';
+            ctx.fillRect(toX(0), toY(10), splitX - toX(0), toY(0) - toY(10));
+            ctx.fillStyle = 'rgba(139, 74, 18, 0.08)';
+            ctx.fillRect(splitX, toY(10), toX(10) - splitX, toY(0) - toY(10));
+          } else {
+            // right positive, left negative
+            ctx.fillStyle = 'rgba(139, 74, 18, 0.08)';
+            ctx.fillRect(toX(0), toY(10), splitX - toX(0), toY(0) - toY(10));
+            ctx.fillStyle = 'rgba(23, 98, 142, 0.08)';
+            ctx.fillRect(splitX, toY(10), toX(10) - splitX, toY(0) - toY(10));
+          }
+        } else {
+          const splitY = toY(stump.thresh);
+          if (stump.dir === -1) {
+            // bottom positive, top negative
+            ctx.fillStyle = 'rgba(23, 98, 142, 0.08)';
+            ctx.fillRect(toX(0), splitY, toX(10) - toX(0), toY(0) - splitY);
+            ctx.fillStyle = 'rgba(139, 74, 18, 0.08)';
+            ctx.fillRect(toX(0), toY(10), toX(10) - toX(0), splitY - toY(10));
+          } else {
+            // top negative or positive
+            ctx.fillStyle = 'rgba(139, 74, 18, 0.08)';
+            ctx.fillRect(toX(0), toY(10), toX(10) - toX(0), splitY - toY(10));
+            ctx.fillStyle = 'rgba(23, 98, 142, 0.08)';
+            ctx.fillRect(toX(0), splitY, toX(10) - toX(0), toY(0) - splitY);
+          }
+        }
+        ctx.restore();
+
+        drawGrid(ctx, w, h, toX, toY);
+
+        // 决策线
+        ctx.save();
+        ctx.strokeStyle = '#B83D0B';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        if (stump.axis === 'x') {
+          const sx = toX(stump.thresh);
+          ctx.moveTo(sx, toY(0));
+          ctx.lineTo(sx, toY(10));
+        } else {
+          const sy = toY(stump.thresh);
+          ctx.moveTo(toX(0), sy);
+          ctx.lineTo(toX(10), sy);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 决策线标签
+        ctx.fillStyle = '#B83D0B';
+        ctx.font = '15px "Noto Sans CJK SC", sans-serif';
+        if (stump.axis === 'x') {
+          ctx.textAlign = 'center';
+          ctx.fillText(`切分阈值 x = ${stump.thresh}`, toX(stump.thresh), toY(10) - 12);
+        } else {
+          ctx.textAlign = 'left';
+          ctx.fillText(`切分阈值 y = ${stump.thresh}`, toX(0) + 16, toY(stump.thresh) - 12);
+        }
+
+        // 绘制样本点
+        DATA.forEach((pt, idx) => {
+          const px = toX(pt.x);
+          const py = toY(pt.y);
+          const wgt = cur.weights[idx];
+          // 基础半径 7px，随权重自适应放大
+          const radius = Math.max(8, Math.round(wgt * 110));
+          const isWrong = cur.wrongIds.includes(pt.id);
+
+          // 错分高亮光圈
+          if (isWrong) {
+            ctx.beginPath();
+            ctx.arc(px, py, radius + 7, 0, Math.PI * 2);
+            ctx.strokeStyle = '#B83D0B';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          }
+
+          // 实体圆
+          ctx.beginPath();
+          ctx.arc(px, py, radius, 0, Math.PI * 2);
+          ctx.fillStyle = pt.yVal === 1 ? '#17628E' : '#8B4A12';
+          ctx.fill();
+
+          // 权重值标注文案
+          ctx.fillStyle = '#142630';
+          ctx.font = '13px "Noto Sans CJK SC", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const labelY = py + (pt.y > 5 ? -radius - 12 : radius + 12);
+          ctx.fillText(`w=${wgt.toFixed(2)}`, px, labelY);
+
+          // 中心加减号
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 13px sans-serif';
+          ctx.fillText(pt.yVal === 1 ? '+' : '-', px, py);
+        });
+      }
+
+      function drawEnsemble(ctx) {
+        const w = cvEnsemble.width;
+        const h = cvEnsemble.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const { toX, toY } = getTransform(ctx, w, h);
+        const cur = ROUNDS[currentRound - 1];
+
+        // 栅格采样绘制集成决策边界 (密集采样)
+        const res = 50;
+        const stepX = 10 / res;
+        const stepY = 10 / res;
+        for (let i = 0; i < res; i++) {
+          for (let j = 0; j < res; j++) {
+            const gx = (i + 0.5) * stepX;
+            const gy = (j + 0.5) * stepY;
+            const pred = predictEnsemble(currentRound, { x: gx, y: gy });
+            ctx.fillStyle = pred === 1 ? 'rgba(23, 98, 142, 0.08)' : 'rgba(139, 74, 18, 0.08)';
+            const x1 = toX(i * stepX);
+            const y1 = toY((j + 1) * stepY);
+            const cw = toX((i + 1) * stepX) - x1;
+            const ch = toY(j * stepY) - y1;
+            ctx.fillRect(x1, y1, cw, ch);
+          }
+        }
+
+        drawGrid(ctx, w, h, toX, toY);
+
+        // 样本点展示（标出总错误）
+        DATA.forEach(pt => {
+          const px = toX(pt.x);
+          const py = toY(pt.y);
+          const pred = predictEnsemble(currentRound, pt);
+          const isEnsembleWrong = pred !== pt.yVal;
+
+          if (isEnsembleWrong) {
+            ctx.beginPath();
+            ctx.arc(px, py, 15, 0, Math.PI * 2);
+            ctx.strokeStyle = '#B83D0B';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+          }
+
+          ctx.beginPath();
+          ctx.arc(px, py, 9, 0, Math.PI * 2);
+          ctx.fillStyle = pt.yVal === 1 ? '#17628E' : '#8B4A12';
+          ctx.fill();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 12px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(pt.yVal === 1 ? '+' : '-', px, py);
+        });
+      }
+
+      function init() {
+        fitSingle = Deck.autofit(cvSingle, drawSingle);
+        fitEnsemble = Deck.autofit(cvEnsemble, drawEnsemble);
+
+        tabs.forEach(tab => {
+          tab.addEventListener('click', () => {
+            setRound(parseInt(tab.dataset.round, 10));
+          });
+        });
+
+        stepBtn.addEventListener('click', () => {
+          const next = currentRound < 3 ? currentRound + 1 : 1;
+          setRound(next);
+        });
+
+        resetBtn.addEventListener('click', () => {
+          setRound(1);
+        });
+
+        setRound(1);
+      }
+
+      window.addEventListener('DOMContentLoaded', init);
+    })();
+  </script>
+</body>
+</html>

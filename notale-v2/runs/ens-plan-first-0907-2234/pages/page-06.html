@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      color: var(--text);
+      font-family: var(--font-sans);
+      position: relative;
+    }
+
+    /* 顶部标题与极简说明 */
+    header {
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      line-height: var(--lh-tight);
+      font-weight: 600;
+    }
+    .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 主实验视界：两栏对齐（左侧样本阵列与采样器，右侧袋外收敛曲线与统计） */
+    .lab-grid {
+      display: grid;
+      grid-template-columns: 800px 1fr;
+      gap: 56px;
+      align-items: start;
+    }
+
+    /* 左侧：采样过程与样本矩阵 */
+    .panel-left {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* 样本点阵 SVG 区域 */
+    .sample-grid-wrap {
+      width: 800px;
+      height: 380px;
+      position: relative;
+    }
+    svg.sample-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 控制栏 */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn {
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      font-weight: 500;
+      padding: 8px 18px;
+      border: 1px solid var(--rule);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 0;
+      transition: background var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast);
+    }
+    .btn:hover {
+      background: rgba(23, 98, 142, 0.08);
+      border-color: var(--model);
+    }
+    .btn-primary {
+      background: var(--model);
+      color: #ffffff;
+      border-color: var(--model);
+    }
+    .btn-primary:hover {
+      background: #114c6e;
+      border-color: #114c6e;
+    }
+    .btn:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    /* 状态与计数读数 */
+    .stats-row {
+      display: flex;
+      gap: 32px;
+      font-size: var(--fs-body);
+      line-height: var(--lh-tight);
+      align-items: baseline;
+    }
+    .stat-val {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 24px;
+    }
+    .stat-in {
+      color: var(--model);
+    }
+    .stat-oob {
+      color: var(--focus);
+    }
+
+    /* 右侧：收敛图表与理论说明 */
+    .panel-right {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .chart-box {
+      width: 100%;
+      height: 380px;
+      position: relative;
+    }
+    canvas.chart-cv {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .math-callout {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      border-top: 1px solid var(--rule);
+      padding-top: 16px;
+    }
+    .math-callout strong {
+      color: var(--text);
+    }
+
+    /* 样本圆圈视觉类 */
+    .dot {
+      transition: fill var(--motion-step), stroke var(--motion-step), r var(--motion-step);
+    }
+  </style>
+</head>
+<body data-page="06" data-total="22">
+  <div id="stage">
+    <header>
+      <h1>Bootstrap 采样模拟：样本覆盖率与袋外数据（OOB）</h1>
+      <p class="lead">从 N=100 总体有放回抽样 N 次：约 63.2% 样本进入训练集，余下 36.8% 天然构成验证集。</p>
+    </header>
+
+    <div class="lab-grid">
+      <!-- 左栏：点阵与采样交互 -->
+      <div class="panel-left min0">
+        <div class="sample-grid-wrap">
+          <svg class="sample-svg" id="gridSvg" viewBox="0 0 800 380"></svg>
+        </div>
+
+        <div class="controls">
+          <button class="btn btn-primary" id="stepDrawBtn">单次抽样 (+1)</button>
+          <button class="btn" id="fullRoundBtn">完整轮次抽样 (N=100)</button>
+          <button class="btn" id="runManyBtn">模拟 100 轮实验</button>
+          <button class="btn" id="resetBtn">重置实验</button>
+        </div>
+
+        <div class="stats-row" id="statsRow" aria-live="polite">
+          <div>已抽样：<span class="stat-val" id="drawCount">0</span>/100</div>
+          <div>袋内覆盖：<span class="stat-val stat-in" id="coveredRate">0.0%</span> (<span id="coveredCount">0</span>)</div>
+          <div>袋外数据：<span class="stat-val stat-oob" id="oobRate">100.0%</span> (<span id="oobCount">100</span>)</div>
+        </div>
+      </div>
+
+      <!-- 右栏：OOB 比例收敛与理论极限 -->
+      <div class="panel-right min0">
+        <div class="chart-box">
+          <canvas class="chart-cv" id="chartCv"></canvas>
+        </div>
+
+        <div class="math-callout">
+          <strong>理论极限：</strong>lim (1 - 1/N)^N = 1/e ≈ 36.8%（N 趋向无穷）。<br>
+          袋外样本无需划分即可充当基学习器的泛化能力测试集。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    在左侧网格中，我们有 100 个初始样本。
+    Bootstrap 自助法要求从这 100 个样本中有放回地抽取 100 次。
+    点击“完整轮次抽样”，抽中的样本进入袋内（蓝色，数字表示重复抽中频次），未抽中的即为袋外样本（橙色 OOB）。
+    根据极限公式，单样本 N 次均未被抽中的概率趋于 1/e，约等于 36.8%。
+    点击“模拟 100 轮实验”，可以看到右侧各轮 OOB 比例紧密围绕 36.8% 的红虚线波动。
+    这一机制使得 Bagging 与随机森林天然拥有约三分之一的未见测试数据，无需像交叉验证那样切分训练集。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      const N = 100;
+      let drawCount = 0;
+      let counts = new Array(N).fill(0);
+      let roundHistory = [];
+
+      const svg = document.getElementById('gridSvg');
+      const startX = 40;
+      const startY = 32;
+      const gapX = 78;
+      const gapY = 36;
+
+      const nodes = [];
+      for (let i = 0; i < N; i++) {
+        const row = Math.floor(i / 10);
+        const col = i % 10;
+        const cx = startX + col * gapX;
+        const cy = startY + row * gapY;
+
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('transform', `translate(${cx}, ${cy})`);
+
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('r', '13');
+        circle.setAttribute('fill', '#E8EEF1');
+        circle.setAttribute('stroke', '#71828B');
+        circle.setAttribute('stroke-width', '1.5');
+        circle.classList.add('dot');
+
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'central');
+        text.setAttribute('font-size', '13');
+        text.setAttribute('font-family', 'var(--font-sans)');
+        text.setAttribute('fill', '#50616B');
+        text.textContent = (i + 1).toString();
+
+        g.appendChild(circle);
+        g.appendChild(text);
+        svg.appendChild(g);
+
+        nodes.push({ g, circle, text });
+      }
+
+      const cv = document.getElementById('chartCv');
+      let ctx = Deck.fit(cv);
+
+      function updateGridUI(highlightIdx = -1) {
+        let covered = 0;
+        for (let i = 0; i < N; i++) {
+          const c = counts[i];
+          const node = nodes[i];
+          if (c > 0) {
+            covered++;
+            node.circle.setAttribute('fill', '#17628E');
+            node.circle.setAttribute('stroke', '#17628E');
+            node.text.setAttribute('fill', '#ffffff');
+            node.text.textContent = `×${c}`;
+          } else {
+            if (drawCount >= N) {
+              node.circle.setAttribute('fill', 'rgba(184, 61, 11, 0.15)');
+              node.circle.setAttribute('stroke', '#B83D0B');
+              node.circle.setAttribute('stroke-width', '2');
+              node.text.setAttribute('fill', '#B83D0B');
+              node.text.textContent = 'OOB';
+            } else {
+              node.circle.setAttribute('fill', '#E8EEF1');
+              node.circle.setAttribute('stroke', '#71828B');
+              node.circle.setAttribute('stroke-width', '1.5');
+              node.text.setAttribute('fill', '#50616B');
+              node.text.textContent = (i + 1).toString();
+            }
+          }
+          if (i === highlightIdx) {
+            node.circle.setAttribute('stroke-width', '4');
+            node.circle.setAttribute('r', '15');
+          } else {
+            node.circle.setAttribute('r', '13');
+          }
+        }
+
+        const oob = N - covered;
+        document.getElementById('drawCount').textContent = drawCount;
+        document.getElementById('coveredCount').textContent = covered;
+        document.getElementById('coveredRate').textContent = `${(covered / N * 100).toFixed(1)}%`;
+        document.getElementById('oobCount').textContent = oob;
+        document.getElementById('oobRate').textContent = `${(oob / N * 100).toFixed(1)}%`;
+      }
+
+      function drawChart() {
+        if (!ctx) ctx = Deck.fit(cv);
+        const w = cv.clientWidth || 600;
+        const h = cv.clientHeight || 380;
+        ctx.clearRect(0, 0, w, h);
+
+        const padL = 54;
+        const padR = 24;
+        const padT = 30;
+        const padB = 42;
+        const plotW = w - padL - padR;
+        const plotH = h - padT - padB;
+
+        // 坐标轴
+        ctx.strokeStyle = '#71828B';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padL, padT);
+        ctx.lineTo(padL, padT + plotH);
+        ctx.lineTo(padL + plotW, padT + plotH);
+        ctx.stroke();
+
+        // 理论参考虚线 36.8%
+        const yTheory = padT + plotH * (1 - 0.3679);
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = '#B83D0B';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(padL, yTheory);
+        ctx.lineTo(padL + plotW, yTheory);
+        ctx.stroke();
+        ctx.restore();
+
+        // 虚线标签
+        ctx.fillStyle = '#B83D0B';
+        ctx.font = '13px ' + Deck.token('--font-sans');
+        ctx.fillText('1/e ≈ 36.8% (理论期望)', padL + 12, yTheory - 8);
+
+        // Y 轴刻度
+        ctx.fillStyle = '#50616B';
+        ctx.font = '13px ' + Deck.token('--font-sans');
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        [0, 0.2, 0.4, 0.6, 0.8, 1.0].forEach(v => {
+          const y = padT + plotH * (1 - v);
+          ctx.fillText(`${Math.round(v * 100)}%`, padL - 8, y);
+          ctx.strokeStyle = 'rgba(113, 130, 139, 0.15)';
+          ctx.beginPath();
+          ctx.moveTo(padL, y);
+          ctx.lineTo(padL + plotW, y);
+          ctx.stroke();
+        });
+
+        // X 轴说明
+        ctx.textAlign = 'center';
+        ctx.fillText('轮次历史 (每轮独立重抽 100 次)', padL + plotW / 2, padT + plotH + 28);
+
+        // 绘制折线
+        if (roundHistory.length > 0) {
+          const maxRounds = Math.max(20, roundHistory.length);
+          ctx.strokeStyle = '#17628E';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          roundHistory.forEach((r, idx) => {
+            const x = padL + (idx / (maxRounds - 1)) * plotW;
+            const y = padT + plotH * (1 - r);
+            if (idx === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+
+          // 绘制数据点
+          roundHistory.forEach((r, idx) => {
+            const x = padL + (idx / (maxRounds - 1)) * plotW;
+            const y = padT + plotH * (1 - r);
+            ctx.fillStyle = '#17628E';
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+          });
+
+          // 显示最新一轮实测
+          const lastVal = roundHistory[roundHistory.length - 1];
+          const lastX = padL + ((roundHistory.length - 1) / (maxRounds - 1)) * plotW;
+          const lastY = padT + plotH * (1 - lastVal);
+          ctx.fillStyle = '#142630';
+          ctx.font = 'bold 13px ' + Deck.token('--font-sans');
+          ctx.textAlign = 'left';
+          ctx.fillText(`${(lastVal * 100).toFixed(1)}%`, Math.min(lastX + 6, w - 50), lastY - 4);
+        }
+      }
+
+      function doSingleDraw() {
+        if (drawCount >= N) {
+          counts.fill(0);
+          drawCount = 0;
+        }
+        const picked = Math.floor(Math.random() * N);
+        counts[picked]++;
+        drawCount++;
+        updateGridUI(picked);
+
+        if (drawCount === N) {
+          const oobCount = counts.filter(c => c === 0).length;
+          roundHistory.push(oobCount / N);
+          drawChart();
+        }
+      }
+
+      function doFullRound() {
+        counts.fill(0);
+        for (let i = 0; i < N; i++) {
+          const picked = Math.floor(Math.random() * N);
+          counts[picked]++;
+        }
+        drawCount = N;
+        const oobCount = counts.filter(c => c === 0).length;
+        roundHistory.push(oobCount / N);
+        updateGridUI();
+        drawChart();
+      }
+
+      function doManyRounds() {
+        for (let r = 0; r < 100; r++) {
+          const tempCounts = new Array(N).fill(0);
+          for (let i = 0; i < N; i++) {
+            tempCounts[Math.floor(Math.random() * N)]++;
+          }
+          const oob = tempCounts.filter(c => c === 0).length;
+          roundHistory.push(oob / N);
+          if (r === 99) {
+            counts = tempCounts;
+            drawCount = N;
+          }
+        }
+        updateGridUI();
+        drawChart();
+      }
+
+      function resetAll() {
+        drawCount = 0;
+        counts.fill(0);
+        roundHistory = [];
+        updateGridUI();
+        drawChart();
+      }
+
+      doFullRound();
+
+      document.getElementById('stepDrawBtn').addEventListener('click', doSingleDraw);
+      document.getElementById('fullRoundBtn').addEventListener('click', doFullRound);
+      document.getElementById('runManyBtn').addEventListener('click', doManyRounds);
+      document.getElementById('resetBtn').addEventListener('click', resetAll);
+
+      Deck.onResize(() => {
+        ctx = Deck.fit(cv);
+        drawChart();
+      });
+
+      Deck.init({ index: 6, total: 22 });
+    })();
+  </script>
+</body>
+</html>

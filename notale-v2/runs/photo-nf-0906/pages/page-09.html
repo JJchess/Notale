@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+    }
+
+    /* 标题区 */
+    .header {
+      position: absolute;
+      top: 36px;
+      left: 64px;
+      right: 64px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      z-index: 10;
+    }
+
+    .title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-strong);
+      color: var(--text);
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主舞台布局：左侧主图能量级联降落，右侧膜上空间定位与泵送联动 */
+    .viewport {
+      position: absolute;
+      top: 96px;
+      left: 64px;
+      right: 64px;
+      bottom: 96px;
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 36px;
+    }
+
+    /* SVG 矢量级联图区 */
+    .cascade-stage {
+      position: relative;
+      background: rgba(255, 255, 255, 0.45);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    svg.cascade-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧面板：膜结构示意与能量产出解析 */
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.35);
+      border-radius: 8px;
+      padding: 24px 28px;
+      box-sizing: border-box;
+    }
+
+    .panel-sec {
+      margin-bottom: 18px;
+    }
+
+    .sec-title {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-strong);
+      color: var(--text);
+      margin: 0 0 12px 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sec-title::before {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 16px;
+      background: var(--model);
+      border-radius: 2px;
+    }
+
+    .desc-text {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      margin: 0 0 14px 0;
+    }
+
+    .highlight-val {
+      color: var(--energy);
+      font-weight: var(--weight-strong);
+    }
+
+    /* 状态切换指示卡 */
+    .status-box {
+      background: #ffffff;
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin-top: 12px;
+      box-shadow: 0 2px 8px rgba(23, 37, 30, 0.04);
+    }
+
+    .status-step-name {
+      font-size: var(--fs-lead);
+      font-weight: var(--weight-strong);
+      color: var(--model);
+      margin: 0 0 6px 0;
+    }
+
+    .status-step-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      margin: 0;
+    }
+
+    /* 底部交互条 */
+    .nav-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 64px;
+      right: 64px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.55);
+      border-radius: 6px;
+      padding: 0 16px;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .step-btn {
+      appearance: none;
+      border: 1px solid var(--rule);
+      background: #ffffff;
+      color: var(--text);
+      font-size: var(--fs-tick);
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: all var(--motion-fast);
+    }
+
+    .step-btn:hover {
+      background: #f0f4f1;
+    }
+
+    .step-btn.active {
+      background: var(--model);
+      color: #ffffff;
+      border-color: var(--model);
+      font-weight: var(--weight-strong);
+    }
+
+    .play-btn {
+      appearance: none;
+      border: none;
+      background: var(--focus);
+      color: #ffffff;
+      font-size: var(--fs-tick);
+      font-weight: var(--weight-strong);
+      padding: 6px 18px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: opacity var(--motion-fast);
+    }
+
+    .play-btn:hover {
+      opacity: 0.9;
+    }
+
+    /* SVG 内部样式与刻度 */
+    .axis-line {
+      stroke: var(--rule);
+      stroke-width: 1.5;
+    }
+    .grid-line {
+      stroke: rgba(129, 150, 138, 0.25);
+      stroke-dasharray: 4 4;
+    }
+    .tick-text {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-tick);
+      fill: var(--muted);
+    }
+    .node-text {
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      fill: var(--text);
+      font-weight: var(--weight-strong);
+      text-anchor: middle;
+    }
+    .subnode-text {
+      font-size: var(--fs-tick);
+      font-family: var(--font-sans);
+      fill: var(--muted);
+      text-anchor: middle;
+    }
+  </style>
+</head>
+<body data-page="09" data-total="22">
+  <div id="stage">
+    <header class="header">
+      <h1 class="title">高能电子沿类囊体膜释放能量</h1>
+      <p class="lead">从光系统Ⅱ到光系统Ⅰ：能级梯级下落，能量驱动质子逆浓度跨膜泵入</p>
+    </header>
+
+    <main class="viewport">
+      <!-- 阶梯能级落差与电子传递主图 -->
+      <section class="cascade-stage min0">
+        <svg class="cascade-svg" viewBox="0 0 880 630" id="cascadeSvg">
+          <!-- 纵坐标电位与能量标尺 -->
+          <g class="axis-group">
+            <line x1="110" y1="560" x2="110" y2="70" class="axis-line" marker-end="url(#arrow)" />
+            <text x="110" y="52" class="tick-text" text-anchor="middle">还原电位 (V)</text>
+            
+            <!-- 电位刻度 -->
+            <line x1="105" y1="120" x2="110" y2="120" class="axis-line" />
+            <text x="100" y="124" class="tick-text" text-anchor="end">-0.8 (高能)</text>
+            <line x1="110" y1="120" x2="850" y2="120" class="grid-line" />
+
+            <line x1="105" y1="260" x2="110" y2="260" class="axis-line" />
+            <text x="100" y="264" class="tick-text" text-anchor="end">0.0</text>
+            <line x1="110" y1="260" x2="850" y2="260" class="grid-line" />
+
+            <line x1="105" y1="420" x2="110" y2="420" class="axis-line" />
+            <text x="100" y="424" class="tick-text" text-anchor="end">+0.4</text>
+            <line x1="110" y1="420" x2="850" y2="420" class="grid-line" />
+
+            <line x1="105" y1="540" x2="110" y2="540" class="axis-line" />
+            <text x="100" y="544" class="tick-text" text-anchor="end">+1.0 (基态)</text>
+            <line x1="110" y1="540" x2="850" y2="540" class="grid-line" />
+          </g>
+
+          <!-- 箭头定义 -->
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="var(--rule)" />
+            </marker>
+            <marker id="energy-arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="var(--energy)" />
+            </marker>
+            <marker id="focus-arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="var(--focus)" />
+            </marker>
+          </defs>
+
+          <!-- 传递路径背景连线 -->
+          <g class="path-group" fill="none" stroke-width="3">
+            <!-- 光激发升能：PSII基态 P680 到激发态 P680* -->
+            <path id="excitePath1" d="M 180 520 L 180 140" stroke="var(--focus)" stroke-width="3" stroke-dasharray="6 4" />
+            <!-- 下降链：P680* -> 质体醌PQ -> 细胞色素b6f复合物 -> 质体蓝素PC -> PSI基态 P700 -->
+            <path id="chainPath" d="M 180 140 L 300 220 L 450 310 L 590 410 L 680 470" stroke="var(--model)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+            <!-- 光激发二次升能：PSI基态 P700 到激发态 P700* -->
+            <path id="excitePath2" d="M 680 470 L 680 110" stroke="var(--focus)" stroke-width="3" stroke-dasharray="6 4" />
+            <!-- 终端流向：P700* -> 铁氧还蛋白Fd -> 用于合成NADPH -->
+            <path id="fdPath" d="M 680 110 L 760 176" stroke="var(--energy)" stroke-width="3" stroke-linecap="round" marker-end="url(#energy-arrow)" />
+          </g>
+
+          <!-- 质子泵送驱动标记（在 Cyt b6f 处释能并泵 H+） -->
+          <g id="pumpFlow" transform="translate(450, 310)">
+            <circle cx="0" cy="0" r="28" fill="rgba(166, 83, 34, 0.12)" stroke="var(--energy)" stroke-width="1.5" stroke-dasharray="3 3" />
+            <!-- 释放能量与泵出 H+ 箭头 -->
+            <path d="M 0 35 L 0 85" stroke="var(--matter)" stroke-width="3" fill="none" marker-end="url(#arrow)" />
+            <text x="12" y="70" font-size="13" font-family="var(--font-sans)" fill="var(--matter)" font-weight="600">泵出 H⁺ 入腔</text>
+            <text x="0" y="115" class="subnode-text" fill="var(--matter)">建立跨膜质子梯度</text>
+          </g>
+
+          <!-- 反应中心复合体节点 -->
+          <!-- 节点 1: PS II (P680) -->
+          <g id="node-ps2" class="carrier-node" transform="translate(180, 520)">
+            <rect x="-55" y="-24" width="110" height="48" rx="6" fill="#ffffff" stroke="var(--model)" stroke-width="2" />
+            <text y="-2" class="node-text">PS Ⅱ (P680)</text>
+            <text y="16" class="subnode-text">+1.0 V 强氧化端</text>
+          </g>
+
+          <!-- 节点 2: P680* 激发态 -->
+          <g id="node-p680star" class="carrier-node" transform="translate(180, 140)">
+            <circle cx="0" cy="0" r="24" fill="#ffffff" stroke="var(--focus)" stroke-width="2.5" />
+            <text y="5" font-size="13" font-family="var(--font-sans)" font-weight="700" fill="var(--focus)" text-anchor="middle">P680*</text>
+            <text y="-32" class="subnode-text" fill="var(--focus)">-0.8V 激发态</text>
+          </g>
+
+          <!-- 节点 3: 质体醌 PQ -->
+          <g id="node-pq" class="carrier-node" transform="translate(300, 220)">
+            <rect x="-44" y="-20" width="88" height="40" rx="5" fill="#ffffff" stroke="var(--model)" stroke-width="1.5" />
+            <text y="0" class="node-text">质体醌 PQ</text>
+            <text y="15" class="subnode-text">双电子穿梭</text>
+          </g>
+
+          <!-- 节点 4: 细胞色素 b6f -->
+          <g id="node-b6f" class="carrier-node" transform="translate(450, 310)">
+            <rect x="-62" y="-22" width="124" height="44" rx="6" fill="#ffffff" stroke="var(--energy)" stroke-width="2.5" />
+            <text y="-2" class="node-text" fill="var(--energy)">Cyt b₆f 复合物</text>
+            <text y="16" class="subnode-text" fill="var(--energy)">释能泵质子</text>
+          </g>
+
+          <!-- 节点 5: 质体蓝素 PC -->
+          <g id="node-pc" class="carrier-node" transform="translate(590, 410)">
+            <circle cx="0" cy="0" r="22" fill="#ffffff" stroke="var(--model)" stroke-width="1.5" />
+            <text y="5" class="node-text">PC</text>
+            <text y="36" class="subnode-text">铜蛋白载体</text>
+          </g>
+
+          <!-- 节点 6: PS I (P700) -->
+          <g id="node-ps1" class="carrier-node" transform="translate(680, 470)">
+            <rect x="-55" y="-24" width="110" height="48" rx="6" fill="#ffffff" stroke="var(--model)" stroke-width="2" />
+            <text y="-2" class="node-text">PS Ⅰ (P700)</text>
+            <text y="16" class="subnode-text">+0.4 V 电子接收端</text>
+          </g>
+
+          <!-- 节点 7: P700* 激发态 -->
+          <g id="node-p700star" class="carrier-node" transform="translate(680, 110)">
+            <circle cx="0" cy="0" r="24" fill="#ffffff" stroke="var(--focus)" stroke-width="2.5" />
+            <text y="5" font-size="13" font-family="var(--font-sans)" font-weight="700" fill="var(--focus)" text-anchor="middle">P700*</text>
+            <text y="-32" class="subnode-text" fill="var(--focus)">二次光激发</text>
+          </g>
+
+          <!-- 节点 8: 铁氧还蛋白 Fd -->
+          <g id="node-fd" class="carrier-node" transform="translate(805, 205)">
+            <rect x="-44" y="-22" width="88" height="44" rx="5" fill="#ffffff" stroke="var(--energy)" stroke-width="1.5" />
+            <text y="-2" class="node-text">Fd 载体</text>
+            <text y="15" class="subnode-text">传递给 NADP⁺</text>
+          </g>
+
+          <!-- 活动电子粒子 -->
+          <g id="activeElectron" transform="translate(180, 140)" style="pointer-events: none;">
+            <circle cx="0" cy="0" r="11" fill="var(--focus)" />
+            <circle cx="0" cy="0" r="16" fill="none" stroke="var(--focus)" stroke-width="2" opacity="0.6" />
+            <text y="4" font-size="12" font-family="var(--font-sans)" font-weight="900" fill="#ffffff" text-anchor="middle">e⁻</text>
+          </g>
+        </svg>
+      </section>
+
+      <!-- 右侧解析与直观对应 -->
+      <aside class="side-panel min0">
+        <div>
+          <div class="panel-sec">
+            <h2 class="sec-title">能量梯级下落机制</h2>
+            <p class="desc-text">
+              叶绿素吸收光能，将电子推至高能态（<span class="highlight-val">-0.8 V</span>）。
+            </p>
+            <p class="desc-text">
+              高能电子顺氧化还原电位梯级跌落，分步释放自由能。
+            </p>
+          </div>
+
+          <div class="status-box" id="statusBox">
+            <h3 class="status-step-name" id="stepTitle">第一阶段：光能激发</h3>
+            <p class="status-step-desc" id="stepDesc">光子能量打入 PS Ⅱ，P680 激发为高能态并脱出电子。</p>
+          </div>
+        </div>
+
+        <div class="panel-sec" style="margin-bottom: 0;">
+          <h2 class="sec-title">核心能量转换</h2>
+          <p class="desc-text" style="margin-bottom: 8px;">
+            电子下落释放的自由能，被 <strong>Cyt b₆f</strong> 用于将 <span class="highlight-val">H⁺ 逆浓度泵入腔内</span>。
+          </p>
+          <p class="desc-text">
+            形成跨膜电化学势差，直接驱动随后的 ATP 合成。
+          </p>
+        </div>
+      </aside>
+    </main>
+
+    <!-- 底部交互步骤控制条 -->
+    <nav class="nav-bar">
+      <div class="btn-group" id="stepNav">
+        <button class="step-btn active" data-step="0">1. 光能激发 (P680*)</button>
+        <button class="step-btn" data-step="1">2. 经 PQ 传递</button>
+        <button class="step-btn" data-step="2">3. Cyt b₆f 释能泵 H⁺</button>
+        <button class="step-btn" data-step="3">4. 经 PC 到达 PS Ⅰ</button>
+        <button class="step-btn" data-step="4">5. 二次光激发至 Fd</button>
+      </div>
+      <button class="play-btn" id="playBtn">连续演练</button>
+    </nav>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      const STEPS = [
+        {
+          title: "第一阶段：光能激发",
+          desc: "光子打入反应中心，电子跃迁至 -0.8V 高能态并脱出。",
+          pos: { x: 180, y: 140 },
+          nodeId: "node-p680star",
+          pumpActive: false
+        },
+        {
+          title: "第二阶段：PQ 接收流动",
+          desc: "高能电子由 PQ 捕获，顺电位梯度向下游传递。",
+          pos: { x: 300, y: 220 },
+          nodeId: "node-pq",
+          pumpActive: false
+        },
+        {
+          title: "第三阶段：Cyt b₆f 释能泵 H⁺",
+          desc: "电子能级下落释放自由能，复合物逆浓度泵 H⁺ 入腔。",
+          pos: { x: 450, y: 310 },
+          nodeId: "node-b6f",
+          pumpActive: true
+        },
+        {
+          title: "第四阶段：PC 输送至 PS Ⅰ",
+          desc: "释能后的电子由 PC 接力，填补 PS Ⅰ 空缺的反应中心基态。",
+          pos: { x: 590, y: 410 },
+          nodeId: "node-pc",
+          pumpActive: false
+        },
+        {
+          title: "第五阶段：二次光激发至 Fd",
+          desc: "PS Ⅰ 二次吸光跃迁至 P700*，经 Fd 最终传递给 NADP⁺。",
+          pos: { x: 805, y: 205 },
+          nodeId: "node-fd",
+          pumpActive: false
+        }
+      ];
+
+      const electronEl = document.getElementById("activeElectron");
+      const stepTitle = document.getElementById("stepTitle");
+      const stepDesc = document.getElementById("stepDesc");
+      const stepButtons = document.querySelectorAll(".step-btn");
+      const playBtn = document.getElementById("playBtn");
+      const pumpFlow = document.getElementById("pumpFlow");
+
+      let currentStep = 0;
+      let timer = null;
+      let isPlaying = false;
+
+      function renderStep(idx) {
+        currentStep = idx;
+        const info = STEPS[idx];
+
+        // 移动电子粒子
+        electronEl.setAttribute("transform", `translate(${info.pos.x}, ${info.pos.y})`);
+
+        // 更新右侧文字
+        stepTitle.textContent = info.title;
+        stepDesc.textContent = info.desc;
+
+        // 按钮样式
+        stepButtons.forEach((btn, i) => {
+          if (i === idx) {
+            btn.classList.add("active");
+          } else {
+            btn.classList.remove("active");
+          }
+        });
+
+        // 泵送状态高亮
+        if (info.pumpActive) {
+          pumpFlow.style.opacity = "1";
+          pumpFlow.querySelector("circle").setAttribute("fill", "rgba(166, 83, 34, 0.28)");
+        } else {
+          pumpFlow.style.opacity = "0.6";
+          pumpFlow.querySelector("circle").setAttribute("fill", "rgba(166, 83, 34, 0.12)");
+        }
+      }
+
+      stepButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          stopAutoplay();
+          const stepIndex = parseInt(btn.dataset.step, 10);
+          renderStep(stepIndex);
+        });
+      });
+
+      function stopAutoplay() {
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+        isPlaying = false;
+        playBtn.textContent = "连续演练";
+      }
+
+      function startAutoplay() {
+        isPlaying = true;
+        playBtn.textContent = "暂停演练";
+        timer = setInterval(() => {
+          currentStep = (currentStep + 1) % STEPS.length;
+          renderStep(currentStep);
+        }, 1500);
+      }
+
+      playBtn.addEventListener("click", () => {
+        if (isPlaying) {
+          stopAutoplay();
+        } else {
+          startAutoplay();
+        }
+      });
+
+      // 初始化初态
+      renderStep(0);
+      Deck.init({ index: 9, total: 22, keys: false });
+    })();
+  </script>
+
+  <aside class="notes" hidden>
+    各位同学，在上一页我们看到了水光解如何把电子补充给叶绿素。现在请看大屏幕上这幅经典的“Z字形”能量级联模型。
+    很多同学以为电子是一瞬间撞进最终受体的，其实不是。叶绿素吸收光能后，把电子瞬间弹射到了高达 -0.8V 的极高能级。
+    这个高能电子如果一下子把能量全散发成热量，能量就被白白浪费了。类囊体膜的巧妙之处就在于，布置了一条像水梯一样的电子传递链：从质体醌 PQ，到细胞色素 b6f 复合物，再到质体蓝素 PC。
+    电子每往下落一步，就释放一部分自由能。特别是在 Cyt b6f 这一步，释放的能量立即被用来把类囊体外面的氢离子逆着浓度差强行泵进类囊体腔内部！
+    这样，光能激发的电能，就转化成了膜两侧巨大的氢离子浓度差势能，为下一节我们要讲的 ATP 合成酶转动提供了充足动力。
+  </aside>
+</body>
+</html>

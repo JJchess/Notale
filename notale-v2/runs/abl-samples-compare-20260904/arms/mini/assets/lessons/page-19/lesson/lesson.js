@@ -1,0 +1,58 @@
+export const lesson = {
+  id: "page-19",
+  title: "梯度提升代码实操：验证集曲线揭示迭代不足与迭代过度的不同表现",
+  visualTitle: "梯度提升迭代与验证损失",
+  visualKicker: "Gradient Boosting Dynamics",
+  learningTarget: "通过逐步累加弱学习器输出，追踪训练误差与验证误差曲线分化，直观观察欠拟合、最佳泛化轮数与过度迭代。",
+  runtime: "python",
+  entry: "starter.py",
+  entryMode: "fixed",
+  files: [
+    {
+      id: "starter",
+      filename: "starter.py",
+      label: "starter.py",
+      language: "python",
+      sourceUrl: "./lesson/starter.py",
+      editable: true,
+    },
+  ],
+  traceUrl: "./lesson/trace.py",
+  testsUrl: "./lesson/tests.py",
+  seed: 42,
+  limits: {
+    timeoutMs: 5000,
+    maxFrames: 1800,
+    maxPayloadBytes: 4_000_000,
+    maxOutputChars: 80_000,
+    maxSourceChars: 200_000,
+    maxItems: 200,
+    maxDepth: 7,
+    maxString: 1200,
+  },
+  initialStep: {
+    sequence: 0,
+    source: { file: "starter.py", line: 1, column: 1 },
+    kind: "boosting_curve",
+    state: {
+      current_round: 0,
+      total_rounds: 12,
+      learning_rate: 0.25,
+      train_loss: null,
+      val_loss: null,
+      history: [],
+      stage: "ready",
+    },
+    focus: [],
+    changes: [],
+    metrics: {
+      "当前轮数": "0 / 12",
+      "训练 MSE": "—",
+      "验证 MSE": "—",
+      "泛化差距": "—",
+    },
+    annotation: "梯度提升初始状态：设定弱学习器迭代轮数与学习率，点击运行开始序列训练并绘制双曲线。",
+  },
+};
+
+export default lesson;

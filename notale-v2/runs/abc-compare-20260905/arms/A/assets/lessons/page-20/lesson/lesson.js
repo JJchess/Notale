@@ -1,0 +1,66 @@
+const initialDataset = [
+  { id: 0, x: 1.0, y: 1.20, pred: 0.49, res: 0.71 },
+  { id: 1, x: 2.0, y: 2.10, pred: 0.49, res: 1.61 },
+  { id: 2, x: 3.0, y: 1.85, pred: 0.49, res: 1.36 },
+  { id: 3, x: 4.0, y: 0.40, pred: 0.49, res: -0.09 },
+  { id: 4, x: 5.0, y: -0.90, pred: 0.49, res: -1.39 },
+  { id: 5, x: 6.0, y: -1.80, pred: 0.49, res: -2.29 },
+  { id: 6, x: 7.0, y: -0.70, pred: 0.49, res: -1.19 },
+  { id: 7, x: 8.0, y: 0.85, pred: 0.49, res: 0.36 },
+];
+
+export const lesson = {
+  id: "page-20",
+  title: "代码实操 Boosting：学习率与迭代轮数的权衡",
+  visualTitle: "Boosting 残差拟合与预测合流",
+  visualKicker: "Gradient Boosting Regression",
+  learningTarget: "理解加法模型中弱学习器对前序残差的逐步补偿，观察学习率 η 与迭代轮数 M 的权衡。",
+  runtime: "python",
+  entry: "starter.py",
+  entryMode: "fixed",
+  files: [
+    {
+      id: "starter",
+      filename: "starter.py",
+      label: "starter.py",
+      language: "python",
+      sourceUrl: "./lesson/starter.py",
+      editable: true,
+    },
+  ],
+  traceUrl: "./lesson/trace.py",
+  testsUrl: "./lesson/tests.py",
+  seed: 20,
+  limits: {
+    timeoutMs: 5000,
+    maxFrames: 1800,
+    maxPayloadBytes: 4_000_000,
+    maxOutputChars: 60_000,
+    maxSourceChars: 100_000,
+    maxItems: 120,
+    maxDepth: 6,
+    maxString: 800,
+  },
+  initialStep: {
+    sequence: 0,
+    source: { file: "starter.py", line: 17, column: 1 },
+    kind: "boosting_step",
+    state: {
+      round: 0,
+      total_rounds: 6,
+      eta: 0.5,
+      mse: 1.624,
+      split: null,
+      left_val: 0.0,
+      right_val: 0.0,
+      samples: initialDataset,
+      complete: false,
+    },
+    focus: [],
+    changes: [],
+    metrics: { "当前轮次": "0/6", "学习率 η": "0.50", "当前 MSE": "1.6240" },
+    annotation: "初态：总预测 F_0 初始化为样本均值；点击「运行」观察各轮弱分类桩逐步吸收残差。",
+  },
+};
+
+export default lesson;

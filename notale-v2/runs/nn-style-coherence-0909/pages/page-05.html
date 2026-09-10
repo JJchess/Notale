@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh" data-variant="dark">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ position:relative; overflow:hidden; }
+
+  .head{
+    position:absolute; inset:56px 72px auto 72px;
+  }
+  .head .nt-kicker{ margin-bottom:14px; }
+  .head .nt-title{ font-size:var(--fs-h2); max-width:1100px; }
+  .head .nt-lead{ margin-top:12px; color:var(--muted); }
+
+  /* 主证据场：神经元机制图 */
+  .evidence{
+    position:absolute; left:72px; top:216px; width:900px; height:560px;
+  }
+  .evidence svg{ width:100%; height:100%; overflow:visible; }
+
+  .term-label{
+    font-family:var(--font-mono);
+    font-size:16px;
+    font-weight:700;
+    text-anchor:middle;
+    dominant-baseline:middle;
+  }
+  .role-label{
+    font-family:var(--font-sans);
+    font-size:13px;
+    font-weight:500;
+    fill:var(--muted);
+    text-anchor:middle;
+  }
+
+  .weight-line{
+    fill:none;
+    stroke-linecap:round;
+    vector-effect:non-scaling-stroke;
+  }
+
+  .weight-tag{
+    font-family:var(--font-mono);
+    font-size:15px;
+    font-weight:700;
+    text-anchor:middle;
+    dominant-baseline:middle;
+  }
+
+  /* 公式条 */
+  .formula-strip{
+    position:absolute; left:72px; top:800px; width:900px;
+    display:flex; align-items:baseline; gap:22px;
+  }
+  .formula-strip .nt-equation{ font-size:26px; }
+  .formula-strip .nt-mono{ color:var(--accent); }
+
+  /* 右侧控制台 + 读数 */
+  .side{
+    position:absolute; right:64px; top:216px; width:420px;
+  }
+
+  .readout-block{
+    margin-bottom:22px;
+  }
+  .readout-row{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding:10px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .readout-row .nt-label{ font-size:15px; }
+  .readout-row .nt-mono{
+    font-size:20px; font-weight:700; color:var(--text);
+  }
+  .readout-row[data-role="sum"] .nt-mono{ color:var(--stable); }
+  .readout-row[data-role="out"] .nt-mono{ color:var(--accent); font-size:24px; }
+
+  .nt-controls{ width:100%; }
+  .slider-row{
+    display:grid;
+    grid-template-columns:64px 1fr 64px;
+    align-items:center;
+    gap:12px;
+  }
+  .slider-row input[type="range"]{
+    width:100%;
+    accent-color:var(--accent);
+    height:6px;
+  }
+  .slider-row .nt-mono{
+    text-align:right;
+    font-size:16px;
+    color:var(--accent);
+  }
+  .slider-row .nt-control-label{ min-width:64px; }
+
+  .reset-row{
+    margin-top:16px;
+    display:flex;
+    justify-content:flex-end;
+  }
+
+  .note-block{
+    position:absolute; right:64px; bottom:56px; width:420px;
+  }
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+
+  <div class="head">
+    <span class="nt-kicker">神经元</span>
+    <h1 class="nt-title">一个神经元，是可学习的加权和加一次非线性</h1>
+    <p class="nt-lead nt-body">每个输入 x 乘上一个权重 w，求和后加偏置 b，再经过激活函数得到输出 a。w 和 b 是训练中被调整的参数——拖动右侧滑块，观察它们如何改变输出。</p>
+  </div>
+
+  <div class="evidence">
+    <svg viewBox="0 0 900 560" aria-label="神经元机制图：三个输入经加权求和与激活得到输出">
+      <!-- 输入 -->
+      <g id="inputs"></g>
+      <!-- 权重连线 -->
+      <g id="weight-lines"></g>
+      <!-- 权重数值标签 -->
+      <g id="weight-tags"></g>
+      <!-- 求和节点 -->
+      <circle class="nt-node" data-state="stable" cx="520" cy="280" r="46"></circle>
+      <text class="term-label" x="520" y="272" fill="var(--accent-ink)">&#931;+b</text>
+      <text class="term-label" x="520" y="296" fill="var(--accent-ink)" font-size="13">z</text>
+      <!-- 求和 -> 激活 连线 -->
+      <path class="nt-diagram-line" d="M566,280 L660,280"></path>
+      <!-- 激活节点：环形进度表示 a 的强度 -->
+      <circle cx="710" cy="280" r="40" fill="var(--paper)" stroke="var(--line-strong)" stroke-width="2"></circle>
+      <circle id="act-ring" cx="710" cy="280" r="40" fill="none" stroke="var(--accent)" stroke-width="6" transform="rotate(-90 710 280)"></circle>
+      <text class="term-label" x="710" y="280" fill="var(--text)">&#963;</text>
+      <text class="role-label" x="710" y="336">激活函数</text>
+      <!-- 激活 -> 输出 -->
+      <path class="nt-diagram-line" d="M750,280 L830,280"></path>
+      <circle class="nt-node" id="out-node" cx="855" cy="280" r="16"></circle>
+      <text class="role-label" x="855" y="316">输出 a</text>
+
+      <text class="role-label" x="520" y="346">求和与偏置</text>
+    </svg>
+  </div>
+
+  <div class="formula-strip">
+    <span class="nt-equation">a = &#963;( <span class="nt-mono" id="f-terms">w&#8321;x&#8321;+w&#8322;x&#8322;+w&#8323;x&#8323;+b</span> )</span>
+  </div>
+
+  <div class="side">
+    <div class="readout-block">
+      <div class="readout-row" data-role="sum">
+        <span class="nt-label">加权和 + 偏置&nbsp;z</span>
+        <span class="nt-mono" id="readout-z">0.00</span>
+      </div>
+      <div class="readout-row" data-role="out">
+        <span class="nt-label">激活输出&nbsp;a = &#963;(z)</span>
+        <span class="nt-mono" id="readout-a">0.50</span>
+      </div>
+    </div>
+
+    <div class="nt-controls">
+      <div class="nt-control-row slider-row" data-var="w1">
+        <span class="nt-control-label">w&#8321;</span>
+        <input type="range" id="slider-w1" min="-2" max="2" step="0.05" value="0.8">
+        <span class="nt-mono" id="value-w1">0.80</span>
+      </div>
+      <div class="nt-control-row slider-row" data-var="w2">
+        <span class="nt-control-label">w&#8322;</span>
+        <input type="range" id="slider-w2" min="-2" max="2" step="0.05" value="-1.1">
+        <span class="nt-mono" id="value-w2">-1.10</span>
+      </div>
+      <div class="nt-control-row slider-row" data-var="w3">
+        <span class="nt-control-label">w&#8323;</span>
+        <input type="range" id="slider-w3" min="-2" max="2" step="0.05" value="0.4">
+        <span class="nt-mono" id="value-w3">0.40</span>
+      </div>
+      <div class="nt-control-row slider-row" data-var="b">
+        <span class="nt-control-label">b</span>
+        <input type="range" id="slider-b" min="-2" max="2" step="0.05" value="0">
+        <span class="nt-mono" id="value-b">0.00</span>
+      </div>
+      <div class="reset-row">
+        <button class="nt-button" id="reset-btn">复位</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="note-block">
+    <p class="nt-note nt-body">输入 x&#8321;、x&#8322;、x&#8323; 固定为 <span class="nt-mono">1.0、0.6、-0.3</span>，代表这颗神经元当前看到的信号。改变的只是 w 和 b——参数变了，同样的输入会产生不同的输出。</p>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // 固定输入（教学简化数值，非真实训练数据）
+  const X = [1.0, 0.6, -0.3];
+  const INPUT_Y = [160, 280, 400];
+  const SUM_X = 520, SUM_Y = 280, SUM_R = 46;
+  const INPUT_X = 160;
+
+  const state = { w: [0.8, -1.1, 0.4], b: 0 };
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const inputsG = document.getElementById("inputs");
+  const linesG = document.getElementById("weight-lines");
+  const tagsG = document.getElementById("weight-tags");
+
+  function el(tag, attrs){
+    const node = document.createElementNS(svgNS, tag);
+    for (const k in attrs) node.setAttribute(k, attrs[k]);
+    return node;
+  }
+
+  // 构建输入节点（静态）
+  X.forEach((x, i) => {
+    const y = INPUT_Y[i];
+    const node = el("circle", { class: "nt-node", cx: INPUT_X, cy: y, r: 30 });
+    inputsG.appendChild(node);
+    const label = el("text", { class: "term-label", x: INPUT_X, y: y, fill: "var(--text)" });
+    label.textContent = "x" + "\u2081\u2082\u2083"[i];
+    inputsG.appendChild(label);
+    const valueLabel = el("text", { class: "role-label", x: INPUT_X, y: y + 50 });
+    valueLabel.textContent = x.toFixed(1);
+    inputsG.appendChild(valueLabel);
+  });
+
+  // 构建权重连线（动态更新粗细/颜色）与标签
+  const weightLines = X.map((x, i) => {
+    const y = INPUT_Y[i];
+    const dx = SUM_X - INPUT_X, dy = SUM_Y - y;
+    const dist = Math.hypot(dx, dy);
+    const startX = INPUT_X + (dx / dist) * 30;
+    const startY = y + (dy / dist) * 30;
+    const endX = SUM_X - (dx / dist) * SUM_R;
+    const endY = SUM_Y - (dy / dist) * SUM_R;
+    const line = el("path", {
+      class: "weight-line",
+      d: "M" + startX.toFixed(1) + "," + startY.toFixed(1) + " L" + endX.toFixed(1) + "," + endY.toFixed(1)
+    });
+    linesG.appendChild(line);
+    const midX = (startX + endX) / 2, midY = (startY + endY) / 2;
+    const tagBg = el("circle", { cx: midX, cy: midY - 18, r: 20, fill: "var(--bg)", stroke: "var(--line-strong)", "stroke-width": "1" });
+    tagsG.appendChild(tagBg);
+    const tag = el("text", { class: "weight-tag", x: midX, y: midY - 18, fill: "var(--text)" });
+    tagsG.appendChild(tag);
+    return { line, tag, tagBg };
+  });
+
+  const stableColor = getComputedStyle(document.documentElement).getPropertyValue("--stable").trim();
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+  const lineColor = getComputedStyle(document.documentElement).getPropertyValue("--line-strong").trim();
+
+  function sigmoid(z){ return 1 / (1 + Math.exp(-z)); }
+
+  function render(){
+    let z = state.b;
+    X.forEach((x, i) => { z += state.w[i] * x; });
+    const a = sigmoid(z);
+
+    // 更新连线：粗细正比于 |w|，颜色区分正负
+    weightLines.forEach((wl, i) => {
+      const w = state.w[i];
+      const width = 1.5 + Math.min(Math.abs(w), 2) * 3.5;
+      wl.line.setAttribute("stroke-width", width.toFixed(1));
+      wl.line.setAttribute("stroke", w >= 0 ? stableColor : accentColor);
+      wl.line.setAttribute("opacity", (0.45 + Math.min(Math.abs(w), 2) * 0.275).toFixed(2));
+      wl.tag.textContent = "w" + "\u2081\u2082\u2083"[i] + "=" + w.toFixed(2);
+    });
+
+    // 激活节点：环形进度周长反映 a 的强度；输出节点大小反映 a
+    const actRing = document.getElementById("act-ring");
+    const ringR = 40, ringC = 2 * Math.PI * ringR;
+    actRing.setAttribute("stroke-dasharray", (a * ringC).toFixed(1) + " " + ringC.toFixed(1));
+    const outNode = document.getElementById("out-node");
+    outNode.setAttribute("fill", accentColor);
+    outNode.setAttribute("stroke", accentColor);
+    outNode.setAttribute("opacity", (0.35 + a * 0.65).toFixed(2));
+    outNode.setAttribute("r", (10 + a * 14).toFixed(1));
+
+    document.getElementById("readout-z").textContent = z.toFixed(2);
+    document.getElementById("readout-a").textContent = a.toFixed(2);
+
+    const fTerms = "w\u2081x\u2081+w\u2082x\u2082+w\u2083x\u2083+b = " +
+      state.w.map((w,i)=> w.toFixed(2)+"\u00d7"+X[i].toFixed(1)).join(" + ") +
+      " + " + state.b.toFixed(2) + " = " + z.toFixed(2);
+    document.getElementById("f-terms").textContent = fTerms;
+  }
+
+  function bindSlider(id, key, index){
+    const slider = document.getElementById("slider-" + id);
+    const valueLabel = document.getElementById("value-" + id);
+    slider.addEventListener("input", () => {
+      const v = parseFloat(slider.value);
+      if (index === undefined) state.b = v;
+      else state.w[index] = v;
+      valueLabel.textContent = v.toFixed(2);
+      render();
+    });
+  }
+
+  bindSlider("w1", "w", 0);
+  bindSlider("w2", "w", 1);
+  bindSlider("w3", "w", 2);
+  bindSlider("b", "b");
+
+  document.getElementById("reset-btn").addEventListener("click", () => {
+    state.w = [0.8, -1.1, 0.4];
+    state.b = 0;
+    document.getElementById("slider-w1").value = 0.8;
+    document.getElementById("slider-w2").value = -1.1;
+    document.getElementById("slider-w3").value = 0.4;
+    document.getElementById("slider-b").value = 0;
+    document.getElementById("value-w1").textContent = "0.80";
+    document.getElementById("value-w2").textContent = "-1.10";
+    document.getElementById("value-w3").textContent = "0.40";
+    document.getElementById("value-b").textContent = "0.00";
+    render();
+  });
+
+  render();
+  Deck.init({ index: 5, total: 44 });
+})();
+</script>
+</body>
+</html>

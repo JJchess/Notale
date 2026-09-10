@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .header-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.15;
+    }
+    .header-lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主体布局：左侧曲线图，右侧分类器投票权盘点与判别公式 */
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 490px;
+      gap: 20px;
+    }
+
+    /* 左侧面板：加权函数曲线与刻度标注 */
+    .panel-chart {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--surface-strong);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px;
+      position: relative;
+    }
+    .chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 4px;
+    }
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .chart-formula {
+      font-size: var(--fs-sec);
+      color: var(--learner);
+      font-weight: 600;
+    }
+    .chart-body {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      margin-top: 4px;
+    }
+    .chart-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 曲线图坐标与线条样式 */
+    .axis-line { stroke: var(--surface-strong); stroke-width: 2; }
+    .grid-line { stroke: var(--surface-strong); stroke-dasharray: 4 4; stroke-width: 1; }
+    .axis-text { font-size: var(--fs-tick); fill: var(--muted); font-family: var(--font-num); }
+    .curve-path { fill: none; stroke: var(--learner); stroke-width: 3.5; stroke-linecap: round; }
+    .zero-line { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 3 3; }
+    
+    /* 曲线上的典型锚点与交互高亮点 */
+    .anchor-point {
+      cursor: pointer;
+      transition: transform var(--dur) var(--ease);
+    }
+    .anchor-point circle {
+      fill: var(--surface);
+      stroke: var(--learner);
+      stroke-width: 3;
+    }
+    .anchor-point:hover circle, .anchor-point.active circle {
+      fill: var(--learner);
+      stroke: var(--text);
+      stroke-width: 3;
+    }
+    .anchor-point text {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      fill: var(--text);
+      user-select: none;
+    }
+    .interactive-marker circle {
+      fill: var(--aggregate);
+      stroke: var(--surface);
+      stroke-width: 2.5;
+    }
+
+    /* 曲线下方区域注释导读 */
+    .chart-foot-notes {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin-top: 10px;
+      padding-top: 12px;
+      border-top: 1px solid var(--surface-strong);
+    }
+    .foot-note-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .foot-note-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .foot-note-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--learner);
+    }
+    .foot-note-desc {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* 右侧控制与决议面板 */
+    .panel-aside {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .card-inspect {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--surface-strong);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .inspect-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .slider-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .err-slider {
+      width: 100%;
+      accent-color: var(--learner);
+      cursor: pointer;
+      height: 6px;
+    }
+
+    .readout-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    .readout-box {
+      background: #eef3f6;
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .readout-lbl {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .readout-val {
+      font-family: var(--font-num);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--learner);
+      line-height: 1.1;
+    }
+    .readout-val.red {
+      color: var(--aggregate);
+    }
+
+    /* 决议合成机制展示卡片 */
+    .card-ensemble {
+      flex: 1;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--surface-strong);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .ensemble-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .ensemble-head-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .learners-vote-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .voter-row {
+      display: grid;
+      grid-template-columns: 78px 1fr 86px;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: #f0f4f8;
+      font-size: 15px;
+    }
+    .voter-name {
+      font-weight: 700;
+      color: var(--learner);
+    }
+    .voter-bar-wrap {
+      height: 10px;
+      background: var(--surface-strong);
+      border-radius: 5px;
+      overflow: hidden;
+      position: relative;
+    }
+    .voter-bar-fill {
+      height: 100%;
+      background: var(--learner);
+      border-radius: 5px;
+      transition: width var(--dur) var(--ease);
+    }
+    .voter-stat {
+      text-align: right;
+      font-family: var(--font-num);
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .vote-summary {
+      margin-top: auto;
+      background: #fdf2f0;
+      border: 1px solid #f2cfca;
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .vote-summary-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--aggregate);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .vote-summary-text {
+      font-size: 15px;
+      color: var(--text);
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body data-page="17" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题与导语 -->
+    <header class="header-block">
+      <h1 class="header-title">AdaBoost 的模型权重：表现更可靠的弱分类器拥有更大话语权</h1>
+      <p class="header-lead">最终强分类器并非简单少数服从多数，而是依据各弱分类器的误差率赋予投票权重。</p>
+    </header>
+
+    <!-- 主体网格布局 -->
+    <div class="main-grid">
+      <!-- 左侧：权重函数响应曲线图 -->
+      <section class="panel-chart">
+        <div class="chart-head">
+          <div class="chart-title">分类器权重函数 <span class="math" data-tex="\alpha_m = \frac{1}{2} \ln \left(\frac{1 - \epsilon_m}{\epsilon_m}\right)"></span></div>
+          <div class="chart-formula">单调递减 · 0.5 处清零</div>
+        </div>
+
+        <div class="chart-body" id="chart-container">
+          <svg class="chart-svg" id="alpha-svg" viewBox="0 0 880 430">
+            <!-- 坐标网格与基准轴 -->
+            <line class="axis-line" x1="80" y1="360" x2="840" y2="360" />
+            <line class="axis-line" x1="80" y1="40" x2="80" y2="360" />
+
+            <!-- 零权重水平基准线 alpha = 0 (对应 y = 200) -->
+            <line class="zero-line" x1="80" y1="200" x2="840" y2="200" />
+            <text class="axis-text" x="48" y="205" text-anchor="middle">0.0</text>
+
+            <!-- 垂直基准线 epsilon = 0.5 (随机猜测分界线, 对应 x = 460) -->
+            <line class="grid-line" x1="460" y1="40" x2="460" y2="360" />
+
+            <!-- X 轴刻度及标签 -->
+            <text class="axis-text" x="80" y="385" text-anchor="middle">0.0</text>
+            <text class="axis-text" x="175" y="385" text-anchor="middle">0.1</text>
+            <text class="axis-text" x="270" y="385" text-anchor="middle">0.2</text>
+            <text class="axis-text" x="365" y="385" text-anchor="middle">0.3</text>
+            <text class="axis-text" x="460" y="385" text-anchor="middle">0.5 (随机猜)</text>
+            <text class="axis-text" x="555" y="385" text-anchor="middle">0.6</text>
+            <text class="axis-text" x="650" y="385" text-anchor="middle">0.7</text>
+            <text class="axis-text" x="745" y="385" text-anchor="middle">0.8</text>
+            <text class="axis-text" x="840" y="385" text-anchor="middle">1.0</text>
+            <text class="axis-text" x="840" y="415" text-anchor="end" font-weight="700" fill="var(--text)">分类误差率 ε</text>
+
+            <!-- Y 轴刻度及标签 -->
+            <text class="axis-text" x="48" y="45" text-anchor="middle">+2.5</text>
+            <text class="axis-text" x="48" y="105" text-anchor="middle">+1.5</text>
+            <text class="axis-text" x="48" y="295" text-anchor="middle">-1.5</text>
+            <text class="axis-text" x="48" y="355" text-anchor="middle">-2.5</text>
+            <text class="axis-text" x="80" y="25" text-anchor="start" font-weight="700" fill="var(--text)">投票权重 α</text>
+
+            <!-- 曲线路径 -->
+            <path id="alpha-curve" class="curve-path" d="" />
+
+            <!-- 动态交互指示器 -->
+            <g id="interactive-marker" class="interactive-marker">
+              <line id="probe-v" stroke="var(--aggregate)" stroke-width="1.5" stroke-dasharray="3 3" x1="0" y1="40" x2="0" y2="360" />
+              <line id="probe-h" stroke="var(--aggregate)" stroke-width="1.5" stroke-dasharray="3 3" x1="80" y1="0" x2="840" y2="0" />
+              <circle id="probe-dot" cx="0" cy="0" r="6" />
+            </g>
+
+            <!-- 三个特征点标记 -->
+            <g class="anchor-point" id="pt-perfect" transform="translate(140, 75)">
+              <circle cx="0" cy="0" r="6" />
+              <text x="14" y="5">ε=0.07 ⇒ α ≈ +1.29</text>
+            </g>
+            <g class="anchor-point" id="pt-random" transform="translate(460, 200)">
+              <circle cx="0" cy="0" r="6" />
+              <text x="14" y="-8">ε=0.50 ⇒ α = 0（无发言权）</text>
+            </g>
+            <g class="anchor-point" id="pt-reversed" transform="translate(745, 325)">
+              <circle cx="0" cy="0" r="6" />
+              <text x="-195" y="5">ε=0.80 ⇒ α ≈ -0.69（反向参考）</text>
+            </g>
+          </svg>
+        </div>
+
+        <!-- 底部说明 -->
+        <div class="chart-foot-notes">
+          <div class="foot-note-item">
+            <div class="foot-note-title">
+              <span class="foot-note-dot" style="background:var(--learner);"></span>
+              <span>ε &lt; 0.5：优于随机</span>
+            </div>
+            <div class="foot-note-desc">α &gt; 0，误差越小权重呈对数加速提升，高准确率分类器拥有绝对主导权。</div>
+          </div>
+          <div class="foot-note-item">
+            <div class="foot-note-title">
+              <span class="foot-note-dot" style="background:var(--muted);"></span>
+              <span>ε = 0.5：等同抛硬币</span>
+            </div>
+            <div class="foot-note-desc">α = 0，对最终决议毫无贡献，投票权直接归零，不干扰整体判决。</div>
+          </div>
+          <div class="foot-note-item">
+            <div class="foot-note-title">
+              <span class="foot-note-dot" style="background:var(--aggregate);"></span>
+              <span>ε &gt; 0.5：劣于随机</span>
+            </div>
+            <div class="foot-note-desc">α &lt; 0，二分类中稳定犯错等同反向预测，被赋予负权重反向采纳。</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：交互探针与加权集成模拟 -->
+      <aside class="panel-aside">
+        <!-- 探针调节 -->
+        <div class="card-inspect">
+          <div class="inspect-title">
+            <span>实时探索弱分类器</span>
+            <span class="tag" style="background:#e1ecf4;color:var(--learner);font-size:14px;padding:3px 8px;border-radius:4px;">交互推演</span>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-labels">
+              <span>当前误差率 ε</span>
+              <span id="slider-err-val" style="font-family:var(--font-num);font-weight:700;color:var(--learner);font-size:17px;">0.20</span>
+            </div>
+            <input type="range" class="err-slider" id="err-range" min="0.02" max="0.98" step="0.01" value="0.20">
+          </div>
+
+          <div class="readout-row">
+            <div class="readout-box">
+              <span class="readout-lbl">计算权重 α</span>
+              <span class="readout-val" id="readout-alpha">+0.693</span>
+            </div>
+            <div class="readout-box">
+              <span class="readout-lbl">相对赔率比 ((1-ε)/ε)</span>
+              <span class="readout-val" id="readout-ratio">4.00 : 1</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 加权合成决策 -->
+        <div class="card-ensemble">
+          <div class="ensemble-head">
+            <div class="ensemble-head-title">最终强分类器决议结构</div>
+            <span style="font-size:13px;color:var(--muted);">3 个弱基学习器联合投票</span>
+          </div>
+
+          <div class="learners-vote-list">
+            <!-- 基学习器 1 -->
+            <div class="voter-row">
+              <span class="voter-name">基学习器 h₁</span>
+              <div class="voter-bar-wrap">
+                <div class="voter-bar-fill" style="width: 82%;"></div>
+              </div>
+              <span class="voter-stat">α₁ = +1.10</span>
+            </div>
+            <!-- 基学习器 2 (由滑块动态控制) -->
+            <div class="voter-row" style="background:#eaf2f8;border:1px solid #c2d8e8;">
+              <span class="voter-name" style="color:var(--aggregate);">基学习器 h₂</span>
+              <div class="voter-bar-wrap">
+                <div class="voter-bar-fill" id="voter-bar-2" style="width: 45%;background:var(--aggregate);"></div>
+              </div>
+              <span class="voter-stat" id="voter-stat-2">α₂ = +0.69</span>
+            </div>
+            <!-- 基学习器 3 -->
+            <div class="voter-row">
+              <span class="voter-name">基学习器 h₃</span>
+              <div class="voter-bar-wrap">
+                <div class="voter-bar-fill" style="width: 30%;"></div>
+              </div>
+              <span class="voter-stat">α₃ = +0.35</span>
+            </div>
+          </div>
+
+          <!-- 加权符号函数结果 -->
+          <div class="vote-summary">
+            <div class="vote-summary-title">
+              <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--aggregate);"></span>
+              <span>集成决议规则：<span class="math" data-tex="H(x) = \text{sign}\left(\sum_{m=1}^M \alpha_m h_m(x)\right)"></span></span>
+            </div>
+            <div class="vote-summary-text" id="ensemble-verdict-desc">
+              h₁（预测+1，权1.10）与 h₂（预测-1，权0.69）产生分歧时，高权重模型决定主导权，弱模型无法通过单纯人数拉垮强模型。
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 坐标映射常数
+      // SVG 尺寸: 880 × 430
+      // x: 误差 epsilon 从 0.0 到 1.0 映射在 [80, 840] 像素
+      // y: 权重 alpha 从 -2.5 到 +2.5 映射在 [360, 40] 像素 (alpha=0 在 y=200)
+      const X_MIN = 80, X_MAX = 840;
+      const Y_TOP = 40, Y_BOT = 360, Y_ZERO = 200;
+      const ALPHA_RANGE = 2.5;
+
+      function errToX(eps) {
+        return X_MIN + eps * (X_MAX - X_MIN);
+      }
+
+      function alphaToY(a) {
+        // 限制在 [-ALPHA_RANGE, ALPHA_RANGE]
+        const clamped = Math.max(-ALPHA_RANGE, Math.min(ALPHA_RANGE, a));
+        return Y_ZERO - (clamped / ALPHA_RANGE) * (Y_ZERO - Y_TOP);
+      }
+
+      function calcAlpha(eps) {
+        if (eps <= 0.001) return 3.0;
+        if (eps >= 0.999) return -3.0;
+        return 0.5 * Math.log((1 - eps) / eps);
+      }
+
+      // 绘制曲线
+      function generatePath() {
+        const points = [];
+        for (let eps = 0.02; eps <= 0.98; eps += 0.01) {
+          const a = calcAlpha(eps);
+          const x = errToX(eps);
+          const y = alphaToY(a);
+          points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+        }
+        return "M " + points.join(" L ");
+      }
+
+      const curve = document.getElementById("alpha-curve");
+      curve.setAttribute("d", generatePath());
+
+      // 动态更新探针和右侧读数
+      const slider = document.getElementById("err-range");
+      const sliderVal = document.getElementById("slider-err-val");
+      const readoutAlpha = document.getElementById("readout-alpha");
+      const readoutRatio = document.getElementById("readout-ratio");
+      const probeMarker = document.getElementById("interactive-marker");
+      const probeV = document.getElementById("probe-v");
+      const probeH = document.getElementById("probe-h");
+      const probeDot = document.getElementById("probe-dot");
+      const voterBar2 = document.getElementById("voter-bar-2");
+      const voterStat2 = document.getElementById("voter-stat-2");
+      const ensembleVerdictDesc = document.getElementById("ensemble-verdict-desc");
+
+      function update(eps) {
+        const a = calcAlpha(eps);
+        const x = errToX(eps);
+        const y = alphaToY(a);
+
+        // 更新探针位置
+        probeV.setAttribute("x1", x);
+        probeV.setAttribute("x2", x);
+        probeH.setAttribute("y1", y);
+        probeH.setAttribute("y2", y);
+        probeDot.setAttribute("cx", x);
+        probeDot.setAttribute("cy", y);
+
+        // 读数更新
+        sliderVal.textContent = eps.toFixed(2);
+        readoutAlpha.textContent = (a >= 0 ? "+" : "") + a.toFixed(3);
+        if (a < 0) {
+          readoutAlpha.classList.add("red");
+        } else {
+          readoutAlpha.classList.remove("red");
+        }
+
+        const odds = (1 - eps) / eps;
+        readoutRatio.textContent = odds >= 1 ? odds.toFixed(2) + " : 1" : "1 : " + (1 / odds).toFixed(2);
+
+        // 更新右侧投票条目
+        const barWidth = Math.max(0, Math.min(100, (Math.abs(a) / 1.5) * 80));
+        voterBar2.style.width = barWidth + "%";
+        if (a < 0) {
+          voterBar2.style.background = "var(--aggregate)";
+          voterStat2.textContent = `α₂ = ${a.toFixed(2)} (反向)`;
+        } else {
+          voterBar2.style.background = "var(--learner)";
+          voterStat2.textContent = `α₂ = ${a.toFixed(2)}`;
+        }
+
+        // 动态描述
+        if (eps < 0.25) {
+          ensembleVerdictDesc.textContent = `基学习器 h₂ 表现优异（ε = ${eps.toFixed(2)}，α = ${a >= 0 ? "+" : ""}${a.toFixed(2)}），在联合投票中具有强大决断力，与 h₁ 形成主导同盟。`;
+        } else if (eps >= 0.45 && eps <= 0.55) {
+          ensembleVerdictDesc.textContent = `基学习器 h₂ 接近随机猜测（ε = ${eps.toFixed(2)}，α ≈ 0.00），话语权被彻底削弱，不干扰投票大局。`;
+        } else if (eps > 0.55) {
+          ensembleVerdictDesc.textContent = `基学习器 h₂ 错误率高达 ${eps.toFixed(2)}（α = ${a.toFixed(2)}），其投票权变为负值，其预测结果会被反向采纳！`;
+        } else {
+          ensembleVerdictDesc.textContent = `h₁（权1.10）与 h₂（权 ${a >= 0 ? "+" : ""}${a.toFixed(2)}）协同决策，各分类器权重依据各自可靠程度分配。`;
+        }
+      }
+
+      slider.addEventListener("input", function (e) {
+        update(parseFloat(e.target.value));
+      });
+
+      // 特征锚点交互（SVG g 元素可能无 native click 方法，加 pointerdown 与 click 双保险）
+      function bindTrigger(el, val) {
+        if (!el) return;
+        const handler = () => {
+          slider.value = val;
+          update(val);
+        };
+        el.addEventListener("click", handler);
+        el.addEventListener("pointerdown", handler);
+      }
+
+      bindTrigger(document.getElementById("pt-perfect"), 0.07);
+      bindTrigger(document.getElementById("pt-random"), 0.50);
+      bindTrigger(document.getElementById("pt-reversed"), 0.80);
+
+      // 初始化 KaTeX 仅针对 .math 容器
+      if (window.katex) {
+        document.querySelectorAll(".math").forEach(el => {
+          const tex = el.getAttribute("data-tex");
+          if (tex) {
+            try {
+              katex.render(tex, el, { throwOnError: false });
+            } catch (e) {}
+          }
+        });
+      }
+
+      // 首次更新
+      update(0.20);
+
+      Deck.init({ index: 17, total: 27 });
+    })();
+  </script>
+</body>
+</html>

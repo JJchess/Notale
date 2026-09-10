@@ -1,0 +1,858 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>梯度提升超参数：学习率、树深与迭代轮数</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+      flex-shrink: 0;
+    }
+
+    .title-wrap h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      margin: 0 0 6px 0;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .title-wrap p {
+      margin: 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .header-formula {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 15px;
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(18, 38, 52, 0.04);
+    }
+
+    .header-formula span.hl-lr { color: var(--aggregate); font-weight: 700; }
+    .header-formula span.hl-tree { color: var(--model); font-weight: 700; }
+
+    /* 主布局 */
+    .workspace {
+      display: grid;
+      grid-template-columns: 310px 1fr 1fr;
+      gap: 18px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧控制栏与教学洞察 */
+    .control-pane {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 2px 6px rgba(18,38,52,0.03);
+    }
+
+    .pane-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .preset-btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .preset-btn {
+      padding: 8px 10px;
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      font-size: 14px;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease);
+      font-weight: 500;
+    }
+
+    .preset-btn:hover {
+      background: var(--surface-strong);
+    }
+
+    .preset-btn.active {
+      background: var(--model);
+      color: #FFFFFF;
+      border-color: var(--model);
+      font-weight: 700;
+    }
+
+    .param-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .param-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+
+    .param-header span.val {
+      font-weight: 700;
+      font-family: ui-monospace, monospace;
+      color: var(--model);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      accent-color: var(--model);
+      cursor: pointer;
+      margin: 4px 0;
+    }
+
+    .param-hint {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .insight-card {
+      background: var(--bg);
+      border-left: 3px solid var(--aggregate);
+      padding: 12px 14px;
+      border-radius: 0 6px 6px 0;
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--text);
+      margin-top: auto;
+    }
+
+    .insight-card strong {
+      display: block;
+      color: var(--aggregate);
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    /* 中间和右侧图表卡片 */
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px 18px 12px 18px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 2px 6px rgba(18,38,52,0.03);
+      position: relative;
+    }
+
+    .chart-header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 6px;
+      flex-shrink: 0;
+    }
+
+    .chart-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-swatch {
+      width: 14px;
+      height: 4px;
+      border-radius: 2px;
+    }
+
+    .legend-swatch.train { background: var(--model); }
+    .legend-swatch.val { background: var(--aggregate); }
+    .legend-swatch.ground-truth { background: #9299A0; border-top: 2px dashed #626A72; height: 0; }
+    .legend-swatch.fit { background: var(--aggregate); height: 3px; }
+
+    .plot-area {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      position: relative;
+    }
+
+    .chart-container {
+      width: 100%;
+      height: 100%;
+    }
+
+    .metrics-summary {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      padding: 6px 12px;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      flex-shrink: 0;
+    }
+
+    .metrics-summary .item span {
+      color: var(--muted);
+      margin-right: 4px;
+    }
+
+    .metrics-summary .item strong {
+      font-family: ui-monospace, monospace;
+    }
+
+    .chart-footnote {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+      flex-shrink: 0;
+    }
+
+    /* 辅助高亮标签 */
+    .badge-tag {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge-overfit { background: #FDEDEA; color: var(--aggregate); border: 1px solid #F5C6BA; }
+    .badge-balanced { background: #E8F5EF; color: var(--answer); border: 1px solid #B8E2CF; }
+    .badge-underfit { background: #EDF3F7; color: var(--model); border: 1px solid #C4D9E8; }
+  </style>
+</head>
+<body data-page="18" data-total="27">
+  <div id="stage">
+    <header>
+      <div class="title-wrap">
+        <h1>学习率、树深与迭代轮数</h1>
+        <p>梯度提升用小步收敛累加交换拟合速度、单树容量与测试集泛化风险</p>
+      </div>
+      <div class="header-formula">
+        F<sub>m</sub>(x) = F<sub>m-1</sub>(x) + <span class="hl-lr">&eta;</span> &middot; <span class="hl-tree">h<sub>m</sub>(x; d)</span>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <!-- 控制与参数调节栏 -->
+      <aside class="control-pane min0">
+        <h2 class="pane-title">超参数探索</h2>
+        
+        <div class="preset-btns">
+          <button class="preset-btn active" id="btnBalanced" onclick="applyPreset('balanced')">推荐小步稳健</button>
+          <button class="preset-btn" id="btnOverfit" onclick="applyPreset('overfit')">大步深树过拟合</button>
+          <button class="preset-btn" id="btnUnderfit" onclick="applyPreset('underfit')">极小步欠拟合</button>
+          <button class="preset-btn" id="btnShallow" onclick="applyPreset('shallow')">树桩多轮累加</button>
+        </div>
+
+        <div class="param-group">
+          <div class="param-header">
+            <span>学习率 &eta; (Step Size)</span>
+            <span class="val" id="valEta">0.10</span>
+          </div>
+          <input type="range" id="rangeEta" min="0.01" max="0.80" step="0.01" value="0.10">
+          <span class="param-hint">缩减因子：更小的 &eta; 减缓过拟合速率，但需要更多轮数</span>
+        </div>
+
+        <div class="param-group">
+          <div class="param-header">
+            <span>树深 d (Max Depth)</span>
+            <span class="val" id="valDepth">3</span>
+          </div>
+          <input type="range" id="rangeDepth" min="1" max="6" step="1" value="3">
+          <span class="param-hint">d = 1 为决策树桩（无特征交叉）；d &ge; 5 拟合局部高频噪声</span>
+        </div>
+
+        <div class="param-group">
+          <div class="param-header">
+            <span>当前迭代轮数 M</span>
+            <span class="val" id="valIter">60</span>
+          </div>
+          <input type="range" id="rangeIter" min="1" max="150" step="1" value="60">
+          <span class="param-hint">模型累加树数：沿损失曲线滑动观察拟合演变</span>
+        </div>
+
+        <div class="insight-card" id="insightBox">
+          <strong id="insightTitle">状态诊断：泛化平衡点</strong>
+          <span id="insightText">
+            学习率 0.10 配合深度 3，测试集在 50~70 轮达到最低泛化误差，曲线平缓平稳。
+          </span>
+        </div>
+      </aside>
+
+      <!-- 中间：迭代收敛与泛化误差曲线 -->
+      <section class="chart-card min0">
+        <div class="chart-header">
+          <div class="chart-header-row">
+            <h3 class="chart-title">均方误差 MSE 随迭代推进</h3>
+            <div class="chart-legend">
+              <div class="legend-item"><span class="legend-swatch train"></span>训练集损失</div>
+              <div class="legend-item"><span class="legend-swatch val"></span>验证集损失</div>
+            </div>
+          </div>
+        </div>
+        <div class="metrics-summary">
+          <div class="item"><span>训练 MSE:</span><strong id="metricTrain">-</strong></div>
+          <div class="item"><span>验证 MSE:</span><strong id="metricVal">-</strong></div>
+          <div class="item"><span>验证最优轮:</span><strong id="metricBest">-</strong></div>
+        </div>
+        <div class="plot-area">
+          <div id="lossChart" class="chart-container"></div>
+        </div>
+        <div class="chart-footnote">
+          注：Boosting 不断减小训练残差，但过大步长或过深树会导致验证集损失在一定轮数后调头上升。
+        </div>
+      </section>
+
+      <!-- 右侧：真实函数 vs 集成累加预测曲线 -->
+      <section class="chart-card min0">
+        <div class="chart-header">
+          <h3 class="chart-title">真实函数与当前集成预测 F<sub>M</sub>(x)</h3>
+          <div class="chart-legend">
+            <div class="legend-item"><span class="legend-swatch ground-truth"></span>真实信号 f(x)</div>
+            <div class="legend-item"><span class="legend-swatch fit"></span>集成预测 F<sub>M</sub>(x)</div>
+          </div>
+        </div>
+        <div class="plot-area">
+          <div id="fitChart" class="chart-container"></div>
+        </div>
+        <div class="chart-footnote">
+          散点含随机观测噪声 &epsilon; ~ N(0, 0.25&sup2;)；深树与大步长易追逐孤立噪声峰谷。
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      // 1. 种子与模拟数据准备 (真实非线性函数: f(x) = sin(2.5 x) + 0.5 cos(5 x))
+      var N_TRAIN = 40;
+      var N_TEST = 40;
+      var trainData = [];
+      var testData = [];
+
+      // 伪随机数发生器 (线性同余 LCG 保证固定种子)
+      var seed = 42;
+      function rnd() {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+      }
+      function gaussian() {
+        var u = 0, v = 0;
+        while(u === 0) u = rnd();
+        while(v === 0) v = rnd();
+        return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+      }
+
+      function trueFunc(x) {
+        return Math.sin(2.4 * x) + 0.45 * Math.cos(4.8 * x);
+      }
+
+      // 生成采样点与噪声数据
+      for (var i = 0; i < N_TRAIN; i++) {
+        var x = -2.5 + (5.0 * i) / (N_TRAIN - 1);
+        var y = trueFunc(x) + gaussian() * 0.26;
+        trainData.push([x, y]);
+      }
+      for (var j = 0; j < N_TEST; j++) {
+        var xt = -2.45 + (4.9 * j) / (N_TEST - 1) + (rnd() - 0.5) * 0.05;
+        var yt = trueFunc(xt) + gaussian() * 0.26;
+        testData.push([xt, yt]);
+      }
+
+      // 用于画真实曲线的密集点
+      var denseGroundTruth = [];
+      for (var step = 0; step <= 120; step++) {
+        var xDense = -2.6 + (5.2 * step) / 120;
+        denseGroundTruth.push([xDense, trueFunc(xDense)]);
+      }
+
+      // 2. 简易真实回归决策树模拟器 (用于严谨模拟深度 d 的提升累加过程)
+      // 在一维下，深度 d 对应至多 2^d 个区间的阶梯常数函数拟合当前负梯度（残差）
+      function fitStumpResidual(xArr, rArr, depth) {
+        var numSplits = Math.min(Math.pow(2, depth) - 1, 15);
+        // 按 x 分段寻找最优阈值分界
+        // 为保证确定性与运算速度，在分位点上搜索贪心分割
+        var sorted = [];
+        for (var i = 0; i < xArr.length; i++) sorted.push({x: xArr[i], r: rArr[i]});
+        sorted.sort(function(a, b) { return a.x - b.x; });
+
+        // 生成候选切分点
+        var candidateThresholds = [];
+        var step = Math.max(1, Math.floor(sorted.length / (numSplits * 2)));
+        for (var k = step; k < sorted.length; k += step) {
+          candidateThresholds.push(0.5 * (sorted[k - 1].x + sorted[k].x));
+        }
+
+        // 递归或分层切分
+        var intervals = [{ left: -999, right: 999, items: sorted }];
+        for (var s = 0; s < numSplits; s++) {
+          var bestScore = -1, bestSplitIdx = -1, bestThreshold = 0;
+          for (var tIdx = 0; tIdx < candidateThresholds.length; tIdx++) {
+            var th = candidateThresholds[tIdx];
+            // 找到包含它的 interval
+            for (var invIdx = 0; invIdx < intervals.length; invIdx++) {
+              var inv = intervals[invIdx];
+              if (th > inv.left && th < inv.right) {
+                var leftR = [], rightR = [];
+                for (var m = 0; m < inv.items.length; m++) {
+                  if (inv.items[m].x <= th) leftR.push(inv.items[m].r);
+                  else rightR.push(inv.items[m].r);
+                }
+                if (leftR.length >= 2 && rightR.length >= 2) {
+                  // 方差减少量
+                  var leftMean = leftR.reduce(function(a,b){return a+b;},0)/leftR.length;
+                  var rightMean = rightR.reduce(function(a,b){return a+b;},0)/rightR.length;
+                  var score = leftR.length * leftMean * leftMean + rightR.length * rightMean * rightMean;
+                  if (score > bestScore) {
+                    bestScore = score;
+                    bestSplitIdx = invIdx;
+                    bestThreshold = th;
+                  }
+                }
+              }
+            }
+          }
+          if (bestSplitIdx >= 0) {
+            var targetInv = intervals[bestSplitIdx];
+            var leftItems = [], rightItems = [];
+            for (var p = 0; p < targetInv.items.length; p++) {
+              if (targetInv.items[p].x <= bestThreshold) leftItems.push(targetInv.items[p]);
+              else rightItems.push(targetInv.items[p]);
+            }
+            intervals.splice(bestSplitIdx, 1,
+              { left: targetInv.left, right: bestThreshold, items: leftItems },
+              { left: bestThreshold, right: targetInv.right, items: rightItems }
+            );
+          }
+        }
+
+        // 算出每个区间的常数值
+        var leaves = intervals.map(function(inv) {
+          var val = 0;
+          if (inv.items.length > 0) {
+            val = inv.items.reduce(function(acc, it){ return acc + it.r; }, 0) / inv.items.length;
+          }
+          return { left: inv.left, right: inv.right, val: val };
+        });
+
+        return function predict(x) {
+          for (var i = 0; i < leaves.length; i++) {
+            if (x >= leaves[i].left && x < leaves[i].right) {
+              return leaves[i].val;
+            }
+          }
+          return leaves[leaves.length - 1].val;
+        };
+      }
+
+      // 3. 提升过程缓存体系
+      var MAX_STEPS = 150;
+      var cachedSim = null;
+
+      function simulateBoosting(eta, depth) {
+        var xTrain = trainData.map(function(d){ return d[0]; });
+        var yTrain = trainData.map(function(d){ return d[1]; });
+        var xTest = testData.map(function(d){ return d[0]; });
+        var yTest = testData.map(function(d){ return d[1]; });
+
+        var meanY = yTrain.reduce(function(a,b){return a+b;},0) / yTrain.length;
+        var trainPred = xTrain.map(function(){ return meanY; });
+        var testPred = xTest.map(function(){ return meanY; });
+
+        var trainMSEs = [];
+        var testMSEs = [];
+        var trees = [];
+
+        // 初始损失
+        function calcMSE(preds, targets) {
+          var sum = 0;
+          for (var i = 0; i < preds.length; i++) {
+            var diff = preds[i] - targets[i];
+            sum += diff * diff;
+          }
+          return sum / preds.length;
+        }
+
+        trainMSEs.push(calcMSE(trainPred, yTrain));
+        testMSEs.push(calcMSE(testPred, yTest));
+
+        for (var step = 1; step <= MAX_STEPS; step++) {
+          // 当前残差
+          var residuals = [];
+          for (var i = 0; i < yTrain.length; i++) {
+            residuals.push(yTrain[i] - trainPred[i]);
+          }
+
+          var treePredict = fitStumpResidual(xTrain, residuals, depth);
+          trees.push(treePredict);
+
+          for (var i = 0; i < trainPred.length; i++) {
+            trainPred[i] += eta * treePredict(xTrain[i]);
+          }
+          for (var j = 0; j < testPred.length; j++) {
+            testPred[j] += eta * treePredict(xTest[j]);
+          }
+
+          trainMSEs.push(calcMSE(trainPred, yTrain));
+          testMSEs.push(calcMSE(testPred, yTest));
+        }
+
+        // 找出验证集最小损失轮数
+        var bestM = 1;
+        var minLoss = testMSEs[1];
+        for (var m = 1; m <= MAX_STEPS; m++) {
+          if (testMSEs[m] < minLoss) {
+            minLoss = testMSEs[m];
+            bestM = m;
+          }
+        }
+
+        return {
+          basePred: meanY,
+          trainMSEs: trainMSEs,
+          testMSEs: testMSEs,
+          trees: trees,
+          bestM: bestM,
+          eta: eta,
+          depth: depth
+        };
+      }
+
+      // 4. DOM 引用
+      var rangeEta = document.getElementById("rangeEta");
+      var rangeDepth = document.getElementById("rangeDepth");
+      var rangeIter = document.getElementById("rangeIter");
+      var valEta = document.getElementById("valEta");
+      var valDepth = document.getElementById("valDepth");
+      var valIter = document.getElementById("valIter");
+
+      var metricTrain = document.getElementById("metricTrain");
+      var metricVal = document.getElementById("metricVal");
+      var metricBest = document.getElementById("metricBest");
+
+      var insightTitle = document.getElementById("insightTitle");
+      var insightText = document.getElementById("insightText");
+
+      var lossChartDom = document.getElementById("lossChart");
+      var fitChartDom = document.getElementById("fitChart");
+
+      var lossChart = echarts.init(lossChartDom, null, { renderer: 'svg' });
+      var fitChart = echarts.init(fitChartDom, null, { renderer: 'svg' });
+
+      // 5. 渲染图表与界面
+      function update() {
+        var eta = parseFloat(rangeEta.value);
+        var depth = parseInt(rangeDepth.value, 10);
+        var curIter = parseInt(rangeIter.value, 10);
+
+        valEta.textContent = eta.toFixed(2);
+        valDepth.textContent = depth;
+        valIter.textContent = curIter;
+
+        if (!cachedSim || cachedSim.eta !== eta || cachedSim.depth !== depth) {
+          cachedSim = simulateBoosting(eta, depth);
+        }
+
+        var sim = cachedSim;
+        var curTrainMSE = sim.trainMSEs[curIter];
+        var curValMSE = sim.testMSEs[curIter];
+
+        metricTrain.textContent = curTrainMSE.toFixed(3);
+        metricVal.textContent = curValMSE.toFixed(3);
+        metricBest.textContent = "第 " + sim.bestM + " 轮 (" + sim.testMSEs[sim.bestM].toFixed(3) + ")";
+
+        // 诊断文案
+        if (depth >= 4 && eta >= 0.25 && curIter > sim.bestM + 15) {
+          insightTitle.textContent = "状态诊断：严重过拟合 (Overfitting)";
+          insightTitle.style.color = "#C34B22";
+          insightText.innerHTML = "大步长与深树使模型迅速记住了训练样本的噪声。验证集误差在第 <b>" + sim.bestM + "</b> 轮后显著上扬，测试集泛化退化。";
+        } else if (eta <= 0.03 && curIter < 50) {
+          insightTitle.textContent = "状态诊断：学习步长极小，欠拟合 (Underfitting)";
+          insightTitle.style.color = "#27648F";
+          insightText.innerHTML = "由于步长仅 " + eta.toFixed(2) + "，当前 " + curIter + " 轮尚未来得及逼近复杂信号峰值，仍有大量未提取的结构残差。";
+        } else if (depth === 1) {
+          insightTitle.textContent = "状态诊断：单特征树桩 (Additive Stumps)";
+          insightTitle.style.color = "#2F7568";
+          insightText.innerHTML = "单层树（树桩）模型容量极低，杜绝了特征高阶交互，泛化曲线极其平缓，通常需数百轮才能拟合平滑波峰。";
+        } else {
+          insightTitle.textContent = "状态诊断：步长稳健，接近平衡泛化区";
+          insightTitle.style.color = "#237052";
+          insightText.innerHTML = "学习率保持在 0.1 左右配合浅树，验证集损失在全局低位震荡，展现了梯度提升经典的“小步慢爬，稳健收敛”优势。";
+        }
+
+        // --- 绘制损失曲线 ---
+        var lossXData = [];
+        var lossTrainData = [];
+        var lossValData = [];
+        for (var m = 1; m <= MAX_STEPS; m++) {
+          lossXData.push(m);
+          lossTrainData.push(sim.trainMSEs[m]);
+          lossValData.push(sim.testMSEs[m]);
+        }
+
+        lossChart.setOption({
+          animation: false,
+          grid: { left: 45, right: 25, top: 30, bottom: 42 },
+          xAxis: {
+            type: 'category',
+            data: lossXData,
+            name: '轮数 M',
+            nameLocation: 'middle',
+            nameGap: 26,
+            axisTick: { alignWithLabel: true },
+            axisLabel: { color: '#536A78', fontSize: 12, interval: 24 }
+          },
+          yAxis: {
+            type: 'value',
+            min: 0,
+            max: Math.min(1.2, Math.max(0.6, Math.max.apply(null, lossValData) * 1.05)),
+            name: '均方误差 MSE',
+            nameTextStyle: { color: '#536A78', fontSize: 12 },
+            axisLabel: { color: '#536A78', fontSize: 12 },
+            splitLine: { lineStyle: { color: '#E2EBF0' } }
+          },
+          series: [
+            {
+              name: '训练集损失',
+              type: 'line',
+              data: lossTrainData,
+              showSymbol: false,
+              lineStyle: { width: 2.5, color: '#27648F' }
+            },
+            {
+              name: '验证集损失',
+              type: 'line',
+              data: lossValData,
+              showSymbol: false,
+              lineStyle: { width: 2.8, color: '#C34B22' },
+              markPoint: {
+                data: [
+                  {
+                    coord: [sim.bestM - 1, sim.testMSEs[sim.bestM]],
+                    symbol: 'pin',
+                    symbolSize: 34,
+                    itemStyle: { color: '#237052' },
+                    label: {
+                      formatter: '最优',
+                      fontSize: 11,
+                      color: '#FFF',
+                      fontWeight: 'bold',
+                      offset: [0, -2]
+                    }
+                  }
+                ]
+              },
+              markLine: {
+                symbol: 'none',
+                data: [
+                  {
+                    xAxis: curIter - 1,
+                    lineStyle: { color: '#9B3F11', width: 1.5, type: 'dashed' },
+                    label: {
+                      formatter: '当前 M=' + curIter,
+                      position: 'end',
+                      color: '#9B3F11',
+                      fontSize: 11
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        });
+
+        // --- 绘制拟合预测曲线 ---
+        var fitCurve = [];
+        var denseX = denseGroundTruth.map(function(d){ return d[0]; });
+        for (var step = 0; step < denseX.length; step++) {
+          var currX = denseX[step];
+          var predY = sim.basePred;
+          for (var t = 0; t < curIter; t++) {
+            predY += sim.eta * sim.trees[t](currX);
+          }
+          fitCurve.push([currX, predY]);
+        }
+
+        fitChart.setOption({
+          animation: false,
+          grid: { left: 45, right: 25, top: 30, bottom: 42 },
+          xAxis: {
+            type: 'value',
+            min: -2.6,
+            max: 2.6,
+            name: '输入特征 x',
+            nameLocation: 'middle',
+            nameGap: 26,
+            axisLabel: { color: '#536A78', fontSize: 12 }
+          },
+          yAxis: {
+            type: 'value',
+            min: -2.0,
+            max: 2.0,
+            name: '目标 y',
+            nameTextStyle: { color: '#536A78', fontSize: 12 },
+            axisLabel: { color: '#536A78', fontSize: 12 },
+            splitLine: { lineStyle: { color: '#E2EBF0' } }
+          },
+          series: [
+            {
+              name: '训练样本',
+              type: 'scatter',
+              data: trainData,
+              symbolSize: 6,
+              itemStyle: { color: '#27648F', opacity: 0.7 }
+            },
+            {
+              name: '真实信号',
+              type: 'line',
+              data: denseGroundTruth,
+              showSymbol: false,
+              lineStyle: { width: 2, color: '#626A72', type: 'dashed' }
+            },
+            {
+              name: '当前集成预测',
+              type: 'line',
+              data: fitCurve,
+              showSymbol: false,
+              lineStyle: { width: 3.2, color: '#C34B22' }
+            }
+          ]
+        });
+      }
+
+      // 预设模式切换
+      window.applyPreset = function(type) {
+        document.querySelectorAll('.preset-btn').forEach(function(b){ b.classList.remove('active'); });
+        if (type === 'balanced') {
+          document.getElementById('btnBalanced').classList.add('active');
+          rangeEta.value = 0.10;
+          rangeDepth.value = 3;
+          rangeIter.value = 60;
+        } else if (type === 'overfit') {
+          document.getElementById('btnOverfit').classList.add('active');
+          rangeEta.value = 0.45;
+          rangeDepth.value = 5;
+          rangeIter.value = 110;
+        } else if (type === 'underfit') {
+          document.getElementById('btnUnderfit').classList.add('active');
+          rangeEta.value = 0.02;
+          rangeDepth.value = 2;
+          rangeIter.value = 20;
+        } else if (type === 'shallow') {
+          document.getElementById('btnShallow').classList.add('active');
+          rangeEta.value = 0.15;
+          rangeDepth.value = 1;
+          rangeIter.value = 90;
+        }
+        update();
+      };
+
+      rangeEta.addEventListener('input', function() {
+        document.querySelectorAll('.preset-btn').forEach(function(b){ b.classList.remove('active'); });
+        update();
+      });
+      rangeDepth.addEventListener('input', function() {
+        document.querySelectorAll('.preset-btn').forEach(function(b){ b.classList.remove('active'); });
+        update();
+      });
+      rangeIter.addEventListener('input', function() {
+        update();
+      });
+
+      window.addEventListener('resize', function() {
+        lossChart.resize();
+        fitChart.resize();
+      });
+
+      Deck.init({ index: 18, total: 27 });
+      update();
+    })();
+  </script>
+</body>
+</html>

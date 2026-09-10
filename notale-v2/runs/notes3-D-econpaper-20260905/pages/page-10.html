@@ -1,0 +1,1072 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>识别策略压力测试</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 38px 56px 32px 56px;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题栏 */
+    .page-header {
+      flex: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+    }
+    .header-text h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .header-text p {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .target-estimand-badge {
+      flex: none;
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 2px 6px rgba(23,39,45,0.04);
+    }
+    .target-estimand-badge .label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .target-estimand-badge .val {
+      font-size: var(--fs-h2);
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--observed);
+    }
+
+    /* 主网格布局：左侧控制与 DGP 机制，右侧诊断图表与估计量分解 */
+    .workspace {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 24px;
+    }
+
+    /* 左侧控制卡片 */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .dgp-selector {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      padding: 16px 18px;
+      border: 1px solid var(--soft);
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .dgp-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .dgp-btn {
+      background: var(--bg);
+      border: 1.5px solid transparent;
+      border-radius: var(--r-sm);
+      padding: 10px 12px;
+      text-align: left;
+      cursor: pointer;
+      transition: all var(--fast) var(--ease);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .dgp-btn:hover {
+      background: var(--selected);
+    }
+    .dgp-btn[aria-pressed="true"] {
+      background: var(--surface);
+      border-color: var(--observed);
+      box-shadow: 0 0 0 1px var(--observed);
+    }
+    .dgp-btn .btn-name {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .dgp-btn .btn-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* 扰动与参数控制 */
+    .stress-panel {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      padding: 16px 18px;
+      border: 1px solid var(--soft);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .ctl-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ctl-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .ctl-label {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .ctl-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--observed);
+    }
+    input[type=range] {
+      width: 100%;
+      accent-color: var(--observed);
+      cursor: pointer;
+    }
+
+    .dgp-formula-box {
+      background: var(--bg);
+      border-radius: var(--r-sm);
+      padding: 12px 14px;
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+      color: var(--muted);
+      border: 1px solid var(--soft);
+    }
+    .dgp-formula-box strong {
+      color: var(--text);
+    }
+
+    /* 右侧展示面板 */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    /* 估计量对比卡片条 */
+    .metrics-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      flex: none;
+    }
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 14px 18px;
+      position: relative;
+    }
+    .metric-card.alert {
+      border-color: rgba(177, 63, 42, 0.4);
+      background: #FFFDFD;
+    }
+    .metric-card .card-head {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .metric-card .card-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text);
+    }
+    .metric-card .card-sub {
+      margin-top: 6px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .bias-val {
+      font-weight: 700;
+      font-family: var(--font-num);
+    }
+    .bias-val.bad { color: var(--cause); }
+    .bias-val.good { color: var(--supported); }
+
+    /* 图表区 */
+    .viz-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 16px;
+    }
+
+    .viz-panel {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid var(--soft);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      position: relative;
+    }
+    .viz-panel h3 {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      margin: 0 0 10px 0;
+      color: var(--text);
+      line-height: 1.3;
+    }
+    .panel-subtitle {
+      display: block;
+      font-size: var(--fs-tick);
+      font-weight: 400;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .viz-legend {
+      display: flex;
+      gap: 14px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .viz-legend span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot-legend {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .cvbox {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      width: 100%;
+    }
+
+    /* 诊断反馈横条 */
+    .diagnosis-footer {
+      flex: none;
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .diag-text {
+      flex: 1;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .diag-text strong {
+      color: var(--cause);
+    }
+    .diag-tag {
+      flex: none;
+      padding: 6px 14px;
+      border-radius: var(--r-sm);
+      font-size: var(--fs-label);
+      font-weight: 700;
+    }
+    .diag-tag.supported {
+      background: #EAF4EE;
+      color: var(--supported);
+      border: 1px solid rgba(45,105,76,0.3);
+    }
+    .diag-tag.threatened {
+      background: #FDEDEA;
+      color: var(--cause);
+      border: 1px solid rgba(177,63,42,0.3);
+    }
+    .diag-tag.uncertain {
+      background: #FDF6E2;
+      color: var(--uncertain);
+      border: 1px solid rgba(122,91,18,0.3);
+    }
+
+    /* 重置与随机种子微调 */
+    .seed-btn {
+      background: transparent;
+      border: 1px solid var(--soft);
+      border-radius: var(--r-sm);
+      padding: 4px 10px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .seed-btn:hover {
+      border-color: var(--muted);
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="10" data-total="24">
+  <div id="stage">
+    <!-- 顶部标题 -->
+    <header class="page-header">
+      <div class="header-text">
+        <h1>识别策略压力测试：替代数据生成过程（DGP）如何改变因果含义</h1>
+        <p>设定真实因果效应为常数，切换不同底层数据生成机制；观察相同回归估计量在威胁下的偏误漂移。</p>
+      </div>
+      <div class="target-estimand-badge">
+        <span class="label">基准真实因果效应 (ATE)</span>
+        <span class="val" id="true-ate">+2.00</span>
+      </div>
+    </header>
+
+    <!-- 主工作区 -->
+    <div class="workspace">
+      <!-- 左栏：DGP 场景选择与压力参数 -->
+      <div class="left-col min0">
+        <section class="dgp-selector" aria-label="数据生成过程选择">
+          <div class="panel-title">
+            <span>选择真实生成机制 (DGP)</span>
+            <button type="button" class="seed-btn" id="btn-reseed" title="用新随机样本重新抽取数据">重新抽样</button>
+          </div>
+          <div class="dgp-grid" role="group" aria-label="替代 DGP">
+            <button type="button" class="dgp-btn" data-dgp="ideal" aria-pressed="true">
+              <span class="btn-name">1. 理想随机试验 (RCT)</span>
+              <span class="btn-desc">处理完全外生，无遗漏混杂与选择偏误</span>
+            </button>
+            <button type="button" class="dgp-btn" data-dgp="confounding" aria-pressed="false">
+              <span class="btn-name">2. 遗漏混杂能力 (U)</span>
+              <span class="btn-desc">高能力个体更易受训且潜在产出更高</span>
+            </button>
+            <button type="button" class="dgp-btn" data-dgp="badcontrol" aria-pressed="false">
+              <span class="btn-name">3. 坏控制变量 (M)</span>
+              <span class="btn-desc">控制了受处理影响的中介或对撞因子</span>
+            </button>
+            <button type="button" class="dgp-btn" data-dgp="anticipation" aria-pressed="false">
+              <span class="btn-name">4. 预期效应与前置选择</span>
+              <span class="btn-desc">处理前提前反应，基线平行趋势被打破</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="stress-panel min0" aria-label="压力测试参数调节">
+          <div class="panel-title">
+            <span>调节威胁强度与控制规格</span>
+          </div>
+
+          <!-- 滑块1：威胁强度 -->
+          <div class="ctl-row">
+            <div class="ctl-top">
+              <span class="ctl-label" id="stress-slider-label">混杂偏误强度 (γ)</span>
+              <span class="ctl-val" id="stress-slider-val">0.00</span>
+            </div>
+            <input type="range" id="stress-slider" min="0" max="3" step="0.1" value="0.0" aria-labelledby="stress-slider-label">
+          </div>
+
+          <!-- 选项：是否控制变量 / 规格调整 -->
+          <div class="ctl-row">
+            <div class="ctl-top">
+              <span class="ctl-label" id="control-spec-label">估计量规格</span>
+              <span class="ctl-val" id="control-spec-state">双变量回归</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="dgp-btn" id="spec-bivariate" aria-pressed="true" style="flex:1;">
+                <span class="btn-name">不加控制变量</span>
+                <span class="btn-desc">Y 对 D 简单回归</span>
+              </button>
+              <button type="button" class="dgp-btn" id="spec-controlled" aria-pressed="false" style="flex:1;">
+                <span class="btn-name">加入观测变量 X</span>
+                <span class="btn-desc">OLS 控制观测特征</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- DGP 公式与识别威胁解释 -->
+          <div class="dgp-formula-box" id="dgp-note">
+            <strong>当前机制说明：</strong>
+            <span id="dgp-desc-text">完全随机分配，D 独立于潜在产出 Y(0), Y(1)。简单均值差即为无偏估计量。</span>
+          </div>
+        </section>
+      </div>
+
+      <!-- 右栏：因果诊断、图表与估计量分解 -->
+      <div class="right-col min0">
+        <!-- 核心估计量卡片 -->
+        <div class="metrics-bar">
+          <div class="metric-card">
+            <div class="card-head">
+              <span>简单均值差估计量 (OLS)</span>
+              <span style="font-size:var(--fs-tick);">β̂_ols</span>
+            </div>
+            <div class="card-val" id="val-ols">+2.00</div>
+            <div class="card-sub">真实 ATE: 2.00 ｜ 偏误: <span class="bias-val good" id="bias-ols">0.00</span></div>
+          </div>
+
+          <div class="metric-card" id="card-controlled">
+            <div class="card-head">
+              <span>控制协变量估计量</span>
+              <span style="font-size:var(--fs-tick);">β̂_ctrl</span>
+            </div>
+            <div class="card-val" id="val-ctrl">+2.00</div>
+            <div class="card-sub">扣除 X 影响后 ｜ 偏误: <span class="bias-val good" id="bias-ctrl">0.00</span></div>
+          </div>
+
+          <div class="metric-card" id="card-verdict">
+            <div class="card-head">
+              <span>因果有效性诊断</span>
+              <span style="font-size:var(--fs-tick);">识别有效性</span>
+            </div>
+            <div class="card-val" id="val-status" style="font-size: var(--fs-h2); color: var(--supported);">外生无偏</div>
+            <div class="card-sub" id="status-sub">条件独立假设 (CIA) 严格成立</div>
+          </div>
+        </div>
+
+        <!-- 诊断图表：左侧为微观散点与回归线，右侧为估计量分布抽样 -->
+        <div class="viz-grid min0">
+          <div class="viz-panel min0">
+            <h3>
+              <span>微观散点与拟合反事实 (N=200 样本)</span>
+              <span class="panel-subtitle">单次抽样下的个体潜在产出分布与斜率</span>
+            </h3>
+            <div class="viz-legend">
+              <span><i class="dot-legend" style="background:var(--muted);"></i> 对照组 (D=0)</span>
+              <span><i class="dot-legend" style="background:var(--cause);"></i> 处理组 (D=1)</span>
+            </div>
+            <div class="cvbox">
+              <canvas id="cv-scatter" class="cv-fill"></canvas>
+            </div>
+          </div>
+
+          <div class="viz-panel min0">
+            <h3>
+              <span>估计量分布稳定性 (500次蒙特卡洛抽样)</span>
+              <span class="panel-subtitle">不同随机样本下的估计量期望值与发散度</span>
+            </h3>
+            <div class="viz-legend">
+              <span><i class="dot-legend" style="background:var(--observed);"></i> 估计值分布</span>
+              <span style="color:var(--cause); font-weight:700;">— 真实 ATE</span>
+            </div>
+            <div class="cvbox">
+              <canvas id="cv-dist" class="cv-fill"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部识别审查诊断结论 -->
+        <footer class="diagnosis-footer">
+          <div class="diag-text" id="diag-summary">
+            <strong>阅读审查提示：</strong>当数据生成过程脱离随机分配时，即使回归表的星号（t 统计量）极度显著，系数也可能全由混杂驱动。读论文必须先盘问「未观测变量如何同时影响入选概率与产出」。
+          </div>
+          <div class="diag-tag supported" id="diag-tag">识别安全</div>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+  (() => {
+    "use strict";
+
+    // 状态机核心定义
+    const TRUE_ATE = 2.0;
+    const SAMPLE_SIZE = 200;
+    const MC_REPS = 400;
+
+    let state = {
+      dgp: "ideal", // "ideal" | "confounding" | "badcontrol" | "anticipation"
+      stress: 0.0,  // 威胁扰动强度 0.0 ~ 3.0
+      useControl: false,
+      seed: 42
+    };
+
+    // 随机数发生器（确定性伪随机）
+    function mulberry32(a) {
+      return function() {
+        let t = a += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    // 正态分布抽样
+    function normalRandom(rng, mean = 0, std = 1) {
+      let u1 = rng();
+      let u2 = rng();
+      while (u1 <= 1e-7) u1 = rng();
+      const z = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+      return mean + z * std;
+    }
+
+    // 生成单次样本
+    function generateData(seed, dgp, stress) {
+      const rng = mulberry32(seed);
+      const data = [];
+
+      for (let i = 0; i < SAMPLE_SIZE; i++) {
+        // 潜在变量与外生冲击
+        const e = normalRandom(rng, 0, 1.0);
+        let U = normalRandom(rng, 0, 1.0); // 未观测能力/混杂
+        let X = normalRandom(rng, 0, 1.0); // 观测协变量
+        let D = 0;
+        let Y = 0;
+        let M = 0; // 中介/对撞变量
+
+        if (dgp === "ideal") {
+          // 理想 RCT: D 完全随机独立
+          D = rng() > 0.5 ? 1 : 0;
+          Y = 5.0 + TRUE_ATE * D + 0.8 * X + e;
+          M = 2.0 + 0.5 * D + normalRandom(rng, 0, 0.5);
+        } else if (dgp === "confounding") {
+          // 遗漏混杂：U 驱动选择并直接驱动产出
+          // stress 越大，选择机制中 U 的比重越高，且对 Y 的直接作用越大
+          const logit = -0.2 + (stress * 1.2) * U + 0.5 * X;
+          const prob = 1 / (1 + Math.exp(-logit));
+          D = rng() < prob ? 1 : 0;
+          // Y 同时受到 U 的影响（若未控制 U 则存在严重正向选择偏误）
+          Y = 5.0 + TRUE_ATE * D + (stress * 1.4) * U + 0.8 * X + e;
+          M = 1.0 + 0.5 * D + normalRandom(rng, 0, 0.5);
+        } else if (dgp === "badcontrol") {
+          // 坏控制：M 是处理 D 的中介后果，或者 M 是 D 与未观测混杂的对撞因子 (Collider)
+          // 此时控制 M 会导致中介效应被吸收（过控制），或在对撞点开启虚假关联
+          D = rng() > 0.5 ? 1 : 0;
+          // M 被 D 强烈驱动
+          M = 1.5 + (stress * 1.2) * D + 0.9 * U + normalRandom(rng, 0, 0.4);
+          // 潜在产出
+          Y = 5.0 + TRUE_ATE * D + (stress * 1.1) * U + e;
+        } else if (dgp === "anticipation") {
+          // 预期效应：高潜质主体提前行动，打破反事实基准
+          const preTrend = stress * 1.2;
+          const prob = 1 / (1 + Math.exp(-(0.5 + preTrend * U)));
+          D = rng() < prob ? 1 : 0;
+          // 如果 D=1，事前已经因为预期提取了部分收益，基线不再平行
+          Y = 5.0 + TRUE_ATE * D - (D === 1 ? preTrend * 0.9 : 0) + 0.6 * X + e;
+        }
+
+        data.push({ D, Y, X, U, M });
+      }
+      return data;
+    }
+
+    // 回归估计量计算（最小二乘法 OLS）
+    function estimateOLS(data, useCtrl, dgp) {
+      const n = data.length;
+      let sumD = 0, sumY = 0, sumD2 = 0, sumDY = 0;
+      let d1 = [], d0 = [];
+
+      for (let i = 0; i < n; i++) {
+        const item = data[i];
+        sumD += item.D;
+        sumY += item.Y;
+        sumD2 += item.D * item.D;
+        sumDY += item.D * item.Y;
+        if (item.D === 1) d1.push(item.Y);
+        else d0.push(item.Y);
+      }
+
+      // 双变量估计值: 均值差
+      const mean1 = d1.reduce((a, b) => a + b, 0) / (d1.length || 1);
+      const mean0 = d0.reduce((a, b) => a + b, 0) / (d0.length || 1);
+      const betaBivariate = mean1 - mean0;
+
+      // 控制变量回归
+      // 坏控制场景下，控制的是 M；其他场景控制的是 X
+      let betaCtrl = betaBivariate;
+      const ctrlVar = (dgp === "badcontrol") ? "M" : "X";
+
+      // 简易多元线性回归求解 beta_D: Y = a + beta*D + gamma*Ctrl
+      // 借助 Frisch-Waugh-Lovell 定理:
+      // 1. D 对 Ctrl 回归得残差 D_res
+      // 2. Y 对 Ctrl 回归得残差 Y_res
+      // 3. Y_res 对 D_res 回归
+      let meanCtrl = 0;
+      for (let i = 0; i < n; i++) meanCtrl += data[i][ctrlVar];
+      meanCtrl /= n;
+
+      let sCtrl2 = 0, sDCtrl = 0, sYCtrl = 0;
+      for (let i = 0; i < n; i++) {
+        const cDiff = data[i][ctrlVar] - meanCtrl;
+        sCtrl2 += cDiff * cDiff;
+        sDCtrl += (data[i].D - (sumD/n)) * cDiff;
+        sYCtrl += (data[i].Y - (sumY/n)) * cDiff;
+      }
+      const bD_on_Ctrl = sDCtrl / (sCtrl2 || 1e-5);
+      const bY_on_Ctrl = sYCtrl / (sCtrl2 || 1e-5);
+
+      let covRes = 0, varDRes = 0;
+      for (let i = 0; i < n; i++) {
+        const cDiff = data[i][ctrlVar] - meanCtrl;
+        const dRes = (data[i].D - (sumD/n)) - bD_on_Ctrl * cDiff;
+        const yRes = (data[i].Y - (sumY/n)) - bY_on_Ctrl * cDiff;
+        covRes += dRes * yRes;
+        varDRes += dRes * dRes;
+      }
+      betaCtrl = covRes / (varDRes || 1e-5);
+
+      return {
+        betaBivariate,
+        betaCtrl,
+        mean0,
+        mean1,
+        ctrlName: ctrlVar
+      };
+    }
+
+    // 蒙特卡洛多重抽样以获得估计量抽样分布
+    function runMonteCarlo(dgp, stress) {
+      const distOLS = [];
+      const distCtrl = [];
+      for (let s = 1; s <= MC_REPS; s++) {
+        const sample = generateData(s * 177, dgp, stress);
+        const est = estimateOLS(sample, true, dgp);
+        distOLS.push(est.betaBivariate);
+        distCtrl.push(est.betaCtrl);
+      }
+      return { distOLS, distCtrl };
+    }
+
+    // DOM 元素引用
+    const dgpButtons = document.querySelectorAll(".dgp-btn[data-dgp]");
+    const stressSlider = document.getElementById("stress-slider");
+    const stressValDisplay = document.getElementById("stress-slider-val");
+    const stressLabel = document.getElementById("stress-slider-label");
+    const specBivariateBtn = document.getElementById("spec-bivariate");
+    const specControlledBtn = document.getElementById("spec-controlled");
+    const specStateDisplay = document.getElementById("control-spec-state");
+    const reseedBtn = document.getElementById("btn-reseed");
+
+    const valOlsEl = document.getElementById("val-ols");
+    const biasOlsEl = document.getElementById("bias-ols");
+    const valCtrlEl = document.getElementById("val-ctrl");
+    const biasCtrlEl = document.getElementById("bias-ctrl");
+    const valStatusEl = document.getElementById("val-status");
+    const statusSubEl = document.getElementById("status-sub");
+    const cardControlledEl = document.getElementById("card-controlled");
+    const cardVerdictEl = document.getElementById("card-verdict");
+
+    const dgpDescText = document.getElementById("dgp-desc-text");
+    const diagSummaryEl = document.getElementById("diag-summary");
+    const diagTagEl = document.getElementById("diag-tag");
+
+    const cvScatter = document.getElementById("cv-scatter");
+    const cvDist = document.getElementById("cv-dist");
+    const ctxScatter = Deck.fit(cvScatter);
+    const ctxDist = Deck.fit(cvDist);
+
+    // 描述与审查指导字典
+    const DGP_INFO = {
+      ideal: {
+        sliderLabel: "试验扰动 / 噪声波动",
+        formulaDesc: "完全随机分配 (RCT)：处理变量 D 独立于潜在产出 Y(0), Y(1)。简单均值差等于真实因果效应 ATE，回归估计量满足外生无偏。",
+        readingTip: "审查抓手：随机分配是否真正落地？关注损耗偏误（attrition）、样本依从性（compliance）与干预前平衡性检验表。",
+        threatLevel: "supported",
+        tag: "识别安全"
+      },
+      confounding: {
+        sliderLabel: "遗漏混杂强度 (γ)",
+        formulaDesc: "遗漏变量偏差 (OVB)：高能力个体 U 既显著增加接受处理概率 D，又直接拔高产出 Y。简单均值差混入了自选择偏误。",
+        readingTip: "审查抓手：遗漏变量偏差公式 OVB = Cov(D,U)/Var(D) × γ。作者控制的观测特征 X 是否真能耗尽全部能力差异？还是遗留严重未观测异质性？",
+        threatLevel: "threatened",
+        tag: "严重选择偏误"
+      },
+      badcontrol: {
+        sliderLabel: "坏控制影响强度 (λ)",
+        formulaDesc: "坏控制变量 (Bad Control)：变量 M 受到处理 D 的直接塑造（中介变量）或充当对撞因子。控制 M 将吸收部分真实处理效应，或反向打开混杂偏误通道。",
+        readingTip: "审查抓手：警惕回归表中「逐步加入时间在处理之后发生的变量」。如果控制变量自身被干预改变，该系数就不再具有因果解释力。",
+        threatLevel: "threatened",
+        tag: "坏控制偏误"
+      },
+      anticipation: {
+        sliderLabel: "预期行为强度 (θ)",
+        formulaDesc: "预期效应 (Anticipation)：政策落地前主体已提前调整策略。若作为 DID 处理，干预前基准产出已被污染，平行趋势假定失效。",
+        readingTip: "审查抓手：审查事件研究法（Event Study）的预处理期系数。干预前是否已出现显著异动？如果存在前置预期，需前移政策时点。",
+        threatLevel: "uncertain",
+        tag: "平行趋势受损"
+      }
+    };
+
+    // 绘制微观散点与均值回归线
+    function drawScatter(data, est) {
+      const rect = cvScatter.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      ctxScatter.clearRect(0, 0, w, h);
+
+      const padL = 45, padR = 25, padT = 25, padB = 35;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+
+      // 坐标范围
+      let minY = 0, maxY = 15;
+      // 绘制网格与坐标轴
+      ctxScatter.strokeStyle = "#E3ECEF";
+      ctxScatter.lineWidth = 1;
+      for (let yVal = 2; yVal <= 14; yVal += 3) {
+        const yPx = padT + plotH * (1 - (yVal - minY) / (maxY - minY));
+        ctxScatter.beginPath();
+        ctxScatter.moveTo(padL, yPx);
+        ctxScatter.lineTo(padL + plotW, yPx);
+        ctxScatter.stroke();
+
+        ctxScatter.fillStyle = "#52666E";
+        ctxScatter.font = "13px Bahnschrift, sans-serif";
+        ctxScatter.textAlign = "right";
+        ctxScatter.textBaseline = "middle";
+        ctxScatter.fillText(yVal.toFixed(0), padL - 8, yPx);
+      }
+
+      // X 轴两列：D=0 与 D=1
+      const col0X = padL + plotW * 0.28;
+      const col1X = padL + plotW * 0.72;
+
+      ctxScatter.fillStyle = "#17272D";
+      ctxScatter.font = "14px 'Noto Sans SC', sans-serif";
+      ctxScatter.textAlign = "center";
+      ctxScatter.fillText("对照组 (D=0)", col0X, h - 10);
+      ctxScatter.fillText("处理组 (D=1)", col1X, h - 10);
+
+      // 绘制样本散点（带轻微 X 抖动）
+      const jitterRng = mulberry32(12345);
+      data.forEach(pt => {
+        const cx = pt.D === 0 ? col0X : col1X;
+        const jitter = (jitterRng() - 0.5) * 60;
+        const px = cx + jitter;
+        const py = padT + plotH * (1 - (Math.max(minY, Math.min(maxY, pt.Y)) - minY) / (maxY - minY));
+
+        ctxScatter.beginPath();
+        ctxScatter.arc(px, py, 3.8, 0, Math.PI * 2);
+        if (pt.D === 1) {
+          ctxScatter.fillStyle = "rgba(177, 63, 42, 0.45)";
+        } else {
+          ctxScatter.fillStyle = "rgba(82, 102, 110, 0.4)";
+        }
+        ctxScatter.fill();
+      });
+
+      // 绘制均值点与拟合线
+      const y0Px = padT + plotH * (1 - (est.mean0 - minY) / (maxY - minY));
+      const y1Px = padT + plotH * (1 - (est.mean1 - minY) / (maxY - minY));
+
+      // 连线（简单回归斜率）
+      ctxScatter.beginPath();
+      ctxScatter.moveTo(col0X, y0Px);
+      ctxScatter.lineTo(col1X, y1Px);
+      ctxScatter.strokeStyle = "#17272D";
+      ctxScatter.lineWidth = 2.5;
+      ctxScatter.stroke();
+
+      // 组均值大圆圈
+      [ {x: col0X, y: y0Px, val: est.mean0, col: "#52666E"},
+        {x: col1X, y: y1Px, val: est.mean1, col: "#B13F2A"} ].forEach(m => {
+        ctxScatter.beginPath();
+        ctxScatter.arc(m.x, m.y, 6.5, 0, Math.PI * 2);
+        ctxScatter.fillStyle = m.col;
+        ctxScatter.fill();
+        ctxScatter.strokeStyle = "#FFFFFF";
+        ctxScatter.lineWidth = 2;
+        ctxScatter.stroke();
+
+        ctxScatter.fillStyle = "#17272D";
+        ctxScatter.font = "bold 13px Bahnschrift, sans-serif";
+        ctxScatter.textAlign = m.x === col0X ? "right" : "left";
+        const offset = m.x === col0X ? -14 : 14;
+        ctxScatter.fillText("均值 " + m.val.toFixed(2), m.x + offset, m.y);
+      });
+
+      // 斜率标注
+      const midX = (col0X + col1X) / 2;
+      const midY = (y0Px + y1Px) / 2;
+      ctxScatter.fillStyle = "#17272D";
+      ctxScatter.font = "bold 13px 'Noto Sans SC', sans-serif";
+      ctxScatter.textAlign = "center";
+      ctxScatter.fillText(`OLS 斜率 = ${est.betaBivariate.toFixed(2)}`, midX, midY - 12);
+    }
+
+    // 绘制蒙特卡洛抽样分布核密度/柱状图
+    function drawDistribution(mc) {
+      const rect = cvDist.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      ctxDist.clearRect(0, 0, w, h);
+
+      const padL = 40, padR = 25, padT = 25, padB = 35;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+
+      // 评估范围固定在 [-1, 6] 之间便于对比
+      const minB = -0.5, maxB = 5.5;
+
+      // 计算直方图频数
+      const numBins = 25;
+      const binWidth = (maxB - minB) / numBins;
+      const binsOLS = new Array(numBins).fill(0);
+      const binsCtrl = new Array(numBins).fill(0);
+
+      mc.distOLS.forEach(v => {
+        let idx = Math.floor((v - minB) / binWidth);
+        if (idx >= 0 && idx < numBins) binsOLS[idx]++;
+      });
+      mc.distCtrl.forEach(v => {
+        let idx = Math.floor((v - minB) / binWidth);
+        if (idx >= 0 && idx < numBins) binsCtrl[idx]++;
+      });
+
+      const maxFreq = Math.max(...binsOLS, ...binsCtrl, 30);
+
+      // 绘制网格
+      ctxDist.strokeStyle = "#E3ECEF";
+      ctxDist.lineWidth = 1;
+      for (let b = 0; b <= 5; b += 1) {
+        const xPx = padL + plotW * ((b - minB) / (maxB - minB));
+        ctxDist.beginPath();
+        ctxDist.moveTo(xPx, padT);
+        ctxDist.lineTo(xPx, padT + plotH);
+        ctxDist.stroke();
+
+        ctxDist.fillStyle = "#52666E";
+        ctxDist.font = "13px Bahnschrift, sans-serif";
+        ctxDist.textAlign = "center";
+        ctxDist.textBaseline = "top";
+        ctxDist.fillText(b.toFixed(0), xPx, padT + plotH + 8);
+      }
+
+      // 绘制真实 ATE 垂线 (True = 2.00)
+      const trueXPx = padL + plotW * ((TRUE_ATE - minB) / (maxB - minB));
+      ctxDist.beginPath();
+      ctxDist.setLineDash([5, 4]);
+      ctxDist.moveTo(trueXPx, padT);
+      ctxDist.lineTo(trueXPx, padT + plotH);
+      ctxDist.strokeStyle = "#B13F2A";
+      ctxDist.lineWidth = 2.2;
+      ctxDist.stroke();
+      ctxDist.setLineDash([]);
+
+      ctxDist.fillStyle = "#B13F2A";
+      ctxDist.font = "bold 13px 'Noto Sans SC', sans-serif";
+      ctxDist.textAlign = "center";
+      ctxDist.fillText("真实 ATE (2.0)", trueXPx, padT - 8);
+
+      // 绘制 OLS 抽样柱状
+      const barW = (plotW / numBins) * 0.85;
+      for (let i = 0; i < numBins; i++) {
+        const binCenter = minB + (i + 0.5) * binWidth;
+        const xPx = padL + plotW * ((binCenter - minB) / (maxB - minB)) - barW / 2;
+        const bH = plotH * (binsOLS[i] / maxFreq);
+        const yPx = padT + plotH - bH;
+
+        ctxDist.fillStyle = "rgba(36, 90, 116, 0.65)";
+        ctxDist.fillRect(xPx, yPx, barW, bH);
+      }
+
+      // 如果开启了控制变量，叠加一层描边直方图
+      if (state.useControl) {
+        ctxDist.strokeStyle = "#2D694C";
+        ctxDist.lineWidth = 2;
+        for (let i = 0; i < numBins; i++) {
+          const binCenter = minB + (i + 0.5) * binWidth;
+          const xPx = padL + plotW * ((binCenter - minB) / (maxB - minB)) - barW / 2;
+          const bH = plotH * (binsCtrl[i] / maxFreq);
+          const yPx = padT + plotH - bH;
+
+          ctxDist.strokeRect(xPx, yPx, barW, bH);
+        }
+      }
+
+      // 均值标注
+      const avgOLS = mc.distOLS.reduce((a, b) => a + b, 0) / mc.distOLS.length;
+      const avgXPx = padL + plotW * ((avgOLS - minB) / (maxB - minB));
+
+      ctxDist.beginPath();
+      ctxDist.arc(avgXPx, padT + 20, 5, 0, Math.PI * 2);
+      ctxDist.fillStyle = "#245A74";
+      ctxDist.fill();
+
+      ctxDist.fillStyle = "#245A74";
+      ctxDist.font = "bold 13px Bahnschrift, sans-serif";
+      ctxDist.textAlign = "center";
+      ctxDist.fillText(`OLS均值: ${avgOLS.toFixed(2)}`, avgXPx, padT + 38);
+    }
+
+    // 主渲染流程
+    function update() {
+      // 1. 生成当前随机样本
+      const currentData = generateData(state.seed, state.dgp, state.stress);
+      const est = estimateOLS(currentData, state.useControl, state.dgp);
+
+      // 2. 跑蒙特卡洛分布
+      const mc = runMonteCarlo(state.dgp, state.stress);
+
+      // 3. 更新数值读数
+      const biasBiv = est.betaBivariate - TRUE_ATE;
+      const biasCtrl = est.betaCtrl - TRUE_ATE;
+
+      valOlsEl.textContent = (est.betaBivariate >= 0 ? "+" : "") + est.betaBivariate.toFixed(2);
+      biasOlsEl.textContent = (biasBiv >= 0 ? "+" : "") + biasBiv.toFixed(2);
+      biasOlsEl.className = "bias-val " + (Math.abs(biasBiv) < 0.2 ? "good" : "bad");
+
+      valCtrlEl.textContent = (est.betaCtrl >= 0 ? "+" : "") + est.betaCtrl.toFixed(2);
+      biasCtrlEl.textContent = (biasCtrl >= 0 ? "+" : "") + biasCtrl.toFixed(2);
+      biasCtrlEl.className = "bias-val " + (Math.abs(biasCtrl) < 0.2 ? "good" : "bad");
+
+      // 4. 诊断状态判断
+      const activeBias = state.useControl ? biasCtrl : biasBiv;
+      const absBias = Math.abs(activeBias);
+
+      if (absBias < 0.25) {
+        valStatusEl.textContent = "外生无偏";
+        valStatusEl.style.color = "var(--supported)";
+        statusSubEl.textContent = "估计量集中于真实 ATE 附近";
+        cardVerdictEl.className = "metric-card";
+        diagTagEl.className = "diag-tag supported";
+        diagTagEl.textContent = "识别安全";
+      } else if (absBias < 0.8) {
+        valStatusEl.textContent = "中度偏误";
+        valStatusEl.style.color = "var(--uncertain)";
+        statusSubEl.textContent = "未观测变量导致因果估计偏离";
+        cardVerdictEl.className = "metric-card alert";
+        diagTagEl.className = "diag-tag uncertain";
+        diagTagEl.textContent = "潜在偏误风险";
+      } else {
+        valStatusEl.textContent = "严重失真";
+        valStatusEl.style.color = "var(--cause)";
+        statusSubEl.textContent = "估计量被虚假关联彻底主导";
+        cardVerdictEl.className = "metric-card alert";
+        diagTagEl.className = "diag-tag threatened";
+        diagTagEl.textContent = "因果认领失效";
+      }
+
+      // 控制变量规格名
+      if (state.dgp === "badcontrol") {
+        specControlledBtn.querySelector(".btn-name").textContent = "控制中介变量 M";
+        specControlledBtn.querySelector(".btn-desc").textContent = "控制处理的下游后果";
+        cardControlledEl.querySelector(".card-head span").textContent = "控制中介/对撞 M";
+      } else {
+        specControlledBtn.querySelector(".btn-name").textContent = "加入观测变量 X";
+        specControlledBtn.querySelector(".btn-desc").textContent = "OLS 控制外生特征";
+        cardControlledEl.querySelector(".card-head span").textContent = "控制协变量 X";
+      }
+
+      // 文本与审查指引
+      const info = DGP_INFO[state.dgp];
+      stressLabel.textContent = info.sliderLabel;
+      dgpDescText.textContent = info.formulaDesc;
+      diagSummaryEl.innerHTML = `<strong>阅读审查抓手：</strong>` + info.readingTip;
+
+      // 5. 绘制两张图表
+      drawScatter(currentData, est);
+      drawDistribution(mc);
+    }
+
+    // 事件绑定与交互调度
+    dgpButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        dgpButtons.forEach(b => b.setAttribute("aria-pressed", "false"));
+        btn.setAttribute("aria-pressed", "true");
+        state.dgp = btn.dataset.dgp;
+
+        // 根据 DGP 设置默认扰动值
+        if (state.dgp === "ideal") {
+          state.stress = 0.0;
+        } else if (state.stress === 0) {
+          state.stress = 1.5;
+        }
+        stressSlider.value = state.stress;
+        stressValDisplay.textContent = state.stress.toFixed(2);
+        update();
+      });
+    });
+
+    stressSlider.addEventListener("input", (e) => {
+      state.stress = parseFloat(e.target.value);
+      stressValDisplay.textContent = state.stress.toFixed(2);
+      update();
+    });
+
+    specBivariateBtn.addEventListener("click", () => {
+      state.useControl = false;
+      specBivariateBtn.setAttribute("aria-pressed", "true");
+      specControlledBtn.setAttribute("aria-pressed", "false");
+      specStateDisplay.textContent = "双变量回归";
+      update();
+    });
+
+    specControlledBtn.addEventListener("click", () => {
+      state.useControl = true;
+      specBivariateBtn.setAttribute("aria-pressed", "false");
+      specControlledBtn.setAttribute("aria-pressed", "true");
+      specStateDisplay.textContent = state.dgp === "badcontrol" ? "控制中介 M" : "控制协变量 X";
+      update();
+    });
+
+    reseedBtn.addEventListener("click", () => {
+      state.seed = Math.floor(Math.random() * 10000) + 1;
+      update();
+    });
+
+    // 适配缩放
+    Deck.onResize(() => {
+      Deck.fit(cvScatter);
+      Deck.fit(cvDist);
+      update();
+    });
+
+    // 初始化渲染
+    update();
+    Deck.init({ index: 10, total: 24, keys: false });
+  })();
+  </script>
+
+  <aside class="notes" hidden>
+    各位读者，现在我们进入第 10 页的识别策略压力测试互动实验。
+    前面几页我们梳理了因果图、反事实与各类识别设计。但在实际读论文时，最危险的陷阱是「把回归结果的显著性当成因果证据」。
+    在这块画布上，我们把真实因果效应（ATE）固定为 +2.00。请大家点击左侧不同的底层数据生成过程：
+    第一，当处于理想随机试验（RCT）时，无论怎么抽样，OLS 均值差都会牢牢围绕真实值 2.00 波动；
+    第二，切换到「遗漏混杂能力」并拉大偏误强度，大家会看到右侧的散点和抽样分布整体向右漂移到 3.5 甚至 4.0 以上，此时极其显著的星号背后其实全是选择偏误；
+    第三，请特别尝试「坏控制变量」：即使你加入了控制变量，如果该变量本身是处理的后果或对撞因子，偏误反而会加剧，甚至吃掉真正的因果效应。
+    通过这种压力测试，大家读实证论文时就能形成直觉反射：任何时候看到估计量，第一反应不是看 t 值有多大，而是审查作者假定的数据生成过程是否扛得住这几种经典替代冲击。
+  </aside>
+</body>
+</html>

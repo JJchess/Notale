@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: 44px 56px 40px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      overflow: hidden;
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .top-bar h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .top-lead {
+      margin: 6px 0 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .top-badge-group {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    /* Bento Grid 主布局 */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: 360px 480px 1fr;
+      grid-template-rows: 400px 310px;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 逻辑门对比卡 */
+    .card-truth {
+      grid-column: 1;
+      grid-row: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 24px;
+    }
+    .truth-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 15px;
+      text-align: center;
+    }
+    .truth-table th {
+      padding: 8px 4px;
+      color: var(--muted);
+      border-bottom: 2px solid var(--border-subtle);
+      font-weight: 600;
+    }
+    .truth-table td {
+      padding: 10px 4px;
+      border-bottom: 1px solid var(--border-subtle);
+      font-variant-numeric: tabular-nums;
+      font-size: 16px;
+    }
+    .val-active {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #eff6ff;
+      color: var(--primary);
+      font-weight: 700;
+    }
+    .val-zero {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #f1f5f9;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .xor-val-1 {
+      background: rgba(225, 29, 72, 0.12);
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    /* 矛盾推导卡片 */
+    .card-proof {
+      grid-column: 1;
+      grid-row: 2;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 22px 24px;
+    }
+    .proof-equations {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #f8fafc;
+      padding: 14px 18px;
+      border-radius: 12px;
+      border-left: 3px solid var(--danger);
+    }
+    .proof-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+    }
+    .proof-conc {
+      font-size: 14px;
+      line-height: 1.45;
+      color: var(--danger);
+      font-weight: 600;
+      margin: 0;
+    }
+
+    /* 几何决策边界交互视窗 */
+    .card-canvas {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      position: relative;
+    }
+    .canvas-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .canvas-box {
+      flex: 1;
+      position: relative;
+      border-radius: 14px;
+      background: #fafbfc;
+      border: 1px solid var(--border-subtle);
+      overflow: hidden;
+    }
+    #plot {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 控制条与交互 */
+    .gate-selector {
+      display: flex;
+      gap: 6px;
+      background: #e2e8f0;
+      padding: 4px;
+      border-radius: 10px;
+    }
+    .gate-btn {
+      padding: 6px 14px;
+      border: none;
+      background: transparent;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .gate-btn.active {
+      background: #fff;
+      color: var(--text);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    }
+
+    .boundary-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 14px;
+      padding: 12px 14px;
+      background: #f8fafc;
+      border-radius: 12px;
+      border: 1px solid var(--border-subtle);
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+    }
+    .slider-row label {
+      width: 68px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .slider-row input[type="range"] {
+      flex: 1;
+      accent-color: var(--primary);
+    }
+    .slider-row output {
+      width: 44px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+
+    /* 历史与破局分析 */
+    .card-insight {
+      grid-column: 3;
+      grid-row: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      gap: 14px;
+    }
+    .callout-box {
+      background: #eff6ff;
+      border: 1px solid rgba(37, 99, 235, 0.2);
+      border-radius: 14px;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .callout-box h3 {
+      margin: 0;
+      font-size: 16px;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .callout-box p {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #1e293b;
+    }
+
+    /* 破局思路：多层空间折叠预览 */
+    .card-solution {
+      grid-column: 3;
+      grid-row: 2;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      gap: 14px;
+    }
+    .decomp-flow {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 10px;
+      background: #f8fafc;
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+    .decomp-node {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .decomp-node .title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .decomp-node .expr {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .decomp-arrow {
+      font-size: 18px;
+      color: var(--accent-orange);
+      font-weight: bold;
+    }
+    .decomp-tag {
+      font-size: 12px;
+      color: var(--success);
+      font-weight: 600;
+      background: #ecfdf5;
+      padding: 2px 6px;
+      border-radius: 4px;
+      align-self: flex-start;
+    }
+
+    .status-pill {
+      font-size: 13px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-pill.separable {
+      background: #ecfdf5;
+      color: var(--success);
+    }
+    .status-pill.inseparable {
+      background: #ffe4e6;
+      color: var(--danger);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="17">
+  <div id="stage">
+    <!-- 顶部标题与简要陈述 -->
+    <header class="top-bar">
+      <div>
+        <h1 class="nt-title">单神经元的致命瓶颈：异或与线性不可分</h1>
+        <p class="top-lead">单感知机只能生成单条线性决策面：能切分与、或，却无法用单条直线划分异或。</p>
+      </div>
+      <div class="top-badge-group">
+        <span class="nt-badge" style="background:#fee2e2; color:var(--danger); font-weight:600;">AI 寒冬导火索 (1969)</span>
+        <span class="nt-badge" style="background:#f1f5f9; color:var(--muted);">Minsky &amp; Papert 几何瓶颈</span>
+      </div>
+    </header>
+
+    <!-- 主体 Bento Grid -->
+    <main class="bento-grid">
+      <!-- 1. 真值表与可分性判别 -->
+      <section class="nt-bento-cell card-truth">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2 class="nt-section-title" style="font-size:18px; margin:0;">布尔逻辑真值对照</h2>
+          <span id="gate-status" class="status-pill inseparable">不可线性分割</span>
+        </div>
+
+        <table class="truth-table">
+          <thead>
+            <tr>
+              <th><span class="tex">x_1</span></th>
+              <th><span class="tex">x_2</span></th>
+              <th>AND</th>
+              <th>OR</th>
+              <th style="color:var(--danger); font-weight:700;">XOR</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-row="0">
+              <td>0</td>
+              <td>0</td>
+              <td><span class="val-zero">0</span></td>
+              <td><span class="val-zero">0</span></td>
+              <td><span class="val-zero">0</span></td>
+            </tr>
+            <tr data-row="1">
+              <td>0</td>
+              <td>1</td>
+              <td><span class="val-zero">0</span></td>
+              <td><span class="val-active">1</span></td>
+              <td><span class="val-active xor-val-1">1</span></td>
+            </tr>
+            <tr data-row="2">
+              <td>1</td>
+              <td>0</td>
+              <td><span class="val-zero">0</span></td>
+              <td><span class="val-active">1</span></td>
+              <td><span class="val-active xor-val-1">1</span></td>
+            </tr>
+            <tr data-row="3">
+              <td>1</td>
+              <td>1</td>
+              <td><span class="val-active">1</span></td>
+              <td><span class="val-active">1</span></td>
+              <td><span class="val-zero">0</span></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="font-size:13px; color:var(--muted); line-height:1.45;">
+          两输入相异时为 1，相同时为 0。同类样本呈对角分布。
+        </div>
+      </section>
+
+      <!-- 2. 代数矛盾推导证明 -->
+      <section class="nt-bento-cell card-proof">
+        <h2 class="nt-section-title" style="font-size:18px; margin:0;">代数矛盾证明</h2>
+        <div class="proof-equations">
+          <div class="proof-item">
+            <span>(0,0) → 0:</span>
+            <span class="tex">b < 0</span>
+          </div>
+          <div class="proof-item">
+            <span>(0,1) → 1:</span>
+            <span class="tex">w_2 + b \ge 0</span>
+          </div>
+          <div class="proof-item">
+            <span>(1,0) → 1:</span>
+            <span class="tex">w_1 + b \ge 0</span>
+          </div>
+          <div class="proof-item">
+            <span>(1,1) → 0:</span>
+            <span class="tex">w_1 + w_2 + b < 0</span>
+          </div>
+        </div>
+        <div class="proof-conc">
+          两正例式相加得 <span class="tex">w_1 + w_2 + 2b \ge 0</span>；但由两负例式相加得 <span class="tex">w_1 + w_2 + 2b < 0</span>，代数矛盾无解。
+        </div>
+      </section>
+
+      <!-- 3. 中间大卡片：几何超平面划分视窗与拖动滑块 -->
+      <section class="nt-bento-cell card-canvas">
+        <div class="canvas-header">
+          <div class="gate-selector" role="tablist">
+            <button class="gate-btn" data-gate="AND">AND (与)</button>
+            <button class="gate-btn" data-gate="OR">OR (或)</button>
+            <button class="gate-btn active" data-gate="XOR">XOR (异或)</button>
+          </div>
+          <div style="font-size:13px; color:var(--muted);">
+            当前准确率: <strong id="acc-display" style="color:var(--danger); font-size:15px;">75% (3/4)</strong>
+          </div>
+        </div>
+
+        <div class="canvas-box">
+          <canvas id="plot"></canvas>
+        </div>
+
+        <div class="boundary-controls">
+          <div class="slider-row">
+            <label>角度 θ</label>
+            <input type="range" id="param-theta" min="-180" max="180" value="45" step="1">
+            <output id="val-theta">45°</output>
+          </div>
+          <div class="slider-row">
+            <label>截距 d</label>
+            <input type="range" id="param-dist" min="-1.5" max="1.5" value="0.7" step="0.02">
+            <output id="val-dist">0.70</output>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. 历史回溯与影响卡片 -->
+      <section class="nt-bento-cell card-insight">
+        <div class="callout-box">
+          <h3>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            1969 年明斯基的预言与十年停滞
+          </h3>
+          <p>马文·明斯基在著作《感知机》中用严格几何定理证明单层神经元无法计算异或，并悲观预言多层网络无法有效训练，导致神经网络研究进入首次长达十余年的寒冬。</p>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; background:#fafbfc; border-radius:12px; padding:12px 16px; border:1px solid var(--border-subtle);">
+          <span style="font-size:14px; font-weight:600; color:var(--text);">单层感知机极限</span>
+          <span style="font-size:13px; color:var(--muted);">仅能形成单一线性超平面划分</span>
+        </div>
+      </section>
+
+      <!-- 5. 破局之道：多层空间折叠预览 -->
+      <section class="nt-bento-cell card-solution">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2 class="nt-section-title" style="font-size:18px; margin:0;">破局：引入多层感知机 (MLP)</h2>
+          <span class="decomp-tag">非线性可解</span>
+        </div>
+        
+        <div class="decomp-flow">
+          <div class="decomp-node">
+            <span class="title">拆解组合</span>
+            <span class="expr"><span class="tex">x_1 \oplus x_2 = (x_1 \lor x_2) \land \neg(x_1 \land x_2)</span></span>
+          </div>
+          <div class="decomp-arrow">→</div>
+          <div class="decomp-node">
+            <span class="title">网络映射</span>
+            <span class="expr" style="color:var(--primary);">2个隐藏神经元 + 1个输出</span>
+          </div>
+        </div>
+
+        <p style="margin:0; font-size:13.5px; color:var(--muted); line-height:1.45;">
+          增加一层隐藏神经元，先用两条直线分别划界，再在输出层做逻辑与，即可分割异或。
+        </p>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学请看大屏幕。在前面的学习中，我们看到单个感知机可以通过调整权重和偏置，在二维平面上切出一条直线。
+    对逻辑“与”（AND）和逻辑“或”（OR）而言，正例和负例都可以被一条直线干净利落地分开。
+    但是在 1969 年，人工智能先驱马文·明斯基指出了一个致命问题——异或（XOR）问题。
+    屏幕左下角展示了严格的代数矛盾推导：四个不等式联立之后必然出现矛盾无解。在中央的平面交互中，大家可以任意旋转平移这条直线，无论怎么调，对异或的正确率上限永远只能达到 75%，永远无法把对角线上的两个类别彻底切开。
+    这就是单层感知机的致命瓶颈：它只能处理线性可分问题。这一发现直接导致了神经网络历史上著名的第一次 AI 寒冬。而破局的关键，正如右下角所示——我们需要多层感知机（MLP）来组合两条直线，这正是我们下一页要深入探讨的隐藏层空间折叠机制。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    (function () {
+      // 渲染 Katex
+      document.querySelectorAll('.tex').forEach(el => {
+        try {
+          katex.render(el.textContent, el, { throwOnError: false });
+        } catch (e) {}
+      });
+
+      // 画布与交互控制
+      const canvas = document.getElementById('plot');
+      const thetaInput = document.getElementById('param-theta');
+      const distInput = document.getElementById('param-dist');
+      const valTheta = document.getElementById('val-theta');
+      const valDist = document.getElementById('val-dist');
+      const accDisplay = document.getElementById('acc-display');
+      const gateStatus = document.getElementById('gate-status');
+      const gateBtns = document.querySelectorAll('.gate-btn');
+
+      let currentGate = 'XOR';
+
+      const DATASETS = {
+        AND: [
+          { x: 0, y: 0, label: 0 },
+          { x: 0, y: 1, label: 0 },
+          { x: 1, y: 0, label: 0 },
+          { x: 1, y: 1, label: 1 }
+        ],
+        OR: [
+          { x: 0, y: 0, label: 0 },
+          { x: 0, y: 1, label: 1 },
+          { x: 1, y: 0, label: 1 },
+          { x: 1, y: 1, label: 1 }
+        ],
+        XOR: [
+          { x: 0, y: 0, label: 0 },
+          { x: 0, y: 1, label: 1 },
+          { x: 1, y: 0, label: 1 },
+          { x: 1, y: 1, label: 0 }
+        ]
+      };
+
+      const DEFAULT_PARAMS = {
+        AND: { theta: 45, dist: 1.1 },
+        OR: { theta: 45, dist: 0.35 },
+        XOR: { theta: 45, dist: 0.7 }
+      };
+
+      function updateStatus() {
+        if (currentGate === 'XOR') {
+          gateStatus.className = 'status-pill inseparable';
+          gateStatus.textContent = '不可线性分割';
+        } else {
+          gateStatus.className = 'status-pill separable';
+          gateStatus.textContent = '线性可分';
+        }
+      }
+
+      function draw() {
+        const ctx = Deck.fit(canvas);
+        const w = canvas.width / (window.devicePixelRatio || 1);
+        const h = canvas.height / (window.devicePixelRatio || 1);
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 坐标系映射：[-0.5, 1.5] -> [pad, w - pad]
+        const padX = 65;
+        const padY = 50;
+        const minVal = -0.4;
+        const maxVal = 1.4;
+
+        const mapX = val => padX + ((val - minVal) / (maxVal - minVal)) * (w - padX * 2);
+        const mapY = val => h - padY - ((val - minVal) / (maxVal - minVal)) * (h - padY * 2);
+
+        // 绘制坐标网格
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+
+        [0, 1].forEach(tick => {
+          // 垂直线
+          const tx = mapX(tick);
+          ctx.beginPath();
+          ctx.moveTo(tx, padY - 10);
+          ctx.lineTo(tx, h - padY + 10);
+          ctx.stroke();
+
+          // 水平线
+          const ty = mapY(tick);
+          ctx.beginPath();
+          ctx.moveTo(padX - 10, ty);
+          ctx.lineTo(w - padX + 10, ty);
+          ctx.stroke();
+        });
+        ctx.setLineDash([]);
+
+        // 坐标轴刻度数字
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '12px ' + Deck.token('--font-sans');
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText('0', mapX(0), mapY(minVal) - 16);
+        ctx.fillText('1', mapX(1), mapY(minVal) - 16);
+        ctx.fillText('x₁', w - padX + 24, mapY(minVal) - 20);
+
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('0', mapX(minVal) + 16, mapY(0));
+        ctx.fillText('1', mapX(minVal) + 16, mapY(1));
+        ctx.fillText('x₂', mapX(minVal) + 16, padY - 15);
+
+        // 直线决策边界方程: cos(theta)*x + sin(theta)*y - dist = 0
+        const thetaRad = (parseFloat(thetaInput.value) * Math.PI) / 180;
+        const dist = parseFloat(distInput.value);
+        const cosT = Math.cos(thetaRad);
+        const sinT = Math.sin(thetaRad);
+
+        // 决策面阴影：判断 positive 半平面
+        // 找视窗四角对应的正负区域填充
+        const samples = 36;
+        const stepX = (maxVal - minVal) / samples;
+        const stepY = (maxVal - minVal) / samples;
+
+        ctx.fillStyle = 'rgba(37, 99, 235, 0.05)';
+        for (let i = 0; i < samples; i++) {
+          for (let j = 0; j < samples; j++) {
+            const rx = minVal + i * stepX;
+            const ry = minVal + j * stepY;
+            if (cosT * rx + sinT * ry - dist >= 0) {
+              const cx = mapX(rx);
+              const cy = mapY(ry + stepY);
+              const cw = mapX(rx + stepX) - cx;
+              const ch = mapY(ry) - cy;
+              ctx.fillRect(cx, cy, cw, ch);
+            }
+          }
+        }
+
+        // 绘制直线: cosT * x + sinT * y - dist = 0
+        // 求直线与边界 minVal, maxVal 的交点
+        let linePts = [];
+        if (Math.abs(sinT) > 1e-4) {
+          // x = minVal, maxVal
+          const y1 = (dist - cosT * minVal) / sinT;
+          const y2 = (dist - cosT * maxVal) / sinT;
+          linePts.push({ x: minVal, y: y1 });
+          linePts.push({ x: maxVal, y: y2 });
+        } else {
+          // x = dist / cosT
+          const x0 = dist / cosT;
+          linePts.push({ x: x0, y: minVal });
+          linePts.push({ x: x0, y: maxVal });
+        }
+
+        ctx.strokeStyle = Deck.token('--primary');
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(mapX(linePts[0].x), mapY(linePts[0].y));
+        ctx.lineTo(mapX(linePts[1].x), mapY(linePts[1].y));
+        ctx.stroke();
+
+        // 样本点绘制与分类评估
+        const data = DATASETS[currentGate];
+        let correctCount = 0;
+
+        data.forEach(pt => {
+          const px = mapX(pt.x);
+          const py = mapY(pt.y);
+
+          // 模型预测: cosT * x + sinT * y - dist >= 0 -> 1 否则 0
+          const pred = (cosT * pt.x + sinT * pt.y - dist >= 0) ? 1 : 0;
+          const isCorrect = (pred === pt.label);
+          if (isCorrect) correctCount++;
+
+          // 绘制光晕外环（若是错误点加红色警示）
+          if (!isCorrect) {
+            ctx.beginPath();
+            ctx.arc(px, py, 20, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(225, 29, 72, 0.18)';
+            ctx.fill();
+            ctx.strokeStyle = Deck.token('--danger');
+            ctx.lineWidth = 2;
+            ctx.setLineDash([3, 3]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+
+          // 点主体
+          ctx.beginPath();
+          ctx.arc(px, py, 11, 0, Math.PI * 2);
+          if (pt.label === 1) {
+            ctx.fillStyle = Deck.token('--primary');
+          } else {
+            ctx.fillStyle = '#ffffff';
+          }
+          ctx.fill();
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = pt.label === 1 ? '#1d4ed8' : '#64748b';
+          ctx.stroke();
+
+          // 点文字标签
+          ctx.fillStyle = pt.label === 1 ? '#ffffff' : '#475569';
+          ctx.font = 'bold 12px ' + Deck.token('--font-sans');
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(pt.label.toString(), px, py);
+
+          // 旁边标注点坐标 (x1, x2)
+          ctx.fillStyle = '#64748b';
+          ctx.font = '12px ' + Deck.token('--font-sans');
+          const isTopRow = (pt.y === 1);
+          const coordY = isTopRow ? py - 22 : py + 24;
+          ctx.fillText(`(${pt.x},${pt.y})`, px, coordY);
+        });
+
+        // 实时更新准确率
+        const accPct = Math.round((correctCount / data.length) * 100);
+        accDisplay.textContent = `${accPct}% (${correctCount}/${data.length})`;
+        if (accPct === 100) {
+          accDisplay.style.color = Deck.token('--success');
+        } else {
+          accDisplay.style.color = Deck.token('--danger');
+        }
+      }
+
+      // 事件绑定
+      thetaInput.addEventListener('input', () => {
+        valTheta.textContent = thetaInput.value + '°';
+        draw();
+      });
+
+      distInput.addEventListener('input', () => {
+        valDist.textContent = parseFloat(distInput.value).toFixed(2);
+        draw();
+      });
+
+      gateBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          gateBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentGate = btn.dataset.gate;
+
+          // 设定对应门推荐初值
+          const def = DEFAULT_PARAMS[currentGate];
+          thetaInput.value = def.theta;
+          distInput.value = def.dist;
+          valTheta.textContent = def.theta + '°';
+          valDist.textContent = def.dist.toFixed(2);
+
+          updateStatus();
+          draw();
+        });
+      });
+
+      // 初始化
+      Deck.autofit(canvas, draw);
+      updateStatus();
+      draw();
+    })();
+  </script>
+</body>
+</html>

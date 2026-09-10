@@ -1,0 +1,1 @@
+import{browser as i}from"$app/environment";import{readable as t}from"svelte/store";import n from"lodash.debounce";export default t({width:0,height:0},r=>{const e=()=>r({width:window.innerWidth,height:window.innerHeight});return i&&(e(),window.addEventListener("resize",n(e,250))),()=>{i&&window.removeEventListener("resize",e)}});

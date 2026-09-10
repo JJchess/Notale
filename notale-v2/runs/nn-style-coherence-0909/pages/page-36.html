@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{ overflow:hidden; }
+
+.kicker{
+  position:absolute; left:68px; top:52px;
+  font-size:var(--fs-label); color:var(--muted); letter-spacing:.08em;
+}
+h1{
+  position:absolute; left:68px; top:70px; width:900px;
+  font-size:var(--fs-h1); line-height:1.16; color:var(--text);
+  font-family: var(--font-sans); font-weight:800; letter-spacing:-.01em;
+}
+
+/* sentence row */
+#sentence{
+  position:absolute; left:68px; top:250px; width:1464px; height:64px;
+}
+.tok{
+  position:absolute; top:0; height:64px;
+  display:flex; align-items:center; justify-content:center;
+  font-family: var(--font-sans); font-size:20px; color:var(--text);
+  border-bottom:2px solid var(--line);
+  padding:0 4px; white-space:nowrap;
+}
+.tok .idx{
+  position:absolute; top:-20px; left:50%; transform:translateX(-50%);
+  font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums;
+}
+
+/* chain diagram */
+#chain{
+  position:absolute; left:68px; top:334px; width:1464px; height:330px;
+}
+#chainSvg{ width:100%; height:100%; overflow:visible; }
+
+.state-box{ fill: var(--bg); stroke: var(--stable); stroke-width: var(--diagram-line-width); }
+.state-box.final{ stroke: var(--accent); stroke-width: 3; }
+.state-label{ font-family: var(--font-sans); font-size:15px; fill: var(--text); text-anchor:middle; }
+.rnn-cell{ fill: var(--bg); stroke: var(--text); stroke-width: var(--diagram-line-width); }
+.rnn-cell-label{ font-family: var(--font-sans); font-size:14px; fill: var(--text); text-anchor:middle; }
+.flow-line{ fill:none; stroke: var(--stable); stroke-width: var(--diagram-line-width); }
+.flow-line.blocked{ stroke: var(--muted); stroke-dasharray: 3 4; opacity:.55; }
+.flow-line.hot{ stroke: var(--accent); stroke-width: 2.6; }
+.arrow-head{ fill: var(--stable); }
+.arrow-head.hot{ fill: var(--accent); }
+.time-tick{ font-family: var(--font-sans); font-size:12px; fill: var(--muted); text-anchor:middle; }
+.step-tag{ font-family: var(--font-sans); font-size:13px; fill: var(--muted); text-anchor:middle; }
+.bottleneck-fill{ fill: var(--accent); opacity:.14; }
+
+/* bottom readout */
+#readout{
+  position:absolute; left:68px; top:674px; width:1464px;
+  border-top:1px solid var(--line); padding-top:16px;
+  display:grid; grid-template-columns: 1fr 1fr; gap:60px;
+}
+.readout-col h3{
+  font-family: var(--font-sans); font-size:17px; font-weight:700; color:var(--accent);
+  margin:0 0 6px;
+}
+.readout-col p{
+  font-size:var(--fs-body); line-height:1.5; color:var(--text); margin:0;
+}
+.readout-col .metric{
+  font-family: var(--font-sans); font-variant-numeric:tabular-nums;
+  color:var(--muted); font-size:14px; margin-top:8px;
+}
+.metric b{ color:var(--text); font-weight:700; }
+
+#claim{
+  position:absolute; left:68px; top:838px; width:1464px;
+  border-top:1px solid var(--line); padding-top:14px;
+  font-size:var(--fs-body); line-height:1.5; color:var(--text);
+}
+#claim b{ color:var(--accent); font-weight:700; }
+
+.step-hint{
+  position:absolute; right:68px; top:52px;
+  font-size:13px; color:var(--muted);
+}
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+
+  <div class="kicker">从 RNN 到注意力</div>
+  <h1>一个固定长度的状态，扛着一整句话的意思</h1>
+  <div class="step-hint" id="stepHint"></div>
+
+  <div id="sentence"></div>
+
+  <div id="chain">
+    <svg id="chainSvg" viewBox="0 0 1464 360" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+
+  <div id="readout">
+    <div class="readout-col">
+      <h3>信息瓶颈</h3>
+      <p id="bottleneckText">每一步都把新词压进同一个向量，旧信息不断被覆盖、稀释。到最后一步，这个固定大小的向量要装下全部十个词的线索。</p>
+      <div class="metric" id="bottleneckMetric"></div>
+    </div>
+    <div class="readout-col">
+      <h3>串行限制</h3>
+      <p id="serialText">第 t 步必须等第 t−1 步算完才能开始，因为它需要上一步的隐藏状态。十步不能同时算。</p>
+      <div class="metric" id="serialMetric"></div>
+    </div>
+  </div>
+
+  <div id="claim">这两处限制指向同一件事：<b>需要一种不必逐步递推、也不必把全句挤进一个向量就能取用任意位置信息的机制</b>——下一页就是注意力如何做到这一点。</div>
+
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  const WORDS = ["这","部","电影","的","开头","很","无聊","但","结局","震撼"];
+  const N = WORDS.length;
+
+  const sentenceEl = document.getElementById('sentence');
+  const stepHint = document.getElementById('stepHint');
+  const bottleneckMetric = document.getElementById('bottleneckMetric');
+  const serialMetric = document.getElementById('serialMetric');
+
+  // layout sentence tokens
+  const totalW = 1464;
+  const gap = 6;
+  const tokW = (totalW - gap*(N-1)) / N;
+  WORDS.forEach((w, i) => {
+    const d = document.createElement('div');
+    d.className = 'tok';
+    d.style.left = (i*(tokW+gap)) + 'px';
+    d.style.width = tokW + 'px';
+    d.innerHTML = '<span class="idx">t'+(i+1)+'</span>' + w;
+    d.id = 'tok'+i;
+    sentenceEl.appendChild(d);
+  });
+
+  const svg = document.getElementById('chainSvg');
+  const NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs){
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  // chain geometry: N cells along x, mapped to same x-centers as tokens (scaled to 1464 viewBox)
+  const cellY = 70;
+  const cellW = 46, cellH = 46;
+  const centers = [];
+  for (let i=0;i<N;i++){
+    centers.push(i*(tokW+gap) + tokW/2);
+  }
+
+  const finalX = centers[N-1];
+  const finalY = 210;
+
+  function arrowMarker(id, colorVar){
+    const marker = el('marker', {id:id, markerWidth:8, markerHeight:8, refX:6, refY:4, orient:'auto'});
+    const path = el('path', {d:'M0,0 L8,4 L0,8 Z', class:'arrow-head'+(colorVar?' '+colorVar:'')});
+    marker.appendChild(path);
+    return marker;
+  }
+
+  function build(){
+    svg.innerHTML = '';
+    const defs = el('defs');
+    defs.appendChild(arrowMarker('arrowNormal',''));
+    defs.appendChild(arrowMarker('arrowHot','hot'));
+    svg.appendChild(defs);
+
+    // bottleneck highlight zone around final state
+    const bottleneckRect = el('rect', {
+      class:'bottleneck-fill', x: finalX-38, y: finalY-38, width:76, height:76, rx:8
+    });
+    svg.appendChild(bottleneckRect);
+
+    // recurrent chain: cell boxes + connecting arrows carrying hidden state
+    for (let i=0;i<N;i++){
+      const cx = centers[i];
+      // vertical input arrow from token to cell
+      const inLine = el('path', {
+        class:'flow-line', d:'M'+cx+',10 L'+cx+','+(cellY-cellH/2-4),
+        'marker-end':'url(#arrowNormal)'
+      });
+      svg.appendChild(inLine);
+
+      const isFinal = i === N-1;
+      const cell = el('rect', {
+        class: 'rnn-cell', x: cx-cellW/2, y: cellY-cellH/2, width:cellW, height:cellH, rx:6
+      });
+      svg.appendChild(cell);
+      const cellLabel = el('text', {class:'rnn-cell-label', x:cx, y:cellY+5});
+      cellLabel.textContent = 'h'+(i+1);
+      svg.appendChild(cellLabel);
+
+      if (i < N-1) {
+        const nx = centers[i+1];
+        const midY = cellY;
+        const conn = el('path', {
+          class:'flow-line', d:'M'+(cx+cellW/2)+','+midY+' L'+(nx-cellW/2-4)+','+midY,
+          'marker-end':'url(#arrowNormal)'
+        });
+        svg.appendChild(conn);
+      }
+    }
+
+    // final state box, larger, fixed-size
+    const fbox = el('rect', {
+      class:'state-box final', x: finalX-34, y: finalY-34, width:68, height:68, rx:8
+    });
+    svg.appendChild(fbox);
+    const flabel = el('text', {class:'state-label', x: finalX, y: finalY+6, style:'font-weight:700;font-size:17px'});
+    flabel.textContent = 'h₁₀';
+    svg.appendChild(flabel);
+
+    const fdrop = el('path', {
+      class:'flow-line', d:'M'+finalX+','+(cellY+cellH/2+4)+' L'+finalX+','+(finalY-34-4),
+      'marker-end':'url(#arrowNormal)'
+    });
+    svg.appendChild(fdrop);
+
+    // annotate final box
+    const fcap = el('text', {class:'step-tag', x: finalX, y: finalY+58});
+    fcap.textContent = '固定大小·装下全部十步';
+    svg.appendChild(fcap);
+
+    // highlight path from token "结局"(i=8) into the chain, showing it must pass through all later steps too? 
+    // "结局" is index 8 (0-based) = t9, already last token feeding h9 directly.
+    // Instead trace an EARLIER key clue: "无聊"(i=6, t7) needing to survive to h9 through h8,h9
+    const clueIdx = 6; // “无聊”
+    const clueCx = centers[clueIdx];
+    const clueMark = el('circle', {cx: clueCx, cy: cellY, r: 26, fill:'none', stroke:'var(--accent)', 'stroke-width':2, 'stroke-dasharray':'4 3'});
+    svg.appendChild(clueMark);
+
+    // hot path from clue cell through remaining cells to final
+    for (let i=clueIdx;i<N-1;i++){
+      const cx = centers[i], nx = centers[i+1];
+      const hot = el('path', {
+        class:'flow-line hot', d:'M'+(cx+cellW/2)+','+cellY+' L'+(nx-cellW/2-4)+','+cellY,
+        'marker-end':'url(#arrowHot)'
+      });
+      svg.appendChild(hot);
+    }
+    const clueTag = el('text', {class:'step-tag', x: clueCx, y: cellY-46});
+    clueTag.textContent = '"无聊"的线索要挤过 3 步才到终点';
+    clueTag.setAttribute('fill', 'var(--accent)');
+    svg.appendChild(clueTag);
+
+    // === serial timeline (step 1 reveal) ===
+    const timelineY = 268;
+    const barH = 14;
+    const stepDur = 46; // px per step, arbitrary time unit visual
+    for (let i=0;i<N;i++){
+      const x0 = 40 + i*stepDur*1.5;
+    }
+  }
+
+  build();
+
+  // === serial timeline: build once, show/hide with data-step ===
+  const timeline = document.createElementNS(NS,'g');
+  timeline.setAttribute('id','timelineGroup');
+  (function buildTimeline(){
+    const y = 300;
+    const unit = 1360 / N;
+    const barH = 16;
+    for (let i=0;i<N;i++){
+      const x0 = 52 + i*unit;
+      const rect = el('rect', {x:x0, y:y, width:unit*0.78, height:barH, class:'rnn-cell', style:'stroke-width:1.4'});
+      timeline.appendChild(rect);
+      const lbl = el('text', {class:'time-tick', x:x0+unit*0.39, y:y+barH+16});
+      lbl.textContent = 't'+(i+1);
+      timeline.appendChild(lbl);
+      if (i>0){
+        const wait = el('path', {
+          class:'flow-line blocked',
+          d:'M'+(x0-unit*0.22)+','+(y+barH/2)+' L'+(x0)+','+(y+barH/2),
+          'marker-end':'url(#arrowNormal)'
+        });
+        timeline.appendChild(wait);
+      }
+    }
+    const totalLabel = el('text', {class:'step-tag', x:732, y:y-14, id:'totalTimeLabel'});
+    totalLabel.textContent = '十步依次算完，耗时 ≈ 10 个单位；不能同时开始';
+    timeline.appendChild(totalLabel);
+  })();
+  svg.appendChild(timeline);
+  timeline.style.opacity = 0;
+  timeline.style.transition = 'opacity .3s';
+
+  function computeMetrics(){
+    bottleneckMetric.innerHTML = '<b>1</b> 个向量承载 <b>'+N+'</b> 个词的信息，大小不随句长增加';
+    serialMetric.innerHTML = '<b>'+N+'</b> 步顺序执行，总耗时 ≈ <b>'+N+'</b>× 单步耗时，无法并行';
+  }
+  computeMetrics();
+
+  Deck.onStep(function(step, max){
+    const tokens = sentenceEl.querySelectorAll('.tok');
+    tokens.forEach((t,i)=>{
+      t.style.opacity = 1;
+      t.style.color = (i===6) ? 'var(--accent)' : (i===8 ? 'var(--stable)' : 'var(--text)');
+      t.style.fontWeight = (i===6||i===8) ? '700' : '400';
+    });
+    if (step === 0){
+      timeline.style.opacity = 0;
+      stepHint.textContent = '第 0 步 · 递推链与固定终态';
+    } else {
+      timeline.style.opacity = 1;
+      stepHint.textContent = '第 1 步 · 串行时间成本';
+    }
+  }, 2);
+
+  Deck.init({ index:36, total:44 });
+})();
+</script>
+</body>
+</html>

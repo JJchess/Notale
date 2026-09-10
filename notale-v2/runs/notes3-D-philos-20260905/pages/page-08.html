@@ -1,0 +1,897 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bootstrap 重采样：用有放回抽样制造相互不同的训练集</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 页面私有布局与实验台排版 */
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-shrink: 0;
+      gap: 24px;
+    }
+
+    .head-main {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .page-title {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .page-lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    .head-math {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      padding: 6px 14px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      flex-shrink: 0;
+    }
+
+    .math-formula {
+      font-family: var(--font-num), serif;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.01em;
+    }
+
+    .math-tag {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      border-left: 1px solid var(--surface-strong);
+      padding-left: 10px;
+    }
+
+    /* 主实验主屏：两栏对称对比 */
+    .lab-stage {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 370px 1fr;
+      gap: 20px;
+      min-height: 0;
+    }
+
+    /* 左栏：原始母本与数学机制 */
+    .source-col {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .panel-box {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .panel-box.compact {
+      gap: 10px;
+      padding: 14px 18px;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .badge {
+      font-size: var(--fs-label);
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: var(--surface-strong);
+      color: var(--text);
+    }
+
+    .badge.theory {
+      background: rgba(182, 59, 36, 0.12);
+      color: var(--aggregate);
+    }
+
+    /* 母本样本网格 */
+    .sample-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .sample-item {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 38px;
+      border-radius: 8px;
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      border: 1px solid rgba(39, 93, 145, 0.25);
+      background: #FFFFFF;
+      color: var(--learner);
+      transition: all var(--dur) var(--ease);
+      user-select: none;
+    }
+
+    .sample-item.highlight {
+      background: var(--learner);
+      color: #FFFFFF;
+      transform: scale(1.04);
+      box-shadow: 0 4px 10px rgba(39, 93, 145, 0.3);
+    }
+
+    /* 极限推导说明 */
+    .calc-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    .calc-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding-bottom: 6px;
+      border-bottom: 1px dashed var(--surface-strong);
+    }
+
+    .calc-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .calc-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: var(--fs-sec);
+      color: var(--aggregate);
+    }
+
+    /* 读数栏 */
+    .stat-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: #FFFFFF;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .stat-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .stat-value {
+      font-family: var(--font-num);
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+    }
+
+    .stat-sub {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* 右栏：3 个平行子集对比与重采样证据 */
+    .compare-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .compare-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 10px 18px;
+      flex-shrink: 0;
+    }
+
+    .compare-tools {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn-group {
+      display: inline-flex;
+      gap: 6px;
+    }
+
+    .subsets-container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .subset-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .subset-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 8px;
+    }
+
+    .subset-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 700;
+      font-size: var(--fs-sec);
+      color: var(--learner);
+    }
+
+    .subset-tag-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--learner);
+    }
+
+    .subset-counts {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+
+    /* 抽样条目展示 */
+    .token-stream {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      padding: 4px 0;
+    }
+
+    .sample-token {
+      position: relative;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: var(--fs-sec);
+      background: #FFFFFF;
+      color: var(--text);
+      border: 1px solid var(--surface-strong);
+      transition: all var(--dur) var(--ease);
+    }
+
+    .sample-token.dup-2 {
+      background: rgba(39, 93, 145, 0.14);
+      border-color: var(--learner);
+      color: var(--learner);
+    }
+
+    .sample-token.dup-3 {
+      background: rgba(182, 59, 36, 0.14);
+      border-color: var(--aggregate);
+      color: var(--aggregate);
+    }
+
+    .dup-badge {
+      position: absolute;
+      top: -5px;
+      right: -5px;
+      background: var(--aggregate);
+      color: #FFFFFF;
+      font-size: var(--fs-tick);
+      line-height: 1;
+      padding: 2px 4px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+
+    .dup-badge.learner-dup {
+      background: var(--learner);
+    }
+
+    /* 袋外 OOB 与覆盖统计 */
+    .oob-area {
+      margin-top: auto;
+      background: #FFFFFF;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .oob-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .oob-tokens {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      min-height: 26px;
+      align-items: center;
+    }
+
+    .oob-pill {
+      font-family: var(--font-num);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--aggregate);
+      background: rgba(182, 59, 36, 0.08);
+      border: 1px dashed rgba(182, 59, 36, 0.35);
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+
+    .metric-bar-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .metric-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .metric-track {
+      height: 6px;
+      background: var(--surface-strong);
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .metric-fill {
+      height: 100%;
+      background: var(--learner);
+      border-radius: 3px;
+      transition: width var(--dur) var(--ease);
+    }
+
+    .metric-fill.oob-fill {
+      background: var(--aggregate);
+    }
+
+    /* 底部收束条与横向重叠度对照 */
+    .overlap-summary {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-shrink: 0;
+    }
+
+    .overlap-statement {
+      font-size: var(--fs-body);
+      color: var(--text);
+      line-height: 1.4;
+      flex: 1;
+    }
+
+    .overlap-statement strong {
+      color: var(--learner);
+    }
+
+    .jaccard-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    .jaccard-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .jaccard-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="08" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题与极限公式导言 -->
+    <header class="page-head">
+      <div class="head-main">
+        <h1 class="page-title">Bootstrap 重采样：用有放回抽样制造相互不同的训练集</h1>
+        <p class="page-lead">从规模为 N 的母本中有放回抽取 N 次，每个子集天然保留约 63.2% 的独特样本，余下约 36.8% 未被选中。</p>
+      </div>
+      <div class="head-math" aria-label="袋外未抽中极限概率推导">
+        <span class="math-formula">lim (1 - 1/N)ᴺ = 1/e ≈ 36.8%</span>
+        <span class="math-tag">袋外 (OOB) 极限</span>
+      </div>
+    </header>
+
+    <!-- 中部实验舞台 -->
+    <main class="lab-stage">
+      <!-- 左栏：母本全集与抽样机制 -->
+      <section class="source-col">
+        <div class="panel-box">
+          <h2 class="panel-title">
+            <span>原始训练集母本 D</span>
+            <span class="badge">N = 16 样本</span>
+          </h2>
+          <p class="small muted" style="margin: 0;">点击任意样本高亮它在右侧各个 Bootstrap 子集中的重复与遗漏分布：</p>
+          <div class="sample-grid" id="masterGrid" role="group" aria-label="母本样本列表">
+            <!-- 16 个固定编号样本 x1..x16 -->
+          </div>
+        </div>
+
+        <div class="panel-box compact">
+          <h2 class="panel-title">
+            <span>为什么子集互不相同？</span>
+            <span class="badge theory">机制解释</span>
+          </h2>
+          <div class="calc-list">
+            <div class="calc-row">
+              <span>单次未抽中某样本的概率</span>
+              <span class="calc-val">1 - 1/N</span>
+            </div>
+            <div class="calc-row">
+              <span>有放回连抽 N 次均未抽中</span>
+              <span class="calc-val">(1 - 1/N)^N</span>
+            </div>
+            <div class="calc-row">
+              <span>N = 16 时理论未中概率</span>
+              <span class="calc-val">34.42%</span>
+            </div>
+            <div class="calc-row">
+              <span>单个子集期望不同样本数</span>
+              <span class="calc-val">10.49 / 16 (65.6%)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat-card">
+            <span class="stat-label">当前高亮样本</span>
+            <span class="stat-value" id="activeSampleName">全部样本</span>
+            <span class="stat-sub" id="activeSampleStatus">平均每集出现 1.00 次</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">子集间平均重叠度</span>
+            <span class="stat-value" id="avgJaccardText">52.8%</span>
+            <span class="stat-sub">Jaccard 相似系数</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：3 个平行子集 (D1, D2, D3) 对照 -->
+      <section class="compare-col">
+        <div class="compare-head">
+          <div class="btns btn-group">
+            <button class="btn" id="btnResample" type="button">重抽一组样本集 (换种子)</button>
+            <button class="btn" id="btnInspectMode" type="button" aria-pressed="false">高亮重复样本</button>
+            <button class="btn" id="btnResetMaster" type="button">重置高亮</button>
+          </div>
+          <span class="small muted">每个子集独立有放回抽取 16 次，总容量恒为 16</span>
+        </div>
+
+        <!-- 3 个并行 Bootstrap 子集卡片 -->
+        <div class="subsets-container" id="subsetsContainer">
+          <!-- 动态渲染 D1, D2, D3 -->
+        </div>
+
+        <!-- 底部收束结论条 -->
+        <footer class="overlap-summary">
+          <div class="overlap-statement">
+            <strong>核心观察：</strong>有放回抽样使每个子集既包含约 <strong>1/3 的重复样本</strong>，又排除了约 <strong>1/3 的袋外样本 (OOB)</strong>。这种既有重叠、又有显著差异的数据分布，为 Bagging 提供了多样性来源。
+          </div>
+          <div class="jaccard-group">
+            <div class="jaccard-item">
+              <span>D₁ ∩ D₂:</span>
+              <span class="jaccard-val" id="j12">--</span>
+            </div>
+            <div class="jaccard-item">
+              <span>D₂ ∩ D₃:</span>
+              <span class="jaccard-val" id="j23">--</span>
+            </div>
+            <div class="jaccard-item">
+              <span>D₁ ∩ D₃:</span>
+              <span class="jaccard-val" id="j13">--</span>
+            </div>
+          </div>
+        </footer>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，我们现在正式进入 Bagging 与随机森林的核心构建基石——Bootstrap 重采样。
+    请看大屏幕左侧，我们有原始训练集母本 D，包含 16 个样本点。如果我们直接把母本原样复制给 3 个基学习器，那么它们学到的模型将完全一样，集成就毫无意义。
+    为了制造出“相互不同”的基学习器，Bootstrap 采用了【有放回抽样】（Sampling with Replacement）。每次在容量为 N 的母本中随机摸一个样本，记录下它，再放回母本中，整整重复 N 次。
+    数学上，当样本量很大时，任意一个样本在 N 次抽取中始终未被选中的极限概率是 (1 - 1/N)^N，趋向于 1/e，也就是约 36.8%。
+    这意味着什么？请看右侧三个独立生成的子集 D1、D2 和 D3：
+    第一，每个子集并不是母本的简单切片，它们各自都有被重复抽中 2 次甚至 3 次的样本；
+    第二，每个子集内部真正不同的样本只有约 63.2%；
+    第三，剩下未被选中的 36.8% 样本，被称为“袋外样本”（Out-Of-Bag, OOB），这为后面免交叉验证的泛化性能评估埋下了极为巧妙的伏笔；
+    第四，任意两个子集之间的交集只有约一半，正是这种适度的样本差异，抑制了单个基学习器的方差，构成了 Bagging 能够降低方差的数学保证。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const N = 16;
+      let seedCounter = 20260908;
+      let selectedSampleId = null;
+      let highlightDuplicatesOnly = false;
+
+      // 伪随机数生成器（线性同余保证确定性与可复现）
+      function pseudoRandom(seed) {
+        let val = seed;
+        return function () {
+          val = (val * 9301 + 49297) % 233280;
+          return val / 233280;
+        };
+      }
+
+      // 生成单个 Bootstrap 集合 (容量 N，从 1..N 中有放回抽取)
+      function generateBootstrapSample(rng) {
+        const counts = {};
+        const sequence = [];
+        for (let i = 1; i <= N; i++) counts[i] = 0;
+
+        for (let i = 0; i < N; i++) {
+          const picked = Math.floor(rng() * N) + 1;
+          counts[picked]++;
+          sequence.push(picked);
+        }
+
+        // 排序呈现更易视觉对比，也可按抽取序列显示；按 ID 升序排布更利于学生核查重复频次
+        sequence.sort((a, b) => a - b);
+
+        const uniqueSet = new Set(sequence);
+        const oobSet = [];
+        for (let i = 1; i <= N; i++) {
+          if (!uniqueSet.has(i)) {
+            oobSet.push(i);
+          }
+        }
+
+        return {
+          counts,
+          sequence,
+          uniqueCount: uniqueSet.size,
+          uniqueSet,
+          oobSet
+        };
+      }
+
+      // 当前状态：3 个子集
+      let subsets = [];
+
+      function resampleAll(newSeed) {
+        const rng = pseudoRandom(newSeed);
+        subsets = [
+          generateBootstrapSample(rng),
+          generateBootstrapSample(rng),
+          generateBootstrapSample(rng)
+        ];
+      }
+
+      // DOM 元素引用
+      const masterGrid = document.getElementById("masterGrid");
+      const subsetsContainer = document.getElementById("subsetsContainer");
+      const btnResample = document.getElementById("btnResample");
+      const btnInspectMode = document.getElementById("btnInspectMode");
+      const btnResetMaster = document.getElementById("btnResetMaster");
+      const activeSampleName = document.getElementById("activeSampleName");
+      const activeSampleStatus = document.getElementById("activeSampleStatus");
+      const avgJaccardText = document.getElementById("avgJaccardText");
+      const j12El = document.getElementById("j12");
+      const j23El = document.getElementById("j23");
+      const j13El = document.getElementById("j13");
+
+      // 初始化母本网格
+      function initMasterGrid() {
+        masterGrid.innerHTML = "";
+        for (let i = 1; i <= N; i++) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "sample-item";
+          btn.dataset.id = i;
+          btn.textContent = "x" + i;
+          btn.title = "点击聚焦样本 x" + i;
+          btn.addEventListener("click", () => {
+            if (selectedSampleId === i) {
+              selectedSampleId = null;
+            } else {
+              selectedSampleId = i;
+            }
+            renderAll();
+          });
+          masterGrid.appendChild(btn);
+        }
+      }
+
+      // 计算两集合 Jaccard 相似度
+      function calcJaccard(setA, setB) {
+        let intersection = 0;
+        setA.forEach(val => {
+          if (setB.has(val)) intersection++;
+        });
+        const union = new Set([...setA, ...setB]).size;
+        return (intersection / union) * 100;
+      }
+
+      // 渲染主流程
+      function renderAll() {
+        // 1. 渲染母本高亮状态
+        const masterButtons = masterGrid.querySelectorAll(".sample-item");
+        masterButtons.forEach(btn => {
+          const id = parseInt(btn.dataset.id, 10);
+          if (selectedSampleId === id) {
+            btn.classList.add("highlight");
+          } else {
+            btn.classList.remove("highlight");
+          }
+        });
+
+        // 2. 渲染右侧 3 个子集
+        subsetsContainer.innerHTML = "";
+        const subsetLabels = [
+          { name: "子集 D₁", role: "基学习器 h₁" },
+          { name: "子集 D₂", role: "基学习器 h₂" },
+          { name: "子集 D₃", role: "基学习器 h₃" }
+        ];
+
+        subsets.forEach((sub, idx) => {
+          const card = document.createElement("div");
+          card.className = "subset-card";
+
+          // 头部信息
+          const header = document.createElement("div");
+          header.className = "subset-header";
+          header.innerHTML = `
+            <div class="subset-tag">
+              <span class="subset-tag-dot"></span>
+              <span>${subsetLabels[idx].name}</span>
+              <span class="small muted" style="font-weight: normal; margin-left: 4px;">(${subsetLabels[idx].role})</span>
+            </div>
+            <div class="subset-counts">独特: <strong>${sub.uniqueCount}</strong> / 16</div>
+          `;
+          card.appendChild(header);
+
+          // 16 个抽样样本展示网格
+          const stream = document.createElement("div");
+          stream.className = "token-stream";
+
+          sub.sequence.forEach((val, pos) => {
+            const token = document.createElement("div");
+            token.className = "sample-token";
+            const freq = sub.counts[val];
+
+            if (freq === 2) token.classList.add("dup-2");
+            else if (freq >= 3) token.classList.add("dup-3");
+
+            // 外部选中高亮
+            if (selectedSampleId !== null) {
+              if (selectedSampleId === val) {
+                token.style.transform = "scale(1.08)";
+                token.style.boxShadow = "0 2px 8px rgba(39, 93, 145, 0.4)";
+                token.style.borderColor = "var(--learner)";
+                token.style.fontWeight = "900";
+              } else {
+                token.style.opacity = "0.32";
+              }
+            } else if (highlightDuplicatesOnly) {
+              if (freq === 1) {
+                token.style.opacity = "0.25";
+              }
+            }
+
+            token.textContent = "x" + val;
+
+            // 如果频次大于 1 且是该元素在排序序列中第一次出现或当前 token，加个小角标说明频次
+            if (freq > 1) {
+              // 寻找在这个子集里第一次出现的索引
+              const firstIndex = sub.sequence.indexOf(val);
+              if (pos === firstIndex) {
+                const badge = document.createElement("span");
+                badge.className = "dup-badge" + (freq === 2 ? " learner-dup" : "");
+                badge.textContent = "×" + freq;
+                token.appendChild(badge);
+              }
+            }
+
+            stream.appendChild(token);
+          });
+          card.appendChild(stream);
+
+          // 进度指示条：独特样本比例
+          const ratio = ((sub.uniqueCount / N) * 100).toFixed(1);
+          const barWrap = document.createElement("div");
+          barWrap.className = "metric-bar-wrap";
+          barWrap.innerHTML = `
+            <div class="metric-meta">
+              <span>样本覆盖度</span>
+              <span>${sub.uniqueCount} 种 (${ratio}%)</span>
+            </div>
+            <div class="metric-track">
+              <div class="metric-fill" style="width: ${ratio}%;"></div>
+            </div>
+          `;
+          card.appendChild(barWrap);
+
+          // 袋外样本 OOB 区域
+          const oobArea = document.createElement("div");
+          oobArea.className = "oob-area";
+
+          const oobRatio = ((sub.oobSet.length / N) * 100).toFixed(1);
+          const oobTitle = document.createElement("div");
+          oobTitle.className = "oob-title";
+          oobTitle.innerHTML = `
+            <span>未被抽中的袋外样本 (OOB)</span>
+            <span>${sub.oobSet.length} 个 (${oobRatio}%)</span>
+          `;
+          oobArea.appendChild(oobTitle);
+
+          const oobTokens = document.createElement("div");
+          oobTokens.className = "oob-tokens";
+          sub.oobSet.forEach(item => {
+            const pill = document.createElement("span");
+            pill.className = "oob-pill";
+            pill.textContent = "x" + item;
+            if (selectedSampleId !== null) {
+              if (selectedSampleId === item) {
+                pill.style.background = "var(--aggregate)";
+                pill.style.color = "#FFFFFF";
+                pill.style.fontWeight = "900";
+                pill.style.transform = "scale(1.15)";
+              } else {
+                pill.style.opacity = "0.3";
+              }
+            }
+            oobTokens.appendChild(pill);
+          });
+          oobArea.appendChild(oobTokens);
+          card.appendChild(oobArea);
+
+          subsetsContainer.appendChild(card);
+        });
+
+        // 3. 计算并更新统计指标
+        const j12 = calcJaccard(subsets[0].uniqueSet, subsets[1].uniqueSet);
+        const j23 = calcJaccard(subsets[1].uniqueSet, subsets[2].uniqueSet);
+        const j13 = calcJaccard(subsets[0].uniqueSet, subsets[2].uniqueSet);
+        const avgJaccard = ((j12 + j23 + j13) / 3).toFixed(1);
+
+        j12El.textContent = j12.toFixed(1) + "%";
+        j23El.textContent = j23.toFixed(1) + "%";
+        j13El.textContent = j13.toFixed(1) + "%";
+        avgJaccardText.textContent = avgJaccard + "%";
+
+        // 更新左侧被点击样本读数
+        if (selectedSampleId !== null) {
+          activeSampleName.textContent = "样本 x" + selectedSampleId;
+          const c1 = subsets[0].counts[selectedSampleId];
+          const c2 = subsets[1].counts[selectedSampleId];
+          const c3 = subsets[2].counts[selectedSampleId];
+          const zeroCount = [c1, c2, c3].filter(v => v === 0).length;
+          activeSampleStatus.textContent = `D₁中${c1}次 / D₂中${c2}次 / D₃中${c3}次 (${zeroCount}个集为OOB)`;
+        } else {
+          activeSampleName.textContent = "全部样本";
+          activeSampleStatus.textContent = "平均每集出现 1.00 次 (抽样总数恒等于N)";
+        }
+      }
+
+      // 事件绑定
+      btnResample.addEventListener("click", () => {
+        seedCounter += 17;
+        resampleAll(seedCounter);
+        renderAll();
+      });
+
+      btnInspectMode.addEventListener("click", () => {
+        highlightDuplicatesOnly = !highlightDuplicatesOnly;
+        btnInspectMode.setAttribute("aria-pressed", highlightDuplicatesOnly);
+        renderAll();
+      });
+
+      btnResetMaster.addEventListener("click", () => {
+        selectedSampleId = null;
+        highlightDuplicatesOnly = false;
+        btnInspectMode.setAttribute("aria-pressed", "false");
+        renderAll();
+      });
+
+      // 初始化执行
+      initMasterGrid();
+      resampleAll(seedCounter);
+      renderAll();
+
+      // 底盘自检与就绪标记
+      Deck.init({ index: 8, total: 27 });
+      window.__NOTALE_READY__ = true;
+    })();
+  </script>
+</body>
+</html>

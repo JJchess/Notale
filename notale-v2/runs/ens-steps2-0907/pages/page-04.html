@@ -1,0 +1,379 @@
+<!--
+构图意图：
+1. 主对象：同一个输入样本在 3 个有差异的基模型（不同超平面/决策面）中各自独立判断，最终汇聚为多数投票决策。
+2. 对象关系：左侧输入样本点分流到中间 3 个平行的基学习器决策视图，多条蓝色预测路径向右收束为一条 4px 粗线进入集成决策器，直观解释“集成”。
+3. 说明文字：紧密附着在基模型独立决策差异处与右侧多数裁决结果处，讲清“好而不同”与“互相纠错”。
+-->
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    /* 标题与核心论点 */
+    .header {
+      position: absolute;
+      top: 36px;
+      left: 56px;
+      width: 1488px;
+    }
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .lead {
+      margin: 10px 0 0;
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+    }
+
+    /* 整体证据图谱舞台 */
+    .flow-stage {
+      position: absolute;
+      top: 140px;
+      left: 56px;
+      width: 1488px;
+      height: 680px;
+    }
+
+    /* 矢量背景图：连接线与汇聚流 */
+    .wires-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    /* 输入样本区块 */
+    .input-col {
+      position: absolute;
+      left: 0;
+      top: 230px;
+      width: 180px;
+    }
+    .input-pill {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .col-title {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .sample-chip {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.02em;
+    }
+    .sample-coord {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 基学习器列表 */
+    .learners-col {
+      position: absolute;
+      left: 280px;
+      top: 20px;
+      width: 720px;
+      display: flex;
+      flex-direction: column;
+      gap: 36px;
+    }
+
+    .learner-card {
+      position: relative;
+      display: grid;
+      grid-template-columns: 200px 300px 180px;
+      align-items: center;
+      gap: 20px;
+      height: 170px;
+    }
+
+    /* 迷你决策面视口 */
+    .chart-box {
+      width: 200px;
+      height: 160px;
+      position: relative;
+    }
+    .chart-box svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      background: none;
+    }
+
+    .meta-box {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .learner-name {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .learner-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    .pred-box {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+    }
+    .pred-val {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+    }
+    .pred-correct {
+      color: var(--model);
+    }
+    .pred-wrong {
+      color: var(--focus);
+    }
+    .pred-tag {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 右侧集成组合与结果 */
+    .ensemble-col {
+      position: absolute;
+      right: 20px;
+      top: 150px;
+      width: 380px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .comb-box {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .comb-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--model);
+    }
+    .comb-rule {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    .result-callout {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .vote-tally {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .vote-status {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--model);
+    }
+
+    .core-takeaway {
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+      color: var(--text);
+      border-left: var(--stroke-strong) solid var(--model);
+      padding-left: 14px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body data-page="04" data-total="32">
+  <div id="stage">
+    <div class="header">
+      <h1>核心思想：差异化基模型协同决策</h1>
+      <p class="lead">单模型易受假设空间局限；多个差异分类器协同表决，少数失误被多数纠正。</p>
+    </div>
+
+    <div class="flow-stage">
+      <!-- 矢量连接线：由左至右分流与汇聚 -->
+      <svg class="wires-svg" viewBox="0 0 1488 680">
+        <!-- 分流线：样本 -> 三个基学习器 -->
+        <path d="M 120 280 C 190 280, 210 105, 275 105" fill="none" stroke="var(--rule)" stroke-width="2" stroke-dasharray="4 4" />
+        <path d="M 120 280 C 190 280, 210 310, 275 310" fill="none" stroke="var(--rule)" stroke-width="2" stroke-dasharray="4 4" />
+        <path d="M 120 280 C 190 280, 210 515, 275 515" fill="none" stroke="var(--rule)" stroke-width="2" stroke-dasharray="4 4" />
+
+        <!-- 汇聚线：三个基学习器输出 -> 集成收束点 -->
+        <!-- 学习器 1 汇聚路径 -->
+        <path d="M 940 105 C 1020 105, 1050 260, 1100 290" fill="none" stroke="var(--model)" stroke-width="2" />
+        <!-- 学习器 2 (失误) 汇聚路径 -->
+        <path d="M 940 310 C 1010 310, 1040 300, 1100 290" fill="none" stroke="var(--focus)" stroke-width="2" />
+        <!-- 学习器 3 汇聚路径 -->
+        <path d="M 940 515 C 1020 515, 1050 320, 1100 290" fill="none" stroke="var(--model)" stroke-width="2" />
+
+        <!-- 最终汇聚为一条 4px 粗线进入决策区 -->
+        <line x1="1100" y1="290" x2="1140" y2="290" stroke="var(--model)" stroke-width="4" stroke-linecap="round" />
+      </svg>
+
+      <!-- 左列：输入样本 -->
+      <div class="input-col">
+        <div class="col-title">待测样本</div>
+        <div class="input-pill">
+          <div class="sample-chip">x* (真实值: +1)</div>
+          <div class="sample-coord">边界临界点</div>
+        </div>
+      </div>
+
+      <!-- 中列：三个差异化模型 -->
+      <div class="learners-col">
+        <!-- 模型 1 -->
+        <div class="learner-card">
+          <div class="chart-box">
+            <svg viewBox="0 0 200 150">
+              <!-- 坐标轴线代替矩形底色 -->
+              <line x1="15" y1="135" x2="185" y2="135" stroke="var(--rule)" stroke-width="1.5" />
+              <line x1="15" y1="15" x2="15" y2="135" stroke="var(--rule)" stroke-width="1.5" />
+              <!-- 决策边界 1：斜切分 -->
+              <line x1="20" y1="130" x2="180" y2="30" stroke="var(--model)" stroke-width="2.5" />
+              <!-- 点位 -->
+              <circle cx="50" cy="50" r="5" fill="var(--model)" />
+              <circle cx="80" cy="40" r="5" fill="var(--model)" />
+              <circle cx="150" cy="110" r="5" fill="var(--rule)" />
+              <circle cx="130" cy="120" r="5" fill="var(--rule)" />
+              <!-- 临界样本 x* 落在 +1 侧 -->
+              <circle cx="95" cy="70" r="7" fill="none" stroke="var(--model)" stroke-width="2.5" />
+              <circle cx="95" cy="70" r="3" fill="var(--model)" />
+            </svg>
+          </div>
+          <div class="meta-box">
+            <div class="learner-name">基模型 h₁(x)</div>
+            <div class="learner-desc">侧重维度 A，正确判定为正类</div>
+          </div>
+          <div class="pred-box">
+            <div class="pred-val pred-correct">+1</div>
+            <div class="pred-tag">正确</div>
+          </div>
+        </div>
+
+        <!-- 模型 2 -->
+        <div class="learner-card" data-step="1">
+          <div class="chart-box">
+            <svg viewBox="0 0 200 150">
+              <line x1="15" y1="135" x2="185" y2="135" stroke="var(--rule)" stroke-width="1.5" />
+              <line x1="15" y1="15" x2="15" y2="135" stroke="var(--rule)" stroke-width="1.5" />
+              <!-- 决策边界 2：水平切分，产生局部偏置误差 -->
+              <line x1="15" y1="65" x2="185" y2="65" stroke="var(--focus)" stroke-width="2.5" stroke-dasharray="5 3" />
+              <circle cx="50" cy="50" r="5" fill="var(--model)" />
+              <circle cx="80" cy="40" r="5" fill="var(--model)" />
+              <circle cx="150" cy="110" r="5" fill="var(--rule)" />
+              <circle cx="130" cy="120" r="5" fill="var(--rule)" />
+              <!-- 临界样本 x* 被误判在 -1 侧 -->
+              <circle cx="95" cy="70" r="7" fill="none" stroke="var(--focus)" stroke-width="2.5" />
+              <circle cx="95" cy="70" r="3" fill="var(--focus)" />
+            </svg>
+          </div>
+          <div class="meta-box">
+            <div class="learner-name">基模型 h₂(x)</div>
+            <div class="learner-desc">局部偏差，误判为负类</div>
+          </div>
+          <div class="pred-box">
+            <div class="pred-val pred-wrong">-1</div>
+            <div class="pred-tag" style="color:var(--focus);">失误</div>
+          </div>
+        </div>
+
+        <!-- 模型 3 -->
+        <div class="learner-card">
+          <div class="chart-box">
+            <svg viewBox="0 0 200 150">
+              <line x1="15" y1="135" x2="185" y2="135" stroke="var(--rule)" stroke-width="1.5" />
+              <line x1="15" y1="15" x2="15" y2="135" stroke="var(--rule)" stroke-width="1.5" />
+              <!-- 决策边界 3：垂直切分 -->
+              <line x1="125" y1="15" x2="125" y2="135" stroke="var(--model)" stroke-width="2.5" />
+              <circle cx="50" cy="50" r="5" fill="var(--model)" />
+              <circle cx="80" cy="40" r="5" fill="var(--model)" />
+              <circle cx="150" cy="110" r="5" fill="var(--rule)" />
+              <circle cx="130" cy="120" r="5" fill="var(--rule)" />
+              <!-- 临界样本 x* 落在 +1 侧 -->
+              <circle cx="95" cy="70" r="7" fill="none" stroke="var(--model)" stroke-width="2.5" />
+              <circle cx="95" cy="70" r="3" fill="var(--model)" />
+            </svg>
+          </div>
+          <div class="meta-box">
+            <div class="learner-name">基模型 h₃(x)</div>
+            <div class="learner-desc">侧重维度 B，独立正确判定</div>
+          </div>
+          <div class="pred-box">
+            <div class="pred-val pred-correct">+1</div>
+            <div class="pred-tag">正确</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右列：集成组合与纠错机制 -->
+      <div class="ensemble-col" data-step="2">
+        <div class="comb-box">
+          <div class="comb-title">多数表决机制</div>
+          <div class="comb-rule">H(x*) = sign( ∑ hᵢ(x*) )</div>
+        </div>
+
+        <div class="result-callout">
+          <div class="vote-tally">
+            <span>2 票 vs 1 票</span>
+            <span class="vote-status">最终输出: +1</span>
+          </div>
+          <div class="core-takeaway">
+            单模型失误被独立同伴纠偏。基模型保持“好而不同”，集成泛化能力即可超越单体。
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+各位同学，在上一节我们看到了单一模型面临的容量与方差瓶颈。
+这一页展示的就是集成学习的最核心思想：不要指望训练一个全知全能的完美模型，而是构建多个“好而不同”的基分类器。
+看中间这三个模型，面对同一个边界临界样本 x*，模型 h1 与 h3 从不同维度成功捕捉了正类分布，而模型 h2 产生了偏差，误判为 -1。
+如果只用 h2，我们就犯了错。但通过多数投票，两条蓝色正确路径压过了橙色的失误路径，输出正确的 +1。
+这就是差异性带来的容错红利：只要基模型的错误不完全重叠，集成就拥有自动纠偏的能力。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 4, total: 32 });
+  </script>
+</body>
+</html>

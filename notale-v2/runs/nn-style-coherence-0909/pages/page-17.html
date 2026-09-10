@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{ position:relative; overflow:hidden; }
+
+.kicker{ position:absolute; left:72px; top:52px; }
+h1{
+  position:absolute; left:72px; top:84px; width:920px;
+  font-size:var(--fs-h2); line-height:1.24; margin:0;
+}
+.lead{
+  position:absolute; left:72px; top:186px; width:500px;
+}
+
+/* 左：像素邻域证据 */
+.evidence-label{
+  position:absolute; left:72px; top:300px;
+}
+#gridHost{ position:absolute; left:72px; top:334px; width:420px; height:420px; }
+
+.corr-note{
+  position:absolute; left:72px; top:774px; width:460px;
+}
+
+/* 右：连接方式对照 */
+.diagram-label{
+  position:absolute; left:596px; top:256px; width:940px;
+  display:flex; justify-content:space-between;
+}
+#diagramHost{ position:absolute; left:596px; top:296px; width:940px; height:560px; }
+
+.step-note{
+  position:absolute; left:596px; top:820px; width:940px;
+}
+
+svg text{ font-family: var(--font-sans); fill: var(--text); }
+.lbl{ font-size: var(--fs-label); fill: var(--muted); }
+.tag{ font-size: var(--fs-label); font-weight:600; }
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+
+  <p class="nt-kicker kicker">CNN 的第一个假设</p>
+  <h1 class="nt-title">邻近像素相关，全连接层却对每个像素独立赋权</h1>
+  <p class="nt-lead lead">手写数字图像里，一个像素的灰度和它周围像素的灰度接近；这种局部相关是可以利用的结构，而不只是噪声。</p>
+
+  <p class="nt-label evidence-label">同一张 8×8 数字图：邻域灰度差远小于随机两点的差</p>
+  <div id="gridHost"></div>
+  <p class="nt-note corr-note" id="corrNote"></p>
+
+  <div class="diagram-label">
+    <p class="nt-label" id="diagTitle">全连接：每个隐藏单元读取全部 64 个像素</p>
+    <p class="nt-tag" id="diagTag" style="color:var(--accent)"></p>
+  </div>
+  <div id="diagramHost"></div>
+  <p class="nt-note step-note" id="stepNote"></p>
+
+</div>
+<script src="assets/base.js"></script>
+<script>
+Deck.init({ index:17, total:44 });
+
+/* ---------- 数据：一个简化的 8x8 手写数字(约等于 "7") ---------- */
+const N = 8;
+const DIGIT = [
+  [0,0,1,1,1,1,1,0],
+  [0,0,0,0,0,1,1,0],
+  [0,0,0,0,1,1,0,0],
+  [0,0,0,1,1,0,0,0],
+  [0,0,1,1,0,0,0,0],
+  [0,0,1,1,0,0,0,0],
+  [0,0,1,1,0,0,0,0],
+  [0,0,1,1,0,0,0,0]
+];
+// 灰度化：边缘做一点渐变，制造真实的邻域相关，而不是纯 0/1
+function gray(r,c){
+  let v = DIGIT[r][c] ? 0.86 : 0.06;
+  // 边缘轻微羽化：看左右上下邻居
+  let neigh=0,cnt=0;
+  [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr,dc])=>{
+    const rr=r+dr, cc=c+dc;
+    if(rr>=0&&rr<N&&cc>=0&&cc<N){ neigh += DIGIT[rr][cc]?0.86:0.06; cnt++; }
+  });
+  if(cnt) v = v*0.72 + (neigh/cnt)*0.28;
+  return v;
+}
+const G = Array.from({length:N}, (_,r)=>Array.from({length:N}, (_,c)=>gray(r,c)));
+
+/* ---------- 左侧：像素网格 + 邻域相关证据 ---------- */
+const gridHost = document.getElementById('gridHost');
+const gridSvg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+gridSvg.setAttribute('viewBox','0 0 420 420');
+gridSvg.setAttribute('width','100%'); gridSvg.setAttribute('height','100%');
+gridHost.appendChild(gridSvg);
+
+const CELL = 420/N;
+function cellFill(v){
+  const g = Math.round(30 + v*195); // 灰度映射到纸面到墨色
+  return `rgb(${g},${g},${g})`;
+}
+// 画像素格
+for(let r=0;r<N;r++){
+  for(let c=0;c<N;c++){
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', c*CELL); rect.setAttribute('y', r*CELL);
+    rect.setAttribute('width', CELL); rect.setAttribute('height', CELL);
+    rect.setAttribute('fill', cellFill(1-G[r][c]));
+    rect.setAttribute('stroke', 'var(--bg)');
+    rect.setAttribute('stroke-width','1');
+    gridSvg.appendChild(rect);
+  }
+}
+
+// 选两组像素对：一组邻近(标 A)，一组随机远(标 B)，用彩色描边标出并连线比较
+const NEAR = [[1,4],[2,4]];   // 邻近对：笔画边缘,灰度接近但不相等
+const FAR  = [[0,0],[5,3]];   // 远距离对：背景与笔画深处,灰度明显不同
+function markPair(pair, color, label){
+  pair.forEach(([r,c])=>{
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', c*CELL+1.5); rect.setAttribute('y', r*CELL+1.5);
+    rect.setAttribute('width', CELL-3); rect.setAttribute('height', CELL-3);
+    rect.setAttribute('fill','none'); rect.setAttribute('stroke', color);
+    rect.setAttribute('stroke-width','3');
+    gridSvg.appendChild(rect);
+  });
+  const [a,b] = pair;
+  const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+  line.setAttribute('x1', a[1]*CELL+CELL/2); line.setAttribute('y1', a[0]*CELL+CELL/2);
+  line.setAttribute('x2', b[1]*CELL+CELL/2); line.setAttribute('y2', b[0]*CELL+CELL/2);
+  line.setAttribute('stroke', color); line.setAttribute('stroke-width','2');
+  line.setAttribute('stroke-dasharray','5 4');
+  gridSvg.appendChild(line);
+}
+markPair(NEAR, 'var(--accent)', 'A 邻近');
+markPair(FAR, 'var(--stable)', 'B 远距');
+
+const diffNear = Math.abs(G[NEAR[0][0]][NEAR[0][1]] - G[NEAR[1][0]][NEAR[1][1]]);
+const diffFar  = Math.abs(G[FAR[0][0]][FAR[0][1]] - G[FAR[1][0]][FAR[1][1]]);
+document.getElementById('corrNote').innerHTML =
+  `<b style="color:var(--accent)">A 邻近像素对</b>灰度差 ${diffNear.toFixed(2)}；` +
+  `<b style="color:var(--stable)">B 远距像素对</b>灰度差 ${diffFar.toFixed(2)}。` +
+  `邻近像素几乎总是更接近——这就是“局部结构”，全连接层的权重矩阵不知道谁挨着谁。`;
+
+/* ---------- 右侧：全连接 vs 局部连接+权重共享 ---------- */
+const dHost = document.getElementById('diagramHost');
+const dSvg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+dSvg.setAttribute('viewBox','0 0 940 560');
+dSvg.setAttribute('width','100%'); dSvg.setAttribute('height','100%');
+dHost.appendChild(dSvg);
+const NS='http://www.w3.org/2000/svg';
+const el=(tag,attrs)=>{ const e=document.createElementNS(NS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); return e; };
+
+// 左边一个缩小像素网格(8x8 -> 用于展示连接来源), 右边隐藏单元列
+const GX = 30, GY = 40, GS = 200; const gc = GS/N;
+const gridGroup = el('g',{});
+dSvg.appendChild(gridGroup);
+for(let r=0;r<N;r++){
+  for(let c=0;c<N;c++){
+    gridGroup.appendChild(el('rect',{
+      x:GX+c*gc, y:GY+r*gc, width:gc, height:gc,
+      fill:cellFill(1-G[r][c]), stroke:'var(--bg)', 'stroke-width':1
+    }));
+  }
+}
+gridGroup.appendChild(el('text',{x:GX+GS/2, y:GY+GS+28, 'text-anchor':'middle', class:'lbl'})).textContent = '输入像素 8×8';
+
+// 隐藏单元位置(全连接展示用4个代表点)
+const HX = 700;
+const hiddenYs = [90,220,350,480];
+
+// step 状态由 Deck.onStep 驱动
+const CONV_R = 2, CONV_C = 4; // 卷积窗口锚点(第二次滑动位置的行列，第一次在别处)
+function windowCells(r0,c0,size=3){
+  const cells=[];
+  for(let dr=0;dr<size;dr++) for(let dc=0;dc<size;dc++) cells.push([r0+dr, c0+dc]);
+  return cells;
+}
+const WIN_A = [1,1]; // 第一次卷积窗口起点
+const WIN_B = [4,3]; // 第二次(权重共享)窗口起点
+
+function cellCenter(r,c){ return [GX + c*gc + gc/2, GY + r*gc + gc/2]; }
+
+function clear(g){ while(g.firstChild) g.removeChild(g.firstChild); }
+
+const overlay = el('g',{}); dSvg.appendChild(overlay);
+const connLayer = el('g',{}); dSvg.appendChild(connLayer);
+const nodeLayer = el('g',{}); dSvg.appendChild(nodeLayer);
+const labelLayer = el('g',{}); dSvg.appendChild(labelLayer);
+
+const TITLE = [
+  '全连接：每个隐藏单元读取全部 64 个像素',
+  '全连接的连线不知道像素的位置关系',
+  '局部连接：一个 3×3 卷积核只读一小块邻域',
+  '权重共享：同一组权重滑到新位置，参数不变'
+];
+const TAGS = ['64 条连线 / 单元','位置信息丢失','9 条连线 / 单元','参数总数不随位置增加'];
+const NOTES = [
+  '左边任意一个隐藏单元(灰点)都连向全部 64 个像素；权重矩阵是 64 个独立数字，谁挨着谁与它无关。',
+  '把连线打乱输入顺序，全连接层的计算结果完全不变——它对空间邻接没有任何偏好。',
+  '一个卷积核只覆盖 3×3=9 个相邻像素；权重数量从 64 降到 9，且这 9 个数字对应固定的空间形状。',
+  '核滑到图像另一处时，用的还是同一组 9 个权重(w₁…w₉)。位置变了，参数没变——这就是权重共享。'
+];
+
+function drawFC(highlightUnit){
+  clear(connLayer); clear(nodeLayer); clear(labelLayer);
+  // 输入像素中心
+  const cells=[];
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++) cells.push(cellCenter(r,c));
+  // 隐藏单元
+  hiddenYs.forEach((hy,i)=>{
+    const active = highlightUnit===i;
+    cells.forEach(([x,y])=>{
+      connLayer.appendChild(el('line',{
+        x1:x, y1:y, x2:HX, y2:hy,
+        stroke: active? 'var(--accent)':'var(--line)',
+        'stroke-width': active? 1.1:0.5,
+        opacity: active? 0.55 : 0.14
+      }));
+    });
+    nodeLayer.appendChild(el('circle',{cx:HX, cy:hy, r:14,
+      fill: active? 'var(--accent)':'var(--bg)',
+      stroke:'var(--text)', 'stroke-width':1.5}));
+  });
+  labelLayer.appendChild(el('text',{x:HX, y:hiddenYs[0]-36, 'text-anchor':'middle', class:'lbl'})).textContent='隐藏单元';
+  labelLayer.appendChild(el('text',{x:HX, y:530, 'text-anchor':'middle', class:'lbl'})).textContent='每单元 64 个权重';
+}
+
+function drawLocal(winStart, sharedLabel){
+  clear(connLayer); clear(nodeLayer); clear(labelLayer);
+  const cells = windowCells(winStart[0], winStart[1], 3);
+  // 高亮窗口方框
+  overlayWindow(winStart);
+  const targetX = HX, targetY = 270;
+  cells.forEach(([r,c],idx)=>{
+    const [x,y] = cellCenter(r,c);
+    connLayer.appendChild(el('line',{
+      x1:x, y1:y, x2:targetX, y2:targetY,
+      stroke:'var(--accent)', 'stroke-width':1.3, opacity:0.75
+    }));
+  });
+  nodeLayer.appendChild(el('circle',{cx:targetX, cy:targetY, r:16,
+    fill:'var(--accent)', stroke:'var(--text)', 'stroke-width':1.5}));
+  labelLayer.appendChild(el('text',{x:targetX, y:targetY-30, 'text-anchor':'middle', class:'lbl'})).textContent='输出特征图上的一个数';
+  labelLayer.appendChild(el('text',{x:targetX, y:targetY+42, 'text-anchor':'middle', class:'lbl'})).textContent='9 个权重 w₁…w₉';
+  if(sharedLabel){
+    labelLayer.appendChild(el('text',{x:targetX, y:targetY+66, 'text-anchor':'middle', class:'lbl', fill:'var(--accent)'})).textContent='与上一步同一组 w₁…w₉';
+  }
+}
+
+function overlayWindow(start){
+  clear(overlay);
+  const [r0,c0] = start;
+  overlay.appendChild(el('rect',{
+    x:GX+c0*gc-1, y:GY+r0*gc-1, width:gc*3+2, height:gc*3+2,
+    fill:'none', stroke:'var(--accent)', 'stroke-width':3
+  }));
+}
+
+function clearOverlay(){ clear(overlay); }
+
+Deck.onStep(function(step, max){
+  document.getElementById('diagTitle').textContent = TITLE[step];
+  document.getElementById('diagTag').textContent = TAGS[step];
+  document.getElementById('stepNote').textContent = NOTES[step];
+
+  if(step===0){ clearOverlay(); drawFC(0); }
+  else if(step===1){ clearOverlay(); drawFC(-1); }
+  else if(step===2){ drawLocal(WIN_A, false); }
+  else { drawLocal(WIN_B, true); }
+}, 4);
+</script>
+</body>
+</html>

@@ -1,0 +1,372 @@
+<!doctype html>
+<!--
+构图意图：
+1. 主对象：随机森林三个核心超参数（树数 B、特征数 m、叶约束 min_samples_leaf）对偏差与方差的对应曲线。
+2. 对象关系：水平排列三组并列坐标系，统一用细线表达偏差、方差与总误差，以橙色焦点标出经验最优折中区间。
+3. 说明文字：直接依附在各坐标轴与最优驻点旁，下方单行对照给出生产实践法则，无装饰框与色块面板。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: "Lato", "Noto Sans SC", sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      margin: 0;
+      overflow: hidden;
+    }
+
+    #stage {
+      padding: 40px 56px 32px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header-group {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+      margin-bottom: 28px;
+    }
+
+    .title-block h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      color: var(--text);
+    }
+
+    .title-block p {
+      margin: 6px 0 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-line {
+      width: 20px;
+      height: 2px;
+      display: inline-block;
+    }
+
+    .line-err { background: var(--aggregate); height: 3px; }
+    .line-var { background: var(--model); border-top: 2px dashed var(--model); height: 0; }
+    .line-bias { background: var(--uncertain); }
+    .point-focus { width: 8px; height: 8px; border-radius: 50%; background: var(--focus); display: inline-block; }
+
+    /* 三列坐标网格 */
+    .curves-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 36px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .param-column {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .col-header {
+      margin-bottom: 12px;
+    }
+
+    .col-header h2 {
+      margin: 0;
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--aggregate);
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .col-header h2 code {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-weight: var(--weight-regular);
+    }
+
+    .col-header .subtext {
+      margin: 4px 0 0;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .chart-container {
+      position: relative;
+      flex: 1;
+      min-height: 380px;
+      border-left: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .chart-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      display: block;
+    }
+
+    .axis-label {
+      font-size: var(--fs-label);
+      fill: var(--muted);
+      font-family: var(--font-sans);
+    }
+
+    .axis-tick {
+      font-size: var(--fs-tick);
+      fill: var(--muted);
+      font-family: var(--font-numeric);
+    }
+
+    .guide-line {
+      stroke: var(--line);
+      stroke-dasharray: 4 3;
+      stroke-width: 1;
+    }
+
+    .focus-point {
+      fill: var(--focus);
+    }
+
+    .focus-tag {
+      font-size: var(--fs-label);
+      font-weight: var(--weight-medium);
+      fill: var(--focus);
+    }
+
+    /* 底部法则总结 */
+    .summary-strip {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 36px;
+      color: var(--text);
+    }
+
+    .rule-item strong {
+      color: var(--aggregate);
+      font-weight: var(--weight-medium);
+      font-size: var(--fs-body);
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .rule-item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+    }
+  </style>
+</head>
+<body data-page="12" data-total="26">
+  <main id="stage">
+    <header class="header-group">
+      <div class="title-block">
+        <h1>关键超参数：树数、特征子集与叶约束</h1>
+        <p>树数单调降低方差，特征子集与叶节点约束决定偏差与基学习器相关性的折中点</p>
+      </div>
+      <div class="legend-row">
+        <span class="legend-item"><i class="legend-line line-err"></i>总误差</span>
+        <span class="legend-item"><i class="legend-line line-var"></i>方差</span>
+        <span class="legend-item"><i class="legend-line line-bias"></i>偏差平方</span>
+        <span class="legend-item"><i class="point-focus"></i>最优折中</span>
+      </div>
+    </header>
+
+    <section class="curves-grid">
+      <!-- 维度 1: 树的数量 n_estimators -->
+      <article class="param-column">
+        <div class="col-header">
+          <h2>树数 <code>n_estimators (B)</code></h2>
+          <div class="subtext">方差随大数定律单调下降，不引起过拟合</div>
+        </div>
+        <div class="chart-container" id="chart-b">
+          <svg class="chart-svg" viewBox="0 0 450 380" preserveAspectRatio="none">
+            <!-- 坐标网格与辅助线 -->
+            <line x1="0" y1="95" x2="450" y2="95" stroke="#cbd2ce" stroke-width="1"/>
+            <line x1="0" y1="190" x2="450" y2="190" stroke="#cbd2ce" stroke-width="1"/>
+            <line x1="0" y1="285" x2="450" y2="285" stroke="#cbd2ce" stroke-width="1"/>
+
+            <!-- 垂直标定线 (B ~ 100 处收敛) -->
+            <line x1="220" y1="40" x2="220" y2="350" class="guide-line"/>
+            
+            <!-- 偏差 Bias^2：保持恒定水平线 (y=280) -->
+            <path d="M 20 280 L 440 280" fill="none" stroke="var(--uncertain)" stroke-width="2"/>
+            
+            <!-- 方差 Var：从很高(y=140)平滑衰减至下限 rho*sigma^2 (y=230) -->
+            <path d="M 20 140 Q 60 210 120 225 T 440 230" fill="none" stroke="var(--model)" stroke-width="2" stroke-dasharray="5 3"/>
+            
+            <!-- 总误差 Err = Bias^2 + Var (y从60平滑衰减到150) -->
+            <path d="M 20 60 Q 60 130 120 145 T 440 150" fill="none" stroke="var(--aggregate)" stroke-width="3"/>
+
+            <!-- 标注 -->
+            <circle cx="220" cy="148" r="5" class="focus-point"/>
+            <text x="210" y="132" class="focus-tag">B ≥ 100 收益平缓</text>
+
+            <!-- 渐近线说明 -->
+            <text x="350" y="222" class="axis-label">下限 ρσ²</text>
+
+            <!-- 刻度与轴名 -->
+            <text x="20" y="366" class="axis-tick">1</text>
+            <text x="215" y="366" class="axis-tick">100</text>
+            <text x="410" y="366" class="axis-tick">500</text>
+            <text x="445" y="345" text-anchor="end" class="axis-label">树数量 B →</text>
+          </svg>
+        </div>
+      </article>
+
+      <!-- 维度 2: 特征子集大小 max_features -->
+      <article class="param-column">
+        <div class="col-header">
+          <h2>特征子集 <code>max_features (m)</code></h2>
+          <div class="subtext">权衡单树拟合力（偏差）与树间去相关（方差）</div>
+        </div>
+        <div class="chart-container" id="chart-m">
+          <svg class="chart-svg" viewBox="0 0 450 380" preserveAspectRatio="none">
+            <!-- 网格线 -->
+            <line x1="0" y1="95" x2="450" y2="95" stroke="#cbd2ce" stroke-width="1"/>
+            <line x1="0" y1="190" x2="450" y2="190" stroke="#cbd2ce" stroke-width="1"/>
+            <line x1="0" y1="285" x2="450" y2="285" stroke="#cbd2ce" stroke-width="1"/>
+
+            <!-- 最优点垂直标定线 (m ≈ sqrt(p)) -->
+            <line x1="180" y1="40" x2="180" y2="350" class="guide-line"/>
+
+            <!-- 偏差 Bias^2：随 m 增大单调下降（数值更低，y值更大更靠底） -->
+            <path d="M 20 190 C 80 240, 200 270, 440 285" fill="none" stroke="var(--uncertain)" stroke-width="2"/>
+
+            <!-- 方差 Var：随 m 增大树间相关性 rho 升高，方差升高（数值增大，y更靠近顶） -->
+            <path d="M 20 270 C 180 255, 300 190, 440 140" fill="none" stroke="var(--model)" stroke-width="2" stroke-dasharray="5 3"/>
+
+            <!-- 总误差 Err：U 型谷底向下的曲线（最小值处误差数值最小，在图上线条最靠近底部，此处取 y=185） -->
+            <!-- 修正：通常坐标系下误差越小数值越小，若 Y 轴越往上数值越大，则最小值应当在视觉下方(谷底)。 -->
+            <!-- 此时：左端总误差 = Bias(高) + Var(低) = 190 + 270 对应误差高（视觉靠上 y=110） -->
+            <!-- 中间 m=sqrt(p)：Bias=265, Var=240, 总误差达到最低（视觉靠下 y=185） -->
+            <!-- 右端 m=p：Bias=285(低), Var=140(高), 总误差又变高（视觉靠上 y=100） -->
+            <path d="M 20 110 C 90 145, 140 185, 180 185 C 240 185, 340 140, 440 100" fill="none" stroke="var(--aggregate)" stroke-width="3"/>
+
+            <!-- 最优点标注 -->
+            <circle cx="180" cy="185" r="5" class="focus-point"/>
+            <text x="180" y="214" text-anchor="middle" class="focus-tag">分类 √p · 回归 p/3</text>
+
+            <!-- 刻度与轴名 -->
+            <text x="20" y="366" class="axis-tick">1</text>
+            <text x="175" y="366" class="axis-tick">√p</text>
+            <text x="420" y="366" class="axis-tick">p</text>
+            <text x="445" y="345" text-anchor="end" class="axis-label">子集大小 m →</text>
+          </svg>
+        </div>
+      </article>
+
+      <!-- 维度 3: 叶节点约束与最大深度 -->
+      <article class="param-column">
+        <div class="col-header">
+          <h2>树深度与叶约束 <code>min_samples_leaf</code></h2>
+          <div class="subtext">单树需保持高深度低偏差，靠集成平滑高方差</div>
+        </div>
+        <div class="chart-container" id="chart-leaf">
+          <svg class="chart-svg" viewBox="0 0 450 380" preserveAspectRatio="none">
+            <!-- 网格线 -->
+            <line x1="0" y1="95" x2="450" y2="95" stroke="#cbd2ce" stroke-width="1"/>
+            <line x1="0" y1="190" x2="450" y2="190" stroke="#cbd2ce" stroke-width="1"/>
+            <line x1="0" y1="285" x2="450" y2="285" stroke="#cbd2ce" stroke-width="1"/>
+
+            <!-- 最优点垂直标定线 (min_leaf = 1~5 偏向充分生长) -->
+            <line x1="90" y1="40" x2="90" y2="350" class="guide-line"/>
+
+            <!-- X 轴为 min_samples_leaf (从 1 到 50，即从“充分生长”到“强剪枝”) -->
+            <!-- 偏差 Bias^2：剪枝越重偏差越大（数值变大，视觉靠上，y从 280 升到 140） -->
+            <path d="M 20 280 C 120 270, 260 210, 440 140" fill="none" stroke="var(--uncertain)" stroke-width="2"/>
+
+            <!-- 方差 Var：剪枝越重方差越低（数值变小，视觉靠下，y从 180 降到 270） -->
+            <path d="M 20 180 C 120 220, 260 250, 440 270" fill="none" stroke="var(--model)" stroke-width="2" stroke-dasharray="5 3"/>
+
+            <!-- 总误差 Err：最小值在 min_samples_leaf=1~5 处（视觉最低谷在 y=185 附近） -->
+            <path d="M 20 160 C 60 180, 80 185, 100 185 C 180 185, 280 140, 440 95" fill="none" stroke="var(--aggregate)" stroke-width="3"/>
+
+            <!-- 最优点标注 -->
+            <circle cx="95" cy="185" r="5" class="focus-point"/>
+            <text x="95" y="214" text-anchor="middle" class="focus-tag">分类 1 · 回归 5</text>
+
+            <!-- 刻度与轴名 -->
+            <text x="20" y="366" class="axis-tick">1</text>
+            <text x="85" y="366" class="axis-tick">5</text>
+            <text x="210" y="366" class="axis-tick">20</text>
+            <text x="390" y="366" class="axis-tick">50</text>
+            <text x="445" y="345" text-anchor="end" class="axis-label">叶节点约束 →</text>
+          </svg>
+        </div>
+      </article>
+    </section>
+
+    <!-- 底部法则总结 -->
+    <footer class="summary-strip">
+      <div class="rule-item">
+        <strong>树数 B：单调无害</strong>
+        <p>B 增加不会引发过拟合，超过收敛点后仅增加训练时间。</p>
+      </div>
+      <div class="rule-item">
+        <strong>子集 m：控制树间相关</strong>
+        <p>常用默认值：分类选 √p，回归选 p/3，高噪声数据宜进一步缩小。</p>
+      </div>
+      <div class="rule-item">
+        <strong>叶约束：保持充分生长</strong>
+        <p>单树维持低偏差高深度，过大剪枝会破坏集成抵消方差的前提。</p>
+      </div>
+    </footer>
+  </main>
+
+  <aside class="notes" hidden>
+    本页梳理随机森林在工业实践中最重要的三个超参数以及它们如何支配偏差-方差分解。
+    第一，树数量 B。随机森林不会因为树增多而发生过拟合，误差下限收敛到基学习器相关系数乘以单树方差。通常设在 100 到 300 之间就已经饱和。
+    第二，每次划分候选特征数 m。这是权衡单树拟合能力与树之间去相关性的关键。m 太小单树欠拟合、偏差升高；m 太大树之间高度相似、集成方差降不下来。经典默认是根号 p。
+    第三，叶节点样本数或最大深度。初学者常犯的错误是像单决策树一样给随机森林做重度剪枝。随机森林的优势恰恰建立在“单树低偏差、集成降方差”的前提上，因此通常让树充分生长或仅做极轻微的叶片样本约束。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 12, total: 26 });
+  </script>
+</body>
+</html>

@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    /* 严格 Bento Grid 布局与主题承接 */
+    #stage {
+      padding: 36px 48px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      height: 48px;
+    }
+    .header-left {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+    }
+    .header-left h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      color: var(--text);
+      line-height: 1.15;
+    }
+    .header-left .sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-family: var(--font-sans);
+    }
+    .formula-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 14px;
+      background: var(--primary-soft);
+      border: 1px solid var(--border-subtle);
+      border-radius: 999px;
+      color: var(--primary);
+    }
+
+    /* Bento 网格布局: 左右两栏 */
+    .bento-main {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧大单元: 2D 损失等高线与梯度下降轨迹探索世界 */
+    .surface-cell {
+      position: relative;
+      background: #ffffff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+    }
+    .cell-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .cell-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .view-note {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .canvas-container {
+      position: relative;
+      flex: 1;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #fafbfc;
+      border: 1px solid var(--border-subtle);
+      cursor: crosshair;
+    }
+    #contourCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧 Bento 组合 */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      min-height: 0;
+    }
+
+    /* 学习率控制面板与操作卡 */
+    .control-card {
+      background: #ffffff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 22px 24px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .lr-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .lr-btn {
+      padding: 10px 8px;
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      background: #f8fafc;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      font-size: var(--fs-body);
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+    .lr-btn .lr-val {
+      font-size: var(--fs-sec);
+      font-weight: normal;
+      color: var(--muted);
+    }
+    .lr-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+    }
+    .lr-btn.active .lr-val {
+      color: #e0e7ff;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+    }
+    .action-btn {
+      flex: 1;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border-subtle);
+      font-size: var(--fs-body);
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.15s ease;
+    }
+    .btn-step {
+      background: #ffffff;
+      color: var(--text);
+    }
+    .btn-step:hover {
+      background: #f1f5f9;
+    }
+    .btn-play {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+    }
+    .btn-play:hover {
+      background: #1d4ed8;
+    }
+    .btn-reset {
+      flex: 0 0 74px;
+      background: #f8fafc;
+      color: var(--muted);
+    }
+    .btn-reset:hover {
+      color: var(--text);
+    }
+
+    /* 实时收敛与损失指标图 */
+    .metric-card {
+      background: #ffffff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 20px 24px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .metric-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .stat-box {
+      background: #f8fafc;
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .stat-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .stat-val {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: var(--font-display);
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-val.loss {
+      color: var(--accent-orange);
+    }
+    .loss-chart-box {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      border-radius: 10px;
+      background: #fafbfc;
+      border: 1px solid var(--border-subtle);
+      overflow: hidden;
+    }
+    #lossCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="17">
+  <div id="stage">
+    <div class="header-row">
+      <div class="header-left">
+        <h1 class="nt-title">损失曲面与梯度下降</h1>
+        <span class="sub">权重沿负梯度方向迭代更新与学习率影响</span>
+      </div>
+      <div class="formula-badge" id="formulaBox"></div>
+    </div>
+
+    <div class="bento-main">
+      <!-- 左侧：等高线图与参数轨迹 -->
+      <div class="surface-cell nt-bento-cell">
+        <div class="cell-top">
+          <div class="cell-title">参数空间与损失等高线 (w₁, w₂)</div>
+          <div class="view-note">点击或拖动圆点重设初始权重</div>
+        </div>
+        <div class="canvas-container">
+          <canvas id="contourCanvas"></canvas>
+        </div>
+      </div>
+
+      <!-- 右侧：控制与监控 Bento 组 -->
+      <div class="right-col">
+        <!-- 控制卡 -->
+        <div class="control-card nt-bento-cell">
+          <div class="stat-label">选择学习率 (η) 观察不同动态特征</div>
+          <div class="lr-tabs" role="group" aria-label="学习率模式">
+            <button class="lr-btn" data-lr="0.04">
+              <span>过小</span>
+              <span class="lr-val">η = 0.04</span>
+            </button>
+            <button class="lr-btn active" data-lr="0.16">
+              <span>适中</span>
+              <span class="lr-val">η = 0.16</span>
+            </button>
+            <button class="lr-btn" data-lr="0.52">
+              <span>震荡</span>
+              <span class="lr-val">η = 0.52</span>
+            </button>
+          </div>
+
+          <div class="btn-row">
+            <button class="action-btn btn-step" id="btnStep">单步更新</button>
+            <button class="action-btn btn-play" id="btnPlay">连续迭代</button>
+            <button class="action-btn btn-reset" id="btnReset">重置</button>
+          </div>
+        </div>
+
+        <!-- 监控指标卡 -->
+        <div class="metric-card nt-bento-cell">
+          <div class="metric-stats">
+            <div class="stat-box">
+              <div class="stat-label">当前步数</div>
+              <div class="stat-val" id="valStep">0</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-label">当前损失 L</div>
+              <div class="stat-val loss" id="valLoss">3.85</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-label">收敛状态</div>
+              <div class="stat-val" id="valStatus" style="font-size:16px; line-height:24px; color:var(--muted);">准备就绪</div>
+            </div>
+          </div>
+          <div class="loss-chart-box">
+            <canvas id="lossCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    本页直观解剖梯度下降在非凸/各向异性二次损失曲面上的动态表现。
+    参数更新规则始终遵循 w = w - η · ∇L(w)。
+    当学习率适中时，参数顺着陡峭斜坡与沟壑快速收敛到局部极小点；
+    过小时收敛极度迟缓，步幅微小难以快速逼近最优；
+    而学习率过大时，在曲率较大的峡谷壁两侧会剧烈振荡甚至发散。
+    点击曲面上的任意位置可重置初始权重起点，对比不同初始点与学习率组合下的轨迹。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 渲染 KaTeX 公式
+    katex.render("w^{(t+1)} = w^{(t)} - \\eta \\nabla L(w^{(t)})", document.getElementById("formulaBox"), { throwOnError: false });
+
+    // 目标模型定义: 典型峡谷形状 (w1 沿水平平缓，w2 沿竖直陡峭)
+    // 学习率界限分析:
+    // dw2/dt = 3.6 * w2，对于标准梯度下降，当 eta > 2 / 3.6 ≈ 0.55 时发散；
+    // eta = 0.04 时极慢平滑逼近；eta = 0.16 时快速斜线收敛；eta = 0.48 时在峡谷两侧剧烈弹跳振荡并最终缓慢发散或大幅震荡
+    function lossFunc(w1, w2) {
+      return 0.35 * (w1 * w1) + 1.8 * (w2 * w2) - 0.2 * Math.cos(2.0 * w1) + 0.2;
+    }
+    function gradFunc(w1, w2) {
+      const dw1 = 0.7 * w1 + 0.4 * Math.sin(2.0 * w1);
+      const dw2 = 3.6 * w2;
+      return [dw1, dw2];
+    }
+
+    // 状态管理
+    const state = {
+      lr: 0.16,
+      w: [-2.6, 1.6],
+      initialW: [-2.6, 1.6],
+      path: [[-2.6, 1.6]],
+      losses: [lossFunc(-2.6, 1.6)],
+      running: false,
+      stepCount: 0,
+      maxSteps: 60,
+      status: '就绪'
+    };
+
+    // 画布设置与坐标映射
+    const contourCv = document.getElementById("contourCanvas");
+    const lossCv = document.getElementById("lossCanvas");
+    const cCtx = Deck.fit(contourCv);
+    const lCtx = Deck.fit(lossCv);
+
+    // 坐标范围: w1 in [-3.2, 3.2], w2 in [-2.2, 2.2]
+    const W_RANGE = { minX: -3.2, maxX: 3.2, minY: -2.2, maxY: 2.2 };
+
+    function wToScreen(w1, w2, w, h) {
+      const sx = ((w1 - W_RANGE.minX) / (W_RANGE.maxX - W_RANGE.minX)) * w;
+      const sy = ((W_RANGE.maxY - w2) / (W_RANGE.maxY - W_RANGE.minY)) * h;
+      return [sx, sy];
+    }
+
+    function screenToW(sx, sy, w, h) {
+      const w1 = W_RANGE.minX + (sx / w) * (W_RANGE.maxX - W_RANGE.minX);
+      const w2 = W_RANGE.maxY - (sy / h) * (W_RANGE.maxY - W_RANGE.minY);
+      return [w1, w2];
+    }
+
+    // 预计算等高线离线缓冲
+    let bgCache = null;
+    function renderContourBackground(w, h) {
+      const bg = document.createElement("canvas");
+      bg.width = w;
+      bg.height = h;
+      const ctx = bg.getContext("2d");
+
+      // 绘制热力色谱基底 (细密采样)
+      const step = 4;
+      for (let y = 0; y < h; y += step) {
+        for (let x = 0; x < w; x += step) {
+          const [w1, w2] = screenToW(x + step / 2, y + step / 2, w, h);
+          const l = lossFunc(w1, w2);
+          // 归一化损失值映射浅色
+          const norm = Math.min(l / 6.0, 1.0);
+          // 浅蓝到灰白暖色
+          const r = Math.round(245 - norm * 35);
+          const g = Math.round(248 - norm * 45);
+          const b = Math.round(253 - norm * 20);
+          ctx.fillStyle = `rgb(${r},${g},${b})`;
+          ctx.fillRect(x, y, step, step);
+        }
+      }
+
+      // 绘制等高线层次线
+      const levels = [0.1, 0.25, 0.5, 0.9, 1.5, 2.3, 3.4, 4.8, 6.5, 8.5];
+      const res = 3;
+      const gridW = Math.ceil(w / res);
+      const gridH = Math.ceil(h / res);
+      const valGrid = new Float32Array(gridW * gridH);
+
+      for (let gy = 0; gy < gridH; gy++) {
+        for (let gx = 0; gx < gridW; gx++) {
+          const [w1, w2] = screenToW(gx * res, gy * res, w, h);
+          valGrid[gy * gridW + gx] = lossFunc(w1, w2);
+        }
+      }
+
+      ctx.strokeStyle = "rgba(148, 163, 184, 0.45)";
+      ctx.lineWidth = 1;
+
+      // 简单行扫描找等值线点
+      levels.forEach(lv => {
+        ctx.beginPath();
+        for (let gy = 0; gy < gridH - 1; gy++) {
+          for (let gx = 0; gx < gridW - 1; gx++) {
+            const v = valGrid[gy * gridW + gx];
+            const vr = valGrid[gy * gridW + gx + 1];
+            const vb = valGrid[(gy + 1) * gridW + gx];
+            if ((v - lv) * (vr - lv) <= 0) {
+              const frac = (lv - v) / (vr - v);
+              ctx.moveTo(gx * res + frac * res, gy * res);
+              ctx.lineTo(gx * res + frac * res + 1, gy * res + 1);
+            }
+            if ((v - lv) * (vb - lv) <= 0) {
+              const frac = (lv - v) / (vb - v);
+              ctx.moveTo(gx * res, gy * res + frac * res);
+              ctx.lineTo(gx * res + 1, gy * res + frac * res + 1);
+            }
+          }
+        }
+        ctx.stroke();
+      });
+
+      // 绘制坐标轴 (w1=0, w2=0)
+      const [axX, axY] = wToScreen(0, 0, w, h);
+      ctx.strokeStyle = "rgba(100, 116, 139, 0.25)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, axY);
+      ctx.lineTo(w, axY);
+      ctx.moveTo(axX, 0);
+      ctx.lineTo(axX, h);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 极小值核心标记
+      ctx.fillStyle = "#059669";
+      ctx.beginPath();
+      ctx.arc(axX, axY, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      return bg;
+    }
+
+    // 绘制等高线与轨迹
+    function drawContour() {
+      const rect = contourCv.getBoundingClientRect();
+      const w = contourCv.offsetWidth;
+      const h = contourCv.offsetHeight;
+      cCtx.clearRect(0, 0, w, h);
+
+      if (!bgCache || bgCache.width !== w || bgCache.height !== h) {
+        bgCache = renderContourBackground(w, h);
+      }
+      cCtx.drawImage(bgCache, 0, 0);
+
+      // 绘制梯度更新轨迹
+      if (state.path.length > 1) {
+        cCtx.strokeStyle = "#2563eb";
+        cCtx.lineWidth = 2.5;
+        cCtx.lineCap = "round";
+        cCtx.lineJoin = "round";
+        cCtx.beginPath();
+        state.path.forEach(([pw1, pw2], i) => {
+          const [sx, sy] = wToScreen(pw1, pw2, w, h);
+          if (i === 0) cCtx.moveTo(sx, sy);
+          else cCtx.lineTo(sx, sy);
+        });
+        cCtx.stroke();
+
+        // 绘制轨迹上的节点与单步方向箭头
+        state.path.forEach(([pw1, pw2], i) => {
+          const [sx, sy] = wToScreen(pw1, pw2, w, h);
+          cCtx.fillStyle = (i === 0) ? "#64748b" : "#2563eb";
+          cCtx.beginPath();
+          cCtx.arc(sx, sy, 3.5, 0, Math.PI * 2);
+          cCtx.fill();
+        });
+      }
+
+      // 绘制当前权重位置大圆点
+      const currW = state.path[state.path.length - 1];
+      const [curX, curY] = wToScreen(currW[0], currW[1], w, h);
+
+      // 绘制当前负梯度方向向量箭头
+      const [g1, g2] = gradFunc(currW[0], currW[1]);
+      const arrowLen = Math.min(Math.hypot(g1, g2) * 16, 55);
+      const angle = Math.atan2(-g2, -g1); // 负梯度方向
+
+      if (arrowLen > 2) {
+        cCtx.strokeStyle = "#ea580c";
+        cCtx.lineWidth = 2;
+        cCtx.beginPath();
+        cCtx.moveTo(curX, curY);
+        const endX = curX + Math.cos(angle) * arrowLen;
+        const endY = curY - Math.sin(angle) * arrowLen; // screen y 倒置
+        cCtx.lineTo(endX, endY);
+        cCtx.stroke();
+
+        // 箭头头标
+        cCtx.fillStyle = "#ea580c";
+        cCtx.beginPath();
+        cCtx.arc(endX, endY, 3, 0, Math.PI * 2);
+        cCtx.fill();
+      }
+
+      // 外光晕
+      cCtx.fillStyle = "rgba(37, 99, 235, 0.2)";
+      cCtx.beginPath();
+      cCtx.arc(curX, curY, 10, 0, Math.PI * 2);
+      cCtx.fill();
+
+      // 中心实心点
+      cCtx.fillStyle = "#1d4ed8";
+      cCtx.beginPath();
+      cCtx.arc(curX, curY, 6, 0, Math.PI * 2);
+      cCtx.fill();
+      cCtx.strokeStyle = "#ffffff";
+      cCtx.lineWidth = 2;
+      cCtx.stroke();
+    }
+
+    // 绘制实时损失折线图
+    function drawLossChart() {
+      const w = lossCv.offsetWidth;
+      const h = lossCv.offsetHeight;
+      lCtx.clearRect(0, 0, w, h);
+
+      const pad = { top: 20, right: 20, bottom: 30, left: 45 };
+      const chartW = w - pad.left - pad.right;
+      const chartH = h - pad.top - pad.bottom;
+
+      // 轴线与刻度网格
+      lCtx.strokeStyle = "rgba(226, 232, 240, 0.8)";
+      lCtx.lineWidth = 1;
+      lCtx.beginPath();
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.top + (chartH / 4) * i;
+        lCtx.moveTo(pad.left, y);
+        lCtx.lineTo(w - pad.right, y);
+      }
+      lCtx.stroke();
+
+      // 刻度文字
+      lCtx.fillStyle = "#94a3b8";
+      lCtx.font = "11px var(--font-sans)";
+      lCtx.textAlign = "right";
+      lCtx.textBaseline = "middle";
+      const maxL = Math.max(5.0, ...state.losses);
+      for (let i = 0; i <= 4; i++) {
+        const val = maxL * (1 - i / 4);
+        const y = pad.top + (chartH / 4) * i;
+        lCtx.fillText(val.toFixed(1), pad.left - 8, y);
+      }
+
+      // 底部步数标
+      lCtx.textAlign = "center";
+      lCtx.textBaseline = "top";
+      lCtx.fillText("0", pad.left, h - pad.bottom + 6);
+      lCtx.fillText(`${Math.max(state.maxSteps, state.losses.length)} 步`, w - pad.right, h - pad.bottom + 6);
+
+      // 损失折线
+      if (state.losses.length > 0) {
+        const totalX = Math.max(state.maxSteps, state.losses.length - 1);
+        lCtx.strokeStyle = "#ea580c";
+        lCtx.lineWidth = 2.5;
+        lCtx.beginPath();
+        state.losses.forEach((lVal, i) => {
+          const x = pad.left + (i / totalX) * chartW;
+          const y = pad.top + chartH * (1 - Math.min(lVal, maxL) / maxL);
+          if (i === 0) lCtx.moveTo(x, y);
+          else lCtx.lineTo(x, y);
+        });
+        lCtx.stroke();
+
+        // 终点脉冲
+        const lastIdx = state.losses.length - 1;
+        const lastVal = state.losses[lastIdx];
+        const lastX = pad.left + (lastIdx / totalX) * chartW;
+        const lastY = pad.top + chartH * (1 - Math.min(lastVal, maxL) / maxL);
+
+        lCtx.fillStyle = "#ea580c";
+        lCtx.beginPath();
+        lCtx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+        lCtx.fill();
+        lCtx.strokeStyle = "#ffffff";
+        lCtx.lineWidth = 1.5;
+        lCtx.stroke();
+      }
+    }
+
+    // 状态更新与 DOM 反映
+    function updateMetrics() {
+      const curW = state.path[state.path.length - 1];
+      const curLoss = lossFunc(curW[0], curW[1]);
+      document.getElementById("valStep").textContent = state.stepCount;
+      document.getElementById("valLoss").textContent = curLoss.toFixed(3);
+
+      const statusEl = document.getElementById("valStatus");
+      if (curLoss < 0.05) {
+        state.status = "已收敛";
+        statusEl.textContent = "已收敛";
+        statusEl.style.color = "var(--success)";
+      } else if (state.lr >= 0.5 && state.stepCount >= 4) {
+        state.status = "峡谷壁剧烈震荡";
+        statusEl.textContent = "峡谷壁震荡";
+        statusEl.style.color = "var(--danger)";
+      } else if (state.running) {
+        state.status = "优化中";
+        statusEl.textContent = "梯度优化中";
+        statusEl.style.color = "var(--primary)";
+      } else {
+        statusEl.textContent = state.stepCount === 0 ? "准备就绪" : "已暂停";
+        statusEl.style.color = "var(--muted)";
+      }
+
+      drawContour();
+      drawLossChart();
+    }
+
+    // 执行单步梯度下降更新
+    function stepOnce() {
+      if (state.stepCount >= state.maxSteps) {
+        stopPlay();
+        return;
+      }
+      const curW = state.path[state.path.length - 1];
+      const [g1, g2] = gradFunc(curW[0], curW[1]);
+
+      // w_new = w - lr * grad
+      const nextW1 = curW[0] - state.lr * g1;
+      const nextW2 = curW[1] - state.lr * g2;
+
+      state.path.push([nextW1, nextW2]);
+      state.losses.push(lossFunc(nextW1, nextW2));
+      state.stepCount++;
+
+      updateMetrics();
+
+      if (lossFunc(nextW1, nextW2) < 0.005) {
+        stopPlay();
+      }
+    }
+
+    // 播放循环
+    let animTimer = null;
+    function startPlay() {
+      if (state.stepCount >= state.maxSteps) {
+        resetState(false);
+      }
+      state.running = true;
+      document.getElementById("btnPlay").textContent = "暂停";
+      document.getElementById("btnPlay").style.background = "#d97706";
+      document.getElementById("btnPlay").style.borderColor = "#d97706";
+      runLoop();
+    }
+
+    function stopPlay() {
+      state.running = false;
+      if (animTimer) cancelAnimationFrame(animTimer);
+      animTimer = null;
+      document.getElementById("btnPlay").textContent = "连续迭代";
+      document.getElementById("btnPlay").style.background = "var(--primary)";
+      document.getElementById("btnPlay").style.borderColor = "var(--primary)";
+      updateMetrics();
+    }
+
+    let lastTick = 0;
+    function runLoop(timestamp) {
+      if (!state.running) return;
+      if (!timestamp) timestamp = performance.now();
+      if (timestamp - lastTick > 60) {
+        stepOnce();
+        lastTick = timestamp;
+      }
+      if (state.running && state.stepCount < state.maxSteps) {
+        animTimer = requestAnimationFrame(runLoop);
+      } else {
+        stopPlay();
+      }
+    }
+
+    function resetState(full = true) {
+      stopPlay();
+      if (full) {
+        state.w = [...state.initialW];
+      }
+      state.path = [[state.w[0], state.w[1]]];
+      state.losses = [lossFunc(state.w[0], state.w[1])];
+      state.stepCount = 0;
+      updateMetrics();
+    }
+
+    // 事件绑定: 学习率选择
+    document.querySelectorAll(".lr-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".lr-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        state.lr = parseFloat(btn.dataset.lr);
+        resetState(false);
+      });
+    });
+
+    // 单步与连续控制
+    document.getElementById("btnStep").addEventListener("click", () => {
+      stopPlay();
+      stepOnce();
+    });
+
+    document.getElementById("btnPlay").addEventListener("click", () => {
+      if (state.running) stopPlay();
+      else startPlay();
+    });
+
+    document.getElementById("btnReset").addEventListener("click", () => {
+      resetState(true);
+    });
+
+    // 交互: 点击或拖动修改初始权重位置
+    let isDragging = false;
+    function handlePointer(e) {
+      const pt = Deck.pt(contourCv, e);
+      const w = contourCv.offsetWidth;
+      const h = contourCv.offsetHeight;
+      const [w1, w2] = screenToW(pt.x, pt.y, w, h);
+      // 限制在有效可视范围内
+      state.initialW = [
+        Math.max(W_RANGE.minX + 0.2, Math.min(W_RANGE.maxX - 0.2, w1)),
+        Math.max(W_RANGE.minY + 0.2, Math.min(W_RANGE.maxY - 0.2, w2))
+      ];
+      state.w = [...state.initialW];
+      resetState(false);
+    }
+
+    contourCv.addEventListener("pointerdown", (e) => {
+      isDragging = true;
+      contourCv.setPointerCapture(e.pointerId);
+      handlePointer(e);
+    });
+
+    contourCv.addEventListener("pointermove", (e) => {
+      if (!isDragging) return;
+      handlePointer(e);
+    });
+
+    contourCv.addEventListener("pointerup", (e) => {
+      if (isDragging) {
+        isDragging = false;
+        try { contourCv.releasePointerCapture(e.pointerId); } catch(err){}
+      }
+    });
+
+    // 窗口调整适配
+    Deck.onResize(() => {
+      Deck.fit(contourCv);
+      Deck.fit(lossCv);
+      bgCache = null;
+      updateMetrics();
+    });
+
+    // 初始化
+    Deck.init({ index: 10, total: 17 });
+    updateMetrics();
+  </script>
+</body>
+</html>

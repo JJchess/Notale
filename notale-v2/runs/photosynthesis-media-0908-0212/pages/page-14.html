@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>第二阶段：碳反应（卡尔文循环）</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    #flow-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    .cover-header {
+      position: absolute;
+      top: 110px;
+      left: 100px;
+      width: 620px;
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .chapter-tag {
+      font-size: var(--fs-label);
+      color: var(--model);
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chapter-tag::after {
+      content: "";
+      display: inline-block;
+      width: 48px;
+      height: var(--stroke);
+      background: var(--model);
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 24px 0;
+      letter-spacing: -0.02em;
+    }
+
+    .lead-desc {
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      margin: 0;
+      max-width: 540px;
+    }
+
+    /* 右侧循环主导结构示意注记（轻量文字骨架，融入生成轨迹环） */
+    .cycle-annotation {
+      position: absolute;
+      z-index: 6;
+      pointer-events: none;
+      font-size: var(--fs-label);
+      line-height: 1.3;
+    }
+
+    .anno-fixation {
+      right: 210px;
+      top: 155px;
+      text-align: right;
+    }
+
+    .anno-reduction {
+      right: 120px;
+      bottom: 280px;
+      text-align: left;
+    }
+
+    .anno-regeneration {
+      left: 720px;
+      bottom: 230px;
+      text-align: right;
+    }
+
+    .phase-name {
+      font-weight: 700;
+      color: var(--text);
+      font-size: var(--fs-sec);
+      margin-bottom: 4px;
+    }
+
+    .phase-sub {
+      color: var(--muted);
+      font-size: var(--fs-label);
+    }
+
+    .focus-val {
+      color: var(--focus);
+      font-weight: 700;
+    }
+
+    .model-val {
+      color: var(--model);
+      font-weight: 700;
+    }
+
+    .center-label {
+      position: absolute;
+      left: 1070px;
+      top: 450px;
+      transform: translate(-50%, -50%);
+      z-index: 4;
+      pointer-events: none;
+      text-align: center;
+    }
+
+    .center-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--model);
+      letter-spacing: 0.08em;
+    }
+
+    .center-sub {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body data-page="14" data-total="25">
+  <div id="stage">
+    <canvas id="flow-canvas" class="cv-fill" aria-hidden="true"></canvas>
+
+    <header class="cover-header">
+      <div class="chapter-tag">STAGE 02 · 碳反应</div>
+      <h1>第二阶段：<br>碳反应（卡尔文循环）</h1>
+      <p class="lead-desc">利用光反应转化的化学潜能，将无机碳连续编织为生命有机物的高精密分子回旋工场。</p>
+    </header>
+
+    <!-- 循环阶段几何注记 -->
+    <div class="cycle-annotation anno-fixation">
+      <div class="phase-name"><span class="focus-val">01</span> 碳固定</div>
+      <div class="phase-sub">CO₂ + RuBP → 3-PGA</div>
+    </div>
+
+    <div class="cycle-annotation anno-reduction">
+      <div class="phase-name"><span class="focus-val">02</span> 还原阶段</div>
+      <div class="phase-sub">消耗 ATP 与 NADPH 产出 G3P</div>
+    </div>
+
+    <div class="cycle-annotation anno-regeneration">
+      <div class="phase-name"><span class="focus-val">03</span> RuBP 再生</div>
+      <div class="phase-sub">重组三碳糖骨架维持持续循环</div>
+    </div>
+
+    <div class="center-label">
+      <div class="center-title">CALVIN CYCLE</div>
+      <div class="center-sub">3 CO₂ ➔ 1 磷酸丙糖 (G3P)</div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    欢迎来到第二阶段：碳反应。在前一阶段，叶绿体类囊体膜上的光反应捕获了光子，将光能转化为了 ATP 与 NADPH 中的活跃化学能。现在，反应场所转移到了叶绿体基质中。我们将深入剖析卡尔文循环如何通过碳固定、三碳糖还原和 RuBP 再生三个精密配合的步骤，把无机碳 CO2 固定并还原为承载生命大厦的三碳糖分子。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("flow-canvas");
+      const ctx = Deck.fit(canvas);
+      if (!ctx) return;
+
+      const CX = 1070;
+      const CY = 450;
+      const RADIUS = 250;
+      const W = 1600;
+      const H = 900;
+      const SEED = 20240314;
+
+      // 伪随机数发生器保证可复现
+      function mulberry32(a) {
+        return function() {
+          let t = a += 0x6D2B79F5;
+          t = Math.imul(t ^ t >>> 15, t | 1);
+          t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+      }
+
+      const rng = mulberry32(SEED);
+
+      // 生成环形闭合流场粒子系统（360根束流引导线）
+      const STREAM_COUNT = 48;
+      const streamLines = [];
+
+      for (let i = 0; i < STREAM_COUNT; i++) {
+        const baseAngle = (i / STREAM_COUNT) * Math.PI * 2;
+        const radialOffset = (rng() - 0.5) * 80;
+        const speed = 0.00045 + rng() * 0.0003;
+        const width = 1.0 + rng() * 1.8;
+        const alpha = 0.12 + rng() * 0.22;
+        // 汇入与流出的特殊分支
+        const isExportBranch = (i % 8 === 0);
+        const isImportBranch = (i % 9 === 0);
+        streamLines.push({
+          baseAngle,
+          radialOffset,
+          speed,
+          width,
+          alpha,
+          isExportBranch,
+          isImportBranch,
+          phase: rng() * Math.PI * 2
+        });
+      }
+
+      // 少量高亮碳流子脉冲
+      const TRACERS = Array.from({ length: 9 }, (_, i) => ({
+        angle: (i / 9) * Math.PI * 2,
+        speed: 0.0006 + (i % 3) * 0.0002,
+        len: 0.15 + (i % 2) * 0.1,
+        color: i === 0 || i === 4 ? "--focus" : "--model"
+      }));
+
+      function getPointOnCycle(theta, radialOffset, branchType, tProgress) {
+        // 围绕 (CX, CY) 顺时针旋转
+        let r = RADIUS + radialOffset;
+        
+        // 阶段三微调变形（固定在顶部，还原在右下，再生在左下）
+        const bulge = Math.sin(theta * 3) * 14;
+        r += bulge;
+
+        let x = CX + Math.cos(theta) * r;
+        let y = CY + Math.sin(theta) * r;
+
+        // 如果是 CO2 输入支流（从上方汇入）
+        if (branchType === "import") {
+          const blend = Math.max(0, 1 - Math.abs(theta - (-Math.PI / 2)) / 0.8);
+          y -= blend * 120;
+          x += blend * 40;
+        }
+
+        // 如果是 G3P 输出支流（从右下方输出）
+        if (branchType === "export") {
+          const blend = Math.max(0, 1 - Math.abs(theta - (Math.PI / 4)) / 0.8);
+          x += blend * 140;
+          y += blend * 80;
+        }
+
+        return { x, y };
+      }
+
+      function drawCycleStream(time) {
+        ctx.clearRect(0, 0, W, H);
+
+        const modelRgb = Deck.rgb("model");
+        const focusRgb = Deck.rgb("focus");
+        const ruleRgb = Deck.rgb("rule");
+
+        // 1. 底层静止/微动精密规线与主环轨道
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(CX, CY, RADIUS, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${ruleRgb.join(",")}, 0.25)`;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 8]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 内环刻度线
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 36) {
+          const innerR = RADIUS - 16;
+          const outerR = a % (Math.PI / 6) < 0.001 ? RADIUS + 10 : RADIUS - 8;
+          const x1 = CX + Math.cos(a) * innerR;
+          const y1 = CY + Math.sin(a) * innerR;
+          const x2 = CX + Math.cos(a) * outerR;
+          const y2 = CY + Math.sin(a) * outerR;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.strokeStyle = `rgba(${ruleRgb.join(",")}, ${a % (Math.PI / 6) < 0.001 ? 0.4 : 0.15})`;
+          ctx.lineWidth = a % (Math.PI / 6) < 0.001 ? 1.5 : 1;
+          ctx.stroke();
+        }
+
+        // 2. 绘制连续生成的碳流场流线
+        const STEPS = 72;
+        streamLines.forEach(sl => {
+          ctx.beginPath();
+          let started = false;
+          for (let step = 0; step <= STEPS; step++) {
+            const frac = step / STEPS;
+            const currentAngle = sl.baseAngle + frac * Math.PI * 2 + (time * sl.speed);
+            const pt = getPointOnCycle(currentAngle, sl.radialOffset, sl.isImportBranch ? "import" : (sl.isExportBranch ? "export" : "normal"), frac);
+            if (!started) {
+              ctx.moveTo(pt.x, pt.y);
+              started = true;
+            } else {
+              ctx.lineTo(pt.x, pt.y);
+            }
+          }
+          ctx.strokeStyle = `rgba(${modelRgb.join(",")}, ${sl.alpha})`;
+          ctx.lineWidth = sl.width;
+          ctx.stroke();
+        });
+
+        // 3. 动态脉冲游标 (Tracer)
+        TRACERS.forEach(tr => {
+          const headAngle = tr.angle + time * tr.speed;
+          const headPt = getPointOnCycle(headAngle, 0, "normal", 0);
+          
+          const rgb = tr.color === "--focus" ? focusRgb : modelRgb;
+
+          // 拖尾
+          const TAIL_STEPS = 16;
+          ctx.beginPath();
+          for (let s = 0; s <= TAIL_STEPS; s++) {
+            const a = headAngle - (s / TAIL_STEPS) * tr.len;
+            const pt = getPointOnCycle(a, 0, "normal", 0);
+            if (s === 0) ctx.moveTo(pt.x, pt.y);
+            else ctx.lineTo(pt.x, pt.y);
+          }
+          ctx.strokeStyle = `rgba(${rgb.join(",")}, 0.75)`;
+          ctx.lineWidth = tr.color === "--focus" ? 3.5 : 2.5;
+          ctx.stroke();
+
+          // 头部明亮节点
+          ctx.beginPath();
+          ctx.arc(headPt.x, headPt.y, tr.color === "--focus" ? 4.5 : 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = `rgb(${rgb.join(",")})`;
+          ctx.fill();
+        });
+
+        // 4. 三大阶段节点标注基准点
+        const NODE_ANGLES = [
+          { angle: -Math.PI / 3, name: "FIXATION", color: focusRgb },      // 顶部偏右：固定
+          { angle: Math.PI / 4, name: "REDUCTION", color: modelRgb },       // 右下方：还原
+          { angle: Math.PI * 0.95, name: "REGENERATION", color: modelRgb }   // 左侧：再生
+        ];
+
+        NODE_ANGLES.forEach(node => {
+          const pt = getPointOnCycle(node.angle, 0, "normal", 0);
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
+          ctx.fillStyle = `rgb(${node.color.join(",")})`;
+          ctx.fill();
+          
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 11, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(${node.color.join(",")}, 0.45)`;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        });
+
+        // 5. 汇入与流出箭头指引线
+        // CO2 注入指引
+        ctx.beginPath();
+        ctx.moveTo(CX + 20, CY - RADIUS - 90);
+        ctx.lineTo(CX + 20, CY - RADIUS - 25);
+        ctx.strokeStyle = `rgb(${focusRgb.join(",")})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // 箭头
+        ctx.beginPath();
+        ctx.moveTo(CX + 14, CY - RADIUS - 35);
+        ctx.lineTo(CX + 20, CY - RADIUS - 23);
+        ctx.lineTo(CX + 26, CY - RADIUS - 35);
+        ctx.fillStyle = `rgb(${focusRgb.join(",")})`;
+        ctx.fill();
+
+        // G3P 输出指引
+        const exportAngle = Math.PI / 4;
+        const expX = CX + Math.cos(exportAngle) * RADIUS;
+        const expY = CY + Math.sin(exportAngle) * RADIUS;
+        ctx.beginPath();
+        ctx.moveTo(expX + 15, expY + 15);
+        ctx.lineTo(expX + 85, expY + 65);
+        ctx.strokeStyle = `rgb(${focusRgb.join(",")})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // 输出箭头
+        ctx.beginPath();
+        ctx.moveTo(expX + 70, expY + 68);
+        ctx.lineTo(expX + 87, expY + 67);
+        ctx.lineTo(expX + 80, expY + 50);
+        ctx.fillStyle = `rgb(${focusRgb.join(",")})`;
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      Deck.onResize(() => {
+        Deck.fit(canvas);
+        drawCycleStream(1200);
+      });
+
+      // 启动循环动画，reduced-motion 时定格在 1200ms
+      Deck.loop((time) => {
+        drawCycleStream(time);
+      }, { still: 1200 });
+
+    })();
+  </script>
+</body>
+</html>

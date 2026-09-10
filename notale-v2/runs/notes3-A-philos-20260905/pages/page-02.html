@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>为什么“多个模型”可能胜过“一个更强的模型”</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .header-block h1 {
+      font-size: var(--fs-h1);
+      margin: 0;
+      color: var(--text);
+      font-weight: 700;
+      line-height: 1.25;
+      letter-spacing: -0.01em;
+    }
+    .header-block p.lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主舞台双栏对比：相同基分类器准确率 (70%) 下的两种极端 */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .case-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 22px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 4px 14px rgba(20, 37, 51, 0.05);
+      min-height: 0;
+    }
+
+    .case-card.highlight {
+      border-color: rgba(39, 93, 145, 0.35);
+      background: #fafcfe;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+      flex-shrink: 0;
+    }
+    .card-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge {
+      font-size: var(--fs-tick);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .badge.ident {
+      background: #fce8e6;
+      color: var(--aggregate);
+    }
+    .badge.indep {
+      background: #e6f0fa;
+      color: var(--learner);
+    }
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      color: var(--text);
+    }
+    .card-subtitle {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 样本测试矩阵与投票条 */
+    .matrix-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .matrix-caption {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .matrix-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 4px;
+    }
+    .matrix-table th {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 600;
+      text-align: center;
+      padding: 4px 2px;
+    }
+    .matrix-table td {
+      text-align: center;
+      height: 38px;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 700;
+      transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+    }
+    .matrix-table td.row-label {
+      text-align: left;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      padding-left: 6px;
+      width: 82px;
+      background: transparent !important;
+    }
+    .cell-ok {
+      background: #e8f4ec;
+      color: var(--correct);
+    }
+    .cell-err {
+      background: #fdeee9;
+      color: var(--aggregate);
+    }
+
+    .vote-row {
+      border-top: 2px dashed var(--surface-strong);
+    }
+    .vote-row td.row-label {
+      font-weight: 700;
+      color: var(--text);
+    }
+    .vote-cell-ok {
+      background: #2E6A45;
+      color: #ffffff;
+    }
+    .vote-cell-err {
+      background: #B63B24;
+      color: #ffffff;
+    }
+
+    /* 读数与对比区 */
+    .card-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--surface-strong);
+      border-radius: 8px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+    }
+    .stat-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .stat-val {
+      font-family: var(--font-num), monospace;
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text);
+    }
+    .stat-val.strong-err {
+      color: var(--aggregate);
+    }
+    .stat-val.strong-ok {
+      color: var(--correct);
+    }
+
+    .card-footer-text {
+      font-size: var(--fs-body);
+      line-height: 1.5;
+      color: var(--text);
+      margin: 0;
+      flex: 1;
+    }
+    .card-footer-text strong {
+      color: var(--text);
+    }
+
+    /* 底部收束结论条 */
+    .bottom-summary {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 32px;
+      flex-shrink: 0;
+    }
+    .condition-pair {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex: 1;
+    }
+    .cond-box {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      flex: 1;
+    }
+    .cond-index {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--learner);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .cond-content h4 {
+      margin: 0 0 2px 0;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      font-weight: 700;
+    }
+    .cond-content p {
+      margin: 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .cond-divider {
+      width: 1px;
+      height: 38px;
+      background: var(--surface-strong);
+    }
+    .summary-claim {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--aggregate);
+      padding: 8px 16px;
+      background: #fdf2ef;
+      border-radius: 8px;
+      border: 1px solid rgba(182, 59, 36, 0.2);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body data-page="02" data-total="27">
+  <div id="stage">
+    <!-- 页眉 -->
+    <div class="header-block">
+      <h1>为什么“多个模型”可能胜过“一个更强的模型”</h1>
+      <p class="lead">单模型受限于假设空间、样本扰动与优化陷阱；多模型只有在<strong>个体具备预测能力</strong>且<strong>错误不完全重叠</strong>时，多数表决才能消除个体的偶发错误。</p>
+    </div>
+
+    <!-- 核心对比矩阵舞台 -->
+    <div class="comparison-grid min0">
+      <!-- 极端对照 1: 错误完全同质 -->
+      <section class="case-card min0">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="badge ident">极端一</span>
+            <h2 class="card-title">错误完全同质</h2>
+          </div>
+          <span class="card-subtitle">相关系数 ρ = 1.0</span>
+        </div>
+
+        <div class="matrix-container">
+          <div class="matrix-caption">
+            <span>10 个待测测试样本（真实类别均为 正）</span>
+            <span>✓ 正确 / ✗ 错误</span>
+          </div>
+          <table class="matrix-table" aria-label="错误同质测试结果表">
+            <thead>
+              <tr>
+                <th style="text-align:left; padding-left:6px;">模型</th>
+                <th>S1</th><th>S2</th><th>S3</th><th>S4</th><th>S5</th><th>S6</th><th>S7</th><th>S8</th><th>S9</th><th>S10</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="row-label">学习器 h₁</td>
+                <td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-err">✗</td><td class="cell-err">✗</td><td class="cell-err">✗</td>
+              </tr>
+              <tr>
+                <td class="row-label">学习器 h₂</td>
+                <td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-err">✗</td><td class="cell-err">✗</td><td class="cell-err">✗</td>
+              </tr>
+              <tr>
+                <td class="row-label">学习器 h₃</td>
+                <td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-err">✗</td><td class="cell-err">✗</td><td class="cell-err">✗</td>
+              </tr>
+              <tr class="vote-row">
+                <td class="row-label">多数表决 H</td>
+                <td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-err">✗</td><td class="vote-cell-err">✗</td><td class="vote-cell-err">✗</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card-stats">
+          <div class="stat-item">
+            <span class="stat-label">个体平均准确率</span>
+            <span class="stat-val">70%</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">集成表决准确率</span>
+            <span class="stat-val strong-err">70% (收益为 0)</span>
+          </div>
+        </div>
+
+        <p class="card-footer-text">
+          当三个基学习器的预测策略与盲区完全相同时，集成分歧度为 0。<strong>任何一个模型错的地方，所有模型必然一同出错</strong>，投票机制退化为单一模型的简单复制，没有任何容错增益。
+        </p>
+      </section>
+
+      <!-- 极端对照 2: 错误相互独立 / 错位 -->
+      <section class="case-card highlight min0">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="badge indep">极端二</span>
+            <h2 class="card-title">错误相互错开</h2>
+          </div>
+          <span class="card-subtitle">相关系数 ρ = 0.0</span>
+        </div>
+
+        <div class="matrix-container">
+          <div class="matrix-caption">
+            <span>10 个待测测试样本（真实类别均为 正）</span>
+            <span>多数表决：2/3 判对即整体判对</span>
+          </div>
+          <table class="matrix-table" aria-label="错误错位测试结果表">
+            <thead>
+              <tr>
+                <th style="text-align:left; padding-left:6px;">模型</th>
+                <th>S1</th><th>S2</th><th>S3</th><th>S4</th><th>S5</th><th>S6</th><th>S7</th><th>S8</th><th>S9</th><th>S10</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="row-label">学习器 h₁</td>
+                <td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-err">✗</td><td class="cell-err">✗</td><td class="cell-err">✗</td>
+              </tr>
+              <tr>
+                <td class="row-label">学习器 h₂</td>
+                <td class="cell-err">✗</td><td class="cell-err">✗</td><td class="cell-err">✗</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td>
+              </tr>
+              <tr>
+                <td class="row-label">学习器 h₃</td>
+                <td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-err">✗</td><td class="cell-err">✗</td><td class="cell-err">✗</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td><td class="cell-ok">✓</td>
+              </tr>
+              <tr class="vote-row">
+                <td class="row-label">多数表决 H</td>
+                <td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td><td class="vote-cell-ok">✓</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card-stats">
+          <div class="stat-item">
+            <span class="stat-label">个体平均准确率</span>
+            <span class="stat-val">70%</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">集成表决准确率</span>
+            <span class="stat-val strong-ok">100% (+30% 质变)</span>
+          </div>
+        </div>
+
+        <p class="card-footer-text">
+          每个学习器各自依然错 3 个样本（准确率同为 70%）。但由于<strong>错误位置互不重叠，在任意样本上始终有 2 个学习器判断正确</strong>，多数决直接将所有个体错误彻底抹平。
+        </p>
+      </section>
+    </div>
+
+    <!-- 底部：集成的两大前提条件 -->
+    <div class="bottom-summary min0">
+      <div class="condition-pair">
+        <div class="cond-box">
+          <div class="cond-index">1</div>
+          <div class="cond-content">
+            <h4>个体要有基本精度（准确率 &gt; 50%）</h4>
+            <p>个体必须具备弱学习能力；若单模型准确率低于随机猜测，投票反而会放大错误。</p>
+          </div>
+        </div>
+        <div class="cond-divider"></div>
+        <div class="cond-box">
+          <div class="cond-index">2</div>
+          <div class="cond-content">
+            <h4>错误要有差异性（不完全相关）</h4>
+            <p>若错误完全一致，集成毫无增益；只有模型盲区错开，彼此才能互相补位纠错。</p>
+          </div>
+        </div>
+      </div>
+      <div class="summary-claim">
+        好而不同：集成的核心基石
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 2, total: 27, keys: false });
+  </script>
+</body>
+</html>

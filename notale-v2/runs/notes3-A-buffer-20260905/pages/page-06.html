@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>缓冲范围与缓冲容量</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F7F8;
+      --paper: #FFFFFF;
+      --text: #142B33;
+      --muted: #526970;
+      --focus: #C45A00;
+      --acid: #B43F2B;
+      --base: #23629A;
+      --buffer: #08746E;
+      --selected: #DCECEF;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: Bahnschrift, "DIN Alternate", "Noto Sans SC", sans-serif;
+    }
+
+    #stage {
+      padding: 32px 56px 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      box-sizing: border-box;
+      width: 1600px;
+      height: 900px;
+      overflow: hidden;
+    }
+
+    /* 顶部标题与核心结论导语 */
+    .header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .header .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .header .lead strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* 主布局：左侧定量图表（800px） + 右侧机制拆解与动态对比（剩余） */
+    .main-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 810px 1fr;
+      gap: 28px;
+      min-height: 0;
+    }
+
+    /* 左侧图表卡片 */
+    .chart-panel {
+      background: var(--paper);
+      border-radius: 12px;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+      padding: 18px 22px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 4px 16px rgba(20, 43, 51, 0.04);
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(82, 105, 112, 0.15);
+      padding-bottom: 10px;
+    }
+    .panel-head h2 {
+      margin: 0;
+      font-size: var(--fs-h2);
+      color: var(--text);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .panel-head .legend-row {
+      display: flex;
+      gap: 12px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-item .sw {
+      width: 14px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .sw.c-high { background: var(--buffer); }
+    .sw.c-mid { background: #238982; opacity: 0.65; }
+    .sw.c-low { background: #7baaa6; }
+    .sw.band {
+      width: 14px;
+      height: 10px;
+      background: rgba(8, 116, 110, 0.12);
+      border: 1px dashed var(--buffer);
+      border-radius: 2px;
+    }
+
+    .chart-container {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+    #chart-host {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 图表底部辅助注脚与参数 */
+    .chart-foot {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 6px;
+      border-top: 1px solid rgba(82, 105, 112, 0.12);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .chart-foot .formula {
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      color: var(--text);
+      background: rgba(8, 116, 110, 0.07);
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+
+    /* 右侧机制分析与实验推演区 */
+    .control-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    /* 规则卡片：范围规则 + 容量规则 */
+    .rule-card {
+      background: var(--paper);
+      border-radius: 12px;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+      padding: 16px 20px;
+      box-shadow: 0 4px 16px rgba(20, 43, 51, 0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .rule-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge {
+      display: inline-block;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: var(--font-num);
+    }
+    .badge.range {
+      background: rgba(8, 116, 110, 0.12);
+      color: var(--buffer);
+    }
+    .badge.capacity {
+      background: rgba(35, 98, 154, 0.12);
+      color: var(--base);
+    }
+    .rule-body {
+      font-size: var(--fs-body);
+      color: var(--text);
+      line-height: 1.5;
+      margin: 0;
+    }
+    .rule-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    /* 交互比对模拟器 */
+    .sim-card {
+      background: var(--paper);
+      border-radius: 12px;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+      padding: 16px 20px;
+      box-shadow: 0 4px 16px rgba(20, 43, 51, 0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+      min-height: 0;
+    }
+    .sim-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sim-head h3 {
+      margin: 0;
+      font-size: var(--fs-h2);
+      color: var(--text);
+      font-weight: 700;
+    }
+    .tabs {
+      display: flex;
+      gap: 6px;
+      background: rgba(220, 236, 239, 0.6);
+      padding: 3px;
+      border-radius: 8px;
+    }
+    .tab-btn {
+      border: none;
+      background: transparent;
+      padding: 5px 12px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      background: var(--paper);
+      color: var(--buffer);
+      box-shadow: 0 2px 6px rgba(20, 43, 51, 0.1);
+    }
+
+    /* 对比条形计测区 */
+    .compare-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 12px 16px;
+      border: 1px solid rgba(82, 105, 112, 0.15);
+    }
+    .state-row {
+      display: grid;
+      grid-template-columns: 140px 1fr 100px;
+      align-items: center;
+      gap: 14px;
+    }
+    .state-label {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .state-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 400;
+      margin-top: 1px;
+    }
+    .bar-track {
+      position: relative;
+      height: 20px;
+      background: rgba(82, 105, 112, 0.12);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 10px;
+      transition: width 0.35s ease;
+    }
+    .bar-fill.c05 { background: var(--buffer); }
+    .bar-fill.c01 { background: #4ba29c; }
+    .bar-fill.c002 { background: #96c4c0; }
+
+    .state-val {
+      text-align: right;
+      font-family: var(--font-num);
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .state-val span {
+      font-size: var(--fs-tick);
+      font-weight: 400;
+      color: var(--muted);
+      margin-left: 2px;
+    }
+
+    /* 扰动反应实测读数对比 */
+    .impact-box {
+      margin-top: auto;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: rgba(8, 116, 110, 0.08);
+      border: 1px solid rgba(8, 116, 110, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .impact-box .impact-text {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+    }
+    .impact-box .impact-text strong {
+      color: var(--buffer);
+    }
+    .impact-metric {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      font-family: var(--font-num);
+    }
+    .impact-metric .val {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--buffer);
+    }
+    .impact-metric .lbl {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body data-page="06" data-total="17">
+  <div id="stage">
+    <!-- 顶部标题区 -->
+    <header class="header">
+      <h1>缓冲范围与缓冲容量</h1>
+      <p class="lead">
+        <strong>比例决定有效区间</strong>：共轭碱与弱酸比在 0.1 至 10 之间时，pH 处于缓冲窗 <span style="font-family:var(--font-num);font-weight:600;">pKa ± 1</span>；
+        <strong>总浓度决定缓冲能力</strong>：保持相同比例，体系总浓度越高，能承接的外加酸碱量越大。
+      </p>
+    </header>
+
+    <!-- 主展示区 -->
+    <main class="main-grid min0">
+      <!-- 左栏：缓冲容量随 pH 及总浓度的分布曲线 (Van Slyke 公式定量真数据) -->
+      <section class="chart-panel min0">
+        <div class="panel-head">
+          <h2>缓冲容量 β(pH) 分布曲线</h2>
+          <div class="legend-row">
+            <div class="legend-item"><span class="sw band"></span>缓冲窗 (pKa ± 1)</div>
+            <div class="legend-item"><span class="sw c-high"></span>0.20 M</div>
+            <div class="legend-item"><span class="sw c-mid"></span>0.10 M</div>
+            <div class="legend-item"><span class="sw c-low"></span>0.05 M</div>
+          </div>
+        </div>
+
+        <div class="chart-container min0">
+          <div id="chart-host"></div>
+        </div>
+
+        <div class="chart-foot">
+          <span>以醋酸缓冲系 (pKa = 4.76) 为例，在 pH = pKa 处 β 达最大值</span>
+          <span class="formula">β = 2.303 · C_tot · [Ka · [H⁺]] / (Ka + [H⁺])²</span>
+        </div>
+      </section>
+
+      <!-- 右栏：机制解析与外加酸扰动耐受力对比 -->
+      <aside class="control-panel min0">
+        <!-- 核心原理解析卡片 -->
+        <article class="rule-card">
+          <div class="rule-title">
+            <span>缓冲范围由「共轭比例」锁定</span>
+            <span class="badge range">pKa ± 1.0</span>
+          </div>
+          <p class="rule-body">
+            由方程 <span style="font-family:var(--font-num);font-weight:600;">pH = pKa + lg([A⁻]/[HA])</span> 决定。
+            当比例超出 <span style="font-family:var(--font-num);font-weight:600;">10:1</span> 或低于 <span style="font-family:var(--font-num);font-weight:600;">1:10</span> 时，其中一种组分极度匮乏，缓冲容量急剧跌至峰值的 33% 以下，体系失去抵抗扰动的能力。
+          </p>
+          <p class="rule-sub">
+            选择缓冲剂时，必须挑选 pKa 尽量接近目标 pH 的弱酸弱碱对。
+          </p>
+        </article>
+
+        <!-- 浓度对缓冲容量的影响推演 -->
+        <section class="sim-card">
+          <div class="sim-head">
+            <h3>总浓度对抵抗扰动能力的倍增效应</h3>
+            <div class="tabs" role="tablist">
+              <button class="tab-btn active" id="tab-opt" onclick="setRatio('ideal')">最佳比例 (1:1)</button>
+              <button class="tab-btn" id="tab-edge" onclick="setRatio('edge')">边缘比例 (1:5)</button>
+            </div>
+          </div>
+
+          <p class="rule-sub" id="ratio-note">
+            当前处于最佳配比：[Ac⁻]/[HAc] = 1.0，pH = 4.76。此时缓冲对处于最大储备均衡状态。
+          </p>
+
+          <!-- 柱状能力计测器 -->
+          <div class="compare-container">
+            <div class="state-row">
+              <div>
+                <div class="state-label">C_tot = 0.20 mol/L</div>
+                <div class="state-desc">高浓度高储备</div>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill c05" id="bar-high" style="width: 100%;"></div>
+              </div>
+              <div class="state-val" id="val-high">0.115<span> mol/L·pH</span></div>
+            </div>
+
+            <div class="state-row">
+              <div>
+                <div class="state-label">C_tot = 0.10 mol/L</div>
+                <div class="state-desc">常用标准浓度</div>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill c01" id="bar-mid" style="width: 50%;"></div>
+              </div>
+              <div class="state-val" id="val-mid">0.058<span> mol/L·pH</span></div>
+            </div>
+
+            <div class="state-row">
+              <div>
+                <div class="state-label">C_tot = 0.05 mol/L</div>
+                <div class="state-desc">稀薄低储备</div>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill c002" id="bar-low" style="width: 25%;"></div>
+              </div>
+              <div class="state-val" id="val-low">0.029<span> mol/L·pH</span></div>
+            </div>
+          </div>
+
+          <!-- 外加扰动结果展示 -->
+          <div class="impact-box" id="impact-card">
+            <div class="impact-text" id="impact-desc">
+              加入 <strong>10 mmol/L 强碱 (NaOH)</strong> 后：<br>
+              0.20 M 缓冲液仅升高 <strong>0.09 pH</strong>，而 0.05 M 缓冲液激增 <strong>0.37 pH</strong>。
+            </div>
+            <div class="impact-metric">
+              <span class="val" id="metric-ratio">4.2 ×</span>
+              <span class="lbl">抗扰动耐受度差异</span>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const pKa = 4.76;
+      const Ka = Math.pow(10, -pKa);
+
+      // 计算 Van Slyke 缓冲容量精确值
+      function calcBeta(pH, Ctot) {
+        const H = Math.pow(10, -pH);
+        const numerator = Ka * H;
+        const denominator = Math.pow(Ka + H, 2);
+        return 2.303 * Ctot * (numerator / denominator);
+      }
+
+      // 生成 pH 在 2.76 到 6.76 (pKa ± 2) 区间的高精度数据点
+      const phPoints = [];
+      const dataHigh = [];
+      const dataMid = [];
+      const dataLow = [];
+
+      for (let ph = 2.76; ph <= 6.76; ph += 0.05) {
+        const phVal = Number(ph.toFixed(2));
+        phPoints.push(phVal);
+        dataHigh.push([phVal, Number(calcBeta(phVal, 0.20).toFixed(4))]);
+        dataMid.push([phVal, Number(calcBeta(phVal, 0.10).toFixed(4))]);
+        dataLow.push([phVal, Number(calcBeta(phVal, 0.05).toFixed(4))]);
+      }
+
+      const host = document.getElementById('chart-host');
+      const chart = echarts.init(host, null, { renderer: 'svg' });
+
+      const option = {
+        grid: {
+          left: 56,
+          right: 28,
+          top: 32,
+          bottom: 38
+        },
+        tooltip: {
+          trigger: 'axis',
+          formatter: function(params) {
+            const ph = params[0].value[0];
+            let tip = `<div style="font-weight:600;margin-bottom:4px;font-size:15px;">pH = ${ph}</div>`;
+            params.forEach(p => {
+              tip += `<div style="font-size:13px;color:${p.color};">${p.seriesName}: <b>${p.value[1]}</b> mol/(L·pH)</div>`;
+            });
+            return tip;
+          }
+        },
+        xAxis: {
+          type: 'value',
+          min: 2.76,
+          max: 6.76,
+          interval: 0.5,
+          name: 'pH',
+          nameLocation: 'end',
+          nameTextStyle: {
+            color: '#526970',
+            fontFamily: 'Bahnschrift',
+            fontSize: 13,
+            padding: [0, 0, 0, 6]
+          },
+          axisLabel: {
+            color: '#526970',
+            fontFamily: 'Bahnschrift',
+            fontSize: 13,
+            formatter: (v) => v.toFixed(1)
+          },
+          axisLine: { lineStyle: { color: 'rgba(82, 105, 112, 0.4)' } },
+          splitLine: { lineStyle: { color: 'rgba(82, 105, 112, 0.1)' } }
+        },
+        yAxis: {
+          type: 'value',
+          min: 0,
+          max: 0.13,
+          interval: 0.02,
+          name: '缓冲容量 β (mol / (L · pH))',
+          nameTextStyle: {
+            color: '#526970',
+            fontSize: 13,
+            padding: [0, 0, 6, 10]
+          },
+          axisLabel: {
+            color: '#526970',
+            fontFamily: 'Bahnschrift',
+            fontSize: 13,
+            formatter: (v) => v.toFixed(2)
+          },
+          axisLine: { show: false },
+          splitLine: { lineStyle: { color: 'rgba(82, 105, 112, 0.12)' } }
+        },
+        series: [
+          {
+            name: '有效范围阴影',
+            type: 'line',
+            data: [],
+            markArea: {
+              silent: true,
+              itemStyle: {
+                color: 'rgba(8, 116, 110, 0.08)'
+              },
+              data: [[
+                {
+                  xAxis: 3.76,
+                  label: {
+                    show: true,
+                    position: 'insideBottom',
+                    distance: 30,
+                    formatter: '有效缓冲区间 [ pKa - 1,  pKa + 1 ]',
+                    color: '#08746E',
+                    fontSize: 13,
+                    fontWeight: 600
+                  }
+                },
+                {
+                  xAxis: 5.76
+                }
+              ]]
+            },
+            markLine: {
+              symbol: 'none',
+              lineStyle: {
+                color: '#08746E',
+                type: 'dashed',
+                width: 1.5
+              },
+              data: [
+                {
+                  xAxis: 4.76,
+                  label: {
+                    formatter: 'pH = pKa (4.76) 峰值',
+                    position: 'end',
+                    fontSize: 13,
+                    color: '#08746E'
+                  }
+                },
+                { xAxis: 3.76, label: { formatter: '3.76 (-1)', position: 'end', fontSize: 13, color: '#526970' } },
+                { xAxis: 5.76, label: { formatter: '5.76 (+1)', position: 'end', fontSize: 13, color: '#526970' } }
+              ]
+            }
+          },
+          {
+            name: '0.20 mol/L',
+            type: 'line',
+            smooth: true,
+            showSymbol: false,
+            data: dataHigh,
+            lineStyle: { color: '#08746E', width: 3.5 },
+            itemStyle: { color: '#08746E' }
+          },
+          {
+            name: '0.10 mol/L',
+            type: 'line',
+            smooth: true,
+            showSymbol: false,
+            data: dataMid,
+            lineStyle: { color: '#238982', width: 2.5, type: 'solid' },
+            itemStyle: { color: '#238982' }
+          },
+          {
+            name: '0.05 mol/L',
+            type: 'line',
+            smooth: true,
+            showSymbol: false,
+            data: dataLow,
+            lineStyle: { color: '#7baaa6', width: 2, type: 'dashed' },
+            itemStyle: { color: '#7baaa6' }
+          }
+        ]
+      };
+
+      chart.setOption(option);
+
+      // 响应式图表尺寸更新
+      window.addEventListener('resize', function () {
+        chart.resize();
+      });
+
+      // 互动状态切换：最佳比例 vs 边缘比例
+      window.setRatio = function(mode) {
+        const tabOpt = document.getElementById('tab-opt');
+        const tabEdge = document.getElementById('tab-edge');
+        const note = document.getElementById('ratio-note');
+        const barHigh = document.getElementById('bar-high');
+        const barMid = document.getElementById('bar-mid');
+        const barLow = document.getElementById('bar-low');
+        const valHigh = document.getElementById('val-high');
+        const valMid = document.getElementById('val-mid');
+        const valLow = document.getElementById('val-low');
+        const desc = document.getElementById('impact-desc');
+        const metric = document.getElementById('metric-ratio');
+
+        if (mode === 'ideal') {
+          tabOpt.classList.add('active');
+          tabEdge.classList.remove('active');
+          note.innerHTML = '当前处于最佳配比：[Ac⁻]/[HAc] = 1.0，pH = 4.76。此时缓冲对处于最大储备均衡状态。';
+
+          barHigh.style.width = '100%';
+          barMid.style.width = '50%';
+          barLow.style.width = '25%';
+
+          valHigh.innerHTML = '0.115<span> mol/L·pH</span>';
+          valMid.innerHTML = '0.058<span> mol/L·pH</span>';
+          valLow.innerHTML = '0.029<span> mol/L·pH</span>';
+
+          desc.innerHTML = '加入 <strong>10 mmol/L 强碱 (NaOH)</strong> 后：<br>0.20 M 缓冲液仅升高 <strong>0.09 pH</strong>，而 0.05 M 缓冲液激增 <strong>0.37 pH</strong>。';
+          metric.textContent = '4.2 ×';
+        } else {
+          tabEdge.classList.add('active');
+          tabOpt.classList.remove('active');
+          note.innerHTML = '当前处于边缘配比：[Ac⁻]/[HAc] = 0.2 (1:5)，pH = 4.06。共轭碱 Ac⁻ 已大幅损耗。';
+
+          // 在 pH 4.06 时，beta 约为峰值的 55%
+          barHigh.style.width = '55%';
+          barMid.style.width = '27.5%';
+          barLow.style.width = '13.8%';
+
+          valHigh.innerHTML = '0.063<span> mol/L·pH</span>';
+          valMid.innerHTML = '0.032<span> mol/L·pH</span>';
+          valLow.innerHTML = '0.016<span> mol/L·pH</span>';
+
+          desc.innerHTML = '共轭碱消耗大半，抵御外加酸能力急剧萎缩：<br>低浓度 0.05 M 溶液已接近缓冲枯竭点，极易发生 pH 击穿。';
+          metric.textContent = '1.8 ×';
+        }
+      };
+
+      Deck.init({ index: 6, total: 17, keys: false });
+    })();
+  </script>
+</body>
+</html>

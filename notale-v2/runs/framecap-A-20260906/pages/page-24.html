@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Voting 与 Stacking</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F4F7FB;
+      --surface: #E8EEF5;
+      --text: #13243A;
+      --muted: #53667C;
+      --model: #2457A6;
+      --aggregate: #0F766E;
+      --focus: #C94B00;
+      --font-display: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: "DIN Alternate", "Bahnschrift", system-ui, sans-serif;
+      --fs-h1: 34px;
+      --fs-h2: 22px;
+      --fs-lead: 19px;
+      --fs-body: 18px;
+      --fs-sec: 16px;
+      --fs-label: 15px;
+      --fs-tick: 13px;
+      --radius: 8px;
+      --line: 2px;
+      --dur-fast: 160ms;
+      --dur-base: 320ms;
+      --ease: cubic-bezier(.2,.75,.25,1);
+      --pad-x: 56px;
+      --pad-y: 28px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    main {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+    }
+
+    .panel {
+      background: #FFFFFF;
+      border: var(--line) solid var(--surface);
+      border-radius: var(--radius);
+      padding: 22px 26px 18px 26px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      position: relative;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      border-bottom: 2px solid var(--surface);
+      padding-bottom: 10px;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .panel-tag {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--model);
+    }
+
+    .diagram-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    svg.flow {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* Diagram SVG Styles */
+    .node-box {
+      fill: var(--surface);
+      stroke: var(--model);
+      stroke-width: var(--line);
+      rx: 6px;
+    }
+
+    .node-title {
+      font-family: var(--font-sans);
+      font-size: 15px;
+      font-weight: 700;
+      fill: var(--text);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .node-sub {
+      font-family: var(--font-numeric);
+      font-size: 13px;
+      fill: var(--muted);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .input-pill {
+      fill: #FFFFFF;
+      stroke: var(--muted);
+      stroke-width: var(--line);
+      rx: 6px;
+    }
+
+    .agg-box {
+      fill: #FFFFFF;
+      stroke: var(--aggregate);
+      stroke-width: 3px;
+      rx: 8px;
+    }
+
+    .meta-box {
+      fill: #FEF3C7;
+      stroke: var(--focus);
+      stroke-width: 3px;
+      rx: 8px;
+    }
+
+    .meta-text {
+      fill: var(--focus);
+      font-weight: 700;
+      font-size: 15px;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .out-box {
+      fill: var(--aggregate);
+      rx: 6px;
+    }
+
+    .out-text {
+      fill: #FFFFFF;
+      font-weight: 700;
+      font-size: 16px;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .flow-line {
+      fill: none;
+      stroke: var(--model);
+      stroke-width: var(--line);
+    }
+
+    .agg-line {
+      fill: none;
+      stroke: var(--aggregate);
+      stroke-width: 3px;
+    }
+
+    .focus-line {
+      fill: none;
+      stroke: var(--focus);
+      stroke-width: 3px;
+    }
+
+    .rule-box {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .rule-strong {
+      font-weight: 700;
+    }
+
+    .rule-val {
+      font-family: var(--font-numeric);
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="24" data-total="29">
+  <div id="stage">
+    <header>
+      <h1>Voting 直接汇总，Stacking 训练组合</h1>
+      <p class="lead">前者用固定启发式规则汇总预测，后者将基模型输出作为新特征由元模型训练最佳组合</p>
+    </header>
+
+    <main>
+      <!-- 左栏：Voting -->
+      <section class="panel min0">
+        <div class="panel-header">
+          <h2 class="panel-title">Voting 投票聚合</h2>
+          <span class="panel-tag">固定人工规则</span>
+        </div>
+
+        <div class="diagram-wrap min0">
+          <svg class="flow" viewBox="0 0 660 380">
+            <defs>
+              <marker id="arrow-model" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#2457A6"/>
+              </marker>
+              <marker id="arrow-agg" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#0F766E"/>
+              </marker>
+            </defs>
+
+            <!-- 原始输入样本 -->
+            <rect class="input-pill" x="15" y="165" width="95" height="50"/>
+            <text class="node-title" x="62" y="190">输入样本 x</text>
+
+            <!-- 分发流向基模型 -->
+            <path class="flow-line" marker-end="url(#arrow-model)" d="M110,180 C155,180 165,65 195,65"/>
+            <path class="flow-line" marker-end="url(#arrow-model)" d="M110,190 L195,190"/>
+            <path class="flow-line" marker-end="url(#arrow-model)" d="M110,200 C155,200 165,315 195,315"/>
+
+            <!-- 基学习器 1, 2, 3 -->
+            <rect class="node-box" x="195" y="38" width="165" height="54"/>
+            <text class="node-title" x="277" y="57">基模型 1 · 随机森林</text>
+            <text class="node-sub" x="277" y="77">预测: 0.85</text>
+
+            <rect class="node-box" x="195" y="163" width="165" height="54"/>
+            <text class="node-title" x="277" y="182">基模型 2 · 逻辑回归</text>
+            <text class="node-sub" x="277" y="202">预测: 0.70</text>
+
+            <rect class="node-box" x="195" y="288" width="165" height="54"/>
+            <text class="node-title" x="277" y="307">基模型 3 · SVM</text>
+            <text class="node-sub" x="277" y="327">预测: 0.40</text>
+
+            <!-- 汇总到硬投票/软均值聚合节点 -->
+            <path class="agg-line" marker-end="url(#arrow-agg)" d="M360,65 C410,65 415,175 440,180"/>
+            <path class="agg-line" marker-end="url(#arrow-agg)" d="M360,190 L440,190"/>
+            <path class="agg-line" marker-end="url(#arrow-agg)" d="M360,315 C410,315 415,205 440,200"/>
+
+            <!-- 规则汇聚器 -->
+            <rect class="agg-box" x="440" y="153" width="115" height="74"/>
+            <text class="node-title" x="497" y="179" style="fill: var(--aggregate);">规则汇总</text>
+            <text class="node-sub" x="497" y="203">均值 / 多数票</text>
+
+            <!-- 输出最终预测 -->
+            <path class="agg-line" marker-end="url(#arrow-agg)" d="M555,190 L590,190"/>
+            <rect class="out-box" x="590" y="165" width="65" height="50"/>
+            <text class="out-text" x="622" y="190">0.65</text>
+          </svg>
+        </div>
+
+        <div class="rule-box">
+          <span>规则：直接代数均值 <strong class="rule-val">(0.85 + 0.70 + 0.40) / 3 = 0.65</strong></span>
+        </div>
+      </section>
+
+      <!-- 右栏：Stacking -->
+      <section class="panel min0">
+        <div class="panel-header">
+          <h2 class="panel-title">Stacking 堆叠集成</h2>
+          <span class="panel-tag">元学习器自适应</span>
+        </div>
+
+        <div class="diagram-wrap min0">
+          <svg class="flow" viewBox="0 0 680 500">
+            <defs>
+              <marker id="arrow-focus" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#C94B00"/>
+              </marker>
+            </defs>
+
+            <!-- 原始输入样本 -->
+            <rect class="input-pill" x="15" y="220" width="85" height="50"/>
+            <text class="node-title" x="57" y="245">输入样本 x</text>
+
+            <!-- 分发流向初级模型 -->
+            <path class="flow-line" marker-end="url(#arrow-model)" d="M100,235 C145,235 155,95 185,95"/>
+            <path class="flow-line" marker-end="url(#arrow-model)" d="M100,245 L185,245"/>
+            <path class="flow-line" marker-end="url(#arrow-model)" d="M100,255 C145,255 155,395 185,395"/>
+
+            <!-- 基学习器 1, 2, 3 -->
+            <rect class="node-box" x="185" y="70" width="135" height="52"/>
+            <text class="node-title" x="252" y="88">初级模型 1</text>
+            <text class="node-sub" x="252" y="108">ŷ₁ = 0.85</text>
+
+            <rect class="node-box" x="185" y="220" width="135" height="52"/>
+            <text class="node-title" x="252" y="238">初级模型 2</text>
+            <text class="node-sub" x="252" y="258">ŷ₂ = 0.70</text>
+
+            <rect class="node-box" x="185" y="370" width="135" height="52"/>
+            <text class="node-title" x="252" y="388">初级模型 3</text>
+            <text class="node-sub" x="252" y="408">ŷ₃ = 0.40</text>
+
+            <!-- 输出构成新元特征向量 z = [ŷ1, ŷ2, ŷ3] -->
+            <path class="flow-line" marker-end="url(#arrow-model)" d="M320,95 C350,95 355,225 375,230"/>
+            <path class="flow-line" marker-end="url(#arrow-model)" d="M320,245 L375,245"/>
+            <path class="flow-line" marker-end="url(#arrow-model)" d="M320,395 C350,395 355,265 375,260"/>
+
+            <!-- 新特征向量容器 -->
+            <g transform="translate(375, 205)">
+              <rect x="0" y="0" width="102" height="96" rx="6" fill="#F4F7FB" stroke="#53667C" stroke-width="1.5" stroke-dasharray="4 3"/>
+              <text x="51" y="22" text-anchor="middle" font-size="13" font-weight="700" fill="#53667C">元特征输入</text>
+              <text x="51" y="44" text-anchor="middle" font-family="var(--font-numeric)" font-size="15" fill="#13243A">z₁ = 0.85</text>
+              <text x="51" y="64" text-anchor="middle" font-family="var(--font-numeric)" font-size="15" fill="#13243A">z₂ = 0.70</text>
+              <text x="51" y="84" text-anchor="middle" font-family="var(--font-numeric)" font-size="15" fill="#13243A">z₃ = 0.40</text>
+            </g>
+
+            <!-- 元学习器 -->
+            <path class="focus-line" marker-end="url(#arrow-focus)" d="M470,245 L500,245"/>
+            <rect class="meta-box" x="500" y="210" width="105" height="70"/>
+            <text class="meta-text" x="552" y="235">元学习器</text>
+            <text class="node-sub" x="552" y="258" style="fill: #92400E;">拟合目标 y</text>
+
+            <!-- 最终输出 -->
+            <path class="focus-line" marker-end="url(#arrow-focus)" d="M605,245 L630,245"/>
+            <rect class="out-box" x="630" y="220" width="45" height="50" style="fill: var(--focus);"/>
+            <text class="out-text" x="652" y="245">ŷ</text>
+          </svg>
+        </div>
+
+        <div class="rule-box">
+          <span>机制：基模型预测构成元特征向量 <strong class="rule-val">z = [0.85, 0.70, 0.40]</strong>，由元模型学习拟合</span>
+        </div>
+      </section>
+    </main>
+
+    <aside class="notes" hidden>
+      本节对比集成学习中两种最经典的汇总策略：Voting 和 Stacking。
+      左边是 Voting：基学习器产生预测后，不进行任何额外的二次学习，而是直接采用预设的人工启发式规则，比如多数票决（硬投票）或概率均值（软投票）。这种方式计算成本极低，不需要重新训练，但各模型无论置信度高低，都受到固定规则的束缚。
+      右边是 Stacking：它将所有初级模型的预测输出打包成一个全新的特征向量，交给一个被称为“元学习器”（通常是简单的线性模型如 Logistic Regression）进行二次拟合。元学习器会自动在数据中学习“在什么情况下初级模型1更可靠，什么情况下初级模型3在犯错”，从而自适应调整权重。
+      但是，这也引出了下一页的核心问题：如果直接用训练集基模型的拟合值去训练元学习器，极易发生严重的数据泄漏与过拟合。
+    </aside>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 24, total: 29, keys: false });
+  </script>
+</body>
+</html>

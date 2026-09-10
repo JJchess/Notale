@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>识别策略压力测试</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F7;
+      --surface: #FFFFFF;
+      --soft: #E3ECEF;
+      --text: #17272D;
+      --muted: #52666E;
+      --observed: #245A74;
+      --cause: #B13F2A;
+      --uncertain: #7A5B12;
+      --supported: #2D694C;
+      --selected: #D6E8EE;
+      --focus: #B13F2A;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: 44px 56px 36px 56px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      height: 900px;
+      width: 1600px;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* 顶部标题区 */
+    .page-header {
+      flex: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-bottom: 20px;
+      border-bottom: 1px solid rgba(82, 102, 110, 0.22);
+      padding-bottom: 14px;
+    }
+    .page-title {
+      font-size: 34px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--text);
+      margin: 0;
+    }
+    .page-subtitle {
+      font-size: 16px;
+      color: var(--muted);
+      margin: 6px 0 0 0;
+      line-height: 1.4;
+    }
+
+    /* 主实验工作台：左右结构 */
+    .workbench {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 330px 1fr 330px;
+      gap: 20px;
+      min-height: 0;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: 12px;
+      border: 1px solid rgba(82, 102, 110, 0.18);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 16px rgba(23, 39, 45, 0.04);
+    }
+    .card.stage-center {
+      height: 680px;
+      padding-bottom: 14px;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 12px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .card-badge {
+      font-size: 13px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--soft);
+      color: var(--muted);
+    }
+
+    /* 左栏：DGP扰动选择 */
+    .dgp-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .dgp-btn {
+      text-align: left;
+      background: var(--bg);
+      border: 1px solid rgba(82, 102, 110, 0.2);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 150ms ease;
+    }
+    .dgp-btn:hover {
+      border-color: var(--observed);
+      background: #EBF2F5;
+    }
+    .dgp-btn.active {
+      border-color: var(--cause);
+      background: #FDF4F2;
+      box-shadow: inset 0 0 0 1px var(--cause);
+    }
+    .dgp-btn-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .dgp-btn.active .dgp-btn-title {
+      color: var(--cause);
+    }
+    .dgp-btn-desc {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 3px;
+      line-height: 1.35;
+    }
+
+    .dag-mini {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: var(--soft);
+      font-size: 13px;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .dag-formula {
+      font-size: 13px;
+      color: var(--observed);
+      font-weight: 600;
+      font-family: monospace;
+    }
+
+    /* 中栏：实证样本分布与回归拟合画布 */
+    .stage-center {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .chart-container {
+      flex: 1;
+      position: relative;
+      background: #FAFDFD;
+      border-radius: 8px;
+      border: 1px solid rgba(82, 102, 110, 0.15);
+      overflow: hidden;
+    }
+    .chart-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 中栏底部图例与样本规模切换 */
+    .chart-footer {
+      flex: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+      padding: 0 4px;
+    }
+    .chart-legend {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .legend-line {
+      width: 20px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .btn-resample {
+      background: var(--surface);
+      border: 1px solid rgba(82, 102, 110, 0.3);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 120ms;
+    }
+    .btn-resample:hover {
+      background: var(--soft);
+      border-color: var(--muted);
+    }
+
+    /* 右栏：同一估计量的因果含义诊断与读数 */
+    .metrics-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .metric-box {
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: var(--bg);
+      border: 1px solid rgba(82, 102, 110, 0.15);
+    }
+    .metric-label {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 2px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .metric-val {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+    .metric-val.true-effect {
+      color: var(--supported);
+    }
+    .metric-val.ols-effect {
+      color: var(--cause);
+    }
+    .metric-val.bias-effect {
+      color: var(--uncertain);
+    }
+
+    .verdict-box {
+      margin-top: 10px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: #FDF4F2;
+      border: 1px solid rgba(177, 63, 42, 0.3);
+    }
+    .verdict-box.clean {
+      background: #F0F7F4;
+      border-color: rgba(45, 105, 76, 0.3);
+    }
+    .verdict-tag {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+      display: block;
+    }
+    .verdict-box.clean .verdict-tag {
+      color: var(--supported);
+    }
+    .verdict-box:not(.clean) .verdict-tag {
+      color: var(--cause);
+    }
+    .verdict-text {
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+    }
+
+    /* 坐标轴刻度与文字 */
+    .axis-label {
+      font-size: 13px;
+      fill: var(--muted);
+      font-weight: 500;
+    }
+    .tick-label {
+      font-size: 13px;
+      fill: var(--muted);
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body data-page="10" data-total="24">
+  <div id="stage">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">识别策略压力测试：同一回归式在不同 DGP 下的含义</h1>
+        <p class="page-subtitle">真实因果效应 β* 恒为 1.50。切换潜在数据生成过程（DGP），观察 OLS 估计量 β̂ 是否仍代表因果效应。</p>
+      </div>
+      <div style="text-align: right;">
+        <span class="card-badge">常设回归估计：Y = α + β̂ D + e</span>
+      </div>
+    </header>
+
+    <main class="workbench">
+      <!-- 左栏：DGP扰动切换 -->
+      <section class="card">
+        <h2 class="card-title">
+          <span>数据生成机制 (DGP)</span>
+          <span class="card-badge" id="dgp-count">4 种场景</span>
+        </h2>
+        <div class="dgp-selector" id="dgp-list">
+          <button type="button" class="dgp-btn active" data-dgp="clean">
+            <div class="dgp-btn-title">
+              <span>基准：外生实验设计</span>
+              <span>D ⫫ U</span>
+            </div>
+            <div class="dgp-btn-desc">处理变量 D 纯随机分配，无未观测混杂。</div>
+          </button>
+
+          <button type="button" class="dgp-btn" data-dgp="omitted">
+            <div class="dgp-btn-title">
+              <span>威胁 1：遗漏混杂变量 (U)</span>
+              <span>D ← U → Y</span>
+            </div>
+            <div class="dgp-btn-desc">能力 U 同时提升入选概率与收入，正向混杂。</div>
+          </button>
+
+          <button type="button" class="dgp-btn" data-dgp="selection">
+            <div class="dgp-btn-title">
+              <span>威胁 2：基于潜在结果的选择</span>
+              <span>自选择效应</span>
+            </div>
+            <div class="dgp-btn-desc">预期收益更高者更积极参训，破坏无混杂性。</div>
+          </button>
+
+          <button type="button" class="dgp-btn" data-dgp="simultaneity">
+            <div class="dgp-btn-title">
+              <span>威胁 3：同时性与反向因果</span>
+              <span>D ⇄ Y</span>
+            </div>
+            <div class="dgp-btn-desc">因果双向反馈，截面回归无法分离单向影响。</div>
+          </button>
+        </div>
+
+        <div class="dag-mini">
+          <div>当前识别状态：</div>
+          <div class="dag-formula" id="dag-formula">DGP: Y = 1.5·D + ε (D 随机分配)</div>
+        </div>
+      </section>
+
+      <!-- 中栏：微观样本分布与拟合回归 -->
+      <section class="card stage-center min0">
+        <h2 class="card-title">
+          <span>生成样本散点与双线对比 (N=300)</span>
+          <button type="button" class="btn-resample" id="btn-resample">重新抽样扰动</button>
+        </h2>
+
+        <div class="chart-container" id="chart-wrap">
+          <svg class="chart-svg" id="scatter-svg" viewBox="0 0 680 470"></svg>
+        </div>
+
+        <div class="chart-footer">
+          <div class="chart-legend">
+            <div class="legend-item">
+              <span class="legend-dot" style="background: rgba(36, 90, 116, 0.45);"></span>
+              <span>观测样本</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line" style="background: var(--supported); border-top: 2px dashed var(--supported); height:0;"></span>
+              <span>真实因果斜率 β* = 1.50</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line" style="background: var(--cause);"></span>
+              <span>回归估计斜率 β̂ (OLS)</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：因果含义与偏误诊断 -->
+      <section class="card">
+        <h2 class="card-title">
+          <span>因果识别诊断</span>
+          <span class="card-badge" id="ident-status">识别成立</span>
+        </h2>
+
+        <div class="metrics-grid">
+          <div class="metric-box">
+            <div class="metric-label">
+              <span>真实因果效应 (β*)</span>
+              <span>真实参数</span>
+            </div>
+            <div class="metric-val true-effect">1.50</div>
+          </div>
+
+          <div class="metric-box">
+            <div class="metric-label">
+              <span>OLS 回归估计 (β̂)</span>
+              <span>估计量</span>
+            </div>
+            <div class="metric-val ols-effect" id="val-ols">1.51</div>
+          </div>
+
+          <div class="metric-box">
+            <div class="metric-label">
+              <span>识别偏误 (|β̂ - β*|)</span>
+              <span>偏误量</span>
+            </div>
+            <div class="metric-val bias-effect" id="val-bias">0.01</div>
+          </div>
+        </div>
+
+        <div class="verdict-box clean" id="verdict-card">
+          <span class="verdict-tag" id="verdict-tag">无偏因果推断</span>
+          <p class="verdict-text" id="verdict-desc">
+            无混杂变量干扰，OLS 估计量与真实因果效应一致。回归系数可解释为因果效应。
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    在阅读实证论文时，很多读者容易陷入一个误区：只要作者跑出了显著的回归系数，就以为这个系数等于因果效应。
+    这一页我们通过数据生成过程的切换来打破这种错觉。
+    在这个模拟系统中，真实的因果效应 β* 永远等于 1.50。
+    当我们在基准的随机实验下，OLS 回归斜率精确收敛到 1.50，此时估计量具有因果含义。
+    但是，当你切换到“遗漏混杂”或“选择偏差”时，由于 DGP 中存在未观测变量或反向因果，同一行代码、同一个回归估计量算出来的斜率会被严重拉偏。
+    这告诉我们：决定回归系数因果含义的，从来不是回归算法本身，而是现实数据生成过程是否满足识别假设。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 固定伪随机数生成器确保复现性
+      let seed = 42;
+      function random() {
+        const x = Math.sin(seed++) * 10000;
+        return x - Math.floor(x);
+      }
+      function randNorm() {
+        let u = 0, v = 0;
+        while(u === 0) u = random();
+        while(v === 0) v = random();
+        return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+      }
+
+      const N = 300;
+      const TRUE_BETA = 1.50;
+
+      // 4种 DGP 定义与因果含义
+      const DGP_CONFIGS = {
+        clean: {
+          name: "基准：外生实验设计",
+          dag: "DGP: Y = 1.5·D + ε (D 随机分配)",
+          ident: "识别成立",
+          isClean: true,
+          tag: "无偏因果推断",
+          desc: "处理变量完全随机，无内生性威胁。OLS 估计量与真实因果斜率高度吻合。",
+          generate: () => {
+            const data = [];
+            for (let i = 0; i < N; i++) {
+              const D = random() * 6 - 3; // [-3, 3]
+              const e = randNorm() * 1.2;
+              const Y = TRUE_BETA * D + e;
+              data.push({ D, Y });
+            }
+            return data;
+          }
+        },
+        omitted: {
+          name: "威胁 1：遗漏混杂变量 (U)",
+          dag: "DGP: U→D, U→Y (遗漏能力混杂)",
+          ident: "正向遗漏偏误",
+          isClean: false,
+          tag: "混杂虚高估因果",
+          desc: "未观测混杂 U 同时驱动处理与结果，OLS 吸收了 U 的效应，导致估计严重高估。",
+          generate: () => {
+            const data = [];
+            for (let i = 0; i < N; i++) {
+              const U = randNorm() * 1.5;
+              const D = 0.8 * U + randNorm() * 0.8;
+              const e = randNorm() * 1.0;
+              const Y = TRUE_BETA * D + 2.2 * U + e;
+              data.push({ D, Y });
+            }
+            return data;
+          }
+        },
+        selection: {
+          name: "威胁 2：基于潜在结果的选择",
+          dag: "DGP: 自选择效应 (预期高回报更积极)",
+          ident: "选择性偏误",
+          isClean: false,
+          tag: "样本自选择扭曲",
+          desc: "潜在高受益个体更可能进入高处理水平，截面均值差异混入了初始禀赋差异。",
+          generate: () => {
+            const data = [];
+            for (let i = 0; i < N; i++) {
+              const Y0 = randNorm() * 2.0;
+              const D = 1.1 * Y0 + randNorm() * 0.8;
+              const e = randNorm() * 0.8;
+              const Y = Y0 + TRUE_BETA * D + e;
+              data.push({ D, Y });
+            }
+            return data;
+          }
+        },
+        simultaneity: {
+          name: "威胁 3：同时性与反向因果",
+          dag: "DGP: D ⇄ Y (双向均衡反馈)",
+          ident: "联立方程偏误",
+          isClean: false,
+          tag: "双向因果失真",
+          desc: "结果 Y 反向强化了 D，截面协方差由双向均衡共同决定，单方程回归不可解因果。",
+          generate: () => {
+            const data = [];
+            for (let i = 0; i < N; i++) {
+              const u1 = randNorm() * 1.2;
+              const u2 = randNorm() * 1.2;
+              // 联立: Y = 1.5 D + u1; D = 0.45 Y + u2
+              // (1 - 1.5*0.45) Y = 0.325 Y = 1.5 u2 + u1 => Y = (1.5 u2 + u1) / 0.325
+              const Y = (1.5 * u2 + u1) / 0.325;
+              const D = 0.45 * Y + u2;
+              data.push({ D: D * 0.35, Y: Y * 0.35 });
+            }
+            return data;
+          }
+        }
+      };
+
+      let currentDgp = "clean";
+      let baseSeed = 101;
+
+      function solveOLS(data) {
+        let sumD = 0, sumY = 0;
+        data.forEach(p => { sumD += p.D; sumY += p.Y; });
+        const meanD = sumD / data.length;
+        const meanY = sumY / data.length;
+
+        let num = 0, den = 0;
+        data.forEach(p => {
+          num += (p.D - meanD) * (p.Y - meanY);
+          den += (p.D - meanD) * (p.D - meanD);
+        });
+        const beta = den === 0 ? 0 : num / den;
+        const alpha = meanY - beta * meanD;
+        return { alpha, beta };
+      }
+
+      const svg = document.getElementById("scatter-svg");
+      const valOls = document.getElementById("val-ols");
+      const valBias = document.getElementById("val-bias");
+      const identStatus = document.getElementById("ident-status");
+      const dagFormula = document.getElementById("dag-formula");
+      const verdictCard = document.getElementById("verdict-card");
+      const verdictTag = document.getElementById("verdict-tag");
+      const verdictDesc = document.getElementById("verdict-desc");
+      const dgpButtons = document.querySelectorAll(".dgp-btn");
+      const btnResample = document.getElementById("btn-resample");
+
+      function render() {
+        seed = baseSeed;
+        const conf = DGP_CONFIGS[currentDgp];
+        const data = conf.generate();
+        const ols = solveOLS(data);
+        const bias = Math.abs(ols.beta - TRUE_BETA);
+
+        // 更新指标读数
+        valOls.textContent = ols.beta.toFixed(2);
+        valBias.textContent = bias.toFixed(2);
+        identStatus.textContent = conf.ident;
+        dagFormula.textContent = conf.dag;
+
+        verdictTag.textContent = conf.tag;
+        verdictDesc.textContent = conf.desc;
+        if (conf.isClean) {
+          verdictCard.className = "verdict-box clean";
+        } else {
+          verdictCard.className = "verdict-box";
+        }
+
+        // 绘制 SVG 图表
+        // viewBox: 0 0 680 470
+        const pad = { top: 30, right: 30, bottom: 50, left: 60 };
+        const w = 680 - pad.left - pad.right;
+        const h = 470 - pad.top - pad.bottom;
+
+        // 计算数值范围
+        let minD = -4, maxD = 4, minY = -8, maxY = 8;
+        data.forEach(d => {
+          if (d.D < minD) minD = Math.floor(d.D);
+          if (d.D > maxD) maxD = Math.ceil(d.D);
+          if (d.Y < minY) minY = Math.floor(d.Y);
+          if (d.Y > maxY) maxY = Math.ceil(d.Y);
+        });
+
+        // 规范对称范围
+        const absD = Math.max(Math.abs(minD), Math.abs(maxD), 3.5);
+        const absY = Math.max(Math.abs(minY), Math.abs(maxY), 6);
+        minD = -absD; maxD = absD;
+        minY = -absY; maxY = absY;
+
+        const scaleX = v => pad.left + ((v - minD) / (maxD - minD)) * w;
+        const scaleY = v => pad.top + h - ((v - minY) / (maxY - minY)) * h;
+
+        let html = "";
+
+        // 背景网格线
+        for (let x = Math.ceil(minD); x <= Math.floor(maxD); x += 2) {
+          const sx = scaleX(x);
+          html += `<line x1="${sx}" y1="${pad.top}" x2="${sx}" y2="${pad.top + h}" stroke="#E3ECEF" stroke-width="1" />`;
+          html += `<text class="tick-label" x="${sx}" y="${pad.top + h + 18}" text-anchor="middle">${x}</text>`;
+        }
+        for (let y = Math.ceil(minY); y <= Math.floor(maxY); y += 4) {
+          const sy = scaleY(y);
+          html += `<line x1="${pad.left}" y1="${sy}" x2="${pad.left + w}" y2="${sy}" stroke="#E3ECEF" stroke-width="1" />`;
+          html += `<text class="tick-label" x="${pad.left - 10}" y="${sy + 4}" text-anchor="end">${y}</text>`;
+        }
+
+        // 坐标轴
+        const zeroX = scaleX(0);
+        const zeroY = scaleY(0);
+        html += `<line x1="${pad.left}" y1="${zeroY}" x2="${pad.left + w}" y2="${zeroY}" stroke="#52666E" stroke-width="1" stroke-dasharray="3,3" opacity="0.4" />`;
+        html += `<line x1="${zeroX}" y1="${pad.top}" x2="${zeroX}" y2="${pad.top + h}" stroke="#52666E" stroke-width="1" stroke-dasharray="3,3" opacity="0.4" />`;
+        html += `<text class="axis-label" x="${pad.left + w}" y="${pad.top + h + 38}" text-anchor="end">处理强度 (D)</text>`;
+        html += `<text class="axis-label" x="${pad.left}" y="${pad.top - 12}" text-anchor="start">观测产出 (Y)</text>`;
+
+        // 样本散点
+        data.forEach(p => {
+          const cx = scaleX(p.D);
+          const cy = scaleY(p.Y);
+          html += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.5" fill="#245A74" opacity="0.45" />`;
+        });
+
+        // 真实因果线: Y = 1.5 * D (经过原点)
+        const trueX1 = minD;
+        const trueY1 = TRUE_BETA * trueX1;
+        const trueX2 = maxD;
+        const trueY2 = TRUE_BETA * trueX2;
+        html += `<line x1="${scaleX(trueX1).toFixed(1)}" y1="${scaleY(trueY1).toFixed(1)}" x2="${scaleX(trueX2).toFixed(1)}" y2="${scaleY(trueY2).toFixed(1)}" stroke="#2D694C" stroke-width="2.5" stroke-dasharray="6,5" />`;
+
+        // OLS 回归估计线: Y = alpha + beta * D
+        const olsX1 = minD;
+        const olsY1 = ols.alpha + ols.beta * olsX1;
+        const olsX2 = maxD;
+        const olsY2 = ols.alpha + ols.beta * olsX2;
+        html += `<line x1="${scaleX(olsX1).toFixed(1)}" y1="${scaleY(olsY1).toFixed(1)}" x2="${scaleX(olsX2).toFixed(1)}" y2="${scaleY(olsY2).toFixed(1)}" stroke="#B13F2A" stroke-width="3" />`;
+
+        svg.innerHTML = html;
+      }
+
+      dgpButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          dgpButtons.forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+          currentDgp = btn.dataset.dgp;
+          render();
+        });
+      });
+
+      btnResample.addEventListener("click", () => {
+        baseSeed += 13;
+        render();
+      });
+
+      render();
+      Deck.init({ keys: false });
+    })();
+  </script>
+</body>
+</html>

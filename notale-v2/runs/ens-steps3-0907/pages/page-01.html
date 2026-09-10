@@ -1,0 +1,270 @@
+<!doctype html>
+<!--
+  主对象：来自左侧多个弱学习器的多样化决策流线（不同曲率与轨迹的蓝色路径），在右侧向中心聚集并最终汇成一条强韧的单一决断粗线。
+  对象关系：左侧发散展开、中段相互交织与投票加权、右侧汇聚定局；标题区保持宁静开阔，流线绕行并托起标题。
+  说明文字：主标题与副标题位于左上安全区，汇聚点右侧标注简明集成结论，所有文字均服从 200 字预算与严谨学术质感。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 保留底盘默认 #stage 样式，不加 position:absolute; inset:0 覆盖底盘居中机制 */
+    #stage {
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    #stream-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .header-block {
+      position: absolute;
+      left: 104px;
+      top: 180px;
+      z-index: 5;
+      width: 640px;
+      pointer-events: none;
+    }
+
+    .deck-tag {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--model);
+      letter-spacing: 0.12em;
+      margin-bottom: 20px;
+    }
+
+    .main-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.01em;
+      margin: 0 0 20px 0;
+    }
+
+    .sub-lead {
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      margin: 0;
+      max-width: 540px;
+    }
+
+    .convergence-label {
+      position: absolute;
+      left: 1040px;
+      top: 360px;
+      z-index: 5;
+      transform: translateY(-100%);
+      text-align: left;
+      pointer-events: none;
+    }
+
+    .conv-tag {
+      font-size: var(--fs-sec);
+      color: var(--focus);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    .conv-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--text);
+      font-weight: 600;
+      margin: 0 0 8px 0;
+    }
+
+    .conv-desc {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: var(--lh-copy);
+      max-width: 280px;
+      margin: 0;
+    }
+  </style>
+</head>
+<body data-page="01" data-total="32">
+  <div id="stage">
+    <canvas id="stream-canvas" class="cv-fill"></canvas>
+
+    <header class="header-block">
+      <div class="deck-tag">机器学习概论 · 第八讲</div>
+      <h1 class="main-title">集成学习</h1>
+      <p class="sub-lead">组合多个基学习器，构建泛化性能显著优于单个成员的强学习系统。</p>
+    </header>
+
+    <div class="convergence-label">
+      <div class="conv-tag">汇聚决断</div>
+      <h2 class="conv-title">多样性与共识</h2>
+      <p class="conv-desc">个体模型误差相互抵消，投票与加权形成稳定泛化边界。</p>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学好，今天我们进入第八讲：集成学习（Ensemble Learning）。
+    在前面的课程中，我们学习了决策树、支持向量机以及神经网络等单一模型。集成学习的核心哲学在于“博采众长”：不再执着于训练一个无所不能的完美单模型，而是系统化地构建一组各具差异的基学习器，并通过合理的融合策略让它们的误差相互抵消，从而在方差与偏差之间取得更优的平衡。
+    接下来的课程中，我们将依次剖析并行降低方差的 Bagging、精益求精降低偏差的 Boosting，以及融合异质模型的 Stacking。
+  </aside>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      Deck.init({ title: "集成学习——机器学习概论第八讲", keys: false });
+
+      const canvas = document.getElementById("stream-canvas");
+      const ctx = Deck.fit(canvas);
+
+      const SEED = "ensemble-cover-01";
+      const rng = new Math.seedrandom(SEED);
+
+      const MODEL_COLOR = Deck.rgb("model") || [23, 98, 142];
+      const FOCUS_COLOR = Deck.rgb("focus") || [184, 61, 11];
+      const RULE_COLOR = Deck.rgb("rule") || [113, 130, 139];
+
+      // 标题排除区（避免流线切割文字形成视觉噪点）
+      const TITLE_ZONE = { x: 104, y: 120, w: 600, h: 260 };
+
+      // 生成流线：从左侧不同高度发出，具有不同扰动与曲率，在中右侧汇聚到 (1180, 450)
+      const CONVERGENCE = { x: 1140, y: 450 };
+      const STREAM_COUNT = 42;
+      const streams = [];
+
+      for (let i = 0; i < STREAM_COUNT; i++) {
+        const startY = 80 + (740 * (i + rng() * 0.4)) / STREAM_COUNT;
+        const startX = 0;
+        
+        // 控制点生成
+        const cp1x = 360 + rng() * 160;
+        let cp1y = startY + (rng() - 0.5) * 140;
+        // 如果穿过标题区，适度下压或上提
+        if (cp1x > TITLE_ZONE.x && cp1x < TITLE_ZONE.x + TITLE_ZONE.w &&
+            cp1y > TITLE_ZONE.y && cp1y < TITLE_ZONE.y + TITLE_ZONE.h) {
+          cp1y = TITLE_ZONE.y + TITLE_ZONE.h + 30 + rng() * 60;
+        }
+
+        const cp2x = 820 + rng() * 120;
+        const cp2y = CONVERGENCE.y + (startY - CONVERGENCE.y) * 0.28 + (rng() - 0.5) * 60;
+
+        const isCurrentActive = (i === 18); // 选中一条作为当前正在汇入的弱模型
+        streams.push({
+          startX, startY,
+          cp1x, cp1y,
+          cp2x, cp2y,
+          endX: CONVERGENCE.x,
+          endY: CONVERGENCE.y,
+          active: isCurrentActive,
+          alpha: isCurrentActive ? 0.95 : (0.12 + rng() * 0.22),
+          width: isCurrentActive ? 3.5 : (1.0 + rng() * 1.5),
+          dashOffset: rng() * 100
+        });
+      }
+
+      function drawCover(time) {
+        ctx.clearRect(0, 0, Deck.W, Deck.H);
+
+        // 1. 绘制网格刻度点作为严谨蓝图背景
+        ctx.fillStyle = `rgba(${RULE_COLOR.join(",")}, 0.18)`;
+        const step = 64;
+        for (let x = 64; x < Deck.W; x += step) {
+          for (let y = 64; y < Deck.H; y += step) {
+            if (x > 100 && x < 680 && y > 120 && y < 360) continue; // 标题区避让
+            ctx.fillRect(x, y, 1.5, 1.5);
+          }
+        }
+
+        // 2. 绘制各弱分类器轨迹（蓝色流线汇聚）
+        streams.forEach(s => {
+          ctx.beginPath();
+          ctx.moveTo(s.startX, s.startY);
+          ctx.bezierCurveTo(s.cp1x, s.cp1y, s.cp2x, s.cp2y, s.endX, s.endY);
+
+          if (s.active) {
+            ctx.strokeStyle = `rgba(${FOCUS_COLOR.join(",")}, ${s.alpha})`;
+            ctx.lineWidth = s.width;
+            ctx.setLineDash([]);
+          } else {
+            ctx.strokeStyle = `rgba(${MODEL_COLOR.join(",")}, ${s.alpha})`;
+            ctx.lineWidth = s.width;
+            ctx.setLineDash([]);
+          }
+          ctx.stroke();
+
+          // 轨迹起点端点（基学习器输入点）
+          ctx.beginPath();
+          ctx.arc(s.startX + 24, s.startY + (s.cp1y - s.startY)*0.03, s.active ? 3.5 : 2, 0, Math.PI * 2);
+          ctx.fillStyle = s.active ? `rgb(${FOCUS_COLOR.join(",")})` : `rgba(${MODEL_COLOR.join(",")}, 0.4)`;
+          ctx.fill();
+        });
+
+        // 3. 汇聚点之后：粗壮强学习器决断主线（贯穿全套的 4px 汇聚路径）
+        ctx.beginPath();
+        ctx.moveTo(CONVERGENCE.x, CONVERGENCE.y);
+        ctx.lineTo(Deck.W - 60, CONVERGENCE.y);
+        ctx.strokeStyle = `rgb(${MODEL_COLOR.join(",")})`;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // 汇聚核心节点
+        ctx.beginPath();
+        ctx.arc(CONVERGENCE.x, CONVERGENCE.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = `rgb(${FOCUS_COLOR.join(",")})`;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(CONVERGENCE.x, CONVERGENCE.y, 14, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${FOCUS_COLOR.join(",")}, 0.35)`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // 终点方向箭头 / 强预测指示
+        const arrowX = Deck.W - 60;
+        ctx.beginPath();
+        ctx.moveTo(arrowX - 8, CONVERGENCE.y - 5);
+        ctx.lineTo(arrowX, CONVERGENCE.y);
+        ctx.lineTo(arrowX - 8, CONVERGENCE.y + 5);
+        ctx.strokeStyle = `rgb(${MODEL_COLOR.join(",")})`;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // 4. 沿活动路径微流动的脉冲信号（体现动态汇集过程）
+        if (time !== undefined) {
+          const t = (time % 4000) / 4000;
+          const activeS = streams.find(s => s.active);
+          if (activeS) {
+            // 严格三次贝塞尔曲线插值
+            const u = 1 - t;
+            const px = u*u*u * activeS.startX + 3*u*u*t * activeS.cp1x + 3*u*t*t * activeS.cp2x + t*t*t * activeS.endX;
+            const py = u*u*u * activeS.startY + 3*u*u*t * activeS.cp1y + 3*u*t*t * activeS.cp2y + t*t*t * activeS.endY;
+
+            ctx.beginPath();
+            ctx.arc(px, py, 4, 0, Math.PI * 2);
+            ctx.fillStyle = `rgb(${FOCUS_COLOR.join(",")})`;
+            ctx.fill();
+          }
+        }
+      }
+
+      Deck.autofit(canvas, () => {
+        drawCover(0);
+      });
+
+      Deck.loop((time) => {
+        drawCover(time);
+      }, { still: 1600 });
+    })();
+  </script>
+</body>
+</html>

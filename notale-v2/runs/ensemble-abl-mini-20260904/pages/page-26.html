@@ -1,0 +1,1211 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成不是自动增益</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      width: 1600px;
+      height: 900px;
+      padding: 32px 56px 36px 56px;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* 顶部标题区 */
+    .header {
+      flex: 0 0 auto;
+      margin-bottom: 20px;
+    }
+    .header h1 {
+      margin: 0 0 8px 0;
+      font-size: 32px;
+      line-height: 1.25;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .header p {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.45;
+      color: var(--muted);
+      max-width: 1380px;
+    }
+    .header strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* 主实验舞台：左右两栏布局 */
+    .workspace {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 28px;
+    }
+
+    /* 左侧控制与陷阱选择导航 */
+    .trap-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .trap-nav-header {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+    .trap-btn {
+      appearance: none;
+      border: 1px solid var(--surface-strong);
+      background: var(--surface);
+      border-radius: 6px;
+      padding: 14px 16px;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: border-color var(--duration) var(--ease), background var(--duration) var(--ease);
+    }
+    .trap-btn:hover {
+      background: #f8fafb;
+    }
+    .trap-btn.active {
+      border-color: var(--aggregate);
+      background: #FFF9F6;
+      box-shadow: 0 1px 4px rgba(195, 75, 34, 0.08);
+    }
+    .trap-btn-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .trap-btn.active .trap-btn-title {
+      color: var(--aggregate);
+    }
+    .trap-btn-tag {
+      font-size: 13px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--muted);
+    }
+    .trap-btn.active .trap-btn-tag {
+      background: rgba(195, 75, 34, 0.12);
+      color: var(--aggregate);
+    }
+    .trap-btn-desc {
+      font-size: 14px;
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    /* 左下方公式提示条 */
+    .theory-box {
+      margin-top: auto;
+      background: #F8FAFB;
+      border: 1px dashed var(--surface-strong);
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-size: 14px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+    .theory-box b {
+      color: var(--text);
+    }
+
+    /* 右侧主视窗：对比沙盘 */
+    .sandbox {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+    }
+
+    /* 沙盘顶部：当前陷阱的核心论断与参数开关 */
+    .sandbox-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+    .sandbox-statement h2 {
+      margin: 0 0 6px 0;
+      font-size: 21px;
+      color: var(--text);
+      font-weight: 700;
+    }
+    .sandbox-statement p {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    /* 状态切换与调节 */
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .mode-toggle {
+      display: flex;
+      background: var(--surface-strong);
+      padding: 3px;
+      border-radius: 6px;
+    }
+    .toggle-opt {
+      border: 0;
+      background: transparent;
+      padding: 6px 14px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all var(--duration) var(--ease);
+    }
+    .toggle-opt.active {
+      background: var(--surface);
+      color: var(--aggregate);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+
+    /* 沙盘主体：可视化图表与数据度量 */
+    .sandbox-body {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 24px;
+    }
+
+    .vis-container {
+      position: relative;
+      background: #FDFEFE;
+      border: 1px solid #EDF2F4;
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .vis-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧度量与诊断面板 */
+    .metrics-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: #F8FAFB;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 16px;
+    }
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid #E5ECF0;
+      border-radius: 6px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-card.alert {
+      border-left: 3px solid var(--aggregate);
+    }
+    .metric-card.good {
+      border-left: 3px solid var(--sample);
+    }
+    .metric-label {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .metric-val {
+      font-size: 26px;
+      font-weight: 700;
+      font-family: var(--font-num);
+      color: var(--text);
+    }
+    .metric-val.bad {
+      color: var(--aggregate);
+    }
+    .metric-val.ok {
+      color: var(--sample);
+    }
+    .metric-sub {
+      font-size: 13px;
+      line-height: 1.35;
+      color: var(--muted);
+    }
+
+    /* 底部警示总结条 */
+    .takeaway-bar {
+      margin-top: auto;
+      background: #FFF5F0;
+      border: 1px solid rgba(195, 75, 34, 0.25);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 14px;
+      line-height: 1.4;
+      color: #7D280B;
+    }
+    .takeaway-bar strong {
+      color: var(--aggregate);
+    }
+
+    /* SVG 内部文本与标记样式 */
+    .chart-axis {
+      stroke: #CAD6DD;
+      stroke-width: 1.5;
+    }
+    .chart-grid {
+      stroke: #EAEFF2;
+      stroke-dasharray: 4 4;
+      stroke-width: 1;
+    }
+    .chart-label {
+      font-size: 13px;
+      fill: var(--muted);
+      font-family: var(--font-sans);
+    }
+    .chart-title {
+      font-size: 14px;
+      font-weight: 700;
+      fill: var(--text);
+    }
+  </style>
+</head>
+<body data-page="26" data-total="27">
+  <div id="stage">
+    <!-- 顶栏标题 -->
+    <header class="header min0">
+      <h1>集成不是自动增益：收益抵消的四个临界陷阱</h1>
+      <p>
+        集成模型的低误差前提是<strong>基学习器误差相互独立</strong>且<strong>泛化信息真实无泄漏</strong>。当多样性崩溃、校准失效、折外穿透或算力过载时，集成不仅无法提高表现，反而引入系统性偏置与延迟。
+      </p>
+    </header>
+
+    <!-- 工作台 -->
+    <main class="workspace min0">
+      <!-- 左侧陷阱切换导航 -->
+      <nav class="trap-nav min0" aria-label="陷阱导航">
+        <div class="trap-nav-header">四个常见失效场景</div>
+
+        <button class="trap-btn active" data-trap="diversity" id="btn-diversity">
+          <div class="trap-btn-title">
+            <span>1. 缺乏多样性 (ρ → 1)</span>
+            <span class="trap-btn-tag">误差相关</span>
+          </div>
+          <div class="trap-btn-desc">基学习器结构或特征同质化，在相同样本上犯同向错误，方差衰减彻底归零。</div>
+        </button>
+
+        <button class="trap-btn" data-trap="calibration" id="btn-calibration">
+          <div class="trap-btn-title">
+            <span>2. 概率未校准与自信错误</span>
+            <span class="trap-btn-tag">加权扭曲</span>
+          </div>
+          <div class="trap-btn-desc">极端过自信的模型给出 0.99 错估，在软投票或 Stacking 中压制其他正确预测。</div>
+        </button>
+
+        <button class="trap-btn" data-trap="leakage" id="btn-leakage">
+          <div class="trap-btn-title">
+            <span>3. 特征工程在折外泄漏</span>
+            <span class="trap-btn-tag">泛化幻觉</span>
+          </div>
+          <div class="trap-btn-desc">在 K 折切分前做全局目标编码或降维，元学习器学到虚假的折外强特征。</div>
+        </button>
+
+        <button class="trap-btn" data-trap="cost" id="btn-cost">
+          <div class="trap-btn-title">
+            <span>4. 边际成本与延迟爆炸</span>
+            <span class="trap-btn-tag">工程收益</span>
+          </div>
+          <div class="trap-btn-desc">模型数量从 10 增至 100，测试误差仅微降 0.2%，而显存与推理耗时增长 10 倍。</div>
+        </button>
+
+        <div class="theory-box">
+          <b>误差歧异度分解（Krogh &amp; Vedelsby）：</b><br>
+          泛化误差 <i>E</i> = 成员平均误差 <i>Ē</i> − 歧异度 <i>Ā</i><br>
+          其中 <i>Ā</i> 度量成员预测偏离集成共识的方差。若 <i>Ā</i> → 0（各模型同质），则 <i>E</i> → <i>Ē</i>，完全丧失集成收益。
+        </div>
+      </nav>
+
+      <!-- 右侧实验沙盘 -->
+      <section class="sandbox min0" aria-live="polite">
+        <div class="sandbox-head min0">
+          <div class="sandbox-statement">
+            <h2 id="view-title">同质基学习器 vs 多样化基学习器</h2>
+            <p id="view-subtitle">当成员相关系数 ρ = 0.95 时，集成 50 个模型与单模型方差几乎无差别。</p>
+          </div>
+          <div class="control-group">
+            <span style="font-size:14px; font-weight:600; color:var(--muted);" id="toggle-label">配置对照：</span>
+            <div class="mode-toggle" id="mode-toggle">
+              <button class="toggle-opt active" data-mode="bad" id="opt-bad">同质陷阱 (ρ=0.92)</button>
+              <button class="toggle-opt" data-mode="good" id="opt-good">多样解法 (ρ=0.18)</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sandbox-body min0">
+          <!-- 可视化主画布 -->
+          <div class="vis-container min0">
+            <svg id="vis-svg" class="vis-svg" viewBox="0 0 680 430" preserveAspectRatio="xMidYMid meet"></svg>
+          </div>
+
+          <!-- 诊断与数据面板 -->
+          <div class="metrics-panel min0">
+            <div class="metric-card" id="card-primary">
+              <div class="metric-label">
+                <span id="metric-1-title">集成方差降低比</span>
+                <span class="trap-btn-tag" id="metric-1-tag">方差削减</span>
+              </div>
+              <div class="metric-val bad" id="metric-1-val">-5.2%</div>
+              <div class="metric-sub" id="metric-1-sub">高相关性下方差无法通过简单平均抵消。</div>
+            </div>
+
+            <div class="metric-card" id="card-secondary">
+              <div class="metric-label">
+                <span id="metric-2-title">最终测试误差 (Loss)</span>
+                <span class="trap-btn-tag" id="metric-2-tag">实际表现</span>
+              </div>
+              <div class="metric-val bad" id="metric-2-val">0.342</div>
+              <div class="metric-sub" id="metric-2-sub">与单模型测试误差 (0.350) 几乎一致。</div>
+            </div>
+
+            <div class="takeaway-bar" id="takeaway-text">
+              <strong>核心警示：</strong>如果所有基学习器都在同一侧产生偏差，投票只是在强化系统错误。必须引入特征子采样或异质算法。
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      Deck.init({ index: 26, total: 27 });
+
+      // 四个陷阱的完整状态数据
+      const TRAP_DATA = {
+        diversity: {
+          title: "同质基学习器 vs 多样化基学习器",
+          subtitles: {
+            bad: "基模型预测高度同质 (ρ = 0.92)，集成投票不仅没削减方差，还带来额外计算包袱。",
+            good: "引入特征子空间抽样与异质基模型 (ρ = 0.18)，各模型错位互补，方差显著衰减。"
+          },
+          toggleLabels: { bad: "同质陷阱 (ρ=0.92)", good: "多样机制 (ρ=0.18)" },
+          metrics: {
+            bad: {
+              m1Title: "集成方差削减幅度", m1Tag: "方差抵消", m1Val: "-6.1%", m1Class: "bad",
+              m1Sub: "根据公式 Var_ens = ρ·σ² + (1-ρ)σ²/M，ρ 过高时方差衰减极其微弱。",
+              m2Title: "泛化测试损失", m2Tag: "实际表现", m2Val: "0.338", m2Class: "bad",
+              m2Sub: "单模型损失为 0.345，集成 25 个模型仅获得 0.007 的虚弱提升。"
+            },
+            good: {
+              m1Title: "集成方差削减幅度", m1Tag: "方差抵消", m1Val: "-76.4%", m1Class: "ok",
+              m1Sub: "低相关性让独立残差在相加中相互抵消，方差逼近理想衰减极限。",
+              m2Title: "泛化测试损失", m2Tag: "实际表现", m2Val: "0.182", m2Class: "ok",
+              m2Sub: "测试误差显著下行，真正兑现了集成学习的组合红利。"
+            }
+          },
+          takeaway: {
+            bad: "<strong>核心警示：</strong>简单用相同参数训练同一类模型并不能叫集成。缺乏多样性的平均，只是高成本地复读单模型的偏见。",
+            good: "<strong>应对防线：</strong>在数据端实施 Bootstrap，在特征端随机投影，并在算法端组合树模型、线性模型与神经网络。"
+          }
+        },
+        calibration: {
+          title: "未校准的高置信度错误 vs 概率校准",
+          subtitles: {
+            bad: "未剪枝树给出极端输出 P=0.99（但实际判断错误），在软投票平均中单方面绑架了其他温和正确的模型。",
+            good: "通过 Platt 缩放或等保回归校准后，过自信偏置被拉回合理区间，投票重回群体理性。"
+          },
+          toggleLabels: { bad: "过自信未校准", good: "Platt 校准后" },
+          metrics: {
+            bad: {
+              m1Title: "错例最大干扰权重", m1Tag: "软投票权重", m1Val: "99.0%", m1Class: "bad",
+              m1Sub: "一个模型错判为正类且输出 0.99，直接拉高了集成的整体概率均值。",
+              m2Title: "集成最终对数损失 (LogLoss)", m2Tag: "概率质量", m2Val: "0.584", m2Class: "bad",
+              m2Sub: "严重被极端假阳性惩罚，表现甚至劣于硬投票决策。"
+            },
+            good: {
+              m1Title: "错例最大干扰权重", m1Tag: "软投票权重", m1Val: "58.2%", m1Class: "ok",
+              m1Sub: "校准后边缘样本概率回归客观频数，多模型的多数温和概率占据主导。",
+              m2Title: "集成最终对数损失 (LogLoss)", m2Tag: "概率质量", m2Val: "0.245", m2Class: "ok",
+              m2Sub: "概率置信度与真实发生率吻合，对数损失大幅度降低。"
+            }
+          },
+          takeaway: {
+            bad: "<strong>核心警示：</strong>集成不等于‘把输出数字加起来除以 N’。未校准的极端概率会使少数劣质基学习器拥有 veto 级别的破坏力。",
+            good: "<strong>应对防线：</strong>使用折外预测进行 Platt 缩放（Sigmoid 映射）或保序回归校准，或在模型异质时退回硬投票。"
+          }
+        },
+        leakage: {
+          title: "折外穿透（数据泄漏） vs 严格折内变换",
+          subtitles: {
+            bad: "在 5 折切分前做了全数据集 Target Encoding 与特征筛选，元模型学到了泄露的标签残留，导致离线评估虚高但线上崩塌。",
+            good: "每折严格在 4/5 训练集内独立拟合特征管道，向第 5 折投射真正的未知验证，泛化评估诚实可信。"
+          },
+          toggleLabels: { bad: "全量泄漏切分", good: "严格折外流水线" },
+          metrics: {
+            bad: {
+              m1Title: "离线验证 AUC (虚高)", m1Tag: "假象", m1Val: "0.962", m1Class: "bad",
+              m1Sub: "元学习器在训练集上看到了未来信息，验证集评估完全失真。",
+              m2Title: "真实线上测试 AUC (崩塌)", m2Tag: "实战", m2Val: "0.718", m2Class: "bad",
+              m2Sub: "离线与线上产生 0.244 的巨大断崖，模型泛化全面失效。"
+            },
+            good: {
+              m1Title: "离线验证 AUC", m1Tag: "真实估计", m1Val: "0.835", m1Class: "ok",
+              m1Sub: "元特征由干净的折外预测生成，不含折外标签统计泄露。",
+              m2Title: "真实线上测试 AUC", m2Tag: "实战", m2Val: "0.831", m2Class: "ok",
+              m2Sub: "离线与线上高度吻合（落差仅 0.004），具备可靠落地性。"
+            }
+          },
+          takeaway: {
+            bad: "<strong>核心警示：</strong>Stacking 最隐蔽的死穴是数据泄漏。只要元特征产生时沾了一点点测试折的全局统计量，集成就是纸牌屋。",
+            good: "<strong>应对防线：</strong>所有特征预处理、标准化、目标编码都必须装入 Pipeline，在每折 cross-validation 内部单独 fit。"
+          }
+        },
+        cost: {
+          title: "集成规模边际收益递减 vs 效率帕累托最优",
+          subtitles: {
+            bad: "将模型树数量无节制扩充至 200 棵（5 种异质融合），计算延迟与吞吐急剧恶化，而精度提升趋于停滞。",
+            good: "精选 3 种互补的轻量基模型（或早停在 30 棵树），用 10% 的算力成本拿下了 95% 的集成收益。"
+          },
+          toggleLabels: { bad: "极度臃肿 (M=120)", good: "精简高效 (M=3)" },
+          metrics: {
+            bad: {
+              m1Title: "单次推理 P99 延迟", m1Tag: "服务耗时", m1Val: "148 ms", m1Class: "bad",
+              m1Sub: "多分支串行/并行带来通信开销与内存峰值，无法满足生产级实时 SLA（< 30ms）。",
+              m2Title: "相对单模型增益", m2Tag: "边际效果", m2Val: "+0.35%", m2Class: "bad",
+              m2Sub: "消耗 15 倍的显存与训练时间，换取不到半个百分点的指标微量提升。"
+            },
+            good: {
+              m1Title: "单次推理 P99 延迟", m1Tag: "服务耗时", m1Val: "12 ms", m1Class: "ok",
+              m1Sub: "3 个基模型并行执行仅消耗极低算力，远低于在线系统超时阈值。",
+              m2Title: "相对单模型增益", m2Tag: "边际效果", m2Val: "+3.10%", m2Class: "ok",
+              m2Sub: "捕获了绝大部分正交互补收益，兼顾极优的工程吞吐与维护成本。"
+            }
+          },
+          takeaway: {
+            bad: "<strong>核心警示：</strong>Kaggle 式的几十层复杂大融合适合打榜，但在工业界，部署成本、链路断裂风险与推理延迟会瞬间吞噬微弱收益。",
+            good: "<strong>应对防线：</strong>做集成剪枝（Ensemble Pruning），监测边际收益曲线，在性能与延迟的拐点果断收束。"
+          }
+        }
+      };
+
+      let currentTrap = "diversity";
+      let currentMode = "bad"; // 'bad' or 'good'
+
+      // DOM 元素引用
+      const btnDiversity = document.getElementById("btn-diversity");
+      const btnCalibration = document.getElementById("btn-calibration");
+      const btnLeakage = document.getElementById("btn-leakage");
+      const btnCost = document.getElementById("btn-cost");
+      const trapBtns = [btnDiversity, btnCalibration, btnLeakage, btnCost];
+
+      const viewTitle = document.getElementById("view-title");
+      const viewSubtitle = document.getElementById("view-subtitle");
+      const optBad = document.getElementById("opt-bad");
+      const optGood = document.getElementById("opt-good");
+
+      const metric1Title = document.getElementById("metric-1-title");
+      const metric1Tag = document.getElementById("metric-1-tag");
+      const metric1Val = document.getElementById("metric-1-val");
+      const metric1Sub = document.getElementById("metric-1-sub");
+
+      const metric2Title = document.getElementById("metric-2-title");
+      const metric2Tag = document.getElementById("metric-2-tag");
+      const metric2Val = document.getElementById("metric-2-val");
+      const metric2Sub = document.getElementById("metric-2-sub");
+
+      const takeawayText = document.getElementById("takeaway-text");
+      const visSvg = document.getElementById("vis-svg");
+
+      // 切换当前陷阱
+      function setTrap(trapId) {
+        currentTrap = trapId;
+        currentMode = "bad"; // 默认切到陷阱态
+        trapBtns.forEach(b => {
+          b.classList.toggle("active", b.dataset.trap === trapId);
+        });
+        updateUI();
+      }
+
+      // 切换对照模式
+      function setMode(modeId) {
+        currentMode = modeId;
+        optBad.classList.toggle("active", modeId === "bad");
+        optGood.classList.toggle("active", modeId === "good");
+        updateUI();
+      }
+
+      // 更新界面文字与图表
+      function updateUI() {
+        const data = TRAP_DATA[currentTrap];
+        viewTitle.textContent = data.title;
+        viewSubtitle.textContent = data.subtitles[currentMode];
+
+        optBad.textContent = data.toggleLabels.bad;
+        optGood.textContent = data.toggleLabels.good;
+        optBad.classList.toggle("active", currentMode === "bad");
+        optGood.classList.toggle("active", currentMode === "good");
+
+        const mData = data.metrics[currentMode];
+        metric1Title.textContent = mData.m1Title;
+        metric1Tag.textContent = mData.m1Tag;
+        metric1Val.textContent = mData.m1Val;
+        metric1Val.className = `metric-val ${mData.m1Class}`;
+        metric1Sub.textContent = mData.m1Sub;
+
+        metric2Title.textContent = mData.m2Title;
+        metric2Tag.textContent = mData.m2Tag;
+        metric2Val.textContent = mData.m2Val;
+        metric2Val.className = `metric-val ${mData.m2Class}`;
+        metric2Sub.textContent = mData.m2Sub;
+
+        takeawayText.innerHTML = data.takeaway[currentMode];
+
+        renderSVG();
+      }
+
+      // 针对不同陷阱绘制定制化的直观解释性 SVG
+      function renderSVG() {
+        while (visSvg.firstChild) {
+          visSvg.removeChild(visSvg.firstChild);
+        }
+
+        const isGood = currentMode === "good";
+
+        if (currentTrap === "diversity") {
+          renderDiversityChart(isGood);
+        } else if (currentTrap === "calibration") {
+          renderCalibrationChart(isGood);
+        } else if (currentTrap === "leakage") {
+          renderLeakageDiagram(isGood);
+        } else if (currentTrap === "cost") {
+          renderCostTradeoffChart(isGood);
+        }
+      }
+
+      // 1. 多样性图表：模型数量 M vs 集成方差曲线（对比 ρ=0.92 与 ρ=0.18）
+      function renderDiversityChart(isGood) {
+        const width = 680, height = 430;
+        const padL = 70, padR = 40, padT = 50, padB = 60;
+        const chartW = width - padL - padR;
+        const chartH = height - padT - padB;
+
+        // 坐标系背景
+        const g = createSVGElement("g");
+
+        // 轴线
+        const xAxis = createSVGElement("line", {
+          x1: padL, y1: height - padB, x2: width - padR, y2: height - padB,
+          class: "chart-axis"
+        });
+        const yAxis = createSVGElement("line", {
+          x1: padL, y1: padT, x2: padL, y2: height - padB,
+          class: "chart-axis"
+        });
+        g.appendChild(xAxis);
+        g.appendChild(yAxis);
+
+        // 网格与刻度
+        for (let i = 0; i <= 4; i++) {
+          const y = padT + (chartH / 4) * i;
+          const grid = createSVGElement("line", {
+            x1: padL, y1: y, x2: width - padR, y2: y,
+            class: "chart-grid"
+          });
+          g.appendChild(grid);
+
+          const val = (1.0 - (i * 0.25)).toFixed(2);
+          const lbl = createSVGElement("text", {
+            x: padL - 10, y: y + 4,
+            "text-anchor": "end",
+            class: "chart-label"
+          });
+          lbl.textContent = val;
+          g.appendChild(lbl);
+        }
+
+        // X轴刻度 (模型数 M = 1 到 50)
+        const xTicks = [1, 10, 20, 30, 40, 50];
+        xTicks.forEach(m => {
+          const x = padL + ((m - 1) / 49) * chartW;
+          const lbl = createSVGElement("text", {
+            x: x, y: height - padB + 22,
+            "text-anchor": "middle",
+            class: "chart-label"
+          });
+          lbl.textContent = `M=${m}`;
+          g.appendChild(lbl);
+        });
+
+        // 曲线计算函数: Var(M) = rho + (1 - rho) / M
+        function getPath(rho) {
+          let d = "";
+          for (let m = 1; m <= 50; m++) {
+            const v = rho + (1 - rho) / m;
+            const x = padL + ((m - 1) / 49) * chartW;
+            const y = padT + (1.0 - v) * chartH;
+            d += (m === 1 ? `M ${x} ${y}` : ` L ${x} ${y}`);
+          }
+          return d;
+        }
+
+        // 理想完全独立曲线 (ρ=0)
+        const pathIdeal = createSVGElement("path", {
+          d: getPath(0.0),
+          fill: "none",
+          stroke: "#CAD6DD",
+          "stroke-dasharray": "4 4",
+          "stroke-width": "2"
+        });
+        g.appendChild(pathIdeal);
+
+        // 真实曲线
+        const currentRho = isGood ? 0.18 : 0.92;
+        const pathReal = createSVGElement("path", {
+          d: getPath(currentRho),
+          fill: "none",
+          stroke: isGood ? "var(--sample)" : "var(--aggregate)",
+          "stroke-width": "3.5"
+        });
+        g.appendChild(pathReal);
+
+        // 标注（放在图表上方，避开顶部 1.0 轴线）
+        const textRho = createSVGElement("text", {
+          x: padL + 12, y: padT - 16,
+          class: "chart-title",
+          fill: isGood ? "var(--sample)" : "var(--aggregate)"
+        });
+        textRho.textContent = isGood ? "多样性良好曲线 (ρ = 0.18)：方差随模型数 M 快速衰减" : "同质失效曲线 (ρ = 0.92)：陷入水平渐近线，方差几乎无法削减";
+        g.appendChild(textRho);
+
+        const textIdealLbl = createSVGElement("text", {
+          x: width - padR - 10, y: height - padB - 14,
+          "text-anchor": "end",
+          class: "chart-label",
+          fill: "#8EA3B0"
+        });
+        textIdealLbl.textContent = "理论极限 (ρ = 0 完全独立 1/M)";
+        g.appendChild(textIdealLbl);
+
+        // 渐近线阈值虚线
+        const yAsymptote = padT + (1.0 - currentRho) * chartH;
+        const lineAsymptote = createSVGElement("line", {
+          x1: padL, y1: yAsymptote, x2: width - padR, y2: yAsymptote,
+          stroke: isGood ? "var(--sample)" : "var(--aggregate)",
+          "stroke-dasharray": "3 3",
+          "stroke-width": "1.5",
+          opacity: "0.7"
+        });
+        g.appendChild(lineAsymptote);
+
+        const textAsymptote = createSVGElement("text", {
+          x: width - padR - 10, y: isGood ? (yAsymptote - 8) : (yAsymptote + 18),
+          "text-anchor": "end",
+          class: "chart-label",
+          fill: isGood ? "var(--sample)" : "var(--aggregate)",
+          "font-weight": "600"
+        });
+        textAsymptote.textContent = `方差下限渐近线 Var ≥ ${currentRho.toFixed(2)}`;
+        g.appendChild(textAsymptote);
+
+        visSvg.appendChild(g);
+      }
+
+      // 2. 校准图表：可靠性图 (Reliability Diagram) 与软投票分布
+      function renderCalibrationChart(isGood) {
+        const width = 680, height = 430;
+        const padL = 70, padR = 40, padT = 50, padB = 60;
+        const chartW = width - padL - padR;
+        const chartH = height - padT - padB;
+
+        const g = createSVGElement("g");
+
+        // 坐标轴
+        const xAxis = createSVGElement("line", {
+          x1: padL, y1: height - padB, x2: width - padR, y2: height - padB,
+          class: "chart-axis"
+        });
+        const yAxis = createSVGElement("line", {
+          x1: padL, y1: padT, x2: padL, y2: height - padB,
+          class: "chart-axis"
+        });
+        g.appendChild(xAxis);
+        g.appendChild(yAxis);
+
+        // 对角线（完美校准线）
+        const diag = createSVGElement("line", {
+          x1: padL, y1: height - padB, x2: width - padR, y2: padT,
+          stroke: "#CAD6DD",
+          "stroke-dasharray": "5 5",
+          "stroke-width": "2"
+        });
+        g.appendChild(diag);
+
+        // 刻度
+        for (let i = 0; i <= 4; i++) {
+          const p = (i * 0.25).toFixed(2);
+          const x = padL + (i * 0.25) * chartW;
+          const y = height - padB - (i * 0.25) * chartH;
+
+          const lblX = createSVGElement("text", {
+            x: x, y: height - padB + 22,
+            "text-anchor": "middle",
+            class: "chart-label"
+          });
+          lblX.textContent = p;
+          g.appendChild(lblX);
+
+          const lblY = createSVGElement("text", {
+            x: padL - 10, y: y + 4,
+            "text-anchor": "end",
+            class: "chart-label"
+          });
+          lblY.textContent = p;
+          g.appendChild(lblY);
+        }
+
+        // X 与 Y 轴标题
+        const xTitle = createSVGElement("text", {
+          x: padL + chartW / 2, y: height - 16,
+          "text-anchor": "middle",
+          class: "chart-label",
+          fill: "var(--text)"
+        });
+        xTitle.textContent = "基模型预测置信度 P(y=1|x)";
+        g.appendChild(xTitle);
+
+        const yTitle = createSVGElement("text", {
+          x: padL - 45, y: padT - 16,
+          class: "chart-label",
+          fill: "var(--text)"
+        });
+        yTitle.textContent = "真实正例经验频率";
+        g.appendChild(yTitle);
+
+        // 真实校准曲线 (Reliability curve)
+        // 未校准：Sigmoidal 极度两极化 (S形或极端陡峭)，比如预测 0.95 时实际只有 0.65
+        let points = [];
+        if (!isGood) {
+          // 恶劣状态：过自信
+          points = [
+            { pred: 0.1, trueP: 0.35 },
+            { pred: 0.25, trueP: 0.40 },
+            { pred: 0.5, trueP: 0.50 },
+            { pred: 0.75, trueP: 0.60 },
+            { pred: 0.95, trueP: 0.66 }
+          ];
+        } else {
+          // 校准良好：贴近对角线
+          points = [
+            { pred: 0.1, trueP: 0.11 },
+            { pred: 0.25, trueP: 0.26 },
+            { pred: 0.5, trueP: 0.49 },
+            { pred: 0.75, trueP: 0.73 },
+            { pred: 0.95, trueP: 0.94 }
+          ];
+        }
+
+        let pathD = "";
+        points.forEach((pt, idx) => {
+          const x = padL + pt.pred * chartW;
+          const y = height - padB - pt.trueP * chartH;
+          pathD += (idx === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
+        });
+
+        const curve = createSVGElement("path", {
+          d: pathD,
+          fill: "none",
+          stroke: isGood ? "var(--sample)" : "var(--aggregate)",
+          "stroke-width": "3"
+        });
+        g.appendChild(curve);
+
+        // 绘制散点与危险差值标注
+        points.forEach(pt => {
+          const x = padL + pt.pred * chartW;
+          const y = height - padB - pt.trueP * chartH;
+          const diagY = height - padB - pt.pred * chartH;
+
+          // 误差竖线
+          const errLine = createSVGElement("line", {
+            x1: x, y1: y, x2: x, y2: diagY,
+            stroke: isGood ? "rgba(47, 117, 104, 0.4)" : "rgba(195, 75, 34, 0.4)",
+            "stroke-dasharray": "2 2",
+            "stroke-width": "1.5"
+          });
+          g.appendChild(errLine);
+
+          const dot = createSVGElement("circle", {
+            cx: x, cy: y, r: "5",
+            fill: isGood ? "var(--sample)" : "var(--aggregate)"
+          });
+          g.appendChild(dot);
+        });
+
+        // 标题标注
+        const chartTitle = createSVGElement("text", {
+          x: padL + 20, y: padT + 25,
+          class: "chart-title",
+          fill: isGood ? "var(--sample)" : "var(--aggregate)"
+        });
+        chartTitle.textContent = isGood ? "概率校准后：预测置信度与真实正例频率契合" : "未校准陷阱：模型极端自信（给出 95% 但实际仅 66%），严重污染软投票";
+        g.appendChild(chartTitle);
+
+        visSvg.appendChild(g);
+      }
+
+      // 3. 泄漏图解：交叉验证数据流拆解图
+      function renderLeakageDiagram(isGood) {
+        const width = 680, height = 430;
+        const g = createSVGElement("g");
+
+        // 顶部流程标题
+        const title = createSVGElement("text", {
+          x: 40, y: 45,
+          class: "chart-title",
+          fill: isGood ? "var(--sample)" : "var(--aggregate)"
+        });
+        title.textContent = isGood ? "严谨的折外预测流水线 (Out-of-Fold Pipeline)" : "致命陷阱：预处理在 K-Fold 切分前接触了全量标签 (Data Leakage)";
+        g.appendChild(title);
+
+        const boxY = 80;
+        const folds = 5;
+        const foldW = 100;
+        const foldH = 46;
+        const startX = 60;
+
+        // 绘制 5 折数据切分图解
+        for (let f = 0; f < folds; f++) {
+          const fx = startX + f * (foldW + 12);
+          const isHeldOut = (f === 4); // 第 5 折是验证折
+
+          const rect = createSVGElement("rect", {
+            x: fx, y: boxY, width: foldW, height: foldH,
+            rx: "4",
+            fill: isHeldOut ? (isGood ? "rgba(47, 117, 104, 0.15)" : "rgba(195, 75, 34, 0.18)") : "#EBF2F6",
+            stroke: isHeldOut ? (isGood ? "var(--sample)" : "var(--aggregate)") : "#CAD6DD",
+            "stroke-width": isHeldOut ? "2" : "1"
+          });
+          g.appendChild(rect);
+
+          const txt = createSVGElement("text", {
+            x: fx + foldW / 2, y: boxY + 28,
+            "text-anchor": "middle",
+            class: "chart-label",
+            fill: isHeldOut ? (isGood ? "var(--sample)" : "var(--aggregate)") : "var(--muted)",
+            "font-weight": isHeldOut ? "700" : "500"
+          });
+          txt.textContent = isHeldOut ? "第 5 折 (验证)" : `第 ${f + 1} 折 (训练)`;
+          g.appendChild(txt);
+        }
+
+        // 下方的关键处理区别
+        const processY = 175;
+
+        // 框 1：特征变换 / 目标编码拟合范围
+        const fitBoxW = isGood ? (foldW * 4 + 36) : (foldW * 5 + 48);
+        const fitRect = createSVGElement("rect", {
+          x: startX, y: processY, width: fitBoxW, height: 60,
+          rx: "6",
+          fill: isGood ? "rgba(47, 117, 104, 0.08)" : "rgba(195, 75, 34, 0.08)",
+          stroke: isGood ? "var(--sample)" : "var(--aggregate)",
+          "stroke-width": "1.5"
+        });
+        g.appendChild(fitRect);
+
+        const fitText = createSVGElement("text", {
+          x: startX + 16, y: processY + 26,
+          class: "chart-label",
+          fill: isGood ? "var(--sample)" : "var(--aggregate)",
+          "font-weight": "700"
+        });
+        fitText.textContent = isGood ? "Target Encoding 仅在训练折 (4/5) 上计算统计均值" : "Target Encoding 跨越了全部数据（直接利用了第 5 折的标签！）";
+        g.appendChild(fitText);
+
+        const fitSub = createSVGElement("text", {
+          x: startX + 16, y: processY + 48,
+          class: "chart-label",
+          fill: "var(--muted)"
+        });
+        fitSub.textContent = isGood ? "验证折保持纯净状态，模拟真实的未知测试环境" : "第 5 折的真实 y 被反向编码进特征，元模型学会了记忆而非泛化";
+        g.appendChild(fitSub);
+
+        // 箭头指向元学习器
+        const metaBoxY = 275;
+        const arrow = createSVGElement("path", {
+          d: `M ${startX + 180} ${processY + 60} L ${startX + 180} ${metaBoxY}`,
+          fill: "none",
+          stroke: isGood ? "var(--sample)" : "var(--aggregate)",
+          "stroke-width": "2",
+          "marker-end": "url(#arrow)"
+        });
+        g.appendChild(arrow);
+
+        // 元学习器接受特征框
+        const metaRect = createSVGElement("rect", {
+          x: startX, y: metaBoxY, width: 550, height: 75,
+          rx: "6",
+          fill: "#F8FAFB",
+          stroke: "#CAD6DD",
+          "stroke-width": "1.5"
+        });
+        g.appendChild(metaRect);
+
+        const metaTitle = createSVGElement("text", {
+          x: startX + 16, y: metaBoxY + 28,
+          class: "chart-title",
+          fill: "var(--text)"
+        });
+        metaTitle.textContent = isGood ? "元模型 (Meta-Learner) 训练输入：真实泛化估计" : "元模型 (Meta-Learner) 训练输入：带有虚假高置信度的泄漏特征";
+        g.appendChild(metaTitle);
+
+        const metaDesc = createSVGElement("text", {
+          x: startX + 16, y: metaBoxY + 54,
+          class: "chart-label",
+          fill: isGood ? "var(--sample)" : "var(--aggregate)"
+        });
+        metaDesc.textContent = isGood ? "成果：离线交叉验证 AUC (0.835) 与线上生产测试 (0.831) 高度对齐。" : "灾难：离线 CV 虚高到 0.962，上线部署后断崖暴跌至 0.718。";
+        g.appendChild(metaDesc);
+
+        visSvg.appendChild(g);
+      }
+
+      // 4. 成本权衡图表：模型数 M 与 性能收益 / 延迟膨胀的双轴折线图
+      function renderCostTradeoffChart(isGood) {
+        const width = 680, height = 430;
+        const padL = 65, padR = 65, padT = 50, padB = 60;
+        const chartW = width - padL - padR;
+        const chartH = height - padT - padB;
+
+        const g = createSVGElement("g");
+
+        // 坐标轴
+        const xAxis = createSVGElement("line", {
+          x1: padL, y1: height - padB, x2: width - padR, y2: height - padB,
+          class: "chart-axis"
+        });
+        const yAxisL = createSVGElement("line", {
+          x1: padL, y1: padT, x2: padL, y2: height - padB,
+          class: "chart-axis"
+        });
+        const yAxisR = createSVGElement("line", {
+          x1: width - padR, y1: padT, x2: width - padR, y2: height - padB,
+          class: "chart-axis"
+        });
+        g.appendChild(xAxis);
+        g.appendChild(yAxisL);
+        g.appendChild(yAxisR);
+
+        // X轴刻度 (基模型数 M = 1 到 120)
+        const ticksM = [1, 10, 30, 60, 90, 120];
+        ticksM.forEach(m => {
+          const x = padL + (m / 120) * chartW;
+          const lbl = createSVGElement("text", {
+            x: x, y: height - padB + 22,
+            "text-anchor": "middle",
+            class: "chart-label"
+          });
+          lbl.textContent = `M=${m}`;
+          g.appendChild(lbl);
+        });
+
+        // 轴标题
+        const titleL = createSVGElement("text", {
+          x: padL - 10, y: padT - 16,
+          class: "chart-label",
+          fill: "var(--sample)",
+          "font-weight": "700"
+        });
+        titleL.textContent = "准确率增益 (Accuracy %)";
+        g.appendChild(titleL);
+
+        const titleR = createSVGElement("text", {
+          x: width - padR + 10, y: padT - 16,
+          "text-anchor": "end",
+          class: "chart-label",
+          fill: "var(--aggregate)",
+          "font-weight": "700"
+        });
+        titleR.textContent = "推理延迟 (ms / Query)";
+        g.appendChild(titleR);
+
+        // 收益曲线 (对数增长，快速饱和)
+        let accD = "";
+        let latD = "";
+        for (let m = 1; m <= 120; m++) {
+          const x = padL + (m / 120) * chartW;
+          // 准确率在 M=10~20 就达到 95% 饱和
+          const accNorm = Math.log(m + 1) / Math.log(121);
+          const yAcc = height - padB - accNorm * chartH;
+          accD += (m === 1 ? `M ${x} ${yAcc}` : ` L ${x} ${yAcc}`);
+
+          // 延迟线性增长（甚至带通信开销微超线性）
+          const latNorm = (m / 120);
+          const yLat = height - padB - latNorm * chartH;
+          latD += (m === 1 ? `M ${x} ${yLat}` : ` L ${x} ${yLat}`);
+        }
+
+        const pathAcc = createSVGElement("path", {
+          d: accD, fill: "none", stroke: "var(--sample)", "stroke-width": "3"
+        });
+        const pathLat = createSVGElement("path", {
+          d: latD, fill: "none", stroke: "var(--aggregate)", "stroke-width": "2.5", "stroke-dasharray": "4 2"
+        });
+        g.appendChild(pathAcc);
+        g.appendChild(pathLat);
+
+        // 标注推荐帕累托工作点 (M=3~5)
+        const sweetM = 5;
+        const sweetX = padL + (sweetM / 120) * chartW;
+        const sweetLine = createSVGElement("line", {
+          x1: sweetX, y1: padT, x2: sweetX, y2: height - padB,
+          stroke: "#2F7568",
+          "stroke-dasharray": "3 3",
+          "stroke-width": "2"
+        });
+        g.appendChild(sweetLine);
+
+        const sweetTag = createSVGElement("rect", {
+          x: sweetX + 6, y: padT + 40, width: 140, height: 42,
+          rx: "4", fill: "#EBF5F1", stroke: "#2F7568", "stroke-width": "1"
+        });
+        g.appendChild(sweetTag);
+
+        const sweetText1 = createSVGElement("text", {
+          x: sweetX + 14, y: padT + 58,
+          class: "chart-label", fill: "#1F594E", "font-weight": "700"
+        });
+        sweetText1.textContent = "工程平衡点 (M=3~5)";
+        g.appendChild(sweetText1);
+
+        const sweetText2 = createSVGElement("text", {
+          x: sweetX + 14, y: padT + 74,
+          class: "chart-label", fill: "var(--muted)", "font-size": "12px"
+        });
+        sweetText2.textContent = "已捕获 92% 精度增益";
+        g.appendChild(sweetText2);
+
+        // 如果是臃肿模式，标出 M=120 的红区
+        if (!isGood) {
+          const badX = padL + (115 / 120) * chartW;
+          const badRect = createSVGElement("rect", {
+            x: badX - 160, y: padT + 120, width: 155, height: 44,
+            rx: "4", fill: "#FFF0EB", stroke: "var(--aggregate)", "stroke-width": "1"
+          });
+          g.appendChild(badRect);
+
+          const badText1 = createSVGElement("text", {
+            x: badX - 150, y: padT + 140,
+            class: "chart-label", fill: "var(--aggregate)", "font-weight": "700"
+          });
+          badText1.textContent = "算力过载区 (M>50)";
+          g.appendChild(badText1);
+
+          const badText2 = createSVGElement("text", {
+            x: badX - 150, y: padT + 156,
+            class: "chart-label", fill: "var(--muted)", "font-size": "12px"
+          });
+          badText2.textContent = "延迟暴增 10x，收益微弱";
+          g.appendChild(badText2);
+        }
+
+        visSvg.appendChild(g);
+      }
+
+      function createSVGElement(tag, attrs) {
+        const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+        if (attrs) {
+          for (let key in attrs) {
+            el.setAttribute(key, attrs[key]);
+          }
+        }
+        return el;
+      }
+
+      // 事件监听绑定
+      trapBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          setTrap(btn.dataset.trap);
+        });
+      });
+
+      optBad.addEventListener("click", () => setMode("bad"));
+      optGood.addEventListener("click", () => setMode("good"));
+
+      // 键盘快捷支持
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "1") setTrap("diversity");
+        else if (e.key === "2") setTrap("calibration");
+        else if (e.key === "3") setTrap("leakage");
+        else if (e.key === "4") setTrap("cost");
+        else if (e.key.toLowerCase() === "t") {
+          setMode(currentMode === "bad" ? "good" : "bad");
+        }
+      });
+
+      // 初始化初态
+      setTrap("diversity");
+    })();
+  </script>
+</body>
+</html>

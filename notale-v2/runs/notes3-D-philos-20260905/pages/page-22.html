@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Stacking 的二层结构</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      background: var(--bg);
+      font-family: var(--font-sans);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    .header-area {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: var(--line) solid var(--surface-strong);
+      padding-bottom: 12px;
+      flex-shrink: 0;
+    }
+    .header-titles h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .header-titles p {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+
+    /* 主舞台双栏 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：结构流图与区域决策面 */
+    .arch-panel {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      position: relative;
+    }
+    .arch-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 0;
+    }
+    .arch-stage-tag {
+      font-size: var(--fs-label);
+      background: var(--surface-strong);
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-family: monospace;
+      color: var(--text);
+    }
+
+    /* 流程图 SVG */
+    .flow-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      background: #f1f5f8;
+      border-radius: 8px;
+      border: 1px solid rgba(83, 103, 119, 0.2);
+    }
+    .flow-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧：交互对比探针 */
+    .inspect-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 18px 22px;
+    }
+    .inspect-header h2 {
+      margin: 0;
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .inspect-header p {
+      margin: 4px 0 0 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 区域选卡控制器 */
+    .region-selector {
+      display: flex;
+      gap: 8px;
+      background: var(--surface-strong);
+      padding: 4px;
+      border-radius: 8px;
+    }
+    .reg-btn {
+      flex: 1;
+      border: none;
+      background: transparent;
+      padding: 8px 6px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+      text-align: center;
+    }
+    .reg-btn[aria-pressed="true"] {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 1px 4px rgba(20, 37, 51, 0.12);
+    }
+
+    /* 读数对比卡 */
+    .readout-card {
+      background: #f1f5f8;
+      border-radius: 8px;
+      padding: 14px 16px;
+      border: 1px solid rgba(83, 103, 119, 0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .readout-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .model-preds-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .model-box {
+      background: var(--surface);
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #d7e1e8;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .model-box .m-name {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .model-box .m-val {
+      font-size: var(--fs-lead);
+      font-family: var(--font-num), monospace;
+      font-weight: 700;
+      color: var(--learner);
+    }
+    .model-box .m-conf {
+      font-size: var(--fs-sec);
+      color: var(--text);
+    }
+
+    /* 决策对比结果对比 */
+    .compare-result-box {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    .res-col {
+      padding: 10px 12px;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .res-col.avg {
+      background: #edf2f6;
+      border: 1px dashed var(--muted);
+    }
+    .res-col.meta {
+      background: #fdf2f0;
+      border: 2px solid var(--aggregate);
+    }
+    .res-col .res-tag {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .res-col.avg .res-tag { color: var(--muted); }
+    .res-col.meta .res-tag { color: var(--aggregate); }
+    .res-col .res-score {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      font-family: var(--font-num), monospace;
+    }
+    .res-col .res-desc {
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+      color: var(--text);
+    }
+
+    /* 机制说明与洞察卡片 */
+    .meta-mechanism-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 6px;
+    }
+    .meta-mechanism-card h3 {
+      margin: 0;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--aggregate);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .meta-mechanism-card p {
+      margin: 0;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .meta-mechanism-card .formula {
+      font-family: monospace;
+      font-size: var(--fs-sec);
+      background: #edf2f6;
+      padding: 4px 10px;
+      border-radius: 4px;
+      color: #142533;
+      margin-top: 4px;
+      display: inline-block;
+      width: fit-content;
+    }
+
+    /* 动态高亮状态 */
+    .flow-node {
+      transition: filter var(--dur) var(--ease), stroke-width var(--dur) var(--ease);
+      cursor: pointer;
+    }
+    .flow-node:hover {
+      filter: drop-shadow(0 2px 6px rgba(0, 107, 114, 0.25));
+    }
+    .flow-edge {
+      transition: stroke var(--dur) var(--ease), stroke-width var(--dur) var(--ease), opacity var(--dur) var(--ease);
+    }
+  </style>
+</head>
+<body data-page="22" data-total="27">
+  <div id="stage">
+    <!-- 头部说明 -->
+    <header class="header-area min0">
+      <div class="header-titles">
+        <h1>Stacking 的二层结构：元学习器学习模型互补边界</h1>
+        <p>基模型负责在原始特征空间各自提炼视角；元学习器在预测空间学习“谁在何种情境下更可信”，而非粗暴固定平均。</p>
+      </div>
+      <div class="legend-row">
+        <div class="legend-item">
+          <span class="legend-dot" style="background: var(--learner);"></span>
+          <span>初级学习器（异构基模型）</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot" style="background: var(--aggregate);"></span>
+          <span>次级学习器（元模型决策面）</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 主展示区 -->
+    <div class="main-grid min0">
+      <!-- 左：二层拓扑图与特征空间映射 -->
+      <section class="arch-panel min0">
+        <div class="arch-title">
+          <span>层级信息流动架构 (Two-Level Architecture)</span>
+          <span class="arch-stage-tag" id="archPrompt">基特征 → 预测特征空间 → 最终裁决</span>
+        </div>
+        <div class="flow-wrap min0">
+          <svg class="flow-svg" viewBox="0 0 836 490" id="flowSvg">
+            <defs>
+              <marker id="arrow-learner" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#275D91" />
+              </marker>
+              <marker id="arrow-meta" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#B63B24" />
+              </marker>
+              <filter id="card-shadow" x="-5%" y="-5%" width="115%" height="120%">
+                <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.08" />
+              </filter>
+            </defs>
+
+            <!-- 阶段底色背景分栏 -->
+            <rect x="18" y="22" width="154" height="446" rx="8" fill="#e9edf1" stroke="#d3dde5" stroke-width="1.5" />
+            <text x="95" y="52" text-anchor="middle" font-size="15" font-weight="700" fill="#536777">原始输入空间</text>
+            <text x="95" y="74" text-anchor="middle" font-size="13" fill="#536777">X ∈ ℝᵈ (高维特征)</text>
+
+            <rect x="190" y="22" width="260" height="446" rx="8" fill="#e4ebf2" stroke="#ccd7e2" stroke-width="1.5" />
+            <text x="320" y="52" text-anchor="middle" font-size="15" font-weight="700" fill="#275D91">Level-0：初级学习器层</text>
+            <text x="320" y="74" text-anchor="middle" font-size="13" fill="#536777">异构模型并行提取决策偏置</text>
+
+            <rect x="470" y="22" width="348" height="446" rx="8" fill="#faece8" stroke="#f1cfc7" stroke-width="1.5" />
+            <text x="644" y="52" text-anchor="middle" font-size="15" font-weight="700" fill="#B63B24">Level-1：元学习器层</text>
+            <text x="644" y="74" text-anchor="middle" font-size="13" fill="#B63B24">非线性/加权仲裁预测特征</text>
+
+            <!-- 原始输入样本节点 -->
+            <g id="inputNode" class="flow-node">
+              <rect x="28" y="195" width="134" height="96" rx="8" fill="#F7FAFC" stroke="#142533" stroke-width="2" filter="url(#card-shadow)" />
+              <text x="95" y="228" text-anchor="middle" font-size="16" font-weight="700" fill="#142533">输入样本 x</text>
+              <text x="95" y="250" text-anchor="middle" font-size="13" fill="#536777">x = (x₁, x₂, …, x_d)</text>
+              <text x="95" y="272" text-anchor="middle" font-size="13" fill="#006B72" font-weight="600" id="currentPointTag">当前: 线性可分边界</text>
+            </g>
+
+            <!-- 连线：输入 -> 基学习器 -->
+            <path d="M 162 220 C 182 220, 192 135, 208 135" fill="none" stroke="#275D91" stroke-width="2.5" marker-end="url(#arrow-learner)" class="flow-edge" id="edge-in-m1" />
+            <path d="M 162 243 C 182 243, 192 243, 208 243" fill="none" stroke="#275D91" stroke-width="2.5" marker-end="url(#arrow-learner)" class="flow-edge" id="edge-in-m2" />
+            <path d="M 162 266 C 182 266, 192 351, 208 351" fill="none" stroke="#275D91" stroke-width="2.5" marker-end="url(#arrow-learner)" class="flow-edge" id="edge-in-m3" />
+
+            <!-- 基学习器 1: 随机森林 -->
+            <g class="flow-node" id="node-m1">
+              <rect x="212" y="96" width="224" height="78" rx="8" fill="#F7FAFC" stroke="#275D91" stroke-width="2" filter="url(#card-shadow)" />
+              <text x="226" y="122" font-size="15" font-weight="700" fill="#275D91">h₁(x): 随机森林 (RF)</text>
+              <text x="226" y="142" font-size="13" fill="#536777">擅长复杂非线性切分、低偏置</text>
+              <text x="226" y="162" font-size="13" font-weight="700" fill="#275D91" id="m1-pred-tag">预测得分 z₁ = 0.82</text>
+            </g>
+
+            <!-- 基学习器 2: 梯度提升机 -->
+            <g class="flow-node" id="node-m2">
+              <rect x="212" y="204" width="224" height="78" rx="8" fill="#F7FAFC" stroke="#275D91" stroke-width="2" filter="url(#card-shadow)" />
+              <text x="226" y="230" font-size="15" font-weight="700" fill="#275D91">h₂(x): 梯度提升树 (GBDT)</text>
+              <text x="226" y="250" font-size="13" fill="#536777">擅长残差拟合、高阶特征交叉</text>
+              <text x="226" y="270" font-size="13" font-weight="700" fill="#275D91" id="m2-pred-tag">预测得分 z₂ = 0.79</text>
+            </g>
+
+            <!-- 基学习器 3: 正则化逻辑回归 -->
+            <g class="flow-node" id="node-m3">
+              <rect x="212" y="312" width="224" height="78" rx="8" fill="#F7FAFC" stroke="#275D91" stroke-width="2" filter="url(#card-shadow)" />
+              <text x="226" y="338" font-size="15" font-weight="700" fill="#275D91">h₃(x): 逻辑回归 (Logistic)</text>
+              <text x="226" y="358" font-size="13" fill="#536777">擅长平滑全局趋势、抗噪性强</text>
+              <text x="226" y="378" font-size="13" font-weight="700" fill="#275D91" id="m3-pred-tag">预测得分 z₃ = 0.41</text>
+            </g>
+
+            <!-- 连线：基学习器 -> 元特征向量 -->
+            <path d="M 436 135 C 452 135, 458 200, 484 220" fill="none" stroke="#275D91" stroke-width="2" stroke-dasharray="4,3" class="flow-edge" />
+            <path d="M 436 243 C 452 243, 460 243, 484 243" fill="none" stroke="#275D91" stroke-width="2" stroke-dasharray="4,3" class="flow-edge" />
+            <path d="M 436 351 C 452 351, 458 286, 484 266" fill="none" stroke="#275D91" stroke-width="2" stroke-dasharray="4,3" class="flow-edge" />
+
+            <!-- 元特征构建卡片 (放宽宽度避免溢出，给 150px) -->
+            <g class="flow-node" id="meta-feature-card">
+              <rect x="486" y="196" width="150" height="96" rx="6" fill="#F7FAFC" stroke="#536777" stroke-width="1.5" />
+              <text x="561" y="222" text-anchor="middle" font-size="13" font-weight="700" fill="#142533">次级特征向量</text>
+              <text x="561" y="246" text-anchor="middle" font-size="13" font-weight="700" fill="#B63B24" id="zVectorText">z = [z₁, z₂, z₃]</text>
+              <text x="561" y="268" text-anchor="middle" font-size="13" fill="#536777">维度 = 基模型数 K</text>
+              <text x="561" y="283" text-anchor="middle" font-size="13" fill="#275D91">在新坐标中展开</text>
+            </g>
+
+            <!-- 连线：元特征 -> 元学习器 -->
+            <path d="M 636 244 L 664 244" fill="none" stroke="#B63B24" stroke-width="3" marker-end="url(#arrow-meta)" />
+
+            <!-- 元学习器核心节点 -->
+            <g class="flow-node" id="metaLearnerNode">
+              <rect x="668" y="165" width="138" height="156" rx="8" fill="#F7FAFC" stroke="#B63B24" stroke-width="2.5" filter="url(#card-shadow)" />
+              <text x="737" y="196" text-anchor="middle" font-size="16" font-weight="700" fill="#B63B24">元学习器 H</text>
+              <text x="737" y="218" text-anchor="middle" font-size="13" fill="#536777">Meta-Learner</text>
+
+              <line x1="678" y1="230" x2="796" y2="230" stroke="#f1cfc7" stroke-width="1" />
+
+              <text x="737" y="250" text-anchor="middle" font-size="13" font-weight="600" fill="#142533">可学习参数 W</text>
+              <text x="737" y="270" text-anchor="middle" font-size="13" font-weight="700" fill="#B63B24" id="metaWeightsText">w: [0.6, 0.4, 0.0]</text>
+              <text x="737" y="300" text-anchor="middle" font-size="13" fill="#536777" id="metaModeTag">动态抑制弱项</text>
+            </g>
+
+            <!-- 最终输出节点与箭头 -->
+            <path d="M 737 321 L 737 375" fill="none" stroke="#B63B24" stroke-width="2.5" marker-end="url(#arrow-meta)" />
+            <rect x="664" y="380" width="146" height="58" rx="6" fill="#142533" />
+            <text x="737" y="404" text-anchor="middle" font-size="13" fill="#d7e1e8">最终集成输出 ŷ</text>
+            <text x="737" y="426" text-anchor="middle" font-size="16" font-weight="700" fill="#F7FAFC" id="finalOutputText">ŷ = 正类 (0.81)</text>
+          </svg>
+        </div>
+      </section>
+
+      <!-- 右：情境对比与机制剖析 -->
+      <section class="inspect-panel min0">
+        <div class="inspect-header">
+          <h2>探针检验：基模型预测在不同数据域的分歧</h2>
+          <p>观察元学习器如何依据样本所处情境，动态给更有能力的基模型加权，而非僵化均分：</p>
+        </div>
+
+        <!-- 场景切换卡 -->
+        <div class="region-selector" role="tablist" aria-label="数据分布情境">
+          <button class="reg-btn" role="tab" id="btn-reg1" aria-pressed="true">情境 A: 高曲率非线性区</button>
+          <button class="reg-btn" role="tab" id="btn-reg2" aria-pressed="false">情境 B: 全局平缓边缘</button>
+          <button class="reg-btn" role="tab" id="btn-reg3" aria-pressed="false">情境 C: 孤立噪点扰动区</button>
+        </div>
+
+        <!-- 实时基学习器读数 -->
+        <div class="readout-card">
+          <div class="readout-title">
+            <span>基模型输出特征向量 z = [h₁(x), h₂(x), h₃(x)]</span>
+            <span id="regionBadge" style="color: var(--learner); font-weight:700;">区域 A 样本</span>
+          </div>
+          <div class="model-preds-grid">
+            <div class="model-box">
+              <span class="m-name">RF (随机森林)</span>
+              <span class="m-val" id="disp-rf">0.86</span>
+              <span class="m-conf" id="desc-rf">捕获精细曲面</span>
+            </div>
+            <div class="model-box">
+              <span class="m-name">GBDT (梯度树)</span>
+              <span class="m-val" id="disp-gbdt">0.82</span>
+              <span class="m-conf" id="desc-gbdt">紧贴局部流形</span>
+            </div>
+            <div class="model-box">
+              <span class="m-name">Logistic (线性)</span>
+              <span class="m-val" id="disp-lr">0.38</span>
+              <span class="m-conf" id="desc-lr">严重欠拟合失效</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 仲裁结果对比：平均法 vs 元学习器 -->
+        <div class="compare-result-box">
+          <div class="res-col avg">
+            <span class="res-tag">简单平均法 (Bagging 式合并)</span>
+            <span class="res-score" id="avg-score">0.686</span>
+            <span class="res-desc" id="avg-desc">等权盲目吸收线性模型的欠拟合误判，决策置信度被严重拉低。</span>
+          </div>
+          <div class="res-col meta">
+            <span class="res-tag">Stacking 元学习器</span>
+            <span class="res-score" id="meta-score">0.841</span>
+            <span class="res-desc" id="meta-desc">元模型自动将线性模型权重降为 ~0，专注采纳树模型的互补边界。</span>
+          </div>
+        </div>
+
+        <!-- 机制卡片 -->
+        <div class="meta-mechanism-card">
+          <h3>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <span id="mechanismTitle">元学习器在特征空间的核心作用</span>
+          </h3>
+          <p id="mechanismDesc">
+            基模型将原始输入 x 映射为新的向量 z = [h₁(x), …, hₖ(x)]。元学习器不是在寻找平均数，而是在这组<strong>“预测的预测”</strong>空间中建立新的决策边界，学会识别各模型的盲区与优势区间。
+          </p>
+          <div class="formula" id="mechanismFormula">
+            H(x) = g(w₁h₁(x) + w₂h₂(x) + w₃h₃(x) + b)
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学看这一页。之前我们讲了 Bagging 是投票平均，Boosting 是残差串行累加。那如果我们手头有完全不同流派的基模型——比如一个随机森林、一个 GBDT、一个逻辑回归，我们该怎么把它们结合起来？
+    是简单求一个平均吗？显然不行！因为不同模型在不同数据形态上的能力极度不均衡。
+    比如在高度非线性的螺旋曲线上，逻辑回归几乎是完全失效的（输出 0.38），如果固定给它 1/3 的权重，就会把另外两个优秀模型的预测（0.86 与 0.82）强行拖垮到 0.68。
+    Stacking 的天才之处，在于引入了「二层结构」：第一层 Level-0 学习器输出预测得分，拼成一个新的低维特征向量 z；第二层 Level-1 的元学习器（通常是一个带正则的线性模型或浅层网络），专门学习在这组预测特征上的最优仲裁策略。
+    它能通过学习发现：“当 RF 和 GBDT 很高而 LR 很低时，这是非线性区，LR 的权重应该归零”；或者“在噪点区，决策树容易过拟合跳动，此时该重用稳健的线性模型”。这就是元学习器学习互补边界的本质。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      Deck.init({ index: 22, total: 27, keys: false });
+
+      // 数据场景定义
+      const SCENARIOS = [
+        {
+          id: 'reg1',
+          name: '情境 A: 高曲率非线性区',
+          pointTag: '当前: 高曲率非线性区',
+          badge: '区域 A：强曲率流形 (x₁² + x₂² ≈ r²)',
+          preds: { rf: 0.86, gbdt: 0.82, lr: 0.38 },
+          descs: {
+            rf: '成功切分环状结构',
+            gbdt: '拟合局部残差',
+            lr: '欠拟合 (线性无法弯曲)'
+          },
+          weights: [0.55, 0.45, 0.00],
+          avgScore: '0.687',
+          metaScore: '0.842',
+          avgDesc: '等权盲目吸收线性模型的欠拟合误判，决策边界模糊，置信度明显降低。',
+          metaDesc: '元模型识别出 RF 与 GBDT 协同高置信，将 LR 权重自动压低至 0，锁定正类。',
+          weightsText: 'w: [0.55, 0.45, 0.00]',
+          modeTag: '完全剔除线性盲区',
+          finalOut: 'ŷ = 正类 (0.84)',
+          mechTitle: '非线性流形：自动剔除表达能力不足的模型',
+          mechDesc: '当样本位于复杂非线性曲面时，线性回归出现系统性偏差。元学习器在元特征空间学习到此时 LR 与真实标签负相关/无关，赋予其权重接近 0。',
+          formula: 'z = [0.86, 0.82, 0.38] → H(z) = σ(0.55·z₁ + 0.45·z₂ + 0·z₃) = 0.842'
+        },
+        {
+          id: 'reg2',
+          name: '情境 B: 全局平缓边缘',
+          pointTag: '当前: 全局平缓边缘',
+          badge: '区域 B：稀疏大间距边缘 (低密度区)',
+          preds: { rf: 0.61, gbdt: 0.65, lr: 0.74 },
+          descs: {
+            rf: '阶梯切分方差略高',
+            gbdt: '局部叶节点支持较少',
+            lr: '全局平滑边界更稳健'
+          },
+          weights: [0.20, 0.25, 0.55],
+          avgScore: '0.667',
+          metaScore: '0.722',
+          avgDesc: '均值受到树模型叶子分裂边界剧烈跳动的影响，预测波动较大。',
+          metaDesc: '元模型借由正则逻辑回归提供全局平滑支撑，大幅减小了树模型的外推方差。',
+          weightsText: 'w: [0.20, 0.25, 0.55]',
+          modeTag: '平滑模型主导，降低方差',
+          finalOut: 'ŷ = 正类 (0.72)',
+          mechTitle: '稀疏边缘：借平滑基模型抑制树模型方差',
+          mechDesc: '在训练样本较稀疏的边缘区，决策树模型的切分台阶可能发生过拟合跳跃；元学习器自动提高具有全局平滑假设的线性模型权重。',
+          formula: 'z = [0.61, 0.65, 0.74] → H(z) = σ(0.20·z₁ + 0.25·z₂ + 0.55·z₃) = 0.722'
+        },
+        {
+          id: 'reg3',
+          name: '情境 C: 孤立噪点扰动区',
+          pointTag: '当前: 孤立噪点扰动区',
+          badge: '区域 C：邻域带标签噪声点',
+          preds: { rf: 0.78, gbdt: 0.88, lr: 0.52 },
+          descs: {
+            rf: '袋外抽样抗噪性适中',
+            gbdt: '深度残差有追噪倾向',
+            lr: '抗局部离群点最稳健'
+          },
+          weights: [0.35, 0.15, 0.50],
+          avgScore: '0.727',
+          metaScore: '0.665',
+          avgDesc: '等权平均被 GBDT 追逐噪声的高置信度误导，容易发生虚假自信。',
+          metaDesc: '元模型检测到 GBDT 与全局趋势发生异常剧烈偏离，下调 Boosting 权重防止过拟合。',
+          weightsText: 'w: [0.35, 0.15, 0.50]',
+          modeTag: '抑制追噪的高方差模型',
+          finalOut: 'ŷ = 谨慎正类 (0.66)',
+          mechTitle: '噪声抑制：惩罚与大多数模型冲突的过拟合冲动',
+          mechDesc: 'Boosting 对离群噪点极度敏感；元学习器在训练中发现若 GBDT 极高而其他模型保守，往往是噪声过拟合，因此主动削减其信任度。',
+          formula: 'z = [0.78, 0.88, 0.52] → H(z) = σ(0.35·z₁ + 0.15·z₂ + 0.50·z₃) = 0.665'
+        }
+      ];
+
+      let currentIndex = 0;
+
+      // DOM 元素引用
+      const buttons = [
+        document.getElementById('btn-reg1'),
+        document.getElementById('btn-reg2'),
+        document.getElementById('btn-reg3')
+      ];
+
+      const currentPointTag = document.getElementById('currentPointTag');
+      const m1PredTag = document.getElementById('m1-pred-tag');
+      const m2PredTag = document.getElementById('m2-pred-tag');
+      const m3PredTag = document.getElementById('m3-pred-tag');
+      const zVectorText = document.getElementById('zVectorText');
+      const metaWeightsText = document.getElementById('metaWeightsText');
+      const metaModeTag = document.getElementById('metaModeTag');
+      const finalOutputText = document.getElementById('finalOutputText');
+
+      const regionBadge = document.getElementById('regionBadge');
+      const dispRf = document.getElementById('disp-rf');
+      const dispGbdt = document.getElementById('disp-gbdt');
+      const dispLr = document.getElementById('disp-lr');
+      const descRf = document.getElementById('desc-rf');
+      const descGbdt = document.getElementById('desc-gbdt');
+      const descLr = document.getElementById('desc-lr');
+
+      const avgScore = document.getElementById('avg-score');
+      const avgDesc = document.getElementById('avg-desc');
+      const metaScore = document.getElementById('meta-score');
+      const metaDesc = document.getElementById('meta-desc');
+
+      const mechanismTitle = document.getElementById('mechanismTitle');
+      const mechanismDesc = document.getElementById('mechanismDesc');
+      const mechanismFormula = document.getElementById('mechanismFormula');
+
+      function updateView(index) {
+        currentIndex = index;
+        const data = SCENARIOS[index];
+
+        // 更新按钮状态
+        buttons.forEach((btn, idx) => {
+          btn.setAttribute('aria-pressed', idx === index ? 'true' : 'false');
+        });
+
+        // 更新流程图中的文本
+        currentPointTag.textContent = data.pointTag;
+        m1PredTag.textContent = `预测得分 z₁ = ${data.preds.rf.toFixed(2)}`;
+        m2PredTag.textContent = `预测得分 z₂ = ${data.preds.gbdt.toFixed(2)}`;
+        m3PredTag.textContent = `预测得分 z₃ = ${data.preds.lr.toFixed(2)}`;
+        zVectorText.textContent = `z = [${data.preds.rf.toFixed(2)}, ${data.preds.gbdt.toFixed(2)}, ${data.preds.lr.toFixed(2)}]`;
+        metaWeightsText.textContent = data.weightsText;
+        metaModeTag.textContent = data.modeTag;
+        finalOutputText.textContent = data.finalOut;
+
+        // 更新右侧读数
+        regionBadge.textContent = data.badge;
+        dispRf.textContent = data.preds.rf.toFixed(2);
+        dispGbdt.textContent = data.preds.gbdt.toFixed(2);
+        dispLr.textContent = data.preds.lr.toFixed(2);
+        descRf.textContent = data.descs.rf;
+        descGbdt.textContent = data.descs.gbdt;
+        descLr.textContent = data.descs.lr;
+
+        avgScore.textContent = data.avgScore;
+        avgDesc.textContent = data.avgDesc;
+        metaScore.textContent = data.metaScore;
+        metaDesc.textContent = data.metaDesc;
+
+        mechanismTitle.textContent = data.mechTitle;
+        mechanismDesc.textContent = data.mechDesc;
+        mechanismFormula.textContent = data.formula;
+      }
+
+      // 绑定点击事件
+      buttons.forEach((btn, idx) => {
+        btn.addEventListener('click', () => updateView(idx));
+      });
+
+      // 初始化显示情境 0
+      updateView(0);
+    })();
+  </script>
+</body>
+</html>

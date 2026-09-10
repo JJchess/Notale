@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>多层网络前向传播：矩阵向量乘法与层级特征映射的形式化表达</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    /* 页面特异性布局，依托 Bento Grid 与主题 token */
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      overflow: hidden;
+      padding: 44px 56px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-sizing: border-box;
+    }
+
+    /* 顶栏标题区 */
+    .header-area {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      height: 72px;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 16px;
+    }
+    .header-titles {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .header-titles h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      margin: 0;
+      color: var(--text);
+    }
+    .header-titles p {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+    .header-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* 主内容区：三栏 Bento Grid */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: 420px 1fr 430px;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+      height: 740px;
+    }
+
+    /* 模块通用外观 */
+    .panel {
+      background: #ffffff;
+      border-radius: 20px;
+      border: 1px solid var(--border-subtle);
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      box-shadow: 0 4px 18px rgba(15, 23, 42, 0.03);
+      box-sizing: border-box;
+      height: 100%;
+      overflow: hidden;
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 左栏：形式化公式与维度核对 */
+    .formula-card {
+      background: var(--primary-soft);
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      padding: 10px 14px;
+      margin-bottom: 10px;
+    }
+    .formula-box {
+      font-size: 21px;
+      color: var(--primary);
+      text-align: center;
+      padding: 2px 0;
+    }
+    .formula-desc {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+      margin-top: 2px;
+    }
+
+    .dim-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 6px;
+      font-size: 13px;
+    }
+    .dim-table th, .dim-table td {
+      padding: 7px 10px;
+      text-align: left;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .dim-table th {
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .dim-badge {
+      font-family: var(--font-display);
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    /* 中栏：网络拓扑与逐层前向流动 */
+    .canvas-container {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      border-radius: 14px;
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      overflow: hidden;
+    }
+    #net-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 右栏：矩阵乘法具体算术展开 */
+    .matrix-calc-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+    .matrix-step-box {
+      background: #f8fafc;
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 10px 12px;
+      transition: all 0.2s ease;
+    }
+    .matrix-step-box.active {
+      border-color: var(--primary);
+      background: #f0f7ff;
+    }
+    .matrix-step-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .matrix-math-render {
+      font-size: 15px;
+      line-height: 1.4;
+      color: #334155;
+      overflow: visible;
+    }
+
+    /* 底部交互控制 */
+    .bottom-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: auto;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .sample-picker {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+    }
+    .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-option {
+      background: #ffffff;
+      border: 1px solid var(--border-subtle);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: var(--fs-sec);
+      cursor: pointer;
+      font-weight: 500;
+      color: var(--muted);
+      transition: all 0.15s ease;
+    }
+    .btn-option.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+    }
+    .btn-step {
+      background: var(--text);
+      color: #ffffff;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: var(--fs-sec);
+      cursor: pointer;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-step:hover {
+      background: #1e293b;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <!-- 顶栏标题 -->
+    <header class="header-area">
+      <div class="header-titles">
+        <h1 class="nt-title">多层网络前向传播：矩阵向量乘法与特征映射</h1>
+        <p>全连接层将“单个神经元点积”统一表示为严密的矩阵向量变换</p>
+      </div>
+      <div class="header-meta">
+        <span class="nt-badge" style="background:var(--primary-soft);color:var(--primary);font-weight:600;">结构：2 → 3 → 1</span>
+        <span class="nt-badge" style="background:#f1f5f9;color:var(--muted);">激活：ReLU / Sigmoid</span>
+      </div>
+    </header>
+
+    <!-- 主便当盒网格 -->
+    <div class="bento-grid">
+      <!-- 左栏：数学公式与维度规范 -->
+      <section class="panel">
+        <div class="panel-head">
+          <div class="panel-title">
+            <span>形式化推导</span>
+          </div>
+          <span class="nt-badge" style="background:#f8fafc;color:var(--muted);">逐层递推</span>
+        </div>
+
+        <div class="formula-card">
+          <div class="formula-box" id="f-linear"></div>
+          <div class="formula-desc">仿射变换：权重矩阵与特征向量点积加偏置</div>
+        </div>
+
+        <div class="formula-card" style="background:#f5f3ff;border-color:#ddd6fe;">
+          <div class="formula-box" id="f-act" style="color:var(--accent-purple);"></div>
+          <div class="formula-desc" style="color:var(--accent-purple);">逐元素非线性激活函数映射</div>
+        </div>
+
+        <div style="margin-top:10px;">
+          <div style="font-size:var(--fs-sec);font-weight:600;color:var(--text);margin-bottom:6px;">张量维度匹配约束 (Shape Check)</div>
+          <table class="dim-table">
+            <thead>
+              <tr>
+                <th>变量</th>
+                <th>数学符号</th>
+                <th>隐藏层 [1]</th>
+                <th>输出层 [2]</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>权重矩阵</td>
+                <td><span id="tex-w"></span></td>
+                <td><span class="dim-badge">3 × 2</span></td>
+                <td><span class="dim-badge">1 × 3</span></td>
+              </tr>
+              <tr>
+                <td>偏置向量</td>
+                <td><span id="tex-b"></span></td>
+                <td><span class="dim-badge">3 × 1</span></td>
+                <td><span class="dim-badge">1 × 1</span></td>
+              </tr>
+              <tr>
+                <td>激活输出</td>
+                <td><span id="tex-a"></span></td>
+                <td><span class="dim-badge">3 × 1</span></td>
+                <td><span class="dim-badge">1 × 1</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="bottom-bar">
+          <div class="sample-picker">
+            <span>测试输入样本：</span>
+            <div class="btn-group">
+              <button class="btn-option active" data-sample="0">A: [0.8, 0.4]</button>
+              <button class="btn-option" data-sample="1">B: [-0.5, 0.9]</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 中栏：网络图解与前向流动动态图 -->
+      <section class="panel" style="padding: 20px;">
+        <div class="panel-head" style="margin-bottom:12px;">
+          <div class="panel-title">
+            <span>计算拓扑图 (Computation Graph)</span>
+          </div>
+          <div style="display:flex;gap:12px;font-size:var(--fs-label);align-items:center;">
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#3b82f6;"></span>输入层 a^[0]</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:var(--accent-purple);"></span>隐藏层 a^[1]</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:var(--accent-orange);"></span>预测值 y_hat</span>
+          </div>
+        </div>
+
+        <div class="canvas-container">
+          <canvas id="net-canvas"></canvas>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;">
+          <div style="font-size:var(--fs-sec);color:var(--muted);" id="step-status">
+            当前状态：第 0 步 / 输入就绪
+          </div>
+          <button class="btn-step" id="btn-next-step">
+            <span>下一步传播</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- 右栏：分层算术展开详情 -->
+      <section class="panel">
+        <div class="panel-head">
+          <div class="panel-title">
+            <span>数值计算追踪</span>
+          </div>
+          <span class="nt-badge" style="background:#ecfdf5;color:var(--success);font-weight:600;">前向求值</span>
+        </div>
+
+        <div class="matrix-calc-area">
+          <div class="matrix-step-box" id="step-box-0">
+            <div class="matrix-step-title">
+              <span>输入特征向量 a^[0]</span>
+              <span class="dim-badge">2 × 1</span>
+            </div>
+            <div class="matrix-math-render" id="math-input"></div>
+          </div>
+
+          <div class="matrix-step-box" id="step-box-1">
+            <div class="matrix-step-title">
+              <span>第 1 层线性组合 z^[1] = W^[1]·a^[0] + b^[1]</span>
+              <span class="dim-badge">3 × 1</span>
+            </div>
+            <div class="matrix-math-render" id="math-z1"></div>
+          </div>
+
+          <div class="matrix-step-box" id="step-box-2">
+            <div class="matrix-step-title">
+              <span>第 1 层激活 a^[1] = ReLU(z^[1])</span>
+              <span class="dim-badge">3 × 1</span>
+            </div>
+            <div class="matrix-math-render" id="math-a1"></div>
+          </div>
+
+          <div class="matrix-step-box" id="step-box-3">
+            <div class="matrix-step-title">
+              <span>输出层 z^[2] 与预测概率 y_hat</span>
+              <span class="dim-badge">1 × 1</span>
+            </div>
+            <div class="matrix-math-render" id="math-out"></div>
+          </div>
+        </div>
+
+        <div class="nt-metric-callout" style="margin-top:12px;background:#f8fafc;border:1px solid var(--border-subtle);border-radius:12px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-size:var(--fs-label);color:var(--muted);">最终模型预测概率</div>
+            <div style="font-size:24px;font-weight:700;color:var(--text);font-family:var(--font-display);" id="final-pred">--</div>
+          </div>
+          <span class="nt-badge" style="background:var(--primary-soft);color:var(--primary);font-size:13px;padding:6px 12px;">二分类判定: <span id="final-cls">--</span></span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 讲稿 -->
+  <aside class="notes" hidden>
+    这一页我们把单神经元模型形式化扩展到多层感知机。
+    在数学上，无论网络有多少层，每一层的前向计算都严格遵循两步统一形式：
+    第一步是矩阵向量乘法叠加偏置向量，进行仿射特征映射；
+    第二步是应用逐元素的非线性激活函数。
+    注意右侧的形状检查：矩阵的列数必须等于上一层的特征数，行数决定输出维度。
+    这种向量化表达不仅在数学推导上极为严密优美，更让底层能够直接调用高效的并行 BLAS 库进行高速运算。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 1. 渲染静态 KaTeX 基础公式
+      katex.render("z^{[l]} = W^{[l]} a^{[l-1]} + b^{[l]}", document.getElementById("f-linear"), { throwOnError: false });
+      katex.render("a^{[l]} = \\sigma(z^{[l]})", document.getElementById("f-act"), { throwOnError: false });
+      katex.render("W^{[l]}", document.getElementById("tex-w"), { throwOnError: false });
+      katex.render("b^{[l]}", document.getElementById("tex-b"), { throwOnError: false });
+      katex.render("a^{[l]}", document.getElementById("tex-a"), { throwOnError: false });
+
+      // 2. 预设网络参数 (2 -> 3 -> 1)
+      const W1 = [
+        [0.6, -0.4],
+        [0.3, 0.8],
+        [-0.5, 0.2]
+      ];
+      const b1 = [0.1, -0.2, 0.3];
+      
+      const W2 = [[0.7, -0.9, 0.5]];
+      const b2 = [0.15];
+
+      const SAMPLES = [
+        [0.8, 0.4],
+        [-0.5, 0.9]
+      ];
+
+      let currentSampleIdx = 0;
+      let currentStep = 0; // 0: Input ready, 1: Hidden linear, 2: Hidden act, 3: Output ready
+
+      // 辅助计算
+      function relu(v) { return Math.max(0, v); }
+      function sigmoid(v) { return 1 / (1 + Math.exp(-v)); }
+
+      function computeForward(x) {
+        const a0 = [...x];
+        const z1 = [
+          W1[0][0]*a0[0] + W1[0][1]*a0[1] + b1[0],
+          W1[1][0]*a0[0] + W1[1][1]*a0[1] + b1[1],
+          W1[2][0]*a0[0] + W1[2][1]*a0[1] + b1[2]
+        ];
+        const a1 = z1.map(relu);
+        const z2 = [W2[0][0]*a1[0] + W2[0][1]*a1[1] + W2[0][2]*a1[2] + b2[0]];
+        const a2 = [sigmoid(z2[0])];
+        return { a0, z1, a1, z2, a2 };
+      }
+
+      // Canvas 拓扑图绘制
+      const canvas = document.getElementById("net-canvas");
+      let ctx = null;
+
+      // 节点坐标定义 (逻辑坐标)
+      const layers = [
+        { name: "输入层", x: 90, nodes: [170, 270], r: 24, labels: ["x_1", "x_2"], col: "#3b82f6" },
+        { name: "隐藏层", x: 310, nodes: [120, 220, 320], r: 26, labels: ["a_1^{[1]}", "a_2^{[1]}", "a_3^{[1]}"], col: "#7c3aed" },
+        { name: "输出层", x: 530, nodes: [220], r: 28, labels: ["\\hat{y}"], col: "#ea580c" }
+      ];
+
+      function drawNetwork() {
+        if (!ctx) return;
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const activeData = computeForward(SAMPLES[currentSampleIdx]);
+
+        // 缩放比例自适应
+        const scaleX = w / 620;
+        const scaleY = h / 440;
+
+        // 1. 绘制连线 (第一层全连接)
+        for (let i = 0; i < layers[0].nodes.length; i++) {
+          for (let j = 0; j < layers[1].nodes.length; j++) {
+            const x1 = layers[0].x * scaleX;
+            const y1 = layers[0].nodes[i] * scaleY;
+            const x2 = layers[1].x * scaleX;
+            const y2 = layers[1].nodes[j] * scaleY;
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            const isActive = currentStep >= 1;
+            ctx.strokeStyle = isActive ? "rgba(124, 58, 237, 0.45)" : "rgba(203, 213, 225, 0.7)";
+            ctx.lineWidth = isActive ? 2.5 : 1.5;
+            ctx.stroke();
+
+            // 标注权重
+            if (isActive) {
+              const mx = (x1 * 0.42 + x2 * 0.58);
+              const my = (y1 * 0.42 + y2 * 0.58);
+              ctx.fillStyle = "#64748b";
+              ctx.font = "10px Inter, sans-serif";
+              const subIdx = `${j+1}${i+1}`;
+              ctx.fillText(`w` + (subIdx === "11" ? "₁₁" : (subIdx === "12" ? "₁₂" : (subIdx === "21" ? "₂₁" : (subIdx === "22" ? "₂₂" : (subIdx === "31" ? "₃₁" : "₃₂"))))), mx, my - 5);
+            }
+          }
+        }
+
+        // 2. 绘制连线 (第二层全连接)
+        for (let j = 0; j < layers[1].nodes.length; j++) {
+          const x1 = layers[1].x * scaleX;
+          const y1 = layers[1].nodes[j] * scaleY;
+          const x2 = layers[2].x * scaleX;
+          const y2 = layers[2].nodes[0] * scaleY;
+
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          const isActive = currentStep >= 3;
+          ctx.strokeStyle = isActive ? "rgba(234, 88, 12, 0.6)" : "rgba(203, 213, 225, 0.7)";
+          ctx.lineWidth = isActive ? 3 : 1.5;
+          ctx.stroke();
+        }
+
+        // 3. 绘制节点
+        // 输入节点
+        layers[0].nodes.forEach((ny, idx) => {
+          const nx = layers[0].x * scaleX;
+          const y = ny * scaleY;
+          ctx.beginPath();
+          ctx.arc(nx, y, layers[0].r, 0, Math.PI * 2);
+          ctx.fillStyle = currentStep >= 0 ? "#eff6ff" : "#ffffff";
+          ctx.fill();
+          ctx.lineWidth = currentStep >= 0 ? 3 : 2;
+          ctx.strokeStyle = layers[0].col;
+          ctx.stroke();
+
+          ctx.fillStyle = "#1e293b";
+          ctx.font = "bold 13px Inter, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(activeData.a0[idx].toFixed(2), nx, y);
+
+          ctx.fillStyle = "#64748b";
+          ctx.font = "12px Inter, sans-serif";
+          ctx.fillText(`x${idx + 1}`, nx - 36, y);
+        });
+
+        // 隐藏层节点
+        layers[1].nodes.forEach((ny, idx) => {
+          const nx = layers[1].x * scaleX;
+          const y = ny * scaleY;
+          ctx.beginPath();
+          ctx.arc(nx, y, layers[1].r, 0, Math.PI * 2);
+          const active = currentStep >= 2;
+          ctx.fillStyle = active ? "#f5f3ff" : "#ffffff";
+          ctx.fill();
+          ctx.lineWidth = currentStep >= 1 ? 3 : 2;
+          ctx.strokeStyle = currentStep >= 1 ? layers[1].col : "#cbd5e1";
+          ctx.stroke();
+
+          ctx.fillStyle = "#1e293b";
+          ctx.font = "bold 13px Inter, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          const val = currentStep >= 2 ? activeData.a1[idx].toFixed(2) : (currentStep >= 1 ? activeData.z1[idx].toFixed(2) : `h${idx+1}`);
+          ctx.fillText(val, nx, y);
+
+          ctx.fillStyle = "#7c3aed";
+          ctx.font = "11px Inter, sans-serif";
+          ctx.fillText(currentStep >= 2 ? "ReLU" : (currentStep >= 1 ? "Σ+b" : ""), nx, y + 36);
+        });
+
+        // 输出层节点
+        {
+          const nx = layers[2].x * scaleX;
+          const y = layers[2].nodes[0] * scaleY;
+          ctx.beginPath();
+          ctx.arc(nx, y, layers[2].r, 0, Math.PI * 2);
+          const active = currentStep >= 3;
+          ctx.fillStyle = active ? "#fff7ed" : "#ffffff";
+          ctx.fill();
+          ctx.lineWidth = active ? 3.5 : 2;
+          ctx.strokeStyle = active ? layers[2].col : "#cbd5e1";
+          ctx.stroke();
+
+          ctx.fillStyle = "#1e293b";
+          ctx.font = "bold 14px Inter, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          const val = active ? activeData.a2[0].toFixed(3) : "ŷ";
+          ctx.fillText(val, nx, y);
+
+          ctx.fillStyle = "#ea580c";
+          ctx.font = "12px Inter, sans-serif";
+          ctx.fillText(active ? "Sigmoid" : "预测", nx, y + 40);
+        }
+      }
+
+      function updateMathPanel() {
+        const data = computeForward(SAMPLES[currentSampleIdx]);
+        const x = data.a0;
+
+        // 步骤高亮类
+        [0, 1, 2, 3].forEach(step => {
+          const box = document.getElementById(`step-box-${step}`);
+          if (step <= currentStep) {
+            box.classList.add("active");
+          } else {
+            box.classList.remove("active");
+          }
+        });
+
+        // Step 0: Input Vector
+        katex.render(
+          `a^{[0]} = \\begin{bmatrix} x_1 \\\\ x_2 \\end{bmatrix} = \\begin{bmatrix} ${x[0].toFixed(2)} \\\\ ${x[1].toFixed(2)} \\end{bmatrix}`,
+          document.getElementById("math-input"),
+          { throwOnError: false }
+        );
+
+        // Step 1: z^[1]
+        if (currentStep >= 1) {
+          katex.render(
+            `z^{[1]} = \\begin{bmatrix} 0.6 & -0.4 \\\\ 0.3 & 0.8 \\\\ -0.5 & 0.2 \\end{bmatrix} a^{[0]} + \\begin{bmatrix} 0.1 \\\\ -0.2 \\\\ 0.3 \\end{bmatrix} = \\begin{bmatrix} ${data.z1[0].toFixed(2)} \\\\ ${data.z1[1].toFixed(2)} \\\\ ${data.z1[2].toFixed(2)} \\end{bmatrix}`,
+            document.getElementById("math-z1"),
+            { throwOnError: false }
+          );
+        } else {
+          katex.render(`z^{[1]} = W^{[1]} a^{[0]} + b^{[1]} \\quad (等待计算)`, document.getElementById("math-z1"), { throwOnError: false });
+        }
+
+        // Step 2: a^[1]
+        if (currentStep >= 2) {
+          katex.render(
+            `a^{[1]} = \\text{ReLU}(z^{[1]}) = \\begin{bmatrix} ${data.a1[0].toFixed(2)} \\\\ ${data.a1[1].toFixed(2)} \\\\ ${data.a1[2].toFixed(2)} \\end{bmatrix}`,
+            document.getElementById("math-a1"),
+            { throwOnError: false }
+          );
+        } else {
+          katex.render(`a^{[1]} = \\max(0, z^{[1]}) \\quad (等待激活)`, document.getElementById("math-a1"), { throwOnError: false });
+        }
+
+        // Step 3: Out
+        if (currentStep >= 3) {
+          katex.render(
+            `z^{[2]} = W^{[2]} a^{[1]} + b^{[2]} = ${data.z2[0].toFixed(2)}, \\; \\hat{y} = \\sigma(z^{[2]}) = \\mathbf{${data.a2[0].toFixed(3)}}`,
+            document.getElementById("math-out"),
+            { throwOnError: false }
+          );
+          document.getElementById("final-pred").textContent = data.a2[0].toFixed(3);
+          const isPos = data.a2[0] >= 0.5;
+          const clsElem = document.getElementById("final-cls");
+          clsElem.textContent = isPos ? "正类 (Class 1)" : "负类 (Class 0)";
+          clsElem.style.color = isPos ? "var(--primary)" : "var(--accent-orange)";
+        } else {
+          katex.render(`\\hat{y} = \\sigma(W^{[2]} a^{[1]} + b^{[2]}) \\quad (等待输出)`, document.getElementById("math-out"), { throwOnError: false });
+          document.getElementById("final-pred").textContent = "--";
+          document.getElementById("final-cls").textContent = "--";
+        }
+
+        // 状态文字说明
+        const stepDesc = [
+          "当前状态：第 0 步 / 输入特征向量已就绪",
+          "当前状态：第 1 步 / 隐藏层线性矩阵乘求得 z^[1]",
+          "当前状态：第 2 步 / 逐元素 ReLU 截断完成 a^[1]",
+          "当前状态：第 3 步 / 输出层完成 Sigmoid 归一化预测"
+        ];
+        document.getElementById("step-status").textContent = stepDesc[currentStep];
+      }
+
+      function updateAll() {
+        drawNetwork();
+        updateMathPanel();
+      }
+
+      // 初始化 Canvas 尺寸
+      ctx = Deck.fit(canvas);
+      Deck.onResize(() => {
+        ctx = Deck.fit(canvas);
+        drawNetwork();
+      });
+
+      // 样本切换
+      document.querySelectorAll(".btn-option").forEach(btn => {
+        btn.addEventListener("click", e => {
+          document.querySelectorAll(".btn-option").forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+          currentSampleIdx = parseInt(btn.dataset.sample, 10);
+          updateAll();
+        });
+      });
+
+      // 下一步按钮交互
+      const nextBtn = document.getElementById("btn-next-step");
+      nextBtn.addEventListener("click", () => {
+        currentStep = (currentStep + 1) % 4;
+        updateAll();
+      });
+
+      // 底盘分步集成 (右箭头推进)
+      Deck.onStep((step) => {
+        currentStep = Math.min(step, 3);
+        updateAll();
+      }, 3);
+
+      // 首次加载立即求值
+      updateAll();
+
+    })();
+  </script>
+</body>
+</html>

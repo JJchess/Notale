@@ -535,20 +535,25 @@ def audit_delivery(
 
 
 REF_SHOTS_NOTE = """<references>
-随附图片标注了用途。用户/主题包参考可沿用要求的颜色、字体气质与材质，不复制题材、营销文案和导航。
-最终 theme_css 接口与明确修改要求优先；原参考不冒充修改后的效果。画廊候选仅供启发。
-只有封面样张时正文是推导。内容分组不自动对应可见容器；具名局部样式按接口用途使用。
+随附图片是最终主题采用的参考，不是要照抄的页面。按 INTERFACE 说明借鉴形状、笔触、材质和字图关系；仅供配色的图片不授权照搬其结构。
+实际颜色、字体和变体以 theme_css 与明确修改要求为准，原参考不冒充修改后的效果。
+你决定本页主体、布局和交互；把适用的视觉处理落实到主体、图解、批注或操作，而不只继承背景色和字体。
+不复制题材、营销文案、导航和品牌；只有封面样张时正文是推导。样例的默认皮肤不覆盖最终主题。
 </references>"""
 
 
 def ref_images(root: Path, n: int = 2) -> list[dict]:
-    """style director 为这套挑的参照,取前 n 条的截图,缩到 900 宽。没有 style-picks.tsv 就是空。"""
+    """Legacy runs: resolve old gallery IDs or new style IDs without rewriting them."""
     picks = root / "style-picks.tsv"
     if not picks.is_file():
         return []
-    from . import director, gallery
+    from . import director, gallery, style_catalog
     ids = [l.split("\t")[0].strip() for l in picks.read_text(encoding="utf-8").splitlines() if l.strip()]
-    rows = gallery.facts(ids[:n])
+    styles = {r[0] for r in style_catalog.rows()}
+    rows = []
+    for key in ids[:n]:
+        rows.extend([{'id': key, 'shot': str(style_catalog.read_path(key))}]
+                    if key in styles else gallery.facts([key]))
     return director._images(rows) if rows else []
 
 
@@ -558,6 +563,19 @@ def user_ref_images(root: Path) -> list[dict]:
     shots = root / 'pages/assets/style/shots'
     paths = [p for p in sorted(shots.rglob('*')) if p.suffix.lower() in IMAGES - {'.svg'} and p.is_file()]
     return director._images([{'id': '用户/主题包参考', 'shot': str(p)} for p in paths])
+
+
+def theme_ref_images(root: Path) -> list[dict]:
+    """Final declared reference wins; old packages keep their explicit user sample."""
+    from . import director, theme
+    assets = root / 'pages/assets'
+    css = (assets / 'theme.css').read_text(encoding='utf-8')
+    selected = theme.reference_images(css, assets)
+    if selected:
+        return director._images(selected)
+    # Old themes have no final-reference line. Do not turn gallery candidates
+    # into a purported final direction or force new pictures onto a reused theme.
+    return user_ref_images(root)
 
 
 def build_one(
@@ -893,7 +911,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--samples",
         choices=skills.SAMPLE_MODES,
         default="mini",
-        help="样本模式：full=完整实例，mini=紧凑实例（默认；代码页=单个作者层），none=只给 reference",
+        help="样本模式：mini=紧凑实例（默认；代码页=单个作者层），none=只给 reference",
     )
     parser.add_argument(
         "--uniform",
@@ -915,11 +933,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--visual-focus",
         action="store_true",
         help="实验开关：页表带「视觉焦点」行时，system 追加使用规则；默认关闭（基线不变）",
-    )
-    parser.add_argument(
-        "--ref-shots",
-        action="store_true",
-        help="实验开关：把 style director 挑的前两条参照截图随 brief 发给建页 agent；默认关",
     )
     parser.add_argument(
         "--frame-cap",
@@ -981,6 +994,7 @@ def main() -> None:
                 f"{page.pid} 已有构建产物；新实验必须从 absent target 开始"
             )
 
+    refs = theme_ref_images(root) if any(p.workflow != 'build-code' for p in pages) else []
     manifest = {
         "schemaVersion": 3,
         "label": args.label,
@@ -998,10 +1012,8 @@ def main() -> None:
         "visualFocus": args.visual_focus,
         "notesMode": args.notes,
         "frameCap": args.frame_cap,
-        "refShots": args.ref_shots,
-        # mini 臂里因为缺 mini 而仍用 full 的样本。统计时用到它们的页要剔除,
-        # 否则那几页混着对照条件。见 skills.MINI_FALLBACKS。
-        "miniFallbacks": dict(skills.MINI_FALLBACKS),
+        "refShots": any(x['type'] == 'input_image' for x in refs),
+        "themeReferences": [x['text'] for x in refs if x['type'] == 'input_text'],
         "pages": [page.pid for page in pages],
         "startedAt": _now(),
     }
@@ -1053,9 +1065,6 @@ def main() -> None:
     )
 
     started = time.time()
-    refs = user_ref_images(root)
-    if not refs and args.ref_shots:
-        refs = ref_images(root)
     if refs:
         print(f"  参照图 {sum(x.get('type') == 'input_image' for x in refs)} 张随视觉页输入")
 

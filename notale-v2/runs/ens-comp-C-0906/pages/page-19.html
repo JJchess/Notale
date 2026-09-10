@@ -1,0 +1,466 @@
+<!doctype html>
+<!--
+构图意图：
+1. 主对象是两组对比证据：左侧为训练误差与泛化误差随迭代轮数演化的双曲线（展现降低偏差的能力与过拟合转折），右侧为样本空间中干净样本与离群噪声在加权下的决策边界扭曲（展现对噪声标签的敏感性）。
+2. 对象之间的关系通过“串行加权的两面性”在水平轴上对称展开：正常样本通过逐步加权修正残差使偏差单调下降；离群噪声则因持续被错分而指数级吸收权重，强行扭曲边界导致方差激增。
+3. 说明文字直接附着在关键拐点与噪声样本上，右侧操作控件允许读者在“低噪声/高噪声”之间切换观察权重膨胀与测试误差反弹。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+    }
+    #stage {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      color: var(--text);
+    }
+    .lead {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-tight);
+    }
+    .grid-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      padding-top: 22px;
+    }
+    .panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--text);
+    }
+    .legend {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .chart-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+    svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    .axis-line {
+      stroke: var(--line);
+      stroke-width: 1.5;
+    }
+    .grid-line {
+      stroke: var(--line);
+      stroke-width: 1;
+      stroke-dasharray: 3 3;
+      opacity: 0.35;
+    }
+    .tick-text {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-tick);
+      fill: var(--muted);
+    }
+    .curve-train {
+      fill: none;
+      stroke: var(--model);
+      stroke-width: 3;
+    }
+    .curve-test {
+      fill: none;
+      stroke: var(--focus);
+      stroke-width: 3;
+    }
+    .callout {
+      position: absolute;
+      font-size: var(--fs-label);
+      line-height: 1.3;
+      padding: 4px 8px;
+      background: var(--bg);
+      border-left: 2px solid var(--focus);
+      color: var(--text);
+    }
+    .mode-switch {
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      appearance: none;
+      background: transparent;
+      border: 1px solid var(--line);
+      padding: 4px 12px;
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all var(--duration-fast) ease;
+    }
+    .btn.active {
+      background: var(--text);
+      color: var(--bg);
+      border-color: var(--text);
+      font-weight: var(--weight-medium);
+    }
+    .sample-clean-pos { fill: var(--model); }
+    .sample-clean-neg { fill: var(--aggregate); }
+    .sample-noise { fill: var(--focus); stroke: var(--text); stroke-width: 1.5; }
+    .boundary-clean {
+      fill: none;
+      stroke: var(--line);
+      stroke-width: 2;
+      stroke-dasharray: 4 4;
+    }
+    .boundary-distorted {
+      fill: none;
+      stroke: var(--focus);
+      stroke-width: 3;
+    }
+    .boundary-clean-active {
+      fill: none;
+      stroke: var(--aggregate);
+      stroke-width: 3;
+    }
+    .summary-bar {
+      margin-top: 10px;
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      border-top: 1px dashed var(--line);
+      padding-top: 10px;
+    }
+    .summary-bar strong {
+      color: var(--text);
+      font-weight: var(--weight-medium);
+    }
+  </style>
+</head>
+<body data-page="19" data-total="26">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>偏差降低与噪声敏感：AdaBoost 的两面</h1>
+        <p class="lead">串行重赋权压制了偏差，但异常样本被持续惩罚导致权重畸高，易破坏泛化边界</p>
+      </div>
+      <div class="mode-switch">
+        <button id="btnClean" class="btn active" type="button">纯净数据</button>
+        <button id="btnNoisy" class="btn" type="button">含噪声样本</button>
+      </div>
+    </header>
+
+    <div class="grid-body">
+      <!-- 左栏：轮数与误差收敛（展现偏差降低与过拟合风险） -->
+      <section class="panel min0">
+        <div class="panel-head">
+          <div class="panel-title">迭代轮数与误差演化</div>
+          <div class="legend">
+            <div class="legend-item">
+              <span class="legend-dot" style="background: var(--model);"></span>
+              <span>训练误差</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot" style="background: var(--focus);"></span>
+              <span>测试误差</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-container" id="curvePanel">
+          <svg viewBox="0 0 700 480" id="curveSvg">
+            <!-- 坐标系 -->
+            <line x1="60" y1="430" x2="660" y2="430" class="axis-line" />
+            <line x1="60" y1="30" x2="60" y2="430" class="axis-line" />
+            <!-- 横轴刻度 -->
+            <text x="60" y="455" class="tick-text" text-anchor="middle">1</text>
+            <text x="210" y="455" class="tick-text" text-anchor="middle">20</text>
+            <text x="360" y="455" class="tick-text" text-anchor="middle">40</text>
+            <text x="510" y="455" class="tick-text" text-anchor="middle">60</text>
+            <text x="650" y="455" class="tick-text" text-anchor="middle">80 (轮数 T)</text>
+            <!-- 纵轴刻度 -->
+            <text x="45" y="435" class="tick-text" text-anchor="end">0.0</text>
+            <text x="45" y="335" class="tick-text" text-anchor="end">0.1</text>
+            <text x="45" y="235" class="tick-text" text-anchor="end">0.2</text>
+            <text x="45" y="135" class="tick-text" text-anchor="end">0.3</text>
+            <text x="45" y="35" class="tick-text" text-anchor="end">0.4 错误率</text>
+            <!-- 网格线 -->
+            <line x1="60" y1="330" x2="660" y2="330" class="grid-line" />
+            <line x1="60" y1="230" x2="660" y2="230" class="grid-line" />
+            <line x1="60" y1="130" x2="660" y2="130" class="grid-line" />
+
+            <!-- 动态折线 -->
+            <path id="trainPath" class="curve-train" d="" />
+            <path id="testPath" class="curve-test" d="" />
+
+            <!-- 关键标记点与标注 -->
+            <circle id="turnPoint" cx="300" cy="280" r="5" fill="var(--focus)" />
+            <text id="curveAnnotation" x="315" y="275" font-size="var(--fs-label)" fill="var(--focus)">过拟合拐点</text>
+          </svg>
+        </div>
+        <div class="summary-bar">
+          <div><strong>能力：</strong>训练误差呈指数收敛</div>
+          <div><strong>代价：</strong>过拟合致测试误差反弹</div>
+        </div>
+      </section>
+
+      <!-- 右栏：样本空间与决策边界扭曲（展现对错误标签的敏感度） -->
+      <section class="panel min0">
+        <div class="panel-head">
+          <div class="panel-title">样本空间与决策边界扭曲</div>
+          <div class="legend">
+            <div class="legend-item">
+              <span class="legend-dot" style="background: var(--model);"></span>
+              <span>正类</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot" style="background: var(--aggregate);"></span>
+              <span>负类</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot" style="background: var(--focus);"></span>
+              <span>噪声点</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-container" id="spacePanel">
+          <svg viewBox="0 0 700 480" id="spaceSvg">
+            <!-- 背景网格框 -->
+            <rect x="50" y="30" width="600" height="400" fill="none" stroke="var(--line)" stroke-width="1.5" />
+        <!-- 理想平滑分界面 (基准) -->
+        <path id="cleanRefBoundary" d="M 50 360 Q 300 240 650 140" class="boundary-clean" />
+        <text id="cleanRefText" x="520" y="125" font-size="var(--fs-tick)" fill="var(--muted)">真实泛化边界</text>
+
+            <!-- 扭曲分界面 -->
+            <path id="activeBoundary" class="boundary-distorted" d="" />
+
+            <!-- 样本点容器 -->
+            <g id="samplePoints"></g>
+
+            <!-- 噪声点辐射权重圈与标签说明 -->
+            <g id="noiseHighlights"></g>
+          </svg>
+        </div>
+        <div class="summary-bar">
+          <div><strong>机制：</strong>错分样本权重放大倍数为 e^(2α)</div>
+          <div><strong>后果：</strong>离群点强行扭曲泛化边界</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，我们前几节推导了 AdaBoost 的权重更新机制和加权投票决策，今天我们来客观审视它的能力与边界。
+    首先看左侧：AdaBoost 的核心优势是强悍的“降偏差”能力。哪怕基分类器是非常简陋的单层决策树桩，通过串行迭代、聚焦前序错误，训练误差会迅速以指数速度压低。
+    但大家一定要注意右侧图示中的“致命软肋”：如果数据集中混入了离群点或者被打错标签的样本，因为这些点根本无法被基模型正确切分，AdaBoost 每一轮都会用 exp(alpha) 的倍率疯狂放大它们的样本权重！
+    大家看，只要切换到含噪状态，随着迭代深入，这几个噪声点的权重变得极其巨大，最终强行把原本平滑规整的集成决策边界拽向离群点，导致模型对噪声过拟合，测试误差显著反弹。因此工业落地时，AdaBoost 往往需要配合强力的数据清洗或改用鲁棒损失函数的 Gradient Boosting。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      Deck.init({ index: 19, total: 26 });
+
+      const btnClean = document.getElementById('btnClean');
+      const btnNoisy = document.getElementById('btnNoisy');
+      const trainPath = document.getElementById('trainPath');
+      const testPath = document.getElementById('testPath');
+      const turnPoint = document.getElementById('turnPoint');
+      const curveAnnotation = document.getElementById('curveAnnotation');
+      const activeBoundary = document.getElementById('activeBoundary');
+      const samplePoints = document.getElementById('samplePoints');
+      const cleanRefBoundary = document.getElementById('cleanRefBoundary');
+      const cleanRefText = document.getElementById('cleanRefText');
+
+      // 样本数据生成（固定随机种子，确保可复现）
+      const posSamples = [
+        {x: 100, y: 120}, {x: 140, y: 160}, {x: 180, y: 90}, {x: 230, y: 140},
+        {x: 280, y: 110}, {x: 320, y: 180}, {x: 360, y: 100}, {x: 410, y: 80},
+        {x: 460, y: 130}, {x: 520, y: 70},  {x: 580, y: 90}
+      ];
+
+      const negSamples = [
+        {x: 110, y: 380}, {x: 160, y: 320}, {x: 210, y: 350}, {x: 270, y: 290},
+        {x: 330, y: 330}, {x: 390, y: 280}, {x: 440, y: 340}, {x: 490, y: 260},
+        {x: 550, y: 310}, {x: 600, y: 250}, {x: 620, y: 300}
+      ];
+
+      // 离群/错误标签点：深度嵌入在对方类别区域
+      const noisePoints = [
+        {x: 280, y: 360, label: "噪声样本 A"},
+        {x: 520, y: 160, label: "噪声样本 B"}
+      ];
+
+      let isNoisy = false;
+
+      function renderSamples() {
+        samplePoints.innerHTML = '';
+        noiseHighlights.innerHTML = '';
+
+        // 正类
+        posSamples.forEach(p => {
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('cx', p.x);
+          circle.setAttribute('cy', p.y);
+          circle.setAttribute('r', '6');
+          circle.setAttribute('class', 'sample-clean-pos');
+          samplePoints.appendChild(circle);
+        });
+
+        // 负类
+        negSamples.forEach(p => {
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', p.x - 5);
+          rect.setAttribute('y', p.y - 5);
+          rect.setAttribute('width', '10');
+          rect.setAttribute('height', '10');
+          rect.setAttribute('class', 'sample-clean-neg');
+          samplePoints.appendChild(rect);
+        });
+
+        if (isNoisy) {
+          // 渲染噪声点及其膨胀权重光圈
+          noisePoints.forEach((p, idx) => {
+            // 膨胀光圈
+            const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            ring.setAttribute('cx', p.x);
+            ring.setAttribute('cy', p.y);
+            ring.setAttribute('r', '22');
+            ring.setAttribute('fill', 'none');
+            ring.setAttribute('stroke', 'var(--focus)');
+            ring.setAttribute('stroke-width', '2');
+            ring.setAttribute('stroke-dasharray', '3 3');
+            noiseHighlights.appendChild(ring);
+
+            // 核心点
+            const pt = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            pt.setAttribute('cx', p.x);
+            pt.setAttribute('cy', p.y);
+            pt.setAttribute('r', '8');
+            pt.setAttribute('class', 'sample-noise');
+            noiseHighlights.appendChild(pt);
+
+            // 说明文字
+            const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            txt.setAttribute('x', p.x + 14);
+            txt.setAttribute('y', p.y + 4);
+            txt.setAttribute('font-size', '13px');
+            txt.setAttribute('fill', 'var(--focus)');
+            txt.setAttribute('font-weight', '500');
+            txt.textContent = `${p.label} (权重×8)`;
+            noiseHighlights.appendChild(txt);
+          });
+        }
+      }
+
+      function updateState() {
+        if (!isNoisy) {
+          // 纯净数据：训练误差指数逼近0，测试误差保持低水平收敛
+          trainPath.setAttribute('d', 'M 60 100 Q 180 370 300 405 T 650 422');
+          testPath.setAttribute('d', 'M 60 150 Q 200 320 360 340 T 650 355');
+          
+          turnPoint.setAttribute('cx', '380');
+          turnPoint.setAttribute('cy', '342');
+          turnPoint.style.display = 'block';
+          curveAnnotation.setAttribute('x', '395');
+          curveAnnotation.setAttribute('y', '338');
+          curveAnnotation.textContent = '测试误差稳步收敛';
+          curveAnnotation.setAttribute('fill', 'var(--muted)');
+          turnPoint.setAttribute('fill', 'var(--muted)');
+
+          // 边界：平滑贴合，隐藏参考虚线
+          cleanRefBoundary.style.display = 'none';
+          cleanRefText.style.display = 'none';
+          activeBoundary.setAttribute('class', 'boundary-clean-active');
+          activeBoundary.setAttribute('d', 'M 50 360 Q 300 240 650 140');
+        } else {
+          // 含噪声：训练误差强行逼近0，测试误差出现明显U型过拟合反弹
+          trainPath.setAttribute('d', 'M 60 100 Q 160 360 260 400 T 650 426');
+          testPath.setAttribute('d', 'M 60 160 Q 180 300 280 290 Q 420 280 650 160');
+
+          turnPoint.setAttribute('cx', '280');
+          turnPoint.setAttribute('cy', '290');
+          turnPoint.style.display = 'block';
+          turnPoint.setAttribute('fill', 'var(--focus)');
+          curveAnnotation.setAttribute('x', '295');
+          curveAnnotation.setAttribute('y', '285');
+          curveAnnotation.textContent = '第 32 轮拐点';
+          curveAnnotation.setAttribute('fill', 'var(--focus)');
+
+          // 边界：被两个离群点极度扭曲拽走，显示基准参考线
+          cleanRefBoundary.style.display = 'block';
+          cleanRefText.style.display = 'block';
+          activeBoundary.setAttribute('class', 'boundary-distorted');
+          activeBoundary.setAttribute('d', 'M 50 360 C 180 330, 240 410, 310 330 C 380 240, 460 220, 520 145 C 560 90, 600 120, 650 140');
+        }
+        renderSamples();
+      }
+
+      btnClean.addEventListener('click', () => {
+        isNoisy = false;
+        btnClean.classList.add('active');
+        btnNoisy.classList.remove('active');
+        updateState();
+      });
+
+      btnNoisy.addEventListener('click', () => {
+        isNoisy = true;
+        btnNoisy.classList.add('active');
+        btnClean.classList.remove('active');
+        updateState();
+      });
+
+      // 初始化
+      updateState();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bagging、Boosting 与 Stacking 的对照</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 局部布局与本页专用样式 */
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    .header-area {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+    .header-area h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .header-area p {
+      margin: 4px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* 三栏架构比对容器 */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .paradigm-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      padding: 20px 22px;
+      box-shadow: 0 4px 12px rgba(20, 37, 51, 0.05);
+      position: relative;
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card-tag {
+      font-size: var(--fs-label);
+      padding: 3px 10px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--learner);
+      font-weight: 700;
+    }
+
+    /* 拓扑示意图容器 */
+    .arch-diagram {
+      height: 180px;
+      width: 100%;
+      background: #EDF3F7;
+      border-radius: 8px;
+      border: 1px solid #D1DDE6;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .arch-diagram svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 属性对比表行 */
+    .metrics-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+      font-size: var(--fs-sec);
+    }
+    .metric-item {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      align-items: baseline;
+      line-height: 1.4;
+      background: #FFFFFF;
+      padding: 7px 10px;
+      border-radius: 6px;
+      border: 1px solid #D7E1E8;
+    }
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .metric-val {
+      color: var(--text);
+      font-size: var(--fs-sec);
+    }
+    .val-highlight {
+      font-weight: 700;
+    }
+    .val-gain {
+      color: var(--correct);
+      font-weight: 700;
+    }
+    .val-cost {
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+
+    /* 典型风险与避坑底栏 */
+    .card-risk {
+      margin-top: 14px;
+      padding: 10px 12px;
+      background: #FBEFEF;
+      border: 1px solid #F0D2CE;
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      line-height: 1.4;
+      color: #792518;
+    }
+    .card-risk strong {
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+
+    /* 底部收束条 */
+    .bottom-bar {
+      height: 64px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      display: grid;
+      grid-template-columns: 140px 1fr 1fr 1fr;
+      align-items: center;
+      padding: 0 20px;
+      column-gap: 20px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+    }
+    .bottom-bar .summary-title {
+      font-weight: 700;
+      font-size: var(--fs-body);
+      color: var(--learner);
+    }
+    .bottom-bar .rule-item {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.35;
+      font-size: var(--fs-label);
+    }
+    .bottom-bar .rule-item b {
+      font-size: var(--fs-sec);
+    }
+    .dot-bagging { width: 10px; height: 10px; border-radius: 50%; background: #275D91; display: inline-block; }
+    .dot-boosting { width: 10px; height: 10px; border-radius: 50%; background: #B63B24; display: inline-block; }
+    .dot-stacking { width: 10px; height: 10px; border-radius: 50%; background: #006B72; display: inline-block; }
+  </style>
+</head>
+<body data-page="24" data-total="27">
+  <div id="stage">
+    <!-- 头部：声明核心认知 -->
+    <header class="header-area">
+      <div>
+        <h1>三大集成范式全景对照</h1>
+        <p>组织结构决定误差化解方向：并行独立降方差，串行残差降偏差，分层异构促互补</p>
+      </div>
+    </header>
+
+    <!-- 三栏网格核心证据区 -->
+    <main class="comparison-grid min0">
+      
+      <!-- 1. Bagging -->
+      <article class="paradigm-card">
+        <div class="card-head">
+          <div class="card-title">
+            <span class="dot-bagging"></span>
+            Bagging
+          </div>
+          <span class="card-tag">并行同质</span>
+        </div>
+
+        <!-- 拓扑示意图 -->
+        <div class="arch-diagram" aria-label="Bagging 架构示意：同质基模型并行训练后投票或平均">
+          <svg viewBox="0 0 420 160">
+            <!-- 原始数据分发 -->
+            <rect x="15" y="55" width="70" height="50" rx="6" fill="#D7E1E8" stroke="#536777" stroke-width="2"/>
+            <text x="50" y="74" font-size="13" fill="#142533" text-anchor="middle" font-weight="700">原始数据</text>
+            <text x="50" y="92" font-size="11" fill="#536777" text-anchor="middle">Bootstrap</text>
+
+            <!-- 连线至三个基模型 -->
+            <path d="M 85 68 L 138 32" fill="none" stroke="#536777" stroke-width="1.8" stroke-dasharray="3,2"/>
+            <path d="M 85 80 L 138 80" fill="none" stroke="#536777" stroke-width="1.8"/>
+            <path d="M 85 92 L 138 128" fill="none" stroke="#536777" stroke-width="1.8" stroke-dasharray="3,2"/>
+
+            <!-- 基学习器 -->
+            <rect x="140" y="14" width="112" height="36" rx="5" fill="#E8EEF2" stroke="#275D91" stroke-width="2"/>
+            <text x="196" y="32" font-size="13" fill="#275D91" text-anchor="middle" font-weight="700" dominant-baseline="central">强基树 1 (深树)</text>
+
+            <rect x="140" y="62" width="112" height="36" rx="5" fill="#E8EEF2" stroke="#275D91" stroke-width="2"/>
+            <text x="196" y="80" font-size="13" fill="#275D91" text-anchor="middle" font-weight="700" dominant-baseline="central">强基树 2 (深树)</text>
+
+            <rect x="140" y="110" width="112" height="36" rx="5" fill="#E8EEF2" stroke="#275D91" stroke-width="2"/>
+            <text x="196" y="128" font-size="13" fill="#275D91" text-anchor="middle" font-weight="700" dominant-baseline="central">强基树 M (深树)</text>
+
+            <!-- 汇流至聚合 -->
+            <path d="M 252 32 L 298 68" fill="none" stroke="#275D91" stroke-width="2"/>
+            <path d="M 252 80 L 298 80" fill="none" stroke="#275D91" stroke-width="2"/>
+            <path d="M 252 128 L 298 92" fill="none" stroke="#275D91" stroke-width="2"/>
+
+            <rect x="300" y="55" width="105" height="50" rx="6" fill="#275D91" stroke="#275D91" stroke-width="2"/>
+            <text x="352" y="74" font-size="13" fill="#FFFFFF" text-anchor="middle" font-weight="700">简单平均/投票</text>
+            <text x="352" y="92" font-size="11" fill="#E8EEF2" text-anchor="middle">等权平权输出</text>
+          </svg>
+        </div>
+
+        <!-- 详细指标对比 -->
+        <div class="metrics-list">
+          <div class="metric-item">
+            <span class="metric-label">执行模式</span>
+            <span class="metric-val val-highlight">完全并行（独立互不依赖）</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">基模型要求</span>
+            <span class="metric-val">同质、高方差低偏差（如未剪枝深决策树）</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">核心收益</span>
+            <span class="metric-val val-gain">显著降低方差；天然抗过拟合</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">训练代价</span>
+            <span class="metric-val">算力按 CPU/GPU 核心数线性加速</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">聚合机制</span>
+            <span class="metric-val">无参确定性规则（多数投票、算术均值）</span>
+          </div>
+        </div>
+
+        <!-- 风险与避坑 -->
+        <div class="card-risk">
+          <strong>典型风险：</strong>基模型若本身偏差高（欠拟合），Bagging 无法提升表达能力；样本高度自相关时方差收缩失效。
+        </div>
+      </article>
+
+      <!-- 2. Boosting -->
+      <article class="paradigm-card">
+        <div class="card-head">
+          <div class="card-title">
+            <span class="dot-boosting"></span>
+            Boosting
+          </div>
+          <span class="card-tag" style="color: var(--aggregate);">串行迭代</span>
+        </div>
+
+        <!-- 拓扑示意图 -->
+        <div class="arch-diagram" aria-label="Boosting 架构示意：弱模型串行拟合前序残差或样本权重累加">
+          <svg viewBox="0 0 420 160">
+            <!-- 步进框1 -->
+            <rect x="8" y="55" width="88" height="50" rx="5" fill="#E8EEF2" stroke="#B63B24" stroke-width="2"/>
+            <text x="52" y="74" font-size="13" fill="#B63B24" text-anchor="middle" font-weight="700">弱基树 1</text>
+            <text x="52" y="92" font-size="11" fill="#536777" text-anchor="middle">初态基础基准</text>
+
+            <!-- 传递箭头与残差 -->
+            <path d="M 96 80 L 148 80" fill="none" stroke="#B63B24" stroke-width="2.5"/>
+            <polygon points="152,80 145,76 145,84" fill="#B63B24"/>
+            <text x="122" y="66" font-size="11" fill="#B63B24" text-anchor="middle" font-weight="700">拟合残差</text>
+
+            <!-- 步进框2 -->
+            <rect x="154" y="55" width="88" height="50" rx="5" fill="#E8EEF2" stroke="#B63B24" stroke-width="2"/>
+            <text x="198" y="74" font-size="13" fill="#B63B24" text-anchor="middle" font-weight="700">弱基树 2</text>
+            <text x="198" y="92" font-size="11" fill="#536777" text-anchor="middle">纠偏前序误差</text>
+
+            <!-- 传递箭头2 -->
+            <path d="M 242 80 L 294 80" fill="none" stroke="#B63B24" stroke-width="2.5" stroke-dasharray="4,2"/>
+            <polygon points="298,80 291,76 291,84" fill="#B63B24"/>
+            <text x="268" y="66" font-size="11" fill="#B63B24" text-anchor="middle" font-weight="700">梯度递推</text>
+
+            <!-- 步进框M -->
+            <rect x="300" y="55" width="82" height="50" rx="5" fill="#E8EEF2" stroke="#B63B24" stroke-width="2"/>
+            <text x="341" y="74" font-size="13" fill="#B63B24" text-anchor="middle" font-weight="700">弱基树 M</text>
+            <text x="341" y="92" font-size="11" fill="#536777" text-anchor="middle">细粒度补齐</text>
+
+            <!-- 最终加权累加 -->
+            <path d="M 382 80 L 396 80" fill="none" stroke="#B63B24" stroke-width="2"/>
+            <circle cx="406" cy="80" r="12" fill="#B63B24"/>
+            <text x="406" y="81" font-size="14" fill="#FFF" text-anchor="middle" font-weight="700" dominant-baseline="central">∑</text>
+          </svg>
+        </div>
+
+        <!-- 详细指标对比 -->
+        <div class="metrics-list">
+          <div class="metric-item">
+            <span class="metric-label">执行模式</span>
+            <span class="metric-val val-highlight">严格串行（下一棵树强依赖前序残差）</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">基模型要求</span>
+            <span class="metric-val">同质、高偏差低方差弱学习器（浅决策桩）</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">核心收益</span>
+            <span class="metric-val val-gain">强力压低偏差；复杂非线性拟合极强</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">训练代价</span>
+            <span class="metric-val val-cost">难以跨树并行；依赖直方图或特征并行</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">聚合机制</span>
+            <span class="metric-val">加权累加（学习率步进缩放 ∑ η·f_m(x)）</span>
+          </div>
+        </div>
+
+        <!-- 风险与避坑 -->
+        <div class="card-risk">
+          <strong>典型风险：</strong>对离群异常值和标签噪声极度敏感；迭代轮数过多易剧烈过拟合，需严控学习率与提前停止。
+        </div>
+      </article>
+
+      <!-- 3. Stacking -->
+      <article class="paradigm-card">
+        <div class="card-head">
+          <div class="card-title">
+            <span class="dot-stacking"></span>
+            Stacking
+          </div>
+          <span class="card-tag" style="color: var(--focus);">分层异构</span>
+        </div>
+
+        <!-- 拓扑示意图 -->
+        <div class="arch-diagram" aria-label="Stacking 架构示意：多类型基模型并行，OOF 预测输出由元学习器拟合">
+          <svg viewBox="0 0 420 160">
+            <!-- 异构基模型 -->
+            <rect x="15" y="14" width="115" height="36" rx="5" fill="#E8EEF2" stroke="#006B72" stroke-width="2"/>
+            <text x="72" y="32" font-size="13" fill="#006B72" text-anchor="middle" font-weight="700" dominant-baseline="central">GBDT (树模型)</text>
+
+            <rect x="15" y="62" width="115" height="36" rx="5" fill="#E8EEF2" stroke="#006B72" stroke-width="2"/>
+            <text x="72" y="80" font-size="13" fill="#006B72" text-anchor="middle" font-weight="700" dominant-baseline="central">神经网络 (表征)</text>
+
+            <rect x="15" y="110" width="115" height="36" rx="5" fill="#E8EEF2" stroke="#006B72" stroke-width="2"/>
+            <text x="72" y="128" font-size="13" fill="#006B72" text-anchor="middle" font-weight="700" dominant-baseline="central">SVM / 线性模型</text>
+
+            <!-- OOF 验证特征层 -->
+            <path d="M 130 32 L 180 70" fill="none" stroke="#536777" stroke-width="1.8"/>
+            <path d="M 130 80 L 180 80" fill="none" stroke="#536777" stroke-width="1.8"/>
+            <path d="M 130 128 L 180 90" fill="none" stroke="#536777" stroke-width="1.8"/>
+
+            <rect x="180" y="48" width="105" height="64" rx="5" fill="#F7FAFC" stroke="#536777" stroke-width="2" stroke-dasharray="4,2"/>
+            <text x="232" y="70" font-size="13" fill="#142533" text-anchor="middle" font-weight="700">K-Fold OOF</text>
+            <text x="232" y="90" font-size="11" fill="#536777" text-anchor="middle">防泄漏预测矩阵</text>
+
+            <!-- 传递至二层元学习器 -->
+            <path d="M 285 80 L 316 80" fill="none" stroke="#006B72" stroke-width="2.5"/>
+            <polygon points="320,80 313,76 313,84" fill="#006B72"/>
+
+            <!-- 元模型 -->
+            <rect x="322" y="55" width="88" height="50" rx="6" fill="#006B72" stroke="#006B72" stroke-width="2"/>
+            <text x="366" y="74" font-size="13" fill="#FFFFFF" text-anchor="middle" font-weight="700">元学习器</text>
+            <text x="366" y="92" font-size="11" fill="#D7E1E8" text-anchor="middle">学习互补权重</text>
+          </svg>
+        </div>
+
+        <!-- 详细指标对比 -->
+        <div class="metrics-list">
+          <div class="metric-item">
+            <span class="metric-label">执行模式</span>
+            <span class="metric-val val-highlight">双层架构（底层并行，顶层分步接入）</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">基模型要求</span>
+            <span class="metric-val">异构（异类算法）、预测多样、误差弱相关</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">核心收益</span>
+            <span class="metric-val val-gain">学习模型互补边界，突破单类算法能力上限</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">训练代价</span>
+            <span class="metric-val val-cost">极重（需 K 折交叉预测，耗时成倍翻倍）</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">聚合机制</span>
+            <span class="metric-val">学习型映射（逻辑回归/Ridge 动态加权）</span>
+          </div>
+        </div>
+
+        <!-- 风险与避坑 -->
+        <div class="card-risk">
+          <strong>典型风险：</strong>未用 Out-of-fold 会发生严重数据泄漏；异构模型若同质严重，则徒增工程复杂度却毫无收益。
+        </div>
+      </article>
+
+    </main>
+
+    <!-- 底部决策法则提示条 -->
+    <footer class="bottom-bar">
+      <div class="summary-title">选型决策法则</div>
+      <div class="rule-item">
+        <b style="color: #275D91;">方差主导 / 标签噪声大</b>
+        <span>首选 Bagging（随机森林），并行抗造，零调参风险</span>
+      </div>
+      <div class="rule-item">
+        <b style="color: #B63B24;">表格数据 / 追求极限指标</b>
+        <span>首选 Boosting（LightGBM/CatBoost），深挖特征与残差</span>
+      </div>
+      <div class="rule-item">
+        <b style="color: #006B72;">算力充足 / 多源异构模型</b>
+        <span>选用 Stacking，利用 OOF 学习跨模态互补决策面</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 24, total: 27 });
+  </script>
+</body>
+</html>

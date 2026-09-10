@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>逐词推进与隐状态流动</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F1F4F2;
+      --text: #151A18;
+      --muted: #5B6661;
+      --rule: #BAC4BF;
+      --structure: #1C4436;
+      --signal: #D43811;
+      --pos-color: #1C4436;
+      --neg-color: #D43811;
+    }
+
+    #stage {
+      padding: 44px 56px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: var(--text);
+      font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+      user-select: none;
+    }
+
+    /* 顶部标题与短句选择 */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1.5px solid var(--rule);
+      padding-bottom: 16px;
+    }
+
+    .title-group h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+
+    .title-group p {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+    }
+
+    .sentence-selector {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sentence-btn {
+      appearance: none;
+      border: 1px solid var(--rule);
+      background: transparent;
+      padding: 7px 14px;
+      border-radius: 4px;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .sentence-btn:hover {
+      border-color: var(--structure);
+      color: var(--text);
+    }
+
+    .sentence-btn.active {
+      border-color: var(--structure);
+      background: var(--structure);
+      color: #FFF;
+    }
+
+    /* 主舞台双栏 */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 40px;
+      padding-top: 24px;
+      min-height: 0;
+    }
+
+    /* 左侧：时间展开流与步进控制器 */
+    .sequence-section {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 0;
+    }
+
+    .steps-flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 16px;
+      align-items: stretch;
+      min-height: 0;
+      margin-top: 10px;
+    }
+
+    .step-card {
+      border-top: 3px solid var(--rule);
+      border-radius: 0;
+      padding: 16px 8px 12px 8px;
+      background: transparent;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      position: relative;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .step-card:hover {
+      border-top-color: var(--structure);
+    }
+
+    .step-card.active {
+      border-top: 3px solid var(--signal);
+      background: rgba(212, 56, 17, 0.04);
+      box-shadow: none;
+    }
+
+    .step-card.future {
+      opacity: 0.32;
+    }
+
+    .step-tag {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .word-badge {
+      font-size: 34px;
+      font-weight: 750;
+      color: var(--text);
+      margin: 2px 0;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .step-card.active .word-badge {
+      color: var(--signal);
+    }
+
+    .h-vector-preview {
+      width: 100%;
+      height: 140px;
+      background: #FFFFFF;
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      padding: 10px 8px;
+      box-sizing: border-box;
+    }
+
+    .dim-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: 20px;
+    }
+
+    .dim-name {
+      font-size: var(--fs-tick);
+      font-family: monospace;
+      color: var(--muted);
+      width: 18px;
+    }
+
+    .dim-track {
+      flex: 1;
+      height: 8px;
+      background: #E2E8E4;
+      position: relative;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .dim-bar {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background: var(--structure);
+      transition: width 0.2s, left 0.2s, background-color 0.2s;
+    }
+
+    .dim-val {
+      font-size: var(--fs-tick);
+      font-variant-numeric: tabular-nums;
+      font-family: monospace;
+      width: 38px;
+      text-align: right;
+      color: var(--text);
+    }
+
+    .step-connector {
+      position: absolute;
+      right: -13px;
+      top: 45px;
+      font-size: 15px;
+      color: var(--rule);
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* 控制栏 */
+    .controls-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--rule);
+      padding-top: 16px;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 12px;
+    }
+
+    .ctrl-btn {
+      appearance: none;
+      border: 1px solid var(--structure);
+      background: transparent;
+      color: var(--structure);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 8px 18px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .ctrl-btn:hover:not(:disabled) {
+      background: var(--structure);
+      color: #FFF;
+    }
+
+    .ctrl-btn:disabled {
+      border-color: var(--rule);
+      color: var(--rule);
+      cursor: not-allowed;
+    }
+
+    .ctrl-btn.primary {
+      background: var(--signal);
+      border-color: var(--signal);
+      color: #FFF;
+    }
+
+    .ctrl-btn.primary:hover:not(:disabled) {
+      background: #B82F0D;
+      border-color: #B82F0D;
+    }
+
+    .slider-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    input[type="range"] {
+      width: 240px;
+      accent-color: var(--signal);
+      cursor: pointer;
+    }
+
+    /* 右侧：单步数值检验与信息瓶颈诊断 */
+    .inspection-section {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 0;
+      border-left: 1.5px solid var(--rule);
+      padding-left: 36px;
+    }
+
+    .inspect-group {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .inspect-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin: 0;
+      padding-bottom: 8px;
+      border-bottom: 1.5px solid var(--rule);
+    }
+
+    .inspect-title span {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: normal;
+    }
+
+    .formula-row {
+      font-family: monospace;
+      font-size: var(--fs-body);
+      color: var(--structure);
+      background: #E8EEEA;
+      padding: 10px 14px;
+      border-radius: 4px;
+    }
+
+    .vector-calc-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .vec-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      font-family: monospace;
+    }
+
+    .vec-lbl {
+      color: var(--muted);
+    }
+
+    .sentiment-meter-wrap {
+      margin-top: 4px;
+    }
+
+    .meter-label-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .meter-bar-outer {
+      height: 16px;
+      background: #DFE5E2;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .meter-bar-fill {
+      height: 100%;
+      transition: width 0.25s, background-color 0.25s;
+    }
+
+    .meter-subtext {
+      margin-top: 10px;
+      font-size: var(--fs-lead);
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .meter-subtext strong {
+      color: var(--signal);
+    }
+
+    .diagnosis-card {
+      border-top: 1.5px solid var(--rule);
+      padding-top: 16px;
+      font-size: var(--fs-body);
+      line-height: 1.55;
+      color: var(--text);
+    }
+
+    .diagnosis-card strong {
+      color: var(--structure);
+      display: block;
+      margin-bottom: 6px;
+      font-size: var(--fs-lead);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <div class="title-group">
+        <h1>逐词推进与隐状态流动</h1>
+        <p>递推公式：h_t = tanh(W_hh · h_{t-1} + W_xh · x_t + b)</p>
+      </div>
+      <div class="sentence-selector" aria-label="测试序列切换">
+        <button class="sentence-btn active" data-seq="0">句子 A：先抑后扬转折</button>
+        <button class="sentence-btn" data-seq="1">句子 B：先扬后抑转折</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- 左侧：时间展开与隐向量推进 -->
+      <section class="sequence-section">
+        <div class="steps-flow" id="stepsFlow" role="region" aria-label="RNN 时间展开步进视图">
+          <!-- 动态渲染 5 步状态卡片 -->
+        </div>
+
+        <div class="controls-bar">
+          <div class="btn-group">
+            <button class="ctrl-btn" id="prevBtn" aria-label="上一步">上一步</button>
+            <button class="ctrl-btn primary" id="nextBtn" aria-label="推进一词">推进一词</button>
+            <button class="ctrl-btn" id="resetBtn" aria-label="重置时序">重置</button>
+          </div>
+
+          <div class="slider-group">
+            <label for="stepRange">序列时间步 t：</label>
+            <input type="range" id="stepRange" min="1" max="5" value="1" step="1">
+            <span id="stepIndicator" style="font-family: monospace; font-weight: 700; color: var(--text);">t = 1 / 5</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：当前步向量运算、情感预测与信息压缩观察 -->
+      <section class="inspection-section">
+        <div class="inspect-group">
+          <h2 class="inspect-title">
+            当前隐向量计算
+            <span id="inspectWordTag">输入词：虽 (x_1)</span>
+          </h2>
+          <div class="formula-row" id="formulaDetail">
+            h_1 = tanh(W_hh·h_0 + W_xh·x_1 + b)
+          </div>
+          <div class="vector-calc-grid">
+            <div class="vec-row">
+              <span class="vec-lbl">前态 h_{t-1}</span>
+              <span id="prevHVal">[0.00, 0.00, 0.00, 0.00]</span>
+            </div>
+            <div class="vec-row">
+              <span class="vec-lbl">词嵌 x_t</span>
+              <span id="currXVal">[-0.20, +0.10, +0.50]</span>
+            </div>
+            <div class="vec-row">
+              <span class="vec-lbl">当前 h_t</span>
+              <span id="currHVal" style="color: var(--structure); font-weight: 700;">[-0.19, +0.10, +0.46, -0.05]</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="inspect-group">
+          <h2 class="inspect-title">
+            实时情感分类读出
+            <span>y_hat = σ(W_hy · h_t)</span>
+          </h2>
+          <div class="sentiment-meter-wrap">
+            <div class="meter-label-row">
+              <span>负向 0.0</span>
+              <span id="sentimentScore" style="font-family: monospace; font-size: var(--fs-h2); color: var(--signal);">0.41</span>
+              <span>正向 1.0</span>
+            </div>
+            <div class="meter-bar-outer">
+              <div class="meter-bar-fill" id="meterFill" style="width: 41%; background: var(--signal);"></div>
+            </div>
+          </div>
+          <div class="meter-subtext" id="sentimentText">
+            <strong>判断结果：</strong>负向偏好（置信度 19%）。
+          </div>
+        </div>
+
+        <div class="diagnosis-card" id="bottleneckNotice">
+          <strong>信息覆盖与遗忘机制</strong>
+          <span id="bottleneckDesc">
+            转折连词“但”输入后，W_xh 的强偏置迅速重写了隐向量。早期词汇的影响被饱和激活函数挤压，揭示了标准 RNN 的信息瓶颈。
+          </span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    本页演示标准 RNN 在处理序列时的前向递推机制。请引导学生观察：同一个参数矩阵 W_hh 和 W_xh 随着时序不断被重复调用。
+    当我们切换到转折句时，注意看第 3 步和第 4 步隐状态向量是如何被强转折词“洗牌”并快速覆盖早期记忆的。这就是为什么简单的固定维度隐向量会成为序列建模的“信息瓶颈”。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 预置两个对比鲜明的经典 5 词情感短句
+      // A: "虽然 剧情 略显 冗长 但 结局 震撼" -> 5步精简版词表：[虽, 略, 慢, 但, 赞] / [虽然, 冗长, 但, 极其, 精彩]
+      const SENTENCES = [
+        {
+          name: "句子 A：先抑后扬（虽 剧 闷 但 赞）",
+          tokens: [
+            { text: "虽", x: [-0.3, 0.1, 0.4] },
+            { text: "剧", x: [0.0, 0.2, -0.1] },
+            { text: "闷", x: [-0.9, -0.7, 0.2] },
+            { text: "但", x: [0.1, 0.8, -0.5] },
+            { text: "赞", x: [0.95, 0.85, -0.2] }
+          ],
+          conclusions: [
+            "步骤 1：转折预备词'虽'进入，状态偏向中立悬挂。",
+            "步骤 2：主体词'剧'注入，特征保持平淡。",
+            "步骤 3：负向词'闷'使隐向量迅速滑向消极，分类头显示显著负面。",
+            "步骤 4：关键转折词'但'强力介入，旧隐状态权重被剧烈改写。",
+            "步骤 5：强烈正向词'赞'落定，最终隐状态完全被正面极性接管。"
+          ]
+        },
+        {
+          name: "句子 B：先扬后抑（虽 演 佳 但 烂）",
+          tokens: [
+            { text: "虽", x: [-0.3, 0.1, 0.4] },
+            { text: "演", x: [0.1, 0.3, 0.0] },
+            { text: "佳", x: [0.9, 0.8, -0.1] },
+            { text: "但", x: [-0.1, -0.7, 0.5] },
+            { text: "烂", x: [-0.95, -0.9, 0.1] }
+          ],
+          conclusions: [
+            "步骤 1：转折连词'虽'引导，初始向量处于未定状态。",
+            "步骤 2：'演'带来中性偏正面语境。",
+            "步骤 3：褒义词'佳'将隐向量推向高度正面，读出评分接近 0.85。",
+            "步骤 4：逆转词'但'切入，抑制先前的正向激元。",
+            "步骤 5：贬义词'烂'彻底覆盖上下文，最终定格在极低负面情感。"
+          ]
+        }
+      ];
+
+      // 固定权重矩阵（教学确定性轻量模型：h 维度 4，x 维度 3）
+      const W_hh = [
+        [0.45, -0.25, 0.10, 0.05],
+        [0.10, 0.50, -0.15, 0.20],
+        [-0.20, 0.10, 0.40, -0.30],
+        [0.05, -0.10, 0.25, 0.45]
+      ];
+
+      const W_xh = [
+        [0.65, 0.35, -0.10],
+        [0.20, 0.70, 0.15],
+        [-0.40, 0.20, 0.80],
+        [0.30, -0.50, 0.40]
+      ];
+
+      const b_h = [0.0, 0.05, -0.05, 0.0];
+      const W_hy = [0.75, 0.65, -0.80, 0.30];
+      const b_y = 0.0;
+
+      function tanh(v) {
+        return Math.tanh(v);
+      }
+
+      function sigmoid(v) {
+        return 1 / (1 + Math.exp(-v));
+      }
+
+      // 计算整个序列的隐状态序列
+      function computeSequenceStates(sentence) {
+        const states = [];
+        let h_prev = [0, 0, 0, 0];
+
+        sentence.tokens.forEach((tok, t) => {
+          const x = tok.x;
+          const h_curr = [];
+          for (let i = 0; i < 4; i++) {
+            let sum = b_h[i];
+            for (let j = 0; j < 4; j++) {
+              sum += W_hh[i][j] * h_prev[j];
+            }
+            for (let k = 0; k < 3; k++) {
+              sum += W_xh[i][k] * x[k];
+            }
+            h_curr.push(tanh(sum));
+          }
+
+          // 线性分类读出
+          let y_sum = b_y;
+          for (let i = 0; i < 4; i++) {
+            y_sum += W_hy[i] * h_curr[i];
+          }
+          const sentiment = sigmoid(y_sum);
+
+          states.push({
+            t: t + 1,
+            word: tok.text,
+            x: x,
+            h_prev: [...h_prev],
+            h: [...h_curr],
+            sentiment: sentiment
+          });
+
+          h_prev = h_curr;
+        });
+
+        return states;
+      }
+
+      // 状态管理
+      let currentSeqIdx = 0;
+      let currentStep = 1; // 1 ~ 5
+      let computedStates = computeSequenceStates(SENTENCES[currentSeqIdx]);
+
+      // DOM 引用
+      const stepsFlow = document.getElementById("stepsFlow");
+      const prevBtn = document.getElementById("prevBtn");
+      const nextBtn = document.getElementById("nextBtn");
+      const resetBtn = document.getElementById("resetBtn");
+      const stepRange = document.getElementById("stepRange");
+      const stepIndicator = document.getElementById("stepIndicator");
+      const seqButtons = document.querySelectorAll(".sentence-btn");
+
+      const inspectWordTag = document.getElementById("inspectWordTag");
+      const formulaDetail = document.getElementById("formulaDetail");
+      const prevHVal = document.getElementById("prevHVal");
+      const currXVal = document.getElementById("currXVal");
+      const currHVal = document.getElementById("currHVal");
+      const sentimentScore = document.getElementById("sentimentScore");
+      const meterFill = document.getElementById("meterFill");
+      const sentimentText = document.getElementById("sentimentText");
+      const bottleneckDesc = document.getElementById("bottleneckDesc");
+
+      function formatVec(arr) {
+        return "[" + arr.map(v => (v >= 0 ? "+" : "") + v.toFixed(2)).join(", ") + "]";
+      }
+
+      function render() {
+        const states = computedStates;
+        const activeState = states[currentStep - 1];
+
+        // 1. 渲染左侧 5 步时间展开卡片
+        stepsFlow.innerHTML = "";
+        states.forEach((s, idx) => {
+          const stepNum = idx + 1;
+          const isActive = stepNum === currentStep;
+          const isFuture = stepNum > currentStep;
+
+          const card = document.createElement("div");
+          card.className = `step-card ${isActive ? "active" : ""} ${isFuture ? "future" : ""}`;
+          card.setAttribute("role", "button");
+          card.setAttribute("tabindex", "0");
+          card.setAttribute("aria-label", `时间步 ${stepNum}，词：${s.word}`);
+
+          let dimsHtml = "";
+          for (let d = 0; d < 4; d++) {
+            const val = s.h[d];
+            const pct = Math.abs(val) * 50;
+            const left = val >= 0 ? 50 : 50 - pct;
+            const color = val >= 0 ? "var(--structure)" : "var(--signal)";
+            dimsHtml += `
+              <div class="dim-row">
+                <span class="dim-name">h${d+1}</span>
+                <div class="dim-track">
+                  <div class="dim-bar" style="left: ${left}%; width: ${pct}%; background-color: ${color};"></div>
+                </div>
+                <span class="dim-val">${(val >= 0 ? "+" : "") + val.toFixed(2)}</span>
+              </div>
+            `;
+          }
+
+          card.innerHTML = `
+            <div class="step-tag">
+              <span>t = ${stepNum}</span>
+              <span>W_hh 循环</span>
+            </div>
+            <div class="word-badge">${s.word}</div>
+            <div class="h-vector-preview">
+              ${dimsHtml}
+            </div>
+            ${idx < 4 ? '<div class="step-connector">→</div>' : ''}
+          `;
+
+          card.addEventListener("click", () => {
+            currentStep = stepNum;
+            render();
+          });
+
+          stepsFlow.appendChild(card);
+        });
+
+        // 2. 更新控制条
+        stepRange.value = currentStep;
+        stepIndicator.textContent = `t = ${currentStep} / 5`;
+        prevBtn.disabled = currentStep === 1;
+        nextBtn.disabled = currentStep === 5;
+
+        // 3. 更新右侧检测面板
+        inspectWordTag.textContent = `词：${activeState.word} (x_${currentStep})`;
+        formulaDetail.textContent = `h_${currentStep} = tanh(W_hh · h_${currentStep - 1} + W_xh · x_${currentStep} + b)`;
+        prevHVal.textContent = formatVec(activeState.h_prev);
+        currXVal.textContent = formatVec(activeState.x);
+        currHVal.textContent = formatVec(activeState.h);
+
+        // 分类打分
+        const score = activeState.sentiment;
+        sentimentScore.textContent = score.toFixed(2);
+        meterFill.style.width = `${(score * 100).toFixed(1)}%`;
+        if (score >= 0.55) {
+          meterFill.style.background = "var(--structure)";
+          sentimentScore.style.color = "var(--structure)";
+        } else if (score <= 0.45) {
+          meterFill.style.background = "var(--signal)";
+          sentimentScore.style.color = "var(--signal)";
+        } else {
+          meterFill.style.background = "var(--muted)";
+          sentimentScore.style.color = "var(--muted)";
+        }
+
+        sentimentText.innerHTML = `<strong>判断结果：</strong>${score >= 0.55 ? "正向偏好" : score <= 0.45 ? "负向偏好" : "中立摇摆"}（置信度 ${(Math.abs(score - 0.5) * 200).toFixed(0)}%）。`;
+
+        // 诊断文案更新
+        bottleneckDesc.textContent = SENTENCES[currentSeqIdx].conclusions[currentStep - 1];
+      }
+
+      // 交互事件绑定
+      prevBtn.addEventListener("click", () => {
+        if (currentStep > 1) {
+          currentStep--;
+          render();
+        }
+      });
+
+      nextBtn.addEventListener("click", () => {
+        if (currentStep < 5) {
+          currentStep++;
+          render();
+        }
+      });
+
+      resetBtn.addEventListener("click", () => {
+        currentStep = 1;
+        render();
+      });
+
+      stepRange.addEventListener("input", (e) => {
+        currentStep = parseInt(e.target.value, 10);
+        render();
+      });
+
+      seqButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          seqButtons.forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+          currentSeqIdx = parseInt(btn.dataset.seq, 10);
+          computedStates = computeSequenceStates(SENTENCES[currentSeqIdx]);
+          currentStep = 1;
+          render();
+        });
+      });
+
+      // 键盘导航支持
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+          if (currentStep > 1) {
+            currentStep--;
+            render();
+          }
+        } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+          if (currentStep < 5) {
+            currentStep++;
+            render();
+          }
+        }
+      });
+
+      // 初始化初次渲染
+      render();
+    })();
+  </script>
+</body>
+</html>

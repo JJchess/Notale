@@ -1,0 +1,62 @@
+export const lesson = {
+  id: "page-12",
+  title: "随机森林代码实操：从单棵决策树过渡到袋外评估与特征重要性诊断",
+  visualTitle: "随机森林集成诊断",
+  visualKicker: "FOREST DIAGNOSTICS",
+  learningTarget: "理解 Bootstrap 重采样、特征子采样如何协同构造多样化树，并掌握袋外准确率与特征重要性评估机制。",
+  runtime: "python",
+  entry: "starter.py",
+  entryMode: "fixed",
+  files: [
+    {
+      id: "starter",
+      filename: "starter.py",
+      label: "starter.py",
+      language: "python",
+      sourceUrl: "./lesson/starter.py",
+      editable: true,
+    },
+  ],
+  traceUrl: "./lesson/trace.py",
+  testsUrl: "./lesson/tests.py",
+  seed: 42,
+  limits: {
+    timeoutMs: 5000,
+    maxFrames: 1200,
+    maxPayloadBytes: 3_000_000,
+    maxOutputChars: 50_000,
+    maxSourceChars: 150_000,
+    maxItems: 120,
+    maxDepth: 8,
+    maxString: 1000,
+  },
+  initialStep: {
+    sequence: 0,
+    source: { file: "starter.py", line: 1, column: 1 },
+    kind: "random-forest",
+    state: {
+      phase: "initial",
+      trees: [
+        { id: "tree-0", tree_id: 0, split_feat: "f0", thresh: 4.5, cand_feats: ["f0", "f1"], in_bag_count: 8, oob_count: 3, oob_indices: [1, 3, 6] },
+        { id: "tree-1", tree_id: 1, split_feat: "f1", thresh: 2.25, cand_feats: ["f1", "f2"], in_bag_count: 8, oob_count: 2, oob_indices: [0, 4] },
+        { id: "tree-2", tree_id: 2, split_feat: "f0", thresh: 4.5, cand_feats: ["f0", "f2"], in_bag_count: 8, oob_count: 4, oob_indices: [2, 5, 6, 7] },
+        { id: "tree-3", tree_id: 3, split_feat: "f0", thresh: 4.5, cand_feats: ["f0", "f1"], in_bag_count: 8, oob_count: 3, oob_indices: [0, 3, 5] },
+        { id: "tree-4", tree_id: 4, split_feat: "f1", thresh: 2.25, cand_feats: ["f0", "f1"], in_bag_count: 8, oob_count: 3, oob_indices: [1, 2, 7] },
+      ],
+      active_tree: null,
+      importances: [
+        { feat: "f0 (主导信号)", value: 0.60, ratio: 0.60 },
+        { feat: "f1 (辅助特征)", value: 0.40, ratio: 0.40 },
+        { feat: "f2 (随机噪声)", value: 0.00, ratio: 0.00 },
+      ],
+      oob_acc: "100.0%",
+      total_samples: 8,
+    },
+    focus: [],
+    changes: [],
+    metrics: { "已训练树": 5, "OOB准确率": "100.0%", "f0分裂占比": "60%" },
+    annotation: "随机森林模型概览：5 棵树通过样本与特征双重随机性集成，兼顾低偏差与低方差。",
+  },
+};
+
+export default lesson;

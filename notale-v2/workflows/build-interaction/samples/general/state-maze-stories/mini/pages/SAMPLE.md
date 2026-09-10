@@ -14,3 +14,7 @@ This is a scoped, runnable sample extracted from the original work, not the comp
 Mini consolidates the identical keyboard/touch wall-crossing rule and repeated SVG wall markup. It preserves all 51 mazes, six stories, illustrations, policy snapshots, dashboard and methodology; SVG path animation, wall drawing, resets and reduced motion are unchanged. `src/utils/nextLocation.js` is a local pure movement helper, not a new state machine.
 
 At 1600×900 the six illustrated story entries sit beside the full geographic state map. Alternative ordered lists scroll locally; sort/state controls remain visible. Methodology opens in a bounded reading panel with close/Escape and keyboard focus containment. Original maze SVG geometry, controls, progression, stories and historical data remain intact.
+
+## 合一 mini 归档
+
+index.html 包含全部 HTML、CSS 与交互代码，共 15,421 chars。页面按 1600×900 展示；原始数据、字体、插画及 PDF 保留在资源目录。

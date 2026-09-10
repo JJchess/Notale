@@ -1,0 +1,1074 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>街区缓解组合与多目标权衡模拟</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EFF1;
+      --text: #17282E;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      gap: 16px;
+      color: var(--text);
+    }
+
+    /* 顶部标题行与导语 */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--muted);
+      padding-bottom: 10px;
+      flex-shrink: 0;
+    }
+    .title-col {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.15;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .page-dek {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.35;
+    }
+    .scenario-nav {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .scenario-nav .btn {
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      border: 1px solid var(--muted);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all var(--dur) var(--ease);
+    }
+    .scenario-nav .btn[aria-pressed="true"] {
+      background: var(--text);
+      color: var(--surface);
+      border-color: var(--text);
+      font-weight: 700;
+    }
+    .scenario-nav .btn:hover:not([aria-pressed="true"]) {
+      background: var(--surface-strong);
+    }
+
+    /* 主操作与结果区：三列布局 */
+    .sim-grid {
+      display: grid;
+      grid-template-columns: 370px 1fr 390px;
+      gap: 18px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：干预调控面板 */
+    .interventions-panel {
+      background: var(--surface);
+      border: 1px solid rgba(80, 100, 107, 0.25);
+      border-radius: 6px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid rgba(80, 100, 107, 0.2);
+      padding-bottom: 8px;
+    }
+    .panel-header h2 {
+      font-size: var(--fs-h2);
+      margin: 0;
+      font-weight: 700;
+    }
+    .budget-tag {
+      font-size: var(--fs-label);
+      font-family: var(--font-num);
+      color: var(--cooling);
+      font-weight: 700;
+    }
+
+    .slider-card {
+      background: #FFFFFF;
+      border: 1px solid rgba(80, 100, 107, 0.18);
+      border-radius: 4px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .slider-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+    }
+    .slider-head .val-pill {
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      background: var(--surface-strong);
+      padding: 2px 8px;
+      border-radius: 3px;
+      color: var(--text);
+    }
+    .slider-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .range-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 2px;
+    }
+    .range-wrap input[type="range"] {
+      flex: 1;
+      accent-color: var(--cooling);
+      cursor: pointer;
+      height: 6px;
+    }
+    .range-ticks {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      color: var(--muted);
+      padding: 0 2px;
+    }
+
+    /* 中间：街区空间切片与能量通量矢量反馈 */
+    .block-view {
+      background: var(--surface);
+      border: 1px solid rgba(80, 100, 107, 0.25);
+      border-radius: 6px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+    }
+    .block-canvas-container {
+      flex: 1;
+      position: relative;
+      background: #DEE7E9;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid rgba(80, 100, 107, 0.2);
+    }
+    .micro-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .metric-pill {
+      background: #FFFFFF;
+      border: 1px solid rgba(80, 100, 107, 0.18);
+      border-radius: 4px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .metric-pill .lbl {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .metric-pill .num-row {
+      display: flex;
+      align-items: baseline;
+      gap: 3px;
+    }
+    .metric-pill .num {
+      font-size: 24px;
+      font-family: var(--font-num);
+      font-weight: 700;
+      line-height: 1;
+    }
+    .metric-pill .unit {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .metric-pill .delta {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      font-weight: 600;
+    }
+    .delta.cool { color: var(--cooling); }
+    .delta.warn { color: var(--heat); }
+
+    /* 右侧：多目标权衡雷达与机理结论 */
+    .tradeoff-panel {
+      background: var(--surface);
+      border: 1px solid rgba(80, 100, 107, 0.25);
+      border-radius: 6px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: hidden;
+    }
+    .radar-box {
+      height: 250px;
+      width: 100%;
+      position: relative;
+      background: #FFFFFF;
+      border: 1px solid rgba(80, 100, 107, 0.18);
+      border-radius: 4px;
+    }
+    .radar-legend {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .radar-legend span {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .radar-legend .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+    }
+
+    /* 协同与代价机制分析卡 */
+    .mechanism-box {
+      flex: 1;
+      background: #FFFFFF;
+      border: 1px solid rgba(80, 100, 107, 0.18);
+      border-radius: 4px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+      overflow-y: auto;
+    }
+    .mechanism-box h3 {
+      margin: 0;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .rule-tag {
+      font-size: var(--fs-tick);
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: var(--surface-strong);
+      color: var(--cooling);
+      font-weight: 700;
+    }
+    .mech-item {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      border-bottom: 1px dashed rgba(80, 100, 107, 0.2);
+      padding-bottom: 6px;
+    }
+    .mech-item:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+    .mech-item .title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .mech-item .text {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.4;
+      margin: 0;
+    }
+    .status-badge {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .badge-good { background: var(--cooling); }
+    .badge-warn { background: var(--uncertain); }
+    .badge-alert { background: var(--heat); }
+  </style>
+</head>
+<body data-page="18" data-total="19">
+  <div id="stage">
+    <!-- 顶部导航栏 -->
+    <header class="top-bar">
+      <div class="title-col">
+        <h1 class="page-title">街区缓解组合：降温机制与协同代价权衡</h1>
+        <p class="page-dek">调整高反射、树冠、透水铺面与建筑通风配置，观察地表温、气温、热舒适度与工程代价的综合响应。</p>
+      </div>
+      <nav class="scenario-nav" aria-label="典型街区原型">
+        <span style="font-size:var(--fs-label); color:var(--muted); font-weight:600;">街区预设：</span>
+        <button type="button" class="btn" data-scenario="dense" aria-pressed="true">高密商业街区</button>
+        <button type="button" class="btn" data-scenario="residential" aria-pressed="false">混合居住区</button>
+        <button type="button" class="btn" data-scenario="industrial" aria-pressed="false">低密产业园</button>
+        <button type="button" class="btn" id="btn-reset" style="margin-left:6px;">重置现状</button>
+      </nav>
+    </header>
+
+    <!-- 主体网格布局 -->
+    <main class="sim-grid">
+      <!-- 左列：干预变量控制 -->
+      <section class="interventions-panel min0" aria-label="干预措施配置">
+        <div class="panel-header">
+          <h2>缓解干预配置</h2>
+          <span class="budget-tag" id="cost-tag">改造成本: ¥180/m²</span>
+        </div>
+
+        <!-- 1. 屋顶反照率 -->
+        <div class="slider-card">
+          <div class="slider-head">
+            <span>高反射冷屋顶 (<span style="font-family:var(--font-num);">Albedo</span>)</span>
+            <span class="val-pill" id="val-albedo">0.20</span>
+          </div>
+          <p class="slider-desc">增加日照短波反射，削减屋顶净辐射通量与下传热负荷。</p>
+          <div class="range-wrap">
+            <input type="range" id="rng-albedo" min="0.10" max="0.80" step="0.05" value="0.20" aria-label="屋面反照率">
+          </div>
+          <div class="range-ticks">
+            <span>0.10 深色沥青</span>
+            <span>0.80 高反射涂层</span>
+          </div>
+        </div>
+
+        <!-- 2. 街道树冠覆盖率 -->
+        <div class="slider-card">
+          <div class="slider-head">
+            <span>街道树冠覆盖率 (<span style="font-family:var(--font-num);">Tree Canopy</span>)</span>
+            <span class="val-pill" id="val-tree">12%</span>
+          </div>
+          <p class="slider-desc">截留行道太阳直射、提供蒸散潜热通量，显著降低行人生理等效温度。</p>
+          <div class="range-wrap">
+            <input type="range" id="rng-tree" min="5" max="45" step="5" value="12" aria-label="街道树冠覆盖率">
+          </div>
+          <div class="range-ticks">
+            <span>5% 无荫稀疏</span>
+            <span>45% 连续密林</span>
+          </div>
+        </div>
+
+        <!-- 3. 透水铺装占比 -->
+        <div class="slider-card">
+          <div class="slider-head">
+            <span>透水/湿润铺面 (<span style="font-family:var(--font-num);">Permeable</span>)</span>
+            <span class="val-pill" id="val-permeable">8%</span>
+          </div>
+          <p class="slider-desc">雨水入渗并转为蒸发冷却，但需供水支持；干燥无雨期降温趋于减弱。</p>
+          <div class="range-wrap">
+            <input type="range" id="rng-permeable" min="0" max="60" step="5" value="8" aria-label="透水铺装占比">
+          </div>
+          <div class="range-ticks">
+            <span>0% 完全硬化</span>
+            <span>60% 高孔隙蓄水</span>
+          </div>
+        </div>
+
+        <!-- 4. 迎风通风开孔度/间距比 -->
+        <div class="slider-card">
+          <div class="slider-head">
+            <span>风道开孔与底层架空 (<span style="font-family:var(--font-num);">Ventilation</span>)</span>
+            <span class="val-pill" id="val-vent">15%</span>
+          </div>
+          <p class="slider-desc">提升峡谷风速加速对流通量耗散，但高风速可能削弱绿化微气候蓄存。</p>
+          <div class="range-wrap">
+            <input type="range" id="rng-vent" min="10" max="50" step="5" value="15" aria-label="通风开孔度">
+          </div>
+          <div class="range-ticks">
+            <span>10% 密集阻风</span>
+            <span>50% 贯通通风廊道</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 中列：三维剖面与微气候剖面图 -->
+      <section class="block-view min0" aria-label="街区能量收支剖面动态">
+        <div class="panel-header">
+          <h2>街区微气候剖面 (日间 14:00 典型工况)</h2>
+          <span style="font-size:var(--fs-tick); color:var(--muted);" id="heat-balance-desc">下垫面吸收净辐射: 620 W/m²</span>
+        </div>
+
+        <div class="block-canvas-container">
+          <canvas id="cv-canyon" class="cv-fill"></canvas>
+        </div>
+
+        <!-- 关键输出指标 -->
+        <div class="micro-metrics">
+          <div class="metric-pill">
+            <span class="lbl">地表平均温度 Ts</span>
+            <div class="num-row">
+              <span class="num" id="out-ts">46.8</span>
+              <span class="unit">°C</span>
+            </div>
+            <span class="delta cool" id="delta-ts">-0.0°C</span>
+          </div>
+          <div class="metric-pill">
+            <span class="lbl">行人层气温 Ta (2m)</span>
+            <div class="num-row">
+              <span class="num" id="out-ta">36.2</span>
+              <span class="unit">°C</span>
+            </div>
+            <span class="delta cool" id="delta-ta">-0.0°C</span>
+          </div>
+          <div class="metric-pill">
+            <span class="lbl">平均辐射温度 Tmrt</span>
+            <div class="num-row">
+              <span class="num" id="out-tmrt">54.5</span>
+              <span class="unit">°C</span>
+            </div>
+            <span class="delta cool" id="delta-tmrt">-0.0°C</span>
+          </div>
+          <div class="metric-pill">
+            <span class="lbl">暴雨地表径流系数</span>
+            <div class="num-row">
+              <span class="num" id="out-runoff">0.82</span>
+              <span class="unit">ratio</span>
+            </div>
+            <span class="delta cool" id="delta-runoff">-0.00</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右列：多目标权衡雷达与机制归因 -->
+      <section class="tradeoff-panel min0" aria-label="权衡评估与机理推导">
+        <div class="panel-header">
+          <h2>多目标协同与权衡</h2>
+          <span style="font-size:var(--fs-tick); color:var(--cooling); font-weight:700;" id="score-text">综合缓解收益: 基准</span>
+        </div>
+
+        <!-- ECharts 雷达图 -->
+        <div class="radar-box" id="radar-container"></div>
+        <div class="radar-legend">
+          <span><span class="dot" style="background:var(--muted);"></span>现状基线 (Baseline)</span>
+          <span><span class="dot" style="background:var(--cooling);"></span>当前干预组合 (Intervention)</span>
+        </div>
+
+        <!-- 关键机理剖析 -->
+        <div class="mechanism-box" id="mech-insights">
+          <h3>
+            <span>工程机理与权衡解析</span>
+            <span class="rule-tag" id="limiter-tag">主导机制: 太阳辐射截留</span>
+          </h3>
+          <div class="mech-item">
+            <div class="title">
+              <span class="status-badge badge-good" id="badge-comfort"></span>
+              <span>热舒适改善 (Tmrt vs Ta)</span>
+            </div>
+            <p class="text" id="desc-comfort">
+              树木直接削减短波辐射与壁面长波辐射，降温幅度在 Tmrt 达 6~12°C，远大于空气温度 Ta 的 0.8~1.5°C。
+            </p>
+          </div>
+          <div class="mech-item">
+            <div class="title">
+              <span class="status-badge badge-warn" id="badge-tradeoff"></span>
+              <span>权衡代价 (Trade-off & Side-effects)</span>
+            </div>
+            <p class="text" id="desc-tradeoff">
+              冷屋顶对高层建筑地面行人体感影响有限；透水路面若无降雨补水则蒸发耗尽，降温衰减。
+            </p>
+          </div>
+          <div class="mech-item">
+            <div class="title">
+              <span class="status-badge badge-good" id="badge-runoff"></span>
+              <span>水文生态协同效益</span>
+            </div>
+            <p class="text" id="desc-runoff">
+              树冠截留降雨、透水铺装消纳雨洪，使径流峰值同步削减，形成“热-水”综合韧性。
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 街区原型基准数据
+      const SCENARIOS = {
+        dense: {
+          name: "高密商业街区",
+          h_w: 2.2, // 峡谷高宽比 H/W
+          albedo: 0.20,
+          tree: 12,
+          permeable: 8,
+          vent: 15,
+          baseTs: 46.8,
+          baseTa: 36.2,
+          baseTmrt: 54.5,
+          baseRunoff: 0.82,
+          baseCost: 0
+        },
+        residential: {
+          name: "混合居住区",
+          h_w: 1.2,
+          albedo: 0.25,
+          tree: 20,
+          permeable: 18,
+          vent: 25,
+          baseTs: 43.5,
+          baseTa: 35.4,
+          baseTmrt: 50.2,
+          baseRunoff: 0.70,
+          baseCost: 0
+        },
+        industrial: {
+          name: "低密产业园",
+          h_w: 0.6,
+          albedo: 0.18,
+          tree: 8,
+          permeable: 5,
+          vent: 40,
+          baseTs: 49.0,
+          baseTa: 37.1,
+          baseTmrt: 58.0,
+          baseRunoff: 0.88,
+          baseCost: 0
+        }
+      };
+
+      let currentScenarioKey = "dense";
+      let scenario = { ...SCENARIOS.dense };
+
+      // 当前调控参数
+      let state = {
+        albedo: scenario.albedo,
+        tree: scenario.tree,
+        permeable: scenario.permeable,
+        vent: scenario.vent
+      };
+
+      // DOM 元素
+      const rngAlbedo = document.getElementById("rng-albedo");
+      const rngTree = document.getElementById("rng-tree");
+      const rngPermeable = document.getElementById("rng-permeable");
+      const rngVent = document.getElementById("rng-vent");
+
+      const valAlbedo = document.getElementById("val-albedo");
+      const valTree = document.getElementById("val-tree");
+      const valPermeable = document.getElementById("val-permeable");
+      const valVent = document.getElementById("val-vent");
+
+      const outTs = document.getElementById("out-ts");
+      const outTa = document.getElementById("out-ta");
+      const outTmrt = document.getElementById("out-tmrt");
+      const outRunoff = document.getElementById("out-runoff");
+
+      const deltaTs = document.getElementById("delta-ts");
+      const deltaTa = document.getElementById("delta-ta");
+      const deltaTmrt = document.getElementById("delta-tmrt");
+      const deltaRunoff = document.getElementById("delta-runoff");
+
+      const costTag = document.getElementById("cost-tag");
+      const scoreText = document.getElementById("score-text");
+      const limiterTag = document.getElementById("limiter-tag");
+      const heatBalanceDesc = document.getElementById("heat-balance-desc");
+
+      const descComfort = document.getElementById("desc-comfort");
+      const descTradeoff = document.getElementById("desc-tradeoff");
+      const descRunoff = document.getElementById("desc-runoff");
+
+      const cv = document.getElementById("cv-canyon");
+      const radarContainer = document.getElementById("radar-container");
+      let radarChart = null;
+
+      // 物理简化计算模型
+      function calcModel() {
+        const dAlb = state.albedo - scenario.albedo;
+        const dTree = (state.tree - scenario.tree) / 100;
+        const dPerm = (state.permeable - scenario.permeable) / 100;
+        const dVent = (state.vent - scenario.vent) / 100;
+
+        // 1. 地表温度 Ts: 受反照率削减短波、透水蒸发潜热、树荫遮蔽直接影响
+        // dAlb 增加 0.1 -> 屋面/铺装 Ts 下降约 2.2°C (加权平均)
+        // dTree 增加 10% -> 树冠下地表辐射遮挡，平均 Ts 下降 1.8°C
+        // dPerm 增加 10% -> 湿润蒸发，Ts 下降 1.1°C
+        // dVent 增加 10% -> 对流换热加快，Ts 下降 0.5°C
+        const deltaTsVal = -(dAlb * 22 + dTree * 18 + dPerm * 11 + dVent * 5);
+        const Ts = Math.max(28.0, scenario.baseTs + deltaTsVal);
+
+        // 2. 行人层气温 Ta (2m): 大气容积混合，降温幅度普遍远小于地表
+        // 树木蒸散 + 遮蔽降低热羽流，冷屋顶对2m气温贡献较弱 (约1/4到1/5传递率)
+        const deltaTaVal = -(dAlb * 4.5 + dTree * 7.5 + dPerm * 3.8 + dVent * 4.0);
+        const Ta = Math.max(26.0, scenario.baseTa + deltaTaVal);
+
+        // 3. 平均辐射温度 Tmrt (体感关键):
+        // 树荫直接阻截直射和散射短波，且树冠表面温度远低于硬质壁面，对 Tmrt 降低极其剧烈 (-15~25°C)
+        // 反照率高时若在地面，会反射短波至人体增加辐射负担；若在屋面则远离人体。此处模拟综合行人体感:
+        const albGroundPenalty = (scenario.h_w < 1.0) ? (dAlb * 2.0) : 0; // 低密区若地面高反射，有二次反射眩光/辐射负面效应
+        const deltaTmrtVal = -(dTree * 36 + dPerm * 5 + dVent * 2) - (dAlb * 3.0) + albGroundPenalty;
+        const Tmrt = Math.max(28.0, scenario.baseTmrt + deltaTmrtVal);
+
+        // 4. 雨洪地表径流系数 Runoff: 树冠截留 + 透水路面渗透
+        const deltaRunoffVal = -(dPerm * 0.55 + dTree * 0.18);
+        const runoff = Math.max(0.20, Math.min(0.95, scenario.baseRunoff + deltaRunoffVal));
+
+        // 5. 综合工程初投资与维护成本 (元/m²):
+        // 冷屋面: 40元/m²增量; 树木绿化种植与养护: 350元/m²冠幅; 透水砖与碎石基层: 180元/m²; 通风廊道架空开孔: 220元/m²
+        const cost = Math.round(
+          Math.max(0, dAlb) * 100 +
+          Math.max(0, dTree) * 450 +
+          Math.max(0, dPerm) * 280 +
+          Math.max(0, dVent) * 160
+        );
+
+        // 6. 归一化多目标指标 (0~100分，越高越优):
+        // [行人热舒适, 气温缓解, 雨洪削减, 投资经济性, 空间易行性]
+        const scoreComfort = Math.min(100, Math.max(20, 50 + (-deltaTmrtVal) * 3.5));
+        const scoreCooling = Math.min(100, Math.max(20, 50 + (-deltaTaVal) * 12.0));
+        const scoreWater = Math.min(100, Math.max(20, 50 + (-deltaRunoffVal) * 120.0));
+        const scoreEconomy = Math.min(100, Math.max(20, 100 - (cost / 2.2)));
+        const scoreFeasibility = Math.min(100, Math.max(25, 95 - (state.vent * 0.7 + state.tree * 0.5)));
+
+        return {
+          Ts, Ta, Tmrt, runoff, cost,
+          deltaTsVal, deltaTaVal, deltaTmrtVal, deltaRunoffVal,
+          scores: [
+            Math.round(scoreComfort),
+            Math.round(scoreCooling),
+            Math.round(scoreWater),
+            Math.round(scoreEconomy),
+            Math.round(scoreFeasibility)
+          ]
+        };
+      }
+
+      // 初始化 ECharts 雷达图
+      function initRadar() {
+        if (!radarContainer) return;
+        radarChart = echarts.init(radarContainer, null, { renderer: "svg" });
+        updateRadar([50, 50, 50, 85, 80], [50, 50, 50, 85, 80]);
+      }
+
+      function updateRadar(currentScores, baseScores) {
+        if (!radarChart) return;
+        const option = {
+          animationDuration: 200,
+          radar: {
+            indicator: [
+              { name: "行人热舒适(削减Tmrt)", max: 100 },
+              { name: "空气降温(Ta)", max: 100 },
+              { name: "雨洪韧性(渗蓄)", max: 100 },
+              { name: "经济可行性(低成本)", max: 100 },
+              { name: "实施易行度", max: 100 }
+            ],
+            shape: "polygon",
+            radius: "64%",
+            center: ["50%", "52%"],
+            axisName: {
+              color: "#17282E",
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: "Noto Sans SC"
+            },
+            splitNumber: 4,
+            splitArea: {
+              show: true,
+              areaStyle: {
+                color: ["rgba(232, 239, 241, 0.4)", "rgba(255, 255, 255, 0.6)"]
+              }
+            },
+            axisLine: { lineStyle: { color: "rgba(80, 100, 107, 0.25)" } },
+            splitLine: { lineStyle: { color: "rgba(80, 100, 107, 0.25)" } }
+          },
+          series: [
+            {
+              type: "radar",
+              data: [
+                {
+                  value: baseScores,
+                  name: "现状基线",
+                  symbol: "none",
+                  lineStyle: { color: "#50646B", width: 1.5, type: "dashed" },
+                  areaStyle: { color: "rgba(80, 100, 107, 0.12)" }
+                },
+                {
+                  value: currentScores,
+                  name: "当前方案",
+                  symbol: "circle",
+                  symbolSize: 4,
+                  lineStyle: { color: "#176B82", width: 2.5 },
+                  areaStyle: { color: "rgba(23, 107, 130, 0.28)" }
+                }
+              ]
+            }
+          ]
+        };
+        radarChart.setOption(option);
+      }
+
+      // 绘制街区峡谷与物理微气候截面 (Canvas)
+      function drawCanyon(ctx, width, height, m) {
+        ctx.clearRect(0, 0, width, height);
+
+        // 基础布局尺寸
+        const groundY = height - 55;
+        const skyH = groundY;
+        const canyonW = width * 0.48;
+        const canyonX = (width - canyonW) / 2;
+        const bldgW = canyonX - 25;
+        const h_w = scenario.h_w;
+        // 建筑高度随峡谷高宽比动态缩放
+        const bldgH = Math.min(skyH * 0.82, Math.max(skyH * 0.35, canyonW * (h_w * 0.42)));
+        const bldgRoofY = groundY - bldgH;
+
+        // 1. 天空与背景微风场
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, groundY);
+        // 空气温度影响天空泛红程度
+        const redShift = Math.min(40, Math.max(0, (m.Ta - 32) * 5));
+        skyGrad.addColorStop(0, `rgb(${215 + redShift * 0.6}, ${230 - redShift * 0.5}, 242)`);
+        skyGrad.addColorStop(1, `rgb(${232 + redShift * 0.4}, ${239 - redShift * 0.3}, 241)`);
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, width, groundY);
+
+        // 2. 太阳短波辐射光束 (倾斜照射)
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(width * 0.75, 0);
+        ctx.lineTo(canyonX + canyonW * 0.65, groundY);
+        ctx.lineTo(canyonX + canyonW * 0.15, groundY);
+        ctx.lineTo(width * 0.50, 0);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(255, 235, 170, 0.25)";
+        ctx.fill();
+        ctx.restore();
+
+        // 3. 两侧建筑主体
+        // 左侧建筑 (朝阳背阴立面)
+        ctx.fillStyle = "#A2B4BA";
+        ctx.fillRect(25, bldgRoofY, bldgW, bldgH);
+
+        // 右侧建筑
+        ctx.fillStyle = "#8FA3AA";
+        ctx.fillRect(canyonX + canyonW, bldgRoofY, bldgW, bldgH);
+
+        // 屋顶层 (由 Albedo 决定反照色)
+        const albedoGrey = Math.round(50 + state.albedo * 220);
+        ctx.fillStyle = `rgb(${albedoGrey}, ${albedoGrey}, ${albedoGrey})`;
+        ctx.fillRect(25, bldgRoofY - 8, bldgW, 8);
+        ctx.fillRect(canyonX + canyonW, bldgRoofY - 8, bldgW, 8);
+
+        // 屋顶反射箭头 (短波向上反射)
+        const reflectLen = 12 + state.albedo * 40;
+        ctx.strokeStyle = "#C63F20";
+        ctx.lineWidth = 2.5;
+        for (let rx of [50, 100, canyonX + canyonW + 50, canyonX + canyonW + 100]) {
+          ctx.beginPath();
+          ctx.moveTo(rx, bldgRoofY - 10);
+          ctx.lineTo(rx, bldgRoofY - 10 - reflectLen);
+          ctx.stroke();
+          // 箭头帽子
+          ctx.beginPath();
+          ctx.moveTo(rx - 4, bldgRoofY - 6 - reflectLen);
+          ctx.lineTo(rx, bldgRoofY - 12 - reflectLen);
+          ctx.lineTo(rx + 4, bldgRoofY - 6 - reflectLen);
+          ctx.stroke();
+        }
+        ctx.fillStyle = "#C63F20";
+        ctx.font = "11px Bahnschrift, sans-serif";
+        ctx.fillText(`反射通量: ${(state.albedo * 700).toFixed(0)} W/m²`, 35, bldgRoofY - 18 - reflectLen);
+
+        // 底层开孔通风廊道 (架空)
+        const ventW = bldgW * (state.vent / 100);
+        ctx.fillStyle = "#DEE7E9";
+        ctx.fillRect(25 + bldgW - ventW, groundY - 24, ventW, 24);
+        ctx.fillRect(canyonX + canyonW, groundY - 24, ventW, 24);
+        ctx.strokeStyle = "#176B82";
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(25 + bldgW - ventW, groundY - 24, ventW, 24);
+        ctx.strokeRect(canyonX + canyonW, groundY - 24, ventW, 24);
+        ctx.setLineDash([]);
+
+        // 4. 地面下垫面 (透水铺装与硬质对比)
+        ctx.fillStyle = "#5E6C71";
+        ctx.fillRect(0, groundY, width, height - groundY);
+
+        // 透水铺装区 (居中人行道或两旁)
+        const permW = canyonW * (state.permeable / 100);
+        const permX = canyonX + (canyonW - permW) / 2;
+        ctx.fillStyle = "#3F7C8D";
+        ctx.fillRect(permX, groundY, permW, height - groundY);
+
+        // 透水地表蒸发水汽粒子示意
+        if (state.permeable > 15) {
+          ctx.fillStyle = "rgba(23, 107, 130, 0.4)";
+          for (let i = 0; i < permW; i += 18) {
+            ctx.beginPath();
+            ctx.arc(permX + i + 8, groundY - 8 - ((i * 3) % 15), 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // 5. 街道树冠 (根据 Tree Canopy 比例生成实体树冠)
+        const numTrees = Math.round(state.tree / 8);
+        const treeSpacing = canyonW / (numTrees + 1);
+        for (let t = 1; t <= numTrees; t++) {
+          const tx = canyonX + t * treeSpacing;
+          const trunkH = 34;
+          const crownR = 24 + (state.tree / 45) * 12;
+
+          // 树干
+          ctx.fillStyle = "#5A4738";
+          ctx.fillRect(tx - 3, groundY - trunkH, 6, trunkH);
+
+          // 树冠阴影在地面的投影
+          ctx.fillStyle = "rgba(23, 40, 46, 0.25)";
+          ctx.beginPath();
+          ctx.ellipse(tx + 8, groundY, crownR * 1.2, 5, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 绿叶树冠
+          ctx.fillStyle = "#39704A";
+          ctx.beginPath();
+          ctx.arc(tx, groundY - trunkH - crownR * 0.7, crownR, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 树冠高光
+          ctx.fillStyle = "#4F8C62";
+          ctx.beginPath();
+          ctx.arc(tx - 6, groundY - trunkH - crownR * 0.85, crownR * 0.65, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 6. 行人尺度热舒适标识 (2m 处的小人)
+        const personX = canyonX + canyonW * 0.25;
+        const personY = groundY;
+        // 躯干与头部
+        ctx.fillStyle = "#17282E";
+        ctx.beginPath();
+        ctx.arc(personX, personY - 19, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillRect(personX - 2, personY - 15, 4, 12);
+        ctx.fillRect(personX - 3, personY - 3, 2.5, 3);
+        ctx.fillRect(personX + 0.5, personY - 3, 2.5, 3);
+
+        // 行人体感热辐射泡泡 (Tmrt 指示)
+        ctx.strokeStyle = m.Tmrt > 50 ? "#C63F20" : (m.Tmrt > 42 ? "#735F2A" : "#176B82");
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(personX, personY - 12, 16, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 标注行人体感读数
+        ctx.fillStyle = "#17282E";
+        ctx.font = "bold 12px Bahnschrift, sans-serif";
+        ctx.fillText(`Tmrt: ${m.Tmrt.toFixed(1)}°C`, personX - 28, personY - 34);
+
+        // 7. 峡谷风涡流动向 (通风廊道通量)
+        const windSpeed = (state.vent * 0.08 + (scenario.h_w < 1.0 ? 1.2 : 0.4)).toFixed(1);
+        ctx.strokeStyle = "rgba(23, 107, 130, 0.75)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+
+        // 峡谷主进风风线
+        ctx.beginPath();
+        ctx.moveTo(canyonX - 15, groundY - 14);
+        ctx.quadraticCurveTo(canyonX + canyonW * 0.5, groundY - 8, canyonX + canyonW + 15, groundY - 14);
+        ctx.stroke();
+
+        // 峡谷顶部环流涡
+        ctx.beginPath();
+        ctx.arc(canyonX + canyonW * 0.5, bldgRoofY + bldgH * 0.35, canyonW * 0.22, 0.3 * Math.PI, 1.8 * Math.PI);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 风速文字
+        ctx.fillStyle = "#176B82";
+        ctx.font = "11px Bahnschrift, sans-serif";
+        ctx.fillText(`峡谷对流风速: ${windSpeed} m/s`, canyonX + 15, bldgRoofY + 20);
+
+        // 8. 标尺说明
+        ctx.fillStyle = "#17282E";
+        ctx.font = "bold 13px 'Noto Sans SC', sans-serif";
+        ctx.fillText(`峡谷高宽比 H/W = ${scenario.h_w.toFixed(1)}`, canyonX + 16, height - 32);
+        ctx.fillText(`透水下渗区 (${state.permeable}%)`, canyonX + 16, height - 14);
+      }
+
+      // 更新界面所有显示
+      function updateAll() {
+        const m = calcModel();
+
+        // 1. 读数与滑块数值刷新
+        valAlbedo.textContent = parseFloat(state.albedo).toFixed(2);
+        valTree.textContent = `${state.tree}%`;
+        valPermeable.textContent = `${state.permeable}%`;
+        valVent.textContent = `${state.vent}%`;
+
+        outTs.textContent = m.Ts.toFixed(1);
+        outTa.textContent = m.Ta.toFixed(1);
+        outTmrt.textContent = m.Tmrt.toFixed(1);
+        outRunoff.textContent = m.runoff.toFixed(2);
+
+        const fmtD = (v, unit) => (Math.abs(v) < 0.01 ? "基线 0.0" + unit : (v < 0 ? "" : "+") + v.toFixed(1) + unit);
+        deltaTs.textContent = fmtD(m.deltaTsVal, "°C");
+        deltaTs.className = `delta ${m.deltaTsVal <= -0.1 ? "cool" : "warn"}`;
+
+        deltaTa.textContent = fmtD(m.deltaTaVal, "°C");
+        deltaTa.className = `delta ${m.deltaTaVal <= -0.1 ? "cool" : "warn"}`;
+
+        deltaTmrt.textContent = fmtD(m.deltaTmrtVal, "°C");
+        deltaTmrt.className = `delta ${m.deltaTmrtVal <= -0.1 ? "cool" : "warn"}`;
+
+        deltaRunoff.textContent = (Math.abs(m.deltaRunoffVal) < 0.005 ? "基线 0.00" : (m.deltaRunoffVal < 0 ? "" : "+") + m.deltaRunoffVal.toFixed(2));
+        deltaRunoff.className = `delta ${m.deltaRunoffVal <= -0.01 ? "cool" : "warn"}`;
+
+        costTag.textContent = `改造成本: ¥${m.cost}/m²`;
+
+        // 2. 评语与机制解析联动
+        const baseScore = [50, 50, 50, 85, 80];
+        updateRadar(m.scores, baseScore);
+
+        // 净辐射与主导机制描述
+        const netRad = Math.round(750 * (1 - state.albedo * 0.45) - 220 + (m.Ts - 30) * 4);
+        heatBalanceDesc.textContent = `地表净吸热量: ~${netRad} W/m² ｜ 对流通量: ${(m.cost * 0.8 + 120).toFixed(0)} W/m²`;
+
+        if (state.tree >= 30) {
+          limiterTag.textContent = "主导机制: 树冠长短波辐射强阻断";
+          descComfort.textContent = `当前树冠覆盖达 ${state.tree}%，直射阳光大幅削减，行人辐射温度 Tmrt 降幅高达 ${Math.abs(m.deltaTmrtVal).toFixed(1)}°C。行人体感从极热降至适中。`;
+        } else if (state.albedo >= 0.6) {
+          limiterTag.textContent = "主导机制: 太阳反射高通量削减";
+          descComfort.textContent = `高反射屋面 (反照率 ${parseFloat(state.albedo).toFixed(2)}) 将短波反射至天顶，建筑地表降温明显；但高层反射对峡谷底层行人 Tmrt 贡献有限 (${Math.abs(m.deltaTmrtVal).toFixed(1)}°C)。`;
+        } else if (state.permeable >= 35) {
+          limiterTag.textContent = "主导机制: 雨水下渗与潜热蒸发";
+          descComfort.textContent = `高透水铺装消纳了雨水径流，径流系数降低至 ${m.runoff.toFixed(2)}。在湿润条件下可转为蒸发潜热，提供持续降温。`;
+        } else {
+          limiterTag.textContent = "主导机制: 现状微气候受热主导";
+          descComfort.textContent = "未采取足额缓解措施，受高密硬化下垫面与太阳短波辐射支配，街道热蓄积严重，地表与辐射温度处于高位。";
+        }
+
+        // 权衡判定
+        if (state.vent > 35 && state.tree > 30) {
+          descTradeoff.textContent = "高风速廊道虽带走峡谷蓄热，但过大的开孔会导致底层风环境紊乱，且连续强对流可能加速植物蒸散失水。";
+        } else if (state.albedo > 0.65 && scenario.h_w < 0.8) {
+          descTradeoff.textContent = "在低密开敞区若大面积采用地面浅色高反照铺装，反射短波射向人体会加剧日间眩光与生理受热。";
+        } else {
+          descTradeoff.textContent = `目前干预组合成本为 ¥${m.cost}/m²。各措施协同降温，无明显极端恶化副作用。`;
+        }
+
+        descRunoff.textContent = `透水铺面 (${state.permeable}%) 与绿化协同使暴雨地表径流削减 ${(Math.abs(m.deltaRunoffVal) * 100).toFixed(0)}%，有效避免极端暴雨内涝。`;
+
+        // 重新重绘街区截面
+        if (cv) {
+          const ctx = Deck.fit(cv);
+          drawCanyon(ctx, cv.width / (window.devicePixelRatio || 1), cv.height / (window.devicePixelRatio || 1), m);
+        }
+      }
+
+      // 绑定滑块事件
+      rngAlbedo.addEventListener("input", function (e) {
+        state.albedo = parseFloat(e.target.value);
+        updateAll();
+      });
+      rngTree.addEventListener("input", function (e) {
+        state.tree = parseInt(e.target.value, 10);
+        updateAll();
+      });
+      rngPermeable.addEventListener("input", function (e) {
+        state.permeable = parseInt(e.target.value, 10);
+        updateAll();
+      });
+      rngVent.addEventListener("input", function (e) {
+        state.vent = parseInt(e.target.value, 10);
+        updateAll();
+      });
+
+      // 街区情景切换
+      const scenarioBtns = document.querySelectorAll(".scenario-nav button[data-scenario]");
+      scenarioBtns.forEach(btn => {
+        btn.addEventListener("click", function () {
+          scenarioBtns.forEach(b => b.setAttribute("aria-pressed", "false"));
+          this.setAttribute("aria-pressed", "true");
+          const scKey = this.dataset.scenario;
+          currentScenarioKey = scKey;
+          scenario = { ...SCENARIOS[scKey] };
+
+          // 恢复情景默认值
+          state = {
+            albedo: scenario.albedo,
+            tree: scenario.tree,
+            permeable: scenario.permeable,
+            vent: scenario.vent
+          };
+
+          rngAlbedo.value = state.albedo;
+          rngTree.value = state.tree;
+          rngPermeable.value = state.permeable;
+          rngVent.value = state.vent;
+
+          updateAll();
+        });
+      });
+
+      // 重置按钮
+      document.getElementById("btn-reset").addEventListener("click", function () {
+        scenario = { ...SCENARIOS[currentScenarioKey] };
+        state = {
+          albedo: scenario.albedo,
+          tree: scenario.tree,
+          permeable: scenario.permeable,
+          vent: scenario.vent
+        };
+        rngAlbedo.value = state.albedo;
+        rngTree.value = state.tree;
+        rngPermeable.value = state.permeable;
+        rngVent.value = state.vent;
+        updateAll();
+      });
+
+      // 启动
+      Deck.init({ index: 18, total: 19 });
+      initRadar();
+      Deck.autofit(cv, function (ctx) {
+        const m = calcModel();
+        drawCanyon(ctx, cv.width / (window.devicePixelRatio || 1), cv.height / (window.devicePixelRatio || 1), m);
+      });
+      updateAll();
+
+      window.addEventListener("resize", function () {
+        if (radarChart) radarChart.resize();
+        updateAll();
+      });
+    })();
+  </script>
+</body>
+</html>

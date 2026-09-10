@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    header {
+      position: absolute;
+      left: var(--pad-x);
+      top: 36px;
+      width: 1488px;
+    }
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 500;
+    }
+    .claim {
+      margin-top: 8px;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-tight);
+    }
+    .claim strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* 流程图主视域 */
+    .flow-stage {
+      position: absolute;
+      left: var(--pad-x);
+      top: 130px;
+      width: 1488px;
+      height: 710px;
+    }
+
+    /* 连线 SVG */
+    #connector-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* 列布局：纯靠对齐与间距分组，不用外部大容器包装 */
+    .col {
+      position: absolute;
+      top: 0;
+      z-index: 2;
+    }
+    .col-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .col-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+
+    /* 1. 原始训练集 */
+    .col-source {
+      left: 0;
+      width: 250px;
+    }
+    .data-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 36px);
+      gap: 6px;
+      margin-bottom: 20px;
+    }
+    .dot {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: #fff;
+    }
+    .dot.pos { background: var(--model); }
+    .dot.neg { background: #627b8b; }
+
+    .stat-list {
+      border-top: 1px solid var(--rule);
+      padding-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .stat-item {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .stat-item b {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* 2. Bootstrap 子集 */
+    .col-samples {
+      left: 320px;
+      width: 260px;
+    }
+    .sample-row {
+      height: 100px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    .sample-meta {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .sample-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .s-dot {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: #fff;
+      background: var(--model);
+    }
+    .s-dot.rep {
+      outline: 2px solid var(--focus);
+      outline-offset: -2px;
+    }
+
+    /* 3. 基决策树 */
+    .col-trees {
+      left: 640px;
+      width: 280px;
+    }
+    .tree-row {
+      height: 100px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    .tree-name {
+      font-size: var(--fs-body);
+      font-weight: 600;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .tree-name span {
+      font-size: var(--fs-sec);
+      font-weight: normal;
+      color: var(--muted);
+    }
+    .tree-info {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      display: flex;
+      gap: 16px;
+    }
+    .tree-info b {
+      color: var(--text);
+    }
+
+    /* 4. 投票聚合与方差对比 */
+    .col-aggregate {
+      left: 980px;
+      width: 508px;
+    }
+    .vote-panel {
+      padding-bottom: 24px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--rule);
+    }
+    .vote-status {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .vote-chip {
+      padding: 6px 14px;
+      font-size: var(--fs-body);
+      background: #cfdbe3;
+      color: var(--text);
+    }
+    .vote-chip.agree {
+      background: var(--model);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    /* 方差降幅条形图 */
+    .variance-panel {
+      margin-top: 10px;
+    }
+    .formula-box {
+      font-size: 20px;
+      margin-bottom: 20px;
+      color: var(--text);
+    }
+    .chart-row {
+      margin-bottom: 16px;
+    }
+    .chart-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      margin-bottom: 6px;
+    }
+    .chart-track {
+      height: 14px;
+      background: #cfd9df;
+      position: relative;
+    }
+    .chart-fill {
+      height: 100%;
+      background: var(--model);
+    }
+    .chart-fill.high {
+      background: var(--focus);
+    }
+
+    /* 分步淡入 */
+    [data-step] {
+      transition: opacity var(--motion-step) var(--ease-out), transform var(--motion-step) var(--ease-out);
+    }
+    [data-step].inert {
+      opacity: 0;
+      transform: translateY(6px);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body data-page="05" data-total="25">
+  <div id="stage">
+    <header>
+      <h1>Bootstrap 采样与投票聚合：Bagging 降低方差的核心机制</h1>
+      <p class="claim">高方差基学习器通过<strong>有放回抽样</strong>与<strong>多数投票</strong>抵消独立误差，平滑整体判决。</p>
+    </header>
+
+    <div class="flow-stage">
+      <svg id="connector-layer" viewBox="0 0 1488 710">
+        <!-- 阶段 1 到阶段 2 的采样连线（y: 110, 226, 342） -->
+        <g data-step="1">
+          <path d="M 230 140 C 280 140, 280 110, 320 110" fill="none" stroke="var(--rule)" stroke-width="2" />
+          <path d="M 230 140 C 280 140, 280 226, 320 226" fill="none" stroke="var(--rule)" stroke-width="2" />
+          <path d="M 230 140 C 280 140, 280 342, 320 342" fill="none" stroke="var(--rule)" stroke-width="2" />
+
+          <!-- 阶段 2 到阶段 3 的训练输入水平线 -->
+          <path d="M 520 110 L 640 110" fill="none" stroke="var(--model)" stroke-width="2" />
+          <path d="M 520 226 L 640 226" fill="none" stroke="var(--model)" stroke-width="2" />
+          <path d="M 520 342 L 640 342" fill="none" stroke="var(--model)" stroke-width="2" />
+        </g>
+
+        <!-- 阶段 3 到阶段 4 的聚合收束线（收束到 y: 154） -->
+        <g data-step="2">
+          <path d="M 870 110 C 930 110, 930 154, 980 154" fill="none" stroke="var(--model)" stroke-width="2" />
+          <path d="M 870 226 C 930 226, 930 154, 980 154" fill="none" stroke="var(--model)" stroke-width="2" />
+          <path d="M 870 342 C 930 342, 930 154, 980 154" fill="none" stroke="var(--model)" stroke-width="2" />
+          <!-- 签名粗线：聚合后粗线贯穿右侧 -->
+          <line x1="1260" y1="154" x2="1480" y2="154" stroke="var(--model)" stroke-width="var(--stroke-strong)" />
+        </g>
+      </svg>
+
+      <!-- 阶段 1：原始数据与抽样理论 -->
+      <div class="col col-source">
+        <div class="col-title">1. 原始训练集 <span class="math-slot" data-tex="D"></span></div>
+        <div class="col-sub">样本规模 <span class="math-slot" data-tex="N = 10"></span></div>
+        <div class="data-grid">
+          <div class="dot pos">1</div><div class="dot pos">2</div><div class="dot pos">3</div><div class="dot pos">4</div><div class="dot pos">5</div>
+          <div class="dot neg">6</div><div class="dot neg">7</div><div class="dot neg">8</div><div class="dot neg">9</div><div class="dot neg">10</div>
+        </div>
+        <div class="stat-list">
+          <div class="stat-item">
+            <span>有放回抽样覆盖率</span>
+            <b>1 - 1/e ≈ 63.2%</b>
+          </div>
+          <div class="stat-item">
+            <span>袋外样本 (OOB)</span>
+            <b>约 36.8%</b>
+          </div>
+        </div>
+      </div>
+
+      <!-- 阶段 2：Bootstrap 抽样子集 -->
+      <div class="col col-samples" data-step="1">
+        <div class="col-title">2. 自助样本集 <span class="math-slot" data-tex="D_t"></span></div>
+        <div class="col-sub">独立有放回抽取 <span class="math-slot" data-tex="N"></span> 次</div>
+
+        <div class="sample-row">
+          <div class="sample-meta">子集 <span class="math-slot" data-tex="D_1"></span>（样本 2 重复）</div>
+          <div class="sample-dots">
+            <div class="s-dot">1</div><div class="s-dot rep">2</div><div class="s-dot rep">2</div><div class="s-dot">4</div><div class="s-dot">7</div>
+          </div>
+        </div>
+
+        <div class="sample-row">
+          <div class="sample-meta">子集 <span class="math-slot" data-tex="D_2"></span>（样本 5 重复）</div>
+          <div class="sample-dots">
+            <div class="s-dot">2</div><div class="s-dot">3</div><div class="s-dot rep">5</div><div class="s-dot rep">5</div><div class="s-dot">9</div>
+          </div>
+        </div>
+
+        <div class="sample-row">
+          <div class="sample-meta">子集 <span class="math-slot" data-tex="D_3"></span>（样本 4 重复）</div>
+          <div class="sample-dots">
+            <div class="s-dot">1</div><div class="s-dot rep">4</div><div class="s-dot rep">4</div><div class="s-dot">8</div><div class="s-dot">10</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 阶段 3：基学习器 -->
+      <div class="col col-trees" data-step="1">
+        <div class="col-title">3. 基决策树 <span class="math-slot" data-tex="h_t(x)"></span></div>
+        <div class="col-sub">充分生长 · 单模型高方差</div>
+
+        <div class="tree-row">
+          <div class="tree-name">树模型 <span class="math-slot" data-tex="h_1"></span> <span>局部过拟合</span></div>
+          <div class="tree-info">
+            <span>方差: <b>0.42</b></span>
+            <span>预测: <b>+1</b></span>
+          </div>
+        </div>
+
+        <div class="tree-row">
+          <div class="tree-name">树模型 <span class="math-slot" data-tex="h_2"></span> <span>对扰动敏感</span></div>
+          <div class="tree-info">
+            <span>方差: <b>0.39</b></span>
+            <span>预测: <b>+1</b></span>
+          </div>
+        </div>
+
+        <div class="tree-row">
+          <div class="tree-name">树模型 <span class="math-slot" data-tex="h_3"></span> <span>局部过拟合</span></div>
+          <div class="tree-info">
+            <span>方差: <b>0.45</b></span>
+            <span>预测: <b>-1</b></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 阶段 4：多数投票与方差分析 -->
+      <div class="col col-aggregate" data-step="2">
+        <div class="col-title">4. 多数投票与方差抵消</div>
+        <div class="col-sub">平滑基模型扰动误差</div>
+
+        <div class="vote-panel">
+          <div style="font-size:var(--fs-sec); color:var(--muted);">输入样本聚合判决</div>
+          <div class="vote-status">
+            <div class="vote-chip agree"><span class="math-slot" data-tex="h_1: +1"></span></div>
+            <div class="vote-chip agree"><span class="math-slot" data-tex="h_2: +1"></span></div>
+            <div class="vote-chip"><span class="math-slot" data-tex="h_3: -1"></span></div>
+          </div>
+        </div>
+
+        <div class="variance-panel">
+          <div class="formula-box">
+            <span class="math-slot" data-tex="\text{Var}(H) = \rho\sigma^2 + \frac{1-\rho}{T}\sigma^2"></span>
+          </div>
+          <div class="chart-row">
+            <div class="chart-meta">
+              <span>单决策树平均方差 <span class="math-slot" data-tex="(\sigma^2)"></span></span>
+              <b>0.42</b>
+            </div>
+            <div class="chart-track">
+              <div class="chart-fill high" style="width: 84%;"></div>
+            </div>
+          </div>
+          <div class="chart-row">
+            <div class="chart-meta">
+              <span>Bagging 集成方差 <span class="math-slot" data-tex="(\text{Var})"></span></span>
+              <b>0.16 (降低 62%)</b>
+            </div>
+            <div class="chart-track">
+              <div class="chart-fill" style="width: 32%;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们，请看整幅 Bagging 机理图。
+    Bagging 之所以能显著提升决策树的泛化性能，核心在于利用 Bootstrap 自助采样制造多样性。
+    对大小为 N 的数据集进行有放回抽样，约 63.2% 的样本会被选入，剩下的 36.8% 成为袋外数据。
+    由于抽样扰动，各棵单决策树在不同子集上虽然都高度拟合甚至过拟合，但彼此的过拟合方向和误差相对独立。
+    进入右侧阶段：多数投票对相互独立的误差进行平滑。从理论方差公式可以看到，只要基模型相关系数 rho 小于 1，随着基学习器数量 T 增加，第二项扰动方差会被迅速压缩，使得集成整体方差大幅低于单棵决策树。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 渲染 KaTeX
+    document.querySelectorAll('.math-slot').forEach(el => {
+      const tex = el.getAttribute('data-tex');
+      if (tex) {
+        katex.render(tex, el, { throwOnError: false });
+      }
+    });
+
+    Deck.init({ index: 5, total: 25 });
+  </script>
+</body>
+</html>

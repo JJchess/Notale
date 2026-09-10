@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F3F5F1;
+      --paper: #FFFFFF;
+      --text: #17231F;
+      --muted: #52635D;
+      --focus: #0A6D8C;
+      --crossref: #246358;
+      --judgment: #9C3528;
+      --selected: #155F83;
+      --correct: #356B45;
+      --font-display: "Noto Serif SC", "Songti SC", "SimSun", serif;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "DIN Alternate", "Arial Narrow", sans-serif;
+      --fs-h1: 34px;
+      --fs-h2: 22px;
+      --fs-lead: 19px;
+      --fs-body: 18px;
+      --fs-sec: 16px;
+      --fs-label: 15px;
+      --fs-tick: 13px;
+      --radius: 6px;
+      --line: 2px;
+      --ease: 180ms;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: 44px 56px 36px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      width: 1600px;
+      height: 900px;
+      gap: 20px;
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .title-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    /* 顶部案例切换按钮组 */
+    .case-selector {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .case-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .btn-tabs {
+      display: flex;
+      gap: 8px;
+      background: rgba(82, 99, 93, 0.08);
+      padding: 3px;
+      border-radius: var(--radius);
+    }
+
+    .case-btn {
+      appearance: none;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      padding: 6px 14px;
+      border-radius: calc(var(--radius) - 2px);
+      cursor: pointer;
+      transition: all var(--ease);
+      font-weight: 500;
+    }
+
+    .case-btn:hover {
+      color: var(--text);
+    }
+
+    .case-btn.active {
+      background: var(--paper);
+      color: var(--selected);
+      border-color: rgba(21, 95, 131, 0.2);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      font-weight: 700;
+    }
+
+    /* 主证据区：双轴结构图 + 底部解析栏 */
+    .main-workspace {
+      display: grid;
+      grid-template-columns: 1040px 1fr;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：双轴坐标画布面板 */
+    .matrix-panel {
+      background: var(--paper);
+      border: 1px solid rgba(82, 99, 93, 0.2);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .matrix-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-shrink: 0;
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-swatch {
+      width: 24px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .legend-swatch.crossref {
+      background: var(--crossref);
+    }
+
+    .legend-swatch.judgment {
+      background: var(--judgment);
+    }
+
+    .matrix-stage {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 1fr 140px;
+      gap: 16px;
+    }
+
+    /* 证据层：横向互见分布 */
+    .crossref-layer {
+      position: relative;
+      background: rgba(36, 99, 88, 0.03);
+      border: 1px dashed rgba(36, 99, 88, 0.3);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .layer-tag {
+      position: absolute;
+      top: -11px;
+      left: 18px;
+      background: var(--bg);
+      padding: 0 10px;
+      font-size: var(--fs-tick);
+      color: var(--crossref);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+
+    .layer-desc {
+      font-size: var(--fs-label);
+      color: var(--crossref);
+      margin-bottom: 12px;
+      font-weight: 500;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .passages-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .passage-card {
+      background: var(--paper);
+      border: 1px solid rgba(82, 99, 93, 0.2);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all var(--ease);
+      cursor: pointer;
+    }
+
+    .passage-card:hover, .passage-card.highlight {
+      border-color: var(--crossref);
+      box-shadow: 0 2px 8px rgba(36, 99, 88, 0.12);
+      transform: translateY(-2px);
+    }
+
+    .passage-card.highlight {
+      background: rgba(36, 99, 88, 0.04);
+      border-width: 2px;
+    }
+
+    .passage-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .passage-source {
+      font-size: var(--fs-sec);
+      font-family: var(--font-display);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .passage-role {
+      font-size: var(--fs-tick);
+      color: var(--crossref);
+      background: rgba(36, 99, 88, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    .passage-quote {
+      font-family: var(--font-display);
+      font-size: 15px;
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .passage-fact {
+      margin-top: 6px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      border-top: 1px dotted rgba(82, 99, 93, 0.2);
+      padding-top: 6px;
+      line-height: 1.35;
+    }
+
+    /* 纵向编联指示线与太史公曰层 */
+    .judgment-layer {
+      position: relative;
+      background: rgba(156, 53, 40, 0.03);
+      border: 1px solid rgba(156, 53, 40, 0.25);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .relation-link-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      border-bottom: 1px dashed rgba(156, 53, 40, 0.2);
+      padding-bottom: 6px;
+    }
+
+    .relation-link-bar .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--crossref);
+    }
+
+    .relation-link-bar .arrow {
+      color: var(--judgment);
+      font-weight: bold;
+    }
+
+    .judgment-content {
+      display: grid;
+      grid-template-columns: 220px 1fr 240px;
+      gap: 18px;
+      align-items: center;
+    }
+
+    .speaker-box {
+      border-right: 1px solid rgba(156, 53, 40, 0.2);
+      padding-right: 16px;
+    }
+
+    .speaker-name {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--judgment);
+      margin-bottom: 4px;
+    }
+
+    .speaker-stance {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .commentary-box {
+      font-family: var(--font-display);
+      font-size: 16px;
+      line-height: 1.5;
+      color: var(--text);
+      padding: 0 10px;
+    }
+
+    .commentary-box mark {
+      background: rgba(156, 53, 40, 0.12);
+      color: var(--judgment);
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 2px;
+    }
+
+    .constraint-arrow {
+      background: rgba(156, 53, 40, 0.06);
+      border: 1px dashed rgba(156, 53, 40, 0.3);
+      border-radius: var(--radius);
+      padding: 8px 12px;
+      font-size: var(--fs-tick);
+      color: var(--judgment);
+      line-height: 1.4;
+    }
+
+    /* 右侧：机制解构与方法对照面板 */
+    .sidebar-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .card-dual {
+      background: var(--paper);
+      border: 1px solid rgba(82, 99, 93, 0.2);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+    }
+
+    .card-dual.crossref-focus {
+      border-top: 4px solid var(--crossref);
+    }
+
+    .card-dual.judgment-focus {
+      border-top: 4px solid var(--judgment);
+    }
+
+    .card-dual-title {
+      font-size: 18px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .crossref-title { color: var(--crossref); }
+    .judgment-title { color: var(--judgment); }
+
+    .card-dual p {
+      margin: 0;
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+      color: var(--text);
+    }
+
+    .contrast-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .contrast-item {
+      display: grid;
+      grid-template-columns: 80px 1fr;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+    }
+
+    .contrast-label {
+      color: var(--muted);
+      font-size: var(--fs-label);
+    }
+
+    .contrast-val {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    /* 底部收束结论条 */
+    .conclusion-bar {
+      background: #ECEFEA;
+      border: 1px solid rgba(82, 99, 93, 0.2);
+      border-radius: var(--radius);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    .conclusion-text {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    .conclusion-text strong {
+      color: var(--selected);
+    }
+
+    .interactive-hint {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+  </style>
+</head>
+<body data-page="14" data-total="15">
+  <div id="stage">
+    <header>
+      <div class="title-row">
+        <h1>互见法与“太史公曰”的分工：证据网络与价值坐标</h1>
+        <div class="case-selector">
+          <span class="case-label">典型案例比照：</span>
+          <div class="btn-tabs" role="tablist">
+            <button id="btn-xiangyu" class="case-btn active" role="tab" aria-selected="true">项羽：史实分散 vs 斥其非天</button>
+            <button id="btn-gaozu" class="case-btn" role="tab" aria-selected="false">高祖：神圣叙事 vs 露骨揭底</button>
+          </div>
+        </div>
+      </div>
+      <p class="lead">互见法在多篇纪传中横向分布史实、消解单一立场的偏见；“太史公曰”则在篇末纵向拔地而起，亮出作者的终审视域与道德评判。</p>
+    </header>
+
+    <main class="main-workspace min0">
+      <!-- 左侧主视觉：双轴互动解构面板 -->
+      <section class="matrix-panel min0" aria-label="双轴叙事模型">
+        <div class="matrix-header">
+          <div class="legend-row">
+            <div class="legend-item">
+              <span class="legend-swatch crossref"></span>
+              <span>横向轴：互见法（多篇分散叙述，提供完整事实拼图）</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-swatch judgment"></span>
+              <span>纵向轴：太史公曰（篇末抽离论赞，提供作者解释裁断）</span>
+            </div>
+          </div>
+          <span id="active-case-tag" class="passage-role">当前：项羽案</span>
+        </div>
+
+        <div class="matrix-stage min0">
+          <!-- 上层：横向互见证据链 -->
+          <div class="crossref-layer min0">
+            <span class="layer-tag">横向维度 · 篇际证据分布（互见法）</span>
+            <div class="layer-desc">
+              <span id="layer-desc-text">本纪维持英雄壮烈行迹，残暴与战略盲动则散置于诸将列传中，读者须跨篇拼合。</span>
+              <span class="interactive-hint">点击卡片可查看证据如何制约结论</span>
+            </div>
+            <div id="passages-container" class="passages-grid min0">
+              <!-- JS 动态注入卡片 -->
+            </div>
+          </div>
+
+          <!-- 下层：纵向论赞裁断 -->
+          <div class="judgment-layer min0">
+            <span class="layer-tag">纵向维度 · 史官主体裁决（太史公曰）</span>
+            <div class="relation-link-bar">
+              <span class="dot"></span>
+              <span>横向三篇实录互证</span>
+              <span class="arrow">↓ 纵向收束</span>
+              <span>篇末论赞由此获得实证依据，非空穴来风</span>
+            </div>
+            <div class="judgment-content">
+              <div class="speaker-box">
+                <div class="speaker-name">太史公曰</div>
+                <div id="speaker-stance-text" class="speaker-stance">反驳“天亡我非用兵之罪”，直斥其自矜功伐、不师古。</div>
+              </div>
+              <div id="commentary-quote-box" class="commentary-box">
+                <!-- 赞语引文 -->
+              </div>
+              <div class="constraint-arrow">
+                <strong>制约机制：</strong>
+                <span id="constraint-desc">论赞的严厉裁断，正是建立在横向列传所坐实的“坑残暴政”基础之上。</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：叙事功能与阅读机制解析 -->
+      <aside class="sidebar-panel min0">
+        <div class="card-dual crossref-focus">
+          <div class="card-dual-title">
+            <span class="crossref-title">互见法：横向编织</span>
+            <span class="passage-role">客观化机制</span>
+          </div>
+          <p id="crossref-principle">避免在单一传记中因主调冲突而割裂人物形象。将违背本传主旨但必须存真的史实，合理安置在关联人物传记中。</p>
+          <ul class="contrast-list">
+            <li class="contrast-item">
+              <span class="contrast-label">叙事空间</span>
+              <span id="crossref-dim" class="contrast-val">跨篇章（本纪、世家、列传）</span>
+            </li>
+            <li class="contrast-item">
+              <span class="contrast-label">功能定位</span>
+              <span class="contrast-val">提供多重视角与互相校正的证据</span>
+            </li>
+            <li class="contrast-item">
+              <span class="contrast-label">读者动作</span>
+              <span class="contrast-val">横向比对、拼合完整真相</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-dual judgment-focus">
+          <div class="card-dual-title">
+            <span class="judgment-title">太史公曰：纵向裁断</span>
+            <span class="passage-role" style="background: rgba(156, 53, 40, 0.1); color: var(--judgment);">主观化坐标</span>
+          </div>
+          <p id="judgment-principle">史家不再隐匿于史事之后，而是跳出记叙流，从更高的历史哲学与道德谱系出发，定格人物的历史位标。</p>
+          <ul class="contrast-list">
+            <li class="contrast-item">
+              <span class="contrast-label">叙事空间</span>
+              <span id="judgment-dim" class="contrast-val">篇章末尾（独立于记叙流）</span>
+            </li>
+            <li class="contrast-item">
+              <span class="contrast-label">功能定位</span>
+              <span class="contrast-val">显露作者心志，纠正传主托词</span>
+            </li>
+            <li class="contrast-item">
+              <span class="contrast-label">读者动作</span>
+              <span class="contrast-val">以此立论回溯叙事，检验因果</span>
+            </li>
+          </ul>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="conclusion-bar">
+      <p class="conclusion-text">
+        <strong>结构双重制约：</strong>没有互见法的分散事实支撑，“太史公曰”便沦为凌空蹈虚的武断；没有“太史公曰”的高蹈审视，互见法的多声部分散材料便缺乏价值统摄。
+      </p>
+      <div class="interactive-hint">下一页将带走全套实战读法</div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      Deck.init({ index: 14, total: 15 });
+
+      const DATA = {
+        xiangyu: {
+          tag: "项羽案：英雄悲剧 vs 暴虐失道",
+          desc: "《项羽本纪》着力书写巨鹿破釜、垓下悲歌的悲壮；坑杀降卒、残民屠城的暴虐事实则散置于各将领列传中。",
+          passages: [
+            {
+              source: "《项羽本纪》",
+              role: "主传 · 悲壮史诗",
+              quote: "“天亡我，非用兵之罪也……力拔山兮气盖世，时不利兮骓不逝。”",
+              fact: "塑造万夫莫当的末路霸王，保留其至死不服输的气魄与自我认知。"
+            },
+            {
+              source: "《高祖本纪》",
+              role: "互见 · 政治对比",
+              quote: "“项羽烧秦宫室，屠咸阳，杀降王子婴，烧秦积聚，收其宝货妇女。”",
+              fact: "揭发其失民心之根由：烧杀抢掠、失信于天下，粉碎关中父老之望。"
+            },
+            {
+              source: "《淮阴侯列传》",
+              role: "互见 · 战略裁决",
+              quote: "“项王所过无不残灭者，天下多怨，百姓不亲附……名虽为霸，实失天下心。”",
+              fact: "韩信客观剖析其“妇人之仁、匹夫之勇”，以冷峻视角拆解其战术与心性致命伤。"
+            }
+          ],
+          speakerStance: "驳斥传主终末之言，以政治因果替代天命遁词。",
+          commentary: "太史公曰：“羽自矜功伐，奋其私智而不师古……五年卒亡其国，身死东城，尚不觉寤而不自责，乃引‘<mark>天亡我，非用兵之罪也</mark>’，岂不谬哉！”",
+          constraint: "论赞断言“岂不谬哉”，正是依凭各传实录之“烧杀失心”，使道德裁断严丝合缝。",
+          crossrefDetail: "不让暴虐行径冲淡《本纪》史诗般的英雄挽歌，但绝不销毁罪证，移入诸传存真求实。",
+          judgmentDetail: "以天下大势与道德秩序为标尺，一语戳破项羽临死推诿于“天命”的盲目与执迷。"
+        },
+        gaozu: {
+          tag: "刘邦案：神圣开国 vs 卑鄙市井",
+          desc: "《高祖本纪》极写受命受符的帝王天命神话；市井无赖、猜忌狡诈与绝情之举，则移置功臣列传予以存真。",
+          passages: [
+            {
+              source: "《高祖本纪》",
+              role: "主传 · 帝业神圣",
+              quote: "“高祖为人，隆准而龙颜，美须髯……母媪尝息大泽之陂，梦与神遇，雷电晦冥，蛟龙于其上。”",
+              fact: "尊崇君王体制，铺陈赤帝子斩白帝子的神异，确立汉家天下的合法性。"
+            },
+            {
+              source: "《项羽本纪》",
+              role: "互见 · 狼狈窘态",
+              quote: "“楚骑追汉王，汉王急，推堕孝惠、鲁元车下，滕公常下收载之，如是者三。”",
+              fact: "写其逃命时不顾骨肉死活之极端自私与狼狈，尽显枭雄真实本相。"
+            },
+            {
+              source: "《淮阴侯 / 彭越列传》",
+              role: "互见 · 猜忌诛功",
+              quote: "“飞鸟尽，良弓藏；狡兔死，走狗烹……天下已定，我固当烹！”",
+              fact: "载录高祖即位后对异姓王之步步诛除、刻薄少恩，补全政治残酷真相。"
+            }
+          ],
+          speakerStance: "赞扬汉家制度与规模，同时寓含对得失治乱的历史深思。",
+          commentary: "太史公曰：“夏之政尚忠，殷之政尚敬，周之政尚文。秦承其敝，而汉承秦之敝……<mark>由是观之，帝王之祚，必有神灵客授焉，岂偶然哉</mark>！”",
+          constraint: "赞语表面顺承天命神授，然而互见篇章已尽录其为人行止，使读者在神圣赞语外自明其得失。",
+          crossrefDetail: "尊者讳其短，故本纪载其恢宏豁达与天命；列传备录其残忍寡情，两相印证始见活人。",
+          judgmentDetail: "以宏阔的历史三代流变与秦汉变革为视阈，超越个人品行评价，落脚于文明规制的演进。"
+        }
+      };
+
+      const btnXiangyu = document.getElementById("btn-xiangyu");
+      const btnGaozu = document.getElementById("btn-gaozu");
+      const activeCaseTag = document.getElementById("active-case-tag");
+      const layerDescText = document.getElementById("layer-desc-text");
+      const passagesContainer = document.getElementById("passages-container");
+      const speakerStanceText = document.getElementById("speaker-stance-text");
+      const commentaryQuoteBox = document.getElementById("commentary-quote-box");
+      const constraintDesc = document.getElementById("constraint-desc");
+      const crossrefPrinciple = document.getElementById("crossref-principle");
+      const judgmentPrinciple = document.getElementById("judgment-principle");
+
+      function renderCase(key) {
+        const item = DATA[key];
+        activeCaseTag.textContent = key === "xiangyu" ? "当前：项羽案" : "当前：高祖案";
+        layerDescText.textContent = item.desc;
+        speakerStanceText.textContent = item.speakerStance;
+        commentaryQuoteBox.innerHTML = item.commentary;
+        constraintDesc.textContent = item.constraint;
+        crossrefPrinciple.textContent = item.crossrefDetail;
+        judgmentPrinciple.textContent = item.judgmentDetail;
+
+        passagesContainer.innerHTML = "";
+        item.passages.forEach((p, idx) => {
+          const card = document.createElement("div");
+          card.className = "passage-card" + (idx === 0 ? " highlight" : "");
+          card.innerHTML = `
+            <div>
+              <div class="passage-head">
+                <span class="passage-source">${p.source}</span>
+                <span class="passage-role">${p.role}</span>
+              </div>
+              <p class="passage-quote">${p.quote}</p>
+            </div>
+            <div class="passage-fact">${p.fact}</div>
+          `;
+          card.addEventListener("click", () => {
+            const all = passagesContainer.querySelectorAll(".passage-card");
+            all.forEach(c => c.classList.remove("highlight"));
+            card.classList.add("highlight");
+          });
+          passagesContainer.appendChild(card);
+        });
+      }
+
+      btnXiangyu.addEventListener("click", () => {
+        btnXiangyu.classList.add("active");
+        btnXiangyu.setAttribute("aria-selected", "true");
+        btnGaozu.classList.remove("active");
+        btnGaozu.setAttribute("aria-selected", "false");
+        renderCase("xiangyu");
+      });
+
+      btnGaozu.addEventListener("click", () => {
+        btnGaozu.classList.add("active");
+        btnGaozu.setAttribute("aria-selected", "true");
+        btnXiangyu.classList.remove("active");
+        btnXiangyu.setAttribute("aria-selected", "false");
+        renderCase("gaozu");
+      });
+
+      // 初始渲染项羽案
+      renderCase("xiangyu");
+
+      window.__NOTALE_READY__ = true;
+    })();
+  </script>
+</body>
+</html>

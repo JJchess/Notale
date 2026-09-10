@@ -1,0 +1,463 @@
+<!doctype html>
+<!--
+构图意图：
+1. 主对象是样本在各基学习器中的“袋内训练 (In-Bag)”与“袋外留存 (OOB)”对照矩阵，以及右侧由 OOB 预测收束为集成泛化评估的机制。
+2. 样本行与模型列形成明确的状态网格（参与训练的蓝点 vs 未参与的留存圈），单棵树未见样本横向聚合为该样本的专属共识预测，对比真值标签。
+3. 说明文字与数学依据（(1 - 1/n)^n -> 1/e ≈ 36.8%）紧贴左侧统计指示，右侧总结紧依评估聚合流。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans Display", sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    header {
+      position: absolute;
+      top: 36px;
+      left: 56px;
+      right: 56px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      letter-spacing: -0.02em;
+    }
+    .math-proof {
+      font-size: var(--fs-body);
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .proof-katex {
+      font-size: 20px;
+      color: var(--text);
+    }
+    .proof-val {
+      color: var(--focus);
+      font-weight: var(--weight-bold);
+    }
+
+    /* 主工作区分栏：左侧矩阵+流向，右侧集成评估卡尺 */
+    .main-view {
+      position: absolute;
+      top: 118px;
+      left: 56px;
+      width: 1488px;
+      height: 700px;
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 56px;
+    }
+
+    /* 左侧矩阵图 */
+    .matrix-section {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+    .sec-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 6px;
+    }
+    .sec-title {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--aggregate);
+    }
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot-in { background: var(--model); }
+    .dot-oob {
+      border: 2px solid var(--focus);
+      background: #fff;
+      box-sizing: border-box;
+    }
+
+    /* SVG 交互/绘图区 */
+    #matrix-svg {
+      width: 880px;
+      height: 520px;
+    }
+
+    /* 样本行悬浮与提示 */
+    .sample-row-bg {
+      fill: transparent;
+      cursor: pointer;
+      transition: fill var(--duration-fast);
+    }
+    .sample-row-bg:hover, .sample-row-bg.active {
+      fill: rgba(198, 75, 46, 0.08);
+    }
+    .oob-cell {
+      cursor: pointer;
+      transition: transform var(--duration-fast);
+    }
+
+    /* 右侧评估推演栏 */
+    .eval-section {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 32px;
+      border-left: 1px solid rgba(116, 129, 124, 0.4);
+      padding-left: 48px;
+    }
+    .eval-block {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .eval-title {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--aggregate);
+    }
+    .eval-lead {
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--text);
+      margin: 0;
+    }
+    .inspect-box {
+      border-top: 1px solid var(--line);
+      padding-top: 18px;
+    }
+    .inspect-target {
+      font-size: var(--fs-lead);
+      font-weight: var(--weight-medium);
+      color: var(--focus);
+      margin-bottom: 8px;
+    }
+    .inspect-desc {
+      font-size: var(--fs-body);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      margin: 0;
+    }
+    .formula-card {
+      padding: 10px 0;
+      font-size: 18px;
+    }
+
+    /* 底部收束结论条 */
+    .bottom-conclusion {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border-top: 2px solid var(--aggregate);
+      padding-top: 16px;
+      margin-top: 12px;
+    }
+    .bottom-conclusion .verdict {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-bold);
+      color: var(--aggregate);
+    }
+    .bottom-conclusion .sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+  </style>
+</head>
+<body data-page="11" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>袋外样本 OOB：无需额外验证集的泛化估计</h1>
+      <div class="math-proof">
+        <span>极限未抽中率：</span>
+        <span class="proof-katex" id="katex-limit"></span>
+        <span>≈ 36.8%</span>
+      </div>
+    </header>
+
+    <div class="main-view">
+      <!-- 左：矩阵推演 -->
+      <section class="matrix-section">
+        <div class="sec-head">
+          <span class="sec-title">样本在各基树中的分布矩阵（n 样本 × T 棵树）</span>
+          <div class="legend-row">
+            <span class="legend-item"><span class="legend-dot dot-in"></span>袋内训练 (~63.2%)</span>
+            <span class="legend-item"><span class="legend-dot dot-oob"></span>袋外留存 (~36.8%)</span>
+          </div>
+        </div>
+        <svg id="matrix-svg" viewBox="0 0 880 520"></svg>
+      </section>
+
+      <!-- 右：聚合评估逻辑 -->
+      <section class="eval-section">
+        <div class="eval-block">
+          <span class="eval-title">OOB 集成预测规则</span>
+          <p class="eval-lead">
+            对每个样本 <span id="katex-xi"></span>，仅聚合<strong>未参与该样本训练</strong>的基学习器进行投票或平均。
+          </p>
+          <div class="formula-card">
+            <div id="katex-formula"></div>
+          </div>
+        </div>
+
+        <div class="inspect-box">
+          <div class="inspect-target" id="inspect-title">样本 x₄ 的 OOB 预测状态</div>
+          <p class="inspect-desc" id="inspect-content">
+            树 T₂、T₃、T₅ 未见 x₄，由其组成投票子集；多树共识抵消单树方差，真实度逼近独立测试集。
+          </p>
+        </div>
+
+        <div class="bottom-conclusion">
+          <span class="verdict">训练即完成验证，无需留出额外测试集</span>
+          <span class="sub">全部 n 个样本均能获得未过拟合的泛化预测与无偏误差估计</span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    本页解析 Bootstrap 自助采样的关键衍生性质：Out-of-Bag（袋外样本）。
+    数学上，当样本量 n 很大时，每次抽样未被选中的概率趋近于 1/e，约占总样本的 36.8%。
+    这意味着每棵树天然拥有约三分之一的未见过样本。
+    我们无须专门切出验证集或运行繁重的 K 折交叉验证，直接让未见过样本 x_i 的那些树为其做集成预测，所得误差即可无偏估计模型的泛化能力。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 渲染公式
+      if (window.katex) {
+        katex.render("\\lim_{n\\to\\infty} \\left(1 - \\frac{1}{n}\\right)^n = \\frac{1}{e} \\approx 0.368", document.getElementById("katex-limit"), { throwOnError: false });
+        katex.render("x_i", document.getElementById("katex-xi"), { throwOnError: false });
+        katex.render("H^{\\text{oob}}(x_i) = \\arg\\max_y \\sum_{t: x_i \\notin D_t} \\mathbb{I}\\left(h_t(x_i) = y\\right)", document.getElementById("katex-formula"), { throwOnError: false });
+      }
+
+      // 构造 10 个样本，7 棵树的固定确定性分布矩阵
+      // 保证每行有约 36.8% 的 OOB (约 2-3 个 OOB)
+      // 0 = OOB, 1 = In-Bag
+      const sampleNames = ["x₁", "x₂", "x₃", "x₄", "x₅", "x₆", "x₇", "x₈", "x₉", "x₁₀"];
+      const treeNames = ["Tree 1", "Tree 2", "Tree 3", "Tree 4", "Tree 5", "Tree 6", "Tree 7"];
+      
+      const matrixData = [
+        [1, 1, 0, 1, 0, 1, 1], // x1: T3, T5 OOB
+        [0, 1, 1, 1, 1, 0, 1], // x2: T1, T6 OOB
+        [1, 0, 1, 0, 1, 1, 0], // x3: T2, T4, T7 OOB
+        [1, 0, 0, 1, 0, 1, 1], // x4: T2, T3, T5 OOB (默认焦点)
+        [0, 1, 1, 0, 1, 1, 1], // x5: T1, T4 OOB
+        [1, 1, 0, 1, 1, 0, 1], // x6: T3, T6 OOB
+        [1, 0, 1, 1, 0, 1, 0], // x7: T2, T5, T7 OOB
+        [0, 1, 1, 0, 1, 0, 1], // x8: T1, T4, T6 OOB
+        [1, 1, 0, 1, 1, 1, 0], // x9: T3, T7 OOB
+        [0, 0, 1, 1, 0, 1, 1]  // x10: T1, T2, T5 OOB
+      ];
+
+      const svg = document.getElementById("matrix-svg");
+      const inspectTitle = document.getElementById("inspect-title");
+      const inspectContent = document.getElementById("inspect-content");
+
+      const colStart = 110;
+      const colStep = 76;
+      const rowStart = 64;
+      const rowStep = 44;
+
+      let currentActiveRow = 3; // 默认选中 x4
+
+      function renderMatrix() {
+        svg.innerHTML = "";
+
+        // 绘制列头（树）
+        treeNames.forEach((name, j) => {
+          const x = colStart + j * colStep;
+          const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          text.setAttribute("x", x);
+          text.setAttribute("y", 36);
+          text.setAttribute("text-anchor", "middle");
+          text.setAttribute("fill", "#173E50");
+          text.setAttribute("font-size", "15px");
+          text.setAttribute("font-weight", "500");
+          text.textContent = name;
+          svg.appendChild(text);
+        });
+
+        // 绘制右侧汇总列头
+        const oobColX = colStart + treeNames.length * colStep + 48;
+        const oobColHead = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        oobColHead.setAttribute("x", oobColX);
+        oobColHead.setAttribute("y", 36);
+        oobColHead.setAttribute("text-anchor", "middle");
+        oobColHead.setAttribute("fill", "#C64B2E");
+        oobColHead.setAttribute("font-size", "15px");
+        oobColHead.setAttribute("font-weight", "700");
+        oobColHead.textContent = "OOB 评估子集";
+        svg.appendChild(oobColHead);
+
+        // 绘制行
+        matrixData.forEach((row, i) => {
+          const y = rowStart + i * rowStep;
+          const isSelected = i === currentActiveRow;
+
+          // 行背景响应条
+          const rowRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          rowRect.setAttribute("x", 20);
+          rowRect.setAttribute("y", y - 18);
+          rowRect.setAttribute("width", 820);
+          rowRect.setAttribute("height", 36);
+          rowRect.setAttribute("rx", "4");
+          rowRect.setAttribute("class", "sample-row-bg" + (isSelected ? " active" : ""));
+          rowRect.addEventListener("click", () => {
+            currentActiveRow = i;
+            renderMatrix();
+            updateInspection(i);
+          });
+          svg.appendChild(rowRect);
+
+          // 行名
+          const rowText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          rowText.setAttribute("x", 50);
+          rowText.setAttribute("y", y + 5);
+          rowText.setAttribute("text-anchor", "middle");
+          rowText.setAttribute("fill", isSelected ? "#C64B2E" : "#17221F");
+          rowText.setAttribute("font-size", "16px");
+          rowText.setAttribute("font-weight", isSelected ? "700" : "500");
+          rowText.textContent = sampleNames[i];
+          svg.appendChild(rowText);
+
+          // 各单元格
+          const oobTrees = [];
+          row.forEach((val, j) => {
+            const x = colStart + j * colStep;
+            if (val === 1) {
+              // 袋内训练点
+              const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+              circle.setAttribute("cx", x);
+              circle.setAttribute("cy", y);
+              circle.setAttribute("r", isSelected ? 6 : 5);
+              circle.setAttribute("fill", "#2E5F78");
+              circle.setAttribute("opacity", isSelected ? "0.35" : "0.75");
+              svg.appendChild(circle);
+            } else {
+              // OOB 留存点
+              oobTrees.push(treeNames[j]);
+              const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+              circle.setAttribute("cx", x);
+              circle.setAttribute("cy", y);
+              circle.setAttribute("r", isSelected ? 9 : 7);
+              circle.setAttribute("fill", "#fff");
+              circle.setAttribute("stroke", "#C64B2E");
+              circle.setAttribute("stroke-width", isSelected ? "3" : "2");
+              circle.setAttribute("class", "oob-cell");
+              svg.appendChild(circle);
+
+              // 选中的行，在 OOB 点外加指示小光圈
+              if (isSelected) {
+                const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                ring.setAttribute("cx", x);
+                ring.setAttribute("cy", y);
+                ring.setAttribute("r", 15);
+                ring.setAttribute("fill", "none");
+                ring.setAttribute("stroke", "rgba(198, 75, 46, 0.35)");
+                ring.setAttribute("stroke-width", "1.5");
+                ring.setAttribute("stroke-dasharray", "3 2");
+                svg.appendChild(ring);
+              }
+            }
+          });
+
+          // 连向右侧聚合标签的引导线（如果是选中行）
+          if (isSelected) {
+            row.forEach((val, j) => {
+              if (val === 0) {
+                const x = colStart + j * colStep;
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                const targetX = oobColX - 44;
+                const d = `M ${x} ${y} C ${(x + targetX) / 2} ${y - 12}, ${(x + targetX) / 2} ${y + 12}, ${targetX} ${y}`;
+                path.setAttribute("d", d);
+                path.setAttribute("fill", "none");
+                path.setAttribute("stroke", "#C64B2E");
+                path.setAttribute("stroke-width", "1.5");
+                path.setAttribute("stroke-dasharray", "3 2");
+                path.setAttribute("opacity", "0.75");
+                svg.appendChild(path);
+              }
+            });
+          }
+
+          // 右侧 OOB 树列表文字
+          const summaryText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          summaryText.setAttribute("x", oobColX);
+          summaryText.setAttribute("y", y + 5);
+          summaryText.setAttribute("text-anchor", "middle");
+          summaryText.setAttribute("fill", isSelected ? "#C64B2E" : "#46534F");
+          summaryText.setAttribute("font-size", "15px");
+          summaryText.setAttribute("font-weight", isSelected ? "700" : "400");
+          summaryText.textContent = "{" + oobTrees.map(t => t.replace("Tree ", "T")).join(",") + "}";
+          svg.appendChild(summaryText);
+        });
+      }
+
+      function updateInspection(index) {
+        const sample = sampleNames[index];
+        const row = matrixData[index];
+        const oobList = [];
+        row.forEach((v, j) => {
+          if (v === 0) oobList.push("T" + (j + 1));
+        });
+
+        inspectTitle.textContent = `样本 ${sample} 的 OOB 预测状态`;
+        inspectContent.textContent = `树 ${oobList.join("、")} 在训练阶段从未见过 ${sample}，由其组成投票子集；多树共识抵消单树方差，真实度逼近独立测试集。`;
+      }
+
+      renderMatrix();
+    })();
+  </script>
+</body>
+</html>

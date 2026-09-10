@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>集成学习 · 第八讲 · 封面</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+  .cover-l{ position:absolute; left:64px; top:150px; width:620px; }
+  .cover-l .kicker{ font-size:15px; letter-spacing:.14em; color:var(--muted); font-family:var(--font-num); }
+  .cover-l .kicker b{ color:var(--text); font-family:var(--font-sans); letter-spacing:.02em; font-weight:600; margin-right:12px; }
+  .cover-l h1{ margin-top:22px; font-size:64px; line-height:1.14; font-weight:700; letter-spacing:-.035em; }
+  .cover-l h1 > span{ display:block; }
+  .cover-l h1 .q{ color:var(--boost); }
+  .cover-l .sub{ margin-top:26px; font-size:19px; line-height:1.65; color:var(--muted); max-width:560px; }
+  .cover-l .sub b{ color:var(--text); font-weight:600; }
+  .agenda{ position:absolute; left:64px; bottom:96px; width:620px; display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  .agenda div{ border-top:2px solid var(--c); padding-top:10px; }
+  .agenda .n{ font-family:var(--font-num); font-size:12px; letter-spacing:.1em; color:var(--muted); }
+  .agenda .t{ font-size:17px; font-weight:700; margin-top:4px; color:var(--text); }
+  .agenda .d{ font-size:13px; color:var(--muted); margin-top:3px; line-height:1.45; }
+  .art{ position:absolute; left:740px; top:120px; width:796px; height:640px; }
+  .art canvas{ position:absolute; inset:0; width:100%; height:100%; }
+  .art .cap{ position:absolute; left:0; right:0; bottom:-40px; display:flex; justify-content:space-between; font-size:14px; color:var(--muted); }
+  .art .cap b{ color:var(--text); font-weight:600; font-family:var(--font-num); }
+  .art .lg{ position:absolute; left:14px; top:12px; display:grid; gap:6px; font-size:14px; color:var(--muted); }
+  .art .lg i{ display:inline-block; width:22px; height:3px; vertical-align:middle; margin-right:8px; border-radius:2px; }
+</style>
+</head>
+<body>
+<main id="stage">
+  <section class="cover-l">
+    <div class="kicker"><b>机器学习概论</b>LECTURE 08 · ENSEMBLE LEARNING</div>
+    <h1><span>一群平庸的模型，</span><span>怎样合成一个<span class="q">厉害的</span>？</span></h1>
+    <p class="sub">每一棵浅树都只会画一段台阶。把 <b>60 棵</b>放在一起取平均，台阶就磨成了曲线。这一讲讨论的就是这件事：<b>什么时候能合，怎么合，为什么合了会更好。</b></p>
+  </section>
+  <section class="agenda" aria-label="本讲提纲">
+    <div style="--c:var(--single)"><div class="n">01</div><div class="t">投票</div><div class="d">多数决为什么能变强</div></div>
+    <div style="--c:var(--bag)"><div class="n">02</div><div class="t">Bagging</div><div class="d">自助抽样 · 随机森林</div></div>
+    <div style="--c:var(--boost)"><div class="n">03</div><div class="t">Boosting</div><div class="d">AdaBoost · 梯度提升</div></div>
+    <div style="--c:var(--gold)"><div class="n">04</div><div class="t">Stacking</div><div class="d">让模型学会组合模型</div></div>
+  </section>
+  <figure class="art" aria-label="六十棵浅树的预测逐条出现，平均线逐渐贴合真实曲线">
+    <canvas id="cv"></canvas>
+    <div class="lg"><span><i style="background:var(--single-lt)"></i>单棵浅树（深度 2）</span><span><i style="background:var(--bag)"></i>它们的平均</span><span><i style="background:var(--quiet);height:2px;opacity:.7"></i>真实函数</span></div>
+    <figcaption class="cap"><span>已合成 <b id="cnt">0</b> / 60 棵树</span><span>训练数据：80 个带噪声的点 · 同一份</span></figcaption>
+  </figure>
+</main>
+<script src="assets/base.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/ens.js"></script>
+<script>
+Ens.footer(1);
+var r = Ens.rng('cover-08');
+var data = Ens.sine1d(80, 0.16, r);
+var trees = [];
+for (var b = 0; b < 60; b++) {
+  var idx = Ens.bootstrap(80, r);
+  trees.push(Ens.regTree(idx.map(function (i) { return data.x[i]; }), idx.map(function (i) { return data.y[i]; }), { maxDepth: 2, minLeaf: 3 }));
+}
+var cv = document.getElementById('cv'), cnt = document.getElementById('cnt');
+var W = 796, H = 640, PAD = { l: 24, r: 24, t: 60, b: 40 };
+function X(x) { return PAD.l + x * (W - PAD.l - PAD.r); }
+function Y(y) { return PAD.t + (0.85 - y) / 1.7 * (H - PAD.t - PAD.b); }
+var N = 240;
+function draw(ctx, shown) {
+  ctx.clearRect(0, 0, W, H);
+  // 数据点
+  ctx.fillStyle = 'rgba(29,35,39,.35)';
+  for (var i = 0; i < 80; i++) { ctx.beginPath(); ctx.arc(X(data.x[i]), Y(data.y[i]), 3.2, 0, 7); ctx.fill(); }
+  // 真实函数
+  ctx.setLineDash([6, 6]); ctx.strokeStyle = 'rgba(106,113,119,.7)'; ctx.lineWidth = 2; ctx.beginPath();
+  for (var k = 0; k <= N; k++) { var x = k / N; ctx[k ? 'lineTo' : 'moveTo'](X(x), Y(data.f(x))); }
+  ctx.stroke(); ctx.setLineDash([]);
+  // 每棵树
+  var m = Math.min(shown, 60), avg = new Float64Array(N + 1);
+  for (var t = 0; t < m; t++) {
+    var alpha = t === m - 1 && shown < 60 ? 0.9 : 0.16;
+    ctx.strokeStyle = 'rgba(92,110,130,' + alpha + ')'; ctx.lineWidth = t === m - 1 && shown < 60 ? 2.5 : 1.2; ctx.beginPath();
+    for (var k2 = 0; k2 <= N; k2++) { var x2 = k2 / N, v = trees[t](x2); avg[k2] += v; ctx[k2 ? 'lineTo' : 'moveTo'](X(x2), Y(v)); }
+    ctx.stroke();
+  }
+  if (m > 0) {
+    ctx.strokeStyle = Deck.token('--bag'); ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.beginPath();
+    for (var k3 = 0; k3 <= N; k3++) ctx[k3 ? 'lineTo' : 'moveTo'](X(k3 / N), Y(avg[k3] / m));
+    ctx.stroke();
+  }
+  cnt.textContent = m;
+}
+var ctx = Deck.fit(cv), shown = 0, last = -1;
+Deck.onResize(function () { ctx = Deck.fit(cv); last = -1; });
+Deck.loop(function (t) {
+  var s = Math.min(60, Math.floor(t / 160) + 1);
+  if (s !== last) { last = s; draw(ctx, s); }
+}, { still: 60 * 160 });
+</script>
+</body>
+</html>

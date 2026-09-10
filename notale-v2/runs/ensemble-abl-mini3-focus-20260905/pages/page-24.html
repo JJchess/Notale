@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>方法选择与收束</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --settle: cubic-bezier(.16, 1, .3, 1);
+    }
+    #stage {
+      position: relative;
+      overflow: hidden;
+      background: var(--bg);
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      isolation: isolate;
+    }
+    /* 标题排版：符合字阶 token (fs-h1: 34px) */
+    .header-block {
+      position: relative;
+      z-index: 10;
+      max-width: 680px;
+      pointer-events: none;
+    }
+    .kicker {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      margin-bottom: 10px;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text);
+      letter-spacing: -0.01em;
+      margin: 0 0 12px 0;
+    }
+    .lead-text {
+      font-size: var(--fs-lead);
+      line-height: 1.55;
+      color: var(--muted);
+      margin: 0;
+      max-width: 620px;
+    }
+
+    /* 视觉焦点：主画布区域与矢量路线系统 */
+    .visual-stage {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* 路线与卡片主构图布局 */
+    .branch-cards {
+      position: absolute;
+      right: 56px;
+      top: 130px;
+      bottom: 56px;
+      width: 530px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      z-index: 5;
+    }
+    .branch-card {
+      position: relative;
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid rgba(83, 106, 120, 0.18);
+      border-radius: 12px;
+      padding: 24px 30px;
+      box-shadow: 0 12px 30px rgba(18, 38, 52, 0.05);
+    }
+    .branch-card.bagging {
+      border-top: 4px solid var(--sample);
+    }
+    .branch-card.boosting {
+      border-top: 4px solid var(--aggregate);
+    }
+    .branch-card.stacking {
+      border-top: 4px solid var(--model);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .target-method {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .bagging .target-method { color: var(--sample); }
+    .boosting .target-method { color: var(--aggregate); }
+    .stacking .target-method { color: var(--model); }
+
+    .problem-label {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .core-condition {
+      font-size: var(--fs-body);
+      color: var(--text);
+      line-height: 1.45;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    .core-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    /* 决策树枝状图谱与流程标注 */
+    .flow-tag {
+      font-size: var(--fs-label);
+      font-weight: 600;
+    }
+    .flow-sub {
+      font-size: var(--fs-tick);
+      fill: var(--muted);
+    }
+
+    /* 路径动态进场效果 */
+    .entering .route-path {
+      stroke-dashoffset: 0;
+      transition: stroke-dashoffset 1.2s var(--settle);
+    }
+    .entering .branch-card {
+      animation: card-in 0.8s var(--settle) both;
+    }
+    .entering .branch-card:nth-child(1) { animation-delay: 0.2s; }
+    .entering .branch-card:nth-child(2) { animation-delay: 0.38s; }
+    .entering .branch-card:nth-child(3) { animation-delay: 0.56s; }
+
+    @keyframes card-in {
+      from {
+        opacity: 0;
+        transform: translateX(36px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .entering .route-path,
+      .entering .branch-card {
+        animation: none !important;
+        transition: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+      }
+    }
+  </style>
+</head>
+<body data-page="24" data-total="27">
+  <div id="stage">
+    <!-- 标题与导语 -->
+    <header class="header-block">
+      <div class="kicker">集成学习 · 第四模块</div>
+      <h1>方法选择与收束</h1>
+      <p class="lead-text">
+        模型误差的结构、基学习器的多样性来源以及计算资源的边界，决定了集成策略的走向。
+      </p>
+    </header>
+
+    <!-- 视觉焦点：三条从问题分流到集成体系的清晰路线 -->
+    <svg class="visual-stage cv-fill" viewBox="0 0 1600 900" aria-label="从误差诊断到 Bagging、Boosting、Stacking 的三条问题路径图">
+      <defs>
+        <!-- 柔和网格点与底纹 -->
+        <pattern id="grid-dots" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+          <circle cx="2" cy="2" r="1.2" fill="#536A78" opacity="0.14" />
+        </pattern>
+        <!-- 渐变线 -->
+        <linearGradient id="grad-bagging" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#536A78" stop-opacity="0.3" />
+          <stop offset="60%" stop-color="#2F7568" stop-opacity="0.8" />
+          <stop offset="100%" stop-color="#2F7568" stop-opacity="1" />
+        </linearGradient>
+        <linearGradient id="grad-boosting" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#536A78" stop-opacity="0.3" />
+          <stop offset="60%" stop-color="#C34B22" stop-opacity="0.8" />
+          <stop offset="100%" stop-color="#C34B22" stop-opacity="1" />
+        </linearGradient>
+        <linearGradient id="grad-stacking" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#536A78" stop-opacity="0.3" />
+          <stop offset="60%" stop-color="#27648F" stop-opacity="0.8" />
+          <stop offset="100%" stop-color="#27648F" stop-opacity="1" />
+        </linearGradient>
+      </defs>
+
+      <!-- 背景结构参考点 -->
+      <rect width="1600" height="900" fill="url(#grid-dots)" />
+
+      <!-- 起始枢纽：误差类型与模型条件 -->
+      <g class="origin-hub" transform="translate(180, 540)">
+        <!-- 枢纽底板 -->
+        <rect x="-124" y="-88" width="248" height="176" rx="14" fill="#FFFFFF" stroke="#536A78" stroke-opacity="0.25" stroke-width="1.5" filter="drop-shadow(0 6px 20px rgba(18,38,52,0.06))"/>
+        <text x="0" y="-48" text-anchor="middle" fill="#536A78" font-size="15" font-weight="600" letter-spacing="0.08em">初始诊断</text>
+        <text x="0" y="-12" text-anchor="middle" fill="#122634" font-size="22" font-weight="700">误差与模型特征</text>
+        <text x="0" y="20" text-anchor="middle" fill="#536A78" font-size="15">方差 · 偏差 · 异质互补</text>
+        <text x="0" y="44" text-anchor="middle" fill="#536A78" font-size="13" opacity="0.85">分流决定体系结构</text>
+        <text x="0" y="66" text-anchor="middle" fill="#536A78" font-size="13" opacity="0.7">（训练顺序与验证协议）</text>
+        
+        <!-- 枢纽输出锚点 -->
+        <circle cx="124" cy="-30" r="5" fill="#2F7568" />
+        <circle cx="124" cy="0" r="5" fill="#C34B22" />
+        <circle cx="124" cy="30" r="5" fill="#27648F" />
+      </g>
+
+      <!-- 三条主干路线 -->
+      <!-- 路径 1: 方差主导 -> Bagging -->
+      <path class="route-path" d="M 304 510 C 460 510, 560 236, 1014 236" fill="none" stroke="url(#grad-bagging)" stroke-width="3.5" stroke-dasharray="8 4" />
+      <!-- 路径 2: 偏差/残差主导 -> Boosting -->
+      <path class="route-path" d="M 304 540 C 530 540, 680 500, 1014 500" fill="none" stroke="url(#grad-boosting)" stroke-width="4" />
+      <!-- 路径 3: 异质模型互补 -> Stacking -->
+      <path class="route-path" d="M 304 570 C 470 570, 620 764, 1014 764" fill="none" stroke="url(#grad-stacking)" stroke-width="3.5" stroke-dasharray="8 4" />
+
+      <!-- 沿途诊断节点与特征标识 -->
+      <!-- 节点 1 (Bagging 路径) -->
+      <g transform="translate(620, 270)">
+        <rect x="-105" y="-36" width="210" height="72" rx="10" fill="#FFFFFF" stroke="#2F7568" stroke-width="1.5" filter="drop-shadow(0 4px 14px rgba(47,117,104,0.12))"/>
+        <text x="0" y="-8" text-anchor="middle" fill="#2F7568" font-size="15" font-weight="700">单一模型过拟合</text>
+        <text x="0" y="16" text-anchor="middle" fill="#536A78" font-size="13">高方差 · 不稳定强学习器</text>
+      </g>
+
+      <!-- 节点 2 (Boosting 路径) -->
+      <g transform="translate(630, 520)">
+        <rect x="-105" y="-36" width="210" height="72" rx="10" fill="#FFFFFF" stroke="#C34B22" stroke-width="1.5" filter="drop-shadow(0 4px 14px rgba(195,75,34,0.12))"/>
+        <text x="0" y="-8" text-anchor="middle" fill="#C34B22" font-size="15" font-weight="700">欠拟合或残差显著</text>
+        <text x="0" y="16" text-anchor="middle" fill="#536A78" font-size="13">高偏差 · 序列弱分类器</text>
+      </g>
+
+      <!-- 节点 3 (Stacking 路径) -->
+      <g transform="translate(620, 730)">
+        <rect x="-105" y="-36" width="210" height="72" rx="10" fill="#FFFFFF" stroke="#27648F" stroke-width="1.5" filter="drop-shadow(0 4px 14px rgba(39,100,143,0.12))"/>
+        <text x="0" y="-8" text-anchor="middle" fill="#27648F" font-size="15" font-weight="700">异质假设空间互补</text>
+        <text x="0" y="16" text-anchor="middle" fill="#536A78" font-size="13">树 + 线性 + 神经网络</text>
+      </g>
+
+      <!-- 连接箭头与汇聚点 -->
+      <polygon points="1014,231 1026,236 1014,241" fill="#2F7568" />
+      <polygon points="1014,495 1026,500 1014,505" fill="#C34B22" />
+      <polygon points="1014,759 1026,764 1014,769" fill="#27648F" />
+    </svg>
+
+    <!-- 右侧三条路径归宿与关键机制卡片 -->
+    <aside class="branch-cards" aria-label="三类集成方法核心定位">
+      <!-- 方案 1: Bagging -->
+      <article class="branch-card bagging">
+        <div class="card-top">
+          <span class="target-method">Bagging</span>
+          <span class="problem-label">对症：高方差</span>
+        </div>
+        <div class="core-condition">独立抽样 + 平行聚合</div>
+        <p class="core-desc">以自助采样（Bootstrap）平滑波动，平均多棵深树的方差，保持低偏差同时抑制过拟合。</p>
+      </article>
+
+      <!-- 方案 2: Boosting -->
+      <article class="branch-card boosting">
+        <div class="card-top">
+          <span class="target-method">Boosting</span>
+          <span class="problem-label">对症：高偏差 / 残差</span>
+        </div>
+        <div class="core-condition">序列依赖 + 迭代纠错</div>
+        <p class="core-desc">后继基学习器专注拟合上一轮被错分的样本或梯度残差，将一系列弱预测器累积为强判别器。</p>
+      </article>
+
+      <!-- 方案 3: Stacking -->
+      <article class="branch-card stacking">
+        <div class="card-top">
+          <span class="target-method">Stacking</span>
+          <span class="problem-label">对症：异质模型优势融合</span>
+        </div>
+        <div class="core-condition">交叉验证 + 元模型学习</div>
+        <p class="core-desc">利用不同假设空间模型的预测结果构造元特征，以折外交叉验证防止元学习器产生数据泄漏。</p>
+      </article>
+    </aside>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+      const stage = document.querySelector("#stage");
+      const motion = matchMedia("(prefers-reduced-motion: reduce)");
+
+      Deck.init({ index: 24, total: 27, keys: false });
+
+      function settle() {
+        stage.classList.remove("entering");
+        void stage.offsetWidth;
+        if (!motion.matches) {
+          stage.classList.add("entering");
+        }
+      }
+
+      motion.addEventListener("change", settle);
+      settle();
+    })();
+  </script>
+</body>
+</html>

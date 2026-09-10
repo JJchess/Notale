@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+html{ }
+#stage{ padding:56px 72px; }
+
+.head{ position:absolute; left:72px; top:52px; right:72px; }
+.head .nt-kicker{ margin-bottom:14px; }
+.head .nt-title{ font-size:38px; max-width:1250px; }
+
+.board{
+  position:absolute; left:72px; top:172px; width:1456px; height:262px;
+}
+.sentence{
+  display:flex; gap:10px; align-items:flex-end;
+}
+.word-slot{ display:flex; flex-direction:column; align-items:center; gap:8px; }
+.word-btn{
+  appearance:none; border:2px solid var(--line-strong); background:var(--paper);
+  color:var(--text); font-family:var(--font-sans); font-size:22px; font-weight:650;
+  min-width:74px; padding:12px 14px; cursor:pointer; line-height:1.15;
+}
+.word-btn:hover{ background:color-mix(in srgb, var(--text) 8%, var(--paper)); }
+.word-btn[aria-pressed="true"]{
+  border-color:var(--accent); background:var(--accent); color:var(--accent-ink);
+}
+.word-btn:focus-visible{
+  outline:4px solid color-mix(in srgb, var(--focus) 72%, transparent); outline-offset:3px;
+}
+.weight-bar-wrap{
+  width:74px; height:118px; display:flex; flex-direction:column; justify-content:flex-end;
+  border-bottom:2px solid var(--line-strong);
+}
+.weight-bar{
+  width:100%; background:var(--stable); transition:height .32s cubic-bezier(.2,.7,.2,1);
+}
+.weight-bar[data-query="true"]{ background:var(--accent); }
+.weight-num{
+  font-family:var(--font-mono); font-size:14px; font-weight:700; color:var(--muted);
+  font-variant-numeric:tabular-nums; text-align:center; width:74px;
+}
+.weight-num[data-query="true"]{ color:var(--accent); }
+
+.role-row{ display:flex; gap:10px; margin-top:6px; }
+.role-cell{ width:74px; text-align:center; font-family:var(--font-mono); font-size:12px; color:var(--muted); }
+
+.mid-rule{
+  position:absolute; left:72px; top:452px; width:1456px; height:1px; background:var(--line);
+}
+
+.readout-zone{
+  position:absolute; left:72px; top:478px; width:700px; height:340px;
+}
+.readout-zone h2{
+  margin:0 0 14px; font-family:var(--font-sans); font-size:18px; font-weight:750; color:var(--text);
+}
+.mix-track{
+  position:relative; height:64px; border:1px solid var(--line-strong); background:var(--paper);
+  display:flex;
+}
+.mix-seg{
+  height:100%; display:flex; align-items:center; justify-content:center;
+  color:var(--accent-ink); font-family:var(--font-mono); font-size:13px; font-weight:700;
+  overflow:hidden; white-space:nowrap; transition:width .32s cubic-bezier(.2,.7,.2,1);
+  border-right:1px solid color-mix(in srgb, var(--paper) 40%, transparent);
+}
+.readout-caption{ margin-top:14px; }
+.readout-caption .nt-body{ max-width:660px; }
+
+.vecpanel{
+  position:absolute; left:820px; top:478px; width:708px; height:340px;
+}
+.vecpanel h2{
+  margin:0 0 14px; font-family:var(--font-sans); font-size:18px; font-weight:750; color:var(--text);
+}
+.veclist{ display:grid; grid-template-columns:60px 1fr 70px; row-gap:8px; column-gap:12px; align-items:center; }
+.veclabel{ font-family:var(--font-mono); font-size:15px; font-weight:700; color:var(--text); }
+.vecbarwrap{ position:relative; height:20px; background:var(--paper); border:1px solid var(--line); }
+.vecbar{ position:absolute; top:0; bottom:0; left:0; background:var(--stable); transition:width .32s cubic-bezier(.2,.7,.2,1); }
+.vecbar[data-query="true"]{ background:var(--accent); }
+.vecval{ font-family:var(--font-mono); font-size:14px; color:var(--muted); text-align:right; font-variant-numeric:tabular-nums; }
+
+.formula-strip{
+  position:absolute; left:820px; top:770px; width:708px;
+}
+.formula-strip .nt-equation{ font-size:19px; }
+
+.note-strip{
+  position:absolute; left:72px; top:820px; width:700px;
+}
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+
+  <div class="head">
+    <span class="nt-kicker">Attention · Query-Driven Weighting</span>
+    <h1 class="nt-title">换一个查询词，权重整体重新分配</h1>
+  </div>
+
+  <div class="board">
+    <div id="sentence" class="sentence" role="group" aria-label="点击一个词作为查询"></div>
+    <div id="roleRow" class="role-row" aria-hidden="true"></div>
+  </div>
+
+  <div class="mid-rule"></div>
+
+  <div class="readout-zone">
+    <h2>加权读出 = Σ 权重 × 该词的值向量</h2>
+    <div id="mixTrack" class="mix-track" role="img" aria-label="读出向量的构成比例"></div>
+    <div class="readout-caption">
+      <p id="readoutText" class="nt-body"></p>
+    </div>
+  </div>
+
+  <div class="vecpanel">
+    <h2 id="vecTitle">查询词的值向量 v(query)</h2>
+    <div id="vecList" class="veclist"></div>
+  </div>
+
+  <div class="formula-strip">
+    <div class="nt-equation" id="formulaLine"></div>
+  </div>
+
+  <div class="note-strip">
+    <p class="nt-note" id="noteLine">先选一个查询词：权重条随之重新计算，读出向量的构成也会跟着变。</p>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  // ---- 教学简化模型：固定 4 维向量，Q=K=V 同源，真实点积 + softmax ----
+  const WORDS = ["猫","追","老鼠","因为","它","饿","了"];
+  // 固定种子式向量（手写常量，非训练结果；用于呈现内容寻址机制）
+  const VEC = [
+    [ 0.9,  0.1, -0.2,  0.6],   // 猫  主体/施动
+    [ 0.2,  0.8,  0.1, -0.3],   // 追  动作
+    [ 0.7, -0.3,  0.5, -0.1],   // 老鼠 客体，与"猫"部分相似（都是名词/主体角色）
+    [-0.4,  0.2,  0.7,  0.2],   // 因为 连接词
+    [ 0.85, 0.05,-0.15, 0.55],  // 它  指代，向量刻意接近"猫"
+    [-0.2, -0.6,  0.3,  0.4],   // 饿  状态
+    [-0.5,  0.1,  0.2, -0.6],   // 了  助词
+  ];
+  const DIM = 4;
+  const SQRT_D = Math.sqrt(DIM);
+
+  const dot = (a, b) => a.reduce((s, v, i) => s + v * b[i], 0);
+  function softmax(scores) {
+    const m = Math.max(...scores);
+    const exps = scores.map(s => Math.exp(s - m));
+    const sum = exps.reduce((a, b) => a + b, 0);
+    return exps.map(e => e / sum);
+  }
+
+  let queryIndex = 4; // 初始：查询"它"——最能暴露"指代要靠内容匹配"的例子
+
+  const sentenceEl = document.getElementById("sentence");
+  const roleRowEl = document.getElementById("roleRow");
+  const mixTrackEl = document.getElementById("mixTrack");
+  const readoutTextEl = document.getElementById("readoutText");
+  const vecListEl = document.getElementById("vecList");
+  const vecTitleEl = document.getElementById("vecTitle");
+  const formulaEl = document.getElementById("formulaLine");
+  const noteEl = document.getElementById("noteLine");
+
+  const ACCENT = () => Deck.token("--accent");
+  const STABLE = () => Deck.token("--stable");
+
+  function compute() {
+    const q = VEC[queryIndex];
+    const scores = VEC.map(k => dot(q, k) / SQRT_D);
+    const weights = softmax(scores);
+    // 读出向量 = 加权求和的 value（此处 value 与 key 同源，教学简化）
+    const readout = [0, 0, 0, 0];
+    weights.forEach((w, i) => VEC[i].forEach((v, d) => { readout[d] += w * v; }));
+    return { scores, weights, readout };
+  }
+
+  function buildSentence() {
+    sentenceEl.innerHTML = WORDS.map((w, i) => `
+      <div class="word-slot" data-idx="${i}">
+        <div class="weight-num" id="wnum-${i}"></div>
+        <div class="weight-bar-wrap"><div class="weight-bar" id="wbar-${i}"></div></div>
+        <button class="word-btn" id="wbtn-${i}" aria-pressed="false" data-idx="${i}">${w}</button>
+      </div>
+    `).join("");
+    roleRowEl.innerHTML = WORDS.map((_, i) => `<div class="role-cell" id="wrole-${i}"></div>`).join("");
+  }
+
+  function render() {
+    const { weights, readout } = compute();
+    const maxBarHeight = 118;
+    const nearestIdx = weights.indexOf(Math.max(...weights));
+
+    WORDS.forEach((w, i) => {
+      const isQuery = i === queryIndex;
+      document.getElementById(`wbtn-${i}`).setAttribute("aria-pressed", String(isQuery));
+      const bar = document.getElementById(`wbar-${i}`);
+      bar.style.height = `${Math.max(3, weights[i] * maxBarHeight)}px`;
+      bar.dataset.query = String(isQuery);
+      const num = document.getElementById(`wnum-${i}`);
+      num.textContent = weights[i].toFixed(2);
+      num.dataset.query = String(isQuery);
+      const role = document.getElementById(`wrole-${i}`);
+      role.textContent = isQuery ? "QUERY" : (i === nearestIdx ? "最高权重" : "");
+      role.style.color = isQuery ? ACCENT() : (i === nearestIdx ? STABLE() : "");
+      role.style.fontWeight = (isQuery || i === nearestIdx) ? "700" : "500";
+    });
+
+    // 加权混合条：每个词占其权重比例的宽度，只标出权重较大的词
+    mixTrackEl.innerHTML = WORDS.map((w, i) => {
+      const pct = (weights[i] * 100).toFixed(1);
+      const show = weights[i] >= 0.08;
+      const bg = i === queryIndex ? ACCENT() : `color-mix(in srgb, ${STABLE()} ${40 + weights[i] * 260}%, var(--paper))`;
+      return `<div class="mix-seg" style="width:${pct}%;background:${bg}">${show ? w : ""}</div>`;
+    }).join("");
+
+    readoutTextEl.textContent =
+      `查询「${WORDS[queryIndex]}」时，权重集中在「${WORDS[nearestIdx]}」（${weights[nearestIdx].toFixed(2)}）。`
+      + `读出向量把各词的值向量按这一权重混合，最终最接近「${WORDS[nearestIdx]}」的值。`;
+
+    vecTitleEl.textContent = `混合结果 vs. 「${WORDS[queryIndex]}」自身向量（4 维，教学简化）`;
+    const dims = ["d1", "d2", "d3", "d4"];
+    vecListEl.innerHTML = dims.map((d, di) => {
+      const val = readout[di];
+      const widthPct = Math.min(100, Math.abs(val) * 55 + 4);
+      const leftShift = val < 0 ? 50 - widthPct : 50;
+      return `
+        <div class="veclabel">${d}</div>
+        <div class="vecbarwrap">
+          <div class="vecbar" data-query="${di===0}" style="left:${val<0?leftShift:50}%;width:${widthPct}%"></div>
+        </div>
+        <div class="vecval">${val.toFixed(2)}</div>
+      `;
+    }).join("");
+
+    formulaEl.innerHTML =
+      `score<sub>i</sub> = q·k<sub>i</sub> / √d　→　softmax　→　<strong data-current="true">w<sub>i</sub></strong>`
+      + `<br>readout = Σ w<sub>i</sub> · v<sub>i</sub>`;
+
+    const catShare = weights[0];
+    if (queryIndex === 4) {
+      noteEl.textContent = `查询「它」时权重最集中在「猫」（猫 ${catShare.toFixed(2)} vs 它自身 ${weights[4].toFixed(2)}）：指代由向量相似度决定，不是按位置就近。`;
+    } else if (queryIndex === 2) {
+      noteEl.textContent = `查询「老鼠」时，权重最高给了它自己（${weights[2].toFixed(2)}），但「猫」也拿到 ${catShare.toFixed(2)}：两者向量都带主体/名词特征，权重看内容相似度，不是词性标签。`;
+    } else {
+      noteEl.textContent = `查询「${WORDS[queryIndex]}」时权重集中在「${WORDS[nearestIdx]}」——换一个查询词，权重整体重新分配，没有固定不变的'重要词'。`;
+    }
+  }
+
+  function selectWord(i) {
+    queryIndex = i;
+    render();
+  }
+
+  buildSentence();
+  sentenceEl.addEventListener("click", e => {
+    const btn = e.target.closest("[data-idx]");
+    if (!btn) return;
+    selectWord(+btn.dataset.idx);
+  });
+  sentenceEl.addEventListener("keydown", e => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const btn = e.target.closest("[data-idx]");
+    if (!btn) return;
+    e.preventDefault();
+    selectWord(+btn.dataset.idx);
+  });
+
+  Deck.init({ index: 37, total: 44 });
+  render();
+})();
+</script>
+</body>
+</html>

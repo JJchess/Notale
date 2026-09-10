@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from core import builder, code_runtime, sample_bundles, skills, tools
+from core import builder, code_runtime, sample_bundles, sample_shots, skills, tools
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,12 +125,11 @@ class WorkflowRegistryTests(unittest.TestCase):
                 )
                 default = skills.routed_workflow(name)
                 self.assertNotIn("  - Aux:", skill_text)
-                self.assertNotIn(".mini.md", skill_text)
+                self.assertNotIn(".full.md", skill_text)
                 self.assertEqual(default, skills.routed_workflow(
                     name, samples="mini", include_aux=True))
-                full = skills.routed_workflow(name, samples="full", include_aux=False)
-                self.assertNotIn("<aux_sample_catalog", full)
-                self.assertNotIn(".mini.md", full)
+                with self.assertRaises(ValueError):
+                    skills.routed_workflow(name, samples="full")
                 main_only = skills.routed_workflow(name, include_aux=False)
                 self.assertNotIn("<aux_sample_catalog", main_only)
 
@@ -154,11 +154,11 @@ class WorkflowRegistryTests(unittest.TestCase):
         self.assertNotIn("CodeScaffold", interaction)
         code = (skills.WORKFLOWS / "build-code/SKILL.md").read_text(encoding="utf-8")
         self.assertIn("CodeScaffold", code)
-        self.assertIn("four contrasting author layers", code)
+        self.assertIn("one worked author layer", code)
 
 
 class SampleAblationTests(unittest.TestCase):
-    """三档样本预算必须真的改变 SKILL 正文,而不是静默不变。
+    """样本开关必须真的改变 SKILL 正文,而不是静默不变。
 
     一个悄悄没生效的消融臂等于偷偷跑了对照组,比直接崩掉更糟 —— 结论会反过来。
     """
@@ -173,32 +173,22 @@ class SampleAblationTests(unittest.TestCase):
                 # reference 必须还在,否则这一臂连构造契约都没有
                 self.assertRegex(body, r"references/[a-z0-9-]+\.md")
 
-    def test_mini_swaps_mains_and_records_fallbacks(self):
-        skills.MINI_FALLBACKS.clear()
+    def test_mini_paths_exist_without_full_fallback(self):
         for name in skills.PAGE_WORKFLOWS:
             with self.subTest(name=name):
-                body = skills.routed_workflow(name, samples="mini", include_aux=False)
-                root = skills.WORKFLOWS / name
-                for rel in re.findall(
-                        r"(?:`|\()((?:references|samples)/[^`)]+\.md)(?:`|\))", body):
-                    self.assertTrue((Path(root) / rel).is_file(), rel)
-        # All visual Main samples now have a registered mini.
-        self.assertNotIn("build-cover", skills.MINI_FALLBACKS)
-        self.assertNotIn("build-page", skills.MINI_FALLBACKS)
-        self.assertEqual(skills.MINI_FALLBACKS, {})
+                body = skills.routed_workflow(name, include_aux=False)
+                self.assertNotIn(".full.md", body)
+                for rel in re.findall(r'((?:references|samples)/[^\x60\s]+\.md)', body):
+                    self.assertTrue((skills.WORKFLOWS / name / rel).is_file(), rel)
+        self.assertFalse(hasattr(skills, "MINI_FALLBACKS"))
 
     def test_code_mini_is_one_author_layer(self):
-        full = skills.routed_workflow("build-code", samples="full")
-        one = skills.routed_workflow("build-code", samples="mini")
-        self.assertIn("code-core-bundle.full.md", full)
-        self.assertIn("four contrasting author layers", full)
+        one = skills.routed_workflow("build-code")
         self.assertIn("code-core-bundle.one.md", one)
         self.assertIn("one worked author layer", one)
-        bundles = skills.WORKFLOWS / "build-code/samples/bundles/code"
-        self.assertLess(
-            (bundles / "code-core-bundle.one.md").stat().st_size,
-            (bundles / "code-core-bundle.full.md").stat().st_size / 2,
-        )
+        self.assertNotIn(".full.md", one)
+        root = skills.WORKFLOWS / "build-code/samples/code"
+        self.assertEqual({p.name for p in root.iterdir()}, {"edit-distance"})
 
     def test_bad_mode_and_aux_conflict_are_refused(self):
         with self.assertRaises(ValueError):
@@ -209,17 +199,31 @@ class SampleAblationTests(unittest.TestCase):
     def test_mini_plus_aux_is_the_many_small_samples_arm(self):
         body = skills.routed_workflow("build-page", samples="mini", include_aux=True)
         self.assertIn("<aux_sample_catalog", body)
-        fallback_ids = re.findall(r"samples/bundles/[^/]+/([^/`]+)\.full\.md", body)
-        self.assertEqual(set(fallback_ids), set(skills.MINI_FALLBACKS.get("build-page", [])))
-        catalog = json.loads((skills.WORKFLOWS / "build-page/samples/catalog.json").read_text())
-        self.assertTrue(all("mini" not in row for row in catalog["samples"] if row["id"] in fallback_ids))
+        self.assertNotIn(".full.md", body)
         self.assertGreaterEqual(body.count(".mini.md"), 4)
 
 
 class BundleTests(unittest.TestCase):
+    def test_sample_shots_stage_the_mini_without_full_or_mirror(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "build-page"
+            entry = root / "samples/general/example/mini/pages/index.html"
+            entry.parent.mkdir(parents=True)
+            entry.write_text("MINI_ONLY")
+            row = {"id": "example", "category": "general",
+                   "mini": {"root": "samples/general/example/mini/pages",
+                            "files": ["index.html"]}}
+            staged, html = sample_shots._stage(root, row)
+            try:
+                self.assertEqual(html.read_text(), "MINI_ONLY")
+                self.assertIn("mini/pages", str(html))
+                self.assertFalse((staged / "example/pages").exists())
+            finally:
+                shutil.rmtree(staged)
+
     def test_generated_bundles_are_current_and_keep_visual_css(self):
         rendered = sample_bundles.render_all()
-        self.assertEqual(len(rendered), 104)
+        self.assertEqual(len(rendered), 52)
         for path, expected in rendered.items():
             with self.subTest(path=path):
                 self.assertEqual(path.read_text(encoding="utf-8"), expected)
@@ -230,40 +234,22 @@ class BundleTests(unittest.TestCase):
                 else:
                     self.assertRegex(expected, r"(?i)<style\b|```css")
 
-    def test_shared_minis_keep_full_content_notes_and_routing(self):
-        shared = []
-        for name in ("build-cover", "build-page", "build-interaction"):
+    def test_live_catalogs_only_register_independent_minis(self):
+        count = 0
+        for name in skills.PAGE_WORKFLOWS:
             root = skills.WORKFLOWS / name
             catalog = json.loads((root / "samples/catalog.json").read_text())
-            full_route = skills.routed_workflow(name, samples="full")
-            mini_route = skills.routed_workflow(name, samples="mini")
-            aux = skills._aux_sample_catalog(name, skills.WORKFLOWS)
+            self.assertFalse(list((root / "samples/bundles").rglob("*.full.md")))
             for row in catalog["samples"]:
-                if row.get("mini") != row["full"]:
-                    continue
-                shared.append(row["id"])
+                count += 1
                 with self.subTest(sample=row["id"]):
-                    rel = f"samples/bundles/{row['category']}/{row['id']}"
-                    full = (root / f"{rel}.full.md").read_text()
-                    mini = (root / f"{rel}.mini.md").read_text()
-                    self.assertEqual(mini, full.replace('variant="full"', 'variant="mini"', 1))
-                    self.assertIn(f"{rel}.full.md", full_route)
-                    self.assertIn(f"{rel}.mini.md", mini_route)
-                    self.assertNotIn(row["id"], skills.MINI_FALLBACKS.get(name, []))
-                    if name == "build-cover":
-                        self.assertTrue(row["aux"])
-                        self.assertIn(row["id"], aux)
-                    else:
-                        self.assertFalse(row["aux"])
-                        self.assertNotIn(row["id"], aux)
-        self.assertEqual(len(shared), 7)
-        # These now need an independent layout to fit a 1600 × 900 slide.
-        self.assertTrue({"music-sample-pair", "flipbook-branches",
-                         "onion-cut-lab", "dress-code-clothing",
-                         "pantheon-index", "iconography-lens", "jersey-edition-board",
-                         "banknote-firsts", "dog-flow-atlas",
-                         "photo-history-quiz", "walk-photo-journal",
-                         "population-clock"}.isdisjoint(shared))
+                    self.assertNotIn("full", row)
+                    spec = row.get("mini", row.get("one"))
+                    for rel in spec["files"]:
+                        p = (root / spec["root"] / rel).resolve()
+                        self.assertTrue(p.is_file(), p)
+                        self.assertTrue(p.is_relative_to(root.resolve()))
+        self.assertEqual(count, 52)
 
     def test_independent_mini_dependencies_are_preserved(self):
         for name, sample in (
@@ -275,7 +261,7 @@ class BundleTests(unittest.TestCase):
             catalog = json.loads((root / "samples/catalog.json").read_text())
             row = next(row for row in catalog["samples"] if row["id"] == sample)
             spec = row["mini"]
-            self.assertNotEqual(spec["root"], row["full"]["root"])
+            self.assertNotIn("full", row)
             html = (root / spec["root"] / "index.html").read_text()
             expected = sample_bundles.omitted_lines(sample, spec, html)
             self.assertTrue(expected)
@@ -283,9 +269,9 @@ class BundleTests(unittest.TestCase):
             for line in expected:
                 self.assertIn(line, text)
 
-    def test_visual_full_bundles_declare_every_omitted_dependency(self):
+    def test_visual_minis_preserve_dependency_checks(self):
         for path, text in sample_bundles.render_all().items():
-            if "build-code" in path.parts or not path.name.endswith(".full.md"):
+            if "build-code" in path.parts:
                 continue
             with self.subTest(path=path):
                 # Dependencies may all be inlined; render_all validates every relative HTML reference.
@@ -309,7 +295,7 @@ class BundleTests(unittest.TestCase):
 
     def test_crossword_bundle_exposes_its_core_mechanism(self):
         root = skills.WORKFLOWS / "build-interaction"
-        text = (root / "samples/bundles/general/crossword-representation.full.md").read_text()
+        text = (ROOT / "legacy/full-samples/workflows/build-interaction/samples/bundles/general/crossword-representation.full.md").read_text()
         for marker in (
             "vendor/svelte-crossword/src/Crossword.svelte",
             "function onCellUpdate(", "function onHistoricalChange(",
@@ -317,6 +303,33 @@ class BundleTests(unittest.TestCase):
             "$: isComplete = percentCorrect == 1;", "MIT License",
         ):
             self.assertIn(marker, text)
+
+    def test_crossword_mini_contains_authors_and_declares_local_dependencies(self):
+        root = skills.WORKFLOWS / "build-interaction"
+        row = next(r for r in json.loads((root / "samples/catalog.json").read_text())["samples"]
+                   if r["id"] == "crossword-representation")
+        spec = row["mini"]
+        self.assertEqual(spec["files"], [
+            "index.html", "src/App.svelte", "src/components/Play.svelte",
+            "src/main.js", "src/utils/loadData.js", "style.css", "mini-scrollbars.css",
+        ])
+        text = sample_bundles._variant(root, row, "mini", spec)
+        self.assertEqual(text, (root / "samples/bundles/general/crossword-representation.mini.md").read_text())
+        for path in re.findall(r'<file path="([^"]+)"', text):
+            self.assertNotIn("/vendor/", path)
+            self.assertNotIn("/src/data/", path)
+        for marker in ("direction", "answer", "clue", "revealDuration", "revealed", "MIT"):
+            self.assertIn(marker, " ".join(spec["omitted"].values()))
+        source = root / spec["root"]
+        loader = source / "src/utils/loadData.js"
+        imports = re.findall(r'from "([^"]+\.json)"', loader.read_text())
+        self.assertEqual(len(imports), 13)
+        for rel in imports:
+            self.assertTrue((loader.parent / rel).is_file())
+        for rel in ("vendor/svelte-crossword/src/Crossword.svelte",
+                    "vendor/svelte-crossword/README.md", "vendor/svelte-crossword/LICENSE",
+                    *spec["omitted"]):
+            self.assertTrue((source / rel).is_file(), rel)
 
     def test_main_only_and_combined_code_contracts(self):
         interaction = json.loads(
@@ -329,7 +342,8 @@ class BundleTests(unittest.TestCase):
         code = json.loads(
             (skills.WORKFLOWS / "build-code/samples/catalog.json").read_text()
         )["samples"][0]
-        self.assertEqual(len(code["full"]["files"]), 28)
+        self.assertEqual(len(code["one"]["files"]), 7)
+        self.assertNotIn("full", code)
         self.assertNotIn("mini", code)
 
 
@@ -436,8 +450,8 @@ class ToolSurfaceTests(unittest.TestCase):
             visual_mini = read("build-page", "example.mini.md")
             code_full = read("build-code", "example.full.md")
 
-        self.assertTrue(visual_full.startswith("<sample_use>"))
-        self.assertIn("worked example, not a template", visual_full)
+        self.assertNotIn("<sample_use>", visual_full)
+        self.assertIn("worked example, not a template", visual_mini)
         self.assertTrue(visual_mini.startswith("<sample_use>"))
         self.assertNotIn("<sample_use>", code_full)
 

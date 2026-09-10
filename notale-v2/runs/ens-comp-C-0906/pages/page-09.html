@@ -1,0 +1,591 @@
+<!doctype html>
+<!--
+构图意图：
+1. 主对象：左侧为多学习器预测曲线与聚合曲线（散点真实值 vs 各自预测与集成线），右侧为方差随学习器数量 M 的衰减曲线对比。
+2. 对象关系：上方直接调节基学习器数 M 与树间相关系数 ρ，左侧实时渲染所有个体蓝色细线及其深蓝集成均值，右侧曲线实时拆解方差下界 ρσ² 与衰减项 (1-ρ)σ²/M。
+3. 说明文字：紧贴公式 Var = ρσ² + (1-ρ)σ²/M 与当前指标读数，不设外围假面板。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans SC", sans-serif;
+      --font-numeric: Lato, "Noto Sans SC", sans-serif;
+      --fs-h1: 34px;
+      --fs-h2: 22px;
+      --fs-lead: 19px;
+      --fs-body: 18px;
+      --fs-sec: 16px;
+      --fs-label: 15px;
+      --fs-tick: 13px;
+      --lh-tight: 1.18;
+      --lh-copy: 1.45;
+      --weight-regular: 400;
+      --weight-medium: 500;
+      --weight-bold: 700;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-sans); }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: 32px 56px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    /* 顶部标题与控制栏 */
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+    }
+
+    .title-group h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      color: var(--text);
+    }
+
+    .title-group p {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 36px;
+    }
+
+    .control-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .control-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      width: 220px;
+    }
+
+    .control-val {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-sec);
+      font-weight: var(--weight-bold);
+      color: var(--text);
+    }
+
+    input[type="range"] {
+      width: 220px;
+      height: 6px;
+      background: #bdc7c2;
+      border-radius: 3px;
+      outline: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--aggregate);
+      cursor: pointer;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    input[type="range"]:focus::-webkit-slider-thumb {
+      background: var(--focus);
+    }
+
+    /* 主视区：双图表 */
+    .viewport {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      height: 680px;
+      align-items: stretch;
+      padding-top: 16px;
+    }
+
+    .card {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      position: relative;
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .card-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--text);
+    }
+
+    .card-subtitle {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .canvas-wrap {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      border-top: 1px solid rgba(116, 129, 124, 0.4);
+    }
+
+    /* 指标浮动读数 */
+    .formula-bar {
+      margin-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      border-top: 1px dashed var(--line);
+      padding-top: 10px;
+    }
+
+    .formula-bar strong {
+      color: var(--text);
+      font-family: var(--font-numeric);
+      font-size: var(--fs-body);
+    }
+
+    .tag-model { color: var(--model); font-weight: 500; }
+    .tag-agg { color: var(--aggregate); font-weight: 700; }
+    .tag-floor { color: var(--focus); font-weight: 700; }
+  </style>
+</head>
+<body data-page="09" data-total="26">
+  <div id="stage">
+    <header class="header-row">
+      <div class="title-group">
+        <h1>基学习器数量、误差相关性与集成方差</h1>
+        <p id="formula-desc"></p>
+      </div>
+      <div class="controls">
+        <div class="control-item">
+          <div class="control-label">
+            <span>基学习器数量 M</span>
+            <span class="control-val" id="val-m">10</span>
+          </div>
+          <input id="slider-m" type="range" min="1" max="40" step="1" value="10">
+        </div>
+        <div class="control-item">
+          <div class="control-label">
+            <span>误差相关性 ρ</span>
+            <span class="control-val" id="val-rho">0.25</span>
+          </div>
+          <input id="slider-rho" type="range" min="0" max="0.9" step="0.05" value="0.25">
+        </div>
+      </div>
+    </header>
+
+    <main class="viewport">
+      <!-- 左栏：函数拟合空间 -->
+      <section class="card min0">
+        <div class="card-head">
+          <div class="card-title">拟合空间与聚合输出</div>
+          <div class="card-subtitle">
+            <span class="tag-model">—— 个体预测</span> &nbsp;
+            <span class="tag-agg">━━ 集成均值</span>
+          </div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="cv-models" class="cv-fill"></canvas>
+        </div>
+        <div class="formula-bar">
+          <span>经验集成方差：<strong id="stat-emp">0.082</strong></span>
+          <span>独立波动抵消：<strong id="stat-drop">-72.4%</strong></span>
+        </div>
+      </section>
+
+      <!-- 右栏：方差衰减规律与理论下界 -->
+      <section class="card min0">
+        <div class="card-head">
+          <div class="card-title">方差随 M 衰减曲线</div>
+          <div class="card-subtitle">
+            <span class="tag-agg">—— 集成方差</span> &nbsp;
+            <span class="tag-floor">┄┄ 不可消除下界 ρσ²</span>
+          </div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="cv-theory" class="cv-fill"></canvas>
+        </div>
+        <div class="formula-bar">
+          <span>理论下界 <span id="eq-floor"></span>：<strong id="stat-floor" class="tag-floor">0.050</strong></span>
+          <span>当前理论方差：<strong id="stat-theo">0.065</strong></span>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    本页模拟 Bagging 在回归拟合任务下的表现。
+    公式表明，无论基学习器数量 M 多大，方差最多降至 ρσ²。
+    当基学习器高度相关（ρ 较大）时，仅靠增加模型数量无法带来收益，
+    必须通过引入特征随机扰动等机制来切断模型间的关联，这也正是后续随机森林的核心动机。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const rng = new Math.seedrandom("bagging-sim-42");
+
+      // 生成真实目标函数及观测样本
+      const N_POINTS = 30;
+      const points = [];
+      for (let i = 0; i < N_POINTS; i++) {
+        const x = (i / (N_POINTS - 1)) * 2 * Math.PI;
+        const yTrue = Math.sin(x);
+        const noise = (rng() - 0.5) * 0.45;
+        points.push({ x, y: yTrue + noise });
+      }
+
+      // 生成固定的公共波动基准与每个基学习器的独立随机波动基准
+      const MAX_M = 40;
+      const X_STEPS = 80;
+      const xs = [];
+      for (let i = 0; i <= X_STEPS; i++) {
+        xs.push((i / X_STEPS) * 2 * Math.PI);
+      }
+
+      // 生成 1 个共享扰动向量与 MAX_M 个独立扰动向量（光滑正弦级数）
+      function genSmoothNoise(r) {
+        const a1 = (r() - 0.5) * 0.9;
+        const a2 = (r() - 0.5) * 0.6;
+        const a3 = (r() - 0.5) * 0.4;
+        const p1 = r() * Math.PI * 2;
+        const p2 = r() * Math.PI * 2;
+        const p3 = r() * Math.PI * 2;
+        return xs.map(x => a1 * Math.sin(x + p1) + a2 * Math.sin(2 * x + p2) + a3 * Math.sin(3 * x + p3));
+      }
+
+      const commonNoise = genSmoothNoise(rng);
+      const indepNoises = [];
+      for (let m = 0; m < MAX_M; m++) {
+        indepNoises.push(genSmoothNoise(rng));
+      }
+
+      // 单个模型基准方差 sigma^2 设为 0.20
+      const SIGMA2 = 0.20;
+
+      // 状态管理
+      let state = {
+        M: 10,
+        rho: 0.25
+      };
+
+      const cvModels = document.getElementById("cv-models");
+      const cvTheory = document.getElementById("cv-theory");
+      const sliderM = document.getElementById("slider-m");
+      const sliderRho = document.getElementById("slider-rho");
+      const valM = document.getElementById("val-m");
+      const valRho = document.getElementById("val-rho");
+      const statEmp = document.getElementById("stat-emp");
+      const statDrop = document.getElementById("stat-drop");
+      const statFloor = document.getElementById("stat-floor");
+      const statTheo = document.getElementById("stat-theo");
+
+      let fitModels = null;
+      let fitTheory = null;
+
+      function updateUI() {
+        valM.textContent = state.M;
+        valRho.textContent = state.rho.toFixed(2);
+
+        const theoreticalFloor = state.rho * SIGMA2;
+        const theoreticalVar = theoreticalFloor + ((1 - state.rho) / state.M) * SIGMA2;
+        const dropRatio = ((1 - theoreticalVar / SIGMA2) * 100);
+
+        statFloor.textContent = theoreticalFloor.toFixed(3);
+        statTheo.textContent = theoreticalVar.toFixed(3);
+        statDrop.textContent = (dropRatio > 0 ? "-" : "+") + Math.abs(dropRatio).toFixed(1) + "%";
+
+        // 计算当前经验模型曲线
+        const curves = [];
+        const sumY = new Float32Array(xs.length);
+        const sqrtRho = Math.sqrt(state.rho);
+        const sqrt1mRho = Math.sqrt(1 - state.rho);
+
+        for (let m = 0; m < state.M; m++) {
+          const yArr = [];
+          for (let i = 0; i <= X_STEPS; i++) {
+            const x = xs[i];
+            const base = Math.sin(x);
+            // 相关性合成公式: e = sqrt(rho)*Z_common + sqrt(1-rho)*Z_indep
+            const err = sqrtRho * commonNoise[i] + sqrt1mRho * indepNoises[m][i];
+            const y = base + err;
+            yArr.push(y);
+            sumY[i] += y;
+          }
+          curves.push(yArr);
+        }
+
+        const avgY = [];
+        let empVarSum = 0;
+        for (let i = 0; i <= X_STEPS; i++) {
+          const avg = sumY[i] / state.M;
+          avgY.push(avg);
+          const trueVal = Math.sin(xs[i]);
+          empVarSum += Math.pow(avg - trueVal, 2);
+        }
+        const empVar = empVarSum / (X_STEPS + 1);
+        statEmp.textContent = empVar.toFixed(3);
+
+        if (fitModels) fitModels.redraw();
+        if (fitTheory) fitTheory.redraw();
+      }
+
+      // 左侧绘制：各模型曲线及聚合均值
+      function drawModels(ctx) {
+        const w = cvModels.parentElement.clientWidth;
+        const h = cvModels.parentElement.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const padX = 40;
+        const padY = 30;
+        const pw = w - padX * 2;
+        const ph = h - padY * 2;
+
+        const mapX = x => padX + (x / (2 * Math.PI)) * pw;
+        const mapY = y => padY + ph * (0.5 - y / 3.4);
+
+        // 网格与基线
+        ctx.strokeStyle = "rgba(116, 129, 124, 0.25)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padX, mapY(0));
+        ctx.lineTo(padX + pw, mapY(0));
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 真实目标曲线 (淡色点线)
+        ctx.strokeStyle = "#46534F";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath();
+        for (let i = 0; i <= X_STEPS; i++) {
+          const px = mapX(xs[i]);
+          const py = mapY(Math.sin(xs[i]));
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 样本点
+        ctx.fillStyle = "#8B6941";
+        for (const p of points) {
+          ctx.beginPath();
+          ctx.arc(mapX(p.x), mapY(p.y), 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 个体模型曲线
+        const sqrtRho = Math.sqrt(state.rho);
+        const sqrt1mRho = Math.sqrt(1 - state.rho);
+        const sumY = new Float32Array(xs.length);
+
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(46, 95, 120, 0.35)";
+        for (let m = 0; m < state.M; m++) {
+          ctx.beginPath();
+          for (let i = 0; i <= X_STEPS; i++) {
+            const base = Math.sin(xs[i]);
+            const err = sqrtRho * commonNoise[i] + sqrt1mRho * indepNoises[m][i];
+            const y = base + err;
+            sumY[i] += y;
+            const px = mapX(xs[i]);
+            const py = mapY(y);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.stroke();
+        }
+
+        // 集成均值曲线
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = "#173E50";
+        ctx.beginPath();
+        for (let i = 0; i <= X_STEPS; i++) {
+          const avg = sumY[i] / state.M;
+          const px = mapX(xs[i]);
+          const py = mapY(avg);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+
+      // 右侧绘制：方差衰减与下界曲线
+      function drawTheory(ctx) {
+        const w = cvTheory.parentElement.clientWidth;
+        const h = cvTheory.parentElement.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const padLeft = 60;
+        const padRight = 36;
+        const padTop = 30;
+        const padBottom = 46;
+        const pw = w - padLeft - padRight;
+        const ph = h - padTop - padBottom;
+
+        const maxM = 40;
+        const maxVar = 0.22;
+
+        const mapM = m => padLeft + ((m - 1) / (maxM - 1)) * pw;
+        const mapV = v => padTop + ph * (1 - v / maxVar);
+
+        // 坐标轴
+        ctx.strokeStyle = "#74817C";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(padLeft, padTop);
+        ctx.lineTo(padLeft, padTop + ph);
+        ctx.lineTo(padLeft + pw, padTop + ph);
+        ctx.stroke();
+
+        // 刻度与标签
+        ctx.fillStyle = "#46534F";
+        ctx.font = "13px Lato, sans-serif";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        const yTicks = [0, 0.05, 0.10, 0.15, 0.20];
+        for (const yt of yTicks) {
+          const yPos = mapV(yt);
+          ctx.fillText(yt.toFixed(2), padLeft - 10, yPos);
+          ctx.strokeStyle = "rgba(116, 129, 124, 0.15)";
+          ctx.beginPath();
+          ctx.moveTo(padLeft, yPos);
+          ctx.lineTo(padLeft + pw, yPos);
+          ctx.stroke();
+        }
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        const xTicks = [1, 10, 20, 30, 40];
+        for (const xt of xTicks) {
+          const xPos = mapM(xt);
+          ctx.fillText(xt, xPos, padTop + ph + 8);
+        }
+
+        // 下界线 rho * sigma^2
+        const floorV = state.rho * SIGMA2;
+        const floorY = mapV(floorV);
+        ctx.strokeStyle = "#C64B2E";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, floorY);
+        ctx.lineTo(padLeft + pw, floorY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 方差衰减曲线
+        ctx.strokeStyle = "#173E50";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let m = 1; m <= maxM; m++) {
+          const v = floorV + ((1 - state.rho) / m) * SIGMA2;
+          const px = mapM(m);
+          const py = mapV(v);
+          if (m === 1) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // 当前 M 所在位置标记
+        const curV = floorV + ((1 - state.rho) / state.M) * SIGMA2;
+        const curX = mapM(state.M);
+        const curY = mapV(curV);
+
+        // 垂直参考线
+        ctx.strokeStyle = "rgba(198, 75, 46, 0.4)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(curX, padTop + ph);
+        ctx.lineTo(curX, curY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 当前点高亮
+        ctx.fillStyle = "#173E50";
+        ctx.beginPath();
+        ctx.arc(curX, curY, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(curX, curY, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // KaTeX 公式渲染
+      if (window.katex) {
+        katex.render("\\text{Var} = \\rho \\sigma^2 + \\frac{1-\\rho}{M} \\sigma^2", document.getElementById("formula-desc"), { throwOnError: false });
+        katex.render("\\rho\\sigma^2", document.getElementById("eq-floor"), { throwOnError: false });
+      }
+
+      fitModels = Deck.autofit(cvModels, drawModels);
+      fitTheory = Deck.autofit(cvTheory, drawTheory);
+      fitTheory = Deck.autofit(cvTheory, drawTheory);
+
+      sliderM.addEventListener("input", (e) => {
+        state.M = parseInt(e.target.value, 10);
+        updateUI();
+      });
+
+      sliderRho.addEventListener("input", (e) => {
+        state.rho = parseFloat(e.target.value);
+        updateUI();
+      });
+
+      updateUI();
+      Deck.init({ index: 9, total: 26, keys: true });
+    })();
+  </script>
+</body>
+</html>

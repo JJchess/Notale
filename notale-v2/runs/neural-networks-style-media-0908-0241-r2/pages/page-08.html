@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>反向传播与梯度流</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 严格遵守白板风格与反 Slop 规范：无卡片底色、无模糊发光、纯墨绿架构与朱红梯度 */
+    #stage {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+      width: 1600px;
+      height: 900px;
+      padding: 34px 56px 28px;
+      color: var(--text);
+      font-family: var(--font-sans);
+      user-select: none;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin: 0;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+
+    /* 主交互区布局 */
+    .graph-board {
+      position: relative;
+      flex: 1;
+      margin-top: 12px;
+      height: 480px;
+    }
+
+    svg.network-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .wire-forward {
+      stroke: var(--structure);
+      stroke-width: 2.5;
+      fill: none;
+    }
+
+    .wire-backward {
+      stroke: var(--signal);
+      stroke-width: 2.5;
+      stroke-dasharray: 6 4;
+      fill: none;
+    }
+
+    .node-box {
+      fill: var(--bg);
+      stroke: var(--structure);
+      stroke-width: 2;
+    }
+
+    .node-box.loss-node {
+      stroke: var(--signal);
+    }
+
+    .node-box.highlight {
+      stroke: var(--signal);
+      stroke-width: 3.5;
+    }
+
+    .node-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      fill: var(--text);
+      text-anchor: middle;
+      font-family: var(--font-sans);
+    }
+
+    .node-val {
+      font-size: var(--fs-lead);
+      font-family: var(--font-mono);
+      font-weight: 700;
+      fill: var(--structure);
+      text-anchor: middle;
+    }
+
+    .node-val.signal {
+      fill: var(--signal);
+    }
+
+    .grad-bubble {
+      fill: #ffffff;
+      stroke: var(--signal);
+      stroke-width: 1.5;
+      cursor: pointer;
+    }
+
+    .grad-bubble text {
+      fill: var(--signal);
+    }
+
+    .grad-bubble.active {
+      fill: #ffffff;
+      stroke: var(--signal);
+      stroke-width: 2.5;
+    }
+
+    .grad-bubble.active text {
+      fill: var(--signal);
+      font-weight: 800;
+    }
+
+    /* 底部操作与追踪板：严格按 1488px 版心分配，不设侧边条底色 */
+    .dashboard {
+      display: grid;
+      grid-template-columns: 240px 1fr 260px;
+      gap: 28px;
+      align-items: center;
+      border-top: 1px solid var(--rule);
+      padding-top: 14px;
+      box-sizing: border-box;
+      width: 100%;
+    }
+
+    .controls-col {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: var(--fs-label);
+      font-family: var(--font-mono);
+    }
+
+    .slider-row label {
+      width: 58px;
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .slider-row input[type=range] {
+      flex: 1;
+      height: 4px;
+      accent-color: var(--structure);
+      cursor: pointer;
+      background: var(--rule);
+    }
+
+    .slider-row output {
+      width: 42px;
+      text-align: right;
+      color: var(--structure);
+      font-weight: 700;
+    }
+
+    .chain-col {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .chain-head {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chain-formula {
+      font-family: var(--font-mono);
+      font-size: var(--fs-sec);
+      color: var(--text);
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+
+    .chain-formula .sym {
+      color: var(--muted);
+    }
+
+    .chain-formula .term {
+      color: var(--structure);
+      font-weight: 600;
+    }
+
+    .chain-formula .grad-res {
+      color: var(--signal);
+      font-weight: 700;
+      background: rgba(212, 56, 17, 0.08);
+      padding: 2px 6px;
+      border-radius: 2px;
+    }
+
+    .chain-note {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .target-col {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-left: 18px;
+      border-left: 1px solid var(--rule);
+    }
+
+    .target-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--structure);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .target-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.3;
+    }
+
+    .btn-step {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      font-weight: 700;
+      color: #fff;
+      background: var(--signal);
+      border: none;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: opacity 120ms;
+    }
+
+    .btn-step:hover {
+      opacity: 0.9;
+    }
+
+    .btn-reset {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
+      margin-left: 8px;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>反向传播与梯度流：链式法则的计算图传导</h1>
+      <div class="subtitle">前向计算标量特征 → 损失回传局部梯度相乘</div>
+    </header>
+
+    <!-- 计算图核心舞台 -->
+    <main class="graph-board">
+      <svg class="network-canvas" viewBox="0 0 1488 470" id="svgGraph">
+        <defs>
+          <marker id="arrow-fwd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#1C4436" />
+          </marker>
+          <marker id="arrow-bwd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 8 1.5 L 0 5 L 8 8.5 z" fill="#D43811" />
+          </marker>
+        </defs>
+
+        <!-- 静态背景轴线与流向标记 -->
+        <g id="connectionsLayer"></g>
+        <g id="nodesLayer"></g>
+        <g id="gradientBubblesLayer"></g>
+      </svg>
+    </main>
+
+    <!-- 底部控制与推演联动板 -->
+    <footer class="dashboard">
+      <div class="controls-col">
+        <div class="slider-row">
+          <label for="rangeW1">w₁</label>
+          <input type="range" id="rangeW1" min="-2.0" max="3.0" step="0.1" value="1.50">
+          <output id="outW1">1.50</output>
+        </div>
+        <div class="slider-row">
+          <label for="rangeW2">w₂</label>
+          <input type="range" id="rangeW2" min="-2.0" max="3.0" step="0.1" value="0.80">
+          <output id="outW2">0.80</output>
+        </div>
+        <div class="slider-row">
+          <label for="rangeX">x</label>
+          <input type="range" id="rangeX" min="0.2" max="2.0" step="0.1" value="1.00">
+          <output id="outX">1.00</output>
+        </div>
+      </div>
+
+      <div class="chain-col">
+        <div class="chain-head">
+          <span id="chainTitle">选定参数灵敏度：∂L / ∂w₁ 完整链式传导</span>
+          <span class="chain-note">点击节点切换目标</span>
+        </div>
+        <div class="chain-formula" id="chainFormula">
+          <!-- 链式乘积动态填充 -->
+        </div>
+        <div class="chain-note" id="chainExplanation">
+          <!-- 因果说明 -->
+        </div>
+      </div>
+
+      <div class="target-col">
+        <div class="target-title">
+          <span>目标 y=1.00</span>
+          <span>L = <b id="valLoss" style="color:var(--signal)">0.106</b></span>
+        </div>
+        <div class="target-desc">
+          沿负梯度方向更新权重，降低输出偏差：
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-top:2px;">
+          <button class="btn-step" id="btnStepGrad" aria-label="执行单步梯度下降更新">
+            单步更新 (η=0.2)
+          </button>
+          <button class="btn-reset" id="btnReset">重置</button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    本页将反向传播置于严格的计算图中，向学生展示链式法则为什么天然等价于局部导数的乘积传播。
+    学生可以滑动权重 w1、w2 或输入 x，观察前向激活值与反向朱红梯度的瞬时重算。
+    注意看绿色实线标定前向输入传播，朱红色虚线标定反向局部梯度回传。
+    点击任意参数节点（如 w1、w2、b1），底部的推导公式自动聚焦该参数的因果链条，清楚展现误差灵敏度是如何由下游回传梯度与局部激活逐层相乘得来的。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 经典轻量标量两层感知机计算图模型:
+    // x -> [z1 = w1*x + b1] -> [a1 = ReLU(z1)] -> [z2 = w2*a1 + b2] -> [y_hat = z2] -> [L = 0.5*(y_hat - y)^2]
+    // 教学设定固定偏置: b1 = 0.20, b2 = 0.10, 真实目标 y = 1.00
+    const FIXED_B1 = 0.20;
+    const FIXED_B2 = 0.10;
+    const TARGET_Y = 1.00;
+
+    const state = {
+      x: 1.00,
+      w1: 1.50,
+      b1: FIXED_B1,
+      w2: 0.80,
+      b2: FIXED_B2,
+      targetY: TARGET_Y,
+      inspectTarget: 'w1' // 当前观察的参数节点: 'w1' | 'w2' | 'b1' | 'a1'
+    };
+
+    function computeModel(s) {
+      // 1. 前向计算
+      const z1 = s.w1 * s.x + s.b1;
+      const a1 = Math.max(0, z1); // ReLU
+      const d_relu = z1 > 0 ? 1.0 : (z1 === 0 ? 0.5 : 0.0);
+
+      const z2 = s.w2 * a1 + s.b2;
+      const y_hat = z2; // 线性输出
+      const diff = y_hat - s.targetY;
+      const loss = 0.5 * diff * diff;
+
+      // 2. 反向梯度计算 (链式法则从 L 开始)
+      const dL_dyhat = diff;
+      const dL_dz2 = dL_dyhat * 1.0;
+
+      const dL_dw2 = dL_dz2 * a1;
+      const dL_db2 = dL_dz2 * 1.0;
+      const dL_da1 = dL_dz2 * s.w2;
+
+      const dL_dz1 = dL_da1 * d_relu;
+      const dL_dw1 = dL_dz1 * s.x;
+      const dL_db1 = dL_dz1 * 1.0;
+      const dL_dx  = dL_dz1 * s.w1;
+
+      return {
+        z1, a1, d_relu,
+        z2, y_hat, diff, loss,
+        dL_dyhat, dL_dz2,
+        dL_dw2, dL_db2, dL_da1,
+        dL_dz1, dL_dw1, dL_db1, dL_dx
+      };
+    }
+
+    // 节点布局坐标定义 (1488 x 470 画布内)
+    const NODES = {
+      x:      { x: 120, y: 150, title: '输入 x', key: 'x' },
+      w1:     { x: 120, y: 310, title: '权重 w₁', key: 'w1' },
+      z1:     { x: 380, y: 220, title: '求和 z₁', key: 'z1' },
+      a1:     { x: 620, y: 220, title: '激活 a₁ (ReLU)', key: 'a1' },
+      w2:     { x: 620, y: 360, title: '权重 w₂', key: 'w2' },
+      z2:     { x: 880, y: 220, title: '预测 ŷ (z₂)', key: 'y_hat' },
+      y_true: { x: 880, y: 80,  title: '真值 y', key: 'y_true' },
+      loss:   { x: 1180, y: 150, title: '平方损失 L', key: 'loss' }
+    };
+
+    function renderGraph() {
+      const res = computeModel(state);
+
+      // 更新界面输出文本
+      document.getElementById('outW1').textContent = state.w1.toFixed(2);
+      document.getElementById('outW2').textContent = state.w2.toFixed(2);
+      document.getElementById('outX').textContent = state.x.toFixed(2);
+      document.getElementById('valLoss').textContent = res.loss.toFixed(3);
+
+      const connLayer = document.getElementById('connectionsLayer');
+      const nodeLayer = document.getElementById('nodesLayer');
+      const bubbleLayer = document.getElementById('gradientBubblesLayer');
+
+      // 1. 绘制连线：前向推进实线(绿色)与反向回传虚线(朱红)
+      // 路径结构: x -> z1, w1 -> z1, z1 -> a1, a1 -> z2, w2 -> z2, z2 -> loss, y_true -> loss
+      let connsHTML = '';
+
+      function drawPath(p1, p2, fwdOffset, bwdOffset) {
+        // 计算带有上下微调的平行双向线
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.hypot(dx, dy);
+        const nx = -dy / len;
+        const ny = dx / len;
+
+        // 前向绿色线
+        const fx1 = p1.x + nx * fwdOffset;
+        const fy1 = p1.y + ny * fwdOffset;
+        const fx2 = p2.x + nx * fwdOffset;
+        const fy2 = p2.y + ny * fwdOffset;
+
+        // 反向朱红虚线 (从 p2 指向 p1)
+        const bx1 = p2.x + nx * bwdOffset;
+        const by1 = p2.y + ny * bwdOffset;
+        const bx2 = p1.x + nx * bwdOffset;
+        const by2 = p1.y + ny * bwdOffset;
+
+        return `
+          <line x1="${fx1}" y1="${fy1}" x2="${fx2}" y2="${fy2}" class="wire-forward" marker-end="url(#arrow-fwd)" />
+          <line x1="${bx1}" y1="${by1}" x2="${bx2}" y2="${by2}" class="wire-backward" marker-end="url(#arrow-bwd)" />
+        `;
+      }
+
+      connsHTML += drawPath({x: NODES.x.x+60, y: NODES.x.y}, {x: NODES.z1.x-60, y: NODES.z1.y-10}, -8, 8);
+      connsHTML += drawPath({x: NODES.w1.x+60, y: NODES.w1.y}, {x: NODES.z1.x-60, y: NODES.z1.y+10}, -8, 8);
+      connsHTML += drawPath({x: NODES.z1.x+60, y: NODES.z1.y}, {x: NODES.a1.x-60, y: NODES.a1.y}, -8, 8);
+      connsHTML += drawPath({x: NODES.a1.x+60, y: NODES.a1.y}, {x: NODES.z2.x-60, y: NODES.z2.y-10}, -8, 8);
+      connsHTML += drawPath({x: NODES.w2.x+60, y: NODES.w2.y}, {x: NODES.z2.x-60, y: NODES.z2.y+10}, -8, 8);
+      connsHTML += drawPath({x: NODES.z2.x+60, y: NODES.z2.y}, {x: NODES.loss.x-60, y: NODES.loss.y+10}, -8, 8);
+
+      // y_true 只有前向对比输入
+      connsHTML += `
+        <line x1="${NODES.y_true.x+60}" y1="${NODES.y_true.y}" x2="${NODES.loss.x-60}" y2="${NODES.loss.y-10}" class="wire-forward" marker-end="url(#arrow-fwd)" />
+      `;
+
+      connLayer.innerHTML = connsHTML;
+
+      // 2. 绘制节点 Box
+      let nodesHTML = '';
+      const nodeValues = {
+        x: state.x.toFixed(2),
+        w1: state.w1.toFixed(2),
+        z1: res.z1.toFixed(2),
+        a1: res.a1.toFixed(2),
+        w2: state.w2.toFixed(2),
+        y_hat: res.y_hat.toFixed(2),
+        y_true: state.targetY.toFixed(2),
+        loss: res.loss.toFixed(3)
+      };
+
+      for (const [id, n] of Object.entries(NODES)) {
+        const val = nodeValues[n.key];
+        const isSelected = (id === state.inspectTarget);
+        const isLoss = (id === 'loss');
+        const boxClass = `node-box ${isLoss ? 'loss-node' : ''} ${isSelected ? 'highlight' : ''}`;
+        const valClass = `node-val ${isLoss ? 'signal' : ''}`;
+
+        nodesHTML += `
+          <g transform="translate(${n.x}, ${n.y})" style="cursor:pointer" onclick="selectTarget('${id}')">
+            <rect x="-65" y="-36" width="130" height="72" rx="3" class="${boxClass}" />
+            <text y="-10" class="node-title">${n.title}</text>
+            <text y="20" class="${valClass}">${val}</text>
+          </g>
+        `;
+      }
+      nodeLayer.innerHTML = nodesHTML;
+
+      // 3. 绘制反向传播梯度气泡 (朱红色标签，展示 ∂L/∂x 各局部梯度数值)
+      const gradients = [
+        { id: 'w1', x: 235, y: 395, val: res.dL_dw1, label: '∂L/∂w₁' },
+        { id: 'z1', x: 495, y: 310, val: res.dL_dz1, label: '∂L/∂z₁' },
+        { id: 'a1', x: 745, y: 310, val: res.dL_da1, label: '∂L/∂a₁' },
+        { id: 'w2', x: 755, y: 445, val: res.dL_dw2, label: '∂L/∂w₂' },
+        { id: 'z2', x: 1040, y: 285, val: res.dL_dz2, label: '∂L/∂ŷ' },
+      ];
+
+      let bubblesHTML = '';
+      gradients.forEach(g => {
+        const isActive = (state.inspectTarget === g.id);
+        const signedVal = (g.val >= 0 ? '+' : '') + g.val.toFixed(2);
+        bubblesHTML += `
+          <g transform="translate(${g.x}, ${g.y})" class="grad-bubble ${isActive ? 'active' : ''}" onclick="selectTarget('${g.id}')">
+            <rect x="-56" y="-14" width="112" height="28" rx="4" />
+            <text class="grad-text">${g.label}=${signedVal}</text>
+          </g>
+        `;
+      });
+      bubbleLayer.innerHTML = bubblesHTML;
+
+      // 4. 更新底部的链式展开公式
+      updateChainInspection(res);
+    }
+
+    function updateChainInspection(res) {
+      const formulaEl = document.getElementById('chainFormula');
+      const titleEl = document.getElementById('chainTitle');
+      const expEl = document.getElementById('chainExplanation');
+
+      const target = state.inspectTarget;
+
+      if (target === 'w1') {
+        titleEl.textContent = '选定参数灵敏度：∂L / ∂w₁ 完整链式传导';
+        formulaEl.innerHTML = `
+          <span class="term">∂L/∂w₁</span> =
+          (<span class="term">∂L/∂ŷ</span> · <span class="term">∂ŷ/∂a₁</span> · <span class="term">∂a₁/∂z₁</span>) · <span class="term">∂z₁/∂w₁</span>
+          <span class="sym">=</span>
+          (${res.dL_dz2.toFixed(2)} · ${state.w2.toFixed(2)} · ${res.d_relu.toFixed(1)}) · ${state.x.toFixed(2)}
+          <span class="sym">=</span>
+          <span class="grad-res">∂L/∂w₁ = ${(res.dL_dw1 >= 0 ? '+' : '') + res.dL_dw1.toFixed(3)}</span>
+        `;
+        if (res.z1 <= 0) {
+          expEl.innerHTML = `⚠️ 当前 z₁ = ${res.z1.toFixed(2)} ≤ 0，处于 ReLU 死亡失活区（导数为 0），误差梯度彻底中断，w₁ 不会得到任何更新。`;
+        } else {
+          expEl.innerHTML = `下游回传梯度 ∂L/∂z₁ 为 ${res.dL_dz1.toFixed(2)}，乘上本层输入激活 x = ${state.x.toFixed(2)}，得到权重的最终灵敏度。`;
+        }
+      } else if (target === 'w2') {
+        titleEl.textContent = '选定参数灵敏度：∂L / ∂w₂ 局部梯度乘积';
+        formulaEl.innerHTML = `
+          <span class="term">∂L/∂w₂</span> =
+          <span class="term">∂L/∂ŷ</span> · <span class="term">∂ŷ/∂w₂</span>
+          <span class="sym">=</span>
+          (ŷ - y) · a₁
+          <span class="sym">=</span>
+          ${res.dL_dz2.toFixed(2)} · ${res.a1.toFixed(2)}
+          <span class="sym">=</span>
+          <span class="grad-res">∂L/∂w₂ = ${(res.dL_dw2 >= 0 ? '+' : '') + res.dL_dw2.toFixed(3)}</span>
+        `;
+        expEl.innerHTML = `输出层权重 w₂ 的灵敏度直接等于误差 (ŷ - y) 与前级神经元激活 a₁ 的乘积。`;
+      } else if (target === 'a1' || target === 'z1') {
+        titleEl.textContent = '选定隐藏特征灵敏度：∂L / ∂a₁ 跨层梯度回传';
+        formulaEl.innerHTML = `
+          <span class="term">∂L/∂a₁</span> =
+          <span class="term">∂L/∂ŷ</span> · <span class="term">∂ŷ/∂a₁</span>
+          <span class="sym">=</span>
+          ${res.dL_dz2.toFixed(2)} · ${state.w2.toFixed(2)}
+          <span class="sym">=</span>
+          <span class="grad-res">∂L/∂a₁ = ${(res.dL_da1 >= 0 ? '+' : '') + res.dL_da1.toFixed(3)}</span>
+        `;
+        expEl.innerHTML = `隐藏层输出不仅要向前激活下游，还要在反向时乘以连接权重 w₂ 承接下游误差，分担误差责任。`;
+      } else {
+        titleEl.textContent = '选定输出节点：∂L / ∂ŷ 顶层损失导数';
+        formulaEl.innerHTML = `
+          <span class="term">∂L/∂ŷ</span> =
+          (ŷ - y)
+          <span class="sym">=</span>
+          ${res.y_hat.toFixed(2)} - ${state.targetY.toFixed(2)}
+          <span class="sym">=</span>
+          <span class="grad-res">∂L/∂ŷ = ${(res.dL_dz2 >= 0 ? '+' : '') + res.dL_dz2.toFixed(3)}</span>
+        `;
+        expEl.innerHTML = `平方损失的导数即残差。残差为正是预测偏大，指示网络应当朝减小输出的方向迈步。`;
+      }
+    }
+
+    window.selectTarget = function(id) {
+      state.inspectTarget = id;
+      renderGraph();
+    };
+
+    // 控件交互绑定
+    const rangeW1 = document.getElementById('rangeW1');
+    const rangeW2 = document.getElementById('rangeW2');
+    const rangeX = document.getElementById('rangeX');
+
+    rangeW1.addEventListener('input', (e) => {
+      state.w1 = parseFloat(e.target.value);
+      renderGraph();
+    });
+
+    rangeW2.addEventListener('input', (e) => {
+      state.w2 = parseFloat(e.target.value);
+      renderGraph();
+    });
+
+    rangeX.addEventListener('input', (e) => {
+      state.x = parseFloat(e.target.value);
+      renderGraph();
+    });
+
+    // 单步梯度更新: w <- w - lr * grad
+    const btnStep = document.getElementById('btnStepGrad');
+    btnStep.addEventListener('click', () => {
+      const res = computeModel(state);
+      const lr = 0.20;
+      state.w1 = parseFloat((state.w1 - lr * res.dL_dw1).toFixed(2));
+      state.w2 = parseFloat((state.w2 - lr * res.dL_dw2).toFixed(2));
+
+      // 保持范围
+      state.w1 = Math.max(-2.0, Math.min(3.0, state.w1));
+      state.w2 = Math.max(-2.0, Math.min(3.0, state.w2));
+
+      rangeW1.value = state.w1;
+      rangeW2.value = state.w2;
+
+      renderGraph();
+    });
+
+    const btnReset = document.getElementById('btnReset');
+    btnReset.addEventListener('click', () => {
+      state.w1 = 1.50;
+      state.w2 = 0.80;
+      state.x = 1.00;
+      state.inspectTarget = 'w1';
+
+      rangeW1.value = state.w1;
+      rangeW2.value = state.w2;
+      rangeX.value = state.x;
+
+      renderGraph();
+    });
+
+    // 初始化底盘与渲染
+    Deck.init({ index: 8, total: 32 });
+    renderGraph();
+  </script>
+</body>
+</html>

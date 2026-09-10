@@ -1,0 +1,760 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成有效的前提：成员模型既要有能力，也要犯不完全相同的错误</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      font-family: var(--font-sans);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      margin: 0;
+      color: var(--text);
+    }
+
+    .lead {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.45;
+    }
+
+    /* Main layout: 2 columns */
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 490px;
+      gap: 20px;
+    }
+
+    .left-col, .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .panel-box {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chart-panel {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .controls-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--surface-strong);
+      padding: 8px 14px;
+      border-radius: 6px;
+    }
+
+    .ctrl-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+
+    .ctrl-item label {
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .ctrl-item input[type="range"] {
+      width: 110px;
+      accent-color: var(--aggregate);
+      cursor: pointer;
+    }
+
+    .segmented {
+      display: flex;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid var(--muted);
+    }
+
+    .seg-btn {
+      background: var(--surface);
+      border: none;
+      padding: 3px 10px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .seg-btn.active {
+      background: var(--model);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .chart-container {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      width: 100%;
+    }
+
+    #echarts-dom {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-footer-note {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin-top: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .chart-footer-note .note-sub {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .chart-footer-note .note-readout {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--aggregate);
+    }
+
+    /* Right side cards */
+    .sample-matrix-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .matrix-toggle {
+      display: flex;
+      gap: 8px;
+      background: var(--surface-strong);
+      padding: 3px;
+      border-radius: 6px;
+    }
+
+    .matrix-tab {
+      flex: 1;
+      padding: 6px 10px;
+      border: none;
+      background: transparent;
+      border-radius: 4px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      cursor: pointer;
+      text-align: center;
+      font-weight: 600;
+      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
+    }
+
+    .matrix-tab.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    .matrix-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-sec);
+    }
+
+    .matrix-table th {
+      text-align: center;
+      padding: 5px 2px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      border-bottom: 1px solid var(--surface-strong);
+      font-weight: 600;
+    }
+
+    .matrix-table td {
+      padding: 6px 2px;
+      text-align: center;
+      border-bottom: 1px solid #f0f4f6;
+    }
+
+    .matrix-table .row-name {
+      text-align: left;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--model);
+      white-space: nowrap;
+      padding-left: 4px;
+    }
+
+    .matrix-table tr.ens-row .row-name {
+      color: var(--aggregate);
+    }
+
+    .dot-cell {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .dot-ok {
+      background: #EAF4EE;
+      color: var(--answer);
+    }
+
+    .dot-err {
+      background: #FCECE8;
+      color: var(--aggregate);
+    }
+
+    .principle-summary {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 18px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      gap: 10px;
+    }
+
+    .principle-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .badge-icon {
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--surface-strong);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+    }
+
+    .badge-icon.ability {
+      background: #E2EBF4;
+      color: var(--model);
+    }
+
+    .badge-icon.diversity {
+      background: #E8EFEF;
+      color: var(--sample);
+    }
+
+    .principle-text h4 {
+      margin: 0 0 3px 0;
+      font-size: var(--fs-body);
+      font-weight: 700;
+    }
+
+    .principle-text p {
+      margin: 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .formula-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      font-size: 14px;
+      margin-top: 3px;
+    }
+
+    .stat-callout {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 10px 12px;
+      background: #FAF7F4;
+      border-left: 3px solid var(--aggregate);
+      border-radius: 0 6px 6px 0;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+    }
+
+    .stat-callout-title {
+      font-weight: 700;
+      color: var(--text);
+      font-size: var(--fs-body);
+    }
+
+    .stat-callout strong {
+      color: var(--aggregate);
+      font-size: 17px;
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body data-page="03" data-total="27">
+  <div id="stage">
+    <header>
+      <h1>集成有效的前提：好而不同</h1>
+      <p class="lead">
+        以二分类多数投票（孔多塞陪审团定理）为例：仅当单模型优于随机猜测（准确率 &gt; 50%）且相互独立犯错时，规模化集成才能让总体错误率趋近于零。
+      </p>
+    </header>
+
+    <div class="main-grid">
+      <!-- 左列：孔多塞曲线图表 -->
+      <section class="panel-box chart-panel min0">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>多数投票集成错误率曲线</span>
+          </div>
+
+          <div class="controls-row">
+            <div class="ctrl-item">
+              <label for="slider-eps">单体错误率 ε：<span id="eps-val">0.35</span></label>
+              <input type="range" id="slider-eps" min="0.05" max="0.95" step="0.01" value="0.35">
+            </div>
+
+            <div class="ctrl-item">
+              <label>基学习器数量 T：</label>
+              <div class="segmented" id="btn-group-t">
+                <button type="button" class="seg-btn" data-t="3">3</button>
+                <button type="button" class="seg-btn active" data-t="7">7</button>
+                <button type="button" class="seg-btn" data-t="21">21</button>
+                <button type="button" class="seg-btn" data-t="51">51</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-container min0">
+          <div id="echarts-dom"></div>
+        </div>
+
+        <div class="chart-footer-note">
+          <span class="note-sub">假设各基学习器相互独立。临界分界线 ε = 50%：优于 50% 规模放大胜算，劣于 50% 规模放大错误。</span>
+          <span class="note-readout" id="current-eval-text"></span>
+        </div>
+      </section>
+
+      <!-- 右列：多样性矩阵对比与前提归纳 -->
+      <section class="right-col min0">
+        <!-- 矩阵对比卡片 -->
+        <div class="sample-matrix-card">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <strong style="font-size: var(--fs-body);">10 个样本上的纠错效果比对</strong>
+            <span style="font-size: var(--fs-label); color: var(--muted);">3 个成员模型投票</span>
+          </div>
+
+          <div class="matrix-toggle">
+            <button type="button" class="matrix-tab active" id="tab-diverse">错误分散（互补）</button>
+            <button type="button" class="matrix-tab" id="tab-identical">错误雷同（同质）</button>
+          </div>
+
+          <table class="matrix-table">
+            <thead>
+              <tr>
+                <th style="width: 72px; text-align: left; padding-left: 4px;">模型</th>
+                <th>S1</th><th>S2</th><th>S3</th><th>S4</th><th>S5</th><th>S6</th><th>S7</th><th>S8</th><th>S9</th><th>S10</th>
+                <th style="width: 50px;">错误率</th>
+              </tr>
+            </thead>
+            <tbody id="matrix-tbody">
+              <!-- JS 动态注入 -->
+            </tbody>
+          </table>
+
+          <div class="stat-callout" id="matrix-summary">
+            <!-- 动态说明 -->
+          </div>
+        </div>
+
+        <!-- 原理总结区 -->
+        <div class="principle-summary">
+          <div class="principle-item">
+            <div class="badge-icon ability">1</div>
+            <div class="principle-text">
+              <h4>准则一：个体具备基本能力（ε &lt; 0.5）</h4>
+              <p>
+                基学习器必须优于随机猜测。当单体错误率 ε &gt; 0.5 时，错误成为多数派，模型数量越多越偏向错误判断。
+              </p>
+            </div>
+          </div>
+
+          <div class="principle-item">
+            <div class="badge-icon diversity">2</div>
+            <div class="principle-text">
+              <h4>准则二：错误必须具有多样性（Diversity）</h4>
+              <p>
+                若成员模型完全同质（相关系数 r → 1），犯错往往同时发生，投票无法消除系统性偏差。差异化预测是集成增益的根基。
+              </p>
+            </div>
+          </div>
+
+          <div class="formula-badge" id="condorcet-formula">
+            <!-- KaTeX 渲染公式 -->
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    // 数学组合数函数与二项累积分布
+    function combinations(n, k) {
+      if (k < 0 || k > n) return 0;
+      if (k === 0 || k === n) return 1;
+      let c = 1;
+      for (let i = 1; i <= k; i++) {
+        c = (c * (n - (k - i))) / i;
+      }
+      return c;
+    }
+
+    // 多数投票集成错误率: P = sum_{k=ceil(T/2)}^T C(T, k) * eps^k * (1 - eps)^(T - k)
+    function ensembleError(T, eps) {
+      const majority = Math.floor(T / 2) + 1;
+      let pErr = 0;
+      for (let k = majority; k <= T; k++) {
+        pErr += combinations(T, k) * Math.pow(eps, k) * Math.pow(1 - eps, T - k);
+      }
+      return pErr;
+    }
+
+    // 状态
+    let curT = 7;
+    let curEps = 0.35;
+    let curMatrixMode = 'diverse'; // 'diverse' | 'identical'
+
+    // DOM
+    const sliderEps = document.getElementById('slider-eps');
+    const epsVal = document.getElementById('eps-val');
+    const btnGroupT = document.getElementById('btn-group-t');
+    const currentEvalText = document.getElementById('current-eval-text');
+    const tabDiverse = document.getElementById('tab-diverse');
+    const tabIdentical = document.getElementById('tab-identical');
+    const matrixTbody = document.getElementById('matrix-tbody');
+    const matrixSummary = document.getElementById('matrix-summary');
+    const formulaContainer = document.getElementById('condorcet-formula');
+
+    // 渲染 KaTeX
+    if (window.katex) {
+      katex.render(
+        String.raw`P_{\text{集成}} = \sum_{k=\lfloor T/2 \rfloor + 1}^{T} \binom{T}{k} \epsilon^k (1-\epsilon)^{T-k}`,
+        formulaContainer,
+        { displayMode: false, throwOnError: false }
+      );
+    }
+
+    // ECharts 初始化
+    const chartDom = document.getElementById('echarts-dom');
+    const chart = echarts.init(chartDom, null, { renderer: 'svg' });
+
+    function generateCurveData(T) {
+      const data = [];
+      for (let x = 0; x <= 1.001; x += 0.01) {
+        data.push([parseFloat(x.toFixed(2)), parseFloat(ensembleError(T, x).toFixed(4))]);
+      }
+      return data;
+    }
+
+    function updateChart() {
+      const ensErr = ensembleError(curT, curEps);
+      const curveT = generateCurveData(curT);
+
+      // 单模型对角线基准 y = x
+      const baselineData = [[0, 0], [1, 1]];
+
+      const option = {
+        animationDuration: 250,
+        grid: {
+          left: 54,
+          right: 36,
+          top: 32,
+          bottom: 42
+        },
+        tooltip: {
+          trigger: 'axis',
+          formatter: function(params) {
+            const eps = params[0].value[0];
+            const ensVal = ensembleError(curT, eps);
+            return `单体错误率 ε: ${(eps * 100).toFixed(0)}%<br>` +
+                   `单模型错误率: ${(eps * 100).toFixed(1)}%<br>` +
+                   `T = ${curT} 多数投票: <b>${(ensVal * 100).toFixed(1)}%</b>`;
+          }
+        },
+        xAxis: {
+          type: 'value',
+          min: 0,
+          max: 1,
+          interval: 0.2,
+          name: '基学习器错误率 ε',
+          nameLocation: 'middle',
+          nameGap: 26,
+          nameTextStyle: { color: '#536A78', fontSize: 13 },
+          axisLabel: {
+            color: '#536A78',
+            fontSize: 13,
+            formatter: v => `${(v * 100).toFixed(0)}%`
+          },
+          splitLine: { lineStyle: { color: '#E2EBF0', type: 'dashed' } }
+        },
+        yAxis: {
+          type: 'value',
+          min: 0,
+          max: 1,
+          interval: 0.2,
+          name: '多数投票集成错误率',
+          nameTextStyle: { color: '#536A78', fontSize: 13 },
+          axisLabel: {
+            color: '#536A78',
+            fontSize: 13,
+            formatter: v => `${(v * 100).toFixed(0)}%`
+          },
+          splitLine: { lineStyle: { color: '#E2EBF0', type: 'dashed' } }
+        },
+        series: [
+          {
+            name: '临界分割线 (ε = 0.5)',
+            type: 'line',
+            data: [[0.5, 0], [0.5, 1]],
+            lineStyle: { color: '#27648F', width: 1.5, type: 'dotted' },
+            symbol: 'none',
+            silent: true
+          },
+          {
+            name: '单模型基准 (y = ε)',
+            type: 'line',
+            data: baselineData,
+            lineStyle: { color: '#536A78', width: 1.5, type: 'dashed' },
+            symbol: 'none',
+            silent: true
+          },
+          {
+            name: `多数投票 (T = ${curT})`,
+            type: 'line',
+            data: curveT,
+            smooth: true,
+            lineStyle: { color: '#C34B22', width: 3.5 },
+            symbol: 'none'
+          },
+          {
+            name: '当前工作点',
+            type: 'scatter',
+            data: [[curEps, ensErr]],
+            symbolSize: 12,
+            itemStyle: { color: '#C34B22', borderColor: '#FFFFFF', borderWidth: 2 }
+          }
+        ],
+        markLine: {
+          silent: true
+        }
+      };
+
+      chart.setOption(option);
+
+      // 更新下方文案
+      const delta = ((ensErr - curEps) * 100).toFixed(1);
+      const sign = ensErr < curEps ? '降低' : (ensErr > curEps ? '恶化上升' : '持平');
+      currentEvalText.textContent = `当前 ε = ${(curEps * 100).toFixed(0)}% 时，${curT} 模型集成错误率为 ${(ensErr * 100).toFixed(1)}%（较单体${sign} ${Math.abs(delta)}%）`;
+    }
+
+    // 矩阵数据：10 个样本，3 个成员模型
+    // 样本真值全为 1，0 代表预测错误，1 代表预测正确
+    // 错误分散情况：每个模型各错 3 个（错误率 30%），但错位错
+    const DIVERSE_DATA = {
+      m1: [0, 0, 0, 1, 1, 1, 1, 1, 1, 1], // 错 1,2,3
+      m2: [1, 1, 1, 0, 0, 0, 1, 1, 1, 1], // 错 4,5,6
+      m3: [1, 1, 1, 1, 1, 1, 0, 0, 0, 1]  // 错 7,8,9
+    };
+
+    // 错误雷同情况：3 个模型都在 1, 2, 3 上犯错
+    const IDENTICAL_DATA = {
+      m1: [0, 0, 0, 1, 1, 1, 1, 1, 1, 1], // 错 1,2,3
+      m2: [0, 0, 0, 1, 1, 1, 1, 1, 1, 1], // 错 1,2,3
+      m3: [0, 0, 0, 1, 1, 1, 1, 1, 1, 1]  // 错 1,2,3
+    };
+
+    function renderMatrix() {
+      const isDiverse = curMatrixMode === 'diverse';
+      const data = isDiverse ? DIVERSE_DATA : IDENTICAL_DATA;
+
+      // 多数投票计算：每一列求和 >= 2 为 1
+      const ensRow = [];
+      for (let s = 0; s < 10; s++) {
+        const votes = data.m1[s] + data.m2[s] + data.m3[s];
+        ensRow.push(votes >= 2 ? 1 : 0);
+      }
+
+      function makeCells(rowArr) {
+        return rowArr.map(v => {
+          const cls = v === 1 ? 'dot-ok' : 'dot-err';
+          const txt = v === 1 ? '✓' : '✗';
+          return `<td><span class="dot-cell ${cls}">${txt}</span></td>`;
+        }).join('');
+      }
+
+      function errRate(rowArr) {
+        const errs = rowArr.filter(v => v === 0).length;
+        return `${(errs / rowArr.length * 100).toFixed(0)}%`;
+      }
+
+      matrixTbody.innerHTML = `
+        <tr>
+          <td class="row-name">基模型 1</td>
+          ${makeCells(data.m1)}
+          <td style="font-weight:600; color:var(--muted);">${errRate(data.m1)}</td>
+        </tr>
+        <tr>
+          <td class="row-name">基模型 2</td>
+          ${makeCells(data.m2)}
+          <td style="font-weight:600; color:var(--muted);">${errRate(data.m2)}</td>
+        </tr>
+        <tr>
+          <td class="row-name">基模型 3</td>
+          ${makeCells(data.m3)}
+          <td style="font-weight:600; color:var(--muted);">${errRate(data.m3)}</td>
+        </tr>
+        <tr class="ens-row" style="background: #FAF7F4; border-top: 2px solid var(--surface-strong);">
+          <td class="row-name" style="color:var(--aggregate);">多数投票</td>
+          ${makeCells(ensRow)}
+          <td style="font-weight:700; color:var(--aggregate); font-size:15px;">${errRate(ensRow)}</td>
+        </tr>
+      `;
+
+      if (isDiverse) {
+        matrixSummary.innerHTML = `
+          <div class="stat-callout-title">互补纠错效果（错误分散）</div>
+          <div>各模型单体错误率均为 <strong>30%</strong>。由于犯错位置完全错开，多数票互相补台纠正，集成错误率降为 <strong>0%</strong>。</div>
+        `;
+      } else {
+        matrixSummary.innerHTML = `
+          <div class="stat-callout-title">同质无增益现象（错误雷同）</div>
+          <div>三个模型在完全相同的样本上同时犯错。多数投票无法纠正共性偏差，集成错误率依然是 <strong>30%</strong>。</div>
+        `;
+      }
+    }
+
+    // 事件绑定
+    sliderEps.addEventListener('input', (e) => {
+      curEps = parseFloat(e.target.value);
+      epsVal.textContent = curEps.toFixed(2);
+      updateChart();
+    });
+
+    btnGroupT.addEventListener('click', (e) => {
+      const btn = e.target.closest('.seg-btn');
+      if (!btn) return;
+      document.querySelectorAll('#btn-group-t .seg-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      curT = parseInt(btn.dataset.t, 10);
+      updateChart();
+    });
+
+    tabDiverse.addEventListener('click', () => {
+      curMatrixMode = 'diverse';
+      tabDiverse.classList.add('active');
+      tabIdentical.classList.remove('active');
+      renderMatrix();
+    });
+
+    tabIdentical.addEventListener('click', () => {
+      curMatrixMode = 'identical';
+      tabIdentical.classList.add('active');
+      tabDiverse.classList.remove('active');
+      renderMatrix();
+    });
+
+    // 窗口尺寸自适应
+    Deck.onResize(() => {
+      chart.resize();
+    });
+
+    // 初始化
+    updateChart();
+    renderMatrix();
+    Deck.init({ index: 3, total: 27 });
+  </script>
+</body>
+</html>

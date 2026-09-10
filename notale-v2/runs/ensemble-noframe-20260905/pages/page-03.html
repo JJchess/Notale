@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成为何可能有效</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F4F7FB;
+      --surface: #E8EEF5;
+      --text: #13243A;
+      --muted: #53667C;
+      --model: #2457A6;
+      --aggregate: #0F766E;
+      --focus: #C94B00;
+      --error: #C94B00;
+      --correct: #2B7A4B;
+      --font-display: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: "DIN Alternate", "Bahnschrift", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      padding: 28px 56px;
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    header {
+      flex: 0 0 auto;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1, 34px);
+      font-weight: 700;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .lead {
+      margin: 8px 0 0 0;
+      font-size: var(--fs-lead, 19px);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    main {
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Comparison matrix card */
+    .board {
+      flex: 1 1 0;
+      min-height: 0;
+      background: #FFFFFF;
+      border: 2px solid #D6DFEB;
+      border-radius: var(--radius, 8px);
+      padding: 36px 32px 28px 32px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .matrix {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Grid structure: 190px row label, 10 sample columns, 140px stat */
+    .row {
+      display: grid;
+      grid-template-columns: 190px repeat(10, 1fr) 140px;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: var(--radius, 8px);
+    }
+
+    .row-header {
+      padding: 0 14px 8px 14px;
+      border-bottom: 2px solid #E2E8F0;
+    }
+
+    .th {
+      font-size: var(--fs-sec, 16px);
+      font-weight: 700;
+      color: var(--text);
+      text-align: center;
+    }
+    .th.left { text-align: left; }
+    .th.right { text-align: right; }
+
+    .sample-pill {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-label, 15px);
+      font-weight: 600;
+      color: var(--text);
+      text-align: center;
+    }
+
+    .row-model {
+      background: var(--surface);
+    }
+
+    .row-model .role {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-body, 18px);
+      font-weight: 700;
+      color: var(--model);
+    }
+
+    .row-model .role sub {
+      font-family: var(--font-numeric);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .tag-model {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      background: var(--model);
+    }
+
+    .cell {
+      height: 64px;
+      border-radius: var(--radius, 8px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-sec, 16px);
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .cell:hover {
+      transform: scale(1.05);
+    }
+
+    .cell.correct {
+      background: #E8F5E9;
+      color: var(--correct);
+      border: 1px solid #B7DFB9;
+    }
+
+    .cell.wrong {
+      background: #FDE8E6;
+      color: var(--error);
+      border: 2px solid var(--error);
+    }
+
+    .cell .symbol {
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .rate {
+      font-family: var(--font-numeric);
+      font-size: 22px;
+      font-weight: 700;
+      text-align: right;
+      color: var(--text);
+    }
+
+    /* Convergence connector zone */
+    .diverge-zone {
+      display: grid;
+      grid-template-columns: 190px repeat(10, 1fr) 140px;
+      gap: 12px;
+      padding: 0 14px;
+      align-items: center;
+    }
+
+    .connector-line {
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .connector-line svg {
+      width: 100%;
+      height: 40px;
+    }
+
+    /* Row aggregate */
+    .row-aggregate {
+      background: #E6F4F1;
+      border: 2px solid var(--aggregate);
+      padding: 12px 14px;
+    }
+
+    .row-aggregate .role {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-lead, 19px);
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    .tag-agg {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      background: var(--aggregate);
+    }
+
+    .cell-agg {
+      height: 72px;
+      border-radius: var(--radius, 8px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-sec, 16px);
+      font-weight: 700;
+      border: 2px solid transparent;
+    }
+
+    .cell-agg.correct {
+      background: #CBEAE3;
+      color: var(--aggregate);
+      border-color: var(--aggregate);
+    }
+
+    .cell-agg.wrong {
+      background: #FEECEB;
+      color: var(--error);
+      border-color: var(--error);
+    }
+
+    .cell-agg .votes {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-tick, 13px);
+      font-weight: 700;
+      opacity: 0.9;
+      margin-top: 2px;
+    }
+
+    .rate-agg {
+      font-family: var(--font-numeric);
+      font-size: 24px;
+      font-weight: 800;
+      text-align: right;
+      color: var(--aggregate);
+    }
+
+    /* Bottom analysis summary */
+    .verdict-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 20px;
+      background: var(--surface);
+      border-radius: var(--radius, 8px);
+      border: 2px solid #D6DFEB;
+    }
+
+    .verdict-text {
+      font-size: var(--fs-sec, 16px);
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .verdict-text strong {
+      color: var(--aggregate);
+    }
+
+    .rule-note {
+      font-size: var(--fs-sec, 16px);
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    /* Interactive sample focus banner */
+    .sample-active-col {
+      outline: 2px solid var(--focus);
+      background: #FFF9F4 !important;
+    }
+  </style>
+</head>
+<body data-page="03" data-total="29">
+  <div id="stage">
+    <header>
+      <h1>集成为何可能有效：错位误差在多数表决中相互抵消</h1>
+      <p class="lead">3 个独立基分类器各自错误率均为 30%，但因犯错样本互不重叠，多数表决将整体错误率压降至 0%。</p>
+    </header>
+
+    <main class="min0">
+      <div class="board min0">
+        <div class="matrix min0">
+          <!-- Table Header -->
+          <div class="row row-header">
+            <div class="th left">预测主体</div>
+            <div class="sample-pill">样本 1</div>
+            <div class="sample-pill">样本 2</div>
+            <div class="sample-pill">样本 3</div>
+            <div class="sample-pill">样本 4</div>
+            <div class="sample-pill">样本 5</div>
+            <div class="sample-pill">样本 6</div>
+            <div class="sample-pill">样本 7</div>
+            <div class="sample-pill">样本 8</div>
+            <div class="sample-pill">样本 9</div>
+            <div class="sample-pill">样本 10</div>
+            <div class="th right">个体错误率</div>
+          </div>
+
+          <!-- Model 1 -->
+          <div class="row row-model" id="m1-row">
+            <div class="role"><span class="tag-model"></span>基分类器 h<sub>1</sub></div>
+            <!-- Errors at 1, 2, 3 -->
+            <div class="cell wrong" data-sample="0"><span class="symbol">✗</span></div>
+            <div class="cell wrong" data-sample="1"><span class="symbol">✗</span></div>
+            <div class="cell wrong" data-sample="2"><span class="symbol">✗</span></div>
+            <div class="cell correct" data-sample="3"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="4"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="5"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="6"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="7"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="8"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="9"><span class="symbol">✓</span></div>
+            <div class="rate">30.0%</div>
+          </div>
+
+          <!-- Model 2 -->
+          <div class="row row-model" id="m2-row">
+            <div class="role"><span class="tag-model"></span>基分类器 h<sub>2</sub></div>
+            <!-- Errors at 4, 5, 6 -->
+            <div class="cell correct" data-sample="0"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="1"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="2"><span class="symbol">✓</span></div>
+            <div class="cell wrong" data-sample="3"><span class="symbol">✗</span></div>
+            <div class="cell wrong" data-sample="4"><span class="symbol">✗</span></div>
+            <div class="cell wrong" data-sample="5"><span class="symbol">✗</span></div>
+            <div class="cell correct" data-sample="6"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="7"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="8"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="9"><span class="symbol">✓</span></div>
+            <div class="rate">30.0%</div>
+          </div>
+
+          <!-- Model 3 -->
+          <div class="row row-model" id="m3-row">
+            <div class="role"><span class="tag-model"></span>基分类器 h<sub>3</sub></div>
+            <!-- Errors at 7, 8, 9 -->
+            <div class="cell correct" data-sample="0"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="1"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="2"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="3"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="4"><span class="symbol">✓</span></div>
+            <div class="cell correct" data-sample="5"><span class="symbol">✓</span></div>
+            <div class="cell wrong" data-sample="6"><span class="symbol">✗</span></div>
+            <div class="cell wrong" data-sample="7"><span class="symbol">✗</span></div>
+            <div class="cell wrong" data-sample="8"><span class="symbol">✗</span></div>
+            <div class="cell correct" data-sample="9"><span class="symbol">✓</span></div>
+            <div class="rate">30.0%</div>
+          </div>
+
+          <!-- Vector flow lines -->
+          <div class="diverge-zone">
+            <div style="font-size:var(--fs-label, 15px); color:var(--muted); font-weight:700;">多数表决汇聚</div>
+            <!-- 10 connector SVGs -->
+            <div class="connector-line"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="M50,0 L50,40" stroke="#0F766E" stroke-width="2" stroke-dasharray="4 4"/></svg></div>
+            <div class="connector-line"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="M50,0 L50,40" stroke="#0F766E" stroke-width="2" stroke-dasharray="4 4"/></svg></div>
+            <div class="connector-line"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="M50,0 L50,40" stroke="#0F766E" stroke-width="2" stroke-dasharray="4 4"/></svg></div>
+            <div class="connector-line"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="M50,0 L50,40" stroke="#0F766E" stroke-width="2" stroke-dasharray="4 4"/></svg></div>
+            <div class="connector-line"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="M50,0 L50,40" stroke="#0F766E" stroke-width="2" stroke-dasharray="4 4"/></svg></div>
+            <div class="connector-line"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="M50,0 L50,40" stroke="#0F766E" stroke-width="2" stroke-dasharray="4 4"/></svg></div>
+            <div class="connector-line"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="M50,0 L50,40" stroke="#0F766E" stroke-width="2" stroke-dasharray="4 4"/></svg></div>
+            <div class="connector-line"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="M50,0 L50,40" stroke="#0F766E" stroke-width="2" stroke-dasharray="4 4"/></svg></div>
+            <div class="connector-line"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="M50,0 L50,40" stroke="#0F766E" stroke-width="2" stroke-dasharray="4 4"/></svg></div>
+            <div class="connector-line"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="M50,0 L50,40" stroke="#0F766E" stroke-width="2" stroke-dasharray="4 4"/></svg></div>
+            <div style="text-align:right; font-size:var(--fs-label, 15px); color:var(--aggregate); font-weight:700;">误差完全抵消</div>
+          </div>
+
+          <!-- Ensemble Aggregated Output -->
+          <div class="row row-aggregate" id="agg-row">
+            <div class="role"><span class="tag-agg"></span>集成预测 H(x)</div>
+            <div class="cell-agg correct" data-sample="0"><span class="symbol">✓</span><span class="votes">2:1</span></div>
+            <div class="cell-agg correct" data-sample="1"><span class="symbol">✓</span><span class="votes">2:1</span></div>
+            <div class="cell-agg correct" data-sample="2"><span class="symbol">✓</span><span class="votes">2:1</span></div>
+            <div class="cell-agg correct" data-sample="3"><span class="symbol">✓</span><span class="votes">2:1</span></div>
+            <div class="cell-agg correct" data-sample="4"><span class="symbol">✓</span><span class="votes">2:1</span></div>
+            <div class="cell-agg correct" data-sample="5"><span class="symbol">✓</span><span class="votes">2:1</span></div>
+            <div class="cell-agg correct" data-sample="6"><span class="symbol">✓</span><span class="votes">2:1</span></div>
+            <div class="cell-agg correct" data-sample="7"><span class="symbol">✓</span><span class="votes">2:1</span></div>
+            <div class="cell-agg correct" data-sample="8"><span class="symbol">✓</span><span class="votes">2:1</span></div>
+            <div class="cell-agg correct" data-sample="9"><span class="symbol">✓</span><span class="votes">3:0</span></div>
+            <div class="rate-agg">0.0%</div>
+          </div>
+        </div>
+
+        <!-- Bottom verdict explanation bar -->
+        <div class="verdict-bar">
+          <div class="verdict-text" id="verdict">
+            每个样本最多仅被 1 个基模型误判，其余 2 个模型依然做出正确预测。
+          </div>
+          <div class="rule-note">集成出错充要条件：≥ 2 个模型同时误判</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页我们回答一个关键直觉：为什么组合多个并不完美的基模型，竟然能得到一个更准确的系统？
+    大家看画面上的矩阵：我们有 3 个基分类器，每一个在 10 个测试样本里都错了 3 个，个体错误率都是 30%。
+    但关键在于，它们犯错的位置完全错开了：模型 1 错了样本 1 到 3，模型 2 错了 4 到 6，模型 3 错了 7 到 9。
+    当我们采用多数表决规则时，集成系统只有在至少两个模型同时犯错时才会出错。
+    对于前 9 个样本，虽然都有一个模型犯错，但另外两个模型给出了正确判断，票数比是 2 比 1，集成决策全部判对；样本 10 更是全票通过。
+    结果是，原本个体错误率 30% 的模型，组合后的集成错误率降到了 0%。这就是误差互补与抵消的数学本质。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 3, total: 29 });
+
+    // Interactive inspection: hovering or clicking on sample columns highlights the voting breakdown
+    const sampleHeaders = document.querySelectorAll('.sample-pill');
+    const cells = document.querySelectorAll('[data-sample]');
+    const verdictEl = document.getElementById('verdict');
+
+    const sampleDetails = [
+      "样本 1：h₁ 误判，h₂ 与 h₃ 正确。表决票数 2:1，集成纠正错误。",
+      "样本 2：h₁ 误判，h₂ 与 h₃ 正确。表决票数 2:1，集成纠正错误。",
+      "样本 3：h₁ 误判，h₂ 与 h₃ 正确。表决票数 2:1，集成纠正错误。",
+      "样本 4：h₂ 误判，h₁ 与 h₃ 正确。表决票数 2:1，集成纠正错误。",
+      "样本 5：h₂ 误判，h₁ 与 h₃ 正确。表决票数 2:1，集成纠正错误。",
+      "样本 6：h₂ 误判，h₁ 与 h₃ 正确。表决票数 2:1，集成纠正错误。",
+      "样本 7：h₃ 误判，h₁ 与 h₂ 正确。表决票数 2:1，集成纠正错误。",
+      "样本 8：h₃ 误判，h₁ 与 h₂ 正确。表决票数 2:1，集成纠正错误。",
+      "样本 9：h₃ 误判，h₁ 与 h₂ 正确。表决票数 2:1，集成纠正错误。",
+      "样本 10：h₁、h₂、h₃ 全部预测正确。表决票数 3:0，全票通过。"
+    ];
+
+    function highlightSample(idx) {
+      cells.forEach(c => {
+        if (c.getAttribute('data-sample') === String(idx)) {
+          c.style.transform = 'scale(1.08)';
+          c.style.boxShadow = '0 0 0 2px var(--focus)';
+        } else {
+          c.style.transform = '';
+          c.style.boxShadow = '';
+        }
+      });
+      sampleHeaders.forEach((h, i) => {
+        if (i === idx) {
+          h.style.color = 'var(--focus)';
+          h.style.fontWeight = '700';
+        } else {
+          h.style.color = 'var(--muted)';
+          h.style.fontWeight = 'normal';
+        }
+      });
+      if (idx !== null && sampleDetails[idx]) {
+        verdictEl.innerHTML = `<strong>样本 ${idx + 1} 投票详情：</strong>${sampleDetails[idx]}`;
+      } else {
+        verdictEl.innerHTML = `每个样本最多仅被 1 个基模型误判，其余 2 个模型依然做出正确预测。`;
+      }
+    }
+
+    cells.forEach(c => {
+      const s = parseInt(c.getAttribute('data-sample'), 10);
+      c.addEventListener('mouseenter', () => highlightSample(s));
+      c.addEventListener('mouseleave', () => highlightSample(null));
+      c.addEventListener('click', () => highlightSample(s));
+    });
+
+    sampleHeaders.forEach((h, i) => {
+      h.style.cursor = 'pointer';
+      h.addEventListener('mouseenter', () => highlightSample(i));
+      h.addEventListener('mouseleave', () => highlightSample(null));
+    });
+  </script>
+</body>
+</html>

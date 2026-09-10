@@ -56,6 +56,8 @@ def hashes():
     paths = [ROOT / 'config.yaml', *sorted((ROOT / 'core').glob('*.py')),
              *sorted((ROOT / 'prompts').glob('*.md')),
              *sorted((ROOT / 'references/styles').rglob('*.md')),
+             *sorted((ROOT / 'references/styles/shots').glob('*.png')),
+             *sorted((ROOT / 'references/styles/contact-sheets').glob('*.png')),
              *sorted((ROOT / 'workflows').rglob('*.md')),
              *sorted((ROOT / 'vendor/chassis').glob('*')),
              Path(__file__).resolve()]

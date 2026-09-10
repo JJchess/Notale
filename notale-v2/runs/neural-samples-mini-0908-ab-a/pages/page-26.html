@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      overflow: hidden;
+      padding: 36px 56px 32px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 14px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      color: var(--text);
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+
+    .topic-tag {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 左右两栏架构对比 */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 56px;
+      margin-top: 20px;
+      height: 610px;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .column-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--rule);
+    }
+
+    .column.bottleneck .column-header {
+      border-bottom-color: var(--signal);
+    }
+
+    .column.attention .column-header {
+      border-bottom-color: var(--structure);
+    }
+
+    .col-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .col-badge {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+    }
+
+    .bottleneck .col-badge { color: var(--signal); }
+    .attention .col-badge { color: var(--structure); }
+
+    .lead-text {
+      font-size: var(--fs-body);
+      line-height: 1.4;
+      color: var(--text);
+      margin: 12px 0 8px;
+      height: 48px;
+    }
+
+    .lead-text strong {
+      color: var(--signal);
+      font-weight: 700;
+    }
+
+    .attention .lead-text strong {
+      color: var(--structure);
+    }
+
+    .diagram-wrap {
+      flex: 1;
+      position: relative;
+      width: 100%;
+      height: 520px;
+    }
+
+    svg.diagram {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 底部结论总结横条 */
+    footer.summary-bar {
+      border-top: 1px solid var(--rule);
+      padding-top: 14px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 28px;
+      align-items: center;
+    }
+
+    .summary-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--structure);
+      white-space: nowrap;
+    }
+
+    .summary-text {
+      font-size: var(--fs-lead);
+      line-height: 1.4;
+      color: var(--text);
+      margin: 0;
+    }
+
+    /* SVG 矢量文字与线条规范 */
+    .token-text {
+      font-size: 16px;
+      font-family: var(--font-sans);
+      fill: var(--text);
+      text-anchor: middle;
+      font-weight: 600;
+    }
+
+    .token-sub {
+      font-size: 13px;
+      font-family: var(--font-sans);
+      fill: var(--muted);
+      text-anchor: middle;
+    }
+
+    .wire-structure {
+      stroke: var(--structure);
+      stroke-width: 2.5;
+      fill: none;
+    }
+
+    .wire-signal {
+      stroke: var(--signal);
+      stroke-width: 2.5;
+      fill: none;
+    }
+
+    .wire-atten-dashed {
+      stroke: var(--structure);
+      stroke-dasharray: 4 4;
+      fill: none;
+    }
+
+    .math-text {
+      font-family: "Times New Roman", serif;
+      font-style: italic;
+      text-anchor: middle;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>从固定瓶颈到动态寻址：为什么需要直接访问任意历史位置</h1>
+      <span class="topic-tag">第 5 单元 · 机制动机</span>
+    </header>
+
+    <div class="comparison-grid">
+      <!-- 左侧：RNN 递归压缩与瓶颈 -->
+      <section class="column bottleneck">
+        <div class="column-header">
+          <span class="col-title">RNN 递归压缩：单一向量瓶颈</span>
+          <span class="col-badge">O(T) 距离衰减</span>
+        </div>
+        <p class="lead-text">
+          长句历史被<strong>逐步挤压</strong>进末状态 <i>h</i><sub>5</sub>；时间步推移冲淡句首转折词细节。
+        </p>
+        <div class="diagram-wrap">
+          <svg class="diagram" viewBox="0 0 710 500">
+            <defs>
+              <marker id="arr-str-l" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M1,1 L7,4 L1,7 Z" fill="#1C4436"/>
+              </marker>
+              <marker id="arr-sig-l" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M1,1 L7,4 L1,7 Z" fill="#D43811"/>
+              </marker>
+            </defs>
+
+            <!-- 词元输入层 (y = 420) -->
+            <!-- x1: "Although" -->
+            <g transform="translate(65, 420)">
+              <rect x="-44" y="-18" width="88" height="34" rx="4" fill="none" stroke="#BAC4BF" stroke-width="1.5"/>
+              <text y="4" class="token-text">Although</text>
+              <text y="30" class="token-sub">x₁</text>
+            </g>
+
+            <!-- x2: "the" -->
+            <g transform="translate(180, 420)">
+              <rect x="-35" y="-18" width="70" height="34" rx="4" fill="none" stroke="#BAC4BF" stroke-width="1.5"/>
+              <text y="4" class="token-text">the</text>
+              <text y="30" class="token-sub">x₂</text>
+            </g>
+
+            <!-- x3: "results" -->
+            <g transform="translate(300, 420)">
+              <rect x="-40" y="-18" width="80" height="34" rx="4" fill="none" stroke="#BAC4BF" stroke-width="1.5"/>
+              <text y="4" class="token-text">results</text>
+              <text y="30" class="token-sub">x₃</text>
+            </g>
+
+            <!-- x4: "looked" -->
+            <g transform="translate(425, 420)">
+              <rect x="-40" y="-18" width="80" height="34" rx="4" fill="none" stroke="#BAC4BF" stroke-width="1.5"/>
+              <text y="4" class="token-text">looked</text>
+              <text y="30" class="token-sub">x₄</text>
+            </g>
+
+            <!-- x5: "promising" -->
+            <g transform="translate(560, 420)">
+              <rect x="-46" y="-18" width="92" height="34" rx="4" fill="none" stroke="#BAC4BF" stroke-width="1.5"/>
+              <text y="4" class="token-text">promising</text>
+              <text y="30" class="token-sub">x₅</text>
+            </g>
+
+            <!-- 向上输入箭头 (y: 400 -> 335) -->
+            <path d="M 65,400 L 65,335" class="wire-structure" marker-end="url(#arr-str-l)"/>
+            <path d="M 180,400 L 180,335" class="wire-structure" marker-end="url(#arr-str-l)"/>
+            <path d="M 300,400 L 300,335" class="wire-structure" marker-end="url(#arr-str-l)"/>
+            <path d="M 425,400 L 425,335" class="wire-structure" marker-end="url(#arr-str-l)"/>
+            <path d="M 560,400 L 560,335" class="wire-structure" marker-end="url(#arr-str-l)"/>
+
+            <!-- 隐藏状态节点 h1 到 h5 (y = 310) -->
+            <!-- h1 -->
+            <circle cx="65" cy="310" r="20" fill="#F1F4F2" stroke="#1C4436" stroke-width="2.5"/>
+            <text x="65" y="316" class="math-text" font-size="16" fill="#1C4436">h₁</text>
+
+            <!-- h1 -> h2 -->
+            <path d="M 85,310 L 155,310" class="wire-structure" marker-end="url(#arr-str-l)"/>
+
+            <!-- h2 -->
+            <circle cx="180" cy="310" r="20" fill="#F1F4F2" stroke="#1C4436" stroke-width="2.5"/>
+            <text x="180" y="316" class="math-text" font-size="16" fill="#1C4436">h₂</text>
+
+            <!-- h2 -> h3 -->
+            <path d="M 200,310 L 275,310" class="wire-structure" marker-end="url(#arr-str-l)"/>
+
+            <!-- h3 -->
+            <circle cx="300" cy="310" r="20" fill="#F1F4F2" stroke="#1C4436" stroke-width="2.5"/>
+            <text x="300" y="316" class="math-text" font-size="16" fill="#1C4436">h₃</text>
+
+            <!-- h3 -> h4 -->
+            <path d="M 320,310 L 400,310" class="wire-structure" marker-end="url(#arr-str-l)"/>
+
+            <!-- h4 -->
+            <circle cx="425" cy="310" r="20" fill="#F1F4F2" stroke="#1C4436" stroke-width="2.5"/>
+            <text x="425" y="316" class="math-text" font-size="16" fill="#1C4436">h₄</text>
+
+            <!-- h4 -> h5 -->
+            <path d="M 445,310 L 535,310" class="wire-structure" marker-end="url(#arr-str-l)"/>
+
+            <!-- 漏斗挤压示意区域 -->
+            <path d="M 525,270 L 635,175 L 635,215 L 525,350 Z" fill="#D43811" fill-opacity="0.08" stroke="#D43811" stroke-dasharray="3 3"/>
+
+            <!-- h5 节点 -->
+            <circle cx="560" cy="310" r="22" fill="#F1F4F2" stroke="#D43811" stroke-width="3"/>
+            <text x="560" y="316" class="math-text" font-size="17" fill="#D43811">h₅</text>
+
+            <!-- 汇聚到单一瓶颈上下文向量 c = h5 -->
+            <path d="M 578,300 C 610,285 635,230 635,210" class="wire-signal" marker-end="url(#arr-sig-l)"/>
+
+            <g transform="translate(635, 175)">
+              <rect x="-38" y="-18" width="76" height="36" rx="4" fill="#F1F4F2" stroke="#D43811" stroke-width="2"/>
+              <text y="5" class="math-text" font-size="16" fill="#D43811">c = h₅</text>
+            </g>
+
+            <!-- 解码输出 -->
+            <path d="M 635,155 L 635,100" class="wire-signal" marker-end="url(#arr-sig-l)"/>
+            <text x="635" y="85" class="token-text" fill="#D43811">解码预测</text>
+
+            <!-- 早期词衰减警示 -->
+            <g transform="translate(180, 195)">
+              <text x="0" y="0" font-size="15" fill="#D43811" font-weight="700">⚠ 跨 4 步非线性递推</text>
+              <text x="0" y="24" font-size="13" fill="#5B6661">句首转折词 "Although" 梯度衰减</text>
+              <path d="M -10,35 C -10,65 50,230 60,285" fill="none" stroke="#D43811" stroke-width="1.5" stroke-dasharray="3 3"/>
+            </g>
+          </svg>
+        </div>
+      </section>
+
+      <!-- 右侧：注意力直接寻址与加权上下文 -->
+      <section class="column attention">
+        <div class="column-header">
+          <span class="col-title">注意力直接寻址：全历史动态路由</span>
+          <span class="col-badge">O(1) 跨度直连</span>
+        </div>
+        <p class="lead-text">
+          保留全部隐状态 <i>h</i><sub>1</sub>…<i>h</i><sub>5</sub>；按解码需要直接计算相关性权重 <strong>α<sub>i</sub> 调取目标词</strong>。
+        </p>
+        <div class="diagram-wrap">
+          <svg class="diagram" viewBox="0 0 710 500">
+            <defs>
+              <marker id="arr-str-r" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M1,1 L7,4 L1,7 Z" fill="#1C4436"/>
+              </marker>
+            </defs>
+
+            <!-- 词元输入层 (y = 420) -->
+            <g transform="translate(65, 420)">
+              <rect x="-44" y="-18" width="88" height="34" rx="4" fill="none" stroke="#BAC4BF" stroke-width="1.5"/>
+              <text y="4" class="token-text">Although</text>
+              <text y="30" class="token-sub">x₁</text>
+            </g>
+
+            <g transform="translate(180, 420)">
+              <rect x="-35" y="-18" width="70" height="34" rx="4" fill="none" stroke="#BAC4BF" stroke-width="1.5"/>
+              <text y="4" class="token-text">the</text>
+              <text y="30" class="token-sub">x₂</text>
+            </g>
+
+            <g transform="translate(300, 420)">
+              <rect x="-40" y="-18" width="80" height="34" rx="4" fill="none" stroke="#BAC4BF" stroke-width="1.5"/>
+              <text y="4" class="token-text">results</text>
+              <text y="30" class="token-sub">x₃</text>
+            </g>
+
+            <g transform="translate(425, 420)">
+              <rect x="-40" y="-18" width="80" height="34" rx="4" fill="none" stroke="#BAC4BF" stroke-width="1.5"/>
+              <text y="4" class="token-text">looked</text>
+              <text y="30" class="token-sub">x₄</text>
+            </g>
+
+            <g transform="translate(560, 420)">
+              <rect x="-46" y="-18" width="92" height="34" rx="4" fill="none" stroke="#BAC4BF" stroke-width="1.5"/>
+              <text y="4" class="token-text">promising</text>
+              <text y="30" class="token-sub">x₅</text>
+            </g>
+
+            <!-- 向上输入箭头 (y: 400 -> 335) -->
+            <path d="M 65,400 L 65,335" class="wire-structure" marker-end="url(#arr-str-r)"/>
+            <path d="M 180,400 L 180,335" class="wire-structure" marker-end="url(#arr-str-r)"/>
+            <path d="M 300,400 L 300,335" class="wire-structure" marker-end="url(#arr-str-r)"/>
+            <path d="M 425,400 L 425,335" class="wire-structure" marker-end="url(#arr-str-r)"/>
+            <path d="M 560,400 L 560,335" class="wire-structure" marker-end="url(#arr-str-r)"/>
+
+            <!-- 历史状态库 h1 到 h5 (y = 310) -->
+            <circle cx="65" cy="310" r="20" fill="#F1F4F2" stroke="#1C4436" stroke-width="2.5"/>
+            <text x="65" y="316" class="math-text" font-size="16" fill="#1C4436">h₁</text>
+
+            <circle cx="180" cy="310" r="20" fill="#F1F4F2" stroke="#1C4436" stroke-width="2.5"/>
+            <text x="180" y="316" class="math-text" font-size="16" fill="#1C4436">h₂</text>
+
+            <circle cx="300" cy="310" r="20" fill="#F1F4F2" stroke="#1C4436" stroke-width="2.5"/>
+            <text x="300" y="316" class="math-text" font-size="16" fill="#1C4436">h₃</text>
+
+            <circle cx="425" cy="310" r="20" fill="#F1F4F2" stroke="#1C4436" stroke-width="2.5"/>
+            <text x="425" y="316" class="math-text" font-size="16" fill="#1C4436">h₄</text>
+
+            <circle cx="560" cy="310" r="20" fill="#F1F4F2" stroke="#1C4436" stroke-width="2.5"/>
+            <text x="560" y="316" class="math-text" font-size="16" fill="#1C4436">h₅</text>
+
+            <!-- 汇聚点：动态上下文 c 向量 -->
+            <g transform="translate(355, 175)">
+              <circle cx="0" cy="0" r="24" fill="#F1F4F2" stroke="#1C4436" stroke-width="2.5"/>
+              <text x="0" y="6" class="math-text" font-size="18" fill="#1C4436">c</text>
+              <text x="50" y="6" font-size="15" fill="#5B6661" font-family="Times New Roman">Σ αᵢ hᵢ</text>
+            </g>
+
+            <!-- 动态注意力寻址曲线 (汇聚到 x=355, y=175) -->
+            <!-- 关注 h1: 高权重 0.52 (粗实线) -->
+            <path d="M 65,288 C 65,210 320,185 332,178" class="wire-structure" stroke-width="3.5" marker-end="url(#arr-str-r)"/>
+            <text x="145" y="210" font-size="13" font-weight="700" fill="#1C4436">α₁ = 0.52</text>
+
+            <!-- 关注 h2: 低权重 0.04 (虚线) -->
+            <path d="M 180,288 C 180,230 325,195 338,182" class="wire-atten-dashed" stroke-width="1.2" stroke-opacity="0.5"/>
+            <text x="215" y="248" font-size="13" fill="#5B6661">0.04</text>
+
+            <!-- 关注 h3: 中权重 0.28 -->
+            <path d="M 300,288 C 300,230 340,205 348,198" class="wire-structure" stroke-width="2.6" marker-end="url(#arr-str-r)"/>
+            <text x="270" y="258" font-size="13" font-weight="600" fill="#1C4436">α₃ = 0.28</text>
+
+            <!-- 关注 h4: 低权重 0.06 -->
+            <path d="M 425,288 C 425,230 375,200 368,195" class="wire-atten-dashed" stroke-width="1.2" stroke-opacity="0.5"/>
+            <text x="420" y="248" font-size="13" fill="#5B6661">0.06</text>
+
+            <!-- 关注 h5: 次权重 0.10 -->
+            <path d="M 560,288 C 560,210 395,185 378,178" class="wire-structure" stroke-width="1.8" marker-end="url(#arr-str-r)"/>
+            <text x="510" y="210" font-size="13" fill="#1C4436">α₅ = 0.10</text>
+
+            <!-- c 输出到解码预测 -->
+            <path d="M 355,150 L 355,100" class="wire-structure" marker-end="url(#arr-str-r)"/>
+            <text x="355" y="85" class="token-text" fill="#1C4436">解码预测</text>
+          </svg>
+        </div>
+      </section>
+    </div>
+
+    <footer class="summary-bar">
+      <span class="summary-title">本质跃迁</span>
+      <p class="summary-text">
+        RNN 将长程依赖寄托于<strong>单向顺序递推</strong>，导致计算距离随时间线性增长；注意力机制通过<strong>内容相似度动态加权</strong>，实现跨时序 <i>O</i>(1) 直接访问。
+      </p>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    在这一页，我们要看清为什么序列模型需要引入注意力机制。
+    请看左边：传统的 RNN 编码器在每个时间步只能依靠一个定维隐藏状态向后传递信息。到第 5 步时，句首词“Although”的信息已经被后续的多次非线性变换强烈冲淡，这就是著名的“单一向量瓶颈”。
+    再看右边：注意力机制彻底打破了这一限制。它保留全部历史状态 h_1 到 h_5；当解码器需要生成特定词时，可以根据内容相关度直接计算权重向量 alpha。这里对“Although”分配了 0.52 的权重，对“results”分配了 0.28，加权汇总为上下文向量 c。信息传递距离从 O(T) 缩短为 O(1)。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 26, total: 32, keys: false });
+  </script>
+</body>
+</html>

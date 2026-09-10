@@ -1,0 +1,468 @@
+<!--
+  构图意图：
+  1. 主对象为三个核心超参数（树数量 n_estimators、候选特征数 max_features、叶节点深度/约束 max_depth）对偏差、方差与总泛化误差的调控曲线。
+  2. 画面以三组联动对比图表横向展开，曲线直观展现：增加树数单调压低方差且不升偏差；调节特征数在多样性与单树能力间形成 U 型拐点；限制深度则直接在过拟合与欠拟合之间转移。
+  3. 结论文字与关键取舍点直接贴附于曲线的最优谷底与饱和拐点处，避免外部卡片包裹。
+-->
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: Lato, "Noto Sans CJK SC", sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    .header {
+      margin-top: 8px;
+      margin-bottom: 24px;
+    }
+    .header h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      color: var(--aggregate);
+    }
+    .header p {
+      margin: 8px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 图例与参数切换条 */
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 12px;
+    }
+    .param-nav {
+      display: flex;
+      gap: 12px;
+    }
+    .param-btn {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      padding: 6px 18px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all var(--duration-fast) ease;
+    }
+    .param-btn:hover {
+      border-color: var(--aggregate);
+      color: var(--aggregate);
+    }
+    .param-btn.active {
+      background: var(--aggregate);
+      border-color: var(--aggregate);
+      color: var(--bg);
+      font-weight: var(--weight-medium);
+    }
+
+    .legend {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-line {
+      width: 18px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .line-bias { background: var(--uncertain); }
+    .line-var { background: var(--model); }
+    .line-err { background: var(--focus); height: 4px; }
+
+    /* 主图表区 */
+    .content-grid {
+      display: grid;
+      grid-template-columns: 1040px 1fr;
+      gap: 40px;
+      height: 560px;
+      align-items: start;
+    }
+
+    .chart-panel {
+      position: relative;
+      height: 530px;
+      width: 100%;
+    }
+    #chartHost {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 侧边说明 */
+    .narrative {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 490px;
+      border-left: 1px solid var(--line);
+      padding-left: 32px;
+    }
+    .param-intro h2 {
+      margin: 0 0 10px 0;
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      color: var(--aggregate);
+    }
+    .param-intro .param-tag {
+      display: inline-block;
+      font-family: var(--font-numeric);
+      font-size: var(--fs-sec);
+      color: var(--model);
+      margin-bottom: 14px;
+      font-weight: var(--weight-medium);
+    }
+    .param-intro p {
+      margin: 0;
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+      color: var(--text);
+    }
+
+    .callout-stat {
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+    }
+    .stat-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .stat-val {
+      font-size: var(--fs-h1);
+      font-family: var(--font-numeric);
+      color: var(--focus);
+      font-weight: var(--weight-bold);
+    }
+    .stat-sub {
+      margin-top: 6px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 底部收束注记 */
+    .footer-note {
+      position: absolute;
+      bottom: 24px;
+      left: var(--pad-x);
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-numeric);
+    }
+  </style>
+</head>
+<body data-page="12" data-total="26">
+  <div id="stage">
+    <header class="header">
+      <h1>随机森林超参数与偏差—方差权衡</h1>
+      <p>树数、特征子集与单树深度分别作用于方差与偏差的不同路径</p>
+    </header>
+
+    <div class="toolbar">
+      <div class="param-nav" role="tablist">
+        <button class="param-btn active" id="btn-trees" role="tab" aria-selected="true" data-param="trees">树数量 n_estimators</button>
+        <button class="param-btn" id="btn-features" role="tab" aria-selected="false" data-param="features">特征子集 max_features</button>
+        <button class="param-btn" id="btn-depth" role="tab" aria-selected="false" data-param="depth">树深度 max_depth</button>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><span class="legend-line line-bias"></span>偏差² (Bias²)</div>
+        <div class="legend-item"><span class="legend-line line-var"></span>方差 (Variance)</div>
+        <div class="legend-item"><span class="legend-line line-err"></span>总泛化误差 (Error)</div>
+      </div>
+    </div>
+
+    <main class="content-grid">
+      <div class="chart-panel">
+        <div id="chartHost"></div>
+      </div>
+
+      <aside class="narrative">
+        <div class="param-intro">
+          <h2 id="view-title">增加树数单向压低方差</h2>
+          <div class="param-tag" id="view-code">n_estimators: 1 → 500</div>
+          <p id="view-desc">
+            平均平抑独立扰动，方差单调递减并收敛至平台，多树不会导致过拟合。
+          </p>
+        </div>
+
+        <div class="callout-stat">
+          <div class="stat-label" id="stat-title">理论收敛极限</div>
+          <div class="stat-val" id="stat-value">ρ · σ² 下界</div>
+          <div class="stat-sub" id="stat-desc">方差随 1/B 下降，达到树间相关系数 ρ 制约的下界后饱和。</div>
+        </div>
+      </aside>
+    </main>
+
+    <div class="footer-note">
+      * 坐标轴数值为模拟教学量纲；总误差包含不可约误差常数项 σ²_noise。
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，在构建随机森林时，大家经常会问：参数到底该怎么调？这页通过偏差—方差分解，清晰呈现三个核心超参数的不同作用路径。
+    首先看“树数量”n_estimators。增加树木是一个“免费的午餐”：单树的期望偏差保持不变，而树间的独立随机性在平均下被持续抵消，方差单调下降至平台期。所以树永远不会因为太多而过拟合，上限只取决于计算成本。
+    接着看“特征子集大小”max_features。特征数太小时单树拟合力弱、偏差过高；特征数过大时各树高度相似、相关系数 ρ 变大导致方差居高不下。因此分类推荐根号 p，回归推荐三分之一 p，正好处在 U 型谷底。
+    最后是“树深度”max_depth。随机森林通常倾向于深树甚至不剪枝，因为高方差可以被集成消除；但在高噪声数据中，适度限制深度能有效降低单树拟合噪声的倾向。
+  </aside>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var host = document.getElementById("chartHost");
+      var chart = echarts.init(host, null, { renderer: "svg" });
+
+      var DATA = {
+        trees: {
+          title: "增加树数单向压低方差",
+          code: "n_estimators: 1 → 500",
+          desc: "平均平抑独立扰动，方差单调递减并收敛至平台，多树不会导致过拟合。",
+          statTitle: "理论收敛极限",
+          statVal: "ρ · σ² 下界",
+          statDesc: "方差随 1/B 下降，达到树间相关系数 ρ 制约的下界后饱和。",
+          xName: "基学习器数量 (n_estimators)",
+          xTicks: ["1", "5", "10", "20", "50", "100", "200", "500"],
+          bias: [0.18, 0.18, 0.18, 0.18, 0.18, 0.18, 0.18, 0.18],
+          variance: [0.65, 0.36, 0.25, 0.18, 0.13, 0.11, 0.10, 0.095],
+          total: [0.88, 0.59, 0.48, 0.41, 0.36, 0.34, 0.33, 0.325],
+          mark: {
+            point: ["100", 0.34],
+            text: "饱和收敛区 (≥100 树)"
+          }
+        },
+        features: {
+          title: "特征子集存在最优折中",
+          code: "max_features: 1 → p",
+          desc: "子集过小使单树欠拟合，过大则树间相关系数上升，经典推荐值 √p 处于谷底。",
+          statTitle: "分类推荐值",
+          statVal: "m = √p",
+          statDesc: "打破树间同质性，同时保留充足的分裂判别力。",
+          xName: "候选特征数 (max_features / p)",
+          xTicks: ["0.05", "0.1", "0.2 (√p)", "0.33", "0.5", "0.7", "0.85", "1.0"],
+          bias: [0.48, 0.32, 0.21, 0.18, 0.16, 0.15, 0.14, 0.14],
+          variance: [0.08, 0.09, 0.11, 0.14, 0.19, 0.26, 0.34, 0.42],
+          total: [0.61, 0.46, 0.37, 0.37, 0.40, 0.46, 0.53, 0.61],
+          mark: {
+            point: ["0.2 (√p)", 0.37],
+            text: "综合误差最低谷"
+          }
+        },
+        depth: {
+          title: "单树深度权衡拟合与稳健",
+          code: "max_depth: 浅 (欠拟合) → 无约束",
+          desc: "随机森林倾向深树以得低偏差，集成消解方差；强噪声场景下可适度约束。",
+          statTitle: "设计直觉",
+          statVal: "低偏差 + 降方差",
+          statDesc: "Bagging 天然擅长消解方差，基树通常追求低偏差充分生长。",
+          xName: "树最大深度 (max_depth)",
+          xTicks: ["2", "4", "6", "8", "12", "16", "24", "无限制"],
+          bias: [0.55, 0.38, 0.25, 0.18, 0.14, 0.12, 0.11, 0.10],
+          variance: [0.06, 0.08, 0.11, 0.15, 0.18, 0.21, 0.24, 0.26],
+          total: [0.66, 0.51, 0.41, 0.38, 0.37, 0.38, 0.40, 0.41],
+          mark: {
+            point: ["12", 0.37],
+            text: "适度剪枝平衡点"
+          }
+        }
+      };
+
+      var currentParam = "trees";
+
+      function buildOption(dataKey) {
+        var d = DATA[dataKey];
+        return {
+          animationDuration: 400,
+          animationEasing: "cubicOut",
+          grid: {
+            left: 50,
+            right: 40,
+            top: 40,
+            bottom: 60,
+            containLabel: true
+          },
+          tooltip: {
+            trigger: "axis",
+            backgroundColor: "#17221F",
+            borderColor: "#74817C",
+            textStyle: { color: "#DCE2DE", fontSize: 13, fontFamily: "Noto Sans CJK SC, sans-serif" },
+            formatter: function (params) {
+              var str = params[0].name + "<br/>";
+              params.forEach(function (item) {
+                str += item.marker + " " + item.seriesName + ": " + item.value.toFixed(3) + "<br/>";
+              });
+              return str;
+            }
+          },
+          xAxis: {
+            type: "category",
+            name: d.xName,
+            nameLocation: "middle",
+            nameGap: 36,
+            nameTextStyle: {
+              color: "#46534F",
+              fontSize: 15,
+              fontFamily: "Noto Sans CJK SC, sans-serif"
+            },
+            data: d.xTicks,
+            axisLine: { lineStyle: { color: "#74817C" } },
+            axisTick: { alignWithLabel: true },
+            axisLabel: {
+              color: "#17221F",
+              fontSize: 13,
+              fontFamily: "Lato, sans-serif"
+            }
+          },
+          yAxis: {
+            type: "value",
+            name: "误差分解",
+            min: 0,
+            max: 0.95,
+            interval: 0.2,
+            nameTextStyle: {
+              color: "#46534F",
+              fontSize: 15,
+              fontFamily: "Noto Sans CJK SC, sans-serif"
+            },
+            axisLine: { show: true, lineStyle: { color: "#74817C" } },
+            splitLine: { lineStyle: { color: "#BAC3BE", type: "dashed" } },
+            axisLabel: {
+              color: "#17221F",
+              fontSize: 13,
+              fontFamily: "Lato, sans-serif"
+            }
+          },
+          series: [
+            {
+              name: "偏差² (Bias²)",
+              type: "line",
+              smooth: true,
+              data: d.bias,
+              itemStyle: { color: "#8B6941" },
+              lineStyle: { width: 2.5, type: "dashed", color: "#8B6941" },
+              symbol: "circle",
+              symbolSize: 6
+            },
+            {
+              name: "方差 (Variance)",
+              type: "line",
+              smooth: true,
+              data: d.variance,
+              itemStyle: { color: "#2E5F78" },
+              lineStyle: { width: 2.5, color: "#2E5F78" },
+              symbol: "circle",
+              symbolSize: 6
+            },
+            {
+              name: "总泛化误差 (Error)",
+              type: "line",
+              smooth: true,
+              data: d.total,
+              itemStyle: { color: "#C64B2E" },
+              lineStyle: { width: 3.8, color: "#C64B2E" },
+              symbol: "circle",
+              symbolSize: 8,
+              markPoint: {
+                symbol: "pin",
+                symbolSize: 42,
+                itemStyle: { color: "#C64B2E" },
+                data: [
+                  {
+                    coord: d.mark.point,
+                    value: d.mark.text
+                  }
+                ],
+                label: {
+                  show: true,
+                  position: "top",
+                  color: "#17221F",
+                  fontSize: 13,
+                  fontFamily: "Noto Sans CJK SC, sans-serif",
+                  formatter: d.mark.text
+                }
+              }
+            }
+          ]
+        };
+      }
+
+      function updateView(key) {
+        currentParam = key;
+        var info = DATA[key];
+
+        document.querySelectorAll(".param-btn").forEach(function (btn) {
+          var active = btn.getAttribute("data-param") === key;
+          btn.classList.toggle("active", active);
+          btn.setAttribute("aria-selected", active);
+        });
+
+        document.getElementById("view-title").textContent = info.title;
+        document.getElementById("view-code").textContent = info.code;
+        document.getElementById("view-desc").textContent = info.desc;
+        document.getElementById("stat-title").textContent = info.statTitle;
+        document.getElementById("stat-value").textContent = info.statVal;
+        document.getElementById("stat-desc").textContent = info.statDesc;
+
+        chart.setOption(buildOption(key), { notMerge: true });
+      }
+
+      document.querySelectorAll(".param-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          updateView(this.getAttribute("data-param"));
+        });
+      });
+
+      Deck.init({ index: 12, total: 26, keys: false });
+      updateView("trees");
+
+      window.addEventListener("resize", function () {
+        chart.resize();
+      });
+    })();
+  </script>
+</body>
+</html>

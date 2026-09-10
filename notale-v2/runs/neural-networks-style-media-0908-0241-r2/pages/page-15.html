@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 38px 56px 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: var(--text);
+      font-family: var(--font-sans);
+      background: var(--bg);
+      user-select: none;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .kicker {
+      font-size: var(--fs-label);
+      color: var(--text);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    /* 主视觉区域：三联对比与投影关系 */
+    .viewport {
+      position: relative;
+      width: 100%;
+      height: 640px;
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 36px;
+      align-items: stretch;
+    }
+
+    /* 左侧：多通道张量视角 (C_in 堆叠与核求和) */
+    .tensor-column {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--structure);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .svg-canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 右侧：步幅、特征图收缩与感受野树状扩张 */
+    .rf-column {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+    }
+
+    /* 控制栏与读数 */
+    .dashboard {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 24px;
+      padding-top: 14px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .interactive-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .stride-btn {
+      appearance: none;
+      background: transparent;
+      border: 1.5px solid var(--rule);
+      border-radius: 4px;
+      padding: 6px 14px;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .stride-btn:hover {
+      border-color: var(--structure);
+      color: var(--structure);
+    }
+    .stride-btn.active {
+      background: var(--structure);
+      border-color: var(--structure);
+      color: #fff;
+    }
+
+    .summary-text {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .metric-pill {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+      padding: 4px 10px;
+      background: rgba(28, 68, 54, 0.08);
+      border-radius: 4px;
+      font-size: var(--fs-label);
+      font-variant-numeric: tabular-nums;
+    }
+    .metric-pill strong {
+      color: var(--signal);
+      font-size: var(--fs-lead);
+    }
+
+    /* SVG 内部样式 */
+    .grid-bg {
+      fill: #fff;
+      stroke: var(--rule);
+      stroke-width: 1;
+    }
+    .cell {
+      stroke: var(--rule);
+      stroke-width: 1;
+      transition: fill 0.2s ease, stroke 0.2s ease;
+    }
+    .cell-focus {
+      fill: rgba(212, 56, 17, 0.22) !important;
+      stroke: var(--signal) !important;
+      stroke-width: 2 !important;
+    }
+    .cell-target {
+      fill: var(--signal) !important;
+      stroke: var(--signal) !important;
+    }
+    .cell-l1 {
+      fill: rgba(28, 68, 54, 0.15);
+      stroke: var(--structure);
+      stroke-width: 1.5;
+    }
+    .rf-cone {
+      fill: rgba(212, 56, 17, 0.08);
+      stroke: var(--signal);
+      stroke-width: 1.5;
+      stroke-dasharray: 4 2;
+    }
+    .flow-arrow {
+      stroke: var(--structure);
+      stroke-width: 2;
+      fill: none;
+      marker-end: url(#arrow-green);
+    }
+    .signal-arrow {
+      stroke: var(--signal);
+      stroke-width: 2;
+      fill: none;
+      marker-end: url(#arrow-red);
+    }
+    .text-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      fill: var(--structure);
+    }
+    .text-dim {
+      font-size: var(--fs-tick);
+      fill: var(--muted);
+      font-family: var(--font-sans);
+    }
+    .text-mono {
+      font-size: var(--fs-tick);
+      font-family: monospace;
+      fill: var(--text);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>通道融合、步幅采样与感受野逐层扩张</h1>
+      <span class="kicker">CNN: 利用空间网格结构</span>
+    </header>
+
+    <div class="viewport">
+      <!-- 左侧：多通道融合机制 (3 输入通道 -> 单一输出特征图) -->
+      <div class="tensor-column">
+        <svg id="svg-channels" class="svg-canvas" viewBox="0 0 460 560">
+          <defs>
+            <marker id="arrow-green" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="#1C4436" />
+            </marker>
+            <marker id="arrow-red" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="#D43811" />
+            </marker>
+          </defs>
+
+          <!-- 标题说明 -->
+          <text x="10" y="24" class="text-title">多通道输入：对应通道独立卷积后相加</text>
+
+          <!-- 3 个输入通道平面 (倾斜等轴视角) -->
+          <!-- Channel 0: R -->
+          <g id="chan-0" transform="translate(40, 60)">
+            <path d="M 0 60 L 140 0 L 260 40 L 120 100 Z" fill="#fff" stroke="#BAC4BF" stroke-width="1.2" />
+            <!-- 3x3 网格线 -->
+            <path d="M 47 40 L 187 -20 M 93 20 L 233 -40" stroke="#BAC4BF" stroke-width="1" />
+            <path d="M 40 80 L 180 20 M 80 60 L 220 0" stroke="#BAC4BF" stroke-width="1" />
+            <!-- 激活核区域 (3x3 中的一个 2x2) -->
+            <path d="M 0 60 L 93 20 L 173 47 L 80 87 Z" fill="rgba(28, 68, 54, 0.18)" stroke="#1C4436" stroke-width="1.5" />
+            <text x="270" y="45" class="text-dim">通道 0 (如 R)</text>
+          </g>
+
+          <!-- Channel 1: G -->
+          <g id="chan-1" transform="translate(40, 140)">
+            <path d="M 0 60 L 140 0 L 260 40 L 120 100 Z" fill="#fff" stroke="#BAC4BF" stroke-width="1.2" />
+            <path d="M 47 40 L 187 -20 M 93 20 L 233 -40" stroke="#BAC4BF" stroke-width="1" />
+            <path d="M 40 80 L 180 20 M 80 60 L 220 0" stroke="#BAC4BF" stroke-width="1" />
+            <path d="M 0 60 L 93 20 L 173 47 L 80 87 Z" fill="rgba(28, 68, 54, 0.18)" stroke="#1C4436" stroke-width="1.5" />
+            <text x="270" y="45" class="text-dim">通道 1 (如 G)</text>
+          </g>
+
+          <!-- Channel 2: B -->
+          <g id="chan-2" transform="translate(40, 220)">
+            <path d="M 0 60 L 140 0 L 260 40 L 120 100 Z" fill="#fff" stroke="#BAC4BF" stroke-width="1.2" />
+            <path d="M 47 40 L 187 -20 M 93 20 L 233 -40" stroke="#BAC4BF" stroke-width="1" />
+            <path d="M 40 80 L 180 20 M 80 60 L 220 0" stroke="#BAC4BF" stroke-width="1" />
+            <path d="M 0 60 L 93 20 L 173 47 L 80 87 Z" fill="rgba(28, 68, 54, 0.18)" stroke="#1C4436" stroke-width="1.5" />
+            <text x="270" y="45" class="text-dim">通道 2 (如 B)</text>
+          </g>
+
+          <!-- 聚合求和符号与导向箭头 -->
+          <g transform="translate(170, 360)">
+            <circle cx="0" cy="0" r="18" fill="#fff" stroke="#1C4436" stroke-width="2" />
+            <text x="0" y="6" text-anchor="middle" font-size="22" font-weight="700" fill="#1C4436">∑</text>
+            <path d="M -70 -40 L -18 -8" stroke="#1C4436" stroke-width="1.5" marker-end="url(#arrow-green)" />
+            <path d="M 0 -40 L 0 -22" stroke="#1C4436" stroke-width="1.5" marker-end="url(#arrow-green)" />
+            <path d="M 70 -40 L 18 -8" stroke="#1C4436" stroke-width="1.5" marker-end="url(#arrow-green)" />
+            <text x="32" y="5" class="text-mono">+ 偏置 b</text>
+          </g>
+
+          <!-- 输出单通道 -->
+          <g id="chan-out" transform="translate(70, 420)">
+            <path d="M 0 60 L 120 10 L 220 45 L 100 95 Z" fill="#fff" stroke="#1C4436" stroke-width="2" />
+            <!-- 单个目标像素标红 -->
+            <path d="M 0 60 L 40 43 L 73 55 L 33 72 Z" fill="#D43811" stroke="#D43811" />
+            <text x="235" y="50" class="text-title" fill="#D43811">单一输出像素</text>
+            <text x="235" y="70" class="text-dim">融合 3 通道局部信息</text>
+          </g>
+          <path d="M 170 380 L 170 420" stroke="#D43811" stroke-width="2" marker-end="url(#arrow-red)" />
+        </svg>
+      </div>
+
+      <!-- 右侧：步幅采样与感受野金字塔 (L0 -> L1 -> L2) -->
+      <div class="rf-column">
+        <svg id="svg-rf" class="svg-canvas" viewBox="0 0 960 560">
+          <!-- 标题说明 -->
+          <text x="20" y="24" class="text-title">步幅与深层感受野：单个深层神经元映射的输入视野</text>
+          <text x="20" y="46" class="text-dim">悬停或点击深层神经元，逆向追踪在浅层与输入层对应的物理覆盖区域</text>
+
+          <!-- 动态层级容器由 JS 统一精准渲染 -->
+          <g id="layer-group"></g>
+        </svg>
+      </div>
+    </div>
+
+    <!-- 底部状态与操作控制栏 -->
+    <div class="dashboard">
+      <div class="interactive-group">
+        <span style="font-size: var(--fs-label); font-weight: 700; color: var(--text);">步幅 Stride:</span>
+        <button class="stride-btn active" id="btn-s1" data-s="1">S = 1 (密集滑动)</button>
+        <button class="stride-btn" id="btn-s2" data-s="2">S = 2 (降采样减半)</button>
+      </div>
+
+      <div class="summary-text" id="status-desc">
+        当前配置：步幅 <strong>S = 1</strong>，第 2 层输出尺寸为 <strong>5×5</strong>，单个深层神经元的输入感受野为 <strong>5×5 像素</strong>。
+      </div>
+
+      <div class="interactive-group">
+        <div class="metric-pill">
+          输入层 RF: <strong id="rf-val">5 × 5</strong>
+        </div>
+        <div class="metric-pill">
+          输出尺寸: <strong id="out-size">5 × 5</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 讲稿容器 -->
+  <aside class="notes" hidden>
+    在单通道卷积中，一个核在二维平面上滑动；但现实图像有红绿蓝 3 个通道，深层特征更有几十到数百个通道。每个输出通道都由一组独立的通道卷积核对所有输入通道分别做卷积后累加，加上偏置得到。
+    当我们在卷积层中引入大于 1 的步幅时，不仅使特征图分辨率成倍减小、大幅降低后续计算量，更关键的是加快了感受野的增长速率。
+    深层神经元不再局限于微小的 3x3 边缘，而是通过层级堆叠与步幅跳跃，视野成倍扩大，从而能够看见复杂的形状、部件乃至完整目标。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const svgRF = document.getElementById("layer-group");
+      const btnS1 = document.getElementById("btn-s1");
+      const btnS2 = document.getElementById("btn-s2");
+      const statusDesc = document.getElementById("status-desc");
+      const rfVal = document.getElementById("rf-val");
+      const outSize = document.getElementById("out-size");
+
+      // 状态变量
+      let currentStride = 1;
+      let hoveredL2 = { x: 1, y: 1 }; // 默认选中的 L2 神经元 (中心)
+
+      // 网格几何配置
+      // L0 (输入): 9x9 像素网格
+      // 卷积核固定 k=3
+      // 若 S=1: L1 尺寸为 (9-3)/1 + 1 = 7x7; L2 尺寸为 (7-3)/1 + 1 = 5x5. L2神经元RF = 1 + 2*(3-1) = 5x5
+      // 若 S=2: L1 尺寸为 (9-3)/2 + 1 = 4x4; L2 尺寸为 (4-3)/1 + 1 = 2x2. L2神经元RF: L1步长2, L2步长1 -> 3 + (3-1)*2 = 7x7
+      
+      const K = 3;
+      const N0 = 9;
+
+      function computeDimensions(stride) {
+        const n1 = Math.floor((N0 - K) / stride) + 1;
+        const n2 = Math.floor((n1 - K) / 1) + 1; // 第二层固定 stride=1
+        return { n1, n2 };
+      }
+
+      function drawRFScene() {
+        const { n1, n2 } = computeDimensions(currentStride);
+        
+        // 约束 hovered 索引
+        hoveredL2.x = Math.max(0, Math.min(n2 - 1, hoveredL2.x));
+        hoveredL2.y = Math.max(0, Math.min(n2 - 1, hoveredL2.y));
+
+        // L2 某个神经元 (x2, y2) 在 L1 上覆盖的范围
+        const l1MinX = hoveredL2.x * 1;
+        const l1MaxX = l1MinX + K - 1;
+        const l1MinY = hoveredL2.y * 1;
+        const l1MaxY = l1MinY + K - 1;
+
+        // L1 覆盖范围在 L0 (输入) 上的映射
+        const l0MinX = l1MinX * currentStride;
+        const l0MaxX = l1MaxX * currentStride + (K - 1);
+        const l0MinY = l1MinY * currentStride;
+        const l0MaxY = l1MaxY * currentStride + (K - 1);
+
+        const rfSpan = (l0MaxX - l0MinX + 1);
+
+        // 更新控制面板读数
+        rfVal.textContent = `${rfSpan} × ${rfSpan}`;
+        outSize.textContent = `${n2} × ${n2}`;
+
+        if (currentStride === 1) {
+          statusDesc.innerHTML = `当前配置：步幅 <strong>S = 1</strong>，层级堆叠使感受野从 3×3 线性扩展至 <strong>${rfSpan}×${rfSpan}</strong>。`;
+        } else {
+          statusDesc.innerHTML = `当前配置：步幅 <strong>S = 2</strong>，空间下采样使特征图减半，感受野加速跳跃扩展至 <strong>${rfSpan}×${rfSpan}</strong>。`;
+        }
+
+        // 渲染 SVG 层
+        // 布局参数：
+        // L0 (底): y = 380, 格子尺寸 24
+        // L1 (中): y = 200, 格子尺寸 26
+        // L2 (顶): y = 50, 格子尺寸 30
+        const c0 = 24, c1 = 26, c2 = 30;
+        const l0W = N0 * c0;
+        const l1W = n1 * c1;
+        const l2W = n2 * c2;
+
+        const startX0 = 480 - l0W / 2;
+        const startX1 = 480 - l1W / 2;
+        const startX2 = 480 - l2W / 2;
+
+        const y0 = 380;
+        const y1 = 210;
+        const y2 = 60;
+
+        let markup = "";
+
+        // 1. 投影锥体 (L2 -> L1, L1 -> L0)
+        // 计算坐标
+        const l2Box = {
+          x1: startX2 + hoveredL2.x * c2,
+          y1: y2 + hoveredL2.y * c2,
+          x2: startX2 + (hoveredL2.x + 1) * c2,
+          y2: y2 + (hoveredL2.y + 1) * c2,
+          cx: startX2 + (hoveredL2.x + 0.5) * c2,
+          cy: y2 + (hoveredL2.y + 0.5) * c2
+        };
+
+        const l1Box = {
+          x1: startX1 + l1MinX * c1,
+          y1: y1 + l1MinY * c1,
+          x2: startX1 + (l1MaxX + 1) * c1,
+          y2: y1 + (l1MaxY + 1) * c1
+        };
+
+        const l0Box = {
+          x1: startX0 + l0MinX * c0,
+          y1: y0 + l0MinY * c0,
+          x2: startX0 + (l0MaxX + 1) * c0,
+          y2: y0 + (l0MaxY + 1) * c0
+        };
+
+        // 锥体阴影连线 (L2 -> L1)
+        markup += `<polygon points="${l2Box.cx},${l2Box.cy} ${l1Box.x1},${l1Box.y1} ${l1Box.x2},${l1Box.y1} ${l1Box.x2},${l1Box.y2} ${l1Box.x1},${l1Box.y2}" class="rf-cone" />`;
+        // 锥体阴影连线 (L1 -> L0)
+        markup += `<polygon points="${l1Box.x1},${l1Box.y2} ${l1Box.x2},${l1Box.y2} ${l0Box.x2},${l0Box.y1} ${l0Box.x1},${l0Box.y1}" class="rf-cone" />`;
+
+        // 2. 绘制 L0 网格 (原始输入)
+        markup += `<g id="l0-grid">`;
+        markup += `<text x="${startX0 - 106}" y="${y0 + l0W / 2 + 5}" class="text-title">输入 L0 (9×9)</text>`;
+        for (let r = 0; r < N0; r++) {
+          for (let c = 0; c < N0; c++) {
+            const inRF = (r >= l0MinY && r <= l0MaxY && c >= l0MinX && c <= l0MaxX);
+            const x = startX0 + c * c0;
+            const y = y0 + r * c0;
+            const fill = inRF ? "rgba(212, 56, 17, 0.28)" : "#fff";
+            const stroke = inRF ? "var(--signal)" : "var(--rule)";
+            const sw = inRF ? "2" : "1";
+            markup += `<rect x="${x}" y="${y}" width="${c0}" height="${c0}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" />`;
+          }
+        }
+        // 输入层感受野高亮框与尺寸标注
+        markup += `<rect x="${l0Box.x1}" y="${l0Box.y1}" width="${l0Box.x2 - l0Box.x1}" height="${l0Box.y2 - l0Box.y1}" fill="none" stroke="var(--signal)" stroke-width="2.5" stroke-dasharray="5 3"/>`;
+        markup += `<text x="${l0Box.x2 + 12}" y="${(l0Box.y1 + l0Box.y2) / 2 + 5}" font-size="14" font-weight="700" fill="var(--signal)">感受野 ${rfSpan}×${rfSpan}</text>`;
+        markup += `</g>`;
+
+        // 3. 绘制 L1 网格 (中间特征图)
+        markup += `<g id="l1-grid">`;
+        markup += `<text x="${startX1 - 128}" y="${y1 + l1W / 2 + 5}" class="text-title">中间层 L1 (${n1}×${n1})</text>`;
+        for (let r = 0; r < n1; r++) {
+          for (let c = 0; c < n1; c++) {
+            const inKernel = (r >= l1MinY && r <= l1MaxY && c >= l1MinX && c <= l1MaxX);
+            const x = startX1 + c * c1;
+            const y = y1 + r * c1;
+            const fill = inKernel ? "rgba(28, 68, 54, 0.22)" : "#fff";
+            const stroke = inKernel ? "var(--structure)" : "var(--rule)";
+            const sw = inKernel ? "2" : "1";
+            markup += `<rect x="${x}" y="${y}" width="${c1}" height="${c1}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" />`;
+          }
+        }
+        markup += `<rect x="${l1Box.x1}" y="${l1Box.y1}" width="${l1Box.x2 - l1Box.x1}" height="${l1Box.y2 - l1Box.y1}" fill="none" stroke="var(--structure)" stroke-width="2" />`;
+        markup += `<text x="${l1Box.x2 + 12}" y="${(l1Box.y1 + l1Box.y2) / 2 + 5}" font-size="13" font-weight="600" fill="var(--structure)">覆盖 3×3 局部特征</text>`;
+        markup += `</g>`;
+
+        // 4. 绘制 L2 网格 (深层特征图，可交互神经元)
+        markup += `<g id="l2-grid">`;
+        markup += `<text x="${startX2 - 128}" y="${y2 + l2W / 2 + 5}" class="text-title">深层 L2 (${n2}×${n2})</text>`;
+        for (let r = 0; r < n2; r++) {
+          for (let c = 0; c < n2; c++) {
+            const isTarget = (r === hoveredL2.y && c === hoveredL2.x);
+            const x = startX2 + c * c2;
+            const y = y2 + r * c2;
+            const fill = isTarget ? "var(--signal)" : "#fff";
+            const stroke = isTarget ? "var(--signal)" : "var(--structure)";
+            const sw = isTarget ? "2.5" : "1.2";
+            markup += `<rect class="l2-cell" data-x="${c}" data-y="${r}" x="${x}" y="${y}" width="${c2}" height="${c2}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" style="cursor:pointer;" />`;
+          }
+        }
+        markup += `<text x="${l2Box.x2 + 14}" y="${l2Box.cy + 5}" font-size="14" font-weight="700" fill="var(--signal)">当前观察神经元</text>`;
+        markup += `</g>`;
+
+        svgRF.innerHTML = markup;
+
+        // 绑定深层单元格交互
+        const cells = svgRF.querySelectorAll(".l2-cell");
+        cells.forEach(cell => {
+          cell.addEventListener("mouseenter", function () {
+            hoveredL2.x = parseInt(this.getAttribute("data-x"), 10);
+            hoveredL2.y = parseInt(this.getAttribute("data-y"), 10);
+            drawRFScene();
+          });
+          cell.addEventListener("click", function () {
+            hoveredL2.x = parseInt(this.getAttribute("data-x"), 10);
+            hoveredL2.y = parseInt(this.getAttribute("data-y"), 10);
+            drawRFScene();
+          });
+        });
+      }
+
+      // 切换步幅
+      btnS1.addEventListener("click", function () {
+        if (currentStride === 1) return;
+        currentStride = 1;
+        btnS1.classList.add("active");
+        btnS2.classList.remove("active");
+        drawRFScene();
+      });
+
+      btnS2.addEventListener("click", function () {
+        if (currentStride === 2) return;
+        currentStride = 2;
+        btnS2.classList.add("active");
+        btnS1.classList.remove("active");
+        drawRFScene();
+      });
+
+      // 初始化渲染
+      drawRFScene();
+      window.__NOTALE_READY__ = true;
+    })();
+  </script>
+</body>
+</html>

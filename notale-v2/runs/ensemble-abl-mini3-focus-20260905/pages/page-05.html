@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>多数票与软投票的分歧</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      font-family: var(--font-sans);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      user-select: none;
+      box-sizing: border-box;
+    }
+
+    /* 顶部标题区 */
+    .header-block {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+      flex: none;
+    }
+    .header-left h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      margin: 0;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .header-left p {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 6px 0 0;
+      line-height: 1.4;
+    }
+    .preset-toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .toolbar-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-right: 4px;
+      font-weight: 500;
+    }
+    .btn-preset {
+      appearance: none;
+      border: 1px solid var(--muted);
+      background: var(--surface);
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: var(--fs-label);
+      font-family: inherit;
+      cursor: pointer;
+      transition: all var(--duration) var(--ease);
+    }
+    .btn-preset:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+    .btn-preset[aria-pressed="true"] {
+      background: var(--model);
+      border-color: var(--model);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    /* 主操作与证据台：左右两栏 */
+    .arena-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 860px 1fr;
+      gap: 24px;
+      min-height: 0;
+      align-items: stretch;
+    }
+
+    /* 左侧：3个分类器的置信度概率调节卡片 */
+    .classifiers-deck {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      justify-content: stretch;
+    }
+    .clf-card {
+      background: var(--surface);
+      border: 1px solid #d4dfe6;
+      border-radius: 8px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 12px;
+      box-shadow: 0 2px 6px rgba(18,38,52,0.04);
+      flex: 1;
+    }
+    .clf-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .clf-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .clf-name {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .clf-nature {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      background: var(--bg);
+      padding: 2px 8px;
+      border-radius: 3px;
+    }
+    .clf-vote-pill {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      padding: 3px 12px;
+      border-radius: 20px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .vote-A {
+      background: rgba(39, 100, 143, 0.12);
+      color: var(--model);
+      border: 1px solid rgba(39, 100, 143, 0.3);
+    }
+    .vote-B {
+      background: rgba(195, 75, 34, 0.12);
+      color: var(--aggregate);
+      border: 1px solid rgba(195, 75, 34, 0.3);
+    }
+
+    /* 双向分段概率条与交互滑块 */
+    .prob-track-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .prob-bar-container {
+      height: 34px;
+      background: var(--surface-strong);
+      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+    }
+    .bar-seg-a {
+      background: var(--model);
+      height: 100%;
+      display: flex;
+      align-items: center;
+      padding-left: 10px;
+      color: #fff;
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      transition: width 60ms linear;
+      white-space: nowrap;
+      box-sizing: border-box;
+    }
+    .bar-seg-b {
+      background: var(--aggregate);
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 10px;
+      color: #fff;
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      transition: width 60ms linear;
+      white-space: nowrap;
+      box-sizing: border-box;
+    }
+    .prob-slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .slider-mark {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      width: 90px;
+    }
+    .slider-mark.mark-a { color: var(--model); text-align: left; }
+    .slider-mark.mark-b { color: var(--aggregate); text-align: right; }
+    .prob-range {
+      flex: 1;
+      accent-color: var(--model);
+      cursor: pointer;
+      margin: 0;
+      height: 6px;
+    }
+
+    /* 右侧：两规则决断与冲突证据卡 */
+    .verdict-comparison {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      justify-content: stretch;
+    }
+
+    /* 机制对比大卡片 */
+    .rule-card {
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid #d4dfe6;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 12px;
+      box-shadow: 0 2px 6px rgba(18,38,52,0.04);
+      position: relative;
+      flex: 1;
+    }
+    .rule-card.rule-hard {
+      border-top: 4px solid var(--model);
+    }
+    .rule-card.rule-soft {
+      border-top: 4px solid var(--aggregate);
+    }
+    .rule-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .rule-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .rule-mechanism {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    /* 决断状态大展示 */
+    .outcome-display {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 10px 16px;
+    }
+    .outcome-winner {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .winner-tag {
+      font-size: var(--fs-h2);
+      font-weight: 800;
+      font-family: var(--font-num);
+    }
+    .winner-tag.tag-a { color: var(--model); }
+    .winner-tag.tag-b { color: var(--aggregate); }
+    .winner-tag.tag-tie { color: var(--muted); }
+    .winner-meaning {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .outcome-score {
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      font-family: var(--font-num);
+      color: var(--text);
+    }
+
+    /* 规则明细条 */
+    .tally-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .tally-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .tally-item strong {
+      color: var(--text);
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+    }
+    .tally-progress-bg {
+      height: 12px;
+      background: var(--surface-strong);
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+    }
+
+    /* 底部高亮总结：冲突诊断器 */
+    .conflict-banner {
+      background: #FFFFFF;
+      border-radius: 8px;
+      border: 1px solid #d4dfe6;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex: none;
+    }
+    .conflict-banner.divergent {
+      background: #FFF9F6;
+      border-color: rgba(195, 75, 34, 0.4);
+    }
+    .conflict-banner.convergent {
+      background: #F4F9F6;
+      border-color: rgba(35, 112, 82, 0.4);
+    }
+    .status-badge {
+      flex: none;
+      padding: 5px 12px;
+      border-radius: 4px;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .status-badge.divergent {
+      background: rgba(195, 75, 34, 0.15);
+      color: var(--aggregate);
+    }
+    .status-badge.convergent {
+      background: rgba(35, 112, 82, 0.15);
+      color: var(--answer);
+    }
+    .conflict-text {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+      flex: 1;
+    }
+    .conflict-text strong {
+      color: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="05" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题与预设场景切换 -->
+    <header class="header-block">
+      <div class="header-left">
+        <h1>多数票与软投票的分歧</h1>
+        <p>调整三名分类器对类别 A 与 B 的预测概率，直接观测硬投票与软投票在同一样本上的决策冲突</p>
+      </div>
+      <div class="preset-toolbar" role="group" aria-label="典型预设场景">
+        <span class="toolbar-label">探索典型场景：</span>
+        <button type="button" class="btn-preset" id="preset-conflict" aria-pressed="true">微弱多数 vs 强烈少数（剧烈分歧）</button>
+        <button type="button" class="btn-preset" id="preset-agree" aria-pressed="false">稳固多数（双重一致）</button>
+        <button type="button" class="btn-preset" id="preset-marginal" aria-pressed="false">势均力敌（临界偏转）</button>
+      </div>
+    </header>
+
+    <!-- 交互主区 -->
+    <main class="arena-grid">
+      <!-- 左栏：3 个基学习器置信度输入 -->
+      <section class="classifiers-deck" aria-label="基分类器预测概率控制">
+        <!-- 分类器 1 -->
+        <div class="clf-card" id="clf-card-0">
+          <div class="clf-header">
+            <div class="clf-meta">
+              <span class="clf-name">分类器 1（支持向量机）</span>
+              <span class="clf-nature">微弱倾向</span>
+            </div>
+            <span class="clf-vote-pill vote-A" id="vote-pill-0">硬投票：类别 A</span>
+          </div>
+          <div class="prob-track-wrap">
+            <div class="prob-bar-container" aria-hidden="true">
+              <div class="bar-seg-a" id="bar-a-0" style="width: 51%;">P(A) = 0.51</div>
+              <div class="bar-seg-b" id="bar-b-0" style="width: 49%;">P(B) = 0.49</div>
+            </div>
+            <div class="prob-slider-row">
+              <span class="slider-mark mark-a">偏向类别 A</span>
+              <input type="range" class="prob-range" id="slider-0" min="0" max="100" value="51"
+                aria-label="分类器 1 预测类别 A 的概率百分比">
+              <span class="slider-mark mark-b">偏向类别 B</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 分类器 2 -->
+        <div class="clf-card" id="clf-card-1">
+          <div class="clf-header">
+            <div class="clf-meta">
+              <span class="clf-name">分类器 2（逻辑回归）</span>
+              <span class="clf-nature">微弱倾向</span>
+            </div>
+            <span class="clf-vote-pill vote-A" id="vote-pill-1">硬投票：类别 A</span>
+          </div>
+          <div class="prob-track-wrap">
+            <div class="prob-bar-container" aria-hidden="true">
+              <div class="bar-seg-a" id="bar-a-1" style="width: 52%;">P(A) = 0.52</div>
+              <div class="bar-seg-b" id="bar-b-1" style="width: 48%;">P(B) = 0.48</div>
+            </div>
+            <div class="prob-slider-row">
+              <span class="slider-mark mark-a">偏向类别 A</span>
+              <input type="range" class="prob-range" id="slider-1" min="0" max="100" value="52"
+                aria-label="分类器 2 预测类别 A 的概率百分比">
+              <span class="slider-mark mark-b">偏向类别 B</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 分类器 3 -->
+        <div class="clf-card" id="clf-card-2">
+          <div class="clf-header">
+            <div class="clf-meta">
+              <span class="clf-name">分类器 3（决策树）</span>
+              <span class="clf-nature">极高置信</span>
+            </div>
+            <span class="clf-vote-pill vote-B" id="vote-pill-2">硬投票：类别 B</span>
+          </div>
+          <div class="prob-track-wrap">
+            <div class="prob-bar-container" aria-hidden="true">
+              <div class="bar-seg-a" id="bar-a-2" style="width: 10%;">P(A) = 0.10</div>
+              <div class="bar-seg-b" id="bar-b-2" style="width: 90%;">P(B) = 0.90</div>
+            </div>
+            <div class="prob-slider-row">
+              <span class="slider-mark mark-a">偏向类别 A</span>
+              <input type="range" class="prob-range" id="slider-2" min="0" max="100" value="10"
+                aria-label="分类器 3 预测类别 A 的概率百分比">
+              <span class="slider-mark mark-b">偏向类别 B</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：聚合裁决与冲突对照证据 -->
+      <section class="verdict-comparison" aria-label="两聚合规则裁决证据">
+        <!-- 硬投票结果卡 -->
+        <div class="rule-card rule-hard" id="hard-card">
+          <div class="rule-title-row">
+            <span class="rule-title">多数票原则（硬投票 Hard Voting）</span>
+            <span class="rule-mechanism">仅统计离散标签得票</span>
+          </div>
+          <div class="outcome-display">
+            <div class="outcome-winner">
+              <span class="winner-tag tag-a" id="hard-winner-tag">类别 A</span>
+              <span class="winner-meaning" id="hard-winner-text">赢得 2 票（相对多数）</span>
+            </div>
+            <span class="outcome-score" id="hard-winner-ratio">2 票 : 1 票</span>
+          </div>
+          <div class="tally-rows">
+            <div class="tally-item">
+              <span>类别 A 得票：<strong id="hard-count-a">2 票</strong></span>
+              <span>类别 B 得票：<strong id="hard-count-b">1 票</strong></span>
+            </div>
+            <div class="tally-progress-bg">
+              <div id="hard-bar-a" style="width: 66.7%; background: var(--model); height: 100%;"></div>
+              <div id="hard-bar-b" style="width: 33.3%; background: var(--aggregate); height: 100%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 软投票结果卡 -->
+        <div class="rule-card rule-soft" id="soft-card">
+          <div class="rule-title-row">
+            <span class="rule-title">置信度加权（软投票 Soft Voting）</span>
+            <span class="rule-mechanism">累加各类别预测概率均值</span>
+          </div>
+          <div class="outcome-display">
+            <div class="outcome-winner">
+              <span class="winner-tag tag-b" id="soft-winner-tag">类别 B</span>
+              <span class="winner-meaning" id="soft-winner-text">平均概率占优</span>
+            </div>
+            <span class="outcome-score" id="soft-winner-ratio">62.3% vs 37.7%</span>
+          </div>
+          <div class="tally-rows">
+            <div class="tally-item">
+              <span>A 均值：<strong id="soft-mean-a">0.377</strong></span>
+              <span>B 均值：<strong id="soft-mean-b">0.623</strong></span>
+            </div>
+            <div class="tally-progress-bg">
+              <div id="soft-bar-a" style="width: 37.7%; background: var(--model); height: 100%;"></div>
+              <div id="soft-bar-b" style="width: 62.3%; background: var(--aggregate); height: 100%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部决断状态横幅 -->
+        <div class="conflict-banner divergent" id="conflict-box">
+          <div class="status-badge divergent" id="status-badge">出现两派分歧</div>
+          <p class="conflict-text" id="conflict-desc">
+            硬投票选出 <strong>类别 A</strong>（2 票胜出），但分类器 1 和 2 仅以 51% 犹豫支持；分类器 3 以 90% 强烈支持 <strong>类别 B</strong>，拉动平均概率使软投票最终转向类别 B。
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 预设数据组
+      const PRESETS = {
+        conflict: [51, 52, 10], // 经典分歧：两个微弱A，一个极强B
+        agree: [78, 85, 20],    // 双重一致：多数票和高概率同属A
+        marginal: [49, 53, 52]  // 临界偏转
+      };
+
+      // 权威状态
+      let state = {
+        probs: [51, 52, 10], // 各分类器预测类别 A 的百分比
+        activePreset: "conflict"
+      };
+
+      // 节点缓存
+      const sliders = [0, 1, 2].map(i => document.getElementById(`slider-${i}`));
+      const barsA = [0, 1, 2].map(i => document.getElementById(`bar-a-${i}`));
+      const barsB = [0, 1, 2].map(i => document.getElementById(`bar-b-${i}`));
+      const pills = [0, 1, 2].map(i => document.getElementById(`vote-pill-${i}`));
+
+      const hardWinnerTag = document.getElementById("hard-winner-tag");
+      const hardWinnerText = document.getElementById("hard-winner-text");
+      const hardWinnerRatio = document.getElementById("hard-winner-ratio");
+      const hardCountA = document.getElementById("hard-count-a");
+      const hardCountB = document.getElementById("hard-count-b");
+      const hardBarA = document.getElementById("hard-bar-a");
+      const hardBarB = document.getElementById("hard-bar-b");
+
+      const softWinnerTag = document.getElementById("soft-winner-tag");
+      const softWinnerText = document.getElementById("soft-winner-text");
+      const softWinnerRatio = document.getElementById("soft-winner-ratio");
+      const softMeanA = document.getElementById("soft-mean-a");
+      const softMeanB = document.getElementById("soft-mean-b");
+      const softBarA = document.getElementById("soft-bar-a");
+      const softBarB = document.getElementById("soft-bar-b");
+
+      const conflictBox = document.getElementById("conflict-box");
+      const statusBadge = document.getElementById("status-badge");
+      const conflictDesc = document.getElementById("conflict-desc");
+
+      const presetBtns = {
+        conflict: document.getElementById("preset-conflict"),
+        agree: document.getElementById("preset-agree"),
+        marginal: document.getElementById("preset-marginal")
+      };
+
+      // 纯领域模型计算
+      function deriveEvidence(probs) {
+        // 1. 各分类器独立离散票
+        const votes = probs.map(p => (p >= 50 ? "A" : "B"));
+        const countA = votes.filter(v => v === "A").length;
+        const countB = votes.filter(v => v === "B").length;
+
+        let hardWinner = "A";
+        if (countB > countA) hardWinner = "B";
+        else if (countA === countB) hardWinner = "TIE";
+
+        // 2. 软投票：各类别概率均值
+        const meanA = (probs[0] + probs[1] + probs[2]) / 300;
+        const meanB = 1 - meanA;
+
+        let softWinner = "A";
+        if (meanB > meanA + 0.001) softWinner = "B";
+        else if (Math.abs(meanA - meanB) <= 0.001) softWinner = "TIE";
+
+        const isDivergent = hardWinner !== softWinner && hardWinner !== "TIE" && softWinner !== "TIE";
+
+        return { votes, countA, countB, hardWinner, meanA, meanB, softWinner, isDivergent };
+      }
+
+      function updateUI() {
+        const ev = deriveEvidence(state.probs);
+
+        // 1. 更新左侧分类器卡片
+        state.probs.forEach((pA, i) => {
+          const pB = 100 - pA;
+          sliders[i].value = pA;
+          barsA[i].style.width = `${pA}%`;
+          barsB[i].style.width = `${pB}%`;
+          barsA[i].textContent = `P(A) = ${(pA / 100).toFixed(2)}`;
+          barsB[i].textContent = `P(B) = ${(pB / 100).toFixed(2)}`;
+
+          if (pA >= 50) {
+            pills[i].className = "clf-vote-pill vote-A";
+            pills[i].textContent = `硬投票：类别 A (${pA}%)`;
+          } else {
+            pills[i].className = "clf-vote-pill vote-B";
+            pills[i].textContent = `硬投票：类别 B (${pB}%)`;
+          }
+        });
+
+        // 2. 更新右侧硬投票
+        hardCountA.textContent = `${ev.countA} 票`;
+        hardCountB.textContent = `${ev.countB} 票`;
+        hardBarA.style.width = `${(ev.countA / 3) * 100}%`;
+        hardBarB.style.width = `${(ev.countB / 3) * 100}%`;
+        hardWinnerRatio.textContent = `${ev.countA} 票 : ${ev.countB} 票`;
+
+        if (ev.hardWinner === "A") {
+          hardWinnerTag.className = "winner-tag tag-a";
+          hardWinnerTag.textContent = "类别 A";
+          hardWinnerText.textContent = `赢得 ${ev.countA} 票（多数决）`;
+        } else if (ev.hardWinner === "B") {
+          hardWinnerTag.className = "winner-tag tag-b";
+          hardWinnerTag.textContent = "类别 B";
+          hardWinnerText.textContent = `赢得 ${ev.countB} 票（多数决）`;
+        } else {
+          hardWinnerTag.className = "winner-tag tag-tie";
+          hardWinnerTag.textContent = "平局";
+          hardWinnerText.textContent = "票数相等";
+        }
+
+        // 3. 更新右侧软投票
+        const pctA = (ev.meanA * 100).toFixed(1);
+        const pctB = (ev.meanB * 100).toFixed(1);
+        softMeanA.textContent = ev.meanA.toFixed(3);
+        softMeanB.textContent = ev.meanB.toFixed(3);
+        softBarA.style.width = `${pctA}%`;
+        softBarB.style.width = `${pctB}%`;
+        softWinnerRatio.textContent = `${pctA}% vs ${pctB}%`;
+
+        if (ev.softWinner === "A") {
+          softWinnerTag.className = "winner-tag tag-a";
+          softWinnerTag.textContent = "类别 A";
+          softWinnerText.textContent = `平均概率 ${pctA}% 占优`;
+        } else if (ev.softWinner === "B") {
+          softWinnerTag.className = "winner-tag tag-b";
+          softWinnerTag.textContent = "类别 B";
+          softWinnerText.textContent = `平均概率 ${pctB}% 占优`;
+        } else {
+          softWinnerTag.className = "winner-tag tag-tie";
+          softWinnerTag.textContent = "平局";
+          softWinnerText.textContent = "平均概率完全相等";
+        }
+
+        // 4. 更新冲突诊断横幅
+        if (ev.isDivergent) {
+          conflictBox.className = "conflict-banner divergent";
+          statusBadge.className = "status-badge divergent";
+          statusBadge.textContent = "规则冲突：结论截然相反";
+
+          const weakWinner = ev.hardWinner;
+          const strongWinner = ev.softWinner;
+          const weakCount = weakWinner === "A" ? ev.countA : ev.countB;
+          const strongProb = strongWinner === "B" ? pctB : pctA;
+
+          conflictDesc.innerHTML = `多数票判定为 <strong>类别 ${weakWinner}</strong>（占 ${weakCount} 票），但胜出成员多处于临界置信边缘；支持 <strong>类别 ${strongWinner}</strong> 的成员置信度极高，软投票累加后以 <strong>${strongProb}%</strong> 均值反转了最终决策。`;
+        } else {
+          conflictBox.className = "conflict-banner convergent";
+          statusBadge.className = "status-badge convergent";
+          statusBadge.textContent = "两规则结论一致";
+
+          if (ev.hardWinner === "TIE" || ev.softWinner === "TIE") {
+            conflictDesc.innerHTML = `当前存在平局状态，调节滑块改变某个模型的微弱倾斜，即可观察不同规则下的率先决断。`;
+          } else {
+            conflictDesc.innerHTML = `硬投票与软投票在此组概率下均裁定为 <strong>类别 ${ev.hardWinner}</strong>。数量多数与置信度强度朝同一方向累加，集成决策稳健。`;
+          }
+        }
+
+        // 5. 预设按钮高亮同步
+        Object.keys(presetBtns).forEach(k => {
+          const isCurrent = state.probs.every((val, idx) => val === PRESETS[k][idx]);
+          presetBtns[k].setAttribute("aria-pressed", String(isCurrent));
+        });
+      }
+
+      // 事件绑定
+      sliders.forEach((slider, i) => {
+        slider.addEventListener("input", (e) => {
+          state.probs[i] = parseInt(e.target.value, 10);
+          updateUI();
+        });
+      });
+
+      Object.keys(presetBtns).forEach(key => {
+        presetBtns[key].addEventListener("click", () => {
+          state.probs = [...PRESETS[key]];
+          updateUI();
+        });
+      });
+
+      // 初始化
+      updateUI();
+      Deck.init({ keys: false, title: "多数票与软投票的分歧" });
+    })();
+  </script>
+</body>
+</html>

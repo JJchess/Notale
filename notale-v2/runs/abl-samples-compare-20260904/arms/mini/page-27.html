@@ -1,0 +1,1130 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成学习概念检验：从误差相关性、训练顺序与验证方式识别合适的方法及常见陷阱</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --danger: #A82D26;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: 28px 56px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 900px;
+      width: 1600px;
+    }
+
+    /* 顶部标题栏 */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #D1DFE6;
+    }
+    .header-bar h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.25;
+    }
+    .header-bar p {
+      margin: 4px 0 0 0;
+      font-size: 16px;
+      color: var(--muted);
+    }
+    .header-metrics {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+    .stat-badge {
+      background: var(--surface);
+      border: 1px solid #D1DFE6;
+      padding: 6px 14px;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 90px;
+    }
+    .stat-badge span {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .stat-badge strong {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      font-family: var(--font-num);
+    }
+
+    /* 主实验与诊断台网格 */
+    .workbench {
+      display: grid;
+      grid-template-columns: 390px 1fr 380px;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+      margin-top: 14px;
+      margin-bottom: 14px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid #D5E1E8;
+      border-radius: 8px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 2px 8px rgba(18, 38, 52, 0.03);
+    }
+
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #EAF0F4;
+      padding-bottom: 8px;
+    }
+
+    /* 左列：业务约束配置与题目卡片 */
+    .scenario-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .scenario-tab {
+      flex: 1;
+      padding: 8px 4px;
+      font-size: 13px;
+      font-weight: 600;
+      background: #F4F8FA;
+      border: 1px solid #CFDEE5;
+      border-radius: 5px;
+      cursor: pointer;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.35;
+      transition: all 0.15s ease;
+    }
+    .scenario-tab.active {
+      background: var(--model);
+      color: #FFFFFF;
+      border-color: var(--model);
+    }
+
+    .constraint-box {
+      background: #F8FBFC;
+      border: 1px solid #E1EDF2;
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+    .constraint-item {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    .constraint-item:last-child {
+      margin-bottom: 0;
+    }
+    .constraint-item .lbl {
+      color: var(--muted);
+    }
+    .constraint-item .val {
+      font-weight: 600;
+      color: var(--text);
+      text-align: right;
+    }
+
+    .question-stem {
+      font-size: 15px;
+      line-height: 1.5;
+      color: var(--text);
+      margin-bottom: 12px;
+      font-weight: 500;
+      flex: 1;
+    }
+
+    .action-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .decision-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+    .btn-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+    .choice-btn {
+      background: var(--surface);
+      border: 1.5px solid #CADAE2;
+      border-radius: 6px;
+      padding: 8px 4px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s ease;
+    }
+    .choice-btn:hover {
+      background: #F0F6F9;
+      border-color: var(--model);
+    }
+    .choice-btn.selected {
+      background: #E8F2F8;
+      border-color: var(--model);
+      color: var(--model);
+      box-shadow: inset 0 0 0 1px var(--model);
+    }
+
+    /* 中间：算法拓扑与动态推理管道 */
+    .pipeline-area {
+      position: relative;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #FAFCFD;
+      border: 1px solid #E1ECF0;
+      border-radius: 6px;
+      padding: 12px;
+      overflow: hidden;
+    }
+    .pipeline-canvas {
+      width: 100%;
+      height: 240px;
+      position: relative;
+    }
+    .metrics-dashboard {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .metric-cell {
+      background: #FFFFFF;
+      border: 1px solid #DCE6EB;
+      border-radius: 6px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+    }
+    .metric-cell .label {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .metric-cell .num-val {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: var(--font-num);
+      color: var(--text);
+    }
+    .metric-cell .sub-note {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .simulation-chart {
+      flex: 1;
+      min-height: 110px;
+      margin-top: 10px;
+      background: #FFFFFF;
+      border: 1px solid #DCE6EB;
+      border-radius: 6px;
+      position: relative;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+    }
+    .chart-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .chart-canvas-wrap {
+      flex: 1;
+      position: relative;
+      width: 100%;
+    }
+
+    /* 右侧：推导证据与陷阱诊断 */
+    .diagnosis-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+    .eval-box {
+      border-radius: 6px;
+      padding: 12px 14px;
+      border: 1px solid transparent;
+      line-height: 1.5;
+    }
+    .eval-box.pending {
+      background: #F4F8FA;
+      border-color: #D3E0E6;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .eval-box.correct {
+      background: #EEF8F3;
+      border-color: #AFD8C4;
+      color: #164E36;
+      font-size: 14px;
+    }
+    .eval-box.incorrect {
+      background: #FDF1F0;
+      border-color: #F1BCB8;
+      color: #791C18;
+      font-size: 14px;
+    }
+    .eval-box h4 {
+      margin: 0 0 6px 0;
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .trap-banner {
+      background: #FFF8E6;
+      border: 1px solid #F0D597;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.45;
+      color: #6D4F0B;
+    }
+    .trap-banner strong {
+      display: block;
+      margin-bottom: 2px;
+      color: #553C04;
+    }
+
+    .insight-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .insight-item {
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text);
+      background: #F8FAFB;
+      border: 1px solid #E3EDF2;
+      padding: 8px 10px;
+      border-radius: 5px;
+    }
+    .insight-item strong {
+      color: var(--model);
+    }
+
+    /* 底部操作控制条 */
+    .footer-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid #D1DFE6;
+    }
+    .footer-hints {
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .bottom-actions {
+      display: flex;
+      gap: 12px;
+    }
+    .btn-action {
+      background: var(--surface);
+      border: 1px solid #BFD1DC;
+      padding: 8px 20px;
+      border-radius: 6px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-action:hover {
+      background: #EBF3F7;
+      border-color: var(--model);
+    }
+    .btn-action.primary {
+      background: var(--aggregate);
+      border-color: var(--aggregate);
+      color: #FFFFFF;
+    }
+    .btn-action.primary:hover {
+      background: #AD3F19;
+    }
+  </style>
+</head>
+<body data-page="27" data-total="27">
+  <div id="stage">
+    <!-- 顶部状态栏 -->
+    <header class="header-bar">
+      <div>
+        <h1>集成架构推断与陷阱诊断台</h1>
+        <p>基于误差相关性、数据划分方式与执行依赖，推导最优集成策略并规避致命泄漏</p>
+      </div>
+      <div class="header-metrics">
+        <div class="stat-badge">
+          <span>当前场景</span>
+          <strong id="statScene">1 / 3</strong>
+        </div>
+        <div class="stat-badge">
+          <span>推断正确率</span>
+          <strong id="statAccuracy">0%</strong>
+        </div>
+        <div class="stat-badge">
+          <span>已捕获陷阱</span>
+          <strong id="statTraps">0 / 3</strong>
+        </div>
+      </div>
+    </header>
+
+    <!-- 工作区主体 -->
+    <main class="workbench">
+      <!-- 左栏：情景与决策控件 -->
+      <section class="card min0">
+        <div class="card-title">
+          <span>业务工况与约束</span>
+          <span style="font-size: 13px; color: var(--muted);" id="difficultyTag">工况诊断</span>
+        </div>
+
+        <div class="scenario-tabs">
+          <button class="scenario-tab active" data-scenario="0">场景 A：信贷风控 (高方差深树)</button>
+          <button class="scenario-tab" data-scenario="1">场景 B：排序纠偏 (高偏差浅树)</button>
+          <button class="scenario-tab" data-scenario="2">场景 C：多模态 (异质模型融合)</button>
+        </div>
+
+        <div class="constraint-box">
+          <div class="constraint-item">
+            <span class="lbl">基础模型特征</span>
+            <span class="val" id="featModel">高方差/过拟合树 (深树)</span>
+          </div>
+          <div class="constraint-item">
+            <span class="lbl">训练时间与算力</span>
+            <span class="val" id="featCompute">支持高并发 / 算力充足</span>
+          </div>
+          <div class="constraint-item">
+            <span class="lbl">误差相关度 ρ</span>
+            <span class="val" id="featCorrelation">0.28 (低相关性)</span>
+          </div>
+          <div class="constraint-item">
+            <span class="lbl">验证防线重点</span>
+            <span class="val" id="featValidation">开箱即用的折外无偏评估</span>
+          </div>
+        </div>
+
+        <div class="question-stem" id="scenarioPrompt">
+          目标：信贷违约样本极度敏感且复杂深树容易过拟合。在支持高度并行计算的集群上，应选择哪种集成拓扑、训练顺序与切分方案，既能压制方差又能获得免额外测试集的泛化检验？
+        </div>
+
+        <div class="action-group">
+          <div class="decision-label">1. 集成范式</div>
+          <div class="btn-row">
+            <button class="choice-btn" data-slot="paradigm" data-val="Bagging">Bagging</button>
+            <button class="choice-btn" data-slot="paradigm" data-val="Boosting">Boosting</button>
+            <button class="choice-btn" data-slot="paradigm" data-val="Stacking">Stacking</button>
+          </div>
+
+          <div class="decision-label">2. 学习时序与权重分配</div>
+          <div class="btn-row">
+            <button class="choice-btn" data-slot="order" data-val="Parallel">并行独立采样</button>
+            <button class="choice-btn" data-slot="order" data-val="Sequential">串行残差递进</button>
+            <button class="choice-btn" data-slot="order" data-val="MetaLayer">多基学习器分层</button>
+          </div>
+
+          <div class="decision-label">3. 验证与防泄漏策略</div>
+          <div class="btn-row">
+            <button class="choice-btn" data-slot="eval" data-val="OOB">包外估计 (OOB)</button>
+            <button class="choice-btn" data-slot="eval" data-val="EarlyStop">早停验证集监控</button>
+            <button class="choice-btn" data-slot="eval" data-val="KFoldMeta">K折内交叉推断</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 中栏：拓扑架构图与实时模拟量化 -->
+      <section class="card min0" style="padding: 16px 18px;">
+        <div class="card-title">
+          <span>集成推理拓扑与泛化模拟</span>
+          <span style="font-size: 13px; color: var(--muted);">根据当前配置动态构建</span>
+        </div>
+
+        <div class="pipeline-area">
+          <div class="pipeline-canvas" id="canvasBox">
+            <canvas id="pipelineCv" class="cv-fill"></canvas>
+          </div>
+
+          <div class="metrics-dashboard">
+            <div class="metric-cell">
+              <span class="label">理论偏差期望</span>
+              <span class="num-val" id="metricBias">0.34</span>
+              <span class="sub-note" id="noteBias">未收敛</span>
+            </div>
+            <div class="metric-cell">
+              <span class="label">理论方差规模</span>
+              <span class="num-val" id="metricVar">0.42</span>
+              <span class="sub-note" id="noteVar">高散度</span>
+            </div>
+            <div class="metric-cell">
+              <span class="label">预期泛化误差</span>
+              <span class="num-val" id="metricLoss">0.76</span>
+              <span class="sub-note" id="noteLoss">高位</span>
+            </div>
+            <div class="metric-cell">
+              <span class="label">数据泄漏风险</span>
+              <span class="num-val" id="metricLeak" style="color: var(--answer);">低 (0%)</span>
+              <span class="sub-note" id="noteLeak">防线正常</span>
+            </div>
+          </div>
+
+          <div class="simulation-chart">
+            <div class="chart-title">
+              <span>基学习器数量 M 对泛化误差的收敛曲线</span>
+              <span id="chartLegend" style="font-family: var(--font-num); font-size: 12px;">当前配置收敛轨迹</span>
+            </div>
+            <div class="chart-canvas-wrap">
+              <canvas id="chartCv" class="cv-fill"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：推断证据与陷阱诊断 -->
+      <section class="card min0 diagnosis-panel">
+        <div class="card-title">
+          <span>因果证据与陷阱诊断</span>
+          <span style="font-size: 13px; color: var(--muted);" id="evalStatus">等待判定</span>
+        </div>
+
+        <div id="evalBox" class="eval-box pending">
+          <h4 id="evalHeading">请在左侧指定三项决策</h4>
+          <div id="evalDetail">
+            选择对应的集成范式、训练时序以及验证防泄漏策略。系统将依据误差相关性与模型特性推导理论收敛与潜在系统陷阱。
+          </div>
+        </div>
+
+        <div class="trap-banner" id="trapBanner" style="display: none;">
+          <strong id="trapTitle">致命陷阱警报</strong>
+          <span id="trapDesc">当前配置存在严重的泄漏或机制错配。</span>
+        </div>
+
+        <div style="font-size: 14px; font-weight: 700; color: var(--text); margin-top: 4px;">机制检验要点</div>
+        <ul class="insight-list">
+          <li class="insight-item">
+            <strong>误差不相关性是集成的基石：</strong> 若多个基模型的误差同向且相关性 ρ ≈ 1，不论投票还是加权均无法抵消随机波动。
+          </li>
+          <li class="insight-item">
+            <strong>Boosting 依赖串行校正：</strong> 弱分类器强行并行则丧失自适应重赋权或残差拟合机制，无法实现降偏差目标。
+          </li>
+          <li class="insight-item">
+            <strong>Stacking 严防元特征泄漏：</strong> 若用同一批训练集让基模型直接产出元特征给次级模型，将诱发严重的伪高精度过拟合。
+          </li>
+        </ul>
+      </section>
+    </main>
+
+    <!-- 底部操作导航 -->
+    <footer class="footer-bar">
+      <div class="footer-hints">
+        提示：通过切换工况场景并对准“范式、时序、验证防线”，排查高方差、欠拟合与特征泄漏三大经典集成失效模式。
+      </div>
+      <div class="bottom-actions">
+        <button class="btn-action" id="btnReset">重置工况配置</button>
+        <button class="btn-action primary" id="btnNext">下一工况测试</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+  (() => {
+    "use strict";
+
+    // 预定义三大场景及真值规则
+    const SCENARIOS = [
+      {
+        id: 0,
+        title: "场景 A：信贷风控 (高维违约预测)",
+        difficulty: "标准工况",
+        model: "高方差/易过拟合的深度决策树 (深树)",
+        compute: "支持大规模分布式集群并发计算",
+        correlation: "0.25 (特征随机子集有效降低相关性)",
+        validation: "无需切分外部测试集的即插即用评估",
+        prompt: "业务目标：信贷违约样本特征繁复，单个深树模型方差极大且易过拟合。在集群算力充沛可支持高并发的情境下，选择哪种集成拓扑、训练时序与验证方案，能最大幅度压制模型方差并提供免额外测试集的泛化界？",
+        // 正确解
+        target: { paradigm: "Bagging", order: "Parallel", eval: "OOB" },
+        traps: [
+          {
+            cond: s => s.paradigm === "Stacking" && s.eval === "OOB",
+            title: "陷阱：机制与数据划分错配",
+            desc: "Stacking 异质多模型缺乏 Bootstrap 自助采样天然产生的 36.8% 包外样本，无法直接用 OOB 进行无偏验证！"
+          },
+          {
+            cond: s => s.order === "Sequential" && s.paradigm === "Bagging",
+            title: "陷阱：低效串行与方差未完全削减",
+            desc: "Bagging 的各基学习器基于独立重采样样本，强制串行训练无法利用并发算力，且不会产生残差纠偏增益。"
+          }
+        ],
+        explain: {
+          correct: "判定正确！深度决策树属于典型的低偏差、高方差模型。采用 Bagging（如随机森林）并行独立自举采样，利用多树平均消除彼此不相关的方差；同时每个基树约有 36.8% 的样本未被抽中，利用包外估计 (OOB) 可直接获得近乎无偏的泛化误差检验。",
+          paradigmWrong: "范式建议修正：针对高方差深度模型，首要任务是降低方差而非提高拟合深度。Boosting 是降偏差工具（对低偏差深树容易过拟合），此处应优先采用 Bagging。",
+          orderWrong: "训练时序违和：Bagging 基学习器彼此独立，无需串行依赖，并行采样是最大化利用算力的标准形态。",
+          evalWrong: "验证防线建议：Bagging 自带每棵树 36.8% 未被抽取的 OOB 数据，包外估计可完美实现无需额外测试集的开箱验证。"
+        }
+      },
+      {
+        id: 1,
+        title: "场景 B：搜索相关性排序 (轻量浅树逐步纠偏)",
+        difficulty: "递进工况",
+        model: "高偏差/单棵表达受限的弱分类器 (单层或浅层树桩)",
+        compute: "对推理单点延迟敏感，训练需步步拟合残差",
+        correlation: "0.82 (若独立训练则误差高度一致，集成无效)",
+        validation: "需要监控验证集损失以防过度拟合噪声",
+        prompt: "业务目标：单个弱学习器（浅决策树）偏差过高、表达能力有限，若独立并行采样其误差高度相关无法降低损失。为了逐层逼近复杂非线性边界，应如何设计训练顺序与防过拟合策略？",
+        target: { paradigm: "Boosting", order: "Sequential", eval: "EarlyStop" },
+        traps: [
+          {
+            cond: s => s.paradigm === "Bagging" && s.order === "Parallel",
+            title: "陷阱：高偏差模型的无效方差削减",
+            desc: "弱分类器自身偏差极高，Bagging 只能降低方差而无法降低偏差，最终集成模型依然严重欠拟合！"
+          },
+          {
+            cond: s => s.paradigm === "Boosting" && s.order === "Parallel",
+            title: "陷阱：违背因果串行依赖",
+            desc: "Boosting 的核心是第 m 棵树拟合前 m-1 棵树留下的残差或样本权重。并行训练使后续树无法获得正确的残差指导！"
+          },
+          {
+            cond: s => s.paradigm === "Boosting" && s.eval === "OOB",
+            title: "陷阱：评估方式不兼容",
+            desc: "标准 Boosting 每轮迭代使用全体样本（或基于前轮误差动态重赋权），不存在固定且随机的包外未采样集。"
+          }
+        ],
+        explain: {
+          correct: "判定正确！弱学习器主要矛盾在于高偏差。采用 Boosting 串行递进结构，后续学习器紧盯前序模型的残差或错误样本，逐步拉低系统偏差；配合早停验证集（Early Stopping）可以精确阻止因拟合离群噪声而发生的过拟合。",
+          paradigmWrong: "范式建议修正：对于高偏差浅树，Bagging 无法有效降低偏差；必须依靠 Boosting（如 GBDT/AdaBoost）的残差拟合机制。",
+          orderWrong: "时序逻辑违背：Boosting 具有严格的数学因果依赖，前序残差是后续学习器的学习目标，无法完全并行化。",
+          evalWrong: "验证防线建议：Boosting 迭代后期极易被离群噪点带偏，必须引入独立验证集并在早停轮数触发时及时截断。"
+        }
+      },
+      {
+        id: 2,
+        title: "场景 C：多模态异质融合 (表格+文本+图谱)",
+        difficulty: "高阶架构",
+        model: "异质结构 (XGBoost 表格模型 + 深度 Transformer 文本向量 + GNN 图模型)",
+        compute: "两阶段分层推断",
+        correlation: "0.12 (不同模态表征差异极大，盲区互补)",
+        validation: "严格阻隔元特征传递时的标签泄漏",
+        prompt: "业务目标：结合了结构化表格、非结构化文本与关系图谱。单一模型无法统摄全模态优势。现需构建多层元学习架构将各模态输出组合，如何配置结构与验证流，杜绝次级学习器‘作弊’？",
+        target: { paradigm: "Stacking", order: "MetaLayer", eval: "KFoldMeta" },
+        traps: [
+          {
+            cond: s => s.paradigm === "Stacking" && s.eval !== "KFoldMeta",
+            title: "致命陷阱：元特征标签泄漏 (Label Leakage)",
+            desc: "若基模型使用全量训练集生成预测并直接供元模型训练，元模型将学到严重的过拟合记忆，在真实盲测时严重崩盘！必须采用严格的 Out-of-fold (K-Fold CV) 交叉推断生成元特征。"
+          },
+          {
+            cond: s => s.paradigm === "Bagging" || s.paradigm === "Boosting",
+            title: "陷阱：异质模型不兼容单一范式",
+            desc: "Bagging 与 Boosting 通常要求同质基学习器协同优化。面对截然不同的多模态模型家族，分层 Stacking 才能有效组合各模型预测概率。"
+          }
+        ],
+        explain: {
+          correct: "判定正确！多模态场景下各异质模型优势互补、相关性极低，最适宜采用 Stacking 分层架构。核心防线在于：必须使用严格的 K-Fold 交叉验证（折外预测 Out-of-fold）生成基模型的元特征，再送入次级元分类器，彻底隔绝标签泄漏！",
+          paradigmWrong: "范式建议修正：面临结构迥异的异质多模型（Tree + Transformer + GNN），单一同质算法（Bagging/Boosting）难以直接整合，应使用 Stacking 学习如何组合预测。",
+          orderWrong: "结构拓扑有误：异质多模型应作为第 1 层基学习器并行产出表征预测，再汇入第 2 层元学习器，属于典型的多层分层拓扑。",
+          evalWrong: "致命验证防线缺失：Stacking 最危险的缺陷即是元特征泄漏。唯有严格的折外 K 折推断（KFoldMeta）才能保证训练与验证的一致性。"
+        }
+      }
+    ];
+
+    // 状态机
+    let state = {
+      scenarioIndex: 0,
+      selections: {
+        paradigm: null,
+        order: null,
+        eval: null
+      },
+      stats: {
+        solved: [false, false, false],
+        trapsCaught: 0
+      }
+    };
+
+    // DOM 引用
+    const dom = {
+      statScene: document.getElementById("statScene"),
+      statAccuracy: document.getElementById("statAccuracy"),
+      statTraps: document.getElementById("statTraps"),
+      difficultyTag: document.getElementById("difficultyTag"),
+      scenarioTabs: document.querySelectorAll(".scenario-tab"),
+      featModel: document.getElementById("featModel"),
+      featCompute: document.getElementById("featCompute"),
+      featCorrelation: document.getElementById("featCorrelation"),
+      featValidation: document.getElementById("featValidation"),
+      scenarioPrompt: document.getElementById("scenarioPrompt"),
+      choiceBtns: document.querySelectorAll(".choice-btn"),
+      metricBias: document.getElementById("metricBias"),
+      metricVar: document.getElementById("metricVar"),
+      metricLoss: document.getElementById("metricLoss"),
+      metricLeak: document.getElementById("metricLeak"),
+      noteBias: document.getElementById("noteBias"),
+      noteVar: document.getElementById("noteVar"),
+      noteLoss: document.getElementById("noteLoss"),
+      noteLeak: document.getElementById("noteLeak"),
+      evalStatus: document.getElementById("evalStatus"),
+      evalBox: document.getElementById("evalBox"),
+      evalHeading: document.getElementById("evalHeading"),
+      evalDetail: document.getElementById("evalDetail"),
+      trapBanner: document.getElementById("trapBanner"),
+      trapTitle: document.getElementById("trapTitle"),
+      trapDesc: document.getElementById("trapDesc"),
+      btnReset: document.getElementById("btnReset"),
+      btnNext: document.getElementById("btnNext"),
+      pipelineCv: document.getElementById("pipelineCv"),
+      chartCv: document.getElementById("chartCv")
+    };
+
+    let pipelineFit, chartFit;
+
+    // 绘制拓扑管道
+    function drawPipeline(ctx) {
+      const w = ctx.canvas.width / (window.devicePixelRatio || 1);
+      const h = ctx.canvas.height / (window.devicePixelRatio || 1);
+      ctx.clearRect(0, 0, w, h);
+
+      const p = state.selections.paradigm;
+      const o = state.selections.order;
+      const e = state.selections.eval;
+
+      ctx.save();
+      ctx.font = "13px 'Noto Sans SC', sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      // 默认初始未配置界面
+      if (!p && !o && !e) {
+        ctx.fillStyle = "#8FA4B0";
+        ctx.fillText("请在左侧配置集成范式、训练时序与验证防线以生成拓扑流", w / 2, h / 2);
+        ctx.restore();
+        return;
+      }
+
+      // 绘制三阶段流：[数据切分/采样] -> [基学习器池] -> [汇聚/验证输出]
+      const stepX = [w * 0.16, w * 0.50, w * 0.84];
+      const centerY = h / 2;
+
+      // 1. 数据/采样节点
+      ctx.fillStyle = "#2F7568";
+      ctx.fillRect(stepX[0] - 50, centerY - 25, 100, 50);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "bold 13px 'Noto Sans SC', sans-serif";
+      let dataText = "原始样本集";
+      if (p === "Bagging") dataText = "Bootstrap 自助采样";
+      else if (p === "Boosting") dataText = "全量/动态加权集";
+      else if (p === "Stacking") dataText = "K-Fold 折外切分";
+      ctx.fillText(dataText, stepX[0], centerY);
+
+      // 2. 基学习器节点群
+      const models = [
+        { y: centerY - 50, label: "基学习器 M₁" },
+        { y: centerY,      label: "基学习器 M₂" },
+        { y: centerY + 50, label: "基学习器 M₃" }
+      ];
+
+      models.forEach((m, idx) => {
+        ctx.fillStyle = "#27648F";
+        ctx.fillRect(stepX[1] - 55, m.y - 18, 110, 36);
+        ctx.fillStyle = "#FFFFFF";
+        ctx.font = "12px 'Noto Sans SC', sans-serif";
+        ctx.fillText(m.label, stepX[1], m.y);
+
+        // 连接线：数据 -> 模型
+        ctx.strokeStyle = "#8FA4B0";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(stepX[0] + 50, centerY);
+        ctx.lineTo(stepX[1] - 55, m.y);
+        ctx.stroke();
+      });
+
+      // 如果是串行时序，绘制模型之间的残差递进箭头
+      if (o === "Sequential") {
+        ctx.strokeStyle = "#C34B22";
+        ctx.lineWidth = 2;
+        // M1 -> M2
+        Deck.arrow(ctx, stepX[1], models[0].y + 18, stepX[1], models[1].y - 18, 5);
+        // M2 -> M3
+        Deck.arrow(ctx, stepX[1], models[1].y + 18, stepX[1], models[2].y - 18, 5);
+
+        ctx.fillStyle = "#C34B22";
+        ctx.font = "11px 'Noto Sans SC', sans-serif";
+        ctx.fillText("残差拟合", stepX[1] + 65, (models[0].y + models[1].y) / 2);
+      }
+
+      // 3. 汇总/集成输出节点
+      let aggColor = "#C34B22";
+      let aggText = "集成汇聚";
+      if (p === "Bagging") aggText = "多数投票 / 平均";
+      else if (p === "Boosting") aggText = "带权线性组合 ΣαₘMₘ";
+      else if (p === "Stacking") aggText = "次级元分类器 Meta";
+
+      ctx.fillStyle = aggColor;
+      ctx.fillRect(stepX[2] - 55, centerY - 25, 110, 50);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "bold 13px 'Noto Sans SC', sans-serif";
+      ctx.fillText(aggText, stepX[2], centerY);
+
+      // 连接线：模型 -> 汇聚
+      models.forEach(m => {
+        ctx.strokeStyle = "#8FA4B0";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(stepX[1] + 55, m.y);
+        ctx.lineTo(stepX[2] - 55, centerY);
+        ctx.stroke();
+      });
+
+      // 4. 验证防线标注
+      ctx.fillStyle = "#122634";
+      ctx.font = "12px 'Noto Sans SC', sans-serif";
+      let evalTag = "未设定验证方式";
+      if (e === "OOB") evalTag = "【防线】约 36.8% 包外样本免泄漏评估";
+      else if (e === "EarlyStop") evalTag = "【防线】独立早停验证集，轮数监控";
+      else if (e === "KFoldMeta") evalTag = "【防线】严格 Out-of-fold 元特征隔绝";
+
+      // 检查当前是否触发泄漏陷阱
+      const currentScenario = SCENARIOS[state.scenarioIndex];
+      const activeTrap = currentScenario.traps.find(t => t.cond(state.selections));
+      if (activeTrap && activeTrap.title.includes("泄漏")) {
+        ctx.fillStyle = "#A82D26";
+        evalTag = "【危险】检测到标签泄漏！元特征未做交叉切分！";
+      }
+
+      ctx.fillText(evalTag, w / 2, h - 18);
+      ctx.restore();
+    }
+
+    // 绘制随基模型数量 M 增加的损失收敛图
+    function drawChart(ctx) {
+      const w = ctx.canvas.width / (window.devicePixelRatio || 1);
+      const h = ctx.canvas.height / (window.devicePixelRatio || 1);
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.save();
+      const p = state.selections.paradigm;
+      const o = state.selections.order;
+      const e = state.selections.eval;
+
+      const pad = { left: 40, right: 25, top: 15, bottom: 25 };
+      const plotW = w - pad.left - pad.right;
+      const plotH = h - pad.top - pad.bottom;
+
+      // 坐标轴
+      ctx.strokeStyle = "#CFDEE5";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad.left, pad.top);
+      ctx.lineTo(pad.left, pad.top + plotH);
+      ctx.lineTo(pad.left + plotW, pad.top + plotH);
+      ctx.stroke();
+
+      // 刻度
+      ctx.fillStyle = "#748D9B";
+      ctx.font = "11px 'Noto Sans SC', sans-serif";
+      ctx.textAlign = "right";
+      ctx.fillText("高", pad.left - 6, pad.top + 10);
+      ctx.fillText("0", pad.left - 6, pad.top + plotH);
+      ctx.textAlign = "center";
+      ctx.fillText("M=1", pad.left, pad.top + plotH + 16);
+      ctx.fillText("基模型数量 M (1 → 50)", pad.left + plotW / 2, pad.top + plotH + 16);
+      ctx.fillText("M=50", pad.left + plotW, pad.top + plotH + 16);
+
+      // 模拟曲线计算：根据当前选择产生对应的泛化损失轨迹
+      const points = 40;
+      const curve = [];
+
+      const curScenario = SCENARIOS[state.scenarioIndex];
+      const isTargetMatch = p === curScenario.target.paradigm &&
+                            o === curScenario.target.order &&
+                            e === curScenario.target.eval;
+
+      const activeTrap = curScenario.traps.find(t => t.cond(state.selections));
+
+      for (let i = 0; i <= points; i++) {
+        const t = i / points; // 0 to 1
+        let val = 0.5; // val 介于 0 (无误差/底轴) 到 1 (高误差/顶轴)
+
+        if (!p) {
+          // 未选择：基准高误差水平线
+          val = 0.75;
+        } else if (activeTrap && activeTrap.title.includes("泄漏")) {
+          // 泄漏：盲测误差在初期看似很低，随着模型记住训练标签，在真实泛化上暴增
+          val = 0.25 + 0.55 * (1 - Math.exp(-2.5 * t));
+        } else if (isTargetMatch) {
+          // 正确匹配：快速单调平滑下降，从高误差 0.85 下降到低误差 0.16
+          val = 0.70 * Math.exp(-3.5 * t) + 0.15;
+        } else if (p === "Bagging" && curScenario.id === 1) {
+          // 弱分类器用 Bagging：完全降不下高偏差，误差维持在顶部
+          val = 0.80 - 0.04 * (1 - Math.exp(-2 * t));
+        } else if (p === "Boosting" && o === "Parallel") {
+          // 违背因果并行 Boosting：无法计算梯度残差，误差震荡不收敛
+          val = 0.65 + 0.12 * Math.sin(t * 10) * Math.exp(-0.5 * t);
+        } else {
+          // 次优选择：略有下降但无法达到最优边界
+          val = 0.50 * Math.exp(-1.5 * t) + 0.38;
+        }
+        // y 轴映射：val 为 0 时应在 pad.top + plotH (底部 0 误差)；val 为 1 时应在 pad.top (顶部 高误差)
+        curve.push({
+          x: pad.left + t * plotW,
+          y: pad.top + plotH - val * plotH
+        });
+      }
+
+      // 绘制轨迹
+      ctx.beginPath();
+      ctx.moveTo(curve[0].x, curve[0].y);
+      for (let i = 1; i < curve.length; i++) {
+        ctx.lineTo(curve[i].x, curve[i].y);
+      }
+      ctx.strokeStyle = isTargetMatch ? "#237052" : (activeTrap ? "#A82D26" : "#27648F");
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // 终点标注
+      const lastPt = curve[curve.length - 1];
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath();
+      ctx.arc(lastPt.x, lastPt.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    // 重新评估状态
+    function evaluate() {
+      const cur = SCENARIOS[state.scenarioIndex];
+      const sel = state.selections;
+
+      // 更新按钮高亮
+      dom.choiceBtns.forEach(btn => {
+        const slot = btn.dataset.slot;
+        const val = btn.dataset.val;
+        if (sel[slot] === val) {
+          btn.classList.add("selected");
+        } else {
+          btn.classList.remove("selected");
+        }
+      });
+
+      // 检查陷阱
+      const activeTrap = cur.traps.find(t => t.cond(sel));
+      if (activeTrap) {
+        dom.trapBanner.style.display = "block";
+        dom.trapTitle.textContent = activeTrap.title;
+        dom.trapDesc.textContent = activeTrap.desc;
+      } else {
+        dom.trapBanner.style.display = "none";
+      }
+
+      // 检查是否全部已选
+      const allSelected = sel.paradigm && sel.order && sel.eval;
+
+      if (!allSelected) {
+        dom.evalStatus.textContent = "待完成决策";
+        dom.evalBox.className = "eval-box pending";
+        dom.evalHeading.textContent = "请指定三项架构要素";
+        dom.evalDetail.textContent = "在左侧分别选定“集成范式”、“训练时序”与“验证防线”，系统将运行模拟推导。";
+
+        dom.metricBias.textContent = "--";
+        dom.metricVar.textContent = "--";
+        dom.metricLoss.textContent = "--";
+        dom.metricLeak.textContent = "待定";
+        dom.metricLeak.style.color = "var(--text)";
+        return;
+      }
+
+      // 进行推断校验
+      const isTarget = sel.paradigm === cur.target.paradigm &&
+                       sel.order === cur.target.order &&
+                       sel.eval === cur.target.eval;
+
+      if (isTarget) {
+        state.stats.solved[state.scenarioIndex] = true;
+        dom.evalStatus.textContent = "验证完全吻合";
+        dom.evalBox.className = "eval-box correct";
+        dom.evalHeading.textContent = "架构推断成功 · 消除主要瓶颈";
+        dom.evalDetail.textContent = cur.explain.correct;
+
+        // 数值反馈 (正向收敛)
+        if (cur.id === 0) {
+          dom.metricBias.textContent = "0.11";
+          dom.metricVar.textContent = "0.08";
+          dom.metricLoss.textContent = "0.19";
+          dom.noteBias.textContent = "保持低偏差";
+          dom.noteVar.textContent = "消除 80% 方差";
+          dom.noteLoss.textContent = "最优泛化界";
+        } else if (cur.id === 1) {
+          dom.metricBias.textContent = "0.09";
+          dom.metricVar.textContent = "0.12";
+          dom.metricLoss.textContent = "0.21";
+          dom.noteBias.textContent = "成功克服高偏差";
+          dom.noteVar.textContent = "平稳控制";
+          dom.noteLoss.textContent = "快速收敛";
+        } else {
+          dom.metricBias.textContent = "0.07";
+          dom.metricVar.textContent = "0.09";
+          dom.metricLoss.textContent = "0.16";
+          dom.noteBias.textContent = "跨模态互补";
+          dom.noteVar.textContent = "异质融合无偏";
+          dom.noteLoss.textContent = "全面突破";
+        }
+        dom.metricLeak.textContent = "0% (严密)";
+        dom.metricLeak.style.color = "var(--answer)";
+        dom.noteLeak.textContent = "无标签串扰";
+      } else {
+        dom.evalStatus.textContent = "架构存在缺陷";
+        dom.evalBox.className = "eval-box incorrect";
+        dom.evalHeading.textContent = "推断未通过 · 存在机制错配";
+
+        let feedback = "";
+        if (sel.paradigm !== cur.target.paradigm) feedback = cur.explain.paradigmWrong;
+        else if (sel.order !== cur.target.order) feedback = cur.explain.orderWrong;
+        else if (sel.eval !== cur.target.eval) feedback = cur.explain.evalWrong;
+
+        dom.evalDetail.textContent = feedback;
+
+        // 异常数值反馈
+        if (activeTrap && activeTrap.title.includes("泄漏")) {
+          dom.metricBias.textContent = "0.02 (假象)";
+          dom.metricVar.textContent = "0.85 (过拟合)";
+          dom.metricLoss.textContent = "0.87 (崩溃)";
+          dom.metricLeak.textContent = "100% (致命)";
+          dom.metricLeak.style.color = "var(--danger)";
+          dom.noteLeak.textContent = "元特征混入测试标签";
+        } else {
+          dom.metricBias.textContent = "0.38";
+          dom.metricVar.textContent = "0.45";
+          dom.metricLoss.textContent = "0.83";
+          dom.metricLeak.textContent = "0%";
+          dom.metricLeak.style.color = "var(--text)";
+          dom.noteLeak.textContent = "机制未能解决主矛盾";
+        }
+      }
+
+      // 更新统计计数
+      const solvedCount = state.stats.solved.filter(Boolean).length;
+      dom.statAccuracy.textContent = Math.round((solvedCount / 3) * 100) + "%";
+      if (activeTrap) {
+        state.stats.trapsCaught = Math.min(3, Math.max(state.stats.trapsCaught, state.scenarioIndex + 1));
+      }
+      dom.statTraps.textContent = `${state.stats.trapsCaught} / 3`;
+
+      // 重绘图层
+      if (pipelineFit) pipelineFit.redraw();
+      if (chartFit) chartFit.redraw();
+    }
+
+    // 切换场景
+    function setScenario(idx) {
+      state.scenarioIndex = idx;
+      state.selections = { paradigm: null, order: null, eval: null };
+
+      const sc = SCENARIOS[idx];
+      dom.statScene.textContent = `${idx + 1} / 3`;
+      dom.difficultyTag.textContent = sc.difficulty;
+      dom.featModel.textContent = sc.model;
+      dom.featCompute.textContent = sc.compute;
+      dom.featCorrelation.textContent = sc.correlation;
+      dom.featValidation.textContent = sc.validation;
+      dom.scenarioPrompt.textContent = sc.prompt;
+
+      dom.scenarioTabs.forEach((tab, i) => {
+        tab.classList.toggle("active", i === idx);
+      });
+
+      evaluate();
+    }
+
+    // 事件绑定
+    dom.scenarioTabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        setScenario(parseInt(tab.dataset.scenario, 10));
+      });
+    });
+
+    dom.choiceBtns.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const slot = btn.dataset.slot;
+        const val = btn.dataset.val;
+        state.selections[slot] = val;
+        evaluate();
+      });
+    });
+
+    dom.btnReset.addEventListener("click", () => {
+      state.selections = { paradigm: null, order: null, eval: null };
+      evaluate();
+    });
+
+    dom.btnNext.addEventListener("click", () => {
+      const nextIdx = (state.scenarioIndex + 1) % 3;
+      setScenario(nextIdx);
+    });
+
+    // 初始化画布与 Deck
+    Deck.init({ index: 27, total: 27 });
+    pipelineFit = Deck.autofit(dom.pipelineCv, drawPipeline);
+    chartFit = Deck.autofit(dom.chartCv, drawChart);
+
+    setScenario(0);
+  })();
+  </script>
+</body>
+</html>

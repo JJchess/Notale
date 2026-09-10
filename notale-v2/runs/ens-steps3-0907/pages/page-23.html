@@ -1,0 +1,569 @@
+<!--
+构图意图：
+1. 主对象是梯度提升的串行更新链条：从初始模型 f₀(x) 开始，每轮通过“计算负梯度/残差 -> 拟合新基学习器 h_m(x) -> 累加收缩到总模型 f_m(x)”的精确结构。
+2. 对象之间的关系通过中央水平展开的 3 阶段流动展现：损失空间负梯度向量与残差对齐，基树拟合残差，右侧展现累加逼近真实函数 y 的阶梯演变。
+3. 说明文字依附在关键数学节点与下方的紧凑推导注记上，保持文字总量受控，纯粹由几何对齐与公式映射揭示“梯度下降是在参数空间走，梯度提升是在函数空间走”。
+-->
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    :root {
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans CJK SC", system-ui, sans-serif;
+    }
+
+    /* #stage 由 base.css 设置为 1600x900 并在视口居中，不要重设 position:absolute 和 inset:0 */
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    /* 顶部标题栏 */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 24px;
+    }
+    .header h1 {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      line-height: var(--lh-tight);
+      margin: 0;
+      color: var(--text);
+      font-weight: 700;
+    }
+    .header .subtitle {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主舞台：三栏流程式展开 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 48px 1fr 48px 1fr;
+      align-items: stretch;
+      height: 600px;
+      gap: 0;
+    }
+
+    /* 阶段卡片/区段 */
+    .flow-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .col-head {
+      border-bottom: 2px solid var(--rule);
+      padding-bottom: 10px;
+      margin-bottom: 16px;
+    }
+    .col-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 4px 0;
+    }
+    .col-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 箭头连接过渡区 */
+    .arrow-col {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-top: 40px;
+    }
+    .arrow-col svg {
+      width: 32px;
+      height: 32px;
+    }
+
+    /* 画布与可视化容器 */
+    .visual-box {
+      flex: 1;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .cv-wrap {
+      position: relative;
+      width: 100%;
+      height: 330px;
+    }
+
+    /* 阶段说明与公式注记 */
+    .col-footer {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px dashed var(--rule);
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--text);
+    }
+    .math-eq {
+      font-size: var(--fs-body);
+      margin: 6px 0;
+      color: var(--model);
+    }
+    .highlight-eq {
+      color: var(--focus);
+      font-weight: bold;
+    }
+
+    /* 底部收束条 */
+    .footer-bar {
+      margin-top: 26px;
+      padding-top: 16px;
+      border-top: 2px solid var(--rule);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .summary-text {
+      font-size: var(--fs-body);
+      color: var(--text);
+    }
+    .summary-tag {
+      font-size: var(--fs-label);
+      color: var(--focus);
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body data-page="23" data-total="32">
+  <div id="stage">
+    <header class="header">
+      <h1>梯度提升的统一视角：在函数空间做梯度下降</h1>
+      <p class="subtitle">每一轮弱学习器拟合损失函数的负梯度方向（即广义残差）</p>
+    </header>
+
+    <main class="main-grid">
+      <!-- 阶段 1：计算负梯度 -->
+      <section class="flow-col">
+        <div class="col-head">
+          <h2 class="col-title">1. 算负梯度</h2>
+          <p class="col-desc">损失下降最陡方向</p>
+        </div>
+        <div class="visual-box">
+          <div class="cv-wrap">
+            <canvas id="cv-grad" class="cv-fill"></canvas>
+          </div>
+        </div>
+        <div class="col-footer">
+          <div>当前预测 <span id="eq-fm"></span></div>
+          <div class="math-eq" id="eq-grad"></div>
+          <div>平方损失下等于残差 <span id="eq-res-diff"></span></div>
+        </div>
+      </section>
+
+      <!-- 连接箭头 1 -->
+      <div class="arrow-col">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--rule)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <polyline points="14 5 21 12 14 19"></polyline>
+        </svg>
+      </div>
+
+      <!-- 阶段 2：基学习器拟合 -->
+      <section class="flow-col">
+        <div class="col-head">
+          <h2 class="col-title">2. 拟合基树</h2>
+          <p class="col-desc">回归树逼近负梯度</p>
+        </div>
+        <div class="visual-box">
+          <div class="cv-wrap">
+            <canvas id="cv-tree" class="cv-fill"></canvas>
+          </div>
+        </div>
+        <div class="col-footer">
+          <div>拟合目标 <span id="eq-target"></span></div>
+          <div class="math-eq" id="eq-fit"></div>
+          <div>收缩率 <span class="highlight-eq" id="eq-shrink"></span> 控制步长</div>
+        </div>
+      </section>
+
+      <!-- 连接箭头 2 -->
+      <div class="arrow-col">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--rule)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <polyline points="14 5 21 12 14 19"></polyline>
+        </svg>
+      </div>
+
+      <!-- 阶段 3：函数空间累加 -->
+      <section class="flow-col">
+        <div class="col-head">
+          <h2 class="col-title">3. 累加更新</h2>
+          <p class="col-desc">在函数空间逐步逼近</p>
+        </div>
+        <div class="visual-box">
+          <div class="cv-wrap">
+            <canvas id="cv-ensemble" class="cv-fill"></canvas>
+          </div>
+        </div>
+        <div class="col-footer">
+          <div>累加规则：</div>
+          <div class="math-eq" id="eq-update"></div>
+          <div>下一轮在此基准上计算新残差</div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer-bar">
+      <div class="summary-text">
+        梯度提升是在函数空间做梯度下降：更新模型本身 <span id="eq-func-gd"></span>。
+      </div>
+      <div class="summary-tag">函数空间优化 · 广义损失可微</div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学好。前面我们学过 AdaBoost，它通过改变样本权重来让下一轮弱分类器关注错题。
+    但到了回归问题、或者面对更一般的损失函数（比如绝对值损失、Huber 损失、交叉熵损失）时，样本权重机制就显得不够通用了。
+    1999 年 Jerome Friedman 提出了著名的梯度提升（Gradient Boosting）。
+    请看画面核心的类比：普通梯度下降是在参数空间走，每一步更新参数 θ ← θ - η·∇L(θ)；
+    而梯度提升是在“函数空间”做梯度下降！它把模型的输出 f(x) 本身看作变量。
+    第一步：计算当前模型在各样本点上的负梯度 r_{mi} = -[∂L(y, f(x))/∂f(x)]。当损失为平方差时，负梯度正是 y - f(x)，也就是我们直观的真实残差！
+    第二步：既然负梯度指明了损失下降最快的方向，我们就训练一棵新的小决策树 h_m(x)，去拟合这个负梯度目标。
+    第三步：把拟合出的基学习器乘上学习率 η，加到已有模型中：f_m(x) = f_{m-1}(x) + η·h_m(x)。
+    这样，只要损失函数可微，任何任务都能套用这套范式，这就是现代 GBDT、XGBoost、LightGBM 的统一理论基石。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      // 1. 初始化 KaTeX 公式
+      const render = (id, tex) => {
+        const el = document.getElementById(id);
+        if (el && window.katex) {
+          katex.render(tex, el, { throwOnError: false });
+        }
+      };
+
+      render("eq-fm", "f_{m-1}(x)");
+      render("eq-grad", "r_{mi} = -\\left[ \\frac{\\partial L(y_i, f(x_i))}{\\partial f(x_i)} \\right]_{f = f_{m-1}}");
+      render("eq-res-diff", "y_i - f_{m-1}(x_i)");
+      render("eq-target", "\\{(x_i, r_{mi})\\}_{i=1}^N");
+      render("eq-fit", "h_m = \\arg\\min_h \\sum_{i=1}^N (r_{mi} - h(x_i))^2");
+      render("eq-shrink", "\\eta \\in (0, 1]");
+      render("eq-update", "f_m(x) = f_{m-1}(x) + \\eta \\cdot h_m(x)");
+      // render("eq-param-gd", "\\theta_{t+1} = \\theta_t - \\eta \\nabla_\\theta L");
+      render("eq-func-gd", "f_m = f_{m-1} + \\eta \\cdot h_m");
+
+      // 2. 数据与模拟定义（用于三个阶段的真实曲线与残差呈现）
+      // 真实函数：双峰平滑曲线 y = sin(x) + 0.5 cos(2x)
+      const N = 8;
+      const sampleX = [0.12, 0.25, 0.38, 0.50, 0.64, 0.76, 0.88, 0.96];
+      // 样本真实值 y
+      const sampleY = [0.28, 0.85, 0.72, 0.20, 0.15, 0.65, 0.88, 0.40];
+      // 当前轮初始前序预测 f_{m-1}(x)（一条平缓粗略基线）
+      const f_prev = [0.45, 0.55, 0.52, 0.40, 0.35, 0.42, 0.50, 0.46];
+      // 负梯度 / 残差 r = y - f_prev
+      const residuals = sampleY.map((y, i) => +(y - f_prev[i]).toFixed(2));
+      // 基学习器 h_m 拟合值（阶梯分段常数）
+      const splits = [0.35, 0.70];
+      const leafVals = [
+        // x < 0.35
+        +( (residuals[0] + residuals[1]) / 2 ).toFixed(2),
+        // 0.35 <= x < 0.70
+        +( (residuals[2] + residuals[3] + residuals[4]) / 3 ).toFixed(2),
+        // x >= 0.70
+        +( (residuals[5] + residuals[6] + residuals[7]) / 3 ).toFixed(2)
+      ];
+      const getH = (x) => {
+        if (x < splits[0]) return leafVals[0];
+        if (x < splits[1]) return leafVals[1];
+        return leafVals[2];
+      };
+      const eta = 0.8;
+
+      // 3. 画布绘制逻辑
+      // 阶段 1：绘制负梯度/残差向量
+      const cvGrad = document.getElementById("cv-grad");
+      Deck.autofit(cvGrad, function(ctx) {
+        const w = cvGrad.width / (window.devicePixelRatio || 1);
+        const h = cvGrad.height / (window.devicePixelRatio || 1);
+        ctx.clearRect(0, 0, w, h);
+
+        const padX = 36, padY = 32;
+        const plotW = w - padX * 2;
+        const plotH = h - padY * 2;
+
+        const toX = (x) => padX + x * plotW;
+        const toY = (val) => padY + plotH * (1 - (val + 0.1) / 1.1);
+
+        // 坐标轴
+        ctx.strokeStyle = Deck.token("--rule") || "#71828B";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(padX, padY + plotH);
+        ctx.lineTo(padX + plotW, padY + plotH);
+        ctx.moveTo(padX, padY);
+        ctx.lineTo(padX, padY + plotH);
+        ctx.stroke();
+
+        // 轴标签与刻度
+        ctx.fillStyle = Deck.token("--muted") || "#50616B";
+        ctx.font = "13px var(--font-sans)";
+        ctx.textAlign = "right";
+        ctx.fillText("y", padX - 8, padY + 12);
+        ctx.textAlign = "center";
+        ctx.fillText("x", padX + plotW, padY + plotH + 18);
+
+        // 绘制前序模型 f_{m-1}(x) 平滑曲线
+        ctx.strokeStyle = Deck.token("--model") || "#17628E";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        for (let i = 0; i <= 40; i++) {
+          const px = i / 40;
+          // 插值 f_prev
+          const py = 0.46 + 0.08 * Math.sin(px * Math.PI * 2.5);
+          const cx = toX(px);
+          const cy = toY(py);
+          if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 标注 f_{m-1}
+        ctx.fillStyle = Deck.token("--model") || "#17628E";
+        ctx.font = "14px var(--font-sans)";
+        ctx.textAlign = "left";
+        ctx.fillText("当前模型 f_{m-1}", toX(0.02), toY(0.58) - 10);
+
+        // 绘制样本点 y 与残差箭头
+        for (let i = 0; i < N; i++) {
+          const x = sampleX[i];
+          const y = sampleY[i];
+          const f = f_prev[i];
+          const cx = toX(x);
+          const cy = toY(y);
+          const cf = toY(f);
+
+          // 绘制残差/负梯度虚线箭头 (从 f 指向 y)
+          ctx.strokeStyle = Deck.token("--focus") || "#B83D0B";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(cx, cf);
+          ctx.lineTo(cx, cy);
+          ctx.stroke();
+
+          // 箭头尖端
+          const arrowDir = cy < cf ? -1 : 1; // 向上还是向下
+          ctx.fillStyle = Deck.token("--focus") || "#B83D0B";
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx - 3.5, cy - arrowDir * 7);
+          ctx.lineTo(cx + 3.5, cy - arrowDir * 7);
+          ctx.closePath();
+          ctx.fill();
+
+          // 真实值样本点
+          ctx.fillStyle = Deck.token("--text") || "#142630";
+          ctx.beginPath();
+          ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 当前预测位置
+          ctx.fillStyle = Deck.token("--model") || "#17628E";
+          ctx.beginPath();
+          ctx.arc(cx, cf, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 图例与标注
+        ctx.fillStyle = Deck.token("--focus") || "#B83D0B";
+        ctx.font = "15px var(--font-sans)";
+        ctx.textAlign = "left";
+        ctx.fillText("负梯度方向 r = y - f", toX(0.35), toY(1.02));
+      });
+
+      // 阶段 2：绘制回归决策树桩拟合负梯度
+      const cvTree = document.getElementById("cv-tree");
+      Deck.autofit(cvTree, function(ctx) {
+        const w = cvTree.width / (window.devicePixelRatio || 1);
+        const h = cvTree.height / (window.devicePixelRatio || 1);
+        ctx.clearRect(0, 0, w, h);
+
+        const padX = 36, padY = 32;
+        const plotW = w - padX * 2;
+        const plotH = h - padY * 2;
+
+        // 零轴在中间
+        const toX = (x) => padX + x * plotW;
+        const toY = (r) => padY + plotH / 2 - (r / 0.5) * (plotH / 2 - 12);
+
+        // 0 刻度线 (基准线)
+        ctx.strokeStyle = Deck.token("--rule") || "#71828B";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padX, toY(0));
+        ctx.lineTo(padX + plotW, toY(0));
+        ctx.stroke();
+
+        // 坐标轴
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(padX, padY);
+        ctx.lineTo(padX, padY + plotH);
+        ctx.stroke();
+
+        ctx.fillStyle = Deck.token("--muted") || "#50616B";
+        ctx.font = "13px var(--font-sans)";
+        ctx.textAlign = "right";
+        ctx.fillText("r (负梯度)", padX + 4, padY + 12);
+        ctx.fillText("0", padX - 8, toY(0) + 4);
+
+        // 划分点垂直线
+        splits.forEach((sp) => {
+          ctx.strokeStyle = "rgba(113, 130, 139, 0.45)";
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(toX(sp), padY);
+          ctx.lineTo(toX(sp), padY + plotH);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = Deck.token("--muted") || "#50616B";
+          ctx.font = "12px var(--font-sans)";
+          ctx.textAlign = "center";
+          ctx.fillText(`划分 x=${sp}`, toX(sp), padY + plotH + 16);
+        });
+
+        // 绘制目标负梯度散点
+        for (let i = 0; i < N; i++) {
+          const cx = toX(sampleX[i]);
+          const cy = toY(residuals[i]);
+
+          ctx.fillStyle = Deck.token("--focus") || "#B83D0B";
+          ctx.beginPath();
+          ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 绘制决策树的拟合阶梯线 h_m(x)
+        ctx.strokeStyle = Deck.token("--model") || "#17628E";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        // 第一段 [0, splits[0]]
+        ctx.moveTo(toX(0), toY(leafVals[0]));
+        ctx.lineTo(toX(splits[0]), toY(leafVals[0]));
+        // 阶梯跳转
+        ctx.lineTo(toX(splits[0]), toY(leafVals[1]));
+        // 第二段 [splits[0], splits[1]]
+        ctx.lineTo(toX(splits[1]), toY(leafVals[1]));
+        // 阶梯跳转
+        ctx.lineTo(toX(splits[1]), toY(leafVals[2]));
+        // 第三段 [splits[1], 1]
+        ctx.lineTo(toX(1), toY(leafVals[2]));
+        ctx.stroke();
+
+        // 标注阶梯拟合
+        ctx.fillStyle = Deck.token("--model") || "#17628E";
+        ctx.font = "14px var(--font-sans)";
+        ctx.textAlign = "left";
+        ctx.fillText("基学习器阶梯拟合 h_m(x)", toX(0.04), toY(leafVals[0]) - 16);
+      });
+
+      // 阶段 3：绘制更新后的模型累加 f_m(x) = f_{m-1}(x) + eta * h_m(x)
+      const cvEnsemble = document.getElementById("cv-ensemble");
+      Deck.autofit(cvEnsemble, function(ctx) {
+        const w = cvEnsemble.width / (window.devicePixelRatio || 1);
+        const h = cvEnsemble.height / (window.devicePixelRatio || 1);
+        ctx.clearRect(0, 0, w, h);
+
+        const padX = 36, padY = 32;
+        const plotW = w - padX * 2;
+        const plotH = h - padY * 2;
+
+        const toX = (x) => padX + x * plotW;
+        const toY = (val) => padY + plotH * (1 - (val + 0.1) / 1.1);
+
+        // 坐标轴
+        ctx.strokeStyle = Deck.token("--rule") || "#71828B";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(padX, padY + plotH);
+        ctx.lineTo(padX + plotW, padY + plotH);
+        ctx.moveTo(padX, padY);
+        ctx.lineTo(padX, padY + plotH);
+        ctx.stroke();
+
+        ctx.fillStyle = Deck.token("--muted") || "#50616B";
+        ctx.font = "13px var(--font-sans)";
+        ctx.textAlign = "right";
+        ctx.fillText("f(x)", padX - 6, padY + 12);
+
+        // 绘制旧模型 f_{m-1} (浅灰虚线)
+        ctx.strokeStyle = "rgba(113, 130, 139, 0.6)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        for (let i = 0; i <= 40; i++) {
+          const px = i / 40;
+          const py = 0.46 + 0.08 * Math.sin(px * Math.PI * 2.5);
+          const cx = toX(px);
+          const cy = toY(py);
+          if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 绘制真实样本点 y
+        for (let i = 0; i < N; i++) {
+          const cx = toX(sampleX[i]);
+          const cy = toY(sampleY[i]);
+          ctx.fillStyle = Deck.token("--text") || "#142630";
+          ctx.beginPath();
+          ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 绘制更新后的新模型 f_m(x) (粗实线：基准 + eta * 阶梯)
+        ctx.strokeStyle = Deck.token("--model") || "#17628E";
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        for (let i = 0; i <= 80; i++) {
+          const px = i / 80;
+          const pyOld = 0.46 + 0.08 * Math.sin(px * Math.PI * 2.5);
+          const pyNew = pyOld + eta * getH(px);
+          const cx = toX(px);
+          const cy = toY(pyNew);
+          if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+
+        // 标注新模型
+        ctx.fillStyle = Deck.token("--model") || "#17628E";
+        ctx.font = "14px var(--font-sans)";
+        ctx.textAlign = "left";
+        ctx.fillText("新累加模型 f_m(x)", toX(0.04), toY(0.72));
+
+        // 标注旧模型对比
+        ctx.fillStyle = Deck.token("--muted") || "#50616B";
+        ctx.font = "12px var(--font-sans)";
+        ctx.fillText("前序模型 f_{m-1}", toX(0.04), toY(0.42));
+      });
+
+      Deck.init({ index: 23, total: 32 });
+    })();
+  </script>
+</body>
+</html>

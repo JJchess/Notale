@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F1F4F2;
+      --text: #151A18;
+      --muted: #5B6661;
+      --rule: #BAC4BF;
+      --structure: #1C4436;
+      --signal: #D43811;
+      --card-bg: #E8EDE9;
+    }
+
+    #stage {
+      padding: 44px 56px;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    /* 顶部标题与导语 */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 12px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--structure);
+      letter-spacing: -0.01em;
+      margin: 0;
+    }
+
+    .subtitle {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    /* 主工作区：左侧计算图与反向传播交互，右侧参数灵敏度与链式推导 */
+    main {
+      display: grid;
+      grid-template-columns: 960px 480px;
+      gap: 48px;
+      align-items: stretch;
+      height: 640px;
+    }
+
+    /* 左侧计算图区 */
+    .graph-pane {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+    }
+
+    .graph-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .badge-bar {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-sec);
+    }
+
+    .badge-forward {
+      color: var(--structure);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge-forward::before {
+      content: "";
+      display: inline-block;
+      width: 12px;
+      height: 3px;
+      background: var(--structure);
+    }
+
+    .badge-backward {
+      color: var(--signal);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge-backward::before {
+      content: "";
+      display: inline-block;
+      width: 12px;
+      height: 3px;
+      background: var(--signal);
+    }
+
+    .step-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .btn {
+      background: #E0E7E3;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 6px 14px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .btn:hover {
+      background: #D2DCD6;
+      border-color: var(--structure);
+    }
+
+    .btn.primary {
+      background: var(--structure);
+      color: #FFF;
+      border-color: var(--structure);
+    }
+
+    .btn.primary:hover {
+      background: #143328;
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* SVG 计算图容器 */
+    .svg-container {
+      position: relative;
+      width: 960px;
+      height: 480px;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    svg.comp-graph {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 节点样式 */
+    .node-box {
+      fill: #FFF;
+      stroke: var(--structure);
+      stroke-width: 2;
+      cursor: pointer;
+      transition: stroke 0.2s, stroke-width 0.2s;
+    }
+
+    .node-box:hover {
+      stroke-width: 3;
+    }
+
+    .node-box.selected {
+      stroke: var(--signal);
+      stroke-width: 3;
+    }
+
+    .node-box.param-box {
+      stroke-dasharray: 4 2;
+    }
+
+    .node-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      fill: var(--text);
+      text-anchor: middle;
+    }
+
+    .node-val-fwd {
+      font-size: var(--fs-label);
+      font-family: monospace;
+      font-weight: 600;
+      fill: var(--structure);
+      text-anchor: middle;
+    }
+
+    .node-val-bwd {
+      font-size: var(--fs-label);
+      font-family: monospace;
+      font-weight: 700;
+      fill: var(--signal);
+      text-anchor: middle;
+    }
+
+    .edge-line {
+      stroke: var(--structure);
+      stroke-width: 2;
+      fill: none;
+    }
+
+    .edge-bwd {
+      stroke: var(--signal);
+      stroke-width: 2.5;
+      stroke-dasharray: 5 3;
+      fill: none;
+    }
+
+    .edge-label-fwd {
+      font-size: 12px;
+      font-family: monospace;
+      fill: var(--structure);
+      text-anchor: middle;
+    }
+
+    .edge-label-bwd {
+      font-size: 12px;
+      font-family: monospace;
+      fill: var(--signal);
+      font-weight: 700;
+      text-anchor: middle;
+    }
+
+    /* 下方说明条 */
+    .graph-footer {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 8px;
+    }
+
+    /* 右侧推导与观察面板 */
+    .side-pane {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-left: 1px solid var(--rule);
+      padding-left: 36px;
+    }
+
+    .panel-section {
+      margin-bottom: 20px;
+    }
+
+    .section-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--structure);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .formula-card {
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 14px 18px;
+      margin-bottom: 16px;
+    }
+
+    .formula-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: var(--fs-body);
+    }
+
+    .formula-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .math-sym {
+      font-family: "Cambria Math", "Times New Roman", serif;
+      font-style: italic;
+      color: var(--structure);
+      font-weight: 600;
+    }
+
+    .grad-sym {
+      font-family: "Cambria Math", "Times New Roman", serif;
+      font-weight: 700;
+      color: var(--signal);
+    }
+
+    .calc-flow {
+      font-family: monospace;
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+
+    /* 交互探针区：输入与参数微调 */
+    .probe-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-label);
+      margin-top: 8px;
+    }
+
+    .probe-table th, .probe-table td {
+      padding: 8px 6px;
+      text-align: left;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .probe-table th {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .probe-table td.val-col {
+      font-family: monospace;
+      font-weight: 700;
+    }
+
+    .probe-table td.grad-col {
+      font-family: monospace;
+      font-weight: 700;
+      color: var(--signal);
+    }
+
+    .param-slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .param-slider-row label {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--structure);
+      width: 70px;
+    }
+
+    .param-slider-row input[type=range] {
+      flex: 1;
+      accent-color: var(--structure);
+    }
+
+    .param-val-disp {
+      font-family: monospace;
+      font-size: var(--fs-label);
+      font-weight: 700;
+      width: 50px;
+      text-align: right;
+    }
+
+    /* 结论框 */
+    .conclusion-box {
+      border-top: 1px solid var(--rule);
+      padding-top: 14px;
+      font-size: var(--fs-body);
+      color: var(--structure);
+      font-weight: 600;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>反向传播与局部梯度流</h1>
+        <div class="subtitle">链式法则计算图：上游梯度 × 局部导数 = 下游梯度</div>
+      </div>
+      <div class="badge-bar">
+        <span class="badge-forward">前向计算（正向传播）</span>
+        <span class="badge-backward">误差梯度回传（反向传播）</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- 左侧计算图 -->
+      <section class="graph-pane">
+        <div class="graph-header">
+          <div class="step-controls">
+            <span style="font-size: var(--fs-label); font-weight:600; color:var(--muted); margin-right:6px;">追踪步骤：</span>
+            <button class="btn" id="btnPrev" disabled>上一步</button>
+            <button class="btn primary" id="btnNext">单步反传</button>
+            <button class="btn" id="btnFull">一键回传</button>
+            <button class="btn" id="btnReset">重置初态</button>
+          </div>
+          <span style="font-size: var(--fs-label); color: var(--muted);" id="stepIndicator">当前状态：前向输出完成，准备回传</span>
+        </div>
+
+        <div class="svg-container">
+          <svg class="comp-graph" id="graphSvg" viewBox="0 0 960 480">
+            <!-- 标记箭头定义 -->
+            <defs>
+              <marker id="arrow-fwd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#1C4436" />
+              </marker>
+              <marker id="arrow-bwd" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M 10 1 L 0 5 L 10 9 z" fill="#D43811" />
+              </marker>
+            </defs>
+
+            <!-- 连线层：前向与反向 -->
+            <g id="edgesLayer"></g>
+
+            <!-- 节点层 -->
+            <g id="nodesLayer"></g>
+          </svg>
+        </div>
+
+        <div class="graph-footer">
+          <span>点击计算图中的任一节点，右侧将展开该节点的<strong>局部导数因式</strong>与<strong>误差灵敏度</strong>。</span>
+          <span id="targetTip" style="color:var(--signal); font-weight:600;">真值标签 y = 1.00，前向输出 ŷ</span>
+        </div>
+      </section>
+
+      <!-- 右侧解析与探针 -->
+      <aside class="side-pane">
+        <div>
+          <div class="panel-section">
+            <div class="section-title">
+              <span>当前焦点解析</span>
+              <span id="focusNodeBadge" style="font-size:var(--fs-label); font-weight:700; color:var(--signal);">节点: L</span>
+            </div>
+
+            <div class="formula-card" id="focusFormulaCard">
+              <div class="formula-row">
+                <span class="math-sym" id="focusFormulaSym">∂L / ∂ŷ</span>
+                <span class="calc-flow" id="focusFormulaDeriv">2 × (ŷ - y)</span>
+              </div>
+              <div class="formula-row" style="border-top: 1px dashed var(--rule); padding-top: 8px; margin-top: 8px;">
+                <span class="grad-sym" id="focusGradTitle">梯度数值</span>
+                <span class="calc-flow" id="focusGradVal" style="font-weight:700; color:var(--signal);">-0.540</span>
+              </div>
+              <div style="font-size: var(--fs-tick); color: var(--muted); margin-top: 8px; line-height: 1.4;" id="focusExplain">
+                均方误差损失对输出 ŷ 的导数。若 ŷ < y，导数为负，提示前向输出需增大以降低误差。
+              </div>
+            </div>
+          </div>
+
+          <!-- 可调参数探针 -->
+          <div class="panel-section">
+            <div class="section-title" style="margin-bottom:6px;">
+              <span>交互调节权重</span>
+            </div>
+            <div class="param-slider-row">
+              <label for="sliderW1">权重 w₁</label>
+              <input type="range" id="sliderW1" min="-2.0" max="2.0" step="0.1" value="0.8">
+              <span class="param-val-disp" id="dispW1">0.80</span>
+            </div>
+            <div class="param-slider-row">
+              <label for="sliderW2">权重 w₂</label>
+              <input type="range" id="sliderW2" min="-2.0" max="2.0" step="0.1" value="1.2">
+              <span class="param-val-disp" id="dispW2">1.20</span>
+            </div>
+            <div class="param-slider-row">
+              <label for="sliderB">偏置 b</label>
+              <input type="range" id="sliderB" min="-2.0" max="2.0" step="0.1" value="-0.5">
+              <span class="param-val-disp" id="dispB">-0.50</span>
+            </div>
+
+            <!-- 参数灵敏度表 -->
+            <table class="probe-table">
+              <thead>
+                <tr>
+                  <th>参数</th>
+                  <th>当前值</th>
+                  <th>局部导数</th>
+                  <th>最终损失梯度 ∂L/∂θ</th>
+                </tr>
+              </thead>
+              <tbody id="probeTableBody">
+                <!-- 动态填充 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="conclusion-box" id="conclusionText">
+          反向传播的本质是复用中间计算：每个节点只需掌握自己的<strong>局部导数</strong>，与接收到的<strong>上游误差信号</strong>相乘，即可精确回传。
+        </div>
+      </aside>
+    </main>
+
+    <aside class="notes" hidden>
+      本页聚焦深度学习的核心机制——反向传播与链式法则。在计算图上，前向传播负责记录激活值与中间变量，反向传播则从损失函数出发，沿有向边向输入端传递误差敏感度。每个计算节点只需要完成一件非常简单的事：将传入的上游梯度乘以本节点的局部偏导数。学生可以通过点击“单步反传”追踪误差信号如何一路流淌至参数 w1、w2 和 b，调节参数滑块还能实时观察局部导数与梯度大小的变化，从而建立“参数如何感知误差并决定更新方向”的确定性物理直觉。
+    </aside>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 拓扑节点定义 (神经元前向计算图: z = x1*w1 + x2*w2 + b; a = sigmoid(z); L = (a - y)^2)
+      // 固定输入 x1=1.5, x2=-1.0, 目标真实标签 y=1.0
+      const CONST_INPUTS = { x1: 1.5, x2: -1.0, y: 1.0 };
+
+      // 权威状态
+      let modelState = {
+        w1: 0.8,
+        w2: 1.2,
+        b: -0.5,
+        step: 0, // 0: 前向完成未回传, 1: 回传到 a (ŷ), 2: 回传到 z (sigmoid 局部导数), 3: 回传到乘法节点与偏置, 4: 回传到参数 w1, w2, b
+        maxSteps: 4,
+        selectedNode: 'L'
+      };
+
+      // 节点几何与属性配置
+      const NODES = [
+        { id: 'x1', label: '输入 x₁', type: 'input', x: 60, y: 80, w: 90, h: 54 },
+        { id: 'w1', label: '权重 w₁', type: 'param', x: 60, y: 160, w: 90, h: 54 },
+        { id: 'm1', label: '乘积 m₁', type: 'op', opSym: '×', x: 230, y: 120, w: 96, h: 62 },
+
+        { id: 'x2', label: '输入 x₂', type: 'input', x: 60, y: 270, w: 90, h: 54 },
+        { id: 'w2', label: '权重 w₂', type: 'param', x: 60, y: 350, w: 90, h: 54 },
+        { id: 'm2', label: '乘积 m₂', type: 'op', opSym: '×', x: 230, y: 310, w: 96, h: 62 },
+
+        { id: 'b',  label: '偏置 b',  type: 'param', x: 230, y: 410, w: 96, h: 54 },
+
+        { id: 'z',  label: '仿射求和 z', type: 'op', opSym: '+', x: 420, y: 215, w: 106, h: 66 },
+        { id: 'a',  label: '激活 ŷ=σ(z)', type: 'op', opSym: 'σ', x: 610, y: 215, w: 110, h: 66 },
+        { id: 'y',  label: '真值 y', type: 'input', x: 610, y: 360, w: 110, h: 54 },
+        { id: 'L',  label: '损失 L(MSE)', type: 'loss', opSym: 'Loss', x: 800, y: 270, w: 120, h: 70 },
+      ];
+
+      // 连线配置 (source -> target, 局部导数关系)
+      const EDGES = [
+        { from: 'x1', to: 'm1', fwdText: 'x₁' },
+        { from: 'w1', to: 'm1', fwdText: 'w₁' },
+        { from: 'x2', to: 'm2', fwdText: 'x₂' },
+        { from: 'w2', to: 'm2', fwdText: 'w₂' },
+        { from: 'm1', to: 'z',  fwdText: 'm₁' },
+        { from: 'm2', to: 'z',  fwdText: 'm₂' },
+        { from: 'b',  to: 'z',  fwdText: 'b' },
+        { from: 'z',  to: 'a',  fwdText: 'z' },
+        { from: 'a',  to: 'L',  fwdText: 'ŷ' },
+        { from: 'y',  to: 'L',  fwdText: 'y' },
+      ];
+
+      // 计算整个图的前向值与导数值
+      function computeGraph(state) {
+        const x1 = CONST_INPUTS.x1;
+        const x2 = CONST_INPUTS.x2;
+        const y = CONST_INPUTS.y;
+        const w1 = state.w1;
+        const w2 = state.w2;
+        const b = state.b;
+
+        // 前向传播
+        const m1 = x1 * w1;
+        const m2 = x2 * w2;
+        const z = m1 + m2 + b;
+        const a = 1 / (1 + Math.exp(-z)); // sigmoid
+        const diff = a - y;
+        const L = Math.pow(diff, 2);
+
+        // 反向传播梯度计算 (链式法则)
+        // 步骤 1: 损失节点回传到 a (ŷ)
+        const dL_dL = 1.0;
+        const dL_da = 2 * diff; // 2 * (a - y)
+
+        // 步骤 2: a 回传到 z: da/dz = a * (1 - a)
+        const da_dz = a * (1 - a);
+        const dL_dz = dL_da * da_dz;
+
+        // 步骤 3: z 回传到 m1, m2, b: dz/dm1 = 1, dz/dm2 = 1, dz/db = 1
+        const dL_dm1 = dL_dz * 1.0;
+        const dL_dm2 = dL_dz * 1.0;
+        const dL_db  = dL_dz * 1.0;
+
+        // 步骤 4: m1, m2 回传到权重与输入: dm1/dw1 = x1, dm2/dw2 = x2
+        const dL_dw1 = dL_dm1 * x1;
+        const dL_dx1 = dL_dm1 * w1;
+        const dL_dw2 = dL_dm2 * x2;
+        const dL_dx2 = dL_dm2 * w2;
+
+        return {
+          values: { x1, w1, m1, x2, w2, m2, b, z, a, y, L },
+          grads: {
+            L: dL_dL,
+            a: dL_da,
+            z: dL_dz,
+            m1: dL_dm1,
+            m2: dL_dm2,
+            b: dL_db,
+            w1: dL_dw1,
+            w2: dL_dw2,
+            x1: dL_dx1,
+            x2: dL_dx2,
+            y: 0.0
+          },
+          localDerivs: {
+            'L->a': { sym: '∂L/∂ŷ', expr: '2(ŷ - y)', val: dL_da },
+            'a->z': { sym: '∂ŷ/∂z', expr: 'σ(z)(1 - σ(z))', val: da_dz },
+            'z->m1': { sym: '∂z/∂m₁', expr: '1.0', val: 1.0 },
+            'z->m2': { sym: '∂z/∂m₂', expr: '1.0', val: 1.0 },
+            'z->b':  { sym: '∂z/∂b',  expr: '1.0', val: 1.0 },
+            'm1->w1': { sym: '∂m₁/∂w₁', expr: 'x₁', val: x1 },
+            'm2->w2': { sym: '∂m₂/∂w₂', expr: 'x₂', val: x2 },
+          }
+        };
+      }
+
+      // 判断某节点在当前步数下是否已算出梯度
+      function isGradRevealed(nodeId, step) {
+        if (step === 0) return nodeId === 'L';
+        if (step === 1) return ['L', 'a'].includes(nodeId);
+        if (step === 2) return ['L', 'a', 'z'].includes(nodeId);
+        if (step === 3) return ['L', 'a', 'z', 'm1', 'm2', 'b'].includes(nodeId);
+        if (step >= 4) return true;
+        return false;
+      }
+
+      // DOM 缓存
+      const svgEdgesLayer = document.getElementById('edgesLayer');
+      const svgNodesLayer = document.getElementById('nodesLayer');
+      const btnPrev = document.getElementById('btnPrev');
+      const btnNext = document.getElementById('btnNext');
+      const btnFull = document.getElementById('btnFull');
+      const btnReset = document.getElementById('btnReset');
+      const stepIndicator = document.getElementById('stepIndicator');
+
+      const sliderW1 = document.getElementById('sliderW1');
+      const sliderW2 = document.getElementById('sliderW2');
+      const sliderB = document.getElementById('sliderB');
+      const dispW1 = document.getElementById('dispW1');
+      const dispW2 = document.getElementById('dispW2');
+      const dispB = document.getElementById('dispB');
+
+      const focusNodeBadge = document.getElementById('focusNodeBadge');
+      const focusFormulaSym = document.getElementById('focusFormulaSym');
+      const focusFormulaDeriv = document.getElementById('focusFormulaDeriv');
+      const focusGradTitle = document.getElementById('focusGradTitle');
+      const focusGradVal = document.getElementById('focusGradVal');
+      const focusExplain = document.getElementById('focusExplain');
+      const probeTableBody = document.getElementById('probeTableBody');
+
+      // 渲染整个 SVG 计算图
+      function renderSvg(computed) {
+        const step = modelState.step;
+        const selectedId = modelState.selectedNode;
+
+        // 1. 连线绘制
+        let edgeHtml = '';
+        EDGES.forEach(edge => {
+          const fromNode = NODES.find(n => n.id === edge.from);
+          const toNode = NODES.find(n => n.id === edge.to);
+
+          const x1 = fromNode.x + fromNode.w;
+          const y1 = fromNode.y + fromNode.h / 2;
+          const x2 = toNode.x;
+          const y2 = toNode.y + toNode.h / 2;
+
+          // 平滑三阶贝塞尔曲线
+          const dx = Math.max(30, (x2 - x1) * 0.5);
+          const pathD = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+          // 前向线 (墨绿)
+          edgeHtml += `<path d="${pathD}" class="edge-line" marker-end="url(#arrow-fwd)" />`;
+
+          // 如果反向梯度已经传过这条边，绘制回传的朱红虚线
+          const edgeActive = isGradRevealed(edge.from, step) && isGradRevealed(edge.to, step) && edge.from !== 'y' && edge.to !== 'y';
+          if (edgeActive) {
+            // 反向连线，从 to 反向连回 from (略微偏置以防重叠)
+            const bwdD = `M ${x2} ${y2 - 6} C ${x2 - dx} ${y2 - 6}, ${x1 + dx} ${y1 - 6}, ${x1} ${y1 - 6}`;
+            edgeHtml += `<path d="${bwdD}" class="edge-bwd" marker-end="url(#arrow-bwd)" />`;
+          }
+        });
+        svgEdgesLayer.innerHTML = edgeHtml;
+
+        // 2. 节点绘制
+        let nodeHtml = '';
+        NODES.forEach(n => {
+          const isSel = n.id === selectedId;
+          const val = computed.values[n.id];
+          const grad = computed.grads[n.id];
+          const gradShown = isGradRevealed(n.id, step) && grad !== undefined;
+
+          const boxClass = `node-box ${n.type === 'param' ? 'param-box' : ''} ${isSel ? 'selected' : ''}`;
+
+          nodeHtml += `
+            <g class="graph-node-group" data-node-id="${n.id}" transform="translate(${n.x}, ${n.y})" style="cursor: pointer;">
+              <rect width="${n.w}" height="${n.h}" rx="4" class="${boxClass}" />
+              <text x="${n.w / 2}" y="18" class="node-title">${n.label}</text>
+              <text x="${n.w / 2}" y="36" class="node-val-fwd">${n.type === 'op' ? (n.opSym + ' = ' + val.toFixed(2)) : val.toFixed(2)}</text>
+              ${(gradShown && grad !== undefined) ? `<text x="${n.w / 2}" y="50" class="node-val-bwd">∇ ${grad.toFixed(3)}</text>` : ''}
+            </g>
+          `;
+        });
+        svgNodesLayer.innerHTML = nodeHtml;
+
+        // 为节点绑定点击事件
+        document.querySelectorAll('.graph-node-group').forEach(el => {
+          el.addEventListener('click', () => {
+            modelState.selectedNode = el.dataset.nodeId;
+            renderAll();
+          });
+        });
+      }
+
+      // 渲染右侧面板说明
+      function renderSide(computed) {
+        const step = modelState.step;
+        const sel = modelState.selectedNode;
+        const val = computed.values[sel] !== undefined ? computed.values[sel] : 0;
+        const grad = computed.grads[sel];
+        const gradActive = isGradRevealed(sel, step);
+
+        focusNodeBadge.textContent = `节点: ${sel}`;
+
+        if (sel === 'L') {
+          focusFormulaSym.textContent = '∂L / ∂L';
+          focusFormulaDeriv.textContent = '基准梯度 = 1.00';
+          focusGradVal.textContent = '1.000';
+          focusExplain.textContent = '误差起点：整个网络的损失定义为均方误差 L = (ŷ - y)²。对自身的梯度恒为 1.00。';
+        } else if (sel === 'a') {
+          focusFormulaSym.textContent = '∂L / ∂ŷ';
+          focusFormulaDeriv.textContent = `2 × (ŷ - y) = 2 × (${val.toFixed(2)} - 1.00)`;
+          focusGradVal.textContent = gradActive && grad !== undefined ? grad.toFixed(3) : '待回传 (第1步)';
+          focusExplain.textContent = '损失对模型输出 ŷ 的敏感度。若导数为负，说明输出若增加，损失将下降。';
+        } else if (sel === 'z') {
+          focusFormulaSym.textContent = '∂L / ∂z';
+          focusFormulaDeriv.textContent = '(∂L/∂ŷ) × σ(z)(1 - σ(z))';
+          focusGradVal.textContent = gradActive && grad !== undefined ? grad.toFixed(3) : '待回传 (第2步)';
+          focusExplain.textContent = '激活函数的链式法则：上游梯度穿过 Sigmoid 时，被压缩乘上局部导数 σ(1-σ)，最大仅 0.25。';
+        } else if (sel === 'm1' || sel === 'm2' || sel === 'b') {
+          focusFormulaSym.textContent = `∂L / ∂${sel}`;
+          focusFormulaDeriv.textContent = '(∂L/∂z) × (∂z/∂' + sel + ') [加法导数为1]';
+          focusGradVal.textContent = gradActive && grad !== undefined ? grad.toFixed(3) : '待回传 (第3步)';
+          focusExplain.textContent = '加法节点是梯度分配器：各个相加分支等额接收上游梯度，局部偏导数全为 1。';
+        } else if (sel === 'w1' || sel === 'w2') {
+          const inputKey = sel === 'w1' ? 'x1' : 'x2';
+          const inputName = sel === 'w1' ? 'x₁' : 'x₂';
+          const inputVal = CONST_INPUTS[inputKey];
+          focusFormulaSym.textContent = `∂L / ∂${sel}`;
+          focusFormulaDeriv.textContent = `(∂L/∂m) × ${inputName}`;
+          focusGradVal.textContent = (gradActive && grad !== undefined) ? grad.toFixed(3) : '待回传 (第4步)';
+          focusExplain.textContent = `乘法节点的参数梯度取决于前向输入：输入 ${inputName}=${inputVal.toFixed(1)} 充当了权重的敏感度放大器。`;
+        } else if (sel === 'x1' || sel === 'x2') {
+          focusFormulaSym.textContent = `∂L / ∂${sel}`;
+          focusFormulaDeriv.textContent = `(∂L/∂m) × 权重`;
+          focusGradVal.textContent = gradActive && grad !== undefined ? grad.toFixed(3) : '待回传 (第4步)';
+          focusExplain.textContent = '输入特征在训练中通常不更新，但多层网络会将该梯度继续回传给前一层。';
+        } else {
+          focusFormulaSym.textContent = '常数真值 y';
+          focusFormulaDeriv.textContent = '不可学习常数';
+          focusGradVal.textContent = '-';
+          focusExplain.textContent = '目标标签作为外部监督信号，参与损失计算。';
+        }
+
+        // 填充参数灵敏度表格
+        const params = [
+          { name: 'w₁', val: modelState.w1, local: `x₁ = ${CONST_INPUTS.x1.toFixed(1)}`, grad: computed.grads.w1, stepNeed: 4 },
+          { name: 'w₂', val: modelState.w2, local: `x₂ = ${CONST_INPUTS.x2.toFixed(1)}`, grad: computed.grads.w2, stepNeed: 4 },
+          { name: 'b',  val: modelState.b,  local: '1.00', grad: computed.grads.b,  stepNeed: 3 },
+        ];
+
+        let tableHtml = '';
+        params.forEach(p => {
+          const isRevealed = step >= p.stepNeed;
+          const gradStr = (isRevealed && p.grad !== undefined) ? p.grad.toFixed(4) : '<span style="color:var(--muted); font-weight:normal;">未传达</span>';
+          tableHtml += `
+            <tr>
+              <td><strong>${p.name}</strong></td>
+              <td class="val-col">${p.val.toFixed(2)}</td>
+              <td style="color:var(--structure); font-family:monospace;">${p.local}</td>
+              <td class="grad-col">${gradStr}</td>
+            </tr>
+          `;
+        });
+        probeTableBody.innerHTML = tableHtml;
+
+        // 步骤指示与按钮状态
+        btnPrev.disabled = step === 0;
+        btnNext.disabled = step >= modelState.maxSteps;
+
+        const stepDescriptions = [
+          '前向完成：各节点算得激活值，准备从 Loss 回传',
+          '步骤 1/4：损失对输出 ŷ 产生初始误差梯度 ∂L/∂ŷ',
+          '步骤 2/4：误差穿过激活函数 Sigmoid，乘以局部导数得到 ∂L/∂z',
+          '步骤 3/4：加法节点将误差等额分配到分支 m₁、m₂ 与偏置 b',
+          '步骤 4/4：乘法节点乘上对应输入，算得参数梯度 ∂L/∂w₁ 与 ∂L/∂w₂'
+        ];
+        stepIndicator.textContent = stepDescriptions[step];
+        btnFull.disabled = step >= modelState.maxSteps;
+      }
+
+      function renderAll() {
+        dispW1.textContent = modelState.w1.toFixed(2);
+        dispW2.textContent = modelState.w2.toFixed(2);
+        dispB.textContent = modelState.b.toFixed(2);
+
+        const computed = computeGraph(modelState);
+        renderSvg(computed);
+        renderSide(computed);
+      }
+
+      // 事件监听
+      btnNext.addEventListener('click', () => {
+        if (modelState.step < modelState.maxSteps) {
+          modelState.step++;
+          // 自动切换焦点到当前最新推进的节点
+          if (modelState.step === 1) modelState.selectedNode = 'a';
+          else if (modelState.step === 2) modelState.selectedNode = 'z';
+          else if (modelState.step === 3) modelState.selectedNode = 'b';
+          else if (modelState.step === 4) modelState.selectedNode = 'w1';
+          renderAll();
+        }
+      });
+
+      btnPrev.addEventListener('click', () => {
+        if (modelState.step > 0) {
+          modelState.step--;
+          renderAll();
+        }
+      });
+
+      btnFull.addEventListener('click', () => {
+        modelState.step = modelState.maxSteps;
+        modelState.selectedNode = 'w1';
+        renderAll();
+      });
+
+      btnReset.addEventListener('click', () => {
+        modelState.step = 0;
+        modelState.selectedNode = 'L';
+        modelState.w1 = 0.8;
+        modelState.w2 = 1.2;
+        modelState.b = -0.5;
+        sliderW1.value = '0.8';
+        sliderW2.value = '1.2';
+        sliderB.value = '-0.5';
+        renderAll();
+      });
+
+      sliderW1.addEventListener('input', (e) => {
+        modelState.w1 = parseFloat(e.target.value);
+        renderAll();
+      });
+
+      sliderW2.addEventListener('input', (e) => {
+        modelState.w2 = parseFloat(e.target.value);
+        renderAll();
+      });
+
+      sliderB.addEventListener('input', (e) => {
+        modelState.b = parseFloat(e.target.value);
+        renderAll();
+      });
+
+      // 初始化渲染
+      renderAll();
+    })();
+  </script>
+</body>
+</html>

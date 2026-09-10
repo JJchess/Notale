@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>梯度提升的残差视角：每棵新树拟合当前模型仍需修正的方向</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, -apple-system, sans-serif;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: 20px var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    header {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+    .title-wrap h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      margin: 0;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .title-wrap p {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .header-formula {
+      font-family: var(--font-num);
+      font-size: 16px;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      padding: 6px 14px;
+      border-radius: 6px;
+    }
+    .header-formula strong {
+      color: var(--aggregate);
+      font-weight: 600;
+    }
+
+    /* 主网格 */
+    .main-grid {
+      flex: 1 1 0;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 22px;
+    }
+
+    /* 左侧可视化区：三行对齐图表 */
+    .visual-panel {
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 18px 22px 14px 22px;
+      box-shadow: 0 2px 8px rgba(18, 38, 52, 0.04);
+    }
+    .step-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .step-tabs {
+      display: flex;
+      gap: 8px;
+    }
+    .step-btn {
+      appearance: none;
+      border: 1px solid var(--surface-strong);
+      background: var(--bg);
+      color: var(--text);
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      font-weight: 600;
+      padding: 6px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all var(--duration) var(--ease);
+    }
+    .step-btn:hover {
+      border-color: var(--muted);
+    }
+    .step-btn.active {
+      background: var(--model);
+      color: #FFFFFF;
+      border-color: var(--model);
+    }
+    .step-summary {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .step-summary b {
+      color: var(--text);
+      font-family: var(--font-num);
+    }
+
+    .charts-container {
+      flex: 1 1 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 1.15fr 1fr;
+      gap: 12px;
+    }
+
+    .chart-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      background: #FAFCFD;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 14px 8px 14px;
+      min-height: 0;
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .chart-title {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .chart-badge {
+      font-size: var(--fs-tick);
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .chart-legend {
+      display: flex;
+      gap: 14px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .legend-line {
+      width: 16px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .svg-wrapper {
+      flex: 1 1 0;
+      min-height: 0;
+      position: relative;
+      width: 100%;
+    }
+    .chart-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+
+    /* 右侧推导与观察侧栏 */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .card-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px 18px;
+      box-shadow: 0 2px 8px rgba(18, 38, 52, 0.04);
+    }
+    .card-panel h2 {
+      margin: 0 0 10px 0;
+      font-size: var(--fs-h2);
+      line-height: 1.25;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .state-desc {
+      font-size: var(--fs-sec);
+      line-height: 1.55;
+      color: var(--text);
+      margin: 0 0 12px 0;
+    }
+    .formula-box {
+      background: #F4F7F9;
+      border-left: 3px solid var(--model);
+      padding: 10px 12px;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 12px;
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+    }
+    .formula-box code {
+      font-family: var(--font-num);
+      font-weight: 600;
+      color: var(--model);
+      display: block;
+    }
+    .formula-box span {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      display: block;
+      margin-top: 4px;
+    }
+
+    /* 指标对比表 */
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--surface-strong);
+      font-size: var(--fs-sec);
+    }
+    .metric-row:last-child {
+      border-bottom: none;
+    }
+    .metric-label {
+      color: var(--muted);
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--text);
+    }
+    .metric-val.good {
+      color: var(--aggregate);
+    }
+
+    /* 机制要点卡 */
+    .mechanism-list {
+      margin: 0;
+      padding-left: 18px;
+      font-size: var(--fs-sec);
+      line-height: 1.6;
+      color: var(--muted);
+    }
+    .mechanism-list li {
+      margin-bottom: 8px;
+    }
+    .mechanism-list strong {
+      color: var(--text);
+    }
+
+    /* 坐标轴刻度与标签样式 */
+    .axis-line {
+      stroke: #C2D0D9;
+      stroke-width: 1;
+    }
+    .axis-tick {
+      stroke: #C2D0D9;
+      stroke-width: 1;
+    }
+    .grid-line {
+      stroke: #E8EFF3;
+      stroke-width: 1;
+      stroke-dasharray: 2 3;
+    }
+    .axis-text {
+      fill: var(--muted);
+      font-size: 12px;
+      font-family: var(--font-num);
+    }
+    .zero-line {
+      stroke: #9BB0BE;
+      stroke-width: 1.5;
+      stroke-dasharray: 4 3;
+    }
+  </style>
+</head>
+<body data-page="17" data-total="27">
+  <div id="stage">
+    <header>
+      <div class="title-wrap">
+        <h1>梯度提升的残差视角：每棵新树拟合当前模型仍需修正的方向</h1>
+        <p>基学习器不再独立预测真实标签，而是拟合上一轮集成留下的残差 gap</p>
+      </div>
+      <div class="header-formula">
+        加法模型：<strong>F<sub>m</sub>(x) = F<sub>m-1</sub>(x) + h<sub>m</sub>(x)</strong>，其中 <strong>h<sub>m</sub> ≈ y − F<sub>m-1</sub></strong>
+      </div>
+    </header>
+
+    <main class="main-grid">
+      <!-- 左侧：上下联动的目标/累加预测与单轮残差树图表 -->
+      <section class="visual-panel min0">
+        <div class="step-nav">
+          <div class="step-tabs" role="tablist" aria-label="提升轮数选择">
+            <button class="step-btn active" data-step="0" role="tab" id="tab-0">初始化 M=0 (常量基线)</button>
+            <button class="step-btn" data-step="1" role="tab" id="tab-1">第 1 轮 (+ 树 1)</button>
+            <button class="step-btn" data-step="2" role="tab" id="tab-2">第 2 轮 (+ 树 2)</button>
+            <button class="step-btn" data-step="3" role="tab" id="tab-3">第 3 轮 (+ 树 3)</button>
+          </div>
+          <div class="step-summary" id="step-summary">
+            当前集成：<b>F₀(x) = 2.82</b>（全局均值）
+          </div>
+        </div>
+
+        <div class="charts-container">
+          <!-- 上图：真实标签与当前集成模型累加曲线 -->
+          <div class="chart-card min0">
+            <div class="chart-header">
+              <div class="chart-title">
+                <span>集成累加预测 F<sub>m</sub>(x) 与真实目标 y</span>
+                <span class="chart-badge" id="top-badge">初态常量</span>
+              </div>
+              <div class="chart-legend">
+                <div class="legend-item">
+                  <div class="legend-dot" style="background: var(--sample);"></div>
+                  <span>真实样本点 (x, y)</span>
+                </div>
+                <div class="legend-line" style="background: var(--aggregate); height:3px;"></div>
+                <span>当前累加预测 F<sub>m</sub>(x)</span>
+                <div class="legend-line" style="background: #9BB0BE; stroke-dasharray: 2 2;"></div>
+                <span>残差误差线段 (r = y − F)</span>
+              </div>
+            </div>
+            <div class="svg-wrapper" id="top-svg-wrapper">
+              <svg id="top-chart" class="chart-svg" preserveAspectRatio="none"></svg>
+            </div>
+          </div>
+
+          <!-- 下图：当前轮拟合的新回归树 h_m(x) 与残差 targets -->
+          <div class="chart-card min0">
+            <div class="chart-header">
+              <div class="chart-title">
+                <span id="bottom-title">本轮弱学习器拟合对象：上一轮残留误差 r<sub>m</sub></span>
+                <span class="chart-badge" id="bottom-badge">第 1 棵残差树输入</span>
+              </div>
+              <div class="chart-legend">
+                <div class="legend-item">
+                  <div class="legend-dot" style="background: #D96B43;"></div>
+                  <span>残差目标 r = y − F<sub>m-1</sub></span>
+                </div>
+                <div class="legend-line" style="background: var(--model); height:3px;"></div>
+                <span>本轮新树分段阶梯 h<sub>m</sub>(x)</span>
+                <div class="legend-line" style="background: #9BB0BE; border-top: 1.5px dashed #9BB0BE;"></div>
+                <span>零误差基线 r=0</span>
+              </div>
+            </div>
+            <div class="svg-wrapper" id="bottom-svg-wrapper">
+              <svg id="bottom-chart" class="chart-svg" preserveAspectRatio="none"></svg>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：教学解说与指标量化 -->
+      <aside class="sidebar min0">
+        <div class="card-panel">
+          <h2 id="sidebar-title">初始化：以常量基线起步</h2>
+          <p class="state-desc" id="sidebar-desc">
+            在回归问题中，平方损失下的最优初始预测是训练集 y 的均值。此时模型预测是一条平直水平线，各样本点与水平线的纵向距离即初始残差。
+          </p>
+          <div class="formula-box">
+            <code id="formula-code">F₀(x) = argmin_c Σ (yᵢ − c)² = ȳ = 2.82</code>
+            <span id="formula-note">所有样本承受最大方差，残留全部非线性波动</span>
+          </div>
+
+          <div class="metric-row">
+            <span class="metric-label">平均绝对残差 |r̄|</span>
+            <span class="metric-val" id="val-mae">1.46</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">均方误差 MSE</span>
+            <span class="metric-val good" id="val-mse">2.74</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">本轮树叶节点数</span>
+            <span class="metric-val" id="val-leaves">-</span>
+          </div>
+        </div>
+
+        <div class="card-panel" style="flex:1;">
+          <h2>残差视角的核心规律</h2>
+          <ul class="mechanism-list">
+            <li>
+              <strong>目标转移：</strong>新树不再去拟合原始 y，而是以 <code>rᵢ = yᵢ − F<sub>m-1</sub>(xᵢ)</code> 为标签进行分裂。
+            </li>
+            <li>
+              <strong>分步纠偏：</strong>前一棵树在大区间定下基调，后一棵树在误差仍然较大的子区间继续切分精修。
+            </li>
+            <li>
+              <strong>累加集成：</strong>预测阶段不需要树之间投票，直接将所有树的局部修正量线性叠加：<code>F<sub>M</sub> = F₀ + Σ h<sub>m</sub></code>。
+            </li>
+          </ul>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      // 1. 教学确定性一维样本集 (x ∈ [0.5, 9.5])
+      // 真实生成函数：含起伏的双峰非线性曲线
+      var SAMPLES = [
+        { x: 1.0, y: 1.2 },
+        { x: 1.8, y: 1.9 },
+        { x: 2.6, y: 3.8 },
+        { x: 3.4, y: 4.6 },
+        { x: 4.2, y: 4.9 },
+        { x: 5.0, y: 4.1 },
+        { x: 5.8, y: 2.7 },
+        { x: 6.6, y: 1.5 },
+        { x: 7.4, y: 1.1 },
+        { x: 8.2, y: 2.2 },
+        { x: 9.0, y: 3.1 }
+      ];
+
+      // 全局均值 F0
+      var ySum = SAMPLES.reduce(function(acc, d){ return acc + d.y; }, 0);
+      var F0 = ySum / SAMPLES.length; // 2.8272... ≈ 2.83
+
+      // 定义三棵深度为2的分裂残差树
+      // 树1：在 x=4.6 切分，将左侧峰与右侧低谷拆开
+      // 左侧 x <= 4.6 拟合正残差(+1.04)，右侧 x > 4.6 拟合负残差(-0.83)
+      function tree1(x) {
+        if (x <= 4.6) {
+          return x <= 2.2 ? -0.85 : 1.35;
+        } else {
+          return x <= 7.8 ? -1.05 : -0.15;
+        }
+      }
+
+      // 树2：针对树1后的残差在 x=3.0 与 x=6.2 处再次细分
+      function tree2(x) {
+        if (x <= 3.8) {
+          return x <= 1.4 ? -0.40 : 0.35;
+        } else if (x <= 6.2) {
+          return 0.45;
+        } else {
+          return x <= 7.8 ? -0.35 : 0.30;
+        }
+      }
+
+      // 树3：微调局部波峰与波谷
+      function tree3(x) {
+        if (x <= 3.0) return -0.12;
+        if (x <= 5.2) return 0.18;
+        if (x <= 7.5) return -0.16;
+        return 0.14;
+      }
+
+      var TREES = [tree1, tree2, tree3];
+
+      // 计算第 m 步时，各采样点的 Fm 与残差
+      function getModelAtStep(step) {
+        return SAMPLES.map(function(pt) {
+          var f = F0;
+          for (var i = 0; i < step; i++) {
+            f += TREES[i](pt.x);
+          }
+          var r = pt.y - f;
+          return { x: pt.x, y: pt.y, f: f, r: r };
+        });
+      }
+
+      // 计算连续评估曲线 (x: 0.5 -> 9.5)
+      function getCurveAtStep(step) {
+        var pts = [];
+        for (var x = 0.6; x <= 9.4; x += 0.05) {
+          var f = F0;
+          for (var i = 0; i < step; i++) {
+            f += TREES[i](x);
+          }
+          pts.push({ x: x, y: f });
+        }
+        return pts;
+      }
+
+      // 计算特定树的单树分段阶梯
+      function getTreeCurve(treeIndex) {
+        if (treeIndex < 0 || treeIndex >= TREES.length) return [];
+        var pts = [];
+        var fn = TREES[treeIndex];
+        for (var x = 0.6; x <= 9.4; x += 0.05) {
+          pts.push({ x: x, y: fn(x) });
+        }
+        return pts;
+      }
+
+      // 状态解说与指标元数据
+      var STEP_META = [
+        {
+          title: "初始化：以全局常数基线 F₀ 起步",
+          desc: "未训练任何树时，集成模型输出全局训练集均值 ȳ=2.83。所有样本在此基线上产生垂直残差 r₀ = y − F₀。这组原始残差即为第 1 棵树的目标标签。",
+          code: "F₀(x) = ȳ = 2.83,  r₀ = y − 2.83",
+          note: "所有非线性特征全未被捕捉，残差方差最大",
+          leaves: "0 (常数)",
+          topBadge: "初始均值",
+          bottomTitle: "等待第 1 棵树拟合：初始残差分布 r₀",
+          bottomBadge: "输入残差向量 r₀"
+        },
+        {
+          title: "第 1 轮：树 1 拟合主波峰与主波谷",
+          desc: "树 1 观察到在 x∈[2.5, 5] 残差显著为正，而在两侧显著为负。它通过切分将输入空间划分为 4 个叶子区间，直接吸收了绝大部分宏观偏差。",
+          code: "F₁(x) = F₀(x) + h₁(x),  r₁ = y − F₁(x)",
+          note: "粗轮廓建立，残差方差骤降",
+          leaves: "4 叶节点",
+          topBadge: "F₁ = F₀ + h₁",
+          bottomTitle: "第 1 棵弱回归树分段阶梯 h₁(x)",
+          bottomBadge: "树 1 预测增量"
+        },
+        {
+          title: "第 2 轮：树 2 在残差缩小后的空间精修",
+          desc: "经过树 1 纠正后，残差绝对值缩小至 0.5 以内。树 2 不再去重复学习全局趋势，而是专门针对 x=3.4 和 x=6.6 附近的漏网误差进行局部抬升或压低。",
+          code: "F₂(x) = F₁(x) + h₂(x) = F₀ + h₁ + h₂",
+          note: "局部分界线细化，误差进一步收敛",
+          leaves: "4 叶节点",
+          topBadge: "F₂ = F₁ + h₂",
+          bottomTitle: "第 2 棵弱回归树分段阶梯 h₂(x)",
+          bottomBadge: "树 2 预测增量"
+        },
+        {
+          title: "第 3 轮：树 3 修正微小波动，逼近真实分布",
+          desc: "残差已经趋于零均值的平稳振荡。树 3 的输出幅度已经非常微弱(±0.15量级)，仅在特定边缘做微调。三棵树累加后，阶梯曲线高度贴合样本点。",
+          code: "F₃(x) = F₂(x) + h₃(x) = F₀ + Σ hₘ",
+          note: "残差接近白噪声，逼近最优拟合能力",
+          leaves: "4 叶节点",
+          topBadge: "F₃ 最终三树集成",
+          bottomTitle: "第 3 棵弱回归树分段阶梯 h₃(x)",
+          bottomBadge: "树 3 预测增量"
+        }
+      ];
+
+      var currentStep = 0;
+
+      // 绘图辅助函数
+      var topSvg = document.getElementById("top-chart");
+      var bottomSvg = document.getElementById("bottom-chart");
+
+      // 坐标映射
+      var PAD = { left: 45, right: 30, top: 12, bottom: 24 };
+
+      function render() {
+        var topBox = document.getElementById("top-svg-wrapper").getBoundingClientRect();
+        var btmBox = document.getElementById("bottom-svg-wrapper").getBoundingClientRect();
+        var W = topBox.width || 1100;
+        var H_top = topBox.height || 260;
+        var H_btm = btmBox.height || 220;
+
+        topSvg.setAttribute("viewBox", "0 0 " + W + " " + H_top);
+        bottomSvg.setAttribute("viewBox", "0 0 " + W + " " + H_btm);
+
+        // x 域 [0.5, 9.5]
+        function mapX(x) {
+          return PAD.left + (x - 0.5) / 9.0 * (W - PAD.left - PAD.right);
+        }
+
+        // 上图 y 域 [0, 6]
+        function mapYTop(y) {
+          return PAD.top + (6.0 - y) / 6.0 * (H_top - PAD.top - PAD.bottom);
+        }
+
+        // 下图 r 域 [-2.5, 2.5]
+        function mapYBtm(r) {
+          return PAD.top + (2.5 - r) / 5.0 * (H_btm - PAD.top - PAD.bottom);
+        }
+
+        // 1. 计算当前数据
+        var currentData = getModelAtStep(currentStep);
+        var curveData = getCurveAtStep(currentStep);
+
+        // 均方误差 MSE 与 MAE
+        var sumSq = 0, sumAbs = 0;
+        currentData.forEach(function(d){
+          sumSq += d.r * d.r;
+          sumAbs += Math.abs(d.r);
+        });
+        var mse = (sumSq / currentData.length).toFixed(2);
+        var mae = (sumAbs / currentData.length).toFixed(2);
+
+        // 2. 渲染上图
+        var topHtml = "";
+        // 水平网格线与 Y 轴
+        for (var yv = 0; yv <= 6; yv += 1) {
+          var yPos = mapYTop(yv);
+          topHtml += '<line class="grid-line" x1="' + PAD.left + '" y1="' + yPos + '" x2="' + (W - PAD.right) + '" y2="' + yPos + '"/>';
+          topHtml += '<text class="axis-text" x="' + (PAD.left - 8) + '" y="' + (yPos + 4) + '" text-anchor="end">' + yv + '</text>';
+        }
+        // X 轴刻度
+        var xZeroY = mapYTop(0);
+        topHtml += '<line class="axis-line" x1="' + PAD.left + '" y1="' + xZeroY + '" x2="' + (W - PAD.right) + '" y2="' + xZeroY + '"/>';
+        for (var xv = 1; xv <= 9; xv += 1) {
+          var xPos = mapX(xv);
+          topHtml += '<line class="axis-tick" x1="' + xPos + '" y1="' + xZeroY + '" x2="' + xPos + '" y2="' + (xZeroY + 4) + '"/>';
+          topHtml += '<text class="axis-text" x="' + xPos + '" y="' + (xZeroY + 16) + '" text-anchor="middle">x=' + xv + '</text>';
+        }
+
+        // 残差虚线线段 (y 与 F(x) 之间的差)
+        currentData.forEach(function(d) {
+          var xCoord = mapX(d.x);
+          var yActual = mapYTop(d.y);
+          var yPred = mapYTop(d.f);
+          topHtml += '<line x1="' + xCoord + '" y1="' + yActual + '" x2="' + xCoord + '" y2="' + yPred + '" stroke="#9BB0BE" stroke-width="2" stroke-dasharray="3 3"/>';
+        });
+
+        // 阶梯/折线累加预测曲线 F_m(x)
+        var curveD = "M " + mapX(curveData[0].x) + " " + mapYTop(curveData[0].y);
+        for (var i = 1; i < curveData.length; i++) {
+          curveD += " L " + mapX(curveData[i].x) + " " + mapYTop(curveData[i].y);
+        }
+        topHtml += '<path d="' + curveD + '" fill="none" stroke="var(--aggregate)" stroke-width="3.5" stroke-linejoin="round"/>';
+
+        // 样本真实点
+        currentData.forEach(function(d) {
+          var cx = mapX(d.x);
+          var cy = mapYTop(d.y);
+          topHtml += '<circle cx="' + cx + '" cy="' + cy + '" r="5.5" fill="var(--sample)" stroke="#FFFFFF" stroke-width="2"/>';
+        });
+
+        topSvg.innerHTML = topHtml;
+
+        // 3. 渲染下图：单轮残差树
+        var btmHtml = "";
+        // 水平网格线与 Y 轴刻度 [-2, -1, 0, 1, 2]
+        [-2, -1, 0, 1, 2].forEach(function(rv) {
+          var rPos = mapYBtm(rv);
+          if (rv === 0) {
+            btmHtml += '<line class="zero-line" x1="' + PAD.left + '" y1="' + rPos + '" x2="' + (W - PAD.right) + '" y2="' + rPos + '"/>';
+          } else {
+            btmHtml += '<line class="grid-line" x1="' + PAD.left + '" y1="' + rPos + '" x2="' + (W - PAD.right) + '" y2="' + rPos + '"/>';
+          }
+          btmHtml += '<text class="axis-text" x="' + (PAD.left - 8) + '" y="' + (rPos + 4) + '" text-anchor="end">' + (rv > 0 ? "+" + rv : rv) + '</text>';
+        });
+
+        // X 轴
+        var btmZeroY = mapYBtm(-2.5);
+        btmHtml += '<line class="axis-line" x1="' + PAD.left + '" y1="' + btmZeroY + '" x2="' + (W - PAD.right) + '" y2="' + btmZeroY + '"/>';
+        for (var xvb = 1; xvb <= 9; xvb += 1) {
+          var xPosB = mapX(xvb);
+          btmHtml += '<line class="axis-tick" x1="' + xPosB + '" y1="' + btmZeroY + '" x2="' + xPosB + '" y2="' + (btmZeroY + 4) + '"/>';
+          btmHtml += '<text class="axis-text" x="' + xPosB + '" y="' + (btmZeroY + 16) + '" text-anchor="middle">x=' + xvb + '</text>';
+        }
+
+        // 如果在 step 0，显示初始残差散点与零基线；如果 step >= 1，显示上一轮残差点和本轮新树分段线
+        var activeTreeIdx = currentStep === 0 ? 0 : currentStep - 1;
+        var treeCurve = getTreeCurve(activeTreeIdx);
+
+        // 残差散点（来自当前步或上一步的待修残差）
+        // step 0 展示 r0；step 1 展示树1对 r0 的拟合；step 2 展示树2对 r1 的拟合；step 3 展示树3对 r2 的拟合
+        var prevStep = currentStep === 0 ? 0 : currentStep - 1;
+        var residualData = getModelAtStep(prevStep);
+
+        // 残差竖线柱到 0 基线
+        var yZeroPos = mapYBtm(0);
+        residualData.forEach(function(d) {
+          var cx = mapX(d.x);
+          var cy = mapYBtm(d.r);
+          btmHtml += '<line x1="' + cx + '" y1="' + yZeroPos + '" x2="' + cx + '" y2="' + cy + '" stroke="#D96B43" stroke-width="1.5" stroke-dasharray="2 2" opacity="0.6"/>';
+          btmHtml += '<circle cx="' + cx + '" cy="' + cy + '" r="5" fill="#D96B43" stroke="#FFFFFF" stroke-width="1.5"/>';
+        });
+
+        // 本轮回归树的分段预测阶梯 (如果是 step 0，展示树 1 即将拟合的预览线，半透明)
+        if (treeCurve.length > 0) {
+          var treeD = "M " + mapX(treeCurve[0].x) + " " + mapYBtm(treeCurve[0].y);
+          for (var j = 1; j < treeCurve.length; j++) {
+            treeD += " L " + mapX(treeCurve[j].x) + " " + mapYBtm(treeCurve[j].y);
+          }
+          var strokeStyle = currentStep === 0 ? 'stroke="var(--model)" stroke-width="2.5" stroke-dasharray="5 4" opacity="0.65"' : 'stroke="var(--model)" stroke-width="3"';
+          btmHtml += '<path d="' + treeD + '" fill="none" ' + strokeStyle + ' stroke-linejoin="round"/>';
+        }
+
+        bottomSvg.innerHTML = btmHtml;
+
+        // 4. 更新右侧解说与指标
+        var meta = STEP_META[currentStep];
+        document.getElementById("sidebar-title").textContent = meta.title;
+        document.getElementById("sidebar-desc").textContent = meta.desc;
+        document.getElementById("formula-code").textContent = meta.code;
+        document.getElementById("formula-note").textContent = meta.note;
+        document.getElementById("val-mae").textContent = mae;
+        document.getElementById("val-mse").textContent = mse;
+        document.getElementById("val-leaves").textContent = meta.leaves;
+
+        document.getElementById("top-badge").textContent = meta.topBadge;
+        document.getElementById("bottom-title").textContent = meta.bottomTitle;
+        document.getElementById("bottom-badge").textContent = meta.bottomBadge;
+
+        var stepDescMap = [
+          "当前集成：<b>F₀(x) = 2.83</b>（全局均值，尚未添加树）",
+          "当前集成：<b>F₁(x) = F₀ + h₁</b>（加入第 1 棵残差树）",
+          "当前集成：<b>F₂(x) = F₁ + h₂</b>（加入第 2 棵精修树）",
+          "当前集成：<b>F₃(x) = F₂ + h₃</b>（三棵树累加完成）"
+        ];
+        document.getElementById("step-summary").innerHTML = stepDescMap[currentStep];
+
+        // 5. 更新按钮状态
+        for (var s = 0; s <= 3; s++) {
+          var btn = document.getElementById("tab-" + s);
+          if (s === currentStep) {
+            btn.classList.add("active");
+          } else {
+            btn.classList.remove("active");
+          }
+        }
+      }
+
+      // 切换事件
+      for (var s = 0; s <= 3; s++) {
+        (function(idx) {
+          var btn = document.getElementById("tab-" + idx);
+          btn.addEventListener("click", function() {
+            currentStep = idx;
+            render();
+          });
+        })(s);
+      }
+
+      // 缩放适配
+      window.addEventListener("resize", render);
+
+      // 初始化底盘
+      Deck.init({ index: 17, total: 27 });
+      render();
+    })();
+  </script>
+</body>
+</html>

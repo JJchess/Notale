@@ -60,6 +60,8 @@ class GuidanceTests(unittest.TestCase):
             for workflow in ('build-cover', 'build-page', 'build-interaction'):
                 inputs = '\n\n'.join(builder.instruction_blocks(root, 6, workflow).values())
                 self.assertIn('Director 定主题方向', inputs)
+                self.assertIn('风格化容器可以承载整幅图表', inputs)
+                self.assertIn('不以有框、白底或面积大单独判错', inputs)
                 self.assertIn('必要时可按需读', inputs)
                 self.assertIn('字号使用主题 token 或具名排版类', inputs)
                 self.assertIn('path.fixed 为线', inputs)
@@ -77,7 +79,8 @@ class GuidanceTests(unittest.TestCase):
                 guidance = tools.check_use(workflow)
                 self.assertNotIn('Remove fills, borders and shadows that only group content', guidance)
                 if workflow != 'build-cover':
-                    self.assertIn('Theme-directed materials may group content', guidance)
+                    self.assertIn('Review container treatments against the initial visual guidance', guidance)
+                    self.assertIn('do not flatten every panel into a borderless layout', guidance)
             reference = tools.run('Read', {'file_path':'references/composition.md'},
                                   root / 'pages', ROOT / 'workflows/build-cover', 'page-01')
             text = reference.text if isinstance(reference, tools.Out) else reference

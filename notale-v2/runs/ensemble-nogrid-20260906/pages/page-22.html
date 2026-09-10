@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+      --bg: #F2F6F9;
+      --text: #172A3A;
+      --font-sans: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    #stage {
+      isolation: isolate;
+      background: var(--bg);
+      padding: var(--pad-y) var(--pad-x);
+      overflow: hidden;
+    }
+
+    #flow-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    .cover-content {
+      position: absolute;
+      top: 140px;
+      left: 100px;
+      width: 580px;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .chapter-tag {
+      display: none;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin: 0 0 16px 0;
+    }
+
+    .subtitle {
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+      color: var(--text);
+      margin: 0;
+      font-weight: 400;
+      max-width: 500px;
+    }
+
+    .meta-metrics {
+      margin-top: 36px;
+      display: flex;
+      gap: 32px;
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .metric-val {
+      font-family: var(--font-sans);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .metric-val.blue { color: var(--model); }
+    .metric-val.green { color: var(--diversity); }
+    .metric-val.rust { color: var(--aggregate); }
+
+    .metric-label {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      opacity: 0.85;
+    }
+
+    /* 讲稿与无障碍 */
+    .notes { display: none; }
+  </style>
+</head>
+<body data-page="22" data-total="26">
+  <main id="stage">
+    <canvas id="flow-canvas" class="cv-fill no-pan" aria-hidden="true"></canvas>
+
+    <div class="cover-content">
+      <h1>选择与迁移</h1>
+      <p class="subtitle">把集成方法放回建模全流程：依据误差形态、算力与推断约束匹配组合架构。</p>
+
+      <div class="meta-metrics">
+        <div class="metric-item">
+          <span class="metric-val blue">Bagging</span>
+          <span class="metric-label">降方差 · 并行采样</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-val green">Boosting</span>
+          <span class="metric-label">降偏差 · 序列重权</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-val rust">Stacking</span>
+          <span class="metric-label">组合多样 · 元学习器</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="notes" hidden>
+    在前面的章节中，我们分别拆解了 Bagging、随机森林和 Boosting 的内在原理与机制。
+    然而在工业界或实际科研建模中，没有哪一个集成算法是处处通用的银弹。
+    进入本讲的最后一章，我们要把集成方法重新放回完整的机器学习流程中去考量：
+    面对高方差还是高偏差？算力支持并行还是序列训练？追求极限指标还是快速推断？
+    我们将建立一套严密的决策与迁移框架，指导集成策略的选型与工程落地。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("flow-canvas");
+      if (!canvas) return;
+
+      Deck.init({ index: 22, total: 26, keys: false });
+
+      // 确定性随机数
+      function seededRandom(seed) {
+        let state = seed >>> 0;
+        return () => {
+          state = (state + 0x6d2b79f5) >>> 0;
+          let n = state;
+          n = Math.imul(n ^ (n >>> 15), n | 1);
+          n ^= n + Math.imul(n ^ (n >>> 7), n | 61);
+          return ((n ^ (n >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      const rng = seededRandom(20260906);
+
+      // 汇聚流场参数
+      // 来源：左侧/上方/下方，多分支流向右侧聚合汇聚点 (1350, 450)
+      const SINK = { x: 1320, y: 450 };
+      const TITLE_BOX = { x: 80, y: 100, w: 620, h: 420 };
+
+      // 预生成多条流线
+      const STREAM_COUNT = 52;
+      const streams = [];
+
+      for (let i = 0; i < STREAM_COUNT; i++) {
+        // 分布在画布各处，但避开左上主要标题区
+        let startX, startY;
+        const seedR = rng();
+        if (seedR < 0.35) {
+          // 左下方发散
+          startX = 120 + rng() * 550;
+          startY = 560 + rng() * 280;
+        } else if (seedR < 0.7) {
+          // 中上部与右上发散
+          startX = 740 + rng() * 600;
+          startY = 80 + rng() * 260;
+        } else {
+          // 中下部
+          startX = 720 + rng() * 650;
+          startY = 580 + rng() * 260;
+        }
+
+        // 类型划分：Bagging(蓝色)、Boosting(绿色)、Stacking(聚合暖红)
+        const typeR = rng();
+        let col, width, speed;
+        if (typeR < 0.42) {
+          col = Deck.rgba("--model", 0.38);
+          width = 1.6 + rng() * 1.2;
+          speed = 0.003 + rng() * 0.002;
+        } else if (typeR < 0.8) {
+          col = Deck.rgba("--diversity", 0.42);
+          width = 1.8 + rng() * 1.0;
+          speed = 0.0035 + rng() * 0.002;
+        } else {
+          col = Deck.rgba("--aggregate", 0.45);
+          width = 2.2 + rng() * 1.4;
+          speed = 0.004 + rng() * 0.002;
+        }
+
+        // 生成三次贝塞尔控制点，使其自然流向 SINK
+        const cp1x = startX + (SINK.x - startX) * (0.2 + rng() * 0.2);
+        const cp1y = startY + (rng() - 0.5) * 180;
+        const cp2x = startX + (SINK.x - startX) * (0.65 + rng() * 0.2);
+        const cp2y = SINK.y + (startY - SINK.y) * 0.25 + (rng() - 0.5) * 80;
+
+        streams.push({
+          x0: startX, y0: startY,
+          cp1x, cp1y,
+          cp2x, cp2y,
+          x1: SINK.x, y1: SINK.y,
+          color: col,
+          width,
+          speed,
+          offset: rng(),
+          pulseLength: 0.25 + rng() * 0.35
+        });
+      }
+
+      // 三次贝塞尔求值
+      function bezierPoint(t, p0, p1, p2, p3) {
+        const u = 1 - t;
+        const tt = t * t;
+        const uu = u * u;
+        const uuu = uu * u;
+        const ttt = tt * t;
+        return uuu * p0 + 3 * uu * t * p1 + 3 * u * tt * p2 + ttt * p3;
+      }
+
+      function draw(ctx) {
+        const W = Deck.W, H = Deck.H;
+        ctx.clearRect(0, 0, W, H);
+
+        // 背景细微坐标流场网格线（极淡冷白底对比）
+        ctx.strokeStyle = "rgba(23, 42, 58, 0.035)";
+        ctx.lineWidth = 1;
+        const gridStep = 80;
+        for (let x = gridStep; x < W; x += gridStep) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, H);
+          ctx.stroke();
+        }
+        for (let y = gridStep; y < H; y += gridStep) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(W, y);
+          ctx.stroke();
+        }
+
+        // 绘制静止轨道底线
+        streams.forEach(s => {
+          ctx.beginPath();
+          ctx.moveTo(s.x0, s.y0);
+          ctx.bezierCurveTo(s.cp1x, s.cp1y, s.cp2x, s.cp2y, s.x1, s.y1);
+          ctx.strokeStyle = s.color;
+          ctx.lineWidth = s.width * 0.65;
+          ctx.stroke();
+
+          // 汇聚端点光晕与起始端点
+          ctx.fillStyle = s.color;
+          ctx.beginPath();
+          ctx.arc(s.x0, s.y0, s.width * 1.2, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // 绘制动态脉冲粒子与明亮流束
+        const now = performance.now();
+        streams.forEach((s, idx) => {
+          const tHead = (s.offset + now * s.speed * 0.08) % 1.0;
+          const tTail = Math.max(0, tHead - s.pulseLength);
+
+          const samples = 14;
+          ctx.beginPath();
+          for (let step = 0; step <= samples; step++) {
+            const curT = tTail + (tHead - tTail) * (step / samples);
+            const px = bezierPoint(curT, s.x0, s.cp1x, s.cp2x, s.x1);
+            const py = bezierPoint(curT, s.y0, s.cp1y, s.cp2y, s.y1);
+            if (step === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.lineWidth = s.width * 1.6;
+          ctx.strokeStyle = s.color.replace(/[\d.]+\)$/, "0.85)");
+          ctx.stroke();
+        });
+
+        // 汇聚主干目标：形成强集成聚合节点
+        // 外层能量环
+        ctx.fillStyle = Deck.rgba("--paper", 0.95);
+        ctx.strokeStyle = Deck.rgba("--aggregate", 0.6);
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(SINK.x, SINK.y, 44, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = Deck.rgba("--aggregate", 0.15);
+        ctx.beginPath();
+        ctx.arc(SINK.x, SINK.y, 60, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 聚合汇聚中枢文字与标识
+        ctx.fillStyle = Deck.token("--aggregate");
+        ctx.beginPath();
+        ctx.arc(SINK.x, SINK.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = "600 15px " + Deck.token("--font-sans");
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = Deck.token("--text");
+        ctx.fillText("最终决策", SINK.x, SINK.y + 22);
+
+        // 从汇聚中枢向右延伸一条加粗的最终强预测主干线
+        ctx.beginPath();
+        ctx.moveTo(SINK.x + 44, SINK.y);
+        ctx.lineTo(W - 40, SINK.y);
+        ctx.strokeStyle = Deck.token("--aggregate");
+        ctx.lineWidth = 5;
+        ctx.stroke();
+
+        // 箭头端
+        ctx.beginPath();
+        ctx.moveTo(W - 46, SINK.y - 6);
+        ctx.lineTo(W - 36, SINK.y);
+        ctx.lineTo(W - 46, SINK.y + 6);
+        ctx.strokeStyle = Deck.token("--aggregate");
+        ctx.lineWidth = 4;
+        ctx.lineCap = "round";
+        ctx.stroke();
+
+        // 最终预测标注
+        ctx.font = "700 16px " + Deck.token("--font-sans");
+        ctx.textAlign = "right";
+        ctx.fillStyle = Deck.token("--aggregate");
+        ctx.fillText("强集成决策输出", W - 56, SINK.y - 16);
+      }
+
+      let ctx = Deck.fit(canvas);
+      if (ctx) {
+        Deck.autofit(canvas, draw);
+        Deck.loop(() => {
+          draw(ctx);
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

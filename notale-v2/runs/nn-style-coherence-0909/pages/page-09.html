@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ padding:0; }
+
+  .layout{
+    position:absolute; inset:64px 80px 56px;
+    display:grid;
+    grid-template-rows:auto auto 1fr;
+    row-gap:26px;
+  }
+
+  header.head{ display:flex; flex-direction:column; gap:14px; }
+  .head .nt-lead{ max-width:64em; }
+
+  /* ---- 概率轴：预测的锚点，贯穿全页保持不变 ---- */
+  .axis-row{ position:relative; height:110px; }
+  .axis-label{
+    position:absolute; left:0; top:0;
+    font-size:var(--fs-label); color:var(--muted);
+  }
+  #axisSvg{ position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+
+  /* ---- 两个真实标签分支：左右对齐比较 ---- */
+  .branches{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    column-gap:48px;
+    min-height:0;
+  }
+  .branch{
+    display:grid;
+    grid-template-rows:auto auto 1fr auto;
+    row-gap:14px;
+    min-width:0;
+    border-top:3px solid var(--line-strong);
+    padding-top:16px;
+    opacity:0; transform:translateY(10px);
+    transition:opacity .5s ease, transform .5s ease;
+  }
+  .branch[data-shown="true"]{ opacity:1; transform:translateY(0); }
+  .branch[data-role="correct"]{ border-top-color:var(--stable); }
+  .branch[data-role="wrong"]{ border-top-color:var(--accent); }
+
+  .branch-head{ display:flex; align-items:baseline; justify-content:space-between; gap:14px; }
+  .branch-title{ font-family:var(--font-title); font-weight:800; font-size:28px; letter-spacing:-.02em; }
+  .branch[data-role="correct"] .branch-title{ color:var(--stable); }
+  .branch[data-role="wrong"] .branch-title{ color:var(--accent); }
+
+  .branch-sub{ font-size:var(--fs-label); color:var(--muted); }
+
+  .steps{ display:flex; flex-direction:column; gap:8px; }
+  .steps .nt-equation{ font-size:21px; }
+  .steps .nt-equation .op{ color:var(--muted); font-weight:500; margin:0 6px; }
+
+  .bar-wrap{
+    position:relative;
+    display:flex; align-items:flex-end;
+    min-height:0;
+  }
+  .bar-track{
+    position:relative;
+    width:64px; height:100%;
+    background:color-mix(in srgb, var(--line) 35%, transparent);
+  }
+  .bar-fill{
+    position:absolute; left:0; right:0; bottom:0;
+    height:0%;
+    transition:height 1s cubic-bezier(.2,.8,.2,1);
+  }
+  .branch[data-role="correct"] .bar-fill{ background:var(--stable); }
+  .branch[data-role="wrong"] .bar-fill{ background:var(--accent); }
+  .bar-cap{
+    position:absolute; left:74px; bottom:0;
+    font-family:var(--font-mono); font-weight:700; font-size:15px;
+    color:var(--muted); white-space:nowrap;
+    transition:bottom 1s cubic-bezier(.2,.8,.2,1);
+  }
+  .branch[data-role="correct"] .bar-cap{ color:var(--stable); }
+  .branch[data-role="wrong"] .bar-cap{ color:var(--accent); }
+
+  .branch-result{
+    font-family:var(--font-mono); font-size:19px; font-weight:700;
+    color:var(--text);
+  }
+  .branch-result .val{ font-size:34px; }
+  .branch[data-role="correct"] .branch-result .val{ color:var(--stable); }
+  .branch[data-role="wrong"] .branch-result .val{ color:var(--accent); }
+
+  .footer-note{
+    position:absolute; left:80px; right:80px; bottom:20px;
+    display:flex; align-items:center; gap:16px;
+    opacity:0; transform:translateY(8px);
+    transition:opacity .5s ease, transform .5s ease;
+  }
+  .footer-note[data-shown="true"]{ opacity:1; transform:translateY(0); }
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+  <div class="layout">
+
+    <header class="head">
+      <span class="nt-kicker">损失函数</span>
+      <h1 class="nt-title">同一预测，标签不同，惩罚不同</h1>
+      <p class="nt-lead">模型给出预测概率 <span class="nt-mono" style="font-weight:700">p&nbsp;=&nbsp;0.8</span>（判断“是正类”的信念），这个数字不会因真实标签而改变；改变的是损失函数用它算出的惩罚。</p>
+    </header>
+
+    <div class="axis-row">
+      <span class="axis-label">预测概率 p（模型判断“是正类”的信念）</span>
+      <svg id="axisSvg" viewBox="0 0 1440 110" preserveAspectRatio="none" aria-hidden="true">
+        <line class="nt-diagram-line" x1="0" y1="70" x2="1440" y2="70" stroke-width="2"></line>
+        <g id="ticks"></g>
+        <g id="predictionMark"></g>
+      </svg>
+    </div>
+
+    <div class="branches">
+
+      <section class="branch" data-role="correct" data-shown="false">
+        <div class="branch-head">
+          <span class="branch-title">真实标签 y = 1</span>
+          <span class="nt-tag" data-tone="stable">预测方向一致</span>
+        </div>
+        <p class="branch-sub">模型判断“是”，答案也是“是”。</p>
+        <div style="display:grid; grid-template-columns:1fr 100px; column-gap:20px; align-items:end; min-height:0;">
+          <div class="steps">
+            <div class="nt-equation">L&nbsp;=&nbsp;&minus;[<span data-current="true">y</span>&middot;log(p)&nbsp;+&nbsp;(1&minus;y)&middot;log(1&minus;p)]</div>
+            <div class="nt-equation">L&nbsp;=&nbsp;&minus;[1&middot;log(0.8)&nbsp;<span class="op">+</span>&nbsp;0&middot;log(0.2)]</div>
+            <div class="nt-equation">L&nbsp;=&nbsp;&minus;log(0.8)</div>
+          </div>
+          <div class="bar-wrap">
+            <div class="bar-track">
+              <div class="bar-fill" id="barCorrect"></div>
+              <span class="bar-cap" id="capCorrect">0</span>
+            </div>
+          </div>
+        </div>
+        <div class="branch-result">L(1) = <span class="val" id="resultCorrect">&mdash;</span></div>
+      </section>
+
+      <section class="branch" data-role="wrong" data-shown="false">
+        <div class="branch-head">
+          <span class="branch-title">真实标签 y = 0</span>
+          <span class="nt-tag" data-tone="accent">预测方向相反</span>
+        </div>
+        <p class="branch-sub">模型判断“是”，答案其实是“否”。</p>
+        <div style="display:grid; grid-template-columns:1fr 100px; column-gap:20px; align-items:end; min-height:0;">
+          <div class="steps">
+            <div class="nt-equation">L&nbsp;=&nbsp;&minus;[y&middot;log(p)&nbsp;+&nbsp;<span data-current="true">(1&minus;y)</span>&middot;log(1&minus;p)]</div>
+            <div class="nt-equation">L&nbsp;=&nbsp;&minus;[0&middot;log(0.8)&nbsp;<span class="op">+</span>&nbsp;1&middot;log(0.2)]</div>
+            <div class="nt-equation">L&nbsp;=&nbsp;&minus;log(0.2)</div>
+          </div>
+          <div class="bar-wrap">
+            <div class="bar-track">
+              <div class="bar-fill" id="barWrong"></div>
+              <span class="bar-cap" id="capWrong">0</span>
+            </div>
+          </div>
+        </div>
+        <div class="branch-result">L(0) = <span class="val" id="resultWrong">&mdash;</span></div>
+      </section>
+
+    </div>
+
+  </div>
+
+  <div class="footer-note" id="footerNote" data-shown="false">
+    <p class="nt-note">p 完全没变；标签把它送进公式的位置变了，惩罚随之从很小跳到很大——损失把“对不对”翻译成一个能驱动训练的数字。</p>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  const P = 0.8;
+  const lossCorrect = -Math.log(P);       // y=1 → -log(0.8)
+  const lossWrong   = -Math.log(1 - P);   // y=0 → -log(0.2)
+  const MAX_BAR = 3.4; // 视觉刻度上限，两个真实值都在此范围内
+
+  function pctHeight(loss){ return Math.min(100, (loss / MAX_BAR) * 100); }
+
+  function buildAxis(){
+    const svgNS = "http://www.w3.org/2000/svg";
+    const ticksG = document.getElementById("ticks");
+    const markG = document.getElementById("predictionMark");
+    const x0 = 40, x1 = 1400;
+    for (let i = 0; i <= 10; i++){
+      const t = i / 10;
+      const x = x0 + (x1 - x0) * t;
+      const tick = document.createElementNS(svgNS, "line");
+      tick.setAttribute("x1", x); tick.setAttribute("x2", x);
+      tick.setAttribute("y1", 64); tick.setAttribute("y2", 76);
+      tick.setAttribute("class", "nt-grid-line");
+      tick.setAttribute("stroke-width", "1.5");
+      ticksG.appendChild(tick);
+      if (i % 5 === 0){
+        const label = document.createElementNS(svgNS, "text");
+        label.setAttribute("x", x); label.setAttribute("y", 98);
+        label.setAttribute("text-anchor", "middle");
+        label.setAttribute("class", "nt-tick");
+        label.textContent = t.toFixed(1);
+        ticksG.appendChild(label);
+      }
+    }
+    const px = x0 + (x1 - x0) * P;
+    const dot = document.createElementNS(svgNS, "circle");
+    dot.setAttribute("cx", px); dot.setAttribute("cy", 70);
+    dot.setAttribute("r", "9");
+    dot.setAttribute("class", "nt-node");
+    markG.appendChild(dot);
+    const stem = document.createElementNS(svgNS, "line");
+    stem.setAttribute("x1", px); stem.setAttribute("x2", px);
+    stem.setAttribute("y1", 20); stem.setAttribute("y2", 61);
+    stem.setAttribute("class", "nt-diagram-line");
+    stem.setAttribute("stroke-width", "2");
+    stem.setAttribute("stroke-dasharray", "2 5");
+    markG.appendChild(stem);
+    const label = document.createElementNS(svgNS, "text");
+    label.setAttribute("x", px); label.setAttribute("y", 14);
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("class", "nt-mono");
+    label.setAttribute("font-size", "20");
+    label.setAttribute("font-weight", "700");
+    label.textContent = "p = 0.80";
+    markG.appendChild(label);
+  }
+
+  function reveal(branch, loss, barId, capId, resultId){
+    branch.dataset.shown = "true";
+    const bar = document.getElementById(barId);
+    const cap = document.getElementById(capId);
+    const result = document.getElementById(resultId);
+    const h = pctHeight(loss);
+    requestAnimationFrame(()=>{
+      bar.style.height = h + "%";
+      cap.style.bottom = "calc(" + h + "% + 6px)";
+      cap.textContent = loss.toFixed(2);
+    });
+    result.textContent = loss.toFixed(2);
+  }
+
+  Deck.onStep(function(step, max){
+    const branchCorrect = document.querySelector('.branch[data-role="correct"]');
+    const branchWrong = document.querySelector('.branch[data-role="wrong"]');
+    const footer = document.getElementById("footerNote");
+
+    if (step < 1){
+      branchCorrect.dataset.shown = "false";
+      branchWrong.dataset.shown = "false";
+      footer.dataset.shown = "false";
+      document.getElementById("barCorrect").style.height = "0%";
+      document.getElementById("barWrong").style.height = "0%";
+      document.getElementById("capCorrect").style.bottom = "6px";
+      document.getElementById("capWrong").style.bottom = "6px";
+      document.getElementById("capCorrect").textContent = "0";
+      document.getElementById("capWrong").textContent = "0";
+      document.getElementById("resultCorrect").textContent = "\u2014";
+      document.getElementById("resultWrong").textContent = "\u2014";
+      return;
+    }
+    if (step >= 1) reveal(branchCorrect, lossCorrect, "barCorrect", "capCorrect", "resultCorrect");
+    if (step >= 2) reveal(branchWrong, lossWrong, "barWrong", "capWrong", "resultWrong");
+    if (step >= 2) footer.dataset.shown = "true"; else footer.dataset.shown = "false";
+  }, 2);
+
+  buildAxis();
+  Deck.init({ index: 9, total: 44 });
+})();
+</script>
+</body>
+</html>

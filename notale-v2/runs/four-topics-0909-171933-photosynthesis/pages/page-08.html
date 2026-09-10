@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>突发暗处理与停止供碳：C3 与 C5 浓度动态推演</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 48px 64px 36px 64px;
+      box-sizing: border-box;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      row-gap: 22px;
+      user-select: none;
+    }
+
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .header-row .nt-title {
+      margin: 0;
+      font-size: 30px;
+    }
+    .header-row .nt-subtitle {
+      margin: 0;
+      font-size: 16px;
+      color: var(--muted);
+    }
+
+    /* 左右两栏工作台 */
+    .workspace {
+      display: grid;
+      grid-template-columns: 600px 1fr;
+      gap: 36px;
+      min-height: 0;
+    }
+
+    /* 左栏：循环通路图解与骤变切换 */
+    .calvin-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .preset-nav {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .preset-btn {
+      appearance: none;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      background: #FFFFFF;
+      padding: 12px 14px;
+      text-align: left;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      color: var(--text);
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .preset-btn:hover {
+      border-color: var(--accent-green);
+    }
+    .preset-btn[aria-pressed="true"] {
+      border-color: var(--accent-green);
+      background: var(--accent-green-subtle);
+      box-shadow: 0 0 0 1px var(--accent-green);
+    }
+    .preset-title {
+      font-weight: 700;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .preset-title span.tag {
+      font-size: 12px;
+      font-family: var(--font-mono);
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(0,0,0,0.06);
+    }
+    .preset-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .cycle-visual {
+      flex: 1;
+      position: relative;
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-soft);
+      padding: 12px 16px;
+      box-sizing: border-box;
+    }
+
+    .cycle-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 右栏：预测与动力学曲线 */
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-soft);
+      padding: 20px 24px;
+      box-sizing: border-box;
+      min-height: 0;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chart-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .legend-row {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+
+    /* 预测任务条 */
+    .predict-box {
+      background: var(--bg-subtle);
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .predict-text {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.35;
+    }
+    .predict-options {
+      display: flex;
+      gap: 8px;
+    }
+    .predict-btn {
+      appearance: none;
+      border: 1px solid var(--border-strong);
+      background: #FFFFFF;
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .predict-btn:hover {
+      border-color: var(--accent-green);
+    }
+    .predict-btn[aria-pressed="true"] {
+      background: var(--text);
+      color: #FFFFFF;
+      border-color: var(--text);
+    }
+
+    /* 动态曲线图 */
+    .curve-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+    .curve-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 实时反馈结论 */
+    .verdict-bar {
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+    .verdict-text {
+      font-weight: 600;
+    }
+    .metrics-live {
+      display: flex;
+      gap: 16px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body data-page="08" data-total="11">
+  <div id="stage">
+    <div class="header-row">
+      <h1 class="nt-title">突发暗处理与停止供碳：C3 与 C5 动态推演</h1>
+      <p class="nt-subtitle">卡尔文循环中“原料生成”与“去路消耗”动态平衡模型</p>
+    </div>
+
+    <div class="workspace">
+      <!-- 左栏：控制与循环通路 -->
+      <div class="calvin-panel">
+        <div class="preset-nav" role="group" aria-label="环境骤变模式">
+          <button class="preset-btn" id="btn-dark" aria-pressed="true">
+            <div class="preset-title">
+              <span>骤停光照（暗处理）</span>
+              <span class="tag">Light=0</span>
+            </div>
+            <div class="preset-desc">光反应停滞，ATP/[H] 断绝，C3 还原受阻</div>
+          </button>
+          <button class="preset-btn" id="btn-noco2" aria-pressed="false">
+            <div class="preset-title">
+              <span>骤停供碳（缺 CO₂）</span>
+              <span class="tag">CO₂=0</span>
+            </div>
+            <div class="preset-desc">固定受阻，C5 消耗停滞，C3 来源断绝</div>
+          </button>
+        </div>
+
+        <div class="cycle-visual">
+          <svg class="cycle-svg" viewBox="0 0 560 400" preserveAspectRatio="xMidYMid meet">
+            <!-- 能量输入线：ATP / [H] -->
+            <g id="flux-light">
+              <path d="M 405 25 L 405 130" fill="none" stroke="var(--accent-gold)" stroke-width="2.5" stroke-dasharray="4 4"/>
+              <polygon points="405,136 400,126 410,126" fill="var(--accent-gold)"/>
+              <text x="418" y="55" font-size="12" font-weight="700" fill="var(--accent-gold)">ATP / [H]</text>
+              <text x="418" y="75" font-size="12" id="txt-atp-status" fill="var(--accent-red)" font-weight="600">骤降受阻</text>
+            </g>
+
+            <!-- 气体输入线：CO₂ -->
+            <g id="flux-co2">
+              <path d="M 125 25 L 125 130" fill="none" stroke="var(--accent-blue)" stroke-width="2.5" stroke-dasharray="4 4"/>
+              <polygon points="125,136 120,126 130,126" fill="var(--accent-blue)"/>
+              <text x="138" y="55" font-size="12" font-weight="700" fill="var(--accent-blue)">CO₂ 供应</text>
+              <text x="138" y="75" font-size="12" id="txt-co2-status" fill="var(--muted)">充足正常</text>
+            </g>
+
+            <!-- 循环主路径 -->
+            <!-- 上弧：碳固定 -->
+            <path id="path-fix" d="M 200 170 C 235 135, 305 135, 340 170" fill="none" stroke="var(--accent-blue)" stroke-width="3.5"/>
+            <polygon points="346,172 336,164 338,176" fill="var(--accent-blue)"/>
+            <text x="270" y="142" text-anchor="middle" font-size="12" font-weight="600" fill="var(--accent-blue)">① 碳固定</text>
+            <text x="270" y="160" id="lbl-fix-rate" text-anchor="middle" font-size="12" fill="var(--muted)">短暂维持</text>
+
+            <!-- 下弧：还原及再生 -->
+            <path id="path-red" d="M 340 250 C 305 295, 235 295, 200 250" fill="none" stroke="var(--accent-green)" stroke-width="3.5"/>
+            <polygon points="194,248 204,256 202,244" fill="var(--accent-green)"/>
+            <text x="270" y="295" text-anchor="middle" font-size="12" font-weight="600" fill="var(--accent-green)">② C3 还原及再生</text>
+            <text x="270" y="313" id="lbl-red-rate" text-anchor="middle" font-size="12" fill="var(--accent-red)">去路骤阻</text>
+
+            <!-- 糖类合成支流 -->
+            <path d="M 390 240 L 470 270" fill="none" stroke="var(--accent-gold)" stroke-width="2" stroke-dasharray="3 3"/>
+            <polygon points="476,272 466,266 470,274" fill="var(--accent-gold)"/>
+            <text x="484" y="278" font-size="12" font-weight="600" fill="var(--text)">(CH₂O) 糖类</text>
+
+            <!-- C5 节点 -->
+            <g transform="translate(170, 210)">
+              <circle r="38" fill="#F4F9F5" stroke="var(--accent-green)" stroke-width="2.5"/>
+              <text y="-8" text-anchor="middle" font-size="17" font-weight="700" fill="var(--accent-green)">C5</text>
+              <text y="10" text-anchor="middle" font-size="12" fill="var(--muted)">RuBP</text>
+              <text y="26" id="badge-c5" text-anchor="middle" font-size="12" font-weight="700" fill="var(--accent-red)">来源断绝 ↓</text>
+            </g>
+
+            <!-- C3 节点 -->
+            <g transform="translate(370, 210)">
+              <circle r="38" fill="#F0F7F9" stroke="var(--accent-blue)" stroke-width="2.5"/>
+              <text y="-8" text-anchor="middle" font-size="17" font-weight="700" fill="var(--accent-blue)">C3</text>
+              <text y="10" text-anchor="middle" font-size="12" fill="var(--muted)">PGA</text>
+              <text y="26" id="badge-c3" text-anchor="middle" font-size="12" font-weight="700" fill="var(--accent-green)">去路受阻 ↑</text>
+            </g>
+
+            <!-- 机制推演底栏 -->
+            <rect x="25" y="348" width="510" height="38" rx="6" fill="#F8FAF8" stroke="var(--border)"/>
+            <text x="280" y="372" id="rule-desc" text-anchor="middle" font-size="12" font-weight="500" fill="var(--text)">
+              断光瞬间：C3 去路（还原）受阻但来源暂存，C3 激增；C5 再生断绝，C5 骤降。
+            </text>
+          </svg>
+        </div>
+      </div>
+
+      <!-- 右栏：曲线与预测 -->
+      <div class="chart-panel">
+        <div class="chart-header">
+          <div class="chart-title">动态浓度响应曲线 (0 ~ 120s)</div>
+          <div class="legend-row">
+            <div class="legend-item">
+              <div class="legend-dot" style="background: var(--accent-blue);"></div>
+              <span>C3 相对量</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot" style="background: var(--accent-green);"></div>
+              <span>C5 相对量</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 预测交互 -->
+        <div class="predict-box">
+          <div class="predict-text" id="predict-prompt">
+            <b>设问推演：</b>突发暗处理后，瞬间变化的 C3 与 C5 走势？
+          </div>
+          <div class="predict-options">
+            <button class="predict-btn" data-choice="c3up-c5down" aria-pressed="true">C3 升 / C5 降</button>
+            <button class="predict-btn" data-choice="both-down" aria-pressed="false">两者同降</button>
+            <button class="predict-btn" data-choice="c3down-c5up" aria-pressed="false">C3 降 / C5 升</button>
+          </div>
+        </div>
+
+        <!-- SVG 响应曲线 -->
+        <div class="curve-wrap">
+          <svg class="curve-svg" id="svg-chart" viewBox="0 0 740 330" preserveAspectRatio="none">
+            <!-- 坐标网格 -->
+            <line x1="55" y1="35" x2="55" y2="270" stroke="var(--border)" stroke-width="1.5"/>
+            <line x1="55" y1="270" x2="710" y2="270" stroke="var(--border)" stroke-width="1.5"/>
+
+            <line x1="55" y1="152.5" x2="710" y2="152.5" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 3"/>
+            <text x="42" y="157" font-size="12" fill="var(--muted)" text-anchor="end">1.0</text>
+            <text x="42" y="42" font-size="12" fill="var(--muted)" text-anchor="end">2.0</text>
+            <text x="42" y="274" font-size="12" fill="var(--muted)" text-anchor="end">0.0</text>
+            <text x="48" y="24" font-size="12" fill="var(--muted)">相对浓度</text>
+
+            <!-- 骤变标注 -->
+            <line x1="273" y1="30" x2="273" y2="270" stroke="var(--accent-red)" stroke-width="1.5" stroke-dasharray="4 4"/>
+            <rect x="230" y="8" width="86" height="22" rx="4" fill="var(--accent-red-subtle)"/>
+            <text x="273" y="23" font-size="12" font-weight="700" fill="var(--accent-red)" text-anchor="middle">t = 40s 突变</text>
+
+            <text x="55" y="292" font-size="12" fill="var(--muted)" text-anchor="middle">0s</text>
+            <text x="273" y="292" font-size="12" fill="var(--muted)" text-anchor="middle">40s</text>
+            <text x="492" y="292" font-size="12" fill="var(--muted)" text-anchor="middle">80s</text>
+            <text x="710" y="292" font-size="12" fill="var(--muted)" text-anchor="middle">120s</text>
+            <text x="710" y="310" font-size="12" fill="var(--muted)" text-anchor="end">时间 (s)</text>
+
+            <!-- 状态说明 -->
+            <text x="164" y="55" font-size="13" font-weight="600" fill="var(--muted)" text-anchor="middle">稳态光合平衡</text>
+            <text x="492" y="55" id="lbl-phase-name" font-size="13" font-weight="600" fill="var(--accent-red)" text-anchor="middle">突发暗处理响应态</text>
+
+            <!-- 曲线 -->
+            <path id="curve-c3" fill="none" stroke="var(--accent-blue)" stroke-width="3.5" stroke-linecap="round"/>
+            <path id="curve-c5" fill="none" stroke="var(--accent-green)" stroke-width="3.5" stroke-linecap="round"/>
+
+            <circle id="dot-c3" cx="273" cy="152.5" r="5" fill="var(--accent-blue)"/>
+            <circle id="dot-c5" cx="273" cy="152.5" r="5" fill="var(--accent-green)"/>
+          </svg>
+        </div>
+
+        <div class="verdict-bar">
+          <div class="verdict-text" id="verdict-msg">✓ 预测准确：还原受阻使 C3 激增，再生断绝使 C5 骤降。</div>
+          <div class="metrics-live">
+            <span style="color: var(--accent-blue);">C3: <b id="val-c3">1.55</b></span>
+            <span style="color: var(--accent-green);">C5: <b id="val-c5">0.20</b></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    本页为光反应与暗反应耦合推演实验。
+    当突然停止光照时，光反应停止，ATP与NADPH迅速耗竭，暗反应中C3的还原受阻，去路切断导致C3瞬间增加；而短时间内CO2固定仍在消耗C5，C5来源断绝因此急剧减少。
+    反之，突然停止供CO2时，暗反应固定受阻，C5去路切断而激增，C3来源切断但在消耗中迅速减少。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      const state = {
+        mode: 'dark', // 'dark' | 'noco2'
+        prediction: 'c3up-c5down',
+        t_mutation: 40,
+        t_total: 120
+      };
+
+      function evaluateConcentrations(t, mode) {
+        if (t <= state.t_mutation) {
+          return { c3: 1.0, c5: 1.0 };
+        }
+        const dt = t - state.t_mutation;
+        const decay = Math.exp(-dt / 12);
+        if (mode === 'dark') {
+          const c3 = 1.0 + 0.7 * (1 - Math.exp(-dt / 8)) - 0.15 * (1 - decay);
+          const c5 = 0.2 + 0.8 * decay;
+          return { c3, c5 };
+        } else {
+          const c3 = 0.2 + 0.8 * decay;
+          const c5 = 1.0 + 0.6 * (1 - Math.exp(-dt / 8));
+          return { c3, c5 };
+        }
+      }
+
+      function toSvgX(t) {
+        return 55 + (t / 120) * 655;
+      }
+      function toSvgY(conc) {
+        return 270 - (conc / 2.0) * 235;
+      }
+
+      function updateChart() {
+        const pointsCount = 120;
+        let d3 = "";
+        let d5 = "";
+
+        for (let i = 0; i <= pointsCount; i++) {
+          const t = (i / pointsCount) * 120;
+          const { c3, c5 } = evaluateConcentrations(t, state.mode);
+          const x = toSvgX(t).toFixed(1);
+          const y3 = toSvgY(c3).toFixed(1);
+          const y5 = toSvgY(c5).toFixed(1);
+
+          if (i === 0) {
+            d3 += `M ${x} ${y3}`;
+            d5 += `M ${x} ${y5}`;
+          } else {
+            d3 += ` L ${x} ${y3}`;
+            d5 += ` L ${x} ${y5}`;
+          }
+        }
+
+        document.getElementById('curve-c3').setAttribute('d', d3);
+        document.getElementById('curve-c5').setAttribute('d', d5);
+
+        const endValues = evaluateConcentrations(120, state.mode);
+        document.getElementById('val-c3').textContent = endValues.c3.toFixed(2);
+        document.getElementById('val-c5').textContent = endValues.c5.toFixed(2);
+
+        document.getElementById('dot-c3').setAttribute('cx', toSvgX(120));
+        document.getElementById('dot-c3').setAttribute('cy', toSvgY(endValues.c3));
+        document.getElementById('dot-c5').setAttribute('cx', toSvgX(120));
+        document.getElementById('dot-c5').setAttribute('cy', toSvgY(endValues.c5));
+      }
+
+      function updateWorld() {
+        const isDark = state.mode === 'dark';
+        document.getElementById('btn-dark').setAttribute('aria-pressed', isDark ? 'true' : 'false');
+        document.getElementById('btn-noco2').setAttribute('aria-pressed', isDark ? 'false' : 'true');
+
+        document.getElementById('lbl-phase-name').textContent = isDark ? '突发暗处理响应态' : '停止供碳响应态';
+
+        if (isDark) {
+          document.getElementById('txt-atp-status').textContent = '骤降受阻';
+          document.getElementById('txt-atp-status').style.fill = 'var(--accent-red)';
+          document.getElementById('txt-co2-status').textContent = '充足正常';
+          document.getElementById('txt-co2-status').style.fill = 'var(--muted)';
+
+          document.getElementById('lbl-fix-rate').textContent = '短暂维持';
+          document.getElementById('lbl-red-rate').textContent = '去路骤阻';
+          document.getElementById('lbl-red-rate').style.fill = 'var(--accent-red)';
+
+          document.getElementById('badge-c3').textContent = '去路受阻 ↑';
+          document.getElementById('badge-c3').setAttribute('fill', 'var(--accent-green)');
+          document.getElementById('badge-c5').textContent = '来源断绝 ↓';
+          document.getElementById('badge-c5').setAttribute('fill', 'var(--accent-red)');
+
+          document.getElementById('rule-desc').textContent =
+            '断光瞬间：C3 去路（还原）受阻但来源暂存，C3 激增；C5 再生断绝，C5 骤降。';
+
+          document.getElementById('predict-prompt').innerHTML =
+            '<b>设问推演：</b>突发暗处理后，瞬间变化的 C3 与 C5 走势？';
+        } else {
+          document.getElementById('txt-atp-status').textContent = '充足正常';
+          document.getElementById('txt-atp-status').style.fill = 'var(--muted)';
+          document.getElementById('txt-co2-status').textContent = '断绝归零';
+          document.getElementById('txt-co2-status').style.fill = 'var(--accent-red)';
+
+          document.getElementById('lbl-fix-rate').textContent = '固定骤停';
+          document.getElementById('lbl-fix-rate').style.fill = 'var(--accent-red)';
+          document.getElementById('lbl-red-rate').textContent = '去路暂存';
+          document.getElementById('lbl-red-rate').style.fill = 'var(--muted)';
+
+          document.getElementById('badge-c3').textContent = '来源断绝 ↓';
+          document.getElementById('badge-c3').setAttribute('fill', 'var(--accent-red)');
+          document.getElementById('badge-c5').textContent = '消耗骤停 ↑';
+          document.getElementById('badge-c5').setAttribute('fill', 'var(--accent-green)');
+
+          document.getElementById('rule-desc').textContent =
+            '停碳瞬间：CO₂ 固定骤停，C3 来源断绝而还原暂存，C3 骤降；C5 消耗停滞，C5 激增。';
+
+          document.getElementById('predict-prompt').innerHTML =
+            '<b>设问推演：</b>骤停供碳后，瞬间变化的 C3 与 C5 走势？';
+        }
+
+        evaluatePredictionFeedback();
+        updateChart();
+      }
+
+      function evaluatePredictionFeedback() {
+        const correct = state.mode === 'dark' ? 'c3up-c5down' : 'c3down-c5up';
+        const isMatch = state.prediction === correct;
+        const msgEl = document.getElementById('verdict-msg');
+
+        document.querySelectorAll('.predict-btn').forEach(btn => {
+          btn.setAttribute('aria-pressed', btn.dataset.choice === state.prediction ? 'true' : 'false');
+        });
+
+        if (isMatch) {
+          msgEl.textContent = state.mode === 'dark'
+            ? '✓ 预测准确：还原受阻使 C3 激增，再生断绝使 C5 骤降。'
+            : '✓ 预测准确：固定停止使 C3 暴跌，消耗停止使 C5 累积。';
+          msgEl.style.color = 'var(--accent-green)';
+        } else {
+          msgEl.textContent = state.mode === 'dark'
+            ? '✕ 偏离机理：还原受阻切断了 C3 去路，导致 C3 瞬间积聚而非下降。'
+            : '✕ 偏离机理：固定停止切断了 C3 生成来源，导致 C3 瞬间暴跌。';
+          msgEl.style.color = 'var(--accent-red)';
+        }
+      }
+
+      document.getElementById('btn-dark').addEventListener('click', function() {
+        state.mode = 'dark';
+        updateWorld();
+      });
+
+      document.getElementById('btn-noco2').addEventListener('click', function() {
+        state.mode = 'noco2';
+        updateWorld();
+      });
+
+      document.querySelectorAll('.predict-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          state.prediction = this.dataset.choice;
+          evaluatePredictionFeedback();
+        });
+      });
+
+      updateWorld();
+    })();
+  </script>
+</body>
+</html>

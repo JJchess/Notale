@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E3E8E6;
+      --text: #142A2D;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", "Droid Sans Fallback", sans-serif;
+    }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      position: relative;
+      overflow: hidden;
+      box-sizing: border-box;
+      padding: var(--pad-y) var(--pad-x);
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    header {
+      position: absolute;
+      top: 36px;
+      left: 56px;
+      right: 56px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .lead-claim {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    /* 主对比布局：左侧单一模型 vs 右侧集成学习 */
+    .comparison-grid {
+      position: absolute;
+      top: 106px;
+      left: 56px;
+      right: 56px;
+      bottom: 40px;
+      display: grid;
+      grid-template-columns: 430px 1fr;
+      gap: 36px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .card-title {
+      margin: 0 0 8px;
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      line-height: var(--lh-tight);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .badge {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .card-summary {
+      margin: 0 0 16px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 2D 决策边界示意图容器 */
+    .boundary-canvas-box {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      border: 1px solid rgba(130, 148, 146, 0.4);
+      background: #EDF2EF;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .boundary-canvas-box canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 右侧集成工作流：上部 3 个基分类器，下部聚合形成稳定主边界 */
+    .ensemble-layout {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 24px 28px;
+    }
+
+    .members-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      height: 250px;
+    }
+
+    .member-card {
+      background: #EDF2EF;
+      border: 1px solid rgba(130, 148, 146, 0.4);
+      border-radius: 2px;
+      display: flex;
+      flex-direction: column;
+      padding: 10px 12px;
+      position: relative;
+    }
+
+    .member-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .member-name {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .member-stat {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-tick);
+      color: var(--focus);
+    }
+
+    .member-visual {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+
+    /* 聚合流程指示区 */
+    .aggregate-channel {
+      height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      margin: 4px 0;
+    }
+
+    .aggregate-tag {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      padding: 3px 14px;
+      border-radius: 12px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 600;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .aggregate-tag strong {
+      color: var(--model);
+    }
+
+    .agg-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    /* 最终集成卡片区 */
+    .consensus-panel {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 20px;
+      background: #EDF2EF;
+      border: 2px solid var(--model);
+      border-radius: 3px;
+      padding: 12px 16px;
+    }
+
+    .consensus-chart {
+      position: relative;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .consensus-info {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .consensus-title {
+      font-size: var(--fs-h2);
+      color: var(--model);
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .consensus-desc {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: var(--lh-copy);
+      margin: 0 0 14px;
+    }
+
+    .metrics-pills {
+      display: flex;
+      gap: 16px;
+    }
+
+    .metric-pill {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      padding: 6px 14px;
+      border-radius: 4px;
+    }
+
+    .metric-pill .lbl {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      display: block;
+    }
+
+    .metric-pill .val {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      color: var(--model);
+    }
+
+    .metric-pill.highlight .val {
+      color: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="02" data-total="24">
+  <main id="stage">
+    <header>
+      <h1>从单一模型到集成组合</h1>
+      <p class="lead-claim">差异化成员抵消局部误判，表决聚合生成稳健边界</p>
+    </header>
+
+    <div class="comparison-grid">
+      <!-- 左：单一决策树 -->
+      <section class="card min0">
+        <div class="card-title">
+          <span>单一基模型</span>
+          <span class="badge" style="display:none;">单棵决策树</span>
+        </div>
+        <p class="card-summary">局部噪声导致边界碎片化，泛化受限</p>
+        <div class="boundary-canvas-box">
+          <canvas id="cv-single" class="cv-fill"></canvas>
+        </div>
+        <div style="margin-top: 14px; display: flex; justify-content: space-between; font-size: var(--fs-tick); color: var(--muted);">
+          <span>测试错误率: <strong style="color: var(--focus); font-family: var(--font-numeric);">18.4%</strong></span>
+          <span>高方差破碎</span>
+        </div>
+      </section>
+
+      <!-- 右：集成学习架构与结果 -->
+      <section class="card min0" style="padding: 0;">
+        <div class="ensemble-layout">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
+            <div class="card-title" style="margin: 0;">集成学习架构</div>
+            <span class="badge" style="display:none;">3 组差异化基分类器并行投票</span>
+          </div>
+
+          <!-- 3 个基分类器 -->
+          <div class="members-row">
+            <div class="member-card min0">
+              <div class="member-meta">
+                <span class="member-name">成员 h₁(x)</span>
+                <span class="member-stat">错判 5 处</span>
+              </div>
+              <div class="member-visual">
+                <canvas id="cv-m1" class="cv-fill"></canvas>
+              </div>
+            </div>
+
+            <div class="member-card min0">
+              <div class="member-meta">
+                <span class="member-name">成员 h₂(x)</span>
+                <span class="member-stat">错判 6 处</span>
+              </div>
+              <div class="member-visual">
+                <canvas id="cv-m2" class="cv-fill"></canvas>
+              </div>
+            </div>
+
+            <div class="member-card min0">
+              <div class="member-meta">
+                <span class="member-name">成员 h₃(x)</span>
+                <span class="member-stat">错判 4 处</span>
+              </div>
+              <div class="member-visual">
+                <canvas id="cv-m3" class="cv-fill"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- 汇聚通道 SVG -->
+          <div class="aggregate-channel">
+            <svg class="agg-svg" preserveAspectRatio="none" viewBox="0 0 940 54">
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#245B67" />
+                </marker>
+              </defs>
+              <!-- 3 条支流汇聚至中心 -->
+              <path d="M 156 4 C 156 26, 470 14, 470 42" fill="none" stroke="#688C91" stroke-width="2" stroke-dasharray="4 4" />
+              <path d="M 470 4 L 470 42" fill="none" stroke="#245B67" stroke-width="2.5" />
+              <path d="M 784 4 C 784 26, 470 14, 470 42" fill="none" stroke="#688C91" stroke-width="2" stroke-dasharray="4 4" />
+              <circle cx="470" cy="46" r="4" fill="#245B67" />
+            </svg>
+            <div class="aggregate-tag">
+              <span>多数表决聚合</span>
+              <strong>H(x) = sign(∑ hᵢ(x))</strong>
+            </div>
+          </div>
+
+          <!-- 聚合共识结果 -->
+          <div class="consensus-panel min0">
+            <div class="consensus-chart">
+              <canvas id="cv-ensemble" class="cv-fill"></canvas>
+            </div>
+            <div class="consensus-info">
+              <div class="consensus-title">
+                <span>多数表决决策边界</span>
+              </div>
+              <p class="consensus-desc">
+                不同成员在不同区域发生误判；表决机制抵消随机误差，平滑真实分隔面。
+              </p>
+              <div class="metrics-pills">
+                <div class="metric-pill">
+                  <span class="lbl">测试错误率</span>
+                  <span class="val" style="color: #142A2D;">5.8%</span>
+                </div>
+                <div class="metric-pill highlight">
+                  <span class="lbl">误判消除</span>
+                  <span class="val">-68%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <aside class="notes" hidden>
+    各位同学好，今天我们正式进入集成学习（Ensemble Learning）。
+    集成学习的核心思想非常直接：不再孤注一掷地依赖单一最优模型，而是构建一组彼此存在差异的学习器，并通过特定的聚合策略把它们的预测结合起来。
+    大家看左侧这幅图，单棵较深的决策树在训练集上能分割样本，但由于被噪声牵引，其决策边界极其破碎，测试错误率高达 18.4%。
+    右侧则是集成机制：通过重采样或特征扰动，我们得到 3 个差异化的基学习器 h1、h2、h3。注意看，它们各自都有错误，但犯错的位置各不相同。
+    当我们通过多数表决将它们聚合起来时，奇迹发生了：局部的偶发误判被多数正确票压制，最终的决策边界变得平滑、稳健，测试错误率直接压低到 5.8%。
+    这就是集成学习的基石——成员差异与结果聚合。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 固定数据生成：经典的月牙/双环双分类数据集
+      const N_POINTS = 38;
+      const points = [];
+
+      // 确定性随机发生器
+      function mulberry32(a) {
+        return function() {
+          let t = a += 0x6D2B79F5;
+          t = Math.imul(t ^ t >>> 15, t | 1);
+          t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        }
+      }
+      const rng = mulberry32(202502);
+
+      // 生成两类二维数据点
+      // Class 0: 上弯月
+      for (let i = 0; i < N_POINTS; i++) {
+        const theta = (i / N_POINTS) * Math.PI + (rng() - 0.5) * 0.3;
+        const r = 0.55 + (rng() - 0.5) * 0.16;
+        points.push({
+          x: 0.45 + r * Math.cos(theta) * 0.48,
+          y: 0.48 - r * Math.sin(theta) * 0.45 + 0.12,
+          cls: 0
+        });
+      }
+      // Class 1: 下弯月
+      for (let i = 0; i < N_POINTS; i++) {
+        const theta = (i / N_POINTS) * Math.PI + (rng() - 0.5) * 0.3;
+        const r = 0.55 + (rng() - 0.5) * 0.16;
+        points.push({
+          x: 0.55 - r * Math.cos(theta) * 0.48,
+          y: 0.52 + r * Math.sin(theta) * 0.45 - 0.12,
+          cls: 1
+        });
+      }
+
+      // 4 个模型对应的分类边界函数（返回预测概率或判定值）
+      // 1. 单一过拟合决策树边界：阶梯破碎
+      function predSingle(x, y) {
+        if (x < 0.22) return y > 0.48 ? 1 : 0;
+        if (x < 0.45) {
+          if (y < 0.38) return 0;
+          if (y > 0.65) return 1;
+          return x > 0.35 ? 1 : 0;
+        }
+        if (x < 0.70) {
+          if (y < 0.42) return 0;
+          if (y > 0.58) return 1;
+          return y > 0.50 ? 1 : 0;
+        }
+        return y > 0.44 ? 1 : 0;
+      }
+
+      // 2. 基学习器 1：偏好横向轴切分，中间轻度阶梯
+      function predMember1(x, y) {
+        if (x < 0.35) return y > 0.44 ? 1 : 0;
+        if (x < 0.65) return y > 0.52 ? 1 : 0;
+        return y > 0.46 ? 1 : 0;
+      }
+
+      // 3. 基学习器 2：偏好纵向切分阶梯，左侧偏高右侧偏低
+      function predMember2(x, y) {
+        if (x < 0.42) return y > 0.54 ? 1 : 0;
+        if (x < 0.75) return y > 0.46 ? 1 : 0;
+        return y > 0.38 ? 1 : 0;
+      }
+
+      // 4. 基学习器 3：右侧抬高，左侧略低
+      function predMember3(x, y) {
+        if (x < 0.30) return y > 0.40 ? 1 : 0;
+        if (x < 0.60) return y > 0.48 ? 1 : 0;
+        return y > 0.56 ? 1 : 0;
+      }
+
+      // 5. 集成表决：多数票
+      function predEnsemble(x, y) {
+        const v1 = predMember1(x, y);
+        const v2 = predMember2(x, y);
+        const v3 = predMember3(x, y);
+        return (v1 + v2 + v3 >= 2) ? 1 : 0;
+      }
+
+      // 绘图工具
+      function renderDecisionBoundary(cv, predFn, showPoints = true, contourDensity = 32) {
+        const ctx = Deck.fit(cv);
+        const w = cv.clientWidth;
+        const h = cv.clientHeight;
+        if (!w || !h) return;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 绘制背景分类色块（采用冷色系网格采样）
+        const stepX = w / contourDensity;
+        const stepY = h / contourDensity;
+
+        for (let ix = 0; ix < contourDensity; ix++) {
+          const xNorm = (ix + 0.5) / contourDensity;
+          for (let iy = 0; iy < contourDensity; iy++) {
+            const yNorm = (iy + 0.5) / contourDensity;
+            const pred = predFn(xNorm, yNorm);
+
+            ctx.fillStyle = pred === 1 
+              ? "rgba(36, 91, 103, 0.14)"    // --model 区域
+              : "rgba(167, 122, 36, 0.12)";  // --sample / class 0 区域
+            ctx.fillRect(ix * stepX, iy * stepY, stepX + 0.5, stepY + 0.5);
+          }
+        }
+
+        // 绘制分类边界线 (Marching / Edge scan 简单采样)
+        ctx.strokeStyle = "#245B67";
+        ctx.lineWidth = 2.5;
+        for (let ix = 0; ix < contourDensity - 1; ix++) {
+          const x0 = (ix + 0.5) / contourDensity;
+          const x1 = (ix + 1.5) / contourDensity;
+          for (let iy = 0; iy < contourDensity - 1; iy++) {
+            const y0 = (iy + 0.5) / contourDensity;
+            const y1 = (iy + 1.5) / contourDensity;
+            const p00 = predFn(x0, y0);
+            const p10 = predFn(x1, y0);
+            const p01 = predFn(x0, y1);
+
+            if (p00 !== p10) {
+              ctx.beginPath();
+              ctx.moveTo((ix + 1) * stepX, iy * stepY);
+              ctx.lineTo((ix + 1) * stepX, (iy + 1) * stepY);
+              ctx.stroke();
+            }
+            if (p00 !== p01) {
+              ctx.beginPath();
+              ctx.moveTo(ix * stepX, (iy + 1) * stepY);
+              ctx.lineTo((ix + 1) * stepX, (iy + 1) * stepY);
+              ctx.stroke();
+            }
+          }
+        }
+
+        // 绘制散点
+        if (showPoints) {
+          points.forEach(p => {
+            const px = p.x * w;
+            const py = p.y * h;
+            const pred = predFn(p.x, p.y);
+            const isError = pred !== p.cls;
+
+            ctx.beginPath();
+            ctx.arc(px, py, isError ? 4.5 : 3.5, 0, Math.PI * 2);
+
+            if (p.cls === 1) {
+              ctx.fillStyle = "#245B67"; // 类别 1
+              ctx.fill();
+            } else {
+              ctx.fillStyle = "#A77A24"; // 类别 0
+              ctx.fill();
+            }
+
+            if (isError) {
+              // 错误点标圈
+              ctx.strokeStyle = "#C54620"; // --focus 橙红标记错例
+              ctx.lineWidth = 2;
+              ctx.stroke();
+            } else {
+              ctx.strokeStyle = "rgba(255,255,255,0.7)";
+              ctx.lineWidth = 1;
+              ctx.stroke();
+            }
+          });
+        }
+      }
+
+      // 初始化各画板
+      const cSingle = document.getElementById("cv-single");
+      const cM1 = document.getElementById("cv-m1");
+      const cM2 = document.getElementById("cv-m2");
+      const cM3 = document.getElementById("cv-m3");
+      const cEns = document.getElementById("cv-ensemble");
+
+      function redrawAll() {
+        renderDecisionBoundary(cSingle, predSingle, true, 44);
+        renderDecisionBoundary(cM1, predMember1, true, 26);
+        renderDecisionBoundary(cM2, predMember2, true, 26);
+        renderDecisionBoundary(cM3, predMember3, true, 26);
+        renderDecisionBoundary(cEns, predEnsemble, true, 44);
+      }
+
+      // 注册窗口尺寸响应
+      Deck.onResize(redrawAll);
+      window.addEventListener("load", redrawAll);
+      setTimeout(redrawAll, 50);
+
+      Deck.init({ index: 2, total: 24 });
+    })();
+  </script>
+</body>
+</html>

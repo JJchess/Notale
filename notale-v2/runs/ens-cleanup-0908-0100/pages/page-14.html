@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+    }
+
+    /* 顶部标题栏 */
+    .header {
+      margin-bottom: 28px;
+    }
+    .title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+    }
+
+    /* 三栏布局容器 */
+    .columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      column-gap: 56px;
+      height: 520px;
+    }
+
+    .col {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .step-tag {
+      font-size: var(--fs-label);
+      color: var(--model);
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+
+    .col-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      line-height: var(--lh-tight);
+      margin-bottom: 16px;
+    }
+
+    /* 可视化矢量图形卡槽 */
+    .vis-box {
+      width: 100%;
+      height: 250px;
+      position: relative;
+      border-bottom: 1px solid var(--rule);
+    }
+    .vis-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 公式与简要结论：文字控制在预算内，避免套话 */
+    .formula-section {
+      margin-top: 14px;
+    }
+    .math-row {
+      font-size: 19px;
+      min-height: 44px;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+    .col-lead {
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 底部收束总结栏 */
+    .summary-bar {
+      margin-top: 26px;
+      padding-top: 22px;
+      border-top: var(--stroke) solid var(--rule);
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      column-gap: 48px;
+    }
+    .summary-heading {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      line-height: var(--lh-tight);
+    }
+    .summary-heading small {
+      display: block;
+      margin-top: 6px;
+      font-size: var(--fs-sec);
+      color: var(--model);
+      font-family: var(--font-sans);
+    }
+    .takeaway-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      column-gap: 36px;
+    }
+    .takeaway-unit {
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+    }
+    .takeaway-unit strong {
+      display: block;
+      font-size: var(--fs-body);
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body data-page="14" data-total="25">
+  <div id="stage">
+    <header class="header">
+      <h1 class="title">AdaBoost 算法原理：样本重权与加权表决</h1>
+    </header>
+
+    <main class="columns">
+      <!-- 列 1：样本权重更新 -->
+      <section class="col min0">
+        <span class="step-tag">步骤 1 · 聚焦错题</span>
+        <h2 class="col-title">样本权重自适应重配</h2>
+        <div class="vis-box">
+          <svg viewBox="0 0 450 250" class="vis-svg">
+            <line x1="20" y1="200" x2="430" y2="200" stroke="var(--rule)" stroke-width="1.5" />
+            <line x1="240" y1="20" x2="240" y2="200" stroke="var(--model)" stroke-width="2" />
+            <text x="245" y="38" fill="var(--model)" font-size="13" font-weight="bold">切分面 G_m</text>
+
+            <text x="120" y="222" fill="var(--muted)" font-size="13" text-anchor="middle">+1 类区</text>
+            <text x="340" y="222" fill="var(--muted)" font-size="13" text-anchor="middle">-1 类区</text>
+
+            <!-- 正确样本 -->
+            <circle cx="50" cy="80" r="8" fill="none" stroke="var(--model)" stroke-width="2" />
+            <text x="50" y="104" font-size="13" fill="var(--muted)" text-anchor="middle">w=0.05</text>
+
+            <circle cx="110" cy="150" r="8" fill="none" stroke="var(--model)" stroke-width="2" />
+            <text x="110" y="174" font-size="13" fill="var(--muted)" text-anchor="middle">w=0.05</text>
+
+            <circle cx="360" cy="75" r="8" fill="none" stroke="var(--model)" stroke-width="2" />
+            <text x="360" y="99" font-size="13" fill="var(--muted)" text-anchor="middle">w=0.05</text>
+
+            <!-- 误分类样本高亮放大 -->
+            <circle cx="170" cy="80" r="20" fill="none" stroke="var(--focus)" stroke-width="3" />
+            <text x="170" y="122" font-size="13" fill="var(--focus)" font-weight="bold" text-anchor="middle">误分 (w=0.45)</text>
+
+            <path d="M 330 145 C 330 180, 240 180, 230 128" fill="none" stroke="var(--focus)" stroke-width="1.5" stroke-dasharray="4 3"/>
+            <text x="335" y="172" font-size="13" fill="var(--focus)">下轮重点拟合</text>
+          </svg>
+        </div>
+        <div class="formula-section">
+          <div id="f-err" class="math-row"></div>
+          <p class="col-lead">判错样本权重以比例放大，强迫后序弱学习器重点攻克模糊边界。</p>
+        </div>
+      </section>
+
+      <!-- 列 2：模型置信度确定 -->
+      <section class="col min0">
+        <span class="step-tag">步骤 2 · 能力定权</span>
+        <h2 class="col-title">基分类器置信度分配</h2>
+        <div class="vis-box">
+          <svg viewBox="0 0 450 250" class="vis-svg">
+            <line x1="40" y1="200" x2="420" y2="200" stroke="var(--rule)" stroke-width="1.5" />
+            <line x1="40" y1="200" x2="40" y2="20" stroke="var(--rule)" stroke-width="1.5" />
+            <text x="420" y="222" font-size="13" fill="var(--muted)" text-anchor="end">误差率 ε</text>
+            <text x="36" y="16" font-size="13" fill="var(--muted)" text-anchor="start">权重 α</text>
+
+            <text x="40" y="218" font-size="13" fill="var(--muted)" text-anchor="middle">0</text>
+            <text x="225" y="218" font-size="13" fill="var(--muted)" text-anchor="middle">0.25</text>
+            <text x="400" y="218" font-size="13" fill="var(--muted)" text-anchor="middle">0.50</text>
+            <line x1="225" y1="200" x2="225" y2="25" stroke="var(--rule)" stroke-width="1" stroke-dasharray="3 3" />
+
+            <!-- α(ε) 曲线 -->
+            <path d="M 48 30 Q 115 110 225 152 T 400 200" fill="none" stroke="var(--model)" stroke-width="2.5" />
+
+            <!-- 关键点 ε=0.15, α=0.86 -->
+            <circle cx="140" cy="120" r="5" fill="var(--focus)" />
+            <line x1="140" y1="200" x2="140" y2="120" stroke="var(--focus)" stroke-width="1.5" stroke-dasharray="3 3" />
+            <line x1="40" y1="120" x2="140" y2="120" stroke="var(--focus)" stroke-width="1.5" stroke-dasharray="3 3" />
+            <text x="152" y="112" font-size="13" fill="var(--focus)" font-weight="bold">ε=0.15 → α=0.86</text>
+            <text x="310" y="175" font-size="13" fill="var(--muted)">ε≥0.5 权重归零</text>
+          </svg>
+        </div>
+        <div class="formula-section">
+          <div id="f-alpha" class="math-row"></div>
+          <p class="col-lead">模型准确率越高话语权越大；误差率接近 0.5 时发言权归零。</p>
+        </div>
+      </section>
+
+      <!-- 列 3：加权线性组合表决 -->
+      <section class="col min0">
+        <span class="step-tag">步骤 3 · 集成决策</span>
+        <h2 class="col-title">加权线性符号表决</h2>
+        <div class="vis-box">
+          <svg viewBox="0 0 450 250" class="vis-svg">
+            <defs>
+              <marker id="arr-thick" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 8 5 L 0 9 z" fill="var(--model)" />
+              </marker>
+            </defs>
+
+            <!-- 弱分类器项 -->
+            <text x="25" y="60" font-size="15" fill="var(--text)">G₁(x) · α₁</text>
+            <text x="25" y="115" font-size="15" fill="var(--text)">G₂(x) · α₂</text>
+            <text x="25" y="170" font-size="15" fill="var(--text)">Gₘ(x) · αₘ</text>
+
+            <!-- 汇聚线（主题签名风格） -->
+            <path d="M 115 55 C 190 55, 205 115, 230 115" fill="none" stroke="var(--model)" stroke-width="2" />
+            <path d="M 115 115 L 230 115" fill="none" stroke="var(--model)" stroke-width="2" />
+            <path d="M 115 175 C 190 175, 205 115, 230 115" fill="none" stroke="var(--model)" stroke-width="2" />
+
+            <!-- 求和节点 -->
+            <circle cx="245" cy="115" r="16" fill="var(--model)" />
+            <text x="245" y="121" fill="#FFF" font-size="18" font-weight="bold" text-anchor="middle">∑</text>
+
+            <!-- 粗汇聚主干路径（4px） -->
+            <line x1="261" y1="115" x2="325" y2="115" stroke="var(--model)" stroke-width="4" marker-end="url(#arr-thick)" />
+
+            <!-- 强分类器输出 -->
+            <text x="348" y="110" font-size="16" fill="var(--text)" font-weight="bold">sign(f(x))</text>
+            <text x="348" y="132" font-size="13" fill="var(--focus)" font-weight="bold">强分类器 G(x)</text>
+          </svg>
+        </div>
+        <div class="formula-section">
+          <div id="f-sign" class="math-row"></div>
+          <p class="col-lead">加权表决让多个简易弱分类器线性组合，构建出复杂的判别边界。</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="summary-bar">
+      <div class="summary-heading">
+        AdaBoost 核心机制
+        <small>串行提升与理论界</small>
+      </div>
+      <div class="takeaway-grid">
+        <div class="takeaway-unit min0">
+          <strong>关注困难样本</strong>
+          每轮成倍增大误判样本权重，后续基分类器被迫聚焦于分类不确定带。
+        </div>
+        <div class="takeaway-unit min0">
+          <strong>按能力赋予发言权</strong>
+          基分类器权重随误差单调递减，防止平庸模型过多干扰全局判断。
+        </div>
+        <div class="takeaway-unit min0">
+          <strong>指数级误差收敛</strong>
+          弱分类器只需略优于随机猜测（ε &lt; 0.5），集成训练误差即随轮数呈指数衰减。
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    本节我们解析 Boosting 族中最具代表性的里程碑算法——AdaBoost。
+    它的核心哲学可以总结为两句话：聚焦错题、按能力投票。
+    第一步在左侧：每轮迭代结束后，做对的样本权重衰减，而误分类样本权重按指数放大，迫使下一个弱分类器强攻难分点。
+    第二步在中间：基分类器在最终决策中的发言权取决于它的误差率。准确率越高，alpha 越大；当误差率接近 0.5 时，其权重直接降为 0。
+    第三步在右侧：最终预测是所有基分类器的加权表决。只要每个分类器略优于盲猜，集成的训练误差就会随轮数指数级迅速收敛。
+  </aside>
+
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      katex.render(
+        "\\epsilon_m = \\sum_{i=1}^N w_{m,i} \\,\\mathbb{I}(y_i \\neq G_m(x_i))",
+        document.getElementById("f-err"),
+        { throwOnError: false }
+      );
+      katex.render(
+        "\\alpha_m = \\frac{1}{2} \\ln \\left( \\frac{1 - \\epsilon_m}{\\epsilon_m} \\right)",
+        document.getElementById("f-alpha"),
+        { throwOnError: false }
+      );
+      katex.render(
+        "G(x) = \\operatorname{sign}\\left( \\sum_{m=1}^M \\alpha_m G_m(x) \\right)",
+        document.getElementById("f-sign"),
+        { throwOnError: false }
+      );
+
+      Deck.init({ index: 14, total: 25 });
+    });
+  </script>
+</body>
+</html>

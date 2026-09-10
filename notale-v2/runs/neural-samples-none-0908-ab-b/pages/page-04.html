@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 560px 1fr;
+      padding: 60px 72px;
+      box-sizing: border-box;
+      gap: 56px;
+      font-family: var(--font-sans);
+    }
+
+    .cover-left {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      z-index: 2;
+    }
+
+    .title-group {
+      margin-top: 32px;
+    }
+
+    .chapter-tag {
+      font-size: var(--fs-label);
+      color: var(--structure);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+      font-weight: 600;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.25;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.01em;
+      margin: 0 0 20px 0;
+    }
+
+    .lead-text {
+      font-size: var(--fs-lead);
+      line-height: 1.5;
+      color: var(--muted);
+      max-width: 460px;
+      margin: 0;
+    }
+
+    .meta-metrics {
+      display: flex;
+      gap: 36px;
+      border-top: 1px solid var(--rule);
+      padding-top: 24px;
+      margin-bottom: 12px;
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .metric-val {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--structure);
+      font-feature-settings: "tnum";
+    }
+
+    .metric-lbl {
+      font-size: var(--fs-tick);
+      color: var(--text);
+    }
+
+    /* 右侧主视觉：前向正向结构与反向朱红误差脉冲 */
+    .vis-wrap {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .vis-legend {
+      position: absolute;
+      bottom: 12px;
+      right: 16px;
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      pointer-events: none;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-line {
+      width: 22px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .line-forward {
+      background: var(--structure);
+    }
+
+    .line-backward {
+      background: var(--signal);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <div class="cover-left min0">
+      <div class="title-group">
+        <div class="chapter-tag">第 02 模块 · 多层感知机</div>
+        <h1>MLP 与<br>训练原理</h1>
+        <p class="lead-text">参数如何从误差中更新：前向映射、损失度量与链式法则回传。</p>
+      </div>
+
+      <div class="meta-metrics">
+        <div class="metric-item">
+          <span class="metric-val">30 分钟</span>
+          <span class="metric-lbl">建议用时</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-val">7 节</span>
+          <span class="metric-lbl">核心进阶</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-val">1 个闭环</span>
+          <span class="metric-lbl">前向计算与梯度更新</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="vis-wrap min0">
+      <canvas id="mlpCv" class="cv-fill"></canvas>
+      <div class="vis-legend">
+        <div class="legend-item">
+          <span class="legend-line line-forward"></span>
+          <span>前向计算路径</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-line line-backward"></span>
+          <span>梯度反向回传</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们好，欢迎进入第二模块：MLP 与训练原理。
+    在第一部分我们探讨了为什么全连接网络不能直接解决所有问题。从这一节开始，我们将真正打开黑盒：
+    首先看单个神经元与非线性激活如何将线性不可分的数据切开；然后沿着一个极小的数值网络，完整走完前向预测、损失计算、链式法则反向传播以及梯度更新的全过程；
+    最后通过调节学习率和训练曲线，理解过拟合与泛化的本质。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 4, total: 32 });
+
+    const cv = document.getElementById('mlpCv');
+    const ctx = Deck.fit(cv);
+
+    // 网络结构定义：输入 3 -> 隐层 4 -> 隐层 4 -> 输出 1 (损失点)
+    const layers = [
+      { count: 3, label: '输入 X' },
+      { count: 4, label: '隐层 H₁' },
+      { count: 4, label: '隐层 H₂' },
+      { count: 1, label: '损失 L' }
+    ];
+
+    let w = 0, h = 0;
+    let nodes = [];
+    let edges = [];
+
+    function setupGraph() {
+      const rect = cv.getBoundingClientRect();
+      w = cv.width / (window.devicePixelRatio || 1);
+      h = cv.height / (window.devicePixelRatio || 1);
+
+      nodes = [];
+      edges = [];
+
+      const xPad = 70;
+      const yPad = 80;
+      const layerSpacing = (w - xPad * 2) / (layers.length - 1);
+
+      layers.forEach((layer, lIdx) => {
+        const x = xPad + lIdx * layerSpacing;
+        const totalHeight = h - yPad * 2;
+        const nodeSpacing = layer.count > 1 ? totalHeight / (layer.count - 1) : 0;
+        const startY = layer.count > 1 ? yPad : h / 2;
+
+        const layerNodes = [];
+        for (let i = 0; i < layer.count; i++) {
+          const y = layer.count > 1 ? startY + i * nodeSpacing : startY;
+          layerNodes.push({
+            x, y,
+            layer: lIdx,
+            idx: i,
+            isOutput: lIdx === layers.length - 1
+          });
+        }
+        nodes.push(layerNodes);
+      });
+
+      // 构建边连接
+      for (let l = 0; l < nodes.length - 1; l++) {
+        const curr = nodes[l];
+        const next = nodes[l + 1];
+        for (let i = 0; i < curr.length; i++) {
+          for (let j = 0; j < next.length; j++) {
+            // 给每条边分配固定的相位与速度
+            edges.push({
+              from: curr[i],
+              to: next[j],
+              weight: Math.sin(i * 2 + j * 3 + l) * 0.5 + 0.5,
+              phase: (i * 0.2 + j * 0.15 + l * 0.3) % 1
+            });
+          }
+        }
+      }
+    }
+
+    setupGraph();
+    window.addEventListener('resize', () => {
+      Deck.fit(cv);
+      setupGraph();
+    });
+
+    const structureColor = Deck.token('--structure') || '#1C4436';
+    const signalColor = Deck.token('--signal') || '#D43811';
+    const ruleColor = Deck.token('--rule') || '#BAC4BF';
+    const bgColor = Deck.token('--bg') || '#F1F4F2';
+
+    let startTime = performance.now();
+
+    function render(time) {
+      ctx.clearRect(0, 0, w, h);
+
+      const t = (time - startTime) * 0.001;
+
+      // 1. 绘制前向连接底线
+      edges.forEach(e => {
+        ctx.beginPath();
+        ctx.moveTo(e.from.x, e.from.y);
+        ctx.lineTo(e.to.x, e.to.y);
+        ctx.strokeStyle = ruleColor;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        // 正向传播脉冲粒子（墨绿）
+        const forwardT = (t * 0.45 + e.phase) % 1;
+        const fx = Deck.lerp(e.from.x, e.to.x, forwardT);
+        const fy = Deck.lerp(e.from.y, e.to.y, forwardT);
+
+        ctx.beginPath();
+        ctx.arc(fx, fy, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = structureColor;
+        ctx.fill();
+
+        // 反向传播梯度脉冲（朱红），方向从后往前
+        const backwardT = (1 - ((t * 0.55 + e.phase) % 1));
+        const bx = Deck.lerp(e.from.x, e.to.x, backwardT);
+        const by = Deck.lerp(e.from.y, e.to.y, backwardT);
+
+        ctx.beginPath();
+        ctx.arc(bx, by, 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = signalColor;
+        ctx.fill();
+      });
+
+      // 2. 绘制节点
+      nodes.forEach((layerNodes, lIdx) => {
+        layerNodes.forEach(node => {
+          // 外圈晕光环（仅损失节点与重要神经元有呼吸感）
+          if (node.isOutput) {
+            const pulse = Math.sin(t * 3) * 0.3 + 0.7;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, 20 + pulse * 6, 0, Math.PI * 2);
+            ctx.fillStyle = Deck.rgba('--signal', 0.12);
+            ctx.fill();
+          }
+
+          // 节点实心底圆
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, node.isOutput ? 14 : 10, 0, Math.PI * 2);
+          ctx.fillStyle = bgColor;
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, node.isOutput ? 14 : 10, 0, Math.PI * 2);
+          ctx.strokeStyle = node.isOutput ? signalColor : structureColor;
+          ctx.lineWidth = node.isOutput ? 3 : 2.2;
+          ctx.stroke();
+
+          // 节点内心核心
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, node.isOutput ? 6 : 4, 0, Math.PI * 2);
+          ctx.fillStyle = node.isOutput ? signalColor : structureColor;
+          ctx.fill();
+        });
+      });
+    }
+
+    if (Deck.reduced()) {
+      render(0);
+    } else {
+      Deck.loop(render);
+    }
+  </script>
+</body>
+</html>

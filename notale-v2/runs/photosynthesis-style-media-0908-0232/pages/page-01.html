@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>光合作用：从光子到糖分的生命能量转换</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      font-family: var(--font-sans);
+    }
+
+    #canvas-field {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* 标题区域：版心对齐，左侧留白与右侧生化场呼应 */
+    .title-group {
+      position: absolute;
+      left: 112px;
+      top: 180px;
+      z-index: 5;
+      max-width: 660px;
+      pointer-events: none;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 600;
+      line-height: 1.25;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    .subtitle {
+      margin-top: 18px;
+      font-size: var(--fs-lead);
+      line-height: 1.45;
+      color: var(--muted);
+      letter-spacing: 0.01em;
+    }
+
+    /* 底部三联核心通道指标 */
+    .metric-rail {
+      position: absolute;
+      left: 112px;
+      bottom: 76px;
+      z-index: 5;
+      display: flex;
+      gap: 56px;
+      pointer-events: none;
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .metric-val {
+      font-family: var(--font-mono);
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .metric-unit {
+      font-size: var(--fs-tick);
+      font-weight: 400;
+      color: var(--muted);
+    }
+
+    .metric-lbl {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+
+    .color-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 4px;
+      align-self: center;
+    }
+  </style>
+</head>
+<body data-page="01" data-total="16">
+  <div id="stage">
+    <canvas id="canvas-field" class="cv-fill"></canvas>
+
+    <div class="title-group">
+      <h1>光合作用</h1>
+      <div class="subtitle">从光子到糖分的生命能量转换</div>
+    </div>
+
+    <div class="metric-rail">
+      <div class="metric-item">
+        <div class="metric-val">
+          <span class="color-dot" style="background:var(--focus)"></span>430 / 680 <span class="metric-unit">nm</span>
+        </div>
+        <div class="metric-lbl">叶绿素双吸收峰</div>
+      </div>
+      <div class="metric-item">
+        <div class="metric-val">
+          <span class="color-dot" style="background:var(--action-green)"></span>H₂O &rarr; O₂ <span class="metric-unit">+ e⁻</span>
+        </div>
+        <div class="metric-lbl">光电荷转移流</div>
+      </div>
+      <div class="metric-item">
+        <div class="metric-val">
+          <span class="color-dot" style="background:var(--carbon-fix)"></span>CO₂ &rarr; C₆H₁₂O₆
+        </div>
+        <div class="metric-lbl">卡尔文碳同化</div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们好，欢迎来到《光合作用：从光子到糖分的生命能量转换》课程。
+    光合作用是地球上最壮丽的生命能量转换过程：叶绿体微观结构捕获特定波长的光量子，通过类囊体膜上的精密电子传递链逐步释放能量，并在基质中完成卡尔文循环碳同化。
+    整门课程中，我们将以430nm蓝紫光与680nm红光双吸收峰作为核心基准尺度，探索光子如何转化为驱动生命的有机分子。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+  (() => {
+    "use strict";
+
+    const W = 1600;
+    const H = 900;
+    const canvas = document.getElementById("canvas-field");
+    let ctx = null;
+
+    // 生物物理结构源与场极点：
+    // 光子源：右上角广角入射
+    // 类囊体基粒堆叠复合体中心：(1060, 470)
+    // 基质卡尔文循环回流区：(860, 680)
+    const SOURCE = { x: 1440, y: 100 };
+    const THYLAKOID = { x: 1060, y: 470 };
+    const STROMA = { x: 860, y: 680 };
+
+    // 避让文字标题安全区
+    const TITLE_BOX = { x1: 60, y1: 120, x2: 740, y2: 440 };
+
+    let seed = 430680;
+    function rnd() {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    }
+
+    // 向量场函数：展现从光量子辐射入射、到类囊体膜旋涡汇聚、再向基质深处舒展回流的全景生化通道
+    function fieldAt(x, y) {
+      // 1. 光量子源辐射
+      const dx1 = x - SOURCE.x;
+      const dy1 = y - SOURCE.y;
+      const d1 = Math.hypot(dx1, dy1) + 60;
+
+      // 2. 类囊体光反应中心引力与旋涡动量
+      const dx2 = x - THYLAKOID.x;
+      const dy2 = y - THYLAKOID.y;
+      const d2 = Math.hypot(dx2, dy2) + 50;
+
+      // 3. 基质碳同化区引导
+      const dx3 = x - STROMA.x;
+      const dy3 = y - STROMA.y;
+      const d3 = Math.hypot(dx3, dy3) + 90;
+
+      // 流向方程：主入射 + 类囊体围绕转折 + 基质扩散
+      let vx = -1.4 * (dx1 / d1) - 2.2 * (dx2 / d2) - 1.8 * (dy2 / d2) + 1.2 * (dx3 / d3);
+      let vy = -0.9 * (dy1 / d1) - 2.2 * (dy2 / d2) + 1.8 * (dx2 / d2) + 1.5 * (dy3 / d3);
+
+      // 标题区避让（平滑推离）
+      if (x < TITLE_BOX.x2 && y < TITLE_BOX.y2 && x > TITLE_BOX.x1 && y > TITLE_BOX.y1) {
+        vx += 2.4;
+        vy += 1.6;
+      }
+
+      const len = Math.hypot(vx, vy) || 1;
+      return { x: vx / len, y: vy / len };
+    }
+
+    // 构建完整分布的能量与代谢流线组（160条，跨越类囊体与基质）
+    const STREAMLINES = [];
+    const LINE_COUNT = 160;
+
+    // 两组流线：一组由光子入射区起始，一组由类囊体膜释放向基质延展
+    for (let i = 0; i < LINE_COUNT; i++) {
+      let px, py;
+      let type = "green"; // 叶绿体电子流 (action-green)
+
+      if (i < 110) {
+        // 第一组：光子捕获流 (来自光源扇面)
+        const angle = Math.PI * 0.65 + (i / 110) * Math.PI * 1.45 + (rnd() - 0.5) * 0.16;
+        const dist = 30 + rnd() * 320;
+        px = SOURCE.x + Math.cos(angle) * dist;
+        py = SOURCE.y + Math.sin(angle) * dist;
+
+        const roll = i % 7;
+        if (roll === 0 || roll === 3) type = "gold";       // 430nm 光子脉冲 (focus)
+        else if (roll === 1 || roll === 5) type = "orange"; // 680nm 驱动峰 (energy-bond)
+      } else {
+        // 第二组：暗反应/基质回流与产物扩散回路
+        const angle = Math.PI * 0.2 + ((i - 110) / 50) * Math.PI * 1.8;
+        const dist = 40 + rnd() * 140;
+        px = THYLAKOID.x + Math.cos(angle) * dist;
+        py = THYLAKOID.y + Math.sin(angle) * dist;
+        type = (i % 2 === 0) ? "cyan" : "green";            // 碳同化回路 (carbon-fix)
+      }
+
+      const pts = [];
+      const maxSteps = 340;
+      const stepSize = 4.2;
+
+      for (let s = 0; s < maxSteps; s++) {
+        const inTitle = (px >= TITLE_BOX.x1 && px <= TITLE_BOX.x2 &&
+                         py >= TITLE_BOX.y1 && py <= TITLE_BOX.y2);
+        pts.push({ x: px, y: py, inTitle });
+
+        // RK2 步进
+        const v1 = fieldAt(px, py);
+        const v2 = fieldAt(px + v1.x * stepSize * 0.5, py + v1.y * stepSize * 0.5);
+        px += v2.x * stepSize;
+        py += v2.y * stepSize;
+
+        if (px < -100 || px > W + 100 || py < -100 || py > H + 100) break;
+      }
+
+      STREAMLINES.push({
+        pts,
+        type,
+        alpha: 0.12 + rnd() * 0.24,
+        width: 0.65 + rnd() * 0.9,
+        speed: 0.00016 + rnd() * 0.00022,
+        offset: rnd()
+      });
+    }
+
+    // 预烘焙静态显微暗场与底纹
+    const staticCanvas = document.createElement("canvas");
+    staticCanvas.width = W;
+    staticCanvas.height = H;
+    const sCtx = staticCanvas.getContext("2d");
+
+    function renderStatic() {
+      sCtx.fillStyle = "#0D140E";
+      sCtx.fillRect(0, 0, W, H);
+
+      // 1. 显微同心光学标尺与类囊体膜层结构同心环
+      sCtx.strokeStyle = "rgba(37, 53, 39, 0.45)";
+      sCtx.lineWidth = 1;
+      for (let r = 70; r <= 560; r += 70) {
+        sCtx.beginPath();
+        sCtx.arc(THYLAKOID.x, THYLAKOID.y, r, 0, Math.PI * 2);
+        sCtx.stroke();
+      }
+
+      // 2. 基质碳同化循环同心微环
+      sCtx.strokeStyle = "rgba(37, 53, 39, 0.3)";
+      for (let r = 50; r <= 250; r += 50) {
+        sCtx.beginPath();
+        sCtx.arc(STROMA.x, STROMA.y, r, 0, Math.PI * 2);
+        sCtx.stroke();
+      }
+
+      // 3. 能量转换双峰基准轴 (430nm 入射光与 680nm 反应中心基线)
+      sCtx.beginPath();
+      sCtx.moveTo(SOURCE.x, SOURCE.y);
+      sCtx.lineTo(THYLAKOID.x, THYLAKOID.y);
+      sCtx.lineTo(STROMA.x, STROMA.y);
+      sCtx.strokeStyle = "rgba(37, 53, 39, 0.65)";
+      sCtx.setLineDash([3, 5]);
+      sCtx.stroke();
+      sCtx.setLineDash([]);
+
+      // 4. 绘制流线主体
+      for (const line of STREAMLINES) {
+        sCtx.beginPath();
+        let drawing = false;
+
+        let baseColor = "82, 183, 102"; // green
+        if (line.type === "gold") baseColor = "242, 185, 59";
+        else if (line.type === "orange") baseColor = "224, 104, 58";
+        else if (line.type === "cyan") baseColor = "62, 141, 168";
+
+        for (let j = 0; j < line.pts.length; j++) {
+          const pt = line.pts[j];
+          if (pt.inTitle) {
+            drawing = false;
+          } else {
+            if (!drawing) {
+              sCtx.moveTo(pt.x, pt.y);
+              drawing = true;
+            } else {
+              sCtx.lineTo(pt.x, pt.y);
+            }
+          }
+        }
+
+        sCtx.strokeStyle = `rgba(${baseColor}, ${line.alpha})`;
+        sCtx.lineWidth = line.width;
+        sCtx.stroke();
+      }
+
+      // 5. 反应核心结构节点
+      sCtx.fillStyle = "rgba(242, 185, 59, 0.65)";
+      sCtx.beginPath();
+      sCtx.arc(SOURCE.x, SOURCE.y, 4, 0, Math.PI * 2);
+      sCtx.fill();
+
+      sCtx.fillStyle = "rgba(82, 183, 102, 0.75)";
+      sCtx.beginPath();
+      sCtx.arc(THYLAKOID.x, THYLAKOID.y, 5, 0, Math.PI * 2);
+      sCtx.fill();
+
+      sCtx.fillStyle = "rgba(62, 141, 168, 0.65)";
+      sCtx.beginPath();
+      sCtx.arc(STROMA.x, STROMA.y, 4, 0, Math.PI * 2);
+      sCtx.fill();
+    }
+
+    renderStatic();
+
+    // 动态绘制：光子、激发激元与碳链中间体粒子循迹流淌
+    function drawFrame(t) {
+      if (!ctx) return;
+      ctx.clearRect(0, 0, W, H);
+      ctx.drawImage(staticCanvas, 0, 0, W, H);
+
+      for (let i = 0; i < STREAMLINES.length; i++) {
+        if (i % 2 !== 0) continue;
+        const line = STREAMLINES[i];
+        if (line.pts.length < 12) continue;
+
+        const progress = (t * line.speed + line.offset) % 1;
+        const indexFloat = progress * (line.pts.length - 1);
+        const idx = Math.floor(indexFloat);
+        const nextIdx = Math.min(idx + 1, line.pts.length - 1);
+        const factor = indexFloat - idx;
+
+        const p1 = line.pts[idx];
+        const p2 = line.pts[nextIdx];
+        if (p1.inTitle || p2.inTitle) continue;
+
+        const x = p1.x + (p2.x - p1.x) * factor;
+        const y = p1.y + (p2.y - p1.y) * factor;
+
+        let col = "rgba(82, 183, 102, 0.9)";
+        let radius = 1.8;
+        if (line.type === "gold") {
+          col = "rgba(242, 185, 59, 0.95)";
+          radius = 2.4;
+        } else if (line.type === "orange") {
+          col = "rgba(224, 104, 58, 0.95)";
+          radius = 2.2;
+        } else if (line.type === "cyan") {
+          col = "rgba(62, 141, 168, 0.9)";
+          radius = 2.0;
+        }
+
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    Deck.init({ index: 1, total: 16 });
+
+    function resize() {
+      ctx = Deck.fit(canvas);
+      drawFrame(3600);
+    }
+
+    Deck.onResize(resize);
+    resize();
+
+    if (Deck.reduced()) {
+      drawFrame(4800);
+    } else {
+      Deck.loop(time => {
+        drawFrame(time);
+      }, { still: 4800 });
+    }
+
+  })();
+  </script>
+</body>
+</html>

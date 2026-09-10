@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      padding: 36px 56px 40px;
+      gap: 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      user-select: none;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 14px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.01em;
+    }
+
+    .query-select {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .query-btn {
+      appearance: none;
+      background: transparent;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 6px 14px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      transition: all 0.15s ease;
+    }
+
+    .query-btn.active {
+      background: var(--structure);
+      border-color: var(--structure);
+      color: #fff;
+    }
+
+    .query-btn:focus-visible {
+      outline: 2px solid var(--signal);
+      outline-offset: 2px;
+    }
+
+    /* Main Grid Layout */
+    .workbench {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 48px;
+      min-height: 0;
+    }
+
+    /* Left Column */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .sentence-strip {
+      display: flex;
+      gap: 16px;
+    }
+
+    .word-card {
+      flex: 1;
+      padding: 8px 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      cursor: pointer;
+    }
+
+    .word-card.is-query .word-token {
+      color: var(--structure);
+      text-decoration: underline;
+      text-underline-offset: 4px;
+    }
+
+    .word-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .word-token {
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .word-pos {
+      font-size: var(--fs-tick);
+      color: var(--text);
+      opacity: 0.7;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .slider-row input[type="range"] {
+      width: 100%;
+      height: 4px;
+      accent-color: var(--signal);
+      cursor: pointer;
+    }
+
+    .score-val {
+      font-size: var(--fs-tick);
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      min-width: 28px;
+      text-align: right;
+    }
+
+    .word-card.is-top .score-val {
+      color: var(--signal);
+      font-weight: 700;
+    }
+
+    /* Softmax Flow Area */
+    .weights-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 10px 0;
+      border-top: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .weights-label {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--structure);
+      min-width: 90px;
+      line-height: 1.25;
+    }
+
+    .weights-label small {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: normal;
+      display: block;
+    }
+
+    .weights-bars {
+      display: flex;
+      flex: 1;
+      gap: 16px;
+    }
+
+    .bar-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .bar-track {
+      height: 6px;
+      background: var(--rule);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: var(--structure);
+      width: 0%;
+      transition: width 0.12s ease-out, background-color 0.12s;
+    }
+
+    .bar-fill.highlight {
+      background: var(--signal);
+    }
+
+    .bar-num {
+      font-size: var(--fs-tick);
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+
+    .bar-num.highlight {
+      color: var(--signal);
+      font-weight: 700;
+    }
+
+    /* Canvas Flow Area */
+    .blending-diagram {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    /* Right Column */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      border-left: 1px solid var(--rule);
+      padding-left: 40px;
+      min-height: 0;
+    }
+
+    .status-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .status-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--structure);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .status-desc {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    .vector-inspect {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .dim-box {
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 8px 10px;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .dim-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    .dim-val {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--structure);
+    }
+
+    .dim-bar {
+      height: 4px;
+      background: var(--rule);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 2px;
+    }
+
+    .dim-bar-fill {
+      height: 100%;
+      background: var(--structure);
+      width: 0%;
+      transition: width 0.12s ease-out;
+    }
+
+    .contrast-box {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-top: 6px;
+    }
+
+    .contrast-item {
+      display: grid;
+      grid-template-columns: 84px 1fr;
+      gap: 14px;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+    }
+
+    .contrast-tag {
+      font-weight: 700;
+      color: var(--muted);
+      border-right: 2px solid var(--rule);
+      padding-right: 8px;
+    }
+
+    .contrast-tag.active {
+      color: var(--structure);
+      border-color: var(--structure);
+    }
+
+    .contrast-text {
+      color: var(--text);
+    }
+
+    .actions-bar {
+      display: flex;
+      gap: 12px;
+      margin-top: auto;
+    }
+
+    .action-btn {
+      padding: 8px 16px;
+      background: transparent;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      font-size: var(--fs-sec);
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .action-btn:hover {
+      background: #e4ebe7;
+    }
+
+    .action-btn.primary {
+      background: var(--structure);
+      border-color: var(--structure);
+      color: #fff;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>注意力权重与动态加权：读取上下文向量</h1>
+      </div>
+      <div class="query-select">
+        <span>当前查询词：</span>
+        <button class="query-btn active" data-q="2">it (代词)</button>
+        <button class="query-btn" data-q="0">The</button>
+        <button class="query-btn" data-q="1">animal</button>
+        <button class="query-btn" data-q="3">tired</button>
+      </div>
+    </header>
+
+    <div class="workbench">
+      <!-- Left Column -->
+      <div class="left-col">
+        <!-- Sequence Cards with Sliders -->
+        <div class="sentence-strip" id="cards-container">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- Softmax Output -->
+        <div class="weights-row">
+          <div class="weights-label">注意力权重 α<small>Softmax 归一化</small></div>
+          <div class="weights-bars" id="bars-container">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <!-- Canvas Flow Area -->
+        <div class="blending-diagram">
+          <canvas id="flow-cv" class="cv-fill"></canvas>
+        </div>
+      </div>
+
+      <!-- Right Column -->
+      <div class="right-col">
+        <!-- Status / Vector readout -->
+        <div class="status-section">
+          <div class="status-title">
+            <span>加权上下文向量 c</span>
+            <span style="font-size:var(--fs-tick);color:var(--muted);font-weight:normal;">Σ αᵢ · vᵢ</span>
+          </div>
+          <p class="status-desc" id="interpretation-text">
+            正在从候选词抽取语义表示。
+          </p>
+
+          <div class="vector-inspect" id="vector-dims">
+            <!-- 4 dimensions rendered here -->
+          </div>
+        </div>
+
+        <!-- Mechanism Contrast -->
+        <div class="contrast-box">
+          <div class="contrast-item">
+            <span class="contrast-tag">RNN 局限</span>
+            <span class="contrast-text">信息强行压缩进单一固定隐状态，长程历史容易在递推中淡化。</span>
+          </div>
+          <div class="contrast-item">
+            <span class="contrast-tag active">注意力机制</span>
+            <span class="contrast-text">直接按相关性对所有历史软寻址，提取定制的动态上下文向量。</span>
+          </div>
+        </div>
+
+        <!-- Presets / Actions -->
+        <div class="actions-bar">
+          <button class="action-btn primary" id="btn-animal">指代实体 (animal)</button>
+          <button class="action-btn" id="btn-tired">关联状态 (tired)</button>
+          <button class="action-btn" id="btn-uniform">均分权重</button>
+          <button class="action-btn" id="btn-reset">重置</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看，上一节课我们讲到 RNN 的核心痛点是固定维度的隐状态瓶颈：无论句子多长，最后都只用一个向量概括全部历史，造成早期信息遗忘。
+    注意力机制给出的答案是：不要把所有信息压缩成死板的一个点，而是保留每个位置的表示向量 v_i。
+    当处理某个词（比如当前查询词“it”）时，我们计算它与序列中各个词的相关性打分，通过 Softmax 得到加权系数 alpha。
+    大家可以在左侧调节打分滑块：当给“animal”很高的相关性时，上下文向量 c 中“动物/生物”维度的数值立刻飙升；而如果切换到“tired”，提取到的则是状态特征。
+    这就是动态软寻址：模型按需从任意位置提取特征，从根源上化解了长距离信息衰减。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      // 4 words sentence: "The", "animal", "it", "tired"
+      const TOKENS = [
+        { word: "The", pos: "冠词", v: [0.1, 0.2, 0.05, 0.1] },
+        { word: "animal", pos: "名词", v: [0.9, 0.15, 0.85, 0.1] },
+        { word: "it", pos: "代词", v: [0.4, 0.3, 0.3, 0.2] },
+        { word: "tired", pos: "形容词", v: [0.15, 0.88, 0.1, 0.95] }
+      ];
+
+      const DIM_NAMES = ["实体性", "状态描述", "生物特征", "疲倦程度"];
+
+      // Presets for Query = "it"
+      const PRESETS = {
+        animal: [0.2, 3.8, 0.5, 0.8],
+        tired: [0.1, 0.6, 0.4, 3.6],
+        uniform: [1.5, 1.5, 1.5, 1.5],
+        reset: [0.2, 3.4, 0.8, 1.2]
+      };
+
+      let state = {
+        queryIdx: 2, // 'it'
+        scores: [...PRESETS.reset],
+        isPreset: 'reset'
+      };
+
+      const cardsContainer = document.getElementById('cards-container');
+      const barsContainer = document.getElementById('bars-container');
+      const vectorDims = document.getElementById('vector-dims');
+      const interpretText = document.getElementById('interpretation-text');
+      const flowCv = document.getElementById('flow-cv');
+
+      function softmax(arr) {
+        const max = Math.max(...arr);
+        const exps = arr.map(x => Math.exp(x - max));
+        const sum = exps.reduce((a, b) => a + b, 0);
+        return exps.map(x => x / sum);
+      }
+
+      function computeContextVector(alphas) {
+        const dims = [0, 0, 0, 0];
+        for (let i = 0; i < TOKENS.length; i++) {
+          const a = alphas[i];
+          const v = TOKENS[i].v;
+          for (let d = 0; d < 4; d++) {
+            dims[d] += a * v[d];
+          }
+        }
+        return dims;
+      }
+
+      function initDom() {
+        // Build cards
+        cardsContainer.innerHTML = TOKENS.map((item, idx) => `
+          <div class="word-card" data-idx="${idx}">
+            <div class="word-header">
+              <span class="word-token">${item.word}</span>
+              <span class="word-pos">${item.pos}</span>
+            </div>
+            <div class="slider-row">
+              <input type="range" min="0" max="5" step="0.1" value="${state.scores[idx]}" data-idx="${idx}">
+              <span class="score-val" id="score-val-${idx}">${state.scores[idx].toFixed(1)}</span>
+            </div>
+          </div>
+        `).join('');
+
+        // Build bars
+        barsContainer.innerHTML = TOKENS.map((item, idx) => `
+          <div class="bar-item">
+            <div class="bar-track">
+              <div class="bar-fill" id="bar-fill-${idx}"></div>
+            </div>
+            <span class="bar-num" id="bar-num-${idx}">0.0%</span>
+          </div>
+        `).join('');
+
+        // Build vector inspection
+        vectorDims.innerHTML = DIM_NAMES.map((name, idx) => `
+          <div class="dim-box">
+            <span class="dim-label">${name}</span>
+            <span class="dim-val" id="dim-val-${idx}">0.00</span>
+            <div class="dim-bar">
+              <div class="dim-bar-fill" id="dim-bar-fill-${idx}"></div>
+            </div>
+          </div>
+        `).join('');
+
+        // Bind sliders
+        cardsContainer.addEventListener('input', (e) => {
+          if (e.target.matches('input[type="range"]')) {
+            const idx = +e.target.dataset.idx;
+            state.scores[idx] = +e.target.value;
+            state.isPreset = null;
+            render();
+          }
+        });
+
+        // Bind query buttons
+        document.querySelectorAll('.query-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('.query-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            state.queryIdx = +btn.dataset.q;
+            if (state.queryIdx === 2) {
+              state.scores = [...PRESETS.animal];
+            } else if (state.queryIdx === 1) {
+              state.scores = [0.8, 3.2, 1.8, 0.4];
+            } else if (state.queryIdx === 3) {
+              state.scores = [0.1, 2.0, 1.5, 3.5];
+            } else {
+              state.scores = [3.0, 1.5, 0.4, 0.2];
+            }
+            render();
+          });
+        });
+
+        // Presets
+        document.getElementById('btn-animal').onclick = () => {
+          state.scores = [...PRESETS.animal];
+          render();
+        };
+        document.getElementById('btn-tired').onclick = () => {
+          state.scores = [...PRESETS.tired];
+          render();
+        };
+        document.getElementById('btn-uniform').onclick = () => {
+          state.scores = [...PRESETS.uniform];
+          render();
+        };
+        document.getElementById('btn-reset').onclick = () => {
+          state.scores = [...PRESETS.reset];
+          render();
+        };
+      }
+
+      function updateExplanation(alphas, c) {
+        const maxAlphaIdx = alphas.indexOf(Math.max(...alphas));
+        const maxWord = TOKENS[maxAlphaIdx].word;
+        const maxPct = (alphas[maxAlphaIdx] * 100).toFixed(0);
+
+        if (maxAlphaIdx === 1) {
+          interpretText.innerHTML = `重点关注 <strong>${maxWord}</strong> (${maxPct}%)：上下文向量以<strong>实体与生物特征</strong>为主 (生物: ${c[2].toFixed(2)})，成功建立指代关系。`;
+        } else if (maxAlphaIdx === 3) {
+          interpretText.innerHTML = `重点关注 <strong>${maxWord}</strong> (${maxPct}%)：上下文向量主导为<strong>疲倦程度与状态</strong> (疲倦: ${c[3].toFixed(2)})，捕获属性关联。`;
+        } else if (Math.max(...alphas) - Math.min(...alphas) < 0.1) {
+          interpretText.innerHTML = `各词权重均等 (~25%)：退化为无重点的<strong>平均池化</strong>，容易抹平关键词的特有信息。`;
+        } else {
+          interpretText.innerHTML = `最大注意力赋予了 <strong>${maxWord}</strong> (${maxPct}%)。向量 c 实时合成各位置特征，克服单一向量瓶颈。`;
+        }
+      }
+
+      function renderCanvas(alphas) {
+        const ctx = Deck.fit(flowCv);
+        const w = flowCv.offsetWidth;
+        const h = flowCv.offsetHeight;
+
+        ctx.clearRect(0, 0, w, h);
+
+        const cardEls = document.querySelectorAll('.word-card');
+        if (!cardEls.length) return;
+
+        const maxAlpha = Math.max(...alphas);
+
+        // Gather coordinates from DOM elements relative to canvas container
+        const cvRect = flowCv.getBoundingClientRect();
+        const bottomTargetX = w * 0.5;
+        const bottomTargetY = h - 20;
+
+        cardEls.forEach((card, idx) => {
+          const rect = card.getBoundingClientRect();
+          const startX = (rect.left + rect.right) / 2 - cvRect.left;
+          const startY = 12;
+          const alpha = alphas[idx];
+          const isTop = alpha === maxAlpha && alpha > 0.35;
+
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.bezierCurveTo(
+            startX, startY + (h * 0.45),
+            bottomTargetX, startY + (h * 0.55),
+            bottomTargetX, bottomTargetY
+          );
+
+          ctx.lineWidth = Math.max(1.5, alpha * 10);
+          if (isTop) {
+            ctx.strokeStyle = '#D43811'; // signal red
+          } else {
+            ctx.strokeStyle = `rgba(28, 68, 54, ${Math.max(0.15, alpha * 0.85)})`; // structure green
+          }
+          ctx.stroke();
+
+          // small source dot
+          ctx.beginPath();
+          ctx.arc(startX, startY, isTop ? 4.5 : 3, 0, Math.PI * 2);
+          ctx.fillStyle = isTop ? '#D43811' : '#1C4436';
+          ctx.fill();
+        });
+
+        // Context vector junction node
+        ctx.beginPath();
+        ctx.arc(bottomTargetX, bottomTargetY, 7, 0, Math.PI * 2);
+        ctx.fillStyle = '#1C4436';
+        ctx.fill();
+
+        ctx.font = '13px ' + Deck.token('--font-sans');
+        ctx.fillStyle = Deck.token('--muted');
+        ctx.textAlign = 'center';
+        ctx.fillText('动态汇聚点 Σ (αᵢ · vᵢ)', bottomTargetX, bottomTargetY - 14);
+      }
+
+      function render() {
+        const alphas = softmax(state.scores);
+        const c = computeContextVector(alphas);
+        const maxAlpha = Math.max(...alphas);
+
+        // Update card sliders & styles
+        TOKENS.forEach((_, idx) => {
+          const card = document.querySelector(`.word-card[data-idx="${idx}"]`);
+          const slider = card.querySelector('input[type="range"]');
+          const valSpan = document.getElementById(`score-val-${idx}`);
+          const barFill = document.getElementById(`bar-fill-${idx}`);
+          const barNum = document.getElementById(`bar-num-${idx}`);
+
+          slider.value = state.scores[idx];
+          valSpan.textContent = state.scores[idx].toFixed(1);
+
+          card.classList.toggle('is-query', idx === state.queryIdx);
+          const isTop = alphas[idx] === maxAlpha && alphas[idx] > 0.35;
+          card.classList.toggle('is-top', isTop);
+
+          const pct = (alphas[idx] * 100).toFixed(1);
+          barFill.style.width = pct + '%';
+          barFill.classList.toggle('highlight', isTop);
+          barNum.textContent = pct + '%';
+          barNum.classList.toggle('highlight', isTop);
+        });
+
+        // Update vector inspector
+        for (let d = 0; d < 4; d++) {
+          const valEl = document.getElementById(`dim-val-${d}`);
+          const barEl = document.getElementById(`dim-bar-fill-${d}`);
+          valEl.textContent = c[d].toFixed(2);
+          barEl.style.width = Math.min(100, (c[d] * 100)) + '%';
+        }
+
+        // Update text
+        updateExplanation(alphas, c);
+
+        // Draw flow canvas
+        renderCanvas(alphas);
+      }
+
+      initDom();
+      render();
+
+      window.addEventListener('resize', () => {
+        const alphas = softmax(state.scores);
+        renderCanvas(alphas);
+      });
+    })();
+  </script>
+</body>
+</html>

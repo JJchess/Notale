@@ -52,28 +52,13 @@ def _font(size: int):
     return ImageFont.load_default(size=size)
 
 
-MIRROR = ROOT / "experiments" / "workflow-skills-next"   # 样本剥掉的数据/媒体文件还留在这里
-
-
 def _stage(skill_dir: Path, row: dict) -> tuple[Path, Path]:
-    """Copy the whole sample dir, overlay the mirror's omitted files, link the chassis.
-
-    Returns (tmp_dir, html_path).  The production sample ships without its data and
-    media (catalog ``omitted``); those still exist in the experiments mirror at the
-    same relative layout, so any file missing here is filled from there.
-    """
-    rel_root = Path(row["full"]["root"])                     # samples/<cat>/<id>/.../pages
+    """Stage the live mini and shared chassis, without historical sample fallback."""
+    rel_root = Path(row["mini"]["root"])
     sample_rel = Path(*rel_root.parts[:3])                   # samples/<cat>/<id>
     tmp = Path(tempfile.mkdtemp(prefix="sample-shots-"))
     dst = tmp / sample_rel.name
     shutil.copytree(skill_dir / sample_rel, dst, symlinks=True)
-    mirror = MIRROR / skill_dir.name / sample_rel
-    if mirror.is_dir():
-        for src in mirror.rglob("*"):
-            target = dst / src.relative_to(mirror)
-            if src.is_file() and not target.exists():
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, target)
     pages = dst / rel_root.relative_to(sample_rel)
     assets = pages / "assets"
     assets.mkdir(exist_ok=True)
@@ -81,7 +66,7 @@ def _stage(skill_dir: Path, row: dict) -> tuple[Path, Path]:
     for src in [CHASSIS / "base.css", CHASSIS / "base.js", CHASSIS / "lib", *(CHASSIS / "lib").iterdir()]:
         if not (assets / src.name).exists():
             (assets / src.name).symlink_to(src)
-    html = next(f for f in row["full"]["files"] if f.endswith(".html"))
+    html = next(f for f in row["mini"]["files"] if f.endswith(".html"))
     return tmp, pages / html
 
 

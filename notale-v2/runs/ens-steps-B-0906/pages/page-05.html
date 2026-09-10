@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      isolation: isolate;
+    }
+
+    #field {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .cover-content {
+      position: absolute;
+      z-index: 5;
+      left: 104px;
+      top: 148px;
+      width: 620px;
+      pointer-events: none;
+    }
+
+    .chapter-tag {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-sec);
+      font-weight: var(--weight-medium);
+      color: var(--text);
+      letter-spacing: 0.12em;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    .subtitle {
+      margin-top: 28px;
+      font-family: var(--font-sans);
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      max-width: 520px;
+    }
+
+    .subtitle strong {
+      color: var(--aggregate);
+      font-weight: var(--weight-medium);
+    }
+
+    .key-metric {
+      margin-top: 56px;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 16px;
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+    }
+
+    .metric-val {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      color: var(--aggregate);
+      letter-spacing: -0.01em;
+    }
+
+    .metric-lbl {
+      font-family: var(--font-sans);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .legend-panel {
+      position: absolute;
+      z-index: 5;
+      right: 88px;
+      bottom: 52px;
+      display: flex;
+      align-items: center;
+      gap: 36px;
+      pointer-events: none;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-sans);
+      font-size: var(--fs-sec);
+      color: var(--text);
+    }
+
+    .legend-dot {
+      width: 14px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .dot-tree {
+      background: var(--model);
+      opacity: 0.65;
+    }
+
+    .dot-ensemble {
+      background: var(--aggregate);
+      height: 5px;
+    }
+
+    .dot-boundary {
+      border: 1px dashed var(--uncertain);
+      height: 0px;
+      width: 18px;
+    }
+  </style>
+</head>
+<body data-page="05" data-total="26">
+  <div id="stage">
+    <canvas id="field" class="cv-fill" aria-hidden="true"></canvas>
+
+    <div class="cover-content">
+      <div class="chapter-tag">第二部分 · 并行集成</div>
+      <h1>Bagging 与<br>随机森林</h1>
+      <p class="subtitle">
+        并行构建多棵<strong>互有差异的基决策树</strong>，通过投票与平均消除个体方差，汇聚为低扰动的稳定决策面。
+      </p>
+      <div class="key-metric">
+        <span class="metric-val">Var / B</span>
+        <span class="metric-lbl">理想状态下独立树集成的方差下界</span>
+      </div>
+    </div>
+
+    <div class="legend-panel">
+      <div class="legend-item">
+        <span class="legend-dot dot-tree"></span>
+        <span>单棵决策树路径</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot dot-ensemble"></span>
+        <span>随机森林聚合决策面</span>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    这一讲我们正式进入 Bagging 与随机森林。
+    与串行纠错的 Boosting 不同，Bagging 的核心逻辑是通过有放回抽样构造多份相互独立的基决策树，并在最后做平均或多数投票。
+    画面右侧展示了单棵决策树各自波动的台阶状判定面，当大量微小差异的树汇聚后，最终平滑为一条低扰动的坚固共识边界。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("field");
+      if (!canvas) return;
+
+      const W = 1600;
+      const H = 900;
+      const SEED = 42;
+
+      function seededRandom(seed) {
+        let s = seed >>> 0;
+        return () => {
+          s = (s + 0x6d2b79f5) >>> 0;
+          let t = s;
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      // Title exclusion zone in logical coordinates
+      function insideTitle(x, y) {
+        return x >= 60 && x <= 740 && y >= 110 && y <= 580;
+      }
+
+      // Build generative model: An ensemble of branching decision trees emerging from distinct bootstrap points
+      // and converging into a dense, solid, unified ensemble consensus boundary on the right half.
+      function buildModel() {
+        const rng = seededRandom(SEED);
+        const trees = [];
+        const numTrees = 28;
+
+        // Trees start from the middle/bottom right and create tree-like partition lines
+        for (let t = 0; t < numTrees; t++) {
+          const rootX = 720 + rng() * 320;
+          const rootY = 820 - rng() * 120;
+          const branches = [];
+
+          // Generate branching paths for each decision tree
+          function grow(x, y, depth, angle, length) {
+            if (depth > 6) return;
+            const nx = x + Math.cos(angle) * length;
+            const ny = y + Math.sin(angle) * length;
+
+            branches.push({ x1: x, y1: y, x2: nx, y2: ny, depth });
+
+            // Random split chance (mimicking feature / split stochasticity)
+            const branchCount = rng() < 0.28 ? 1 : 2;
+            const spread = 0.35 + rng() * 0.3;
+
+            if (branchCount === 1) {
+              const na = angle + (rng() - 0.5) * spread;
+              grow(nx, ny, depth + 1, na, length * (0.82 + rng() * 0.12));
+            } else {
+              grow(nx, ny, depth + 1, angle - spread * 0.9, length * (0.78 + rng() * 0.14));
+              grow(nx, ny, depth + 1, angle + spread * 0.9, length * (0.78 + rng() * 0.14));
+            }
+          }
+
+          const initAngle = -Math.PI / 2 + (rng() - 0.45) * 0.75;
+          grow(rootX, rootY, 0, initAngle, 85 + rng() * 35);
+          trees.push(branches);
+        }
+
+        // Generate synthetic consensus frontier (the aggregated ensemble boundary)
+        const consensusPoints = [];
+        const numPoints = 140;
+        for (let i = 0; i <= numPoints; i++) {
+          const px = 760 + (i / numPoints) * 760;
+          // Smooth non-linear decision boundary function
+          const baseSin = Math.sin((i / numPoints) * Math.PI * 2.2) * 110;
+          const py = 480 + baseSin + Math.cos((i / numPoints) * Math.PI * 4) * 35;
+          consensusPoints.push({ x: px, y: py });
+        }
+
+        // Generate perturbed single-tree frontier lines around consensus
+        const memberFrontiers = [];
+        for (let m = 0; m < 14; m++) {
+          const line = [];
+          const phase = rng() * Math.PI * 2;
+          const amp = 30 + rng() * 55;
+          for (let i = 0; i <= 60; i++) {
+            const progress = i / 60;
+            const px = 780 + progress * 740;
+            const baseSin = Math.sin(progress * Math.PI * 2.2) * 110;
+            // Step-like staircase nature of orthogonal decision splits
+            const stepY = Math.round((Math.sin(progress * 7 + phase) * amp) / 22) * 22;
+            const py = 480 + baseSin + Math.cos(progress * Math.PI * 4) * 35 + stepY;
+            line.push({ x: px, y: py });
+          }
+          memberFrontiers.push(line);
+        }
+
+        // Sampling points cloud (Bootstrap data points)
+        const samples = [];
+        const sampleRng = seededRandom(SEED + 999);
+        for (let s = 0; s < 180; s++) {
+          const sx = 760 + sampleRng() * 780;
+          const sy = 120 + sampleRng() * 700;
+          if (!insideTitle(sx, sy)) {
+            // Label based on position relative to consensus curve
+            const relX = (sx - 760) / 760;
+            const boundaryY = 480 + Math.sin(relX * Math.PI * 2.2) * 110 + Math.cos(relX * Math.PI * 4) * 35;
+            const label = sy < boundaryY ? 1 : 0;
+            samples.push({ x: sx, y: sy, label, r: 2.2 + sampleRng() * 1.8 });
+          }
+        }
+
+        return { trees, consensusPoints, memberFrontiers, samples };
+      }
+
+      const model = buildModel();
+
+      function draw(ctx) {
+        ctx.clearRect(0, 0, W, H);
+
+        const modelColor = Deck.token("--model") || "#2E5F78";
+        const aggColor = Deck.token("--aggregate") || "#173E50";
+        const focusColor = Deck.token("--focus") || "#C64B2E";
+        const lineMuted = Deck.token("--line") || "#74817C";
+        const uncertain = Deck.token("--uncertain") || "#8B6941";
+
+        // 1. Draw subtle coordinate lattice on the right canvas
+        ctx.strokeStyle = "rgba(116, 129, 124, 0.15)";
+        ctx.lineWidth = 1;
+        for (let x = 760; x <= 1540; x += 65) {
+          ctx.beginPath();
+          ctx.moveTo(x, 80);
+          ctx.lineTo(x, 820);
+          ctx.stroke();
+        }
+        for (let y = 120; y <= 820; y += 65) {
+          ctx.beginPath();
+          ctx.moveTo(760, y);
+          ctx.lineTo(1540, y);
+          ctx.stroke();
+        }
+
+        // 2. Draw Decision Tree branching skeletons (individual models)
+        ctx.lineCap = "round";
+        model.trees.forEach(tree => {
+          tree.forEach(branch => {
+            if (insideTitle(branch.x1, branch.y1) && insideTitle(branch.x2, branch.y2)) return;
+            const alpha = Math.max(0.08, 0.32 - branch.depth * 0.04);
+            ctx.strokeStyle = `rgba(46, 95, 120, ${alpha.toFixed(3)})`;
+            ctx.lineWidth = Math.max(0.7, 2.4 - branch.depth * 0.32);
+            ctx.beginPath();
+            ctx.moveTo(branch.x1, branch.y1);
+            ctx.lineTo(branch.x2, branch.y2);
+            ctx.stroke();
+          });
+        });
+
+        // 3. Draw individual jagged tree boundary estimates (variance across models)
+        model.memberFrontiers.forEach(line => {
+          ctx.strokeStyle = "rgba(46, 95, 120, 0.22)";
+          ctx.lineWidth = 1.1;
+          ctx.beginPath();
+          for (let i = 0; i < line.length; i++) {
+            const pt = line[i];
+            if (i === 0) ctx.moveTo(pt.x, pt.y);
+            else {
+              // Draw stepped segments representing tree partition thresholds
+              const prev = line[i - 1];
+              ctx.lineTo(pt.x, prev.y);
+              ctx.lineTo(pt.x, pt.y);
+            }
+          }
+          ctx.stroke();
+        });
+
+        // 4. Draw data sample points (Class A and Class B)
+        model.samples.forEach(pt => {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2);
+          if (pt.label === 1) {
+            ctx.fillStyle = "rgba(46, 95, 120, 0.4)";
+            ctx.fill();
+          } else {
+            ctx.fillStyle = "rgba(139, 105, 65, 0.45)";
+            ctx.fill();
+          }
+        });
+
+        // 5. Draw the thick, solid consensus boundary (The Ensemble: deep aggregate dark blue)
+        ctx.strokeStyle = aggColor;
+        ctx.lineWidth = 4.2;
+        ctx.beginPath();
+        for (let i = 0; i < model.consensusPoints.length; i++) {
+          const pt = model.consensusPoints[i];
+          if (i === 0) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+        }
+        ctx.stroke();
+
+        // 6. Highlight focus: A critical convergence node
+        const focusNode = model.consensusPoints[Math.floor(model.consensusPoints.length * 0.52)];
+        if (focusNode) {
+          ctx.beginPath();
+          ctx.arc(focusNode.x, focusNode.y, 6.5, 0, Math.PI * 2);
+          ctx.fillStyle = focusColor;
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(focusNode.x, focusNode.y, 14, 0, Math.PI * 2);
+          ctx.strokeStyle = focusColor;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
+
+      Deck.autofit(canvas, draw);
+      Deck.init({ index: 5, total: 26, keys: true });
+    })();
+  </script>
+</body>
+</html>

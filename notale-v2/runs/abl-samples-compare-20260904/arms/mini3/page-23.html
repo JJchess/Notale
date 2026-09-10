@@ -1,0 +1,898 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>折外预测矩阵的形成</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      gap: 16px;
+      user-select: none;
+    }
+
+    header.deck-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+      flex-shrink: 0;
+    }
+
+    .title-wrap h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      color: var(--text);
+      letter-spacing: -0.02em;
+      font-weight: 700;
+    }
+
+    .title-wrap p {
+      margin: 4px 0 0 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .top-controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .mode-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 4px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      font-size: var(--fs-label);
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .mode-badge span.dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--aggregate);
+    }
+
+    /* 主工作区：左 360px 折与模型调度，中 610px 模拟流程流转，右 490px 元特征矩阵组装 */
+    .workbench {
+      display: grid;
+      grid-template-columns: 360px 1.2fr 490px;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      position: relative;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: var(--fs-h2);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .panel-head .sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    /* 左侧：选择折与选择基模型 */
+    .fold-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .fold-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .fold-btn {
+      padding: 10px 4px;
+      text-align: center;
+      background: var(--surface-strong);
+      border: 1.5px solid transparent;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      transition: all var(--duration) var(--ease);
+    }
+
+    .fold-btn:hover {
+      border-color: var(--model);
+    }
+
+    .fold-btn.active {
+      background: var(--model);
+      color: #FFF;
+      border-color: var(--model);
+    }
+
+    .model-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .model-chips {
+      display: flex;
+      gap: 8px;
+    }
+
+    .m-chip {
+      flex: 1;
+      padding: 10px 6px;
+      border-radius: 4px;
+      border: 1.5px solid var(--surface-strong);
+      background: var(--surface);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--duration) var(--ease);
+    }
+
+    .m-chip:hover {
+      border-color: var(--sample);
+    }
+
+    .m-chip.active {
+      background: var(--sample);
+      color: #FFF;
+      border-color: var(--sample);
+    }
+
+    .fold-map {
+      background: var(--bg);
+      border-radius: 4px;
+      padding: 10px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .fold-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .fold-row-label {
+      width: 48px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .fold-segments {
+      display: flex;
+      flex: 1;
+      height: 28px;
+      border-radius: 3px;
+      overflow: hidden;
+      gap: 2px;
+    }
+
+    .seg {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-tick);
+      font-weight: 500;
+    }
+
+    .seg.train {
+      background: #CBDCE7;
+      color: #17425F;
+    }
+
+    .seg.val {
+      background: #F8D8CC;
+      color: #7A280D;
+      font-weight: 700;
+      box-shadow: inset 0 0 0 1.5px var(--aggregate);
+    }
+
+    /* 中间：数据流动与预测发生过程 */
+    .flow-card {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      height: 100%;
+    }
+
+    .data-flow-box {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+    }
+
+    .flow-step-item {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .flow-step-item > div {
+      display: flex;
+      align-items: center;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .flow-step-item.active-step {
+      border-color: var(--model);
+      box-shadow: 0 2px 6px rgba(39, 100, 143, 0.12);
+    }
+
+    .step-badge {
+      display: inline-block;
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      background: var(--surface-strong);
+      color: var(--text);
+      text-align: center;
+      line-height: 22px;
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      margin-right: 10px;
+    }
+
+    .step-badge.highlight {
+      background: var(--model);
+      color: #FFF;
+    }
+
+    .step-text {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .step-value {
+      font-family: var(--font-num, monospace);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--bg);
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+
+    .inspect-box {
+      border-top: 1px solid var(--surface-strong);
+      padding-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .inspect-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .leakage-contrast {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .contrast-card {
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-size: var(--fs-tick);
+      line-height: 1.4;
+    }
+
+    .contrast-card.good {
+      background: #EAF4EE;
+      border: 1px solid #B8DCBD;
+      color: #124025;
+    }
+
+    .contrast-card.bad {
+      background: #FDF1EE;
+      border: 1px solid #F3C3B6;
+      color: #7A280D;
+    }
+
+    .contrast-card strong {
+      display: block;
+      margin-bottom: 2px;
+      font-size: var(--fs-label);
+    }
+
+    /* 右侧：元特征矩阵组装 */
+    .matrix-display {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+    }
+
+    .meta-table-wrap {
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    table.meta-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: center;
+      font-size: var(--fs-tick);
+    }
+
+    table.meta-table th {
+      background: var(--surface-strong);
+      color: var(--text);
+      padding: 8px 6px;
+      font-weight: 600;
+      border-bottom: 1px solid #D5DFE5;
+    }
+
+    table.meta-table th.col-target {
+      background: #E8EEF2;
+      color: var(--muted);
+    }
+
+    table.meta-table td {
+      padding: 9px 8px;
+      border-bottom: 1px solid var(--surface-strong);
+      font-family: var(--font-num, monospace);
+      font-size: 14px;
+    }
+
+    table.meta-table tr.row-val-highlight {
+      background: #FFF7F2;
+    }
+
+    table.meta-table tr.row-val-highlight td.cell-active-pred {
+      background: #FCD5C5;
+      color: #832709;
+      font-weight: 700;
+      box-shadow: inset 0 0 0 1px var(--aggregate);
+    }
+
+    .cell-filled {
+      color: #1B442D;
+      font-weight: 600;
+    }
+
+    .cell-empty {
+      color: #B5C4CD;
+    }
+
+    .matrix-status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: var(--fs-label);
+    }
+
+    .progress-pill {
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    .fold-row.active-row .fold-segments {
+      box-shadow: 0 0 0 2px var(--model);
+    }
+    .action-bar {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 9px 12px;
+      border-radius: 4px;
+      border: 1px solid var(--model);
+      background: var(--model);
+      color: #FFF;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--duration) var(--ease);
+    }
+
+    .btn:hover {
+      filter: brightness(1.1);
+    }
+
+    .btn.outline {
+      background: var(--surface);
+      color: var(--text);
+      border-color: var(--surface-strong);
+    }
+
+    .btn.outline:hover {
+      border-color: var(--muted);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      filter: none;
+    }
+
+    /* 规则说明与诊断 */
+    .rule-callout {
+      background: var(--surface-strong);
+      border-radius: 4px;
+      padding: 10px 12px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      line-height: 1.45;
+    }
+
+    .rule-callout b {
+      color: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="23" data-total="27">
+  <div id="stage">
+    <header class="deck-head">
+      <div class="title-wrap">
+        <h1>折外预测矩阵的形成</h1>
+        <p>通过 K 折交叉拆分，确保每个基模型对每个样本的元输入都来自该模型未见过的验证预测</p>
+      </div>
+      <div class="top-controls">
+        <div class="mode-badge">
+          <span class="dot"></span>
+          <span>4 折交叉模拟 · 3 个基学习器</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="workbench">
+      <!-- 左列：K 折与模型选择控制 -->
+      <section class="panel min0">
+        <div class="panel-head">
+          <h2>1. 调度分折与基模型</h2>
+          <span class="sub" id="dispatch-label">折外训练分工</span>
+        </div>
+
+        <div class="fold-selector">
+          <span class="fs-tick" style="color:var(--muted);font-weight:600;">当前选定验证折 (Fold k)：</span>
+          <div class="fold-grid" id="fold-buttons">
+            <button type="button" class="fold-btn active" data-fold="1">第 1 折 (Val)</button>
+            <button type="button" class="fold-btn" data-fold="2">第 2 折 (Val)</button>
+            <button type="button" class="fold-btn" data-fold="3">第 3 折 (Val)</button>
+            <button type="button" class="fold-btn" data-fold="4">第 4 折 (Val)</button>
+          </div>
+        </div>
+
+        <div class="model-selector">
+          <span class="fs-tick" style="color:var(--muted);font-weight:600;">当前拟合基学习器 (Model m)：</span>
+          <div class="model-chips" id="model-buttons">
+            <button type="button" class="m-chip active" data-model="1">M1: 随机森林</button>
+            <button type="button" class="m-chip" data-model="2">M2: GBDT</button>
+            <button type="button" class="m-chip" data-model="3">M3: 逻辑回归</button>
+          </div>
+        </div>
+
+        <div class="fold-map">
+          <span class="fs-tick" style="color:var(--muted);font-weight:600;margin-bottom:2px;">样本集划分分布（总共 8 个样本示例）：</span>
+          
+          <div class="fold-row">
+            <span class="fold-row-label">Fold 1</span>
+            <div class="fold-segments" id="seg-f1">
+              <div class="seg val">S1, S2 验证</div>
+              <div class="seg train">S3-S8 训练</div>
+            </div>
+          </div>
+          <div class="fold-row">
+            <span class="fold-row-label">Fold 2</span>
+            <div class="fold-segments" id="seg-f2">
+              <div class="seg train">S1, S2 训练</div>
+              <div class="seg val">S3, S4 验证</div>
+              <div class="seg train">S5-S8 训练</div>
+            </div>
+          </div>
+          <div class="fold-row">
+            <span class="fold-row-label">Fold 3</span>
+            <div class="fold-segments" id="seg-f3">
+              <div class="seg train">S1-S4 训练</div>
+              <div class="seg val">S5, S6 验证</div>
+              <div class="seg train">S7, S8 训练</div>
+            </div>
+          </div>
+          <div class="fold-row">
+            <span class="fold-row-label">Fold 4</span>
+            <div class="fold-segments" id="seg-f4">
+              <div class="seg train">S1-S6 训练</div>
+              <div class="seg val">S7, S8 验证</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-bar" style="margin-top:12px;">
+          <button type="button" class="btn" id="btn-fit-step">执行当前拟合并填入</button>
+          <button type="button" class="btn outline" id="btn-fill-all">一键完成全矩阵</button>
+        </div>
+      </section>
+
+      <!-- 中列：当前训练流与无泄漏证明 -->
+      <section class="panel min0">
+        <div class="panel-head">
+          <h2>2. 训练隔离与数据流动</h2>
+          <span class="sub" id="status-step-summary">Fold 1 · M1 状态</span>
+        </div>
+
+        <div class="flow-card">
+          <div class="data-flow-box">
+            <div class="flow-step-item active-step" id="flow-step-1">
+              <div>
+                <span class="step-badge highlight" id="badge-1">1</span>
+                <span class="step-text" id="step-1-text">基模型 <strong>M1 (随机森林)</strong> 在其余 3 折（6 个样本）上拟合</span>
+              </div>
+              <span class="step-value" id="step-1-val">训练集：S3 ~ S8</span>
+            </div>
+
+            <div class="flow-step-item active-step" id="flow-step-2">
+              <div>
+                <span class="step-badge highlight" id="badge-2">2</span>
+                <span class="step-text" id="step-2-text">将拟合好的 M1 用于<strong>本折验证样本</strong>进行纯推理</span>
+              </div>
+              <span class="step-value" id="step-2-val">验证集：S1, S2</span>
+            </div>
+
+            <div class="flow-step-item active-step" id="flow-step-3">
+              <div>
+                <span class="step-badge highlight" id="badge-3">3</span>
+                <span class="step-text" id="step-3-text">预测结果写回元特征矩阵的 <strong>M1 对应列与对应行</strong></span>
+              </div>
+              <span class="step-value" id="step-3-val" style="color:var(--aggregate);font-weight:700;">填入 (S1,M1) & (S2,M1)</span>
+            </div>
+          </div>
+
+          <div class="rule-callout" id="rule-detail">
+            当前验证样本 <b>S1、S2 从未进入该模型训练集</b>。因此此时生成的预测值反映了该模型在盲测场景下的真实置信度，不存在“死记硬背”的高估。
+          </div>
+
+          <div class="inspect-box">
+            <div class="inspect-title">
+              <span>信息合规性对比</span>
+            </div>
+            <div class="leakage-contrast">
+              <div class="contrast-card good">
+                <strong>合法（折外预测 OOF）</strong>
+                元学习器的输入特征来自模型未见过的样本。元模型学会的是“基模型在不确定情况下的泛化表现”。
+              </div>
+              <div class="contrast-card bad">
+                <strong>非法泄漏（直接用训练预测）</strong>
+                强基模型对训练集拟合过高，输出极端置信度。元学习器被过度自信误导，最终在测试集失效。
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右列：元特征矩阵与下游对接 -->
+      <section class="panel min0">
+        <div class="panel-head">
+          <h2>3. 构建出的元特征矩阵</h2>
+          <span class="sub" id="matrix-fill-ratio">进度: 2 / 24 格</span>
+        </div>
+
+        <div class="matrix-display">
+          <div class="matrix-status-bar">
+            <span>元数据集形状：<strong>8 行 × 3 列</strong></span>
+            <span class="progress-pill" id="progress-indicator">已生成 8%</span>
+          </div>
+
+          <div class="meta-table-wrap">
+            <table class="meta-table">
+              <thead>
+                <tr>
+                  <th style="width:18%;">样本 ID</th>
+                  <th style="width:14%;">所属折</th>
+                  <th style="width:22%;">M1 (RF)</th>
+                  <th style="width:22%;">M2 (GBDT)</th>
+                  <th style="width:22%;">M3 (LR)</th>
+                  <th class="col-target" style="width:14%;">真实标签 Y</th>
+                </tr>
+              </thead>
+              <tbody id="matrix-body">
+                <!-- 由 JS 动态渲染 8 行 -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="rule-callout" style="background:#EBF2F6;border-left:3px solid var(--model);">
+            <div style="font-weight:700;margin-bottom:4px;color:var(--model);">元学习器（Level-1 Meta-Learner）的训练原料</div>
+            当全矩阵填满后，每一行 <code>[M1(x), M2(x), M3(x)]</code> 将作为新的 X 特征，与真实标签 <code>Y</code> 配对，直接用于训练第二层元模型。
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:auto;">
+            <button type="button" class="btn outline" id="btn-reset">清空重来</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 样本真实标签与预先固定的合规预测值表（真实数值推导，固定种子逻辑）
+      // 8 个样本，4 折，每折 2 个样本
+      const SAMPLES = [
+        { id: "S1", fold: 1, y: 1, m1: 0.82, m2: 0.78, m3: 0.65 },
+        { id: "S2", fold: 1, y: 0, m1: 0.15, m2: 0.22, m3: 0.31 },
+        { id: "S3", fold: 2, y: 1, m1: 0.88, m2: 0.91, m3: 0.74 },
+        { id: "S4", fold: 2, y: 0, m1: 0.28, m2: 0.18, m3: 0.40 },
+        { id: "S5", fold: 3, y: 1, m1: 0.73, m2: 0.84, m3: 0.58 },
+        { id: "S6", fold: 3, y: 1, m1: 0.64, m2: 0.70, m3: 0.62 },
+        { id: "S7", fold: 4, y: 0, m1: 0.12, m2: 0.09, m3: 0.24 },
+        { id: "S8", fold: 4, y: 0, m1: 0.35, m2: 0.27, m3: 0.45 }
+      ];
+
+      const MODEL_NAMES = {
+        1: "M1: 随机森林",
+        2: "M2: GBDT",
+        3: "M3: 逻辑回归"
+      };
+
+      const FOLD_SAMPLES = {
+        1: ["S1", "S2"],
+        2: ["S3", "S4"],
+        3: ["S5", "S6"],
+        4: ["S7", "S8"]
+      };
+
+      // 状态机
+      let state = {
+        currentFold: 1,
+        currentModel: 1,
+        filledCells: {} // key: `${sampleId}_m${modelId}` -> boolean
+      };
+
+      // 初始状态下先填入 (S1, M1) 和 (S2, M1)，首屏即有生动证据
+      state.filledCells["S1_m1"] = true;
+      state.filledCells["S2_m1"] = true;
+
+      const dom = {
+        foldButtons: document.querySelectorAll("#fold-buttons .fold-btn"),
+        modelButtons: document.querySelectorAll("#model-buttons .m-chip"),
+        matrixBody: document.getElementById("matrix-body"),
+        dispatchLabel: document.getElementById("dispatch-label"),
+        statusStepSummary: document.getElementById("status-step-summary"),
+        step1Text: document.getElementById("step-1-text"),
+        step1Val: document.getElementById("step-1-val"),
+        step2Text: document.getElementById("step-2-text"),
+        step2Val: document.getElementById("step-2-val"),
+        step3Text: document.getElementById("step-3-text"),
+        step3Val: document.getElementById("step-3-val"),
+        ruleDetail: document.getElementById("rule-detail"),
+        matrixFillRatio: document.getElementById("matrix-fill-ratio"),
+        progressIndicator: document.getElementById("progress-indicator"),
+        btnFitStep: document.getElementById("btn-fit-step"),
+        btnFillAll: document.getElementById("btn-fill-all"),
+        btnReset: document.getElementById("btn-reset")
+      };
+
+      function updateUI() {
+        // 更新折按钮与折条高亮
+        dom.foldButtons.forEach(btn => {
+          const f = parseInt(btn.dataset.fold, 10);
+          btn.classList.toggle("active", f === state.currentFold);
+        });
+
+        for (let i = 1; i <= 4; i++) {
+          const segEl = document.getElementById(`seg-f${i}`)?.parentElement;
+          if (segEl) {
+            segEl.classList.toggle("active-row", i === state.currentFold);
+          }
+        }
+
+        // 更新模型按钮
+        dom.modelButtons.forEach(btn => {
+          const m = parseInt(btn.dataset.model, 10);
+          btn.classList.toggle("active", m === state.currentModel);
+        });
+
+        // 更新调度文本
+        const valSamples = FOLD_SAMPLES[state.currentFold].join(", ");
+        const trainSamples = SAMPLES
+          .filter(s => s.fold !== state.currentFold)
+          .map(s => s.id)
+          .join(", ");
+
+        const mName = MODEL_NAMES[state.currentModel];
+        dom.dispatchLabel.textContent = `第 ${state.currentFold} 折 · 模型 M${state.currentModel}`;
+        dom.statusStepSummary.textContent = `Fold ${state.currentFold} · M${state.currentModel} 状态`;
+
+        dom.step1Text.innerHTML = `基模型 <strong>${mName}</strong> 在其余 3 折上拟合`;
+        dom.step1Val.textContent = `训练集：${trainSamples}`;
+
+        dom.step2Text.innerHTML = `将训练好的 M${state.currentModel} 对<strong>本折验证样本</strong>纯推理`;
+        dom.step2Val.textContent = `验证集：${valSamples}`;
+
+        dom.step3Text.innerHTML = `预测值写回元特征矩阵 <strong>M${state.currentModel} 列</strong>的对应行`;
+        dom.step3Val.textContent = `填入 (${valSamples}) × M${state.currentModel}`;
+
+        dom.ruleDetail.innerHTML = `当前验证样本 <b>${valSamples} 从未进入该模型训练集</b>。因此此时生成的预测值反映了该模型在盲测场景下的真实置信度，不存在“死记硬背”的高估。`;
+
+        // 更新表格
+        let filledCount = 0;
+        let totalCount = 8 * 3;
+        let html = "";
+
+        SAMPLES.forEach(s => {
+          const isCurrentFold = s.fold === state.currentFold;
+          const rowClass = isCurrentFold ? "row-val-highlight" : "";
+
+          const k1 = `${s.id}_m1`;
+          const k2 = `${s.id}_m2`;
+          const k3 = `${s.id}_m3`;
+
+          if (state.filledCells[k1]) filledCount++;
+          if (state.filledCells[k2]) filledCount++;
+          if (state.filledCells[k3]) filledCount++;
+
+          const cellClass = m => {
+            const active = isCurrentFold && state.currentModel === m;
+            return active ? "cell-active-pred" : "";
+          };
+
+          const formatVal = (filled, val) => {
+            if (filled) return `<span class="cell-filled">${val.toFixed(2)}</span>`;
+            return `<span class="cell-empty">——</span>`;
+          };
+
+          html += `
+            <tr class="${rowClass}">
+              <td><strong>${s.id}</strong></td>
+              <td>Fold ${s.fold}</td>
+              <td class="${cellClass(1)}">${formatVal(state.filledCells[k1], s.m1)}</td>
+              <td class="${cellClass(2)}">${formatVal(state.filledCells[k2], s.m2)}</td>
+              <td class="${cellClass(3)}">${formatVal(state.filledCells[k3], s.m3)}</td>
+              <td style="color:var(--text);font-weight:700;">${s.y}</td>
+            </tr>
+          `;
+        });
+
+        dom.matrixBody.innerHTML = html;
+
+        // 更新进度
+        const pct = Math.round((filledCount / totalCount) * 100);
+        dom.matrixFillRatio.textContent = `进度: ${filledCount} / ${totalCount} 格`;
+        dom.progressIndicator.textContent = `已生成 ${pct}%`;
+
+        // 按钮状态
+        const currentDone = FOLD_SAMPLES[state.currentFold].every(id => state.filledCells[`${id}_m${state.currentModel}`]);
+        dom.btnFitStep.disabled = currentDone;
+        dom.btnFitStep.textContent = currentDone ? "当前折与模型已填充" : "执行当前拟合并填入";
+      }
+
+      function fillCurrent() {
+        const valSamples = FOLD_SAMPLES[state.currentFold];
+        valSamples.forEach(id => {
+          state.filledCells[`${id}_m${state.currentModel}`] = true;
+        });
+        updateUI();
+      }
+
+      function fillAll() {
+        SAMPLES.forEach(s => {
+          state.filledCells[`${s.id}_m1`] = true;
+          state.filledCells[`${s.id}_m2`] = true;
+          state.filledCells[`${s.id}_m3`] = true;
+        });
+        updateUI();
+      }
+
+      function reset() {
+        state.filledCells = {};
+        state.currentFold = 1;
+        state.currentModel = 1;
+        state.filledCells["S1_m1"] = true;
+        state.filledCells["S2_m1"] = true;
+        updateUI();
+      }
+
+      // 事件绑定
+      dom.foldButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          state.currentFold = parseInt(btn.dataset.fold, 10);
+          updateUI();
+        });
+      });
+
+      dom.modelButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          state.currentModel = parseInt(btn.dataset.model, 10);
+          updateUI();
+        });
+      });
+
+      dom.btnFitStep.addEventListener("click", fillCurrent);
+      dom.btnFillAll.addEventListener("click", fillAll);
+      dom.btnReset.addEventListener("click", reset);
+
+      // 初始化
+      updateUI();
+      Deck.init({ index: 23, total: 27 });
+    })();
+  </script>
+</body>
+</html>

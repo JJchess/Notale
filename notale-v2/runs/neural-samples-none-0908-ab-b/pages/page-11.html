@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: 52px 64px 44px;
+      box-sizing: border-box;
+      color: var(--text);
+      font-family: var(--font-sans);
+      background: var(--bg);
+      position: relative;
+    }
+
+    header {
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0 0 6px 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 960px 1fr;
+      gap: 56px;
+      flex: 1;
+      min-height: 0;
+      align-items: stretch;
+    }
+
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      position: relative;
+    }
+
+    .chart-legend-bar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 24px;
+      margin-bottom: 12px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-line {
+      width: 24px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .legend-train {
+      background: var(--structure);
+    }
+
+    .legend-val {
+      background: var(--signal);
+    }
+
+    .chart-container {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      border-bottom: 2px solid var(--rule);
+      border-left: 2px solid var(--rule);
+    }
+
+    #loss-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding-top: 4px;
+    }
+
+    .regimes {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .regime-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .regime-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+    }
+
+    .regime-train {
+      color: var(--structure);
+    }
+
+    .regime-val-color {
+      color: var(--signal);
+    }
+
+    .regime-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    .trap-box {
+      padding-top: 16px;
+      border-top: 1px solid var(--rule);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .trap-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--signal);
+    }
+
+    .trap-desc {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    /* SVG text classes conforming to tokens */
+    .svg-tick {
+      font-size: 13px;
+      fill: var(--muted);
+      font-family: var(--font-sans);
+    }
+
+    .svg-label {
+      font-size: 15px;
+      font-weight: 700;
+      font-family: var(--font-sans);
+    }
+
+    .grid-line {
+      stroke: var(--rule);
+      stroke-width: 1;
+      stroke-dasharray: 3 3;
+      opacity: 0.5;
+    }
+
+    .split-zone {
+      fill: var(--signal);
+      opacity: 0.05;
+    }
+
+    .opt-line {
+      stroke: var(--muted);
+      stroke-width: 1.5;
+      stroke-dasharray: 4 4;
+    }
+
+    .curve-train {
+      fill: none;
+      stroke: var(--structure);
+      stroke-width: 3.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .curve-val {
+      fill: none;
+      stroke: var(--signal);
+      stroke-width: 3.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>泛化与正则化：从损失曲线识别过拟合与欠拟合</h1>
+      <p class="lead">训练损失持续下降不等于模型变好：验证损失的谷底标定了最佳泛化边界。</p>
+    </header>
+
+    <div class="workspace">
+      <!-- Left Chart Area -->
+      <section class="chart-panel">
+        <div class="chart-legend-bar">
+          <div class="legend-item">
+            <div class="legend-line legend-train"></div>
+            <span>训练损失 (Train)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-line legend-val"></div>
+            <span>验证损失 (Val)</span>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <svg id="loss-svg" viewBox="0 0 960 480" preserveAspectRatio="none">
+            <!-- Grid Lines -->
+            <line class="grid-line" x1="0" y1="96" x2="960" y2="96" />
+            <line class="grid-line" x1="0" y1="192" x2="960" y2="192" />
+            <line class="grid-line" x1="0" y1="288" x2="960" y2="288" />
+            <line class="grid-line" x1="0" y1="384" x2="960" y2="384" />
+
+            <!-- Overfitting shaded zone from epoch 40 (x=384) -->
+            <rect class="split-zone" x="384" y="0" width="576" height="480" />
+
+            <!-- Early Stopping line at epoch 40 (x=384) -->
+            <line class="opt-line" x1="384" y1="0" x2="384" y2="480" />
+
+            <!-- Stop Point Target Marker -->
+            <circle cx="384" cy="274" r="5" fill="var(--signal)" />
+            <circle cx="384" cy="274" r="10" fill="none" stroke="var(--signal)" stroke-width="2" opacity="0.45" />
+
+            <!-- Region & Point Annotations -->
+            <text class="svg-label" x="396" y="32" fill="var(--signal)">早停点 (Early Stopping)</text>
+            <text class="svg-tick" x="396" y="52">Epoch 40 · 验证误差触底</text>
+
+            <text class="svg-label" x="140" y="320" fill="var(--muted)">欠拟合阶段</text>
+            <text class="svg-label" x="520" y="340" fill="var(--signal)">过拟合阶段</text>
+
+            <!-- Axis Labels -->
+            <text class="svg-tick" x="12" y="24">Loss</text>
+            <text class="svg-tick" x="900" y="470">Epochs</text>
+
+            <!-- Train Loss Curve: drops smoothly from high (y=48) down to near zero (y=458) -->
+            <path class="curve-train" d="
+              M 0,48
+              C 100,200 200,310 384,395
+              C 560,450 750,456 960,458
+            " />
+
+            <!-- Val Loss Curve: drops from y=60 to valley at epoch 40 (x=384, y=274), then rises to y=120 -->
+            <path class="curve-val" d="
+              M 0,60
+              C 100,165 240,265 384,274
+              C 520,280 720,200 960,120
+            " />
+          </svg>
+        </div>
+      </section>
+
+      <!-- Right Column: Conceptual Distinctions -->
+      <section class="side-panel">
+        <div class="regimes">
+          <div class="regime-item">
+            <span class="regime-title regime-train">欠拟合</span>
+            <p class="regime-desc">训练与验证误差同步偏高，模型尚未学全规律。</p>
+          </div>
+
+          <div class="regime-item">
+            <span class="regime-title regime-train">最佳泛化点</span>
+            <p class="regime-desc">验证误差触底，此时触发早停锁定参数最优。</p>
+          </div>
+
+          <div class="regime-item">
+            <span class="regime-title regime-val-color">过拟合</span>
+            <p class="regime-desc">训练误差趋零而验证误差反弹，死记样本噪声。</p>
+          </div>
+        </div>
+
+        <div class="trap-box">
+          <span class="trap-title">数据泄漏陷阱</span>
+          <p class="trap-desc">划分前做标准化会引入未来信息，导致验证评估失真。</p>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看左侧的标准损失曲线。我们在前几节课通过反向传播与梯度下降将训练误差降到极低。
+    但请大家时刻牢记：深度学习的根本目标绝不是在背过的训练集上拿满分，而是获得泛化能力。
+    深墨绿实线是训练误差，只要参数量足够、继续优化，它几乎单调下降趋向于零。
+    朱红色实线是未参与训练的验证误差。在前 40 轮，两线同步下降，模型正在提取通用模式，这是欠拟合走向充分拟合的阶段。
+    但在第 40 轮验证损失触底后，两条线彻底分叉——训练误差继续走低，验证误差却反弹抬升，这正是过拟合。
+    工程上最直接的手段就是早停（Early Stopping），在谷底锁定参数。同时使用权重衰减（L2 正则）和 Dropout 约束网络复杂度。
+    最后谨防下方的数据泄漏：严禁在划分验证集前对全量数据统一标准化。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init();
+  </script>
+</body>
+</html>

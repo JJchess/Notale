@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      overflow: hidden;
+      background: var(--bg);
+      padding: var(--pad-y) var(--pad-x);
+    }
+
+    #flow-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .title-block {
+      position: absolute;
+      left: 110px;
+      top: 310px;
+      z-index: 5;
+      max-width: 640px;
+      pointer-events: none;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    .lead-text {
+      margin-top: 20px;
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      max-width: 500px;
+    }
+
+    .metrics-panel {
+      position: absolute;
+      right: 110px;
+      top: 100px;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      pointer-events: none;
+    }
+
+    .stage-card {
+      width: 270px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(83, 101, 117, 0.18);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      box-shadow: 0 6px 20px rgba(23, 42, 58, 0.05);
+      backdrop-filter: blur(8px);
+    }
+
+    .stage-card-title {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .stage-card-title .badge {
+      font-family: var(--font-num);
+      font-size: var(--fs-tick);
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+
+    .stage-card-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    .legend-row {
+      position: absolute;
+      left: 110px;
+      bottom: 50px;
+      z-index: 5;
+      display: flex;
+      gap: 36px;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .dot-pass { background: var(--model); }
+    .dot-err { background: var(--aggregate); box-shadow: 0 0 0 3px rgba(201, 79, 45, 0.2); }
+  </style>
+</head>
+<body data-page="16" data-total="26">
+  <main id="stage">
+    <canvas id="flow-canvas" class="cv-fill no-pan" aria-hidden="true"></canvas>
+
+    <header class="title-block">
+      <h1>Boosting</h1>
+      <p class="lead-text">让后继模型专注当前错误</p>
+    </header>
+
+    <div class="metrics-panel">
+      <div class="stage-card">
+        <div class="stage-card-title">
+          <span>第一轮 基础划分</span>
+          <span class="badge">t = 1</span>
+        </div>
+        <p class="stage-card-desc">均等样本权重，初级弱分类器暴露出边界错误样本。</p>
+      </div>
+
+      <div class="stage-card">
+        <div class="stage-card-title">
+          <span>第二轮 聚力纠偏</span>
+          <span class="badge">t = 2</span>
+        </div>
+        <p class="stage-card-desc">错误样本引力骤增，引导后续流线强力向残差区域弯曲折叠。</p>
+      </div>
+
+      <div class="stage-card">
+        <div class="stage-card-title">
+          <span>最终 强组合判别</span>
+          <span class="badge">聚合</span>
+        </div>
+        <p class="stage-card-desc">加权线性叠加弱学习器，错点被多层梯度修正包围消除。</p>
+      </div>
+    </div>
+
+    <footer class="legend-row">
+      <div class="legend-item">
+        <span class="legend-dot dot-pass"></span>
+        <span>已正确分类样本（权重衰减）</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot dot-err"></span>
+        <span>当前轮残差样本（权重激增引力源）</span>
+      </div>
+    </footer>
+  </main>
+
+  <aside class="notes" hidden>
+    本章我们进入集成学习的另一核心范式：Boosting。与 Bagging 并行独立训练各基学习器不同，Boosting 采取序列迭代机制。每一轮迭代中，新的弱分类器都会特别针对前序模型留下的残差或误分类样本进行重点修正，最终通过加权投票或梯度累加形成强大的强学习器。
+  </aside>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      Deck.init({ index: 16, total: 26, keys: false });
+
+      const canvas = document.getElementById("flow-canvas");
+      let ctx = Deck.fit(canvas);
+      if (!ctx) return;
+
+      const W = 1600, H = 900;
+      const SEED = "boosting-flow-seed-42";
+      const random = new Math.seedrandom(SEED);
+
+      // 提高偏转引力源的平滑度，使轨迹自然包裹残差
+      const errorPoles = [
+        { x: 930, y: 360, strength: 2.1, r: 16 },
+        { x: 1040, y: 640, strength: 2.4, r: 22 },
+        { x: 1220, y: 460, strength: 2.8, r: 28 },
+        { x: 1390, y: 260, strength: 1.8, r: 18 },
+        { x: 1420, y: 720, strength: 2.1, r: 20 }
+      ];
+
+      // 正常样本点（低引力，分散）
+      const normalSamples = [];
+      for (let i = 0; i < 28; i++) {
+        normalSamples.push({
+          x: 750 + random() * 750,
+          y: 120 + random() * 680,
+          r: 6
+        });
+      }
+
+      // 产生流线
+      // 流线从左侧平缓流入（初始弱分类器切分），经过中间引力场时被向错误样本区强力牵引偏转（专注错误）
+      const numLines = 65;
+      const lines = [];
+
+      for (let i = 0; i < numLines; i++) {
+        const startY = 80 + (H - 160) * (i / (numLines - 1));
+        const pts = [];
+        let cx = 660 + (random() - 0.5) * 40;
+        let cy = startY;
+        pts.push({ x: cx, y: cy });
+
+        const steps = 70;
+        const stepSize = 14;
+
+        for (let s = 0; s < steps; s++) {
+          // 主行进方向：向右
+          let vx = 1.0;
+          let vy = 0;
+
+          // 错误点带来的引力偏转（向残差区域弯曲）
+          for (const pole of errorPoles) {
+            const dx = pole.x - cx;
+            const dy = pole.y - cy;
+            const distSq = dx * dx + dy * dy + 800;
+            const force = (pole.strength * 900) / distSq;
+            vx += (dx / Math.sqrt(distSq)) * force * 0.45;
+            vy += (dy / Math.sqrt(distSq)) * force * 0.45;
+          }
+
+          // 弱分类器阶段性台阶切分感（水平与垂直的微小折线扰动）
+          const mag = Math.hypot(vx, vy);
+          cx += (vx / mag) * stepSize;
+          cy += (vy / mag) * stepSize;
+
+          if (cx > 1580 || cy < 20 || cy > 880) break;
+          pts.push({ x: cx, y: cy });
+        }
+        lines.push({
+          pts,
+          alpha: 0.12 + (i % 3 === 0 ? 0.22 : 0.08),
+          width: i % 4 === 0 ? 2.2 : 1.2,
+          isFocus: i % 7 === 0
+        });
+      }
+
+      // 动效光点（脉冲遍历，表示迭代时模型纠正权重的传导）
+      const pulses = lines.filter(l => l.isFocus).map((line, idx) => ({
+        line,
+        progress: (idx * 0.18) % 1,
+        speed: 0.00028 + (idx % 3) * 0.00008
+      }));
+
+      function render(time) {
+        ctx.clearRect(0, 0, W, H);
+
+        // 绘制正常样本点
+        ctx.fillStyle = Deck.token("--model");
+        for (const pt of normalSamples) {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2);
+          ctx.globalAlpha = 0.35;
+          ctx.fill();
+        }
+
+        // 绘制流线（模型的拟合路径向残差区域密集偏折）
+        for (const line of lines) {
+          if (line.pts.length < 2) continue;
+          ctx.beginPath();
+          ctx.moveTo(line.pts[0].x, line.pts[0].y);
+          for (let k = 1; k < line.pts.length; k++) {
+            ctx.lineTo(line.pts[k].x, line.pts[k].y);
+          }
+          ctx.strokeStyle = line.isFocus ? Deck.token("--aggregate") : Deck.token("--model");
+          ctx.globalAlpha = line.alpha;
+          ctx.lineWidth = line.width;
+          ctx.stroke();
+        }
+
+        // 绘制残差错误样本（高权重光晕）
+        for (const pole of errorPoles) {
+          // 外部引力场扩散圈
+          const grad = ctx.createRadialGradient(pole.x, pole.y, 4, pole.x, pole.y, pole.r * 2.8);
+          grad.addColorStop(0, Deck.rgba("aggregate", 0.35));
+          grad.addColorStop(1, Deck.rgba("aggregate", 0));
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(pole.x, pole.y, pole.r * 2.8, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 核心样本圆点
+          ctx.fillStyle = Deck.token("--aggregate");
+          ctx.globalAlpha = 0.95;
+          ctx.beginPath();
+          ctx.arc(pole.x, pole.y, pole.r * 0.65, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 边框强调
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2;
+          ctx.globalAlpha = 0.9;
+          ctx.stroke();
+        }
+
+        // 绘制沿流线传输的残差脉冲粒子
+        for (const pulse of pulses) {
+          const p = (pulse.progress + time * pulse.speed) % 1;
+          const totalPts = pulse.line.pts.length;
+          const exactIdx = p * (totalPts - 1);
+          const i0 = Math.floor(exactIdx);
+          const i1 = Math.min(i0 + 1, totalPts - 1);
+          const frac = exactIdx - i0;
+          const p0 = pulse.line.pts[i0];
+          const p1 = pulse.line.pts[i1];
+          const curX = p0.x + (p1.x - p0.x) * frac;
+          const curY = p0.y + (p1.y - p0.y) * frac;
+
+          ctx.fillStyle = Deck.token("--aggregate");
+          ctx.globalAlpha = 0.9;
+          ctx.beginPath();
+          ctx.arc(curX, curY, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1.0;
+      }
+
+      Deck.onResize(() => {
+        ctx = Deck.fit(canvas);
+        render(1200);
+      });
+
+      Deck.loop((time) => {
+        render(time);
+      }, { still: 1200 });
+
+    })();
+  </script>
+</body>
+</html>

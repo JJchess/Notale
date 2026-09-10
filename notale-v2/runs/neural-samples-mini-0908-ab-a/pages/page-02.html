@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>输入结构与表征挑战：全连接网络为何无法高效通吃图像与语言</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F1F4F2;
+      --text: #151A18;
+      --muted: #5B6661;
+      --rule: #BAC4BF;
+      --structure: #1C4436;
+      --signal: #D43811;
+      --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+      --font-mono: "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: 44px 56px 36px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+
+    header {
+      margin-bottom: 22px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 6px;
+    }
+
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.35;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      column-gap: 60px;
+      height: 650px;
+      position: relative;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .divider {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 20px;
+      width: 1px;
+      background: var(--rule);
+      transform: translateX(-50%);
+    }
+
+    .col-head {
+      margin-bottom: 12px;
+    }
+
+    .col-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--structure);
+      margin: 0;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+
+    .col-title .tag {
+      font-size: var(--fs-tick);
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .viz-field {
+      position: relative;
+      height: 440px;
+      box-sizing: border-box;
+    }
+
+    .viz-field canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .col-stats {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      row-gap: 8px;
+      column-gap: 16px;
+      align-items: baseline;
+      font-size: var(--fs-label);
+    }
+
+    .stat-label {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .stat-value {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .stat-value.danger {
+      color: var(--signal);
+      font-family: var(--font-sans);
+    }
+
+    .callout {
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid var(--rule);
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+      color: var(--text);
+    }
+
+    .callout strong {
+      color: var(--signal);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>输入结构与表征挑战：全连接网络为何无法高效通吃图像与语言</h1>
+      <p class="lead">全连接层假设输入各维相互独立；但图像与序列的关键信息完全由空间邻近与时序顺序决定。</p>
+    </header>
+
+    <div class="main-grid">
+      <div class="divider"></div>
+
+      <!-- Left Column: 2D Image Grid flattened to 1D -->
+      <div class="column min0">
+        <div class="col-head">
+          <div class="col-title">
+            <span>手写数字：二维空间网格</span>
+            <span class="tag">28×28 = 784 维</span>
+          </div>
+        </div>
+
+        <div class="viz-field">
+          <canvas id="cv-image"></canvas>
+        </div>
+
+        <div class="col-stats">
+          <span class="stat-label">单层参数</span>
+          <span class="stat-value">784 × 512 = 401,408 权重（无复用）</span>
+          <span class="stat-label">平移代价</span>
+          <span class="stat-value danger">笔画平移 2 像素需重新用全新参数拟合</span>
+        </div>
+
+        <div class="callout">
+          <strong>空间归纳偏置缺失：</strong>各像素被当成独立变量，无法提取“局部弧线”等不变特征。
+        </div>
+      </div>
+
+      <!-- Right Column: Variable Length Language Sequence -->
+      <div class="column min0">
+        <div class="col-head">
+          <div class="col-title">
+            <span>短句语义：可变长离散序列</span>
+            <span class="tag">词元序列 T 步</span>
+          </div>
+        </div>
+
+        <div class="viz-field">
+          <canvas id="cv-text"></canvas>
+        </div>
+
+        <div class="col-stats">
+          <span class="stat-label">槽位瓶颈</span>
+          <span class="stat-value danger">固定输入维度必须对变长文本强行填充截断</span>
+          <span class="stat-label">时序混淆</span>
+          <span class="stat-value danger">“不算好”与“好算不”绑定不同输入槽而失真</span>
+        </div>
+
+        <div class="callout">
+          <strong>时序与变长缺失：</strong>全连接无法跨位置共享同一套参数，长短句无法通用。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学好。在深入具体架构前，我们先思考一个基础问题：既然多层全连接网络是通用函数逼近器，为什么不能用同一个 MLP 高效解决所有视觉和语言任务？
+    看左侧手写数字“3”。图像在物理上是一个二维几何网格，语义来自邻近像素的协同组合。一旦强行拉平成 784 维向量，原本上下相邻的像素在向量中被拉开 28 个步长，空间拓扑直接破碎。而且全连接层第一层就有 40 万参数，数字若稍稍向右平移两格，对应的权重完全不同，必须从头重新学习。
+    再看右侧的自然语言。句子是变长的离散序列，“不算好”和“好算不”包含完全相反的语义。全连接网络只能设定固定宽度，依赖槽位分配，既丢失了时序递归机制，也无法灵活处理不定长文本。
+    这正是为什么要针对图像引入局部连接与权重共享的 CNN，针对时序引入状态递推的 RNN。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      const cvImg = document.getElementById('cv-image');
+      const ctxImg = Deck.fit(cvImg);
+      const cvTxt = document.getElementById('cv-text');
+      const ctxTxt = Deck.fit(cvTxt);
+
+      const colorStructure = Deck.token('--structure') || '#1C4436';
+      const colorSignal = Deck.token('--signal') || '#D43811';
+      const colorMuted = Deck.token('--muted') || '#5B6661';
+      const colorRule = Deck.token('--rule') || '#BAC4BF';
+      const colorText = Deck.token('--text') || '#151A18';
+
+      // 8x8 digit '3'
+      const digitMap = [
+        [0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 0, 0, 0, 0, 0, 1, 1],
+        [0, 0, 0, 0, 0, 0, 1, 1],
+        [0, 0, 1, 1, 1, 1, 1, 0],
+        [0, 0, 0, 0, 0, 0, 1, 1],
+        [0, 0, 0, 0, 0, 0, 1, 1],
+        [0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0]
+      ];
+
+      function drawImagePanel() {
+        const w = cvImg.parentElement.clientWidth;
+        const h = cvImg.parentElement.clientHeight;
+        ctxImg.clearRect(0, 0, w, h);
+
+        // 2D grid
+        const gridX = 20;
+        const gridY = 48;
+        const cellSize = 25;
+        const rows = 8;
+        const cols = 8;
+
+        ctxImg.save();
+        ctxImg.fillStyle = colorStructure;
+        ctxImg.font = '600 16px ' + Deck.token('--font-sans');
+        ctxImg.fillText('2D 局部相邻像素网格', gridX, gridY - 16);
+
+        // Draw cells
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const val = digitMap[r][c];
+            const px = gridX + c * cellSize;
+            const py = gridY + r * cellSize;
+            ctxImg.fillStyle = val ? colorStructure : '#E5EAE7';
+            ctxImg.fillRect(px, py, cellSize - 1, cellSize - 1);
+          }
+        }
+
+        // Highlight adjacent pair (row 1, col 6) and (row 2, col 6)
+        const r1 = 1, c1 = 6;
+        ctxImg.strokeStyle = colorSignal;
+        ctxImg.lineWidth = 2.5;
+        ctxImg.strokeRect(gridX + c1 * cellSize - 1.5, gridY + r1 * cellSize - 1.5, cellSize + 2, cellSize * 2 + 2);
+
+        ctxImg.fillStyle = colorSignal;
+        ctxImg.font = '600 14px ' + Deck.token('--font-sans');
+        ctxImg.fillText('纵向相邻', gridX + cols * cellSize + 14, gridY + r1 * cellSize + 18);
+        ctxImg.font = '13px ' + Deck.token('--font-mono');
+        ctxImg.fillText('Δy = 1', gridX + cols * cellSize + 14, gridY + r1 * cellSize + 36);
+
+        // Transition Arrow
+        const arrowX = gridX + cols * cellSize + 90;
+        const arrowY = gridY + 95;
+        ctxImg.strokeStyle = colorRule;
+        ctxImg.lineWidth = 2;
+        ctxImg.beginPath();
+        ctxImg.moveTo(arrowX, arrowY);
+        ctxImg.lineTo(arrowX + 46, arrowY);
+        ctxImg.lineTo(arrowX + 38, arrowY - 6);
+        ctxImg.moveTo(arrowX + 46, arrowY);
+        ctxImg.lineTo(arrowX + 38, arrowY + 6);
+        ctxImg.stroke();
+
+        ctxImg.fillStyle = colorText;
+        ctxImg.font = '600 14px ' + Deck.token('--font-sans');
+        ctxImg.textAlign = 'center';
+        ctxImg.fillText('展平为一维', arrowX + 23, arrowY - 14);
+
+        // 1D Vector strip
+        const vecX = arrowX + 80;
+        const vecY = 32;
+        const vecW = 100;
+        const vecH = 9.5;
+        const totalItems = 34;
+
+        ctxImg.textAlign = 'left';
+        ctxImg.fillStyle = colorStructure;
+        ctxImg.font = '600 16px ' + Deck.token('--font-sans');
+        ctxImg.fillText('1D 向量输入层 (展平后)', vecX, vecY - 12);
+
+        for (let i = 0; i < totalItems; i++) {
+          const py = vecY + i * (vecH + 1);
+          const isP1 = (i === 5);
+          const isP2 = (i === 17);
+
+          if (isP1 || isP2) {
+            ctxImg.fillStyle = colorSignal;
+          } else {
+            ctxImg.fillStyle = (i >= 3 && i <= 24) ? colorStructure : '#E5EAE7';
+          }
+          ctxImg.fillRect(vecX, py, vecW, vecH);
+
+          if (isP1) {
+            ctxImg.fillStyle = colorSignal;
+            ctxImg.font = '600 13px ' + Deck.token('--font-mono');
+            ctxImg.fillText('x[14]', vecX + vecW + 8, py + 8);
+          }
+          if (isP2) {
+            ctxImg.fillStyle = colorSignal;
+            ctxImg.font = '600 13px ' + Deck.token('--font-mono');
+            ctxImg.fillText('x[22]', vecX + vecW + 8, py + 8);
+          }
+        }
+
+        // Tearing dashed arc
+        const p1CenterY = vecY + 5 * 10.5 + 4.5;
+        const p2CenterY = vecY + 17 * 10.5 + 4.5;
+        const arcStartX = vecX + vecW + 52;
+
+        ctxImg.beginPath();
+        ctxImg.strokeStyle = colorSignal;
+        ctxImg.lineWidth = 1.5;
+        ctxImg.setLineDash([4, 3]);
+        ctxImg.moveTo(arcStartX, p1CenterY);
+        ctxImg.bezierCurveTo(arcStartX + 42, p1CenterY, arcStartX + 42, p2CenterY, arcStartX, p2CenterY);
+        ctxImg.stroke();
+        ctxImg.setLineDash([]);
+
+        ctxImg.fillStyle = colorSignal;
+        ctxImg.font = '600 14px ' + Deck.token('--font-sans');
+        ctxImg.fillText('间距拉大，拓扑撕裂', arcStartX + 48, (p1CenterY + p2CenterY) / 2 + 5);
+
+        ctxImg.restore();
+      }
+
+      function drawTextPanel() {
+        const w = cvTxt.parentElement.clientWidth;
+        const h = cvTxt.parentElement.clientHeight;
+        ctxTxt.clearRect(0, 0, w, h);
+
+        ctxTxt.save();
+
+        const startX = 20;
+        let startY = 32;
+
+        // Sentence 1
+        ctxTxt.fillStyle = colorStructure;
+        ctxTxt.font = '600 16px ' + Deck.token('--font-sans');
+        ctxTxt.fillText('输入序列 1：短句（4 词，需占位填充）', startX, startY);
+
+        startY += 18;
+        const tokens1 = ['这', '部', '电影', '好'];
+        for (let i = 0; i < tokens1.length; i++) {
+          const bx = startX + i * 86;
+          ctxTxt.fillStyle = '#FFFFFF';
+          ctxTxt.strokeStyle = colorStructure;
+          ctxTxt.lineWidth = 1.5;
+          ctxTxt.fillRect(bx, startY, 76, 36);
+          ctxTxt.strokeRect(bx, startY, 76, 36);
+
+          ctxTxt.fillStyle = colorText;
+          ctxTxt.font = '600 15px ' + Deck.token('--font-sans');
+          ctxTxt.textAlign = 'center';
+          ctxTxt.fillText(tokens1[i], bx + 38, startY + 23);
+        }
+
+        // Pad tokens
+        for (let i = 4; i < 6; i++) {
+          const bx = startX + i * 86;
+          ctxTxt.fillStyle = '#E5EAE7';
+          ctxTxt.strokeStyle = colorRule;
+          ctxTxt.lineWidth = 1;
+          ctxTxt.setLineDash([3, 3]);
+          ctxTxt.fillRect(bx, startY, 76, 36);
+          ctxTxt.strokeRect(bx, startY, 76, 36);
+          ctxTxt.setLineDash([]);
+
+          ctxTxt.fillStyle = colorMuted;
+          ctxTxt.font = '13px ' + Deck.token('--font-mono');
+          ctxTxt.textAlign = 'center';
+          ctxTxt.fillText('[PAD]', bx + 38, startY + 23);
+        }
+
+        // Sentence 2
+        startY += 80;
+        ctxTxt.textAlign = 'left';
+        ctxTxt.fillStyle = colorStructure;
+        ctxTxt.font = '600 16px ' + Deck.token('--font-sans');
+        ctxTxt.fillText('输入序列 2：长句（超出槽位被迫截断）', startX, startY);
+
+        startY += 18;
+        const tokens2 = ['剧情', '平淡', '但', '结尾', '反转', '精彩'];
+        for (let i = 0; i < 6; i++) {
+          const bx = startX + i * 86;
+          ctxTxt.fillStyle = '#FFFFFF';
+          ctxTxt.strokeStyle = (i === 5) ? colorSignal : colorStructure;
+          ctxTxt.lineWidth = 1.5;
+          ctxTxt.fillRect(bx, startY, 76, 36);
+          ctxTxt.strokeRect(bx, startY, 76, 36);
+
+          ctxTxt.fillStyle = (i === 5) ? colorSignal : colorText;
+          ctxTxt.font = '600 15px ' + Deck.token('--font-sans');
+          ctxTxt.textAlign = 'center';
+          ctxTxt.fillText(tokens2[i], bx + 38, startY + 23);
+        }
+
+        // Contrast section: Order sensitivity vs MLP fixed slots
+        startY += 90;
+        ctxTxt.textAlign = 'left';
+        ctxTxt.fillStyle = colorSignal;
+        ctxTxt.font = '600 16px ' + Deck.token('--font-sans');
+        ctxTxt.fillText('词序对调对比：固定槽位难以对齐相同含义', startX, startY);
+
+        startY += 20;
+        const pairA = ['不', '算', '好'];
+        const pairB = ['好', '算', '不'];
+
+        for (let i = 0; i < 3; i++) {
+          const bx = startX + i * 66;
+          ctxTxt.fillStyle = '#FFFFFF';
+          ctxTxt.strokeStyle = colorStructure;
+          ctxTxt.lineWidth = 1.2;
+          ctxTxt.fillRect(bx, startY, 56, 32);
+          ctxTxt.strokeRect(bx, startY, 56, 32);
+          ctxTxt.fillStyle = colorText;
+          ctxTxt.font = '600 15px ' + Deck.token('--font-sans');
+          ctxTxt.textAlign = 'center';
+          ctxTxt.fillText(pairA[i], bx + 28, startY + 21);
+        }
+
+        ctxTxt.fillStyle = colorText;
+        ctxTxt.font = '600 16px ' + Deck.token('--font-mono');
+        ctxTxt.textAlign = 'center';
+        ctxTxt.fillText('≠', startX + 228, startY + 22);
+
+        for (let i = 0; i < 3; i++) {
+          const bx = startX + 260 + i * 66;
+          ctxTxt.fillStyle = '#FFFFFF';
+          ctxTxt.strokeStyle = colorStructure;
+          ctxTxt.lineWidth = 1.2;
+          ctxTxt.fillRect(bx, startY, 56, 32);
+          ctxTxt.strokeRect(bx, startY, 56, 32);
+          ctxTxt.fillStyle = colorText;
+          ctxTxt.font = '600 15px ' + Deck.token('--font-sans');
+          ctxTxt.textAlign = 'center';
+          ctxTxt.fillText(pairB[i], bx + 28, startY + 21);
+        }
+
+        startY += 64;
+        ctxTxt.textAlign = 'left';
+        ctxTxt.fillStyle = colorText;
+        ctxTxt.font = '15px ' + Deck.token('--font-sans');
+        ctxTxt.fillText('全连接槽位独立绑定绝对索引，无法自主完成时序状态递推。', startX, startY);
+
+        ctxTxt.restore();
+      }
+
+      Deck.autofit(cvImg, drawImagePanel);
+      Deck.autofit(cvTxt, drawTextPanel);
+
+      Deck.init({ index: 2, total: 32 });
+    })();
+  </script>
+</body>
+</html>

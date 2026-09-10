@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>单个神经元的几何意义：二维超平面分割与权重偏置调节</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 页面基础布局与网格 */
+    #stage {
+      display: grid;
+      grid-template-columns: 480px 1fr;
+      grid-template-rows: auto 1fr auto;
+      gap: 16px 36px;
+      padding: 32px 48px 24px 48px;
+      box-sizing: border-box;
+      position: relative;
+    }
+
+    /* 顶部标题区跨两栏 */
+    .header-region {
+      grid-column: 1 / 3;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2px solid var(--text);
+      padding-bottom: 12px;
+    }
+    .header-titles {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .topic-tag {
+      font-size: var(--fs-tick);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .header-meta {
+      text-align: right;
+      font-family: var(--font-mono);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 左侧控制与数学推导栏 */
+    .control-column {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .formula-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 12px 18px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    .formula-line {
+      font-family: var(--font-mono);
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+      letter-spacing: 0.02em;
+    }
+    .formula-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    /* 滑块控件组 */
+    .slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+    }
+    .param-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .param-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+    }
+    .param-name {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .param-badge {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+    }
+    .param-val {
+      font-family: var(--font-mono);
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    input[type="range"] {
+      width: 100%;
+      height: 24px;
+      margin: 0;
+      accent-color: var(--text);
+      cursor: pointer;
+    }
+
+    /* 快捷预设按钮 */
+    .preset-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .preset-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* 判别统计与几何结论 */
+    .metrics-panel {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 18px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 16px;
+    }
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .metric-title {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .metric-value {
+      font-family: var(--font-mono);
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .insight-card {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-dim);
+      border-left: 3px solid var(--accent);
+      padding: 8px 12px;
+      background: rgba(224, 62, 45, 0.04);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    }
+
+    /* 右侧几何视区 */
+    .plot-container {
+      position: relative;
+      background: #FFFFFF;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .plot-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-subtle);
+      font-size: var(--fs-sec);
+    }
+    .legend-box {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      color: var(--text-dim);
+    }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .canvas-wrapper {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+    canvas#plot-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 悬停/交互读数浮层 */
+    .probe-badge {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      background: rgba(28, 34, 32, 0.85);
+      color: #FFFFFF;
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+    }
+
+    /* 底部条 */
+    .footer-bar {
+      grid-column: 1 / 3;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+      line-height: 1.3;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="15">
+  <div id="stage">
+    <!-- 顶部标题 -->
+    <header class="header-region">
+      <div class="header-titles">
+        <span class="topic-tag">03 · 单个神经元几何机理</span>
+        <h1 class="nt-title">二维超平面分割：权重决定倾角，偏置控制平移</h1>
+      </div>
+      <div class="header-meta">
+        <div>判别方程：w₁x₁ + w₂x₂ + b = 0</div>
+        <div>法向量 n = (w₁, w₂)，截距 d = -b / ||w||</div>
+      </div>
+    </header>
+
+    <!-- 左侧操控区 -->
+    <section class="control-column">
+      <!-- 判别公式卡片 -->
+      <div class="formula-card">
+        <div class="formula-line" id="equation-display">1.20 · x₁ + 0.80 · x₂ + (-0.50) = 0</div>
+        <div class="formula-desc">
+          神经元在激活前的净输入为 <strong>z = wᵀx + b</strong>。令 z = 0 对应的直线即为决策边界：线上为阈值临界点，一侧 z &gt; 0 输出激活，另一侧 z &lt; 0 抑制。
+        </div>
+      </div>
+
+      <!-- 参数微调滑块 -->
+      <div class="slider-group">
+        <div class="param-row">
+          <div class="param-header">
+            <span class="param-name">
+              <span class="param-badge" style="background: var(--text);"></span>
+              权重 w₁ (控制 x₁ 贡献与法向 X 分量)
+            </span>
+            <span class="param-val" id="val-w1">1.20</span>
+          </div>
+          <input type="range" id="slider-w1" min="-3" max="3" step="0.05" value="1.20">
+        </div>
+
+        <div class="param-row">
+          <div class="param-header">
+            <span class="param-name">
+              <span class="param-badge" style="background: var(--text);"></span>
+              权重 w₂ (控制 x₂ 贡献与法向 Y 分量)
+            </span>
+            <span class="param-val" id="val-w2">0.80</span>
+          </div>
+          <input type="range" id="slider-w2" min="-3" max="3" step="0.05" value="0.80">
+        </div>
+
+        <div class="param-row">
+          <div class="param-header">
+            <span class="param-name">
+              <span class="param-badge" style="background: var(--accent);"></span>
+              偏置 b (平移直线，脱离原点约束)
+            </span>
+            <span class="param-val" id="val-b">-0.50</span>
+          </div>
+          <input type="range" id="slider-b" min="-5" max="5" step="0.1" value="-0.50">
+        </div>
+
+        <!-- 预设构型 -->
+        <div class="preset-row">
+          <span class="preset-label">典型构型:</span>
+          <button class="nt-btn" id="btn-preset-sep">完美线性可分</button>
+          <button class="nt-btn" id="btn-preset-vert">纯垂直分割</button>
+          <button class="nt-btn" id="btn-preset-zero">无偏置 (b=0 过原点)</button>
+          <button class="nt-btn" id="btn-reset">重置</button>
+        </div>
+      </div>
+
+      <!-- 实时量化指标 -->
+      <div class="metrics-panel">
+        <div class="metric-item">
+          <span class="metric-title">分类准确率 (Acc)</span>
+          <span class="metric-value" id="metric-acc" style="color: var(--class-a);">95.0%</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-title">原点距离 d = |b|/||w||</span>
+          <span class="metric-value" id="metric-dist">0.35</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-title">法向量倾角 θ</span>
+          <span class="metric-value" id="metric-angle">33.7°</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-title">误分类样本数</span>
+          <span class="metric-value" id="metric-err" style="color: var(--accent);">1 / 20</span>
+        </div>
+      </div>
+
+      <!-- 几何规律总结 -->
+      <div class="insight-card">
+        <strong>几何核心洞察：</strong>
+        权重向量 <strong>w = [w₁, w₂]ᵀ</strong> 是分离直线的<strong>正法向量</strong>，箭头指向激活区 (z &gt; 0)；改变 w 的比例改变直线的旋转斜率；偏置 <strong>b</strong> 决定直线距原点的垂直位移。没有偏置，超平面将被迫锁定在原点 (0,0)。
+      </div>
+    </section>
+
+    <!-- 右侧图解主视区 -->
+    <main class="plot-container">
+      <div class="plot-toolbar">
+        <span class="nt-section-title" style="font-size: 16px;">
+          二维输入特征空间 (x₁, x₂) 与决策流形
+        </span>
+        <div class="legend-box">
+          <div class="legend-item">
+            <span class="legend-dot" style="background: var(--class-a);"></span>
+            类别 A (目标标签 y = 1)
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot" style="background: var(--class-b);"></span>
+            类别 B (目标标签 y = 0)
+          </div>
+          <div class="legend-item">
+            <span style="display:inline-block; width:16px; height:2px; background: var(--text);"></span>
+            超平面决策界 (z=0)
+          </div>
+          <div class="legend-item">
+            <span style="display:inline-block; width:16px; height:2px; background: var(--accent);"></span>
+            法向量 w 梯度指向
+          </div>
+        </div>
+      </div>
+
+      <div class="canvas-wrapper">
+        <canvas id="plot-canvas"></canvas>
+        <div class="probe-badge" id="probe-info">
+          指针探测：x₁ = 0.00, x₂ = 0.00 | z = -0.50 | 预测激活: 0 (抑制)
+        </div>
+      </div>
+    </main>
+
+    <!-- 底部说明与导航 -->
+    <footer class="footer-bar">
+      <span>标尺范围：x₁, x₂ ∈ [-4.0, +4.0] · 阴影明暗度表征神经元净输入强度值 z = w₁x₁ + w₂x₂ + b</span>
+      <span>移动滑块观察半平面翻转、旋转与平移；在右图内滑动查看任意坐标的前向计算值</span>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们，上一讲我们学习了罗森布拉特的感知机模型：输入经过加权求和，再加上偏置，通过阈值决定是否激活。
+    今天我们在二维平面上彻底看清它的几何本质。
+    大家看右边的坐标系，横轴是特征 x₁，纵轴是特征 x₂。
+    神经元的净输入是 z 等于 w₁x₁ 加 w₂x₂ 加 b。
+    当 z 大于 0 时，神经元激活，判定为类别 A（青绿色区域）；当 z 小于 0 时，判定为类别 B（品红色区域）。
+    而 z = 0 正好是一条直线——在高维空间中，它就是所谓的“超平面”。
+    请注意两个关键几何事实：
+    第一，权重向量 w 构成了这条直线的法向量！红色的箭头垂直于决策直线，严格指向 z 大于 0 的正向分类区域。调节 w₁ 和 w₂，直线的倾斜角度随之旋转。
+    第二，偏置 b 控制着直线在法向量方向上的平移距离。如果偏置 b 等于 0，这条直线就无论如何都必须经过原点 (0,0)。在很多实际问题中，样本簇根本不在原点周围，若没有偏置 b，网络甚至连最简单的线性分布都无法分开。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 页面逻辑与直接操作几何模型
+    (function() {
+      // 1. 固定二分类样本点数据集（20 个样本，代表低年级易理解的典型分布）
+      const dataset = [
+        // 类别 A (y = 1): 分布在右上/中右侧
+        { x: 1.5,  y: 1.8,  cls: 1 },
+        { x: 2.2,  y: 0.8,  cls: 1 },
+        { x: 0.8,  y: 2.3,  cls: 1 },
+        { x: 2.8,  y: 1.9,  cls: 1 },
+        { x: 1.9,  y: 2.9,  cls: 1 },
+        { x: 3.2,  y: 0.2,  cls: 1 },
+        { x: 1.2,  y: 1.1,  cls: 1 },
+        { x: 2.5,  y: 3.1,  cls: 1 },
+        { x: 0.4,  y: 3.4,  cls: 1 },
+        { x: 3.0,  y: 2.4,  cls: 1 },
+
+        // 类别 B (y = 0): 分布在左下/中左侧
+        { x: -1.5, y: -1.2, cls: 0 },
+        { x: -2.1, y: -0.5, cls: 0 },
+        { x: -0.8, y: -2.0, cls: 0 },
+        { x: -2.6, y: -2.2, cls: 0 },
+        { x: -1.8, y: -2.8, cls: 0 },
+        { x: -3.0, y: -0.8, cls: 0 },
+        { x: -0.5, y: -1.2, cls: 0 },
+        { x: -2.2, y: -3.3, cls: 0 },
+        { x: -1.0, y: -0.2, cls: 0 },
+        { x: -3.2, y: -1.9, cls: 0 }
+      ];
+
+      // 坐标系配置
+      const X_MIN = -4.0, X_MAX = 4.0;
+      const Y_MIN = -4.0, Y_MAX = 4.0;
+
+      // 模型初始状态
+      let state = {
+        w1: 1.20,
+        w2: 0.80,
+        b: -0.50,
+        probe: { x: 0.0, y: 0.0 }
+      };
+
+      // DOM 元素引用
+      const sliderW1 = document.getElementById('slider-w1');
+      const sliderW2 = document.getElementById('slider-w2');
+      const sliderB  = document.getElementById('slider-b');
+
+      const valW1 = document.getElementById('val-w1');
+      const valW2 = document.getElementById('val-w2');
+      const valB  = document.getElementById('val-b');
+
+      const eqDisplay = document.getElementById('equation-display');
+      const metricAcc = document.getElementById('metric-acc');
+      const metricDist = document.getElementById('metric-dist');
+      const metricAngle = document.getElementById('metric-angle');
+      const metricErr = document.getElementById('metric-err');
+      const probeInfo = document.getElementById('probe-info');
+
+      const btnPresetSep  = document.getElementById('btn-preset-sep');
+      const btnPresetVert = document.getElementById('btn-preset-vert');
+      const btnPresetZero = document.getElementById('btn-preset-zero');
+      const btnReset      = document.getElementById('btn-reset');
+
+      const canvas = document.getElementById('plot-canvas');
+
+      // 更新界面数字与方程式
+      function updateDOM() {
+        sliderW1.value = state.w1;
+        sliderW2.value = state.w2;
+        sliderB.value  = state.b;
+
+        valW1.textContent = state.w1.toFixed(2);
+        valW2.textContent = state.w2.toFixed(2);
+        valB.textContent  = state.b.toFixed(2);
+
+        const signB = state.b >= 0 ? `+ ${state.b.toFixed(2)}` : `- ${Math.abs(state.b).toFixed(2)}`;
+        eqDisplay.textContent = `${state.w1.toFixed(2)} · x₁ + ${state.w2.toFixed(2)} · x₂ ${signB} = 0`;
+
+        // 计算几何指标
+        const norm = Math.hypot(state.w1, state.w2);
+        const dist = norm > 0.0001 ? Math.abs(state.b) / norm : 0;
+        let angleDeg = (Math.atan2(state.w2, state.w1) * 180 / Math.PI);
+        if (angleDeg < 0) angleDeg += 360;
+
+        // 计算样本正确率与错误样本
+        let errors = 0;
+        dataset.forEach(pt => {
+          const z = state.w1 * pt.x + state.w2 * pt.y + state.b;
+          const pred = z >= 0 ? 1 : 0;
+          if (pred !== pt.cls) {
+            errors++;
+          }
+        });
+        const acc = ((dataset.length - errors) / dataset.length * 100).toFixed(1);
+
+        metricAcc.textContent = `${acc}%`;
+        metricAcc.style.color = Number(acc) >= 90 ? 'var(--class-a)' : (Number(acc) >= 70 ? 'var(--text)' : 'var(--accent)');
+        metricDist.textContent = dist.toFixed(2);
+        metricAngle.textContent = `${angleDeg.toFixed(1)}°`;
+        metricErr.textContent = `${errors} / ${dataset.length}`;
+
+        // 探测点状态更新
+        const pz = state.w1 * state.probe.x + state.w2 * state.probe.y + state.b;
+        const pPred = pz >= 0 ? '1 (类别 A 激活)' : '0 (类别 B 抑制)';
+        probeInfo.textContent = `探测坐标: (${state.probe.x.toFixed(2)}, ${state.probe.y.toFixed(2)}) | 净输入 z = ${pz.toFixed(2)} | 输出: ${pPred}`;
+      }
+
+      // 坐标映射转换
+      function mathToCanvas(mx, my, w, h) {
+        const cx = ((mx - X_MIN) / (X_MAX - X_MIN)) * w;
+        const cy = h - ((my - Y_MIN) / (Y_MAX - Y_MIN)) * h;
+        return { x: cx, y: cy };
+      }
+
+      function canvasToMath(cx, cy, w, h) {
+        const mx = X_MIN + (cx / w) * (X_MAX - X_MIN);
+        const my = Y_MAX - (cy / h) * (Y_MAX - Y_MIN);
+        return { x: mx, y: my };
+      }
+
+      // 绘制主渲染循环
+      function draw(ctx, w, h) {
+        ctx.clearRect(0, 0, w, h);
+
+        const norm = Math.hypot(state.w1, state.w2);
+
+        // 1. 绘制半平面分类背景阴影 (用轻量格点采样绘制连续激活背景)
+        const cell = 12;
+        for (let py = 0; py < h; py += cell) {
+          for (let px = 0; px < w; px += cell) {
+            const m = canvasToMath(px + cell/2, py + cell/2, w, h);
+            const z = state.w1 * m.x + state.w2 * m.y + state.b;
+            if (z >= 0) {
+              const alpha = Math.min(0.14, 0.03 + Math.abs(z) * 0.02);
+              ctx.fillStyle = `rgba(30, 107, 101, ${alpha})`;
+            } else {
+              const alpha = Math.min(0.14, 0.03 + Math.abs(z) * 0.02);
+              ctx.fillStyle = `rgba(182, 77, 121, ${alpha})`;
+            }
+            ctx.fillRect(px, py, cell, cell);
+          }
+        }
+
+        // 2. 绘制坐标网格
+        ctx.strokeStyle = '#E0E5E1';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+
+        for (let x = -3; x <= 3; x++) {
+          if (x === 0) continue;
+          const p1 = mathToCanvas(x, Y_MIN, w, h);
+          const p2 = mathToCanvas(x, Y_MAX, w, h);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        }
+        for (let y = -3; y <= 3; y++) {
+          if (y === 0) continue;
+          const p1 = mathToCanvas(X_MIN, y, w, h);
+          const p2 = mathToCanvas(X_MAX, y, w, h);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+
+        // 3. 绘制主坐标轴 (x₁ 轴与 x₂ 轴)
+        const orig = mathToCanvas(0, 0, w, h);
+        ctx.strokeStyle = '#7D8882';
+        ctx.lineWidth = 1.5;
+
+        // X 轴
+        ctx.beginPath();
+        ctx.moveTo(0, orig.y);
+        ctx.lineTo(w, orig.y);
+        ctx.stroke();
+
+        // Y 轴
+        ctx.beginPath();
+        ctx.moveTo(orig.x, 0);
+        ctx.lineTo(orig.x, h);
+        ctx.stroke();
+
+        // 坐标轴标签与刻度数字
+        ctx.fillStyle = '#64706A';
+        ctx.font = '12px "NTF-inter", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+
+        for (let x = -3; x <= 3; x++) {
+          if (x === 0) continue;
+          const pt = mathToCanvas(x, 0, w, h);
+          ctx.fillText(x.toString(), pt.x, orig.y + 6);
+        }
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        for (let y = -3; y <= 3; y++) {
+          if (y === 0) continue;
+          const pt = mathToCanvas(0, y, w, h);
+          ctx.fillText(y.toString(), orig.x - 8, pt.y);
+        }
+
+        ctx.font = '600 14px "NTF-inter", sans-serif';
+        ctx.fillStyle = '#1C2220';
+        ctx.textAlign = 'right';
+        ctx.fillText('x₁ (特征 1)', w - 16, orig.y - 12);
+        ctx.textAlign = 'left';
+        ctx.fillText('x₂ (特征 2)', orig.x + 12, 18);
+
+        // 4. 绘制决策边界直线 (w₁x₁ + w₂x₂ + b = 0)
+        // 求直线与视窗四个边界的交点
+        const pts = [];
+        if (Math.abs(state.w2) > 0.0001) {
+          // x = X_MIN -> y = (-b - w1*X_MIN) / w2
+          const y1 = (-state.b - state.w1 * X_MIN) / state.w2;
+          if (y1 >= Y_MIN && y1 <= Y_MAX) pts.push({ x: X_MIN, y: y1 });
+
+          // x = X_MAX -> y = (-b - w1*X_MAX) / w2
+          const y2 = (-state.b - state.w1 * X_MAX) / state.w2;
+          if (y2 >= Y_MIN && y2 <= Y_MAX) pts.push({ x: X_MAX, y: y2 });
+        }
+        if (Math.abs(state.w1) > 0.0001) {
+          // y = Y_MIN -> x = (-b - w2*Y_MIN) / w1
+          const x1 = (-state.b - state.w2 * Y_MIN) / state.w1;
+          if (x1 >= X_MIN && x1 <= X_MAX) pts.push({ x: x1, y: Y_MIN });
+
+          // y = Y_MAX -> x = (-b - w2*Y_MAX) / w1
+          const x2 = (-state.b - state.w2 * Y_MAX) / state.w1;
+          if (x2 >= X_MIN && x2 <= X_MAX) pts.push({ x: x2, y: Y_MAX });
+        }
+
+        // 去重并绘制分割线
+        if (pts.length >= 2) {
+          const cp1 = mathToCanvas(pts[0].x, pts[0].y, w, h);
+          const cp2 = mathToCanvas(pts[1].x, pts[1].y, w, h);
+
+          ctx.strokeStyle = '#1C2220';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(cp1.x, cp1.y);
+          ctx.lineTo(cp2.x, cp2.y);
+          ctx.stroke();
+        }
+
+        // 5. 绘制法向量 w = (w₁, w₂) 箭头
+        // 从直线垂足点 P0 = (-b*w1/norm^2, -b*w2/norm^2) 出发
+        if (norm > 0.001) {
+          const p0x = (-state.b * state.w1) / (norm * norm);
+          const p0y = (-state.b * state.w2) / (norm * norm);
+
+          // 向量终点
+          const p1x = p0x + state.w1;
+          const p1y = p0y + state.w2;
+
+          const startPt = mathToCanvas(p0x, p0y, w, h);
+          const endPt = mathToCanvas(p1x, p1y, w, h);
+
+          // 原点到直线垂足线 (虚线标注偏置截距)
+          ctx.strokeStyle = '#E03E2D';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(orig.x, orig.y);
+          ctx.lineTo(startPt.x, startPt.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // 垂足点
+          ctx.fillStyle = '#E03E2D';
+          ctx.beginPath();
+          ctx.arc(startPt.x, startPt.y, 4, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 法向量箭头
+          ctx.strokeStyle = '#E03E2D';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(startPt.x, startPt.y);
+          ctx.lineTo(endPt.x, endPt.y);
+          ctx.stroke();
+
+          // 箭头尖端
+          const angle = Math.atan2(endPt.y - startPt.y, endPt.x - startPt.x);
+          const headLen = 12;
+          ctx.beginPath();
+          ctx.moveTo(endPt.x, endPt.y);
+          ctx.lineTo(endPt.x - headLen * Math.cos(angle - Math.PI / 6), endPt.y - headLen * Math.sin(angle - Math.PI / 6));
+          ctx.lineTo(endPt.x - headLen * Math.cos(angle + Math.PI / 6), endPt.y - headLen * Math.sin(angle + Math.PI / 6));
+          ctx.closePath();
+          ctx.fillStyle = '#E03E2D';
+          ctx.fill();
+
+          // 向量文字标注
+          ctx.font = '700 14px "NTF-inter", sans-serif';
+          ctx.fillStyle = '#E03E2D';
+          ctx.textAlign = 'left';
+          ctx.fillText(`w = (${state.w1.toFixed(1)}, ${state.w2.toFixed(1)})`, endPt.x + 8, endPt.y - 6);
+        }
+
+        // 6. 绘制样本数据点与分类对错
+        dataset.forEach((pt, idx) => {
+          const cpt = mathToCanvas(pt.x, pt.y, w, h);
+          const z = state.w1 * pt.x + state.w2 * pt.y + state.b;
+          const pred = z >= 0 ? 1 : 0;
+          const isCorrect = (pred === pt.cls);
+
+          // 样本圆点
+          ctx.beginPath();
+          ctx.arc(cpt.x, cpt.y, 6.5, 0, Math.PI * 2);
+          ctx.fillStyle = (pt.cls === 1) ? '#1E6B65' : '#B64D79';
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.stroke();
+
+          // 若分类错误，外层套一个高亮警示圈
+          if (!isCorrect) {
+            ctx.beginPath();
+            ctx.arc(cpt.x, cpt.y, 11, 0, Math.PI * 2);
+            ctx.strokeStyle = '#E03E2D';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([3, 2]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+        });
+
+        // 7. 绘制探测十字靶心
+        const prPt = mathToCanvas(state.probe.x, state.probe.y, w, h);
+        ctx.strokeStyle = '#1C2220';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(prPt.x, prPt.y, 9, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(prPt.x - 14, prPt.y);
+        ctx.lineTo(prPt.x + 14, prPt.y);
+        ctx.moveTo(prPt.x, prPt.y - 14);
+        ctx.lineTo(prPt.x, prPt.y + 14);
+        ctx.stroke();
+      }
+
+      // 重新绘制入口
+      let currentCtx = null;
+      function render() {
+        if (!currentCtx) return;
+        const rect = canvas.getBoundingClientRect();
+        draw(currentCtx, canvas.width, canvas.height);
+        updateDOM();
+      }
+
+      // 事件绑定
+      sliderW1.addEventListener('input', (e) => {
+        state.w1 = parseFloat(e.target.value);
+        render();
+      });
+      sliderW2.addEventListener('input', (e) => {
+        state.w2 = parseFloat(e.target.value);
+        render();
+      });
+      sliderB.addEventListener('input', (e) => {
+        state.b = parseFloat(e.target.value);
+        render();
+      });
+
+      // 预设模式
+      btnPresetSep.addEventListener('click', () => {
+        state.w1 = 1.25;
+        state.w2 = 0.95;
+        state.b  = -0.40;
+        render();
+      });
+      btnPresetVert.addEventListener('click', () => {
+        state.w1 = 2.00;
+        state.w2 = 0.00;
+        state.b  = 0.00;
+        render();
+      });
+      btnPresetZero.addEventListener('click', () => {
+        state.b = 0.00;
+        render();
+      });
+      btnReset.addEventListener('click', () => {
+        state.w1 = 1.20;
+        state.w2 = 0.80;
+        state.b  = -0.50;
+        state.probe = { x: 0.0, y: 0.0 };
+        render();
+      });
+
+      // 画布交互探测
+      function handleCanvasPointer(e) {
+        const pt = Deck.pt(canvas, e);
+        const mathCoord = canvasToMath(pt.x, pt.y, canvas.width, canvas.height);
+        state.probe.x = Deck.clamp(mathCoord.x, X_MIN, X_MAX);
+        state.probe.y = Deck.clamp(mathCoord.y, Y_MIN, Y_MAX);
+        render();
+      }
+
+      canvas.addEventListener('pointerdown', handleCanvasPointer);
+      canvas.addEventListener('pointermove', (e) => {
+        if (e.buttons > 0 || e.pointerType === 'mouse') {
+          handleCanvasPointer(e);
+        }
+      });
+
+      // 初始化底盘适配与画布自适应
+      Deck.init({ index: 3, total: 15 });
+      Deck.autofit(canvas, (ctx) => {
+        currentCtx = ctx;
+        render();
+      });
+
+      // 首次加载立即刷新
+      updateDOM();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>用因果图定位识别威胁：混杂、选择、同时性与坏控制变量</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F7;
+      --surface: #FFFFFF;
+      --soft: #E3ECEF;
+      --text: #17272D;
+      --muted: #52666E;
+      --observed: #245A74;
+      --cause: #B13F2A;
+      --uncertain: #7A5B12;
+      --supported: #2D694C;
+      --selected: #D6E8EE;
+      --focus: #B13F2A;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: 44px 56px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* 页面头部 */
+    .page-header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.15;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+    .page-lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    /* 威胁切换导航条 */
+    .threat-nav {
+      display: flex;
+      gap: 12px;
+      background: var(--surface);
+      padding: 6px;
+      border-radius: var(--r-md);
+      border: 1px solid rgba(82, 102, 110, 0.2);
+    }
+    .nav-btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: var(--r-sm);
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--fast) var(--ease);
+      font-family: inherit;
+    }
+    .nav-btn:hover {
+      background: var(--soft);
+      color: var(--text);
+    }
+    .nav-btn.active {
+      background: var(--selected);
+      color: var(--observed);
+      border-color: rgba(36, 90, 116, 0.35);
+    }
+    .nav-tag {
+      font-size: var(--fs-tick);
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 700;
+      background: rgba(36, 90, 116, 0.12);
+      color: var(--observed);
+    }
+    .nav-btn.active .nav-tag {
+      background: var(--observed);
+      color: #FFF;
+    }
+
+    /* 主工作台：左图右解 */
+    .workbench {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 860px 1fr;
+      gap: 22px;
+    }
+
+    /* 左侧主图区 */
+    .dag-stage {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid rgba(82, 102, 110, 0.2);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+    .stage-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 22px;
+      border-bottom: 1px solid rgba(82, 102, 110, 0.12);
+      background: #FAFCFD;
+    }
+    .stage-topbar-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .stage-legend {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-tick);
+      color: var(--text);
+      align-items: center;
+    }
+    .stage-legend .item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot-legend {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .canvas-container {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+    #dag-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧机制与审稿人问诊区 */
+    .audit-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid rgba(82, 102, 110, 0.2);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card-label {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--observed);
+    }
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+    .card-body {
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+      color: var(--text);
+      margin: 0;
+    }
+    .card-body strong {
+      color: var(--text);
+    }
+
+    /* 路径流向剖析 */
+    .path-flow-box {
+      background: var(--soft);
+      border-radius: var(--r-sm);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .path-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+    }
+    .path-badge {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .path-badge.target {
+      background: var(--observed);
+      color: #fff;
+    }
+    .path-badge.bias {
+      background: var(--cause);
+      color: #fff;
+    }
+    .path-nodes {
+      font-weight: 700;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+    .path-status {
+      margin-left: auto;
+      font-size: var(--fs-tick);
+      font-weight: 600;
+    }
+
+    /* 审稿问询提示盒：符合禁用视觉清单，使用整圈细描边 */
+    .review-box {
+      border: 1px solid rgba(177, 63, 42, 0.35);
+      background: #FDF6F4;
+      padding: 14px 18px;
+      border-radius: var(--r-md);
+    }
+    .review-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--cause);
+      margin-bottom: 4px;
+    }
+    .review-q {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+    }
+
+    /* 交互切换按键 */
+    .step-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: auto;
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid rgba(82, 102, 110, 0.2);
+      padding: 12px 18px;
+    }
+    .step-btn {
+      padding: 8px 16px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      border-radius: var(--r-sm);
+      border: 1px solid rgba(82, 102, 110, 0.3);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--fast) var(--ease);
+      font-family: inherit;
+    }
+    .step-btn:hover:not(:disabled) {
+      background: var(--soft);
+    }
+    .step-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .step-indicator {
+      font-size: var(--fs-label);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* SVG 内部节点与连线样式 */
+    .node-group {
+      cursor: pointer;
+    }
+    .node-circle {
+      transition: fill var(--fast) var(--ease), stroke var(--fast) var(--ease);
+    }
+    .node-title {
+      font-size: 16px;
+      font-weight: 700;
+      text-anchor: middle;
+      dominant-baseline: central;
+      font-family: "Noto Sans SC", system-ui, sans-serif;
+    }
+    .node-desc {
+      font-size: 13px;
+      fill: var(--muted);
+      text-anchor: middle;
+      font-family: "Noto Sans SC", system-ui, sans-serif;
+    }
+    .arrow-line {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke var(--move) var(--ease), stroke-width var(--move) var(--ease), stroke-dasharray var(--move) var(--ease);
+    }
+  </style>
+</head>
+<body data-page="07" data-total="24">
+  <div id="stage">
+    <!-- 头部导引 -->
+    <header class="page-header min0">
+      <h1 class="page-title">用有向无环图（DAG）定位四类核心识别威胁</h1>
+      <p class="page-lead">从因果机制审视回归方程：并非控制越多越好。观察变量间的流动关系，看清偏误产生的拓扑根源。</p>
+    </header>
+
+    <!-- 顶部四种模式导航条 -->
+    <nav class="threat-nav min0" aria-label="威胁类型切换">
+      <button class="nav-btn active" data-threat="0" id="threat-0">
+        <span class="nav-tag">威胁 1</span>
+        <span>混杂偏误 (Confounding)</span>
+      </button>
+      <button class="nav-btn" data-threat="1" id="threat-1">
+        <span class="nav-tag">威胁 2</span>
+        <span>选择偏误 (Selection)</span>
+      </button>
+      <button class="nav-btn" data-threat="2" id="threat-2">
+        <span class="nav-tag">威胁 3</span>
+        <span>同时性 (Simultaneity)</span>
+      </button>
+      <button class="nav-btn" data-threat="3" id="threat-3">
+        <span class="nav-tag">威胁 4</span>
+        <span>坏控制变量 (Bad Control)</span>
+      </button>
+    </nav>
+
+    <!-- 主工作区 -->
+    <main class="workbench min0">
+      <!-- 左：DAG 图解展示板 -->
+      <section class="dag-stage min0">
+        <div class="stage-topbar">
+          <div class="stage-topbar-title" id="dag-topbar-title">后门路径与混杂因素 (Fork: D ← U → Y)</div>
+          <div class="stage-legend">
+            <div class="item">
+              <span class="dot-legend" style="background: var(--cause);"></span>
+              <span>处理 D / 威胁</span>
+            </div>
+            <div class="item">
+              <span class="dot-legend" style="background: var(--observed);"></span>
+              <span>结果 Y / 目标因果</span>
+            </div>
+            <div class="item">
+              <span class="dot-legend" style="background: var(--uncertain);"></span>
+              <span>控制或干预节点</span>
+            </div>
+          </div>
+        </div>
+        <div class="canvas-container">
+          <svg id="dag-svg" viewBox="0 0 860 470">
+            <defs>
+              <!-- 目标箭头（青蓝） -->
+              <marker id="arrow-target" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M1,1 L7,4 L1,7 Z" fill="#245A74" />
+              </marker>
+              <!-- 威胁箭头（红色） -->
+              <marker id="arrow-threat" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M1,1 L7,4 L1,7 Z" fill="#B13F2A" />
+              </marker>
+              <!-- 中性灰色箭头 -->
+              <marker id="arrow-muted" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M1,1 L7,4 L1,7 Z" fill="#788E96" />
+              </marker>
+              <!-- 虚线阻塞/虚线箭头 -->
+              <marker id="arrow-blocked" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M1,1 L7,4 L1,7 Z" fill="#2D694C" />
+              </marker>
+            </defs>
+            <!-- 动态图层由 JS 生成 -->
+            <g id="dag-edges"></g>
+            <g id="dag-nodes"></g>
+            <g id="dag-annotations"></g>
+          </svg>
+        </div>
+      </section>
+
+      <!-- 右：诊断卡片与审稿人问卷 -->
+      <aside class="audit-panel min0">
+        <!-- 机制说明卡 -->
+        <article class="card">
+          <div class="card-label" id="panel-badge">DAG 拓扑特征</div>
+          <h2 class="card-title" id="panel-title">共同原因形成后门路径，导致虚假相关</h2>
+          <p class="card-body" id="panel-desc">
+            当未观测变量 <strong>U</strong> 同时影响处理变量 <strong>D</strong> 与结果 <strong>Y</strong> 时，在 D 与 Y 之间产生了一条非因果关联路径 <code>D ← U → Y</code>。若不阻断 U，回归估计量将混杂真实效应与 U 的作用。
+          </p>
+
+          <!-- 路径流向拆解 -->
+          <div class="path-flow-box" id="panel-paths">
+            <!-- 动态注入路径状态 -->
+          </div>
+        </article>
+
+        <!-- 审稿人质询卡片 -->
+        <article class="card review-box">
+          <div class="review-title" id="review-title">读论文时的审查质询（Referee Checklist）</div>
+          <p class="review-q" id="review-question">
+            “文章是否声称控制了核心变量就解决了内生性？是否存在既决定个体是否接受处理、又直接决定产出的未观测能力/偏好？”
+          </p>
+        </article>
+
+        <!-- 底部快速步进器 -->
+        <div class="step-controls">
+          <button class="step-btn" id="btn-prev" disabled>← 上一威胁</button>
+          <span class="step-indicator" id="step-indicator">1 / 4</span>
+          <button class="step-btn" id="btn-next">下一威胁 →</button>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 4 种核心识别威胁配置
+      const THREATS = [
+        {
+          id: "confounding",
+          title: "混杂偏误 (Confounding)",
+          topbar: "典型叉结构 (Fork): D ← U → Y 打开后门路径",
+          badge: "拓扑特征：后门路径 (Backdoor Path)",
+          cardTitle: "共同原因制造虚假关联，高估或低估因果效应",
+          desc: "当未观测因素 <strong>U</strong>（如天生能力、经营野心、地理禀赋）同时影响是否进入处理 <strong>D</strong> 与最终结果 <strong>Y</strong> 时，后门路径 <code>D ← U → Y</code> 处于开启状态。普通 OLS 回归会将 U 带来的共同变异误归为 D 的因果产出。",
+          paths: [
+            { type: "target", text: "D → Y", note: "真实因果路径（目标效应）" },
+            { type: "bias", text: "D ← U → Y", note: "开启的后门伪相关路径（必须阻断）" }
+          ],
+          reviewTitle: "读论文时的审稿实质审查：",
+          reviewQuestion: "论文是否列出了长长的控制变量表，就断言‘条件独立假设成立’？到底还有哪些同时影响处理与结果的遗漏变量无法被现有数据观测？",
+          nodes: [
+            { id: "U", label: "U: 未观测混杂因素", sub: "如：天生能力 / 风险偏好", x: 430, y: 100, role: "threat" },
+            { id: "D", label: "D: 处理变量", sub: "接受培训 / 获批贷款", x: 230, y: 310, role: "cause" },
+            { id: "Y", label: "Y: 结果变量", sub: "薪资水平 / 企业利润", x: 630, y: 310, role: "observed" }
+          ],
+          edges: [
+            { from: "U", to: "D", style: "threat", marker: "arrow-threat", label: "选择进入" },
+            { from: "U", to: "Y", style: "threat", marker: "arrow-threat", label: "直接增益" },
+            { from: "D", to: "Y", style: "target", marker: "arrow-target", label: "真实因果 β" }
+          ],
+          annotations: [
+            { text: "非因果后门流动: D ← U → Y", x: 430, y: 220, color: "var(--cause)" }
+          ]
+        },
+        {
+          id: "selection",
+          title: "选择偏误 (Selection / Collider Bias)",
+          topbar: "对冲结构 (Collider): 控制或根据共同结果筛选导致 D 与 U 人为相关",
+          badge: "拓扑特征：对撞变量 (Collider: D → S ← U)",
+          cardTitle: "控制了对撞变量或仅在样本子集中回归，打开虚假通路",
+          desc: "当 <strong>S</strong> 是处理 <strong>D</strong> 与外生扰动 <strong>U</strong> 的共同结果时（例如：<code>D → S ← U</code>），S 是一个天然闭合的对撞节点。一旦我们在样本中只筛选 S=1（如只看录用员工、幸存企业），或在回归中把 S 当作控制变量，就会<strong>人为打开</strong> D 与 U 之间的非因果关联通道，导致严重的样本选择偏误（Berkson 悖论）。",
+          paths: [
+            { type: "target", text: "D → Y", note: "真实因果效应" },
+            { type: "bias", text: "D → [S] ← U → Y", note: "对撞节点 S 被控制/筛选后通道反常打开！" }
+          ],
+          reviewTitle: "读论文时的审稿实质审查：",
+          reviewQuestion: "样本进入分析的标准是什么？作者是否无意中只分析了‘成功获批上市的公司’或‘毕业并就业的学生’？这种条件化是否把本来无关的随机冲击与处理变量强行绑定？",
+          nodes: [
+            { id: "D", label: "D: 处理变量", sub: "如：名校文凭", x: 210, y: 150, role: "cause" },
+            { id: "U", label: "U: 未观测特质", sub: "如：人际情商/家庭背景", x: 210, y: 350, role: "threat" },
+            { id: "S", label: "S: 筛选/对撞点 (已控制)", sub: "被大厂录用 (S=1)", x: 440, y: 250, role: "collider" },
+            { id: "Y", label: "Y: 产出变量", sub: "晋升速度 / 年薪", x: 670, y: 250, role: "observed" }
+          ],
+          edges: [
+            { from: "D", to: "S", style: "threat", marker: "arrow-threat", label: "提高录用率" },
+            { from: "U", to: "S", style: "threat", marker: "arrow-threat", label: "提高录用率" },
+            { from: "D", to: "Y", style: "target", marker: "arrow-target", label: "目标效应" },
+            { from: "U", to: "Y", style: "threat", marker: "arrow-threat", label: "直接影响" }
+          ],
+          annotations: [
+            { text: "在 S=1 样本中：文凭 D 与情商 U 产生伪负相关！", x: 440, y: 395, color: "var(--cause)" }
+          ]
+        },
+        {
+          id: "simultaneity",
+          title: "同时性与双向因果 (Simultaneity)",
+          topbar: "双向环路 (Feedback Loop): D 与 Y 在同一均衡中互相决定",
+          badge: "拓扑特征：因果环路 (Feedback / Endogenous Loop)",
+          cardTitle: "变量在均衡中联立互推，无法通过截面回归识别单向冲击",
+          desc: "在宏观与微观经济均衡中，价格与需求、警察数量与犯罪率、制度与经济增长往往处于<strong>双向决定环路</strong>中。由于 <code>D → Y</code> 与 <code>Y → D</code> 同时发生，Y 的未观测扰动 ε 直接通过反向通道污染 D，使得协方差 Cov(D, ε) ≠ 0，单纯的静态 OLS 彻底失效。",
+          paths: [
+            { type: "target", text: "D → Y", note: "想要测度的单向因果响应 (例如：增派警力对犯罪的抑制)" },
+            { type: "bias", text: "Y → D", note: "反向反馈通道 (犯罪率高的地方政府往往增派更多警力)" }
+          ],
+          reviewTitle: "读论文时的审稿实质审查：",
+          reviewQuestion: "作者如何切断反向因果的闭环？是依赖真正的外生政策冲击（如突发财政拨款）、严格的前定滞后变量，还是具备外生排他性约束的工具变量（IV）？",
+          nodes: [
+            { id: "D", label: "D: 处理变量 (警力投入)", sub: "由地方治安与预算共同决定", x: 280, y: 230, role: "cause" },
+            { id: "Y", label: "Y: 结果变量 (犯罪发生率)", sub: "受警力威慑，反向拉动警力", x: 580, y: 230, role: "observed" },
+            { id: "e", label: "ε: 未观测扰动", sub: "如：流动人口激增 / 黑市变动", x: 580, y: 80, role: "threat" }
+          ],
+          edges: [
+            { from: "D", to: "Y", curve: -35, style: "target", marker: "arrow-target", label: "目标因果: 警力威慑效应 (-)" },
+            { from: "Y", to: "D", curve: -35, style: "threat", marker: "arrow-threat", label: "反向激励: 警力增援 (+)" },
+            { from: "e", to: "Y", style: "threat", marker: "arrow-threat", label: "直接冲击" }
+          ],
+          annotations: [
+            { text: "双向环路使得扰动 ε 沿 Y → D 倒灌，破坏正交假设", x: 430, y: 390, color: "var(--cause)" }
+          ]
+        },
+        {
+          id: "bad_control",
+          title: "坏控制变量 (Bad Control)",
+          topbar: "中介变量与结果衍生变量 (Mediator / Outcome Proxy): 控制后吃掉因果效应",
+          badge: "拓扑特征：链式过度控制 (Overcontrolling: D → M → Y)",
+          cardTitle: "并非控制得越多越严密；控制中介或事后结果会吃掉核心效应",
+          desc: "许多初学者误以为‘控制变量列表越长越好’。如果变量 <strong>M</strong> 处于因果传导链条之中（<code>D → M → Y</code>），控制 M 就会把 D 借助该机制产生的所有因果效应‘清洗吸收’，导致估计系数缩水（Over-controlling）；若 M 自身还受未观测偏误影响，更会重新引入对撞偏误。",
+          paths: [
+            { type: "target", text: "D → M → Y", note: "整体因果机制链（控制 M 后全效应被切断）" },
+            { type: "bias", text: "D ↛ [M] ↛ Y", note: "直接效应被扭曲，传递通道人为归零" }
+          ],
+          reviewTitle: "读论文时的审稿实质审查：",
+          reviewQuestion: "模型里控制的变量中，是否有在‘处理发生之后才决定’的中间变量（如评定大学教育对工资的影响时，控制了‘毕业后从事的行业或职位’）？",
+          nodes: [
+            { id: "D", label: "D: 大学教育", sub: "处理变量 (前置)", x: 180, y: 240, role: "cause" },
+            { id: "M", label: "M: 白领行业准入", sub: "中介变量 (Bad Control: 被控制)", x: 430, y: 240, role: "collider" },
+            { id: "Y", label: "Y: 终身薪酬", sub: "最终产出结果", x: 680, y: 240, role: "observed" }
+          ],
+          edges: [
+            { from: "D", to: "M", style: "target", marker: "arrow-target", label: "学历提升职业准入" },
+            { from: "M", to: "Y", style: "target", marker: "arrow-target", label: "行业溢价" },
+            { from: "D", to: "Y", curve: -80, style: "neutral", marker: "arrow-muted", label: "其他残留直接通道" }
+          ],
+          annotations: [
+            { text: "错误在控制变量中加入 M，教育促进收入的最主要路径被强制吸收！", x: 430, y: 385, color: "var(--cause)" }
+          ]
+        }
+      ];
+
+      let currentIndex = 0;
+
+      const navBtns = document.querySelectorAll(".nav-btn");
+      const btnPrev = document.getElementById("btn-prev");
+      const btnNext = document.getElementById("btn-next");
+      const stepIndicator = document.getElementById("step-indicator");
+
+      const topbarTitle = document.getElementById("dag-topbar-title");
+      const panelBadge = document.getElementById("panel-badge");
+      const panelTitle = document.getElementById("panel-title");
+      const panelDesc = document.getElementById("panel-desc");
+      const panelPaths = document.getElementById("panel-paths");
+      const reviewQuestion = document.getElementById("review-question");
+
+      const edgesGroup = document.getElementById("dag-edges");
+      const nodesGroup = document.getElementById("dag-nodes");
+      const annoGroup = document.getElementById("dag-annotations");
+
+      function getRoleColor(role) {
+        if (role === "cause") return { fill: "#FDF4F2", stroke: "#B13F2A", text: "#B13F2A" };
+        if (role === "observed") return { fill: "#F0F6F9", stroke: "#245A74", text: "#245A74" };
+        if (role === "threat") return { fill: "#FAF4E8", stroke: "#7A5B12", text: "#7A5B12" };
+        if (role === "collider") return { fill: "#EAEFF2", stroke: "#B13F2A", text: "#B13F2A", dashed: true };
+        return { fill: "#FFFFFF", stroke: "#788E96", text: "#17272D" };
+      }
+
+      function renderThreat(index) {
+        currentIndex = index;
+        const data = THREATS[index];
+
+        // 导航按钮状态更新
+        navBtns.forEach((btn, i) => {
+          btn.classList.toggle("active", i === index);
+        });
+
+        // 步进控制状态
+        btnPrev.disabled = index === 0;
+        btnNext.disabled = index === THREATS.length - 1;
+        stepIndicator.textContent = (index + 1) + " / " + THREATS.length;
+
+        // 文字卡片渲染
+        topbarTitle.textContent = data.topbar;
+        panelBadge.textContent = data.badge;
+        panelTitle.textContent = data.cardTitle;
+        panelDesc.innerHTML = data.desc;
+        reviewQuestion.textContent = data.reviewQuestion;
+
+        // 路径流向
+        panelPaths.innerHTML = data.paths.map(p => `
+          <div class="path-row">
+            <span class="path-badge ${p.type === 'target' ? 'target' : 'bias'}">${p.type === 'target' ? '目标' : '偏误'}</span>
+            <span class="path-nodes">${p.text}</span>
+            <span class="path-status" style="color: ${p.type === 'target' ? 'var(--observed)' : 'var(--cause)'};">${p.note}</span>
+          </div>
+        `).join("");
+
+        // 清空 SVG
+        edgesGroup.innerHTML = "";
+        nodesGroup.innerHTML = "";
+        annoGroup.innerHTML = "";
+
+        const nodeMap = {};
+        data.nodes.forEach(n => { nodeMap[n.id] = n; });
+
+        // 渲染边
+        data.edges.forEach(e => {
+          const fromNode = nodeMap[e.from];
+          const toNode = nodeMap[e.to];
+          if (!fromNode || !toNode) return;
+
+          const dx = toNode.x - fromNode.x;
+          const dy = toNode.y - fromNode.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          const radius = 48; // 节点半径防遮挡
+
+          // 缩进起点与终点到圆圈外围
+          const startX = fromNode.x + (dx / dist) * radius;
+          const startY = fromNode.y + (dy / dist) * radius;
+          const endX = toNode.x - (dx / dist) * radius;
+          const endY = toNode.y - (dy / dist) * radius;
+
+          const pathEl = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          pathEl.classList.add("arrow-line");
+
+          let strokeColor = "#788E96";
+          let strokeWidth = "2.2";
+          let markerId = e.marker || "arrow-muted";
+
+          if (e.style === "target") {
+            strokeColor = "#245A74";
+            strokeWidth = "3.2";
+          } else if (e.style === "threat") {
+            strokeColor = "#B13F2A";
+            strokeWidth = "2.8";
+          } else if (e.style === "neutral") {
+            strokeColor = "#8C9EA4";
+            strokeWidth = "2";
+          }
+
+          let pathD = "";
+          let labelX = (startX + endX) / 2;
+          let labelY = (startY + endY) / 2;
+
+          if (e.curve) {
+            // 弧形连线
+            const midX = (startX + endX) / 2;
+            const midY = (startY + endY) / 2;
+            const perpX = -(endY - startY) / dist;
+            const perpY = (endX - startX) / dist;
+            const ctrlX = midX + perpX * e.curve;
+            const ctrlY = midY + perpY * e.curve;
+            pathD = `M ${startX} ${startY} Q ${ctrlX} ${ctrlY} ${endX} ${endY}`;
+            labelX = ctrlX * 0.5 + midX * 0.5;
+            labelY = ctrlY * 0.5 + midY * 0.5 + (e.curve > 0 ? 15 : -12);
+          } else {
+            pathD = `M ${startX} ${startY} L ${endX} ${endY}`;
+            labelY -= 12;
+          }
+
+          pathEl.setAttribute("d", pathD);
+          pathEl.setAttribute("stroke", strokeColor);
+          pathEl.setAttribute("stroke-width", strokeWidth);
+          pathEl.setAttribute("marker-end", `url(#${markerId})`);
+
+          if (e.dashed) {
+            pathEl.setAttribute("stroke-dasharray", "6 4");
+          }
+
+          edgesGroup.appendChild(pathEl);
+
+          // 连线标签文字
+          if (e.label) {
+            const textEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            textEl.setAttribute("x", labelX);
+            textEl.setAttribute("y", labelY);
+            textEl.setAttribute("text-anchor", "middle");
+            textEl.setAttribute("dominant-baseline", "central");
+            textEl.setAttribute("font-size", "13");
+            textEl.setAttribute("font-weight", "600");
+            textEl.setAttribute("fill", strokeColor);
+            textEl.style.fontFamily = "var(--font-sans)";
+            textEl.textContent = e.label;
+            edgesGroup.appendChild(textEl);
+          }
+        });
+
+        // 渲染节点
+        data.nodes.forEach(n => {
+          const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          g.classList.add("node-group");
+          g.setAttribute("transform", `translate(${n.x}, ${n.y})`);
+
+          const roleConf = getRoleColor(n.role);
+
+          // 外边框/背景圆形或圆角矩形
+          const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          const width = 190;
+          const height = 68;
+          rect.setAttribute("x", -width / 2);
+          rect.setAttribute("y", -height / 2);
+          rect.setAttribute("width", width);
+          rect.setAttribute("height", height);
+          rect.setAttribute("rx", "10");
+          rect.setAttribute("ry", "10");
+          rect.setAttribute("fill", roleConf.fill);
+          rect.setAttribute("stroke", roleConf.stroke);
+          rect.setAttribute("stroke-width", n.role === "collider" ? "2.5" : "2");
+          if (roleConf.dashed) {
+            rect.setAttribute("stroke-dasharray", "6 4");
+          }
+          rect.classList.add("node-circle");
+          g.appendChild(rect);
+
+          // 节点主标题
+          const title = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          title.setAttribute("x", 0);
+          title.setAttribute("y", -8);
+          title.setAttribute("fill", roleConf.text);
+          title.classList.add("node-title");
+          title.textContent = n.label;
+          g.appendChild(title);
+
+          // 节点副标题解释
+          const desc = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          desc.setAttribute("x", 0);
+          desc.setAttribute("y", 16);
+          desc.classList.add("node-desc");
+          desc.textContent = n.sub;
+          g.appendChild(desc);
+
+          nodesGroup.appendChild(g);
+        });
+
+        // 渲染注释文字
+        if (data.annotations) {
+          data.annotations.forEach(anno => {
+            const textEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            textEl.setAttribute("x", anno.x);
+            textEl.setAttribute("y", anno.y);
+            textEl.setAttribute("text-anchor", "middle");
+            textEl.setAttribute("dominant-baseline", "central");
+            textEl.setAttribute("font-size", "15");
+            textEl.setAttribute("font-weight", "700");
+            textEl.setAttribute("fill", anno.color || "var(--text)");
+            textEl.style.fontFamily = "var(--font-sans)";
+            textEl.textContent = anno.text;
+
+            annoGroup.appendChild(textEl);
+          });
+        }
+      }
+
+      // 绑定导航与步进事件
+      navBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          const idx = parseInt(btn.getAttribute("data-threat"), 10);
+          renderThreat(idx);
+        });
+      });
+
+      btnPrev.addEventListener("click", () => {
+        if (currentIndex > 0) renderThreat(currentIndex - 1);
+      });
+
+      btnNext.addEventListener("click", () => {
+        if (currentIndex < THREATS.length - 1) renderThreat(currentIndex + 1);
+      });
+
+      // 初始化底盘与首屏渲染
+      if (window.Deck) {
+        Deck.init({ index: 7, total: 24 });
+      }
+      renderThreat(0);
+
+      window.__NOTALE_PAGE_STATE__ = {
+        getThreat: () => currentIndex,
+        setThreat: (i) => renderThreat(i)
+      };
+    })();
+  </script>
+</body>
+</html>

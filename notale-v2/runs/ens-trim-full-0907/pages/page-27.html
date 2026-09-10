@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      font-family: var(--font-sans);
+      box-sizing: border-box;
+      position: relative;
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    /* 标题区 */
+    header {
+      position: absolute;
+      top: 36px;
+      left: 56px;
+      right: 56px;
+    }
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .subtitle {
+      margin-top: 8px;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 主架构画布 / 容器 */
+    .stack-flow {
+      position: absolute;
+      top: 140px;
+      left: 56px;
+      width: 1488px;
+      height: 700px;
+    }
+
+    svg.diagram {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+
+    /* 阶段列标注 */
+    .col-header {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      font-weight: 600;
+      fill: var(--text);
+    }
+    .col-sub {
+      font-size: var(--fs-sec);
+      fill: var(--muted);
+    }
+
+    /* 连线与流动线 */
+    .flow-wire {
+      stroke: var(--model);
+      stroke-width: var(--stroke);
+      fill: none;
+      opacity: 0.35;
+      transition: opacity var(--motion-step) var(--ease-out), stroke-width var(--motion-step) var(--ease-out);
+    }
+    .flow-wire.active {
+      opacity: 0.95;
+      stroke-width: var(--stroke);
+    }
+    .flow-wire.converge {
+      stroke: var(--model);
+      stroke-width: var(--stroke-strong);
+      opacity: 1;
+    }
+
+    /* 节点样式：蓝图式直切无多余底色 */
+    .node-rect {
+      stroke: var(--rule);
+      stroke-width: 1.5px;
+      fill: #F3F7F9;
+      rx: 3px;
+    }
+    .node-rect.model-box {
+      stroke: var(--model);
+      stroke-width: 2px;
+      fill: #DEE8EE;
+    }
+    .node-rect.meta-box {
+      stroke: var(--model);
+      stroke-width: 2.5px;
+      fill: #D3E2EB;
+    }
+    .node-rect.out-box {
+      stroke: var(--text);
+      stroke-width: 2px;
+      fill: #E8EEF1;
+    }
+    .node-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      font-weight: 600;
+      fill: var(--text);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .node-desc {
+      font-size: var(--fs-sec);
+      fill: var(--muted);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    /* 特征矩阵微缩呈现 */
+    .matrix-box {
+      stroke: var(--rule);
+      stroke-width: 1.5px;
+      fill: #EBF1F4;
+    }
+    .matrix-col {
+      stroke: var(--model);
+      stroke-width: 1.5px;
+      stroke-dasharray: 2 2;
+    }
+    .matrix-header {
+      font-size: var(--fs-label);
+      font-family: var(--font-display);
+      fill: var(--model);
+      font-weight: 600;
+      text-anchor: middle;
+    }
+    .matrix-cell {
+      font-size: var(--fs-tick);
+      fill: var(--muted);
+      font-family: monospace;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    /* 锐利强调指示 */
+    .focus-badge {
+      fill: var(--focus);
+    }
+    .focus-text {
+      fill: #FFFFFF;
+      font-size: 13px;
+      font-weight: 600;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    /* 阶段过渡控制动画：分步 */
+    [data-step="1"] {
+      opacity: 0;
+      transition: opacity var(--motion-step) var(--ease-out), transform var(--motion-step) var(--ease-out);
+      transform: translateY(6px);
+    }
+    body[data-page-step="1"] [data-step="1"],
+    body[data-page-step="2"] [data-step="1"],
+    body[data-page-step="3"] [data-step="1"] {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    [data-step="2"] {
+      opacity: 0;
+      transition: opacity var(--motion-step) var(--ease-out), transform var(--motion-step) var(--ease-out);
+      transform: translateY(6px);
+    }
+    body[data-page-step="2"] [data-step="2"],
+    body[data-page-step="3"] [data-step="2"] {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    [data-step="3"] {
+      opacity: 0;
+      transition: opacity var(--motion-step) var(--ease-out), transform var(--motion-step) var(--ease-out);
+      transform: translateY(6px);
+    }
+    body[data-page-step="3"] [data-step="3"] {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body data-page="27" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>Stacking 两层架构：从基模型预测到元学习决策</h1>
+      <div class="subtitle">第一层基学习器输出预测，第二层元学习器学习最优组合机制</div>
+    </header>
+
+    <div class="stack-flow">
+      <svg class="diagram" viewBox="0 0 1488 680">
+        <defs>
+          <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <polygon points="0 0, 7 3.5, 0 7" fill="#17628E" />
+          </marker>
+          <marker id="arrow-dark" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <polygon points="0 0, 7 3.5, 0 7" fill="#142630" />
+          </marker>
+          <marker id="arrow-focus" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <polygon points="0 0, 7 3.5, 0 7" fill="#B83D0B" />
+          </marker>
+        </defs>
+
+        <!-- 列向虚线与背景分区标注 -->
+        <g opacity="0.25">
+          <line x1="310" y1="20" x2="310" y2="640" stroke="#71828B" stroke-dasharray="4 4" stroke-width="1.5" />
+          <line x1="680" y1="20" x2="680" y2="640" stroke="#71828B" stroke-dasharray="4 4" stroke-width="1.5" />
+          <line x1="1020" y1="20" x2="1020" y2="640" stroke="#71828B" stroke-dasharray="4 4" stroke-width="1.5" />
+        </g>
+
+        <!-- 第0步：原始数据与输入 -->
+        <g id="sec-input">
+          <text x="140" y="50" class="col-header" text-anchor="middle">原始训练数据</text>
+          <text x="140" y="78" class="col-sub" text-anchor="middle">特征与标签 (X, y)</text>
+
+          <!-- 原始特征表格简化表示 -->
+          <g transform="translate(45, 130)">
+            <rect x="0" y="0" width="170" height="420" class="matrix-box" />
+            <line x1="0" y1="40" x2="170" y2="40" stroke="#71828B" stroke-width="1.5" />
+            <line x1="56" y1="0" x2="56" y2="420" stroke="#71828B" stroke-dasharray="2 2" stroke-width="1" />
+            <line x1="113" y1="0" x2="113" y2="420" stroke="#71828B" stroke-dasharray="2 2" stroke-width="1" />
+            
+            <text x="28" y="26" class="matrix-cell" font-weight="600" fill="#142630">x₁</text>
+            <text x="85" y="26" class="matrix-cell" font-weight="600" fill="#142630">x₂</text>
+            <text x="141" y="26" class="matrix-cell" font-weight="600" fill="#142630">x₃</text>
+
+            <!-- 采样数据行 -->
+            <text x="28" y="80" class="matrix-cell">0.82</text>
+            <text x="85" y="80" class="matrix-cell">1.45</text>
+            <text x="141" y="80" class="matrix-cell">0.12</text>
+
+            <text x="28" y="150" class="matrix-cell">0.31</text>
+            <text x="85" y="150" class="matrix-cell">0.90</text>
+            <text x="141" y="150" class="matrix-cell">0.78</text>
+
+            <text x="28" y="220" class="matrix-cell">0.65</text>
+            <text x="85" y="220" class="matrix-cell">2.11</text>
+            <text x="141" y="220" class="matrix-cell">0.44</text>
+
+            <text x="28" y="290" class="matrix-cell">0.19</text>
+            <text x="85" y="290" class="matrix-cell">0.40</text>
+            <text x="141" y="290" class="matrix-cell">0.95</text>
+
+            <text x="85" y="365" class="matrix-cell" font-size="16">⋮</text>
+          </g>
+
+          <!-- 标签列 y -->
+          <g transform="translate(225, 130)">
+            <rect x="0" y="0" width="45" height="420" class="matrix-box" fill="#E2EBF0" />
+            <line x1="0" y1="40" x2="45" y2="40" stroke="#71828B" stroke-width="1.5" />
+            <text x="22" y="26" class="matrix-cell" font-weight="600" fill="#142630">y</text>
+
+            <text x="22" y="80" class="matrix-cell" font-weight="600">1</text>
+            <text x="22" y="150" class="matrix-cell" font-weight="600">0</text>
+            <text x="22" y="220" class="matrix-cell" font-weight="600">1</text>
+            <text x="22" y="290" class="matrix-cell" font-weight="600">0</text>
+            <text x="22" y="365" class="matrix-cell" font-size="16">⋮</text>
+          </g>
+        </g>
+
+        <!-- 第0步：第一层基学习器与连线 -->
+        <g id="sec-l1">
+          <text x="495" y="50" class="col-header" text-anchor="middle">Layer 1：异质基学习器</text>
+          <text x="495" y="78" class="col-sub" text-anchor="middle">各自拟合原始数据，形成互补偏好</text>
+
+          <!-- 数据分发连线 -->
+          <path d="M 270 200 C 330 200, 340 170, 395 170" class="flow-wire active" marker-end="url(#arrow)" />
+          <path d="M 270 320 C 330 320, 340 320, 395 320" class="flow-wire active" marker-end="url(#arrow)" />
+          <path d="M 270 440 C 330 440, 340 470, 395 470" class="flow-wire active" marker-end="url(#arrow)" />
+
+          <!-- 基模型1：随机森林 -->
+          <g transform="translate(395, 130)">
+            <rect x="0" y="0" width="200" height="80" class="node-rect model-box" />
+            <text x="100" y="32" class="node-title">随机森林</text>
+            <text x="100" y="58" class="node-desc">非线性树集成</text>
+          </g>
+
+          <!-- 基模型2：梯度提升树 GBDT -->
+          <g transform="translate(395, 280)">
+            <rect x="0" y="0" width="200" height="80" class="node-rect model-box" />
+            <text x="100" y="32" class="node-title">GBDT / XGBoost</text>
+            <text x="100" y="58" class="node-desc">串行残差递减</text>
+          </g>
+
+          <!-- 基模型3：支持向量机 SVM / 逻辑回归 -->
+          <g transform="translate(395, 430)">
+            <rect x="0" y="0" width="200" height="80" class="node-rect model-box" />
+            <text x="100" y="32" class="node-title">支持向量机 (SVM)</text>
+            <text x="100" y="58" class="node-desc">最大间隔核边界</text>
+          </g>
+        </g>
+
+        <!-- 第1步：新特征矩阵生成 (元特征) -->
+        <g id="sec-meta-feat" data-step="1">
+          <text x="835" y="50" class="col-header" text-anchor="middle">元特征矩阵 (Meta-Features)</text>
+          <text x="835" y="78" class="col-sub" text-anchor="middle">基学习器预测值转为新特征列</text>
+
+          <!-- 模型输出到特征矩阵的折线 -->
+          <path d="M 595 170 C 650 170, 670 200, 720 200" class="flow-wire active" marker-end="url(#arrow)" />
+          <path d="M 595 320 C 650 320, 670 320, 720 320" class="flow-wire active" marker-end="url(#arrow)" />
+          <path d="M 595 470 C 650 470, 670 440, 720 440" class="flow-wire active" marker-end="url(#arrow)" />
+
+          <!-- 元特征矩阵容器 -->
+          <g transform="translate(720, 130)">
+            <rect x="0" y="0" width="180" height="420" class="matrix-box" stroke="#17628E" stroke-width="2" />
+            <line x1="0" y1="40" x2="180" y2="40" stroke="#17628E" stroke-width="1.5" />
+            <line x1="60" y1="0" x2="60" y2="420" class="matrix-col" />
+            <line x1="120" y1="0" x2="120" y2="420" class="matrix-col" />
+
+            <!-- 表头：预测值作为新维度 -->
+            <text x="30" y="27" class="matrix-header">ŷ₁</text>
+            <text x="90" y="27" class="matrix-header">ŷ₂</text>
+            <text x="150" y="27" class="matrix-header">ŷ₃</text>
+
+            <text x="30" y="80" class="matrix-cell" font-weight="600" fill="#17628E">0.89</text>
+            <text x="90" y="80" class="matrix-cell" font-weight="600" fill="#17628E">0.93</text>
+            <text x="150" y="80" class="matrix-cell" font-weight="600" fill="#17628E">0.76</text>
+
+            <text x="30" y="150" class="matrix-cell" font-weight="600" fill="#17628E">0.14</text>
+            <text x="90" y="150" class="matrix-cell" font-weight="600" fill="#17628E">0.08</text>
+            <text x="150" y="150" class="matrix-cell" font-weight="600" fill="#17628E">0.22</text>
+
+            <text x="30" y="220" class="matrix-cell" font-weight="600" fill="#17628E">0.72</text>
+            <text x="90" y="220" class="matrix-cell" font-weight="600" fill="#17628E">0.81</text>
+            <text x="150" y="220" class="matrix-cell" font-weight="600" fill="#17628E">0.68</text>
+
+            <text x="30" y="290" class="matrix-cell" font-weight="600" fill="#17628E">0.35</text>
+            <text x="90" y="290" class="matrix-cell" font-weight="600" fill="#17628E">0.19</text>
+            <text x="150" y="290" class="matrix-cell" font-weight="600" fill="#17628E">0.41</text>
+
+            <text x="90" y="365" class="matrix-cell" font-size="16">⋮</text>
+          </g>
+
+          <!-- 伴随真实标签 y 汇入训练 -->
+          <g transform="translate(910, 130)">
+            <rect x="0" y="0" width="45" height="420" class="matrix-box" fill="#E2EBF0" />
+            <line x1="0" y1="40" x2="45" y2="40" stroke="#71828B" stroke-width="1.5" />
+            <text x="22" y="26" class="matrix-cell" font-weight="600" fill="#142630">y</text>
+
+            <text x="22" y="80" class="matrix-cell" font-weight="600">1</text>
+            <text x="22" y="150" class="matrix-cell" font-weight="600">0</text>
+            <text x="22" y="220" class="matrix-cell" font-weight="600">1</text>
+            <text x="22" y="290" class="matrix-cell" font-weight="600">0</text>
+            <text x="22" y="365" class="matrix-cell" font-size="16">⋮</text>
+          </g>
+        </g>
+
+        <!-- 第2步：第二层元学习器与最终收敛 -->
+        <g id="sec-l2" data-step="2">
+          <text x="1235" y="50" class="col-header" text-anchor="middle">Layer 2：元学习器</text>
+          <text x="1235" y="78" class="col-sub" text-anchor="middle">学习如何加权整合各模型输出</text>
+
+          <!-- 元特征到元学习器的汇聚粗线（签名线：多线汇聚为粗线） -->
+          <path d="M 955 250 C 1010 250, 1050 310, 1100 310" class="flow-wire converge" marker-end="url(#arrow)" />
+          <path d="M 955 340 C 1010 340, 1050 340, 1100 340" class="flow-wire converge" marker-end="url(#arrow)" />
+          <path d="M 955 430 C 1010 430, 1050 370, 1100 370" class="flow-wire converge" marker-end="url(#arrow)" />
+
+          <!-- 元模型节点：加大宽度避免拥挤 -->
+          <g transform="translate(1100, 260)">
+            <rect x="0" y="0" width="250" height="160" class="node-rect meta-box" />
+            <text x="125" y="44" class="node-title">元学习器</text>
+            <text x="125" y="80" class="node-desc">常用逻辑回归或浅层模型</text>
+            <text x="125" y="118" class="node-desc" fill="#17628E" font-weight="600">ŷ = σ(w₁ŷ₁ + w₂ŷ₂ + w₃ŷ₃ + b)</text>
+          </g>
+
+          <!-- 最终产出箭头与终结节点 -->
+          <path d="M 1350 340 L 1390 340" class="flow-wire" stroke-width="4" stroke="#142630" marker-end="url(#arrow-dark)" />
+          
+          <g transform="translate(1390, 305)">
+            <rect x="0" y="0" width="75" height="70" class="node-rect out-box" />
+            <text x="37" y="38" class="node-title" font-size="18">ŷ_final</text>
+          </g>
+        </g>
+
+        <!-- 第3步：教学关键提示 (数据泄漏风险预告) -->
+        <g id="sec-notice" data-step="3">
+          <rect x="710" y="585" width="670" height="54" rx="4" fill="#FDF3EE" stroke="#B83D0B" stroke-width="1.5" />
+          <polygon points="730 612, 742 594, 754 612" class="focus-badge" />
+          <text x="742" y="608" class="focus-text">!</text>
+          <text x="768" y="618" font-size="16" fill="#142630" font-weight="600">
+            核心原则：元学习器不能用训练集内拟合值，须使用折外预测 (OOF)
+          </text>
+        </g>
+      </svg>
+    </div>
+
+    <aside class="notes" hidden>
+      这一页我们讲解 Stacking（堆叠法）的基本两层架构。
+      首先看左侧第一层：我们引入不同算法家族的异质基模型——比如随机森林、GBDT 和 SVM。它们各有不同的假设空间与归纳偏好。
+      按键进入下一步，基模型接收原始特征输入，并分别输出预测概率。我们将这些预测值水平拼接，构成新的“元特征矩阵”。
+      再进入下一步，第二层使用元学习器（通常是逻辑回归等简单线性模型），把各模型的预测值作为特征，学习如何给它们分配权重或进行非线性组合，最终得出预测。
+      最后注意下方的警示框：基模型在自身训练集上的预测往往过度乐观，直接用来训练元学习器会导致严重的数据泄漏，必须使用折外交叉验证，这正是下一页要深入剖析的重点。
+    </aside>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 27, total: 32 });
+    
+    // 配合分步推进
+    Deck.onStep(function(step) {
+      document.body.setAttribute('data-page-step', step);
+    }, 3);
+  </script>
+</body>
+</html>

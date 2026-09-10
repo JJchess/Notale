@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    :root {
+      --bg: #E8EEF2;
+      --text: #142533;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-sizing: border-box;
+      color: var(--text);
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      margin: 0;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .lead-row {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 28px;
+      flex: 1;
+      min-height: 0;
+      align-items: stretch;
+    }
+
+    /* 左侧：双模式实证图区（矩阵比较 / 概率累积曲线） */
+    .chart-panel {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: var(--line) solid var(--surface-strong);
+      display: flex;
+      flex-direction: column;
+      padding: 20px 24px;
+      min-height: 0;
+      box-shadow: 0 4px 16px rgba(20, 37, 51, 0.04);
+    }
+
+    .panel-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .view-toggles {
+      display: flex;
+      background: var(--surface-strong);
+      padding: 3px;
+      border-radius: 8px;
+      gap: 4px;
+    }
+
+    .toggle-btn {
+      border: none;
+      background: transparent;
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+
+    .toggle-btn[aria-pressed="true"] {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+
+    .plot-area {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      width: 100%;
+    }
+
+    .plot-view {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--dur) var(--ease);
+    }
+
+    .plot-view.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* 视图1：样本矩阵 */
+    .matrix-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      justify-content: space-between;
+    }
+
+    .matrix-legend {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+    .dot.cor { background: var(--correct); }
+    .dot.err { background: #DC5842; }
+
+    .matrix-scenarios {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      flex: 1;
+      margin-top: 10px;
+    }
+
+    .scenario-box {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .scenario-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .scenario-name {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .scenario-tag {
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .scenario-tag.bad {
+      background: rgba(220, 88, 66, 0.15);
+      color: #B63B24;
+    }
+    .scenario-tag.good {
+      background: rgba(46, 106, 69, 0.15);
+      color: var(--correct);
+    }
+
+    .grid-table {
+      display: grid;
+      grid-template-columns: 36px repeat(5, 1fr) 68px;
+      gap: 8px 6px;
+      align-items: center;
+      font-size: var(--fs-label);
+      margin: 8px 0;
+    }
+
+    .grid-header-cell {
+      text-align: center;
+      color: var(--muted);
+      font-weight: 600;
+      padding-bottom: 4px;
+    }
+
+    .grid-row-name {
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .cell {
+      height: 38px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .cell.c {
+      background: rgba(46, 106, 69, 0.2);
+      color: var(--correct);
+    }
+
+    .cell.w {
+      background: rgba(220, 88, 66, 0.22);
+      color: #B63B24;
+    }
+
+    .cell-maj {
+      font-weight: 700;
+      border-radius: 6px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+    }
+    .cell-maj.win {
+      background: var(--correct);
+      color: #fff;
+    }
+    .cell-maj.fail {
+      background: #B63B24;
+      color: #fff;
+    }
+
+    .scenario-summary {
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+      color: var(--text);
+      background: var(--surface);
+      padding: 12px 14px;
+      border-radius: 6px;
+      margin-top: auto;
+      border: 1px solid var(--surface-strong);
+    }
+
+    /* 视图2：ECharts 曲线图 */
+    #chartHost {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 右侧：推导逻辑与核心洞见 */
+    .insight-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+      justify-content: space-between;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: var(--line) solid var(--surface-strong);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 4px 16px rgba(20, 37, 51, 0.04);
+    }
+
+    .card h2 {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .cond-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .cond-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .cond-badge {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .badge-eff {
+      background: rgba(39, 93, 145, 0.15);
+      color: var(--learner);
+    }
+
+    .badge-div {
+      background: rgba(182, 59, 36, 0.15);
+      color: var(--aggregate);
+    }
+
+    .cond-desc {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .cond-desc strong {
+      color: var(--text);
+    }
+
+    .cond-desc span {
+      color: var(--muted);
+      display: block;
+      font-size: var(--fs-label);
+      margin-top: 2px;
+    }
+
+    /* 交互滑块控制区 */
+    .calc-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: var(--line) solid var(--surface-strong);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .slider-labels .val {
+      font-family: var(--font-num);
+      color: var(--learner);
+      font-size: 16px;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--surface-strong);
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--learner);
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+
+    .math-callout {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .math-txt {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .math-stat {
+      text-align: right;
+    }
+
+    .math-stat .rate {
+      font-family: var(--font-num);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--aggregate);
+      line-height: 1;
+    }
+
+    .math-stat .rate-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* 结语强调条 */
+    .verdict-box {
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      background: rgba(39, 93, 145, 0.08);
+      border: 1px solid rgba(39, 93, 145, 0.25);
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    .verdict-box strong {
+      color: var(--learner);
+    }
+  </style>
+</head>
+<body data-page="02" data-total="27">
+  <div id="stage">
+    <header>
+      <h1>为什么“多个模型”可能胜过“一个更强的模型”</h1>
+      <div class="lead-row">
+        <span>群智涌现的前提：基学习器具有<strong>基本判别力（优于随机猜测）</strong>且<strong>错误不完全重合（具有独立性）</strong></span>
+      </div>
+    </header>
+
+    <div class="main-grid">
+      <!-- 左侧实证区 -->
+      <section class="chart-panel min0">
+        <div class="panel-top">
+          <div class="panel-title" id="plotCaption">5 个学习器在 5 个样本上的多数表决对比</div>
+          <div class="view-toggles" role="tablist" aria-label="展示方式">
+            <button class="toggle-btn" id="btnMatrix" aria-pressed="true">错误重叠与投票矩阵</button>
+            <button class="toggle-btn" id="btnCurve" aria-pressed="false">独立集成极限定理曲线</button>
+          </div>
+        </div>
+
+        <div class="plot-area">
+          <!-- 视图1：样本投票矩阵对比 -->
+          <div class="plot-view active" id="viewMatrix">
+            <div class="matrix-container">
+              <div class="matrix-legend">
+                <span>图例：</span>
+                <div class="legend-item"><div class="dot cor"></div><span>预测正确 (√)</span></div>
+                <div class="legend-item"><div class="dot err"></div><span>预测错误 (×)</span></div>
+                <span style="margin-left: auto; font-size: var(--fs-tick);">单模型错误率均为 40% (5样本中错2个)</span>
+              </div>
+
+              <div class="matrix-scenarios">
+                <!-- 情形 A：错误高度同质 -->
+                <div class="scenario-box">
+                  <div class="scenario-header">
+                    <span class="scenario-name">情形 A：错误完全重叠（零多样性）</span>
+                    <span class="scenario-tag bad">集成无效</span>
+                  </div>
+
+                  <div class="grid-table">
+                    <div class="grid-header-cell"></div>
+                    <div class="grid-header-cell">h₁</div>
+                    <div class="grid-header-cell">h₂</div>
+                    <div class="grid-header-cell">h₃</div>
+                    <div class="grid-header-cell">h₄</div>
+                    <div class="grid-header-cell">h₅</div>
+                    <div class="grid-header-cell">多数表决</div>
+
+                    <div class="grid-row-name">x₁</div>
+                    <div class="cell c">√</div><div class="cell c">√</div><div class="cell c">√</div><div class="cell c">√</div><div class="cell c">√</div>
+                    <div class="cell-maj win">√</div>
+
+                    <div class="grid-row-name">x₂</div>
+                    <div class="cell c">√</div><div class="cell c">√</div><div class="cell c">√</div><div class="cell c">√</div><div class="cell c">√</div>
+                    <div class="cell-maj win">√</div>
+
+                    <div class="grid-row-name">x₃</div>
+                    <div class="cell c">√</div><div class="cell c">√</div><div class="cell c">√</div><div class="cell c">√</div><div class="cell c">√</div>
+                    <div class="cell-maj win">√</div>
+
+                    <div class="grid-row-name">x₄</div>
+                    <div class="cell w">×</div><div class="cell w">×</div><div class="cell w">×</div><div class="cell w">×</div><div class="cell w">×</div>
+                    <div class="cell-maj fail">×</div>
+
+                    <div class="grid-row-name">x₅</div>
+                    <div class="cell w">×</div><div class="cell w">×</div><div class="cell w">×</div><div class="cell w">×</div><div class="cell w">×</div>
+                    <div class="cell-maj fail">×</div>
+                  </div>
+
+                  <div class="scenario-summary">
+                    每个模型错的样本一模一样（x₄, x₅ 全错）。<strong>集成后准确率 60%</strong>，相比单个模型毫无提升。
+                  </div>
+                </div>
+
+                <!-- 情形 B：错误错开互补 -->
+                <div class="scenario-box">
+                  <div class="scenario-header">
+                    <span class="scenario-name">情形 B：错误分散错开（互补多样）</span>
+                    <span class="scenario-tag good">集成质跃</span>
+                  </div>
+
+                  <div class="grid-table">
+                    <div class="grid-header-cell"></div>
+                    <div class="grid-header-cell">h₁</div>
+                    <div class="grid-header-cell">h₂</div>
+                    <div class="grid-header-cell">h₃</div>
+                    <div class="grid-header-cell">h₄</div>
+                    <div class="grid-header-cell">h₅</div>
+                    <div class="grid-header-cell">多数表决</div>
+
+                    <div class="grid-row-name">x₁</div>
+                    <div class="cell w">×</div><div class="cell w">×</div><div class="cell c">√</div><div class="cell c">√</div><div class="cell c">√</div>
+                    <div class="cell-maj win">√</div>
+
+                    <div class="grid-row-name">x₂</div>
+                    <div class="cell c">√</div><div class="cell w">×</div><div class="cell w">×</div><div class="cell c">√</div><div class="cell c">√</div>
+                    <div class="cell-maj win">√</div>
+
+                    <div class="grid-row-name">x₃</div>
+                    <div class="cell c">√</div><div class="cell c">√</div><div class="cell w">×</div><div class="cell w">×</div><div class="cell c">√</div>
+                    <div class="cell-maj win">√</div>
+
+                    <div class="grid-row-name">x₄</div>
+                    <div class="cell c">√</div><div class="cell c">√</div><div class="cell c">√</div><div class="cell w">×</div><div class="cell w">×</div>
+                    <div class="cell-maj win">√</div>
+
+                    <div class="grid-row-name">x₅</div>
+                    <div class="cell w">×</div><div class="cell c">√</div><div class="cell c">√</div><div class="cell c">√</div><div class="cell w">×</div>
+                    <div class="cell-maj win">√</div>
+                  </div>
+
+                  <div class="scenario-summary">
+                    每个样本虽有 2 个模型出错，但另 3 个模型做对。<strong>集成后多数表决 100% 正确</strong>。
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 视图2：ECharts 理论曲线 (孔多塞陪审团定理) -->
+          <div class="plot-view" id="viewCurve">
+            <div id="chartHost"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧解析与交互区 -->
+      <aside class="insight-panel min0">
+        <div class="card">
+          <h2>集成的两个必要前提</h2>
+          <ul class="cond-list">
+            <li class="cond-item">
+              <span class="cond-badge badge-eff">必要条件一</span>
+              <p class="cond-desc">
+                <strong>个体有效性（Accuracy）</strong>
+                <span>每个基分类器的错误率必须满足 <em>ε &lt; 0.5</em>。若单体分类不如瞎猜，多数表决只会成倍放大系统谬误。</span>
+              </p>
+            </li>
+            <li class="cond-item">
+              <span class="cond-badge badge-div">必要条件二</span>
+              <p class="cond-desc">
+                <strong>个体多样性（Diversity）</strong>
+                <span>各模型的错误分布不能强相关。若所有模型同生共死，投票只是相同声音的冗余重复。</span>
+              </p>
+            </li>
+          </ul>
+        </div>
+
+        <div class="calc-card">
+          <div class="slider-group">
+            <div class="slider-labels">
+              <span>基学习器单体错误率 <em>ε</em></span>
+              <span class="val" id="epsVal">0.35</span>
+            </div>
+            <input type="range" id="epsSlider" min="0.10" max="0.60" step="0.01" value="0.35" aria-label="基分类器错误率">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-labels">
+              <span>基学习器数量 <em>T</em>（奇数票）</span>
+              <span class="val" id="tVal">11</span>
+            </div>
+            <input type="range" id="tSlider" min="3" max="25" step="2" value="11" aria-label="基分类器数量">
+          </div>
+
+          <div class="math-callout">
+            <div class="math-txt">
+              理论集成错误率（设各模型误差独立）：<br>
+              <div id="formulaEns" style="margin-top: 4px;"></div>
+            </div>
+            <div class="math-stat">
+              <div class="rate" id="ensRate">14.9%</div>
+              <div class="rate-sub" id="ensPrompt">误差骤降至单体下方</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="verdict-box">
+          <strong>工程启示：</strong>
+          单模型追求极致往往面临<strong>收益递减与过拟合风险</strong>；集成学习的本质是将精益求精的“单体突破”转化为<strong>“构建多样性弱相关模型池”的系统工程</strong>。
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ title: "为什么多个模型可能胜过一个更强的模型", keys: false });
+
+      // 渲染独立数学公式
+      if (window.katex) {
+        var formulaEl = document.getElementById("formulaEns");
+        if (formulaEl) {
+          katex.render("P_{\\text{ens}} = \\sum_{k=\\lceil T/2 \\rceil}^T \\binom{T}{k} \\epsilon^k (1-\\epsilon)^{T-k}", formulaEl, {
+            displayMode: false,
+            throwOnError: false
+          });
+        }
+      }
+      function binomCoeff(n, k) {
+        if (k < 0 || k > n) return 0;
+        if (k === 0 || k === n) return 1;
+        var c = 1;
+        for (var i = 1; i <= k; i++) {
+          c = c * (n - (k - i)) / i;
+        }
+        return c;
+      }
+
+      function calcEnsembleError(eps, T) {
+        var maj = Math.ceil(T / 2);
+        var sum = 0;
+        for (var k = maj; k <= T; k++) {
+          sum += binomCoeff(T, k) * Math.pow(eps, k) * Math.pow(1 - eps, T - k);
+        }
+        return sum;
+      }
+
+      var epsSlider = document.getElementById("epsSlider");
+      var tSlider = document.getElementById("tSlider");
+      var epsVal = document.getElementById("epsVal");
+      var tVal = document.getElementById("tVal");
+      var ensRate = document.getElementById("ensRate");
+      var ensPrompt = document.getElementById("ensPrompt");
+
+      var btnMatrix = document.getElementById("btnMatrix");
+      var btnCurve = document.getElementById("btnCurve");
+      var viewMatrix = document.getElementById("viewMatrix");
+      var viewCurve = document.getElementById("viewCurve");
+      var plotCaption = document.getElementById("plotCaption");
+      var chartHost = document.getElementById("chartHost");
+
+      var chartInstance = null;
+
+      function updateReadouts() {
+        var eps = parseFloat(epsSlider.value);
+        var T = parseInt(tSlider.value, 10);
+        epsVal.textContent = eps.toFixed(2);
+        tVal.textContent = T;
+
+        var pEns = calcEnsembleError(eps, T);
+        var pct = (pEns * 100).toFixed(1) + "%";
+        ensRate.textContent = pct;
+
+        if (eps < 0.5) {
+          ensRate.style.color = "var(--correct)";
+          var ratio = (eps / (pEns || 0.0001)).toFixed(1);
+          ensPrompt.textContent = "误差骤降至单体 " + (pEns < eps ? "下方" : "附近");
+        } else if (eps === 0.5) {
+          ensRate.style.color = "var(--muted)";
+          ensPrompt.textContent = "等于瞎猜，集成无收益";
+        } else {
+          ensRate.style.color = "#B63B24";
+          ensPrompt.textContent = "劣于单体！谬误被集成放大";
+        }
+
+        if (chartInstance && viewCurve.classList.contains("active")) {
+          updateChart();
+        }
+      }
+
+      function getCurveData(T) {
+        var points = [];
+        for (var x = 0; x <= 1.001; x += 0.02) {
+          var y = calcEnsembleError(x, T);
+          points.push([parseFloat(x.toFixed(2)), parseFloat(y.toFixed(4))]);
+        }
+        return points;
+      }
+
+      function initChart() {
+        if (!window.echarts || !chartHost) return;
+        chartInstance = echarts.init(chartHost, null, { renderer: "svg" });
+        updateChart();
+      }
+
+      function updateChart() {
+        if (!chartInstance) return;
+        var currentT = parseInt(tSlider.value, 10);
+        var currentEps = parseFloat(epsSlider.value);
+        var currentPEns = calcEnsembleError(currentEps, currentT);
+
+        var dataT3 = getCurveData(3);
+        var dataTCurrent = getCurveData(currentT);
+        var dataT25 = getCurveData(25);
+
+        var option = {
+          animation: false,
+          tooltip: {
+            trigger: "axis",
+            backgroundColor: "#fff",
+            borderColor: "var(--surface-strong)",
+            textStyle: { color: "var(--text)", fontSize: 13 }
+          },
+          grid: {
+            left: 54,
+            right: 32,
+            top: 40,
+            bottom: 46
+          },
+          xAxis: {
+            type: "value",
+            min: 0,
+            max: 1,
+            interval: 0.2,
+            name: "基学习器错误率 ε",
+            nameLocation: "middle",
+            nameGap: 28,
+            nameTextStyle: { color: "var(--muted)", fontSize: 14 },
+            axisLine: { lineStyle: { color: "#A7B7C2" } },
+            axisLabel: { color: "var(--muted)", fontSize: 13 },
+            splitLine: { lineStyle: { color: "#D7E1E8", type: "dashed" } }
+          },
+          yAxis: {
+            type: "value",
+            min: 0,
+            max: 1,
+            interval: 0.2,
+            name: "集成错误率 P_ens",
+            nameLocation: "middle",
+            nameGap: 34,
+            nameTextStyle: { color: "var(--muted)", fontSize: 14 },
+            axisLine: { lineStyle: { color: "#A7B7C2" } },
+            axisLabel: { color: "var(--muted)", fontSize: 13 },
+            splitLine: { lineStyle: { color: "#D7E1E8", type: "dashed" } }
+          },
+          series: [
+            {
+              name: "对角基准线 (无增益 y=x)",
+              type: "line",
+              data: [[0, 0], [1, 1]],
+              lineStyle: { color: "#95A7B5", width: 1.5, type: "dotted" },
+              symbol: "none",
+              silent: true
+            },
+            {
+              name: "T = 3",
+              type: "line",
+              data: dataT3,
+              smooth: true,
+              lineStyle: { color: "#95A7B5", width: 1.8, type: "dashed" },
+              symbol: "none"
+            },
+            {
+              name: "当前设定 T = " + currentT,
+              type: "line",
+              data: dataTCurrent,
+              smooth: true,
+              lineStyle: { color: "#275D91", width: 3.5 },
+              symbol: "none"
+            },
+            {
+              name: "T = 25",
+              type: "line",
+              data: dataT25,
+              smooth: true,
+              lineStyle: { color: "#B63B24", width: 2 },
+              symbol: "none"
+            },
+            {
+              name: "当前工作点",
+              type: "scatter",
+              data: [[currentEps, currentPEns]],
+              symbolSize: 12,
+              itemStyle: { color: "#B63B24", borderColor: "#fff", borderWidth: 2 }
+            }
+          ]
+        };
+
+        chartInstance.setOption(option, true);
+      }
+
+      // 切换视图
+      btnMatrix.addEventListener("click", function () {
+        btnMatrix.setAttribute("aria-pressed", "true");
+        btnCurve.setAttribute("aria-pressed", "false");
+        viewMatrix.classList.add("active");
+        viewCurve.classList.remove("active");
+        plotCaption.textContent = "5 个学习器在 5 个样本上的多数表决对比";
+      });
+
+      btnCurve.addEventListener("click", function () {
+        btnCurve.setAttribute("aria-pressed", "true");
+        btnMatrix.setAttribute("aria-pressed", "false");
+        viewMatrix.classList.remove("active");
+        viewCurve.classList.add("active");
+        plotCaption.textContent = "孔多塞陪审团定理：独立学习器集成错误率随 T 的跃迁";
+        if (!chartInstance) {
+          initChart();
+        } else {
+          chartInstance.resize();
+          updateChart();
+        }
+      });
+
+      epsSlider.addEventListener("input", updateReadouts);
+      tSlider.addEventListener("input", updateReadouts);
+
+      window.addEventListener("resize", function () {
+        if (chartInstance) chartInstance.resize();
+      });
+
+      updateReadouts();
+    })();
+  </script>
+</body>
+</html>

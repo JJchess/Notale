@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Boosting 的串行思想</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF2;
+      --text: #142533;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      color: var(--text);
+    }
+
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .header-block h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .header-block p {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--text);
+      line-height: 1.35;
+    }
+
+    .main-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1.05fr;
+      gap: 20px;
+      min-height: 0;
+    }
+
+    .round-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 22px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      cursor: pointer;
+      transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+    }
+
+    .round-card:hover {
+      border-color: var(--focus);
+    }
+
+    .round-card.active {
+      border-color: var(--learner);
+      background: #FFFFFF;
+      box-shadow: 0 4px 18px rgba(39, 93, 145, 0.08);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .round-badge {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--learner);
+      background: rgba(39, 93, 145, 0.1);
+      padding: 4px 12px;
+      border-radius: 6px;
+    }
+
+    .round-status {
+      font-size: var(--fs-tick);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    .viz-box {
+      flex: 1;
+      min-height: 190px;
+      background: var(--bg);
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(20, 37, 51, 0.08);
+    }
+
+    .viz-box svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .card-caption {
+      margin: 0;
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+      color: var(--text);
+    }
+
+    .card-caption strong {
+      color: var(--learner);
+    }
+
+    .card-stat {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--surface-strong);
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .card-stat .num {
+      font-family: var(--font-num);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .card-stat .num.red {
+      color: var(--aggregate);
+    }
+
+    .bottom-bar {
+      height: 76px;
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 0 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .ensemble-flow {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: var(--fs-body);
+    }
+
+    .flow-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .flow-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--learner);
+    }
+
+    .flow-dot.agg {
+      background: var(--aggregate);
+    }
+
+    .flow-sep {
+      color: var(--muted);
+      font-weight: bold;
+    }
+
+    .step-nav {
+      display: flex;
+      gap: 12px;
+    }
+
+    .step-btn {
+      padding: 8px 18px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      border: var(--line) solid var(--surface-strong);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+
+    .step-btn:hover {
+      border-color: var(--focus);
+    }
+
+    .step-btn[aria-pressed="true"] {
+      background: var(--learner);
+      color: #fff;
+      border-color: var(--learner);
+    }
+  </style>
+</head>
+<body data-page="15" data-total="27">
+  <div id="stage">
+    <div class="header-block">
+      <h1>弱学习器串行加入：逐轮聚焦尚未解决的残差</h1>
+      <p>每一轮基学习器基于前序的累积预测生成，迫使后续模型把算力投入在前序模型做错的样本上。</p>
+    </div>
+
+    <div class="main-grid">
+      <!-- 轮次 1 -->
+      <div class="round-card active min0" id="card-1" data-round="1" tabindex="0">
+        <div class="card-top">
+          <span class="round-badge">第 1 轮基模型 h₁(x)</span>
+          <span class="round-status">初始均匀样本</span>
+        </div>
+        <div class="viz-box">
+          <svg viewBox="0 0 440 260" id="svg-r1">
+            <!-- 坐标辅助线 -->
+            <line x1="30" y1="220" x2="410" y2="220" stroke="#cad4dc" stroke-width="1.5"/>
+            <!-- 切分边界 -->
+            <line x1="180" y1="20" x2="180" y2="220" stroke="#275D91" stroke-width="2.5" stroke-dasharray="4 3"/>
+            <text x="185" y="42" font-size="13" fill="#275D91" font-weight="600">切分阈值 x=3.5</text>
+            <!-- 样本点 -->
+            <g id="pts-r1"></g>
+          </svg>
+        </div>
+        <p class="card-caption">
+          初次切分出全局大致边界，右侧 <strong>3 个正类样本</strong> 被误判。
+        </p>
+        <div class="card-stat">
+          <span style="color:var(--text)">未解误差点</span>
+          <span class="num red">3</span>
+          <span style="color:var(--text)">/ 10 样本</span>
+        </div>
+      </div>
+
+      <!-- 轮次 2 -->
+      <div class="round-card min0" id="card-2" data-round="2" tabindex="0">
+        <div class="card-top">
+          <span class="round-badge">第 2 轮基模型 h₂(x)</span>
+          <span class="round-status">聚焦遗留错题</span>
+        </div>
+        <div class="viz-box">
+          <svg viewBox="0 0 440 260" id="svg-r2">
+            <line x1="30" y1="220" x2="410" y2="220" stroke="#cad4dc" stroke-width="1.5"/>
+            <line x1="310" y1="20" x2="310" y2="220" stroke="#275D91" stroke-width="2.5" stroke-dasharray="4 3"/>
+            <text x="315" y="42" font-size="13" fill="#275D91" font-weight="600">切分阈值 x=7.5</text>
+            <g id="pts-r2"></g>
+          </svg>
+        </div>
+        <p class="card-caption">
+          提高错分样本关注度，切分点被迫向右移，挽回 2 个错分样本。
+        </p>
+        <div class="card-stat">
+          <span style="color:var(--text)">残余误差点</span>
+          <span class="num red">1</span>
+          <span style="color:var(--text)">/ 10 样本</span>
+        </div>
+      </div>
+
+      <!-- 轮次 3 -->
+      <div class="round-card min0" id="card-3" data-round="3" tabindex="0">
+        <div class="card-top">
+          <span class="round-badge">第 3 轮及最终强分类器 H(x)</span>
+          <span class="round-status">加权合成决策面</span>
+        </div>
+        <div class="viz-box">
+          <svg viewBox="0 0 440 260" id="svg-r3">
+            <line x1="30" y1="220" x2="410" y2="220" stroke="#cad4dc" stroke-width="1.5"/>
+            <rect x="180" y="30" width="130" height="190" fill="rgba(182, 59, 36, 0.08)" stroke="#B63B24" stroke-width="1.5" stroke-dasharray="3 3"/>
+            <text x="190" y="52" font-size="13" fill="#B63B24" font-weight="600">组合有效决策带</text>
+            <g id="pts-r3"></g>
+          </svg>
+        </div>
+        <p class="card-caption">
+          叠加 <strong>H(x) = sign(∑ αₘhₘ(x))</strong>，串行模型协作覆盖孤立离群点。
+        </p>
+        <div class="card-stat">
+          <span style="color:var(--text)">最终整体误差点</span>
+          <span class="num red" style="color: var(--correct);">0</span>
+          <span style="color:var(--text)">/ 10 完全正确</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="ensemble-flow">
+        <div class="flow-item"><span class="flow-dot"></span><span>均匀权重训练 h₁</span></div>
+        <span class="flow-sep">→</span>
+        <div class="flow-item"><span class="flow-dot"></span><span>增大错点权重训练 h₂</span></div>
+        <span class="flow-sep">→</span>
+        <div class="flow-item"><span class="flow-dot"></span><span>修正残差训练 h₃</span></div>
+        <span class="flow-sep">→</span>
+        <div class="flow-item"><span class="flow-dot agg"></span><strong style="color:var(--aggregate)">加权融合 H(x)</strong></div>
+      </div>
+
+      <div class="step-nav" role="tablist" aria-label="观察各轮次">
+        <button class="step-btn" id="btn-1" aria-pressed="true">第 1 轮</button>
+        <button class="step-btn" id="btn-2" aria-pressed="false">第 2 轮</button>
+        <button class="step-btn" id="btn-3" aria-pressed="false">合成终态</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 10个经典一维二分类样本坐标 (x: 1..10, y: 类别 +1 / -1)
+      const samples = [
+        { id: 1, x: 50,  y: 1,  type: 'pos' },
+        { id: 2, x: 90,  y: 1,  type: 'pos' },
+        { id: 3, x: 130, y: 1,  type: 'pos' },
+        { id: 4, x: 170, y: -1, type: 'neg' },
+        { id: 5, x: 210, y: -1, type: 'neg' },
+        { id: 6, x: 250, y: -1, type: 'neg' },
+        { id: 7, x: 290, y: 1,  type: 'pos' }, // r1错分
+        { id: 8, x: 330, y: 1,  type: 'pos' }, // r1错分
+        { id: 9, x: 370, y: 1,  type: 'pos' }, // r1错分
+        { id: 10, x: 400, y: -1, type: 'neg' }
+      ];
+
+      function renderSvg(containerId, round) {
+        const group = document.getElementById(containerId);
+        group.innerHTML = '';
+
+        samples.forEach((s) => {
+          const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          const isErrorInR1 = (s.id >= 7 && s.id <= 9);
+          const isErrorInR2 = (s.id === 10 || s.id === 7);
+
+          // 半径与粗细反映样本权重
+          let r = 8;
+          let strokeW = 2;
+          let isFocus = false;
+
+          if (round === 1) {
+            r = 7;
+            if (isErrorInR1) {
+              isFocus = true;
+            }
+          } else if (round === 2) {
+            if (isErrorInR1) {
+              r = 13; // 错分样本权重急剧放大
+              strokeW = 3;
+            } else {
+              r = 5; // 正确样本权重缩小
+            }
+          } else if (round === 3) {
+            r = 7;
+          }
+
+          const py = s.type === 'pos' ? 100 : 160;
+
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('cx', s.x);
+          circle.setAttribute('cy', py);
+          circle.setAttribute('r', r);
+
+          if (s.type === 'pos') {
+            circle.setAttribute('fill', '#275D91');
+            circle.setAttribute('stroke', '#142533');
+          } else {
+            circle.setAttribute('fill', '#FFFFFF');
+            circle.setAttribute('stroke', '#B63B24');
+          }
+          circle.setAttribute('stroke-width', strokeW);
+
+          if (round === 1 && isFocus) {
+            // 标记错分
+            circle.setAttribute('stroke', '#B63B24');
+            circle.setAttribute('stroke-width', '3');
+            const alertMark = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            alertMark.setAttribute('x', s.x - 4);
+            alertMark.setAttribute('y', py - 14);
+            alertMark.setAttribute('fill', '#B63B24');
+            alertMark.setAttribute('font-size', '14');
+            alertMark.setAttribute('font-weight', 'bold');
+            alertMark.textContent = '!';
+            g.appendChild(alertMark);
+          }
+
+          // 符号标签
+          const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          label.setAttribute('x', s.x);
+          label.setAttribute('y', py + 4);
+          label.setAttribute('text-anchor', 'middle');
+          label.setAttribute('font-size', r >= 10 ? '15' : '13');
+          label.setAttribute('font-weight', 'bold');
+          label.setAttribute('fill', s.type === 'pos' ? '#FFFFFF' : '#B63B24');
+          label.textContent = s.type === 'pos' ? '+' : '−';
+
+          g.appendChild(circle);
+          g.appendChild(label);
+          group.appendChild(g);
+        });
+      }
+
+      renderSvg('pts-r1', 1);
+      renderSvg('pts-r2', 2);
+      renderSvg('pts-r3', 3);
+
+      // 交互高亮切换
+      const cards = [
+        document.getElementById('card-1'),
+        document.getElementById('card-2'),
+        document.getElementById('card-3')
+      ];
+      const buttons = [
+        document.getElementById('btn-1'),
+        document.getElementById('btn-2'),
+        document.getElementById('btn-3')
+      ];
+
+      function setActive(idx) {
+        cards.forEach((c, i) => {
+          c.classList.toggle('active', i === idx);
+        });
+        buttons.forEach((b, i) => {
+          b.setAttribute('aria-pressed', i === idx ? 'true' : 'false');
+        });
+      }
+
+      buttons.forEach((btn, i) => {
+        btn.addEventListener('click', () => setActive(i));
+      });
+
+      cards.forEach((card, i) => {
+        card.addEventListener('click', () => setActive(i));
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setActive(i);
+          }
+        });
+      });
+
+      Deck.init({ index: 15, total: 27 });
+    })();
+  </script>
+</body>
+</html>

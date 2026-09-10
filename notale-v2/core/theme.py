@@ -154,6 +154,29 @@ def variants(contract: str) -> list[str]:
     return re.findall(r'^\s*\*?\s*variant\s+([\w-]+)', contract, re.M)
 
 
+REFERENCE = re.compile(r'^\s*\*?\s*reference(?:\s*:\s*|\s+)(style|user):(.+?)\s*$', re.M)
+
+
+def references(css: str) -> list[tuple[str, str]]:
+    interface = INTERFACE.search(css)
+    return list(dict.fromkeys(REFERENCE.findall(interface.group(1)))) if interface else []
+
+
+def reference_images(css: str, assets: Path) -> list[dict]:
+    """Resolve declared input pictures, not CSS backgrounds or arbitrary file reads."""
+    from . import style_catalog
+    images = []
+    for kind, value in references(css):
+        if kind == 'style':
+            path = style_catalog.read_path(value)
+        else:
+            path, _ = local_url(value, assets, assets)
+            if path is None or path.suffix.lower() not in IMAGES - {'.svg'}:
+                raise ValueError(f'主题参考须为本地位图: {value}')
+        images.append({'id': f'{kind}:{value}', 'shot': str(path)})
+    return images
+
+
 def validate(css: str, assets: Path, *, browser=True) -> list[str]:
     bad, nodes, contract = inspect(css)
     try:
@@ -323,7 +346,22 @@ def import_input(source: Path | None, assets: Path, *, allow_repair=False, reque
                         if notice.is_file():
                             copy(notice)
             replace_url(token, quote(os.path.relpath(dest, assets), safe='/') + fragment)
-    return cssparser.serialize(nodes), shots
+    imported_css = cssparser.serialize(nodes)
+    # A reference is an input picture, so it is not among parsed CSS url() tokens.
+    # Relocate only explicitly declared local references through the same sandbox.
+    interface = INTERFACE.search(imported_css)
+    if interface:
+        def relocate(match):
+            kind, value = match.groups()
+            if kind == 'style':
+                return match.group(0)
+            path, _ = local_url(value, source, boundary)
+            if path is None or path.suffix.lower() not in IMAGES - {'.svg'}:
+                raise ValueError(f'主题参考须为本地位图: {value}')
+            return 'reference user:' + copy(path).relative_to(assets).as_posix()
+        block = REFERENCE.sub(relocate, interface.group(0))
+        imported_css = imported_css[:interface.start()] + block + imported_css[interface.end():]
+    return imported_css, shots
 
 
 def publish(css: str, target: Path):

@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+    }
+
+    #stream-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .cover-content {
+      position: absolute;
+      z-index: 5;
+      left: 88px;
+      top: 260px;
+      width: 680px;
+      pointer-events: none;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    .summary-lead {
+      margin: 28px 0 0 0;
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      max-width: 580px;
+    }
+
+    .triad-labels {
+      position: absolute;
+      z-index: 5;
+      right: 90px;
+      top: 100px;
+      width: 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 36px;
+      pointer-events: none;
+    }
+
+    .pillar-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .pillar-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--model);
+    }
+
+    .pillar-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    .pillar-item.focus-pillar .pillar-title {
+      color: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="32" data-total="32">
+  <div id="stage">
+    <canvas id="stream-canvas" class="cv-fill"></canvas>
+
+    <div class="cover-content">
+      <h1>集成的收益来自准确性、多样性与正确的组合机制</h1>
+      <p class="summary-lead">好而不同，恰当结合：个体预测的互补偏差在收束中相互抵消，沉淀为高稳健决断。</p>
+    </div>
+
+    <div class="triad-labels">
+      <div class="pillar-item">
+        <div class="pillar-title">准确性</div>
+        <div class="pillar-sub">优于随机猜测的基模型边界</div>
+      </div>
+      <div class="pillar-item">
+        <div class="pillar-title">多样性</div>
+        <div class="pillar-sub">样本、特征与结构的差异扰动</div>
+      </div>
+      <div class="pillar-item focus-pillar">
+        <div class="pillar-title">组合机制</div>
+        <div class="pillar-sub">投票、加权平均与次级堆叠学习</div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    在全讲的最后，我们回顾集成学习的核心：它不是简单的模型堆砌，而是依靠准确性、多样性与组合机制三者的紧密协同。当基学习器优于随机猜测且彼此具备差异时，合理的组合机制能有效消除单个假设的盲区，取得超越单一模型的泛化能力。
+  </aside>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      const WIDTH = 1600;
+      const HEIGHT = 900;
+      const SEED = "ensemble-closing-32";
+      const canvas = document.getElementById("stream-canvas");
+      let ctx;
+      let staticCanvas = document.createElement("canvas");
+      let staticCtx;
+      let lines = [];
+      let stopLoop = () => {};
+
+      Deck.init({ index: 32, total: 32, keys: false });
+
+      // Title safety field & Right labels safety
+      const TITLE_BOX = { x: 56, y: 220, w: 740, h: 420 };
+      const LABELS_BOX = { x: 1160, y: 80, w: 420, h: 360 };
+
+      function isBlocked(x, y) {
+        if (x >= TITLE_BOX.x && x <= TITLE_BOX.x + TITLE_BOX.w &&
+            y >= TITLE_BOX.y && y <= TITLE_BOX.y + TITLE_BOX.h) {
+          return true;
+        }
+        if (x >= LABELS_BOX.x && x <= LABELS_BOX.x + LABELS_BOX.w &&
+            y >= LABELS_BOX.y && y <= LABELS_BOX.y + LABELS_BOX.h) {
+          return true;
+        }
+        return false;
+      }
+
+      // Confluence hub placed lower right in clear space
+      const CONFLUENCE = { x: 1100, y: 640 };
+
+      function buildSystem() {
+        const rng = new Math.seedrandom(SEED);
+        lines = [];
+
+        // Upper branch: flows over the title into confluence
+        const upperCount = 28;
+        for (let i = 0; i < upperCount; i++) {
+          const sx = 40 + rng() * 140;
+          const sy = 60 + rng() * 100;
+          const c1x = 420 + rng() * 240;
+          const c1y = 40 + rng() * 90;
+          const c2x = 840 + rng() * 160;
+          const c2y = 220 + rng() * 160;
+
+          const points = [];
+          const steps = 110;
+          for (let s = 0; s <= steps; s++) {
+            const t = s / steps;
+            const it = 1 - t;
+            const px = it * it * it * sx + 3 * it * it * t * c1x + 3 * it * t * t * c2x + t * t * t * CONFLUENCE.x;
+            const py = it * it * it * sy + 3 * it * it * t * c1y + 3 * it * t * t * c2y + t * t * t * CONFLUENCE.y;
+            points.push({ x: px, y: py });
+          }
+
+          lines.push({
+            points,
+            alpha: 0.18 + rng() * 0.32,
+            width: 1.2 + rng() * 1.4,
+            phase: rng() * Math.PI * 2,
+            speed: 0.0007 + rng() * 0.0005
+          });
+        }
+
+        // Lower branch: flows under the title into confluence
+        const lowerCount = 28;
+        for (let i = 0; i < lowerCount; i++) {
+          const sx = 40 + rng() * 140;
+          const sy = 700 + rng() * 140;
+          const c1x = 420 + rng() * 240;
+          const c1y = 740 + rng() * 100;
+          const c2x = 840 + rng() * 160;
+          const c2y = 660 + rng() * 100;
+
+          const points = [];
+          const steps = 110;
+          for (let s = 0; s <= steps; s++) {
+            const t = s / steps;
+            const it = 1 - t;
+            const px = it * it * it * sx + 3 * it * it * t * c1x + 3 * it * t * t * c2x + t * t * t * CONFLUENCE.x;
+            const py = it * it * it * sy + 3 * it * it * t * c1y + 3 * it * t * t * c2y + t * t * t * CONFLUENCE.y;
+            points.push({ x: px, y: py });
+          }
+
+          lines.push({
+            points,
+            alpha: 0.18 + rng() * 0.32,
+            width: 1.2 + rng() * 1.4,
+            phase: rng() * Math.PI * 2,
+            speed: 0.0007 + rng() * 0.0005
+          });
+        }
+      }
+
+      function renderStatic() {
+        staticCanvas.width = canvas.width;
+        staticCanvas.height = canvas.height;
+        staticCtx = staticCanvas.getContext("2d");
+        const ratio = canvas.__r || 1;
+        staticCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+        staticCtx.clearRect(0, 0, WIDTH, HEIGHT);
+
+        const modelRgb = Deck.rgb("model") || [23, 98, 142];
+        const focusRgb = Deck.rgb("focus") || [184, 61, 11];
+
+        // Draw smooth bundle paths
+        for (const line of lines) {
+          staticCtx.beginPath();
+          let started = false;
+          for (const pt of line.points) {
+            if (!started) {
+              staticCtx.moveTo(pt.x, pt.y);
+              started = true;
+            } else {
+              staticCtx.lineTo(pt.x, pt.y);
+            }
+          }
+          staticCtx.strokeStyle = `rgba(${modelRgb.join(",")}, ${line.alpha})`;
+          staticCtx.lineWidth = line.width;
+          staticCtx.stroke();
+        }
+
+        // Draw convergent strong spine from CONFLUENCE to right border
+        staticCtx.beginPath();
+        staticCtx.moveTo(CONFLUENCE.x, CONFLUENCE.y);
+        staticCtx.lineTo(CONFLUENCE.x + 420, CONFLUENCE.y);
+        staticCtx.strokeStyle = Deck.token("focus") || "#B83D0B";
+        staticCtx.lineWidth = 4;
+        staticCtx.stroke();
+
+        // Node ring and hub at CONFLUENCE
+        staticCtx.beginPath();
+        staticCtx.arc(CONFLUENCE.x, CONFLUENCE.y, 5, 0, Math.PI * 2);
+        staticCtx.fillStyle = Deck.token("focus") || "#B83D0B";
+        staticCtx.fill();
+
+        staticCtx.beginPath();
+        staticCtx.arc(CONFLUENCE.x, CONFLUENCE.y, 12, 0, Math.PI * 2);
+        staticCtx.strokeStyle = `rgba(${focusRgb.join(",")}, 0.4)`;
+        staticCtx.lineWidth = 2;
+        staticCtx.stroke();
+      }
+
+      function drawTracer(time) {
+        const modelRgb = Deck.rgb("model") || [23, 98, 142];
+        const focusRgb = Deck.rgb("focus") || [184, 61, 11];
+
+        for (let i = 0; i < lines.length; i += 3) {
+          const line = lines[i];
+          const t = (time * line.speed + line.phase) % 1;
+          const idx = Math.floor(t * (line.points.length - 1));
+          const pt = line.points[idx];
+          if (!pt) continue;
+
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, idx > 95 ? 3.5 : 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = idx > 95 ? `rgba(${focusRgb.join(",")}, 0.85)` : `rgba(${modelRgb.join(",")}, 0.75)`;
+          ctx.fill();
+        }
+      }
+
+      function render(time) {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, WIDTH, HEIGHT);
+        ctx.drawImage(staticCanvas, 0, 0, WIDTH, HEIGHT);
+        drawTracer(time);
+      }
+
+      function rebuild() {
+        ctx = Deck.fit(canvas);
+        if (!ctx) return;
+        buildSystem();
+        renderStatic();
+        render(0);
+      }
+
+      function startMotion() {
+        stopLoop();
+        stopLoop = Deck.loop(time => {
+          render(time);
+        }, { still: 1600 });
+      }
+
+      rebuild();
+      startMotion();
+      Deck.onResize(() => {
+        rebuild();
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+import esbuild from 'esbuild';import babel from '@babel/core';import fs from 'node:fs/promises';
+await esbuild.build({entryPoints:['main.jsx'],outfile:'app.js',bundle:true,minify:true,define:{'process.env.NODE_ENV':'"production"'},loader:{'.js':'jsx'},plugins:[{name:'strip-flow',setup(build){build.onLoad({filter:/\/src\/.*\.js$/},async args=>({contents:(await babel.transformAsync(await fs.readFile(args.path,'utf8'),{filename:args.path,parserOpts:{plugins:["jsx"]},babelrc:false,configFile:false,presets:['@babel/preset-flow']})).code,loader:'jsx'}));}}]});

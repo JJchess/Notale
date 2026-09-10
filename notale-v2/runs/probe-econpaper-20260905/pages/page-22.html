@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F7;
+      --surface: #FFFFFF;
+      --soft: #E3ECEF;
+      --text: #17272D;
+      --muted: #52666E;
+      --observed: #245A74;
+      --cause: #B13F2A;
+      --uncertain: #7A5B12;
+      --supported: #2D694C;
+      --selected: #D6E8EE;
+      --focus: #B13F2A;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      padding: 38px 56px 32px;
+      gap: 20px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      width: 1600px;
+      height: 900px;
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(82, 102, 110, 0.22);
+      padding-bottom: 14px;
+      flex-shrink: 0;
+    }
+    .header-left h1 {
+      margin: 0 0 4px 0;
+      font-size: var(--fs-h1);
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .header-left p {
+      margin: 0;
+      font-size: var(--fs-body);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .pass-pills {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      background: rgba(227, 236, 239, 0.7);
+      padding: 5px;
+      border-radius: var(--r-md);
+    }
+    .pass-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: none;
+      border: 1px solid transparent;
+      padding: 8px 16px;
+      border-radius: var(--r-sm);
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all var(--fast) ease;
+    }
+    .pass-pill .step-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .pass-pill[aria-selected="true"] {
+      background: var(--surface);
+      color: var(--observed);
+      border-color: rgba(36, 90, 116, 0.25);
+      box-shadow: 0 2px 6px rgba(23, 39, 45, 0.08);
+    }
+    .pass-pill[data-pass="1"][aria-selected="true"] { color: var(--observed); }
+    .pass-pill[data-pass="2"][aria-selected="true"] { color: var(--cause); }
+    .pass-pill[data-pass="3"][aria-selected="true"] { color: var(--supported); }
+
+    /* 主内容区：双栏证据网格 */
+    .workspace {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 22px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：论文剖面定位地图 */
+    .paper-anatomy {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid rgba(82, 102, 110, 0.18);
+      display: flex;
+      flex-direction: column;
+      padding: 18px 20px;
+      gap: 12px;
+    }
+    .col-title-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      border-bottom: 1px solid var(--soft);
+      padding-bottom: 10px;
+    }
+    .col-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .col-meta {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .doc-structure {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      flex: 1;
+      justify-content: space-between;
+    }
+    .sec-block {
+      background: #FAFCFC;
+      border: 1px solid rgba(82, 102, 110, 0.18);
+      border-radius: var(--r-sm);
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all var(--move) ease;
+      position: relative;
+    }
+    .sec-left {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .sec-code {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      width: 38px;
+      flex-shrink: 0;
+    }
+    .sec-name {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .sec-state-tag {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--soft);
+      color: var(--muted);
+      transition: all var(--fast) ease;
+      white-space: nowrap;
+    }
+
+    /* 激活与跳过状态 */
+    .sec-block.is-active {
+      background: #FFFFFF;
+      border-color: var(--highlight-color, var(--observed));
+      box-shadow: 0 3px 10px rgba(23, 39, 45, 0.08), 0 0 0 1px var(--highlight-color, var(--observed));
+      transform: translateX(4px);
+    }
+    .sec-block.is-active .sec-name {
+      color: var(--text);
+      font-weight: 700;
+    }
+    .sec-block.is-active .sec-state-tag {
+      background: var(--tag-bg, rgba(36, 90, 116, 0.12));
+      color: var(--highlight-color, var(--observed));
+    }
+    .sec-block.is-dim {
+      opacity: 0.42;
+      background: rgba(227, 236, 239, 0.35);
+      border-style: dashed;
+    }
+
+    /* 右侧：审读目标、审计抓手与输出物 */
+    .pass-detail-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* 目标卡片 */
+    .goal-banner {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid rgba(82, 102, 110, 0.18);
+      padding: 16px 22px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 20px;
+      box-shadow: 0 2px 8px rgba(23, 39, 45, 0.04);
+    }
+    .goal-badge {
+      font-size: var(--fs-tick);
+      font-weight: 800;
+      padding: 6px 12px;
+      border-radius: var(--r-sm);
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+    }
+    .goal-body h2 {
+      margin: 0 0 4px;
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .goal-body p {
+      margin: 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .time-budget {
+      text-align: right;
+      padding-left: 18px;
+      border-left: 1px solid var(--soft);
+    }
+    .time-budget .num {
+      font-size: 34px;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .time-budget .unit {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      display: block;
+      margin-top: 4px;
+      white-space: nowrap;
+    }
+
+    /* 审计抓手与避坑对立卡 */
+    .audit-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      flex: 1;
+      min-height: 0;
+    }
+    .card {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid rgba(82, 102, 110, 0.18);
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .card-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      border-bottom: 1px solid var(--soft);
+      padding-bottom: 8px;
+    }
+    .card-head-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+    }
+    .audit-items {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+      justify-content: space-between;
+    }
+    .audit-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: #FAFCFC;
+      border: 1px solid rgba(82, 102, 110, 0.12);
+      border-radius: var(--r-sm);
+      padding: 10px 14px;
+    }
+    .audit-item-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+    }
+    .audit-item-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* 底部产出交付条 */
+    .deliverable-footer {
+      background: #FAFCFC;
+      border: 1px solid rgba(82, 102, 110, 0.2);
+      border-radius: var(--r-md);
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .deliverable-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .deliverable-tag {
+      font-size: var(--fs-tick);
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      background: var(--soft);
+      color: var(--muted);
+    }
+    .deliverable-val {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--observed);
+      text-align: right;
+    }
+
+    /* 控制切换快捷键提示 */
+    .bottom-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      padding-top: 2px;
+      flex-shrink: 0;
+    }
+    .btn-group {
+      display: flex;
+      gap: 10px;
+    }
+    .nav-btn {
+      background: var(--surface);
+      border: 1px solid rgba(82, 102, 110, 0.28);
+      border-radius: var(--r-sm);
+      padding: 6px 16px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--fast) ease;
+    }
+    .nav-btn:hover {
+      border-color: var(--observed);
+      color: var(--observed);
+    }
+    .nav-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body data-page="22" data-total="24">
+  <div id="stage">
+    <!-- 顶部导航与主张 -->
+    <header class="header-bar min0">
+      <div class="header-left min0">
+        <h1>三遍阅读法：先锁定主张，再审计识别，最后核对结果与稳健性</h1>
+        <p>避免从头到尾被动精读：每一遍只分配一种审读关注点，由浅入深对齐论证链条。</p>
+      </div>
+      <div class="pass-pills min0" role="tablist" aria-label="三遍阅读阶段">
+        <button class="pass-pill min0" role="tab" data-pass="1" id="tab-pass-1" aria-selected="true" aria-controls="panel-content">
+          <span class="step-dot"></span>第 1 遍 · 锁定主张
+        </button>
+        <button class="pass-pill min0" role="tab" data-pass="2" id="tab-pass-2" aria-selected="false" aria-controls="panel-content">
+          <span class="step-dot"></span>第 2 遍 · 审计识别
+        </button>
+        <button class="pass-pill min0" role="tab" data-pass="3" id="tab-pass-3" aria-selected="false" aria-controls="panel-content">
+          <span class="step-dot"></span>第 3 遍 · 核对与稳健
+        </button>
+      </div>
+    </header>
+
+    <!-- 工作台：论文剖面 vs 当前审读抓手 -->
+    <main class="workspace min0" id="panel-content">
+      <!-- 论文剖面地图 -->
+      <section class="paper-anatomy min0" aria-label="论文结构透视图">
+        <div class="col-title-row">
+          <span class="col-title">论文结构注意力定位</span>
+          <span class="col-meta" id="anatomy-hint">第 1 遍激活 3 个核心区块</span>
+        </div>
+        <div class="doc-structure" id="doc-structure">
+          <!-- 8个标准论文区块由 JS 动态切换状态与注记 -->
+          <div class="sec-block" data-sec="title-abs">
+            <div class="sec-left">
+              <span class="sec-code">§ 0</span>
+              <span class="sec-name">标题与摘要 (Abstract)</span>
+            </div>
+            <span class="sec-state-tag">重点锁定</span>
+          </div>
+
+          <div class="sec-block" data-sec="intro">
+            <div class="sec-left">
+              <span class="sec-code">§ 1</span>
+              <span class="sec-name">引言与文献 (Introduction)</span>
+            </div>
+            <span class="sec-state-tag">精读前 3 页</span>
+          </div>
+
+          <div class="sec-block" data-sec="bg-data">
+            <div class="sec-left">
+              <span class="sec-code">§ 2</span>
+              <span class="sec-name">制度背景与样本构建 (Background & Data)</span>
+            </div>
+            <span class="sec-state-tag">暂略读</span>
+          </div>
+
+          <div class="sec-block" data-sec="ident">
+            <div class="sec-left">
+              <span class="sec-code">§ 3</span>
+              <span class="sec-name">经验识别设定 (Empirical Strategy)</span>
+            </div>
+            <span class="sec-state-tag">暂略读</span>
+          </div>
+
+          <div class="sec-block" data-sec="baseline">
+            <div class="sec-left">
+              <span class="sec-code">§ 4</span>
+              <span class="sec-name">基准回归结果 (Baseline Results)</span>
+            </div>
+            <span class="sec-state-tag">仅看主表 1-2 列</span>
+          </div>
+
+          <div class="sec-block" data-sec="threats">
+            <div class="sec-left">
+              <span class="sec-code">§ 5</span>
+              <span class="sec-name">内生性诊断与机制 (Threats & Mechanism)</span>
+            </div>
+            <span class="sec-state-tag">暂略读</span>
+          </div>
+
+          <div class="sec-block" data-sec="robust">
+            <div class="sec-left">
+              <span class="sec-code">§ 6</span>
+              <span class="sec-name">稳健性与敏感度 (Robustness Checks)</span>
+            </div>
+            <span class="sec-state-tag">暂不看</span>
+          </div>
+
+          <div class="sec-block" data-sec="conclusion">
+            <div class="sec-left">
+              <span class="sec-code">§ 7</span>
+              <span class="sec-name">结论与政策含义 (Conclusion)</span>
+            </div>
+            <span class="sec-state-tag">核对主张边界</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧审读抓手区 -->
+      <section class="pass-detail-panel min0" aria-label="审读任务与抓手">
+        <!-- 阶段导语与时间预算 -->
+        <div class="goal-banner min0" id="goal-banner">
+          <span class="goal-badge" id="goal-badge">第 1 遍 · 宏观把关</span>
+          <div class="goal-body">
+            <h2 id="goal-title">先锁定作者的核心主张与事实边界</h2>
+            <p id="goal-summary">用 15 分钟摸清“到底回答了什么问题、因果方向是什么、核心贡献在何处”，绝不陷入公式细节。</p>
+          </div>
+          <div class="time-budget">
+            <span class="num" id="goal-time">15</span>
+            <span class="unit">建议用时 / 分钟</span>
+          </div>
+        </div>
+
+        <!-- 两个抓手卡片：必审问 vs 警惕误区 -->
+        <div class="audit-grid min0">
+          <div class="card min0">
+            <div class="card-head">
+              <span class="card-head-dot" style="background: var(--observed);"></span>
+              <span id="audit-left-title">核心审查问题清单</span>
+            </div>
+            <div class="audit-items" id="audit-questions">
+              <!-- 由 JS 填充 -->
+            </div>
+          </div>
+
+          <div class="card min0">
+            <div class="card-head">
+              <span class="card-head-dot" style="background: var(--cause);"></span>
+              <span id="audit-right-title">常见阅读误区与陷阱</span>
+            </div>
+            <div class="audit-items" id="audit-traps">
+              <!-- 由 JS 填充 -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 阶段阶段性交付物产出 -->
+        <div class="deliverable-footer min0">
+          <div class="deliverable-label">
+            <span class="deliverable-tag">阶段交付物</span>
+            <span id="deliverable-name">主张一览表 (1 句话结论 + 核心识别类型)</span>
+          </div>
+          <div class="deliverable-val" id="deliverable-desc">
+            若无法在一句话内写出“X 对 Y 的因果影响”，暂停并重读引言末段
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部辅助说明与键盘翻阅提示 -->
+    <footer class="bottom-nav min0">
+      <span>提示：可点击上方标签或使用方向键 [← / →] 切换审读阶段</span>
+      <div class="btn-group">
+        <button class="nav-btn" id="btn-prev" disabled>上一阶段</button>
+        <button class="nav-btn" id="btn-next">下一阶段</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      // 阶段配置定义
+      const PASSES = [
+        {
+          id: 1,
+          badge: "第 1 遍 · 锁定主张",
+          title: "先锁定作者的核心主张与事实边界",
+          summary: "用 15 分钟快速摸清“到底回答了什么问题、因果方向是什么、核心贡献在何处”，绝不陷入回归细节与证明。",
+          time: "15",
+          themeColor: "var(--observed)",
+          tagBg: "rgba(36, 90, 116, 0.12)",
+          hint: "激活 3 个定位区块：标题/摘要、引言第 1-3 页与末段结论",
+          activeSections: {
+            "title-abs": { state: "is-active", tag: "精读摘要" },
+            "intro": { state: "is-active", tag: "读前3页+末段" },
+            "bg-data": { state: "is-dim", tag: "跳过" },
+            "ident": { state: "is-dim", tag: "仅看识别标签" },
+            "baseline": { state: "is-active", tag: "扫视表1主要系数" },
+            "threats": { state: "is-dim", tag: "跳过" },
+            "robust": { state: "is-dim", tag: "跳过" },
+            "conclusion": { state: "is-active", tag: "核对主张边界" }
+          },
+          questions: [
+            { title: "因果问题定义", desc: "处理变量 X 是什么？结果变量 Y 是什么？研究受众是哪个群体？" },
+            { title: "核心主张语句", desc: "作者在引言第 3-4 页提炼出的那句定性/定量判断到底是什么？" },
+            { title: "识别设计归类", desc: "论文声称使用的是 DID、IV、RD、RK 还是交错断点？属于自然实验还是政策冲击？" }
+          ],
+          traps: [
+            { title: "开篇陷入冗长文献", desc: "在引言的学术史铺垫中花费数十分钟，丢失了对作者自身主张的聚焦。" },
+            { title: "纠结附录变量构造", desc: "第一遍就去核对每个控制变量如何测度，容易只见树木不见森林。" },
+            { title: "误把相关关系当因果", desc: "未理清作者是做了描述性事实发现，还是严格声称因果外生性。" }
+          ],
+          deliverable: {
+            name: "识别主张一览卡 (One-Sentence Claim)",
+            desc: "一句话概括：“在[群体]中，[冲击X]导致了[结果Y]发生[变化量]”"
+          }
+        },
+        {
+          id: 2,
+          badge: "第 2 遍 · 审计识别",
+          title: "审计识别设定：反事实何在？外生性凭什么成立？",
+          summary: "用 45 分钟深入检验识别策略。核心在于识别假定是否透明，对照组是否干净，是否存在不可观测遗漏变量。",
+          time: "45",
+          themeColor: "var(--cause)",
+          tagBg: "rgba(177, 63, 42, 0.12)",
+          hint: "核心聚集制度背景、识别方程与关键内生性诊断",
+          activeSections: {
+            "title-abs": { state: "is-dim", tag: "已完成" },
+            "intro": { state: "is-dim", tag: "快速参考" },
+            "bg-data": { state: "is-active", tag: "细读制度冲击来源" },
+            "ident": { state: "is-active", tag: "逐项推敲计量方程" },
+            "baseline": { state: "is-active", tag: "核对固定效应吸收" },
+            "threats": { state: "is-active", tag: "严格审计排他性" },
+            "robust": { state: "is-dim", tag: "待第 3 遍核对" },
+            "conclusion": { state: "is-dim", tag: "暂跳过" }
+          },
+          questions: [
+            { title: "冲击的准随机性来源", desc: "政策或自然冲击为何在外生于个体的层面上分配？谁决定了处理状态？" },
+            { title: "不可抗拒的核心假定", desc: "DID 平行趋势、IV 排他性约束、RD 断点处平滑假定，作者拿出了什么证据？" },
+            { title: "固定效应吸收与权重", desc: "控制了哪些维度的交互固定效应？是否有双向固定效应下的负权重异质性？" }
+          ],
+          traps: [
+            { title: "将计量方程公式当成证据", desc: "把写出了回归方程误以为因果识别已经完成；方程只是主张的数学形式。" },
+            { title: "忽视同期政策干扰", desc: "未核验处理组在受冲击年份是否同时叠加了其他区域性或行业性补贴。" },
+            { title: "对自选择偏差视而不见", desc: "忽略处理组与对照组在政策实施前的自发选择机制和动机差异。" }
+          ],
+          deliverable: {
+            name: "识别假定与关键威胁清单 (Threats Audit)",
+            desc: "明确写出 1 个关键识别假定（如排他性约束）以及最致命的潜在混杂因素"
+          }
+        },
+        {
+          id: 3,
+          badge: "第 3 遍 · 核对与稳健",
+          title: "核对基准表格、诊断附录并在合理扰动下检验稳健性",
+          summary: "用 30 分钟核验实证结果表与附录。检验效应量经济学意义、敏感度边界以及核心结论是否容易被扰动破坏。",
+          time: "30",
+          themeColor: "var(--supported)",
+          tagBg: "rgba(45, 105, 76, 0.12)",
+          hint: "全面攻坚基准表格、机制检验、附录表格与稳健性检验",
+          activeSections: {
+            "title-abs": { state: "is-dim", tag: "已完成" },
+            "intro": { state: "is-dim", tag: "已完成" },
+            "bg-data": { state: "is-dim", tag: "备查" },
+            "ident": { state: "is-dim", tag: "已审计" },
+            "baseline": { state: "is-active", tag: "核查点估计与标准误" },
+            "threats": { state: "is-active", tag: "核验机制与异质性" },
+            "robust": { state: "is-active", tag: "逐表审查敏感度扰动" },
+            "conclusion": { state: "is-active", tag: "核定效应经济学规模" }
+          },
+          questions: [
+            { title: "经济学意义而非纯统计显著", desc: "点估计值转化为标准差或百分比后，效应量在现实经济中是否过大或不可信？" },
+            { title: "样本与聚类标准误敏感性", desc: "剔除极端离群值、更宽聚类层级或重抽样后，置信区间是否仍然稳健？" },
+            { title: "安慰剂与反事实检验", desc: "提前伪造政策年份（时滞反事实）或虚构假处理组，估计值是否收敛于零？" }
+          ],
+          traps: [
+            { title: "迷信三个星号标号 (p < 0.01)", desc: "把统计显著直接等同于因果效应稳固；大样本下微弱偏移也会带星号。" },
+            { title: "忽略附录中的存疑图表", desc: "很多关键检验（如前趋势检验在第 -3 期显著跳动）常被雪藏在网络附录中。" },
+            { title: "混淆机制检验与控制变量", desc: "将内生中间结果变量当作控制变量加入主回归，造成恶名昭彰的坏控制偏误。" }
+          ],
+          deliverable: {
+            name: "完整证据评估账本 (Evidence Ledger)",
+            desc: "登记：基准点估计、平行趋势检验结论、关键附录稳健性以及该结论的外部有效性边界"
+          }
+        }
+      ];
+
+      let currentPassIndex = 0;
+
+      // DOM 元素
+      const tabButtons = document.querySelectorAll(".pass-pill");
+      const docBlocks = document.querySelectorAll(".sec-block");
+      const anatomyHint = document.getElementById("anatomy-hint");
+
+      const goalBadge = document.getElementById("goal-badge");
+      const goalTitle = document.getElementById("goal-title");
+      const goalSummary = document.getElementById("goal-summary");
+      const goalTime = document.getElementById("goal-time");
+
+      const auditQuestions = document.getElementById("audit-questions");
+      const auditTraps = document.getElementById("audit-traps");
+      const deliverableName = document.getElementById("deliverable-name");
+      const deliverableDesc = document.getElementById("deliverable-desc");
+
+      const btnPrev = document.getElementById("btn-prev");
+      const btnNext = document.getElementById("btn-next");
+
+      function updatePass(index) {
+        currentPassIndex = Deck.clamp(index, 0, PASSES.length - 1);
+        const data = PASSES[currentPassIndex];
+
+        // 更新药丸导航状态
+        tabButtons.forEach((btn, i) => {
+          const selected = i === currentPassIndex;
+          btn.setAttribute("aria-selected", selected ? "true" : "false");
+        });
+
+        // 更新左侧论文剖面高亮
+        anatomyHint.textContent = data.hint;
+        docBlocks.forEach(block => {
+          const secKey = block.getAttribute("data-sec");
+          const cfg = data.activeSections[secKey];
+          block.classList.remove("is-active", "is-dim");
+          const tagSpan = block.querySelector(".sec-state-tag");
+          if (cfg) {
+            block.classList.add(cfg.state);
+            tagSpan.textContent = cfg.tag;
+            if (cfg.state === "is-active") {
+              block.style.setProperty("--highlight-color", data.themeColor);
+              block.style.setProperty("--tag-bg", data.tagBg);
+            } else {
+              block.style.removeProperty("--highlight-color");
+              block.style.removeProperty("--tag-bg");
+            }
+          }
+        });
+
+        // 更新目标卡片
+        goalBadge.textContent = data.badge;
+        goalBadge.style.background = data.tagBg;
+        goalBadge.style.color = data.themeColor;
+        goalTitle.textContent = data.title;
+        goalSummary.textContent = data.summary;
+        goalTime.textContent = data.time;
+        goalTime.style.color = data.themeColor;
+
+        // 渲染核心审查问题
+        auditQuestions.innerHTML = data.questions.map(q => `
+          <div class="audit-item">
+            <div class="audit-item-title">
+              <span>${q.title}</span>
+            </div>
+            <div class="audit-item-desc">${q.desc}</div>
+          </div>
+        `).join("");
+
+        // 渲染避坑指南
+        auditTraps.innerHTML = data.traps.map(t => `
+          <div class="audit-item">
+            <div class="audit-item-title" style="color: var(--cause);">
+              <span>⚠ ${t.title}</span>
+            </div>
+            <div class="audit-item-desc">${t.desc}</div>
+          </div>
+        `).join("");
+
+        // 渲染产出交付物
+        deliverableName.textContent = data.deliverable.name;
+        deliverableDesc.textContent = data.deliverable.desc;
+        deliverableName.style.color = data.themeColor;
+
+        // 底部前进后退按钮状态
+        btnPrev.disabled = currentPassIndex === 0;
+        btnNext.disabled = currentPassIndex === PASSES.length - 1;
+      }
+
+      // 事件绑定
+      tabButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          const passId = parseInt(btn.getAttribute("data-pass"), 10);
+          updatePass(passId - 1);
+        });
+      });
+
+      btnPrev.addEventListener("click", () => updatePass(currentPassIndex - 1));
+      btnNext.addEventListener("click", () => updatePass(currentPassIndex + 1));
+
+      // 键盘快捷键支持左右切换
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft") {
+          updatePass(currentPassIndex - 1);
+        } else if (e.key === "ArrowRight") {
+          updatePass(currentPassIndex + 1);
+        }
+      });
+
+      // 初始化第一阶段
+      updatePass(0);
+      Deck.init({ index: 22, total: 24, keys: false });
+    })();
+  </script>
+</body>
+</html>

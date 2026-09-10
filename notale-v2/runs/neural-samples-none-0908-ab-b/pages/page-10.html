@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 28px 48px;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      user-select: none;
+    }
+
+    /* 顶部标题与极简导语 */
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .header-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin: 0;
+    }
+    .header-desc {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主舞台双栏：左侧损失等高线与步长轨迹，右侧实时动态与因果指标 */
+    .workbench {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 36px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧等高线绘图区 */
+    .contour-pane {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+    .canvas-container {
+      position: relative;
+      width: 100%;
+      height: 640px;
+      cursor: crosshair;
+    }
+    .canvas-container canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧控制与测量追踪面板 */
+    .control-pane {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 8px 0 16px;
+    }
+
+    .section-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--structure);
+      margin: 0 0 16px;
+    }
+
+    .param-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .param-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-label);
+      font-weight: 600;
+    }
+    .param-val {
+      font-family: monospace;
+      font-size: var(--fs-h2);
+      color: var(--structure);
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    input[type=range] {
+      flex: 1;
+      accent-color: var(--structure);
+      height: 6px;
+      cursor: pointer;
+    }
+
+    .preset-chips {
+      display: flex;
+      gap: 8px;
+    }
+    .preset-btn {
+      padding: 6px 12px;
+      border: 1px solid var(--rule);
+      background: transparent;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.15s ease;
+    }
+    .preset-btn:hover {
+      border-color: var(--structure);
+    }
+    .preset-btn.active {
+      background: var(--structure);
+      color: #fff;
+      border-color: var(--structure);
+    }
+
+    /* 状态与测量结果显示卡 */
+    .metrics-board {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      border-top: 1px solid var(--rule);
+      padding-top: 20px;
+    }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .metric-name {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .metric-data {
+      font-family: monospace;
+      font-size: var(--fs-lead);
+      font-weight: 700;
+    }
+    .metric-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+    }
+    .status-converged {
+      background: #e4eee9;
+      color: var(--structure);
+    }
+    .status-slow {
+      background: #e9eceb;
+      color: var(--muted);
+    }
+    .status-diverged {
+      background: #fbeae6;
+      color: var(--signal);
+    }
+
+    /* 损失曲线图容器 */
+    .loss-chart-box {
+      width: 100%;
+      height: 180px;
+      position: relative;
+    }
+
+    .actions-bar {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .btn-action {
+      flex: 1;
+      padding: 10px 16px;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      border: 1px solid var(--structure);
+      background: transparent;
+      color: var(--structure);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+    .btn-action.primary {
+      background: var(--structure);
+      color: #fff;
+    }
+    .btn-action:hover {
+      opacity: 0.9;
+    }
+
+    .hint-bar {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <div class="header-row">
+      <h1 class="header-title">学习率与训练动力学：步长与损失曲面</h1>
+      <p class="header-desc">点击曲面任一点设定初始参数，观察轨迹</p>
+    </div>
+
+    <div class="workbench">
+      <!-- 左侧：等高线与参数更新轨迹 -->
+      <div class="contour-pane">
+        <div class="canvas-container" id="contour-container">
+          <canvas id="cv-contour" class="cv-fill"></canvas>
+        </div>
+        <div class="hint-bar">坐标 (w₁, w₂)；椭圆曲率差异产生各向异性梯度</div>
+      </div>
+
+      <!-- 右侧：控制、状态诊断与损失收敛测量 -->
+      <div class="control-pane">
+        <div>
+          <div class="param-group">
+            <div class="param-label-row">
+              <span>学习率 η (Learning Rate)</span>
+              <span class="param-val" id="val-lr">0.16</span>
+            </div>
+            <div class="slider-row">
+              <input type="range" id="slider-lr" min="0.01" max="0.28" step="0.01" value="0.16">
+            </div>
+            <div class="preset-chips">
+              <button class="preset-btn" data-lr="0.03">过小 (缓慢)</button>
+              <button class="preset-btn active" data-lr="0.16">适中 (稳定)</button>
+              <button class="preset-btn" data-lr="0.22">过大 (震荡)</button>
+              <button class="preset-btn" data-lr="0.26">发散 (越界)</button>
+            </div>
+          </div>
+
+          <div class="metrics-board">
+            <div class="metric-row">
+              <span class="metric-name">动力学状态</span>
+              <span class="metric-badge status-converged" id="badge-status">稳定收敛</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-name">最终损失 L</span>
+              <span class="metric-data" id="txt-loss">0.0004</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-name">迭代步数</span>
+              <span class="metric-data" id="txt-steps">25 步</span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-bottom: 8px;">损失收敛曲线 L(t)</div>
+          <div class="loss-chart-box">
+            <canvas id="cv-loss" class="cv-fill"></canvas>
+          </div>
+          <div class="actions-bar">
+            <button class="btn-action primary" id="btn-step">单步推进</button>
+            <button class="btn-action" id="btn-reset">重置起点</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    学习率 eta 是梯度下降中最核心的超参数。在各向异性的损失曲面上（长轴平缓、短轴陡峭），梯度方向并不直接指向最小值。
+    当学习率过小时，更新步长微弱，需要极多迭代才能挪入中心低谷；
+    当学习率适中时，参数沿陡峭方向快速下沉并在平缓方向稳步推进，迅速收敛；
+    当学习率过大时，更新将在峡谷两侧剧烈震荡横跳，出现所谓的超调现象（Overshooting）；
+    一旦超过临界步长 2/L_max，更新步长将超过局部恢复力，损失不仅不会下降，反而急剧累积以指数级发散出界。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 真实二次损失曲面模型（各向异性凸二次型，代表典型神经网络极小值邻域的 Hessian 特征）
+    // L(w1, w2) = 0.5 * (a * w1^2 + b * w2^2)
+    // 梯度：grad = [a * w1, b * w2]
+    // 最大曲率 b = 8.0, 理论发散临界学习率 eta_crit = 2 / b = 0.25
+    const MODEL = {
+      a: 1.0,  // w1 平缓方向 (曲率 1)
+      b: 8.0,  // w2 陡峭方向 (曲率 8, 容易产生纵向震荡与发散)
+      loss(w1, w2) {
+        return 0.5 * (this.a * w1 * w1 + this.b * w2 * w2);
+      },
+      grad(w1, w2) {
+        return [this.a * w1, this.b * w2];
+      }
+    };
+
+    // 状态管理
+    const state = {
+      lr: 0.16,
+      startW: [-3.6, 2.2], // 默认起点
+      path: [],            // 轨迹序列 [[w1, w2], ...]
+      maxSteps: 30,
+      activeStep: 30       // 当前显示到的步数
+    };
+
+    // 重新计算完整的梯度下降动力学轨迹
+    function computeTrajectory() {
+      let [w1, w2] = state.startW;
+      state.path = [[w1, w2]];
+      for (let i = 0; i < state.maxSteps; i++) {
+        const [g1, g2] = MODEL.grad(w1, w2);
+        w1 = w1 - state.lr * g1;
+        w2 = w2 - state.lr * g2;
+        state.path.push([w1, w2]);
+        // 若已发散极远，提前截断
+        if (Math.hypot(w1, w2) > 40) break;
+      }
+    }
+
+    // 坐标映射工具：模型坐标 [-4.5, 4.5] x [-3.0, 3.0]
+    const W_RANGE = { minX: -4.5, maxX: 4.5, minY: -3.0, maxY: 3.0 };
+
+    function toScreenX(w1, w) {
+      return ((w1 - W_RANGE.minX) / (W_RANGE.maxX - W_RANGE.minX)) * w;
+    }
+    function toScreenY(w2, h) {
+      return h - ((w2 - W_RANGE.minY) / (W_RANGE.maxY - W_RANGE.minY)) * h;
+    }
+    function toModelW(sx, sy, w, h) {
+      const w1 = W_RANGE.minX + (sx / w) * (W_RANGE.maxX - W_RANGE.minX);
+      const w2 = W_RANGE.minY + ((h - sy) / h) * (W_RANGE.maxY - W_RANGE.minY);
+      return [w1, w2];
+    }
+
+    // 绘制等高线与轨迹画布
+    const cvContour = document.getElementById('cv-contour');
+    function drawContour(ctx, w, h) {
+      ctx.clearRect(0, 0, w, h);
+
+      // 背景微冷白板底
+      ctx.fillStyle = '#F8FAF9';
+      ctx.fillRect(0, 0, w, h);
+
+      // 绘制网格线与零轴
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#E2E7E4';
+      for (let x = -4; x <= 4; x += 1) {
+        const sx = toScreenX(x, w);
+        ctx.beginPath();
+        ctx.moveTo(sx, 0);
+        ctx.lineTo(sx, h);
+        ctx.stroke();
+      }
+      for (let y = -2; y <= 2; y += 1) {
+        const sy = toScreenY(y, h);
+        ctx.beginPath();
+        ctx.moveTo(0, sy);
+        ctx.lineTo(w, sy);
+        ctx.stroke();
+      }
+
+      // 中心轴线
+      ctx.strokeStyle = '#BAC4BF';
+      ctx.lineWidth = 1.5;
+      const zeroX = toScreenX(0, w);
+      const zeroY = toScreenY(0, h);
+      ctx.beginPath();
+      ctx.moveTo(zeroX, 0);
+      ctx.lineTo(zeroX, h);
+      ctx.moveTo(0, zeroY);
+      ctx.lineTo(w, zeroY);
+      ctx.stroke();
+
+      // 绘制理论椭圆等高线 L(w1, w2) = C
+      const levels = [0.2, 0.8, 2.0, 4.5, 8.0, 14.0, 24.0, 38.0];
+      ctx.lineWidth = 1.2;
+      levels.forEach(L => {
+        // 0.5*(a*w1^2 + b*w2^2) = L => w1^2 / (2L/a) + w2^2 / (2L/b) = 1
+        const rxVal = Math.sqrt((2 * L) / MODEL.a);
+        const ryVal = Math.sqrt((2 * L) / MODEL.b);
+        const rx = (rxVal / (W_RANGE.maxX - W_RANGE.minX)) * w;
+        const ry = (ryVal / (W_RANGE.maxY - W_RANGE.minY)) * h;
+
+        ctx.strokeStyle = '#D2DBD6';
+        ctx.beginPath();
+        ctx.ellipse(zeroX, zeroY, rx, ry, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+
+      // 标记极小值中心点
+      ctx.fillStyle = '#1C4436';
+      ctx.beginPath();
+      ctx.arc(zeroX, zeroY, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 绘制步长轨迹
+      const visiblePts = state.path.slice(0, state.activeStep + 1);
+      if (visiblePts.length > 1) {
+        // 连线
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = state.lr >= 0.25 ? '#D43811' : '#1C4436';
+        ctx.beginPath();
+        visiblePts.forEach((p, idx) => {
+          const sx = toScreenX(p[0], w);
+          const sy = toScreenY(p[1], h);
+          if (idx === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        });
+        ctx.stroke();
+
+        // 沿途箭头指示方向
+        for (let i = 0; i < visiblePts.length - 1; i++) {
+          const p1 = visiblePts[i];
+          const p2 = visiblePts[i + 1];
+          const sx1 = toScreenX(p1[0], w);
+          const sy1 = toScreenY(p1[1], h);
+          const sx2 = toScreenX(p2[0], w);
+          const sy2 = toScreenY(p2[1], h);
+          const midX = (sx1 + sx2) / 2;
+          const midY = (sy1 + sy2) / 2;
+          const angle = Math.atan2(sy2 - sy1, sx2 - sx1);
+
+          ctx.save();
+          ctx.translate(midX, midY);
+          ctx.rotate(angle);
+          ctx.fillStyle = state.lr >= 0.25 ? '#D43811' : '#1C4436';
+          ctx.beginPath();
+          ctx.moveTo(5, 0);
+          ctx.lineTo(-4, -3.5);
+          ctx.lineTo(-4, 3.5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      // 绘制所有步点
+      visiblePts.forEach((p, idx) => {
+        const sx = toScreenX(p[0], w);
+        const sy = toScreenY(p[1], h);
+
+        if (idx === 0) {
+          // 起始点
+          ctx.fillStyle = '#151A18';
+          ctx.beginPath();
+          ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.font = '12px monospace';
+          ctx.fillStyle = '#151A18';
+          ctx.fillText('W_0', sx + 8, sy - 8);
+        } else if (idx === visiblePts.length - 1) {
+          // 最新步点
+          ctx.fillStyle = state.lr >= 0.25 ? '#D43811' : '#1C4436';
+          ctx.beginPath();
+          ctx.arc(sx, sy, 5.5, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          // 中间步点
+          ctx.fillStyle = state.lr >= 0.25 ? '#D43811' : '#1C4436';
+          ctx.beginPath();
+          ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    // 绘制右下角损失曲线
+    const cvLoss = document.getElementById('cv-loss');
+    function drawLossChart(ctx, w, h) {
+      ctx.clearRect(0, 0, w, h);
+
+      // 背景与坐标轴
+      ctx.strokeStyle = '#BAC4BF';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(35, 10);
+      ctx.lineTo(35, h - 25);
+      ctx.lineTo(w - 10, h - 25);
+      ctx.stroke();
+
+      const losses = state.path.slice(0, state.activeStep + 1).map(p => MODEL.loss(p[0], p[1]));
+      if (losses.length === 0) return;
+
+      const maxVal = Math.min(30, Math.max(10, ...losses.slice(0, 5)));
+      const plotW = w - 50;
+      const plotH = h - 40;
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = state.lr >= 0.25 ? '#D43811' : '#1C4436';
+      ctx.beginPath();
+
+      losses.forEach((loss, i) => {
+        const x = 35 + (i / Math.max(1, state.maxSteps)) * plotW;
+        const clampedLoss = Math.min(maxVal, Math.max(0, loss));
+        const y = (h - 25) - (clampedLoss / maxVal) * plotH;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // 刻度文本
+      ctx.fillStyle = '#5B6661';
+      ctx.font = '12px monospace';
+      ctx.fillText('0', 16, h - 22);
+      ctx.fillText(maxVal.toFixed(0), 10, 20);
+      ctx.fillText('t=0', 32, h - 10);
+      ctx.fillText(`t=${state.maxSteps}`, w - 35, h - 10);
+    }
+
+    // 更新右侧文本与状态提示
+    function updateMetrics() {
+      const currentPt = state.path[Math.min(state.activeStep, state.path.length - 1)];
+      const currentLoss = MODEL.loss(currentPt[0], currentPt[1]);
+      document.getElementById('txt-loss').textContent = currentLoss > 1000 ? '> 1000' : currentLoss.toFixed(4);
+      document.getElementById('txt-steps').textContent = `${state.activeStep} / ${state.maxSteps} 步`;
+
+      const badge = document.getElementById('badge-status');
+      if (state.lr >= 0.25) {
+        badge.className = 'metric-badge status-diverged';
+        badge.textContent = '超调发散 (越界爆炸)';
+      } else if (state.lr >= 0.20) {
+        badge.className = 'metric-badge status-diverged';
+        badge.textContent = '强烈震荡 (峡谷超调)';
+      } else if (state.lr <= 0.05) {
+        badge.className = 'metric-badge status-slow';
+        badge.textContent = '缓慢挪动 (未入低谷)';
+      } else {
+        badge.className = 'metric-badge status-converged';
+        badge.textContent = '稳定收敛 (快速极小)';
+      }
+    }
+
+    function renderAll() {
+      Deck.fit(cvContour);
+      drawContour(cvContour.getContext('2d'), cvContour.width / (window.devicePixelRatio || 1), cvContour.height / (window.devicePixelRatio || 1));
+
+      Deck.fit(cvLoss);
+      drawLossChart(cvLoss.getContext('2d'), cvLoss.width / (window.devicePixelRatio || 1), cvLoss.height / (window.devicePixelRatio || 1));
+
+      updateMetrics();
+    }
+
+    // 交互绑定
+    const sliderLr = document.getElementById('slider-lr');
+    const valLr = document.getElementById('val-lr');
+    const presetBtns = document.querySelectorAll('.preset-btn');
+
+    function setLearningRate(lr) {
+      state.lr = parseFloat(lr);
+      sliderLr.value = state.lr;
+      valLr.textContent = state.lr.toFixed(2);
+      presetBtns.forEach(btn => {
+        btn.classList.toggle('active', Math.abs(parseFloat(btn.dataset.lr) - state.lr) < 0.001);
+      });
+      state.activeStep = state.maxSteps;
+      computeTrajectory();
+      renderAll();
+    }
+
+    sliderLr.addEventListener('input', (e) => {
+      setLearningRate(e.target.value);
+    });
+
+    presetBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        setLearningRate(btn.dataset.lr);
+      });
+    });
+
+    // 可以在等高线上点击任意位置更换起点
+    const contourBox = document.getElementById('contour-container');
+    contourBox.addEventListener('pointerdown', (e) => {
+      const pt = Deck.pt(contourBox, e);
+      const rect = contourBox.getBoundingClientRect();
+      const modelPt = toModelW(pt.x, pt.y, 880, 640);
+      state.startW = [modelPt[0], modelPt[1]];
+      state.activeStep = state.maxSteps;
+      computeTrajectory();
+      renderAll();
+    });
+
+    // 单步推进
+    document.getElementById('btn-step').addEventListener('click', () => {
+      if (state.activeStep >= state.maxSteps) {
+        state.activeStep = 1;
+      } else {
+        state.activeStep = Math.min(state.maxSteps, state.activeStep + 1);
+      }
+      renderAll();
+    });
+
+    // 重置
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      state.startW = [-3.6, 2.2];
+      state.activeStep = state.maxSteps;
+      computeTrajectory();
+      renderAll();
+    });
+
+    // 初始化运行
+    computeTrajectory();
+    Deck.autofit(cvContour, (ctx, w, h) => drawContour(ctx, w, h));
+    Deck.autofit(cvLoss, (ctx, w, h) => drawLossChart(ctx, w, h));
+    updateMetrics();
+  </script>
+</body>
+</html>

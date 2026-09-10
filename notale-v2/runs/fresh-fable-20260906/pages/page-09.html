@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>09 · 梯度提升</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/deck.css">
+<link rel="stylesheet" href="assets/lib/katex.min.css">
+<style>
+  .lab{ position:absolute; left:64px; top:196px; width:940px; height:580px; }
+  .lab .ttl{ position:absolute; left:0; right:0; display:block; font-size:15px; font-weight:700; height:26px; }
+  .lab .ttl span{ float:right; font-size:13px; color:var(--muted); font-weight:500; }
+  .lab canvas{ position:absolute; left:0; width:940px; border-radius:12px; border:1px solid var(--rule); background:var(--paper); }
+  #top{ top:30px; height:320px; } #bot{ top:390px; height:190px; }
+  .t2{ top:360px; }
+  .side{ position:absolute; left:1044px; top:196px; width:492px; height:580px; display:grid; grid-template-rows:auto auto 1fr; gap:14px; }
+  .side .panel{ padding:18px 22px; }
+  .ctlbar{ display:grid; grid-template-columns:auto auto 1fr auto; gap:10px; align-items:center; }
+  .ctlbar .round{ font-family:var(--font-num); font-size:14px; color:var(--muted); text-align:right; }
+  .ctlbar .round b{ font-size:22px; color:var(--boost); font-weight:700; }
+  .opts{ display:grid; grid-template-columns:1fr 1fr; gap:12px 20px; }
+  .opts label{ font-size:14px; font-weight:600; display:block; margin-bottom:6px; }
+  .opts .seg button{ padding:0 12px; }
+  .opts .math{ grid-column:1/-1; font-size:20px; text-align:center; padding:6px 0 0; border-top:1px solid var(--rule-2); margin-top:2px; }
+  .opts .math small{ display:block; font-size:13px; color:var(--muted); margin-top:4px; }
+  .curve{ display:grid; grid-template-rows:auto 1fr auto; gap:6px; }
+  .curve h3{ font-size:15px; font-weight:700; display:flex; justify-content:space-between; }
+  .curve svg{ width:100%; height:100%; overflow:visible; }
+  .curve .kv .v{ font-size:26px; }
+</style>
+</head>
+<body>
+<main id="stage">
+  <header class="hd">
+    <div class="kicker"><b>03 · Boosting</b>GRADIENT BOOSTING · FRIEDMAN 2001</div>
+    <h1>换成回归：每棵新树去拟合<em class="boost">上一步的残差</em></h1>
+    <p class="lede">AdaBoost 把「错」编码成权重；梯度提升更直接——残差 y − F(x) 就是平方损失的负梯度，让下一棵小树学它，再乘一个<b>学习率 ν</b> 加到总预测里。</p>
+  </header>
+
+  <figure class="lab" aria-label="梯度提升逐轮演示">
+    <div class="ttl">当前总预测 F<sub>m</sub>(x) <span id="tag1">m = 0 · F₀ = 训练集均值</span></div>
+    <canvas id="top"></canvas>
+    <div class="ttl t2">残差 y − F<sub>m−1</sub>(x)，以及去拟合它们的第 m 棵树 h<sub>m</sub> <span id="tag2"></span></div>
+    <canvas id="bot"></canvas>
+  </figure>
+
+  <aside class="side">
+    <div class="panel ctlbar">
+      <button class="btn boost" id="step">加一棵树 →</button>
+      <button class="btn ghost" id="auto">自动 30 棵</button>
+      <button class="btn ghost" id="reset" style="justify-self:start">重置</button>
+      <span class="round">m = <b id="m">0</b> / 150</span>
+    </div>
+    <div class="panel opts">
+      <div><label>学习率 ν</label><div class="seg boost" id="lr"><button data-v="0.1">0.1</button><button data-v="0.3" aria-pressed="true">0.3</button><button data-v="1">1.0</button></div></div>
+      <div><label>每棵树深度</label><div class="seg" id="dp"><button data-v="1">1</button><button data-v="2" aria-pressed="true">2</button><button data-v="4">4</button></div></div>
+      <div class="math"><span id="f1"></span><span id="f1b" style="display:block;margin-top:4px;font-size:18px"></span><small>ν 小 → 每步走一点点，需要更多棵树，但更不容易过头</small></div>
+    </div>
+    <div class="panel curve">
+      <h3>误差随棵数 m 的变化 <span class="legend"><span><i style="--c:var(--boost)"></i>训练</span><span><i style="--c:var(--text)"></i>测试</span></span></h3>
+      <svg id="svg" viewBox="0 0 448 210"></svg>
+      <div class="kv" style="grid-template-columns:1fr 1fr 1fr">
+        <div><div class="k">训练 MSE</div><div class="v boost" id="etr">–</div></div>
+        <div><div class="k">测试 MSE</div><div class="v" id="ete">–</div></div>
+        <div><div class="k">测试最低点</div><div class="v single" id="best">–</div></div>
+      </div>
+    </div>
+  </aside>
+</main>
+<script src="assets/base.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/lib/katex.min.js"></script>
+<script src="assets/ens.js"></script>
+<script>
+Ens.footer(9);
+katex.render('F_m(x)=F_{m-1}(x)+\\nu\\,h_m(x)', document.getElementById('f1'), { throwOnError: false });
+katex.render('h_m \\approx y-F_{m-1}(x)\\;=\\;-\\partial L/\\partial F', document.getElementById('f1b'), { throwOnError: false });
+var train = Ens.sine1d(70, 0.2, Ens.rng('gb-09')), test = Ens.sine1d(400, 0.2, Ens.rng('gb-09-test'));
+var n = train.x.length, MMAX = 150, nu = 0.3, depth = 2, N = 300;
+var Ftr, Fte, Fgrid, m, trees, lastTree, trE, teE, lastRes;
+function mse(a, y) { var s = 0; for (var i = 0; i < a.length; i++) { var d = a[i] - y[i]; s += d * d; } return s / a.length; }
+function reset() {
+  var mean = d3.mean(train.y);
+  Ftr = new Float64Array(n).fill(mean); Fte = new Float64Array(test.x.length).fill(mean); Fgrid = new Float64Array(N + 1).fill(mean);
+  m = 0; lastTree = null; lastRes = null; trE = [mse(Ftr, train.y)]; teE = [mse(Fte, test.y)]; update();
+}
+function step() {
+  if (m >= MMAX) return;
+  var res = new Float64Array(n); for (var i = 0; i < n; i++) res[i] = train.y[i] - Ftr[i];
+  lastRes = res;
+  var h = Ens.regTree(train.x, Array.from(res), { maxDepth: depth, minLeaf: 3 }); lastTree = h;
+  for (var i2 = 0; i2 < n; i2++) Ftr[i2] += nu * h(train.x[i2]);
+  for (var j = 0; j < test.x.length; j++) Fte[j] += nu * h(test.x[j]);
+  for (var k = 0; k <= N; k++) Fgrid[k] += nu * h(k / N);
+  m++; trE.push(mse(Ftr, train.y)); teE.push(mse(Fte, test.y)); update();
+}
+var tcv = document.getElementById('top'), bcv = document.getElementById('bot'), tctx = Deck.fit(tcv), bctx = Deck.fit(bcv);
+var TW = 940, TH = 320, BH = 190, PAD = 16;
+function X(x) { return PAD + x * (TW - 2 * PAD); }
+function Yt(y) { return PAD + (1.0 - y) / 2.0 * (TH - 2 * PAD); }
+function Yb(r) { return BH / 2 - r * (BH / 2 - PAD) / 0.9; }
+function draw() {
+  tctx.clearRect(0, 0, TW, TH);
+  tctx.setLineDash([6, 6]); tctx.strokeStyle = 'rgba(106,113,119,.7)'; tctx.lineWidth = 2; tctx.beginPath(); for (var k = 0; k <= N; k++) tctx[k ? 'lineTo' : 'moveTo'](X(k / N), Yt(train.f(k / N))); tctx.stroke(); tctx.setLineDash([]);
+  tctx.fillStyle = 'rgba(29,35,39,.45)'; for (var i = 0; i < n; i++) { tctx.beginPath(); tctx.arc(X(train.x[i]), Yt(train.y[i]), 3.5, 0, 7); tctx.fill(); }
+  if (lastTree) { tctx.strokeStyle = Deck.rgba('--boost', 0.35); tctx.lineWidth = 2; tctx.beginPath(); for (var k1 = 0; k1 <= N; k1++) tctx[k1 ? 'lineTo' : 'moveTo'](X(k1 / N), Yt(Fgrid[k1] - nu * lastTree(k1 / N))); tctx.stroke(); }
+  tctx.strokeStyle = Deck.token('--boost'); tctx.lineWidth = 4; tctx.beginPath(); for (var k2 = 0; k2 <= N; k2++) tctx[k2 ? 'lineTo' : 'moveTo'](X(k2 / N), Yt(Fgrid[k2])); tctx.stroke();
+  bctx.clearRect(0, 0, TW, BH);
+  bctx.strokeStyle = Deck.token('--rule'); bctx.lineWidth = 1; bctx.beginPath(); bctx.moveTo(PAD, Yb(0)); bctx.lineTo(TW - PAD, Yb(0)); bctx.stroke();
+  var res = lastRes || Float64Array.from(train.y, function (y, i) { return y - Ftr[i]; });
+  bctx.fillStyle = Deck.rgba('--boost', 0.6); for (var i3 = 0; i3 < n; i3++) { bctx.beginPath(); bctx.arc(X(train.x[i3]), Yb(res[i3]), 3.5, 0, 7); bctx.fill(); }
+  if (lastTree) { bctx.strokeStyle = Deck.token('--text'); bctx.lineWidth = 2.5; bctx.beginPath(); for (var k3 = 0; k3 <= N; k3++) bctx[k3 ? 'lineTo' : 'moveTo'](X(k3 / N), Yb(lastTree(k3 / N))); bctx.stroke(); }
+}
+// 误差曲线
+var svg = d3.select('#svg'), SW = 448, SH = 210, SM = { l: 44, r: 12, t: 10, b: 28 };
+var sx = d3.scaleLinear().domain([0, MMAX]).range([SM.l, SW - SM.r]), sy = d3.scaleLog().range([SH - SM.b, SM.t]);
+var gx = svg.append('g').attr('class', 'axis').attr('transform', 'translate(0,' + (SH - SM.b) + ')'), gy = svg.append('g').attr('class', 'axis').attr('transform', 'translate(' + SM.l + ',0)');
+svg.append('text').attr('class', 'axis-title').attr('x', SW - SM.r).attr('y', SH - 2).attr('text-anchor', 'end').text('m');
+var noiseL = svg.append('line').attr('stroke', Deck.token('--quiet')).attr('stroke-dasharray', '3 4');
+var noiseT = svg.append('text').attr('class', 'note').attr('x', SW - SM.r - 4).attr('text-anchor', 'end').text('噪声下界 0.04');
+var pTr = svg.append('path').attr('fill', 'none').attr('stroke', Deck.token('--boost')).attr('stroke-width', 2.5);
+var pTe = svg.append('path').attr('fill', 'none').attr('stroke', Deck.token('--text')).attr('stroke-width', 2.5);
+var bestDot = svg.append('circle').attr('r', 5).attr('fill', Deck.token('--single'));
+function drawCurve() {
+  sy.domain([0.02, Math.max(trE[0], teE[0]) * 1.2]); sx.domain([0, Math.max(30, Math.ceil(m * 1.25))]);
+  gx.call(d3.axisBottom(sx).ticks(6).tickSize(-(SH - SM.t - SM.b)).tickPadding(6)).select('.domain').remove();
+  gy.call(d3.axisLeft(sy).ticks(4, '.2f').tickSize(-(SW - SM.l - SM.r)).tickPadding(6)).select('.domain').remove();
+  var ln = d3.line().x(function (d, i) { return sx(i); }).y(function (d) { return sy(d); });
+  pTr.attr('d', ln(trE)); pTe.attr('d', ln(teE));
+  noiseL.attr('x1', SM.l).attr('x2', SW - SM.r).attr('y1', sy(0.04)).attr('y2', sy(0.04)); noiseT.attr('y', sy(0.04) - 5);
+  var bi = d3.minIndex(teE); bestDot.attr('cx', sx(bi)).attr('cy', sy(teE[bi]));
+  document.getElementById('best').innerHTML = teE[bi].toFixed(3) + '<small>@ m=' + bi + '</small>';
+}
+function update() {
+  document.getElementById('m').textContent = m;
+  document.getElementById('tag1').textContent = m ? 'm = ' + m + ' · 淡线是 F' + (m - 1) + '，粗线是加上第 ' + m + ' 棵树之后' : 'm = 0 · F₀ = 训练集均值';
+  document.getElementById('tag2').textContent = m ? '黑线 = h' + m + '，加到 F 上时乘 ν = ' + nu : '还没有树，残差就是 y − 均值';
+  document.getElementById('etr').textContent = trE[m].toFixed(3); document.getElementById('ete').textContent = teE[m].toFixed(3);
+  draw(); drawCurve();
+}
+function segs(id, fn) { var el = document.getElementById(id); el.addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; el.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); fn(+b.dataset.v); reset(); }); }
+segs('lr', function (v) { nu = v; }); segs('dp', function (v) { depth = v; });
+document.getElementById('step').addEventListener('click', step);
+document.getElementById('reset').addEventListener('click', reset);
+var timer = null;
+document.getElementById('auto').addEventListener('click', function () { if (timer) return; var k = 0; timer = setInterval(function () { step(); if (++k >= 30 || m >= MMAX) { clearInterval(timer); timer = null; } }, 120); });
+Deck.onResize(function () { tctx = Deck.fit(tcv); bctx = Deck.fit(bcv); draw(); });
+reset();
+</script>
+</body>
+</html>

@@ -1,0 +1,971 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>城市热岛不是“城市总比郊区热”：它是随对象、地点与时段变化的城市—参照区温差</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 页面私有布局约束 */
+    .header-group {
+      margin-bottom: 14px;
+    }
+    .header-group h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.18;
+      margin: 0 0 6px 0;
+      color: var(--text);
+    }
+    .header-group .lead {
+      margin: 0;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      max-width: 100%;
+    }
+    .header-group .formula {
+      color: #9C2A15;
+      font-weight: 750;
+      font-family: var(--font-num);
+      font-size: var(--fs-body);
+    }
+    .header-group .formula sub {
+      font-size: var(--fs-tick);
+    }
+
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 440px;
+      gap: 20px;
+    }
+
+    /* 左侧主图表卡片 */
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      padding: 16px 20px;
+      background: var(--surface);
+      border: 2px solid var(--muted);
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(23, 40, 46, .08);
+      overflow: hidden;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chart-view-host {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .chart-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 24小时时段滑杆与关键时点栏 */
+    .time-bar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding-top: 10px;
+      margin-top: 6px;
+      border-top: 1px solid var(--surface-strong);
+      flex-shrink: 0;
+      min-height: 48px;
+    }
+    .time-bar label {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      white-space: nowrap;
+      color: var(--text);
+    }
+    .time-bar input[type="range"] {
+      flex: 1;
+      accent-color: var(--focus);
+      cursor: pointer;
+    }
+    .time-presets {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-chip {
+      min-height: 32px;
+      padding: 4px 12px;
+      font-size: var(--fs-tick);
+      border-radius: 6px;
+      border: 1.5px solid var(--muted);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      font-weight: 650;
+      transition: all var(--dur) var(--ease);
+    }
+    .btn-chip:hover {
+      background: var(--surface-strong);
+    }
+    .btn-chip[aria-pressed="true"] {
+      background: var(--focus);
+      border-color: var(--focus);
+      color: #FFFFFF;
+    }
+
+    /* 右侧诊断与解释面板 */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .readout-card {
+      padding: 14px 18px;
+      border: 2px solid var(--muted);
+      border-radius: 10px;
+      background: var(--surface);
+      box-shadow: 0 4px 12px rgba(23, 40, 46, .08);
+      flex-shrink: 0;
+    }
+
+    .readout-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .readout-header .title {
+      font-size: var(--fs-sec);
+      font-weight: 750;
+      color: var(--text);
+    }
+
+    .metrics-dual {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .metric-box {
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: var(--surface-strong);
+      border: 1px solid rgba(80, 100, 107, .25);
+    }
+    .metric-box .label {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 2px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .metric-box .big {
+      font-size: 34px;
+      line-height: 1.05;
+    }
+    .metric-box .sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .comparison-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-tick);
+      margin-top: 4px;
+    }
+    .comparison-table th, .comparison-table td {
+      padding: 4px 6px;
+      text-align: left;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+    .comparison-table th {
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .comparison-table td.num-cell {
+      font-family: var(--font-num);
+      font-weight: 700;
+      text-align: right;
+    }
+
+    /* 3条事实卡片 */
+    .diagnostic-stack {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .diag-item {
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1.5px solid rgba(80, 100, 107, .35);
+      box-shadow: 0 2px 6px rgba(23, 40, 46, .05);
+    }
+    .diag-item .head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+      font-weight: 750;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+    .diag-item .head-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex: 0 0 8px;
+    }
+    .diag-item p {
+      margin: 0;
+      font-size: var(--fs-tick);
+      line-height: 1.44;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="02" data-total="19">
+  <div id="stage">
+    <!-- 顶栏标题与科学定义 -->
+    <header class="header-group">
+      <h1>城市热岛不是“城市总比郊区热”：它是随对象、地点与时段变化的城市—参照区温差</h1>
+      <p class="lead">
+        热岛强度以温差 <span class="formula">ΔT<sub>U-R</sub> = T<sub>城市</sub> − T<sub>参照</sub></span> 严格定义。地表与冠层空气属于不同物理界面，峰值错位近 10 小时；城市内部存在局部冷岛，而基准选址直接决定计算结果。
+      </p>
+    </header>
+
+    <!-- 主展示网格 -->
+    <div class="main-grid">
+      <!-- 左侧：图表主区 -->
+      <section class="chart-panel min0" aria-label="热岛温差图表分析区">
+        <div class="toolbar">
+          <div class="toolbar-left btns">
+            <button id="btnViewDiurnal" class="btn" aria-pressed="true">昼夜 24 小时：地表与空气相位错位</button>
+            <button id="btnViewTransect" class="btn" aria-pressed="false">空间横截线：城市内部冷岛与参照区基准</button>
+          </div>
+          <div class="toolbar-right legend" id="chartLegend">
+            <!-- 动态注入图例 -->
+          </div>
+        </div>
+
+        <!-- ECharts 宿主 -->
+        <div class="chart-view-host min0">
+          <div id="chartElem" class="chart-canvas" role="img" aria-label="城市热岛温差时序与空间分布图"></div>
+        </div>
+
+        <!-- 底部交互条：时间控制 -->
+        <div class="time-bar" id="diurnalControls">
+          <label for="timeSlider">观察时刻：<span id="timeValDisplay" class="num" style="color:var(--focus);font-weight:700;">13:00</span></label>
+          <input type="range" id="timeSlider" min="0" max="24" step="1" value="13" aria-label="24小时观测时段调节滑杆">
+          <div class="time-presets">
+            <button class="btn-chip" data-hour="5">05:00 清晨日出</button>
+            <button class="btn-chip" data-hour="13" aria-pressed="true">13:00 地表暴晒峰</button>
+            <button class="btn-chip" data-hour="22">22:00 气温热岛峰</button>
+          </div>
+        </div>
+
+        <!-- 底部交互条：空间断面参照点选择（仅在空间断面视图显示） -->
+        <div class="time-bar" id="transectControls" style="display:none;">
+          <label>对比基准站点：</label>
+          <div class="btns">
+            <button class="btn-chip" id="btnRefFarmland" aria-pressed="true">西郊农田基准（常规农耕区）</button>
+            <button class="btn-chip" id="btnRefForest" aria-pressed="false">东郊林地基准（强蒸腾森林）</button>
+          </div>
+          <span class="hint" style="margin-left:auto;">点击图上测点查看该站点温度与局部差值</span>
+        </div>
+      </section>
+
+      <!-- 右侧：读数与机制剖析 -->
+      <aside class="sidebar min0">
+        <!-- 实时读数看板 -->
+        <div class="readout-card">
+          <div class="readout-header">
+            <span class="title" id="readoutTitle">13:00 瞬时城乡温差</span>
+            <span class="tag" id="readoutTag" data-kind="heat">地表主导</span>
+          </div>
+
+          <div class="metrics-dual">
+            <div class="metric-box">
+              <div class="label">
+                <span>地表温差 ΔT<sub>surf</sub></span>
+              </div>
+              <div class="big num" id="valDeltaSurf" style="color:var(--heat);">+12.8<span class="unit">°C</span></div>
+              <div class="sub" id="subDeltaSurf">城市地表 48.8°C / 郊区 36.0°C</div>
+            </div>
+
+            <div class="metric-box">
+              <div class="label">
+                <span>空气温差 ΔT<sub>air</sub></span>
+              </div>
+              <div class="big num" id="valDeltaAir" style="color:var(--cooling);">+0.8<span class="unit">°C</span></div>
+              <div class="sub" id="subDeltaAir">城市空气 34.0°C / 郊区 33.2°C</div>
+            </div>
+          </div>
+
+          <table class="comparison-table" id="readoutTable">
+            <thead>
+              <tr>
+                <th>物理指标</th>
+                <th style="text-align:right;">城市中心</th>
+                <th style="text-align:right;">郊区参照</th>
+                <th style="text-align:right;">温差 ΔT<sub>U-R</sub></th>
+              </tr>
+            </thead>
+            <tbody id="readoutTableBody">
+              <!-- 动态填充 -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 三大关键结论事实 -->
+        <div class="diagnostic-stack">
+          <div class="diag-item">
+            <div class="head">
+              <span class="head-dot" style="background:var(--heat);"></span>
+              <span>1. 物理对象不同：地表与空气峰值错位 9 小时</span>
+            </div>
+            <p>
+              地表温度（LST）直接由下垫面辐射平衡控制，正午吸收峰值大，地表温差可达 10~15°C。而空气温度受湍流与建筑侧壁储热释放控制，白天对流混合使城乡气温接近；夜间热量持续释出，冠层空气热岛在深夜 22:00–02:00 达到峰值。
+            </p>
+          </div>
+
+          <div class="diag-item">
+            <div class="head">
+              <span class="head-dot" style="background:var(--cooling);"></span>
+              <span>2. 空间不均匀：城市内部嵌套明显“冷岛”</span>
+            </div>
+            <p>
+              城市内部并非连绵高热。高蒸发蒸腾的中央公园与水体（如湖泊湿地）温度比邻近高密商业区低 2.6~3.5°C，形成显著的“城市冷岛（UCI）”。若将冷岛误当作全市代表，会低估高温脆弱性。
+            </p>
+          </div>
+
+          <div class="diag-item">
+            <div class="head">
+              <span class="head-dot" style="background:var(--uncertain);"></span>
+              <span>3. 参照基准选择直接改写热岛强度</span>
+            </div>
+            <p>
+              温差依赖于参照点（Rural）的选择。若将参照站设立于林地（强水分蒸腾），计算出的城市温差比设立在收割后的干燥农田或荒地上高出 1.6~2.5°C。不说明参照区下垫面与海拔，“热岛强度”就失去可比性。
+            </p>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+  (function(){
+    "use strict";
+
+    // 24小时物理数据（基于典型中纬度晴朗夏日实测统计模型，Oke 1982）
+    // hour, T_surf_urb, T_surf_rur, T_air_urb, T_air_rur
+    const DIURNAL_DATA = [
+      { h: 0,  tsU: 22.8, tsR: 17.8, taU: 24.5, taR: 19.2 },
+      { h: 1,  tsU: 22.0, tsR: 17.0, taU: 23.8, taR: 18.5 },
+      { h: 2,  tsU: 21.3, tsR: 16.3, taU: 23.2, taR: 17.9 },
+      { h: 3,  tsU: 20.8, tsR: 15.8, taU: 22.7, taR: 17.4 },
+      { h: 4,  tsU: 20.4, tsR: 15.4, taU: 22.3, taR: 17.0 },
+      { h: 5,  tsU: 20.2, tsR: 15.2, taU: 22.0, taR: 16.8 }, // 黎明最低
+      { h: 6,  tsU: 22.5, tsR: 18.0, taU: 23.2, taR: 18.5 },
+      { h: 7,  tsU: 27.2, tsR: 22.8, taU: 25.5, taR: 21.8 },
+      { h: 8,  tsU: 33.5, tsR: 27.5, taU: 27.8, taR: 25.2 },
+      { h: 9,  tsU: 39.8, tsR: 31.4, taU: 29.8, taR: 28.2 },
+      { h: 10, tsU: 44.5, tsR: 34.2, taU: 31.5, taR: 30.5 },
+      { h: 11, tsU: 47.6, tsR: 35.8, taU: 32.7, taR: 32.0 },
+      { h: 12, tsU: 48.8, tsR: 36.0, taU: 33.5, taR: 32.9 },
+      { h: 13, tsU: 48.0, tsR: 35.2, taU: 34.0, taR: 33.2 }, // 地表温差峰值
+      { h: 14, tsU: 45.3, tsR: 33.5, taU: 34.2, taR: 33.1 },
+      { h: 15, tsU: 41.2, tsR: 30.6, taU: 33.8, taR: 32.3 },
+      { h: 16, tsU: 36.4, tsR: 26.8, taU: 32.9, taR: 30.6 },
+      { h: 17, tsU: 31.8, tsR: 23.0, taU: 31.5, taR: 27.8 },
+      { h: 18, tsU: 28.5, tsR: 20.8, taU: 29.8, taR: 24.8 },
+      { h: 19, tsU: 26.6, tsR: 19.8, taU: 28.2, taR: 22.8 },
+      { h: 20, tsU: 25.4, tsR: 19.0, taU: 26.9, taR: 21.4 },
+      { h: 21, tsU: 24.5, tsR: 18.5, taU: 25.9, taR: 20.4 },
+      { h: 22, tsU: 23.8, tsR: 18.1, taU: 25.2, taR: 19.7 }, // 气温温差峰值
+      { h: 23, tsU: 23.2, tsR: 17.8, taU: 24.6, taR: 19.2 },
+      { h: 24, tsU: 22.8, tsR: 17.8, taU: 24.5, taR: 19.2 }
+    ];
+
+    // 空间横截面站点数据（西向东 32km）
+    const TRANSECT_STATIONS = [
+      { id: "s1", name: "西郊农田", km: 0,  land: "农田开阔地", tDayAir: 32.9, tNightAir: 20.4, tDaySurf: 35.2, tNightSurf: 18.1 },
+      { id: "s2", name: "低密城郊", km: 6,  land: "居住与绿化", tDayAir: 33.2, tNightAir: 23.0, tDaySurf: 38.6, tNightSurf: 20.2 },
+      { id: "s3", name: "高密核心CBD", km: 14, land: "密集高楼/深街谷", tDayAir: 34.0, tNightAir: 26.0, tDaySurf: 48.0, tNightSurf: 23.8 },
+      { id: "s4", name: "城市中央公园", km: 19, land: "大型林地与湖泊", tDayAir: 31.4, tNightAir: 23.4, tDaySurf: 33.8, tNightSurf: 19.5 },
+      { id: "s5", name: "工业物流区", km: 25, land: "大跨厂房/沥青坪", tDayAir: 34.6, tNightAir: 25.4, tDaySurf: 49.5, tNightSurf: 23.2 },
+      { id: "s6", name: "东郊林地", km: 32, land: "茂密次生林", tDayAir: 31.8, tNightAir: 18.8, tDaySurf: 32.2, tNightSurf: 16.5 }
+    ];
+
+    // 状态管理
+    let currentView = "diurnal"; // "diurnal" | "transect"
+    let currentHour = 13;
+    let selectedRefStation = "s1"; // "s1" (西郊农田) or "s6" (东郊林地)
+    let selectedTransectStation = "s3"; // CBD
+
+    const chartElem = document.getElementById("chartElem");
+    const chartLegend = document.getElementById("chartLegend");
+    const timeSlider = document.getElementById("timeSlider");
+    const timeValDisplay = document.getElementById("timeValDisplay");
+    const diurnalControls = document.getElementById("diurnalControls");
+    const transectControls = document.getElementById("transectControls");
+    const btnViewDiurnal = document.getElementById("btnViewDiurnal");
+    const btnViewTransect = document.getElementById("btnViewTransect");
+    const btnRefFarmland = document.getElementById("btnRefFarmland");
+    const btnRefForest = document.getElementById("btnRefForest");
+
+    // 读数元素
+    const readoutTitle = document.getElementById("readoutTitle");
+    const readoutTag = document.getElementById("readoutTag");
+    const valDeltaSurf = document.getElementById("valDeltaSurf");
+    const valDeltaAir = document.getElementById("valDeltaAir");
+    const subDeltaSurf = document.getElementById("subDeltaSurf");
+    const subDeltaAir = document.getElementById("subDeltaAir");
+    const readoutTableBody = document.getElementById("readoutTableBody");
+
+    let myChart = null;
+
+    function initChart() {
+      if (!window.echarts) return;
+      myChart = echarts.init(chartElem, null, { renderer: "svg" });
+      updateView();
+    }
+
+    function updateLegend() {
+      if (currentView === "diurnal") {
+        chartLegend.innerHTML = `
+          <div class="li"><span class="sw line" style="border-top-color:#C63F20;border-top-width:3px;"></span>地表温度 (T<sub>surf</sub>)</div>
+          <div class="li"><span class="sw line" style="border-top-color:#176B82;border-top-width:3px;"></span>空气温度 (T<sub>air</sub>)</div>
+          <div class="li"><span class="sw line" style="border-top-color:#50646B;border-top-style:dashed;"></span>郊区参照线</div>
+        `;
+      } else {
+        chartLegend.innerHTML = `
+          <div class="li"><span class="sw line" style="border-top-color:#176B82;border-top-width:3px;"></span>夜间气温 (22:00)</div>
+          <div class="li"><span class="sw line" style="border-top-color:#C63F20;border-top-width:3px;"></span>白天地温 (13:00)</div>
+          <div class="li"><span class="sw line" style="border-top-color:#735F2A;border-top-style:dashed;"></span>选定基准参考线</div>
+        `;
+      }
+    }
+
+    function getDiurnalOption() {
+      const hours = DIURNAL_DATA.map(d => (d.h < 10 ? "0" + d.h : "" + d.h) + ":00");
+      const tsUrban = DIURNAL_DATA.map(d => d.tsU);
+      const tsRural = DIURNAL_DATA.map(d => d.tsR);
+      const taUrban = DIURNAL_DATA.map(d => d.taU);
+      const taRural = DIURNAL_DATA.map(d => d.taR);
+
+      const dSurf = DIURNAL_DATA.map(d => +(d.tsU - d.tsR).toFixed(1));
+      const dAir = DIURNAL_DATA.map(d => +(d.taU - d.taR).toFixed(1));
+
+      return {
+        animation: false,
+        tooltip: {
+          trigger: "axis",
+          axisPointer: { type: "line", lineStyle: { color: "#A92F18", width: 2, type: "dashed" } },
+          backgroundColor: "#F7FAFA",
+          borderColor: "#50646B",
+          borderWidth: 1.5,
+          textStyle: { color: "#17282E", fontSize: 13 },
+          formatter: function(params) {
+            const h = params[0].dataIndex;
+            const item = DIURNAL_DATA[h];
+            const dS = (item.tsU - item.tsR).toFixed(1);
+            const dA = (item.taU - item.taR).toFixed(1);
+            return `<strong>${h}:00 观测数据</strong><br/>` +
+                   `城市地表: ${item.tsU}°C | 郊区地表: ${item.tsR}°C (ΔT<sub>surf</sub>: <b>+${dS}°C</b>)<br/>` +
+                   `城市空气: ${item.taU}°C | 郊区空气: ${item.taR}°C (ΔT<sub>air</sub>: <b>+${dA}°C</b>)`;
+          }
+        },
+        axisPointer: {
+          value: currentHour,
+          status: "show"
+        },
+        grid: [
+          { left: 58, right: 28, top: 22, height: "42%" },
+          { left: 58, right: 28, top: "58%", bottom: 44 }
+        ],
+        xAxis: [
+          {
+            gridIndex: 0,
+            type: "category",
+            data: hours,
+            axisTick: { alignWithLabel: true },
+            axisLine: { lineStyle: { color: "#50646B" } },
+            axisLabel: { show: false }
+          },
+          {
+            gridIndex: 1,
+            type: "category",
+            data: hours,
+            axisTick: { alignWithLabel: true },
+            axisLine: { lineStyle: { color: "#50646B" } },
+            axisLabel: {
+              color: "#17282E",
+              fontSize: 13,
+              interval: 2,
+              margin: 12
+            }
+          }
+        ],
+        yAxis: [
+          {
+            gridIndex: 0,
+            type: "value",
+            name: "绝对温度 (°C)",
+            nameTextStyle: { color: "#17282E", fontSize: 13, padding: [0, 0, 0, 10], fontWeight: 600 },
+            min: 14,
+            max: 52,
+            interval: 10,
+            splitLine: { lineStyle: { color: "#DCE7EA" } },
+            axisLabel: { color: "#50646B", fontSize: 13 }
+          },
+          {
+            gridIndex: 1,
+            type: "value",
+            name: "温差 ΔT (°C)",
+            nameTextStyle: { color: "#17282E", fontSize: 13, padding: [0, 0, 0, 10], fontWeight: 600 },
+            min: 0,
+            max: 16,
+            interval: 4,
+            splitLine: { lineStyle: { color: "#DCE7EA" } },
+            axisLabel: { color: "#50646B", fontSize: 13 }
+          }
+        ],
+        series: [
+          // 上图：绝对温度
+          {
+            name: "城市地表温度",
+            type: "line",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: tsUrban,
+            smooth: 0.25,
+            symbol: "circle",
+            symbolSize: 4,
+            lineStyle: { color: "#C63F20", width: 3 },
+            itemStyle: { color: "#C63F20" }
+          },
+          {
+            name: "郊区地表温度",
+            type: "line",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: tsRural,
+            smooth: 0.25,
+            symbol: "none",
+            lineStyle: { color: "#C63F20", width: 2, type: "dashed" }
+          },
+          {
+            name: "城市空气温度",
+            type: "line",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: taUrban,
+            smooth: 0.25,
+            symbol: "circle",
+            symbolSize: 4,
+            lineStyle: { color: "#176B82", width: 3 },
+            itemStyle: { color: "#176B82" }
+          },
+          {
+            name: "郊区空气温度",
+            type: "line",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: taRural,
+            smooth: 0.25,
+            symbol: "none",
+            lineStyle: { color: "#176B82", width: 2, type: "dashed" }
+          },
+
+          // 下图：温差曲线
+          {
+            name: "地表温差 ΔT_surf",
+            type: "line",
+            xAxisIndex: 1,
+            yAxisIndex: 1,
+            data: dSurf,
+            smooth: 0.25,
+            symbol: "circle",
+            symbolSize: 5,
+            lineStyle: { color: "#C63F20", width: 3 },
+            itemStyle: { color: "#C63F20" },
+            areaStyle: { color: "rgba(198, 63, 32, 0.14)" },
+            markPoint: {
+              symbolSize: [68, 30],
+              data: [
+                {
+                  coord: ["13:00", 12.8],
+                  value: "+12.8°C",
+                  itemStyle: { color: "#C63F20" },
+                  label: { color: "#FFFFFF", fontSize: 13, fontWeight: 700 }
+                }
+              ]
+            }
+          },
+          {
+            name: "空气温差 ΔT_air",
+            type: "line",
+            xAxisIndex: 1,
+            yAxisIndex: 1,
+            data: dAir,
+            smooth: 0.25,
+            symbol: "circle",
+            symbolSize: 5,
+            lineStyle: { color: "#176B82", width: 3 },
+            itemStyle: { color: "#176B82" },
+            areaStyle: { color: "rgba(23, 107, 130, 0.16)" },
+            markPoint: {
+              symbolSize: [64, 28],
+              data: [
+                {
+                  coord: ["22:00", 5.5],
+                  value: "+5.5°C",
+                  itemStyle: { color: "#176B82" },
+                  label: { color: "#FFFFFF", fontSize: 13, fontWeight: 700 }
+                }
+              ]
+            }
+          }
+        ]
+      };
+    }
+
+    function getTransectOption() {
+      const xLabels = TRANSECT_STATIONS.map(s => s.name + "\n(" + s.km + "km)");
+      const nightAir = TRANSECT_STATIONS.map(s => s.tNightAir);
+      const daySurf = TRANSECT_STATIONS.map(s => s.tDaySurf);
+
+      const refStationObj = TRANSECT_STATIONS.find(s => s.id === selectedRefStation);
+      const refNightTemp = refStationObj.tNightAir;
+
+      return {
+        animation: false,
+        tooltip: {
+          trigger: "axis",
+          backgroundColor: "#F7FAFA",
+          borderColor: "#50646B",
+          borderWidth: 1.5,
+          textStyle: { color: "#17282E", fontSize: 13 },
+          formatter: function(params) {
+            const idx = params[0].dataIndex;
+            const st = TRANSECT_STATIONS[idx];
+            const dNight = (st.tNightAir - refNightTemp).toFixed(1);
+            return `<strong>${st.name} (${st.land})</strong><br/>` +
+                   `夜间气温 (22:00): <b>${st.tNightAir}°C</b> (相对基准: ${dNight >= 0 ? "+" + dNight : dNight}°C)<br/>` +
+                   `白天地温 (13:00): <b>${st.tDaySurf}°C</b>`;
+          }
+        },
+        grid: {
+          left: 58,
+          right: 36,
+          top: 36,
+          bottom: 58
+        },
+        xAxis: {
+          type: "category",
+          data: xLabels,
+          axisTick: { alignWithLabel: true },
+          axisLine: { lineStyle: { color: "#50646B" } },
+          axisLabel: {
+            color: "#17282E",
+            fontSize: 13,
+            fontWeight: 650,
+            interval: 0,
+            lineHeight: 18,
+            margin: 12
+          }
+        },
+        yAxis: {
+          type: "value",
+          name: "实测温度 (°C)",
+          nameTextStyle: { color: "#17282E", fontSize: 13, padding: [0, 0, 0, 10], fontWeight: 600 },
+          min: 15,
+          max: 55,
+          interval: 10,
+          splitLine: { lineStyle: { color: "#DCE7EA" } },
+          axisLabel: { color: "#50646B", fontSize: 13 }
+        },
+        series: [
+          {
+            name: "夜间气温 (22:00)",
+            type: "line",
+            data: nightAir,
+            smooth: 0.35,
+            symbol: "circle",
+            symbolSize: 9,
+            lineStyle: { color: "#176B82", width: 4 },
+            itemStyle: { color: "#176B82" },
+            label: {
+              show: true,
+              position: "top",
+              formatter: "{c}°C",
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#176B82"
+            },
+            markLine: {
+              silent: true,
+              data: [
+                {
+                  yAxis: refNightTemp,
+                  lineStyle: { color: "#735F2A", width: 2, type: "dashed" },
+                  label: {
+                    show: true,
+                    position: "insideStartTop",
+                    formatter: "选定基准: " + refStationObj.name + " (" + refNightTemp + "°C)",
+                    color: "#5C4B21",
+                    fontSize: 13,
+                    fontWeight: 700
+                  }
+                }
+              ]
+            }
+          },
+          {
+            name: "白天地表温度 (13:00)",
+            type: "line",
+            data: daySurf,
+            smooth: 0.35,
+            symbol: "rect",
+            symbolSize: 9,
+            lineStyle: { color: "#C63F20", width: 3, type: "dotted" },
+            itemStyle: { color: "#C63F20" },
+            label: {
+              show: true,
+              position: "top",
+              formatter: "{c}°C",
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#C63F20"
+            }
+          }
+        ]
+      };
+    }
+
+    function updateView() {
+      if (!myChart) return;
+      updateLegend();
+      if (currentView === "diurnal") {
+        diurnalControls.style.display = "flex";
+        transectControls.style.display = "none";
+        myChart.setOption(getDiurnalOption(), { notMerge: true });
+        updateDiurnalReadout(currentHour);
+      } else {
+        diurnalControls.style.display = "none";
+        transectControls.style.display = "flex";
+        myChart.setOption(getTransectOption(), { notMerge: true });
+        updateTransectReadout();
+      }
+    }
+
+    function updateDiurnalReadout(hour) {
+      const data = DIURNAL_DATA[hour];
+      const dS = +(data.tsU - data.tsR).toFixed(1);
+      const dA = +(data.taU - data.taR).toFixed(1);
+
+      readoutTitle.textContent = `${(hour < 10 ? "0" + hour : hour)}:00 瞬时城乡温差`;
+
+      if (hour >= 10 && hour <= 16) {
+        readoutTag.textContent = "地表暴晒峰";
+        readoutTag.setAttribute("data-kind", "heat");
+      } else if (hour >= 20 || hour <= 4) {
+        readoutTag.textContent = "气温热岛峰";
+        readoutTag.setAttribute("data-kind", "cooling");
+      } else {
+        readoutTag.textContent = "过渡转换期";
+        readoutTag.setAttribute("data-kind", "observed");
+      }
+
+      valDeltaSurf.innerHTML = `+${dS}<span class="unit">°C</span>`;
+      subDeltaSurf.textContent = `城市地表 ${data.tsU}°C / 郊区 ${data.tsR}°C`;
+
+      valDeltaAir.innerHTML = `+${dA}<span class="unit">°C</span>`;
+      subDeltaAir.textContent = `城市空气 ${data.taU}°C / 郊区 ${data.taR}°C`;
+
+      readoutTableBody.innerHTML = `
+        <tr>
+          <td><strong>地表温度 (LST)</strong></td>
+          <td class="num-cell" style="color:var(--heat);">${data.tsU}°C</td>
+          <td class="num-cell">${data.tsR}°C</td>
+          <td class="num-cell" style="color:var(--heat);">+${dS}°C</td>
+        </tr>
+        <tr>
+          <td><strong>冠层气温 (2m Air)</strong></td>
+          <td class="num-cell" style="color:var(--cooling);">${data.taU}°C</td>
+          <td class="num-cell">${data.taR}°C</td>
+          <td class="num-cell" style="color:var(--cooling);">+${dA}°C</td>
+        </tr>
+        <tr>
+          <td><strong>界面温差 (地表−空气)</strong></td>
+          <td class="num-cell">+${(data.tsU - data.taU).toFixed(1)}°C</td>
+          <td class="num-cell">+${(data.tsR - data.taR).toFixed(1)}°C</td>
+          <td class="num-cell" style="color:var(--muted);">${(dS - dA).toFixed(1)}°C</td>
+        </tr>
+      `;
+
+      timeValDisplay.textContent = (hour < 10 ? "0" + hour : hour) + ":00";
+    }
+
+    function updateTransectReadout() {
+      const st = TRANSECT_STATIONS.find(s => s.id === selectedTransectStation);
+      const ref = TRANSECT_STATIONS.find(s => s.id === selectedRefStation);
+
+      const dAirNight = +(st.tNightAir - ref.tNightAir).toFixed(1);
+      const dSurfDay = +(st.tDaySurf - ref.tDaySurf).toFixed(1);
+
+      readoutTitle.textContent = `${st.name} 相对基准分析`;
+      readoutTag.textContent = `基准: ${ref.name}`;
+      readoutTag.setAttribute("data-kind", "uncertain");
+
+      valDeltaSurf.innerHTML = `${dSurfDay >= 0 ? "+" + dSurfDay : dSurfDay}<span class="unit">°C</span>`;
+      subDeltaSurf.textContent = `13:00 地温: 本站 ${st.tDaySurf}°C / 基准 ${ref.tDaySurf}°C`;
+
+      valDeltaAir.innerHTML = `${dAirNight >= 0 ? "+" + dAirNight : dAirNight}<span class="unit">°C</span>`;
+      subDeltaAir.textContent = `22:00 气温: 本站 ${st.tNightAir}°C / 基准 ${ref.tNightAir}°C`;
+
+      readoutTableBody.innerHTML = `
+        <tr>
+          <td><strong>站点地表下垫面</strong></td>
+          <td colspan="3" style="text-align:right;font-weight:600;">${st.land}</td>
+        </tr>
+        <tr>
+          <td><strong>22:00 夜间气温</strong></td>
+          <td class="num-cell" style="color:var(--cooling);">${st.tNightAir}°C</td>
+          <td class="num-cell">${ref.tNightAir}°C</td>
+          <td class="num-cell" style="color:var(--cooling);">${dAirNight >= 0 ? "+" + dAirNight : dAirNight}°C</td>
+        </tr>
+        <tr>
+          <td><strong>13:00 白天地温</strong></td>
+          <td class="num-cell" style="color:var(--heat);">${st.tDaySurf}°C</td>
+          <td class="num-cell">${ref.tDaySurf}°C</td>
+          <td class="num-cell" style="color:var(--heat);">${dSurfDay >= 0 ? "+" + dSurfDay : dSurfDay}°C</td>
+        </tr>
+      `;
+    }
+
+    // 事件监听
+    btnViewDiurnal.addEventListener("click", function(){
+      currentView = "diurnal";
+      btnViewDiurnal.setAttribute("aria-pressed", "true");
+      btnViewTransect.setAttribute("aria-pressed", "false");
+      updateView();
+    });
+
+    btnViewTransect.addEventListener("click", function(){
+      currentView = "transect";
+      btnViewDiurnal.setAttribute("aria-pressed", "false");
+      btnViewTransect.setAttribute("aria-pressed", "true");
+      updateView();
+    });
+
+    timeSlider.addEventListener("input", function(e){
+      currentHour = parseInt(e.target.value, 10);
+      document.querySelectorAll(".time-presets .btn-chip").forEach(b => {
+        b.setAttribute("aria-pressed", parseInt(b.dataset.hour, 10) === currentHour ? "true" : "false");
+      });
+      updateDiurnalReadout(currentHour);
+      if (myChart && currentView === "diurnal") {
+        myChart.dispatchAction({
+          type: "showTip",
+          seriesIndex: 0,
+          dataIndex: currentHour
+        });
+      }
+    });
+
+    document.querySelectorAll(".time-presets .btn-chip").forEach(btn => {
+      btn.addEventListener("click", function(){
+        const h = parseInt(this.dataset.hour, 10);
+        currentHour = h;
+        timeSlider.value = h;
+        document.querySelectorAll(".time-presets .btn-chip").forEach(b => b.setAttribute("aria-pressed", "false"));
+        this.setAttribute("aria-pressed", "true");
+        updateDiurnalReadout(h);
+        if (myChart && currentView === "diurnal") {
+          myChart.dispatchAction({
+            type: "showTip",
+            seriesIndex: 0,
+            dataIndex: h
+          });
+        }
+      });
+    });
+
+    btnRefFarmland.addEventListener("click", function(){
+      selectedRefStation = "s1";
+      btnRefFarmland.setAttribute("aria-pressed", "true");
+      btnRefForest.setAttribute("aria-pressed", "false");
+      updateView();
+    });
+
+    btnRefForest.addEventListener("click", function(){
+      selectedRefStation = "s6";
+      btnRefFarmland.setAttribute("aria-pressed", "false");
+      btnRefForest.setAttribute("aria-pressed", "true");
+      updateView();
+    });
+
+    // 窗口尺寸自适应
+    const hostEl = document.querySelector(".chart-view-host");
+    if (window.ResizeObserver && hostEl) {
+      new ResizeObserver(function(){
+        if (myChart) myChart.resize();
+      }).observe(hostEl);
+    }
+    window.addEventListener("resize", function(){
+      if (myChart) myChart.resize();
+    });
+
+    // 初始化底盘
+    Deck.init({ index: 2, total: 19 });
+    initChart();
+
+    // 空间横截图点击测点切换
+    if (myChart) {
+      myChart.on("click", function(params){
+        if (currentView === "transect" && params.dataIndex !== undefined) {
+          selectedTransectStation = TRANSECT_STATIONS[params.dataIndex].id;
+          updateTransectReadout();
+        }
+      });
+    }
+  })();
+  </script>
+</body>
+</html>

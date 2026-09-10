@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>随机森林的多样性来源：样本与特征双重扰动</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 页面专用布局与样式，遵循主题变量 */
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      background: var(--bg);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* 顶部标题栏 */
+    .header-area {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+    .header-left {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+      margin: 0;
+    }
+    .page-lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主工作区两栏布局 */
+    .workspace {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧控制与公式面板 */
+    .control-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 18px 20px;
+    }
+
+    .panel-section-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 0 0 4px 0;
+    }
+
+    .ctl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .ctl-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .ctl-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .ctl-val-pill {
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--model);
+    }
+
+    .ctl-slider {
+      width: 100%;
+      height: 6px;
+      accent-color: var(--model);
+      cursor: pointer;
+    }
+
+    .ctl-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* 预设方案按钮组 */
+    .presets {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .btn-preset {
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--duration) var(--ease);
+    }
+    .btn-preset:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+    .btn-preset.active {
+      background: var(--model);
+      border-color: var(--model);
+      color: #ffffff;
+    }
+
+    /* 理论方差解构小面板 */
+    .math-card {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border-left: 3px solid var(--aggregate);
+    }
+    .math-card .formula {
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .math-card .math-exp {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 右侧仪表视窗 */
+    .dashboard {
+      display: grid;
+      grid-template-rows: 140px 1fr;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    /* 顶部指标卡片 */
+    .metrics-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .metric-val-box {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      margin: 4px 0;
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 1;
+      color: var(--text);
+    }
+    .metric-unit {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .metric-foot {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      border-top: 1px dashed var(--surface-strong);
+      padding-top: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .metric-card.highlight-rho .metric-val { color: var(--model); }
+    .metric-card.highlight-var .metric-val { color: var(--aggregate); }
+    .metric-card.highlight-acc .metric-val { color: var(--sample); }
+
+    /* 下方双图表区 */
+    .visual-views {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .view-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+      min-height: 0;
+    }
+
+    .view-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .view-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .view-canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      background: var(--bg);
+      border-radius: 6px;
+      border: 1px solid var(--surface-strong);
+      overflow: hidden;
+    }
+
+    /* 图例条 */
+    .legend-row {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+    }
+
+    /* 交互诊断提示条 */
+    .diag-banner {
+      background: var(--surface-strong);
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .diag-banner strong {
+      color: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="11" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题 -->
+    <header class="header-area">
+      <div class="header-left">
+        <h1 class="page-title">双重随机性：样本与特征扰动削减树间相关性</h1>
+        <p class="page-lead">单棵树方差虽略有增加，但两棵树间的预测相关系数 ρ 大幅衰减，集成的极限方差由 ρ·σ² 决定。</p>
+      </div>
+      <div style="font-size:var(--fs-sec); color:var(--muted); font-weight:500;">随机森林实验平台 · B=40 棵基回归树</div>
+    </header>
+
+    <!-- 主交互工作区 -->
+    <main class="workspace">
+      <!-- 左侧：参数控制与机制解析 -->
+      <aside class="control-panel min0">
+        <div class="panel-section-title">
+          <span>多样性调节机制</span>
+          <span style="font-size:var(--fs-tick); font-weight:400; color:var(--muted)">实时仿真</span>
+        </div>
+
+        <!-- 预设典型场景对比 -->
+        <div class="ctl-row">
+          <label class="ctl-header">典型配置对比</label>
+          <div class="presets">
+            <button type="button" class="btn-preset" id="p-full">单模型复制<br><span style="font-size:12px;opacity:0.8">无扰动 (ρ≈1.0)</span></button>
+            <button type="button" class="btn-preset" id="p-bagging">纯 Bagging<br><span style="font-size:12px;opacity:0.8">仅样本重采样</span></button>
+            <button type="button" class="btn-preset" id="p-rf-std">标准随机森林<br><span style="font-size:12px;opacity:0.8">样本+特征子采样</span></button>
+            <button type="button" class="btn-preset" id="p-rf-ext">极度随机化<br><span style="font-size:12px;opacity:0.8">微小子集 (m=1)</span></button>
+          </div>
+        </div>
+
+        <!-- 滑块1：样本子采样比例 (Bootstrap 强度) -->
+        <div class="ctl-group">
+          <div class="ctl-row">
+            <div class="ctl-header">
+              <span>样本重采样比例 (Subsample)</span>
+              <span class="ctl-val-pill" id="val-sample-ratio">1.00</span>
+            </div>
+            <input type="range" class="ctl-slider" id="input-sample-ratio" min="0.2" max="1.0" step="0.05" value="1.0">
+            <div class="ctl-desc">值越小每棵树见到的数据重叠越低；1.0 表示使用全部样本进行有放回 Bootstrap。</div>
+          </div>
+
+          <!-- 滑块2：特征子采样特征数 m (Feature Subsampling) -->
+          <div class="ctl-row">
+            <div class="ctl-header">
+              <span>分裂候选特征数 m (Features)</span>
+              <span class="ctl-val-pill" id="val-max-features">2 / 8</span>
+            </div>
+            <input type="range" class="ctl-slider" id="input-max-features" min="1" max="8" step="1" value="2">
+            <div class="ctl-desc">总特征 p=8（含2个强信号特征）。当 m=8 时退化为普通决策树，强特征在根节点必选，导致树极度相似。</div>
+          </div>
+
+          <!-- 滑块3：树的数量 B -->
+          <div class="ctl-row">
+            <div class="ctl-header">
+              <span>森林树木数量 B</span>
+              <span class="ctl-val-pill" id="val-n-trees">40 棵</span>
+            </div>
+            <input type="range" class="ctl-slider" id="input-n-trees" min="5" max="60" step="5" value="40">
+            <div class="ctl-desc">随着 B 增大，独立方差项 (1-ρ)/B 快速衰减至 0，最终方差逼近底线 ρ·σ²。</div>
+          </div>
+        </div>
+
+        <!-- 理论公式解析卡片 -->
+        <div class="math-card">
+          <div class="formula">Var(f̄) = ρ · σ² + (1 - ρ)/B · σ²</div>
+          <div class="math-exp">
+            其中 <strong>σ²</strong> 为单树平均方差，<strong>ρ</strong> 为树对间的皮尔逊相关系数。<br>
+            仅增加树木数 B 只能消除第二项；<strong>必须通过特征子采样压低 ρ，才能突破集成的方差下限！</strong>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 右侧：指标与视图 -->
+      <section class="dashboard min0">
+        <!-- 4大核心指标展示栏 -->
+        <div class="metrics-bar">
+          <div class="metric-card highlight-rho">
+            <div class="metric-label">
+              <span>树间相关系数 ρ</span>
+              <span class="tag">关键瓶颈</span>
+            </div>
+            <div class="metric-val-box">
+              <span class="metric-val" id="metric-rho">0.28</span>
+            </div>
+            <div class="metric-foot">
+              <span>未扰动时 ρ=0.88</span>
+              <span id="diff-rho">-68.2%</span>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-label">
+              <span>单树方差 σ²</span>
+              <span>单体精度略降</span>
+            </div>
+            <div class="metric-val-box">
+              <span class="metric-val" id="metric-single-var">1.18</span>
+            </div>
+            <div class="metric-foot">
+              <span>基准单树 σ²=1.00</span>
+              <span id="diff-single-var">+18.0%</span>
+            </div>
+          </div>
+
+          <div class="metric-card highlight-var">
+            <div class="metric-label">
+              <span>集成总方差 Var(f̄)</span>
+              <span class="tag">最终波动</span>
+            </div>
+            <div class="metric-val-box">
+              <span class="metric-val" id="metric-ensemble-var">0.35</span>
+            </div>
+            <div class="metric-foot">
+              <span>理论极限 ρ·σ² = <strong id="metric-limit-var" style="color:var(--aggregate)">0.33</strong></span>
+            </div>
+          </div>
+
+          <div class="metric-card highlight-acc">
+            <div class="metric-label">
+              <span>方差消减率</span>
+              <span class="tag">稳健收益</span>
+            </div>
+            <div class="metric-val-box">
+              <span class="metric-val" id="metric-reduction">70.3</span>
+              <span class="metric-unit">%</span>
+            </div>
+            <div class="metric-foot">
+              <span>相对单树降低</span>
+              <span id="status-reduction">显著改善</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 下半部：多视角动态呈现 -->
+        <div class="visual-views min0">
+          <!-- 视窗1：树间预测相关性散点矩阵（以 Tree 1 与 Tree 2 为例） -->
+          <div class="view-card min0">
+            <div class="view-header">
+              <span class="view-title">
+                <span>树对预测散点分布 (Tree 1 vs Tree 2)</span>
+              </span>
+              <div class="legend-row">
+                <div class="legend-item"><span class="swatch" style="background:var(--model)"></span> 预测点</div>
+                <div class="legend-item"><span class="swatch" style="background:var(--aggregate)"></span> 理想对角线 (完全雷同)</div>
+              </div>
+            </div>
+            <div class="view-canvas-wrap">
+              <canvas id="cv-scatter" class="cv-fill"></canvas>
+            </div>
+          </div>
+
+          <!-- 视窗2：集成方差随树木数 B 衰减曲线与极限分解 -->
+          <div class="view-card min0">
+            <div class="view-header">
+              <span class="view-title">
+                <span>方差收益曲线 Var(B) 与极限 ρ·σ²</span>
+              </span>
+              <div class="legend-row">
+                <div class="legend-item"><span class="swatch" style="background:var(--aggregate)"></span> 森林实际方差 Var</div>
+                <div class="legend-item"><span class="swatch" style="background:var(--muted)"></span> 渐进下限 ρ·σ²</div>
+              </div>
+            </div>
+            <div class="view-canvas-wrap">
+              <canvas id="cv-curve" class="cv-fill"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部结论诊断栏 -->
+        <div class="diag-banner">
+          <span id="diag-text">
+            <strong>状态评估：</strong>标准随机森林配置。通过限制每次候选特征数 m=2（总特征 8 个），强特征无法主导所有树的根节点，相关系数从 0.88 剧降至 0.28，即便单树方差轻微上升，总集成方差仍降低了 70%！
+          </span>
+          <button type="button" class="btn" id="btn-re-sample" style="padding:4px 12px; font-size:var(--fs-label); cursor:pointer;">重新抽样模拟</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script>
+    // 页面逻辑与数学仿真契约
+    (function() {
+      // 保证页面由统一状态驱动
+      let state = {
+        sampleRatio: 1.0,    // 样本抽样比率 (0.2 ~ 1.0)
+        maxFeatures: 2,      // 候选特征 m (1 ~ 8)
+        nTrees: 40,          // 树木棵数 B (5 ~ 60)
+        seed: 42,            // 随机种子
+        simData: null        // 仿真产生的数据集与树模型预测缓存
+      };
+
+      // 8维特征的合成测试集：共 60 个评估样本
+      // 特征1与特征2是主信号 (包含较强非线性)，特征3~8包含弱信号与噪声
+      const N_SAMPLES = 60;
+      const TOTAL_FEATURES = 8;
+
+      function generateDataset(seed) {
+        const rng = new Math.seedrandom('ensemble-' + seed);
+        const X = [];
+        const yTrue = [];
+        for (let i = 0; i < N_SAMPLES; i++) {
+          const row = [];
+          for (let f = 0; f < TOTAL_FEATURES; f++) {
+            row.push(rng() * 4 - 2); // [-2, 2]
+          }
+          // 真实函数：主要由 feature 0 和 feature 1 决定，伴随微弱其他特征
+          const y = Math.sin(row[0] * 1.5) + 0.8 * Math.cos(row[1] * 1.2) + 0.3 * (row[2] - row[3]) + (rng() - 0.5) * 0.4;
+          X.push(row);
+          yTrue.push(y);
+        }
+        return { X, yTrue };
+      }
+
+      // 构造一组简易但机理真实的随机树模型预测器
+      // 树预测值模拟：
+      // - 若 maxFeatures 很大，大部分树都会贪心选取 feature 0/1 分割，导致预测极度相似 (高相关性)
+      // - 若 maxFeatures 较小，很多树被迫在 feature 2~7 分割，虽然单树偏误/方差略增，但树间预测差异急剧增大 (低相关)
+      // - sampleRatio 影响样本扰动
+      function simulateTrees(state) {
+        const rng = new Math.seedrandom('sim-' + state.seed + '-' + state.sampleRatio + '-' + state.maxFeatures);
+        const { X, yTrue } = generateDataset(101);
+        const nTrees = state.nTrees;
+        const predictions = []; // [treeIdx][sampleIdx]
+
+        // 强特征概率分布：m 越大，强特征被选中的概率越接近 1
+        // 当 m=8 时，P(选到强特征) = 1.0
+        // 当 m=1 时，P(选到强特征) = 2/8 = 0.25
+        const pStrong = Math.min(1.0, (state.maxFeatures / TOTAL_FEATURES) * 1.8);
+        const sampleSubsampleNoise = (1.0 - state.sampleRatio) * 0.6; // 样本不足带来的单树估计扰动
+
+        for (let t = 0; t < nTrees; t++) {
+          const treePred = [];
+          const treePerturbSeed = rng();
+          // 该树是否在根节点抓到了强特征
+          const hasStrong = rng() < pStrong;
+          
+          for (let i = 0; i < N_SAMPLES; i++) {
+            const row = X[i];
+            let basePred;
+            if (hasStrong) {
+              // 拟合主干信号
+              basePred = Math.sin(row[0] * 1.4) + 0.75 * Math.cos(row[1] * 1.1) + (rng() - 0.5) * 0.2;
+            } else {
+              // 被迫使用次要特征逼近
+              basePred = 0.6 * (row[2] - row[3]) + Math.sin(row[4] * 1.2) + (rng() - 0.5) * 0.7;
+            }
+            // 样本扰动影响
+            const noise = (rng() - 0.5) * (0.3 + sampleSubsampleNoise + (8 - state.maxFeatures) * 0.08);
+            treePred.push(basePred + noise);
+          }
+          predictions.push(treePred);
+        }
+
+        // 计算树间两两相关系数均值 ρ
+        let sumRho = 0;
+        let countPairs = 0;
+        for (let i = 0; i < Math.min(15, nTrees); i++) {
+          for (let j = i + 1; j < Math.min(15, nTrees); j++) {
+            sumRho += calcPearson(predictions[i], predictions[j]);
+            countPairs++;
+          }
+        }
+        const meanRho = Math.max(0.08, Math.min(0.98, sumRho / Math.max(1, countPairs)));
+
+        // 计算单树平均方差 sigma2 (与真实 yTrue 之间的波动与差异)
+        let sumVar = 0;
+        for (let t = 0; t < nTrees; t++) {
+          sumVar += calcVariance(predictions[t], yTrue);
+        }
+        const sigma2 = sumVar / nTrees;
+
+        // 根据理论公式计算集成方差
+        // Var(B) = rho * sigma2 + ((1 - rho) / B) * sigma2
+        const ensembleVar = meanRho * sigma2 + ((1 - meanRho) / state.nTrees) * sigma2;
+        const limitVar = meanRho * sigma2;
+
+        return {
+          predictions,
+          yTrue,
+          meanRho,
+          sigma2,
+          ensembleVar,
+          limitVar
+        };
+      }
+
+      function calcPearson(arr1, arr2) {
+        const n = arr1.length;
+        let m1 = 0, m2 = 0;
+        for (let i = 0; i < n; i++) { m1 += arr1[i]; m2 += arr2[i]; }
+        m1 /= n; m2 /= n;
+
+        let num = 0, d1 = 0, d2 = 0;
+        for (let i = 0; i < n; i++) {
+          const diff1 = arr1[i] - m1;
+          const diff2 = arr2[i] - m2;
+          num += diff1 * diff2;
+          d1 += diff1 * diff1;
+          d2 += diff2 * diff2;
+        }
+        if (d1 === 0 || d2 === 0) return 0;
+        return num / (Math.sqrt(d1) * Math.sqrt(d2));
+      }
+
+      function calcVariance(pred, trueVal) {
+        let s = 0;
+        for (let i = 0; i < pred.length; i++) {
+          const diff = pred[i] - trueVal[i];
+          s += diff * diff;
+        }
+        return s / pred.length;
+      }
+
+      // DOM 元素引用
+      const sampleSlider = document.getElementById('input-sample-ratio');
+      const maxFeatSlider = document.getElementById('input-max-features');
+      const nTreesSlider = document.getElementById('input-n-trees');
+
+      const valSampleLabel = document.getElementById('val-sample-ratio');
+      const valFeatLabel = document.getElementById('val-max-features');
+      const valTreesLabel = document.getElementById('val-n-trees');
+
+      const metricRho = document.getElementById('metric-rho');
+      const diffRho = document.getElementById('diff-rho');
+      const metricSingleVar = document.getElementById('metric-single-var');
+      const diffSingleVar = document.getElementById('diff-single-var');
+      const metricEnsembleVar = document.getElementById('metric-ensemble-var');
+      const metricLimitVar = document.getElementById('metric-limit-var');
+      const metricReduction = document.getElementById('metric-reduction');
+      const statusReduction = document.getElementById('status-reduction');
+      const diagText = document.getElementById('diag-text');
+
+      const cvScatter = document.getElementById('cv-scatter');
+      const cvCurve = document.getElementById('cv-curve');
+
+      // 预设配置
+      const presetBtns = {
+        'p-full': { sampleRatio: 1.0, maxFeatures: 8 },
+        'p-bagging': { sampleRatio: 0.65, maxFeatures: 8 },
+        'p-rf-std': { sampleRatio: 1.0, maxFeatures: 2 },
+        'p-rf-ext': { sampleRatio: 0.5, maxFeatures: 1 }
+      };
+
+      function updateActivePresetBtn() {
+        Object.keys(presetBtns).forEach(id => {
+          const cfg = presetBtns[id];
+          const btn = document.getElementById(id);
+          if (btn) {
+            if (Math.abs(state.sampleRatio - cfg.sampleRatio) < 0.01 && state.maxFeatures === cfg.maxFeatures) {
+              btn.classList.add('active');
+            } else {
+              btn.classList.remove('active');
+            }
+          }
+        });
+      }
+
+      function update() {
+        // 更新滑块文本显示
+        valSampleLabel.textContent = Number(state.sampleRatio).toFixed(2);
+        valFeatLabel.textContent = `${state.maxFeatures} / 8`;
+        valTreesLabel.textContent = `${state.nTrees} 棵`;
+
+        updateActivePresetBtn();
+
+        // 重新运算仿真
+        state.simData = simulateTrees(state);
+        const { meanRho, sigma2, ensembleVar, limitVar } = state.simData;
+
+        // 更新指标
+        metricRho.textContent = meanRho.toFixed(2);
+        const rhoPct = ((meanRho - 0.88) / 0.88 * 100).toFixed(1);
+        diffRho.textContent = (rhoPct > 0 ? '+' : '') + rhoPct + '%';
+
+        metricSingleVar.textContent = sigma2.toFixed(2);
+        const varPct = ((sigma2 - 1.0) / 1.0 * 100).toFixed(1);
+        diffSingleVar.textContent = (varPct > 0 ? '+' : '') + varPct + '%';
+
+        metricEnsembleVar.textContent = ensembleVar.toFixed(2);
+        metricLimitVar.textContent = limitVar.toFixed(2);
+
+        // 方差消减率
+        const redPct = Math.max(0, ((sigma2 - ensembleVar) / sigma2) * 100);
+        metricReduction.textContent = redPct.toFixed(1);
+
+        if (redPct > 65) {
+          statusReduction.textContent = '大幅抑制方差';
+          statusReduction.style.color = 'var(--answer)';
+        } else if (redPct > 40) {
+          statusReduction.textContent = '中度消减波动';
+          statusReduction.style.color = 'var(--model)';
+        } else {
+          statusReduction.textContent = '树间雷同·受限';
+          statusReduction.style.color = 'var(--aggregate)';
+        }
+
+        // 动态诊断文字
+        if (state.maxFeatures >= 7 && state.sampleRatio >= 0.9) {
+          diagText.innerHTML = `<strong>状态诊断：无随机化或微扰。</strong> 所有树都选取强特征，树间高度雷同（ρ=${meanRho.toFixed(2)}）。此时无论树木数 B 增至多大，集成方差几乎卡死在极限 ρ·σ²=${limitVar.toFixed(2)}，无法发挥多树集成的平均力量。`;
+        } else if (state.maxFeatures >= 7 && state.sampleRatio < 0.9) {
+          diagText.innerHTML = `<strong>状态诊断：纯 Bagging 机制。</strong> 仅通过样本 Bootstrap 打乱，但由于特征全开放，强特征仍在大多数树根部分裂，ρ 仅微降至 ${meanRho.toFixed(2)}。需进一步引入特征子采样以破除强特征依赖。`;
+        } else if (state.maxFeatures <= 3) {
+          diagText.innerHTML = `<strong>状态诊断：随机森林（双重扰动生效）。</strong> 候选特征 m=${state.maxFeatures} 使得大量树被迫探索次级特征空间，树间相关系数 ρ 跌至 <strong>${meanRho.toFixed(2)}</strong>。虽然单树方差略升，但最终集成方差剧减到 <strong>${ensembleVar.toFixed(2)}</strong>！`;
+        } else {
+          diagText.innerHTML = `<strong>状态诊断：中等特征扰动。</strong> 候选特征数 m=${state.maxFeatures}，相关系数 ρ=${meanRho.toFixed(2)}。可观察到随着 B 增加，方差平滑衰减，最终逼近下限线。`;
+        }
+
+        // 重绘画布
+        drawScatter();
+        drawCurve();
+      }
+
+      // 绘制散点图：Tree 1 vs Tree 2 的预测对比
+      function drawScatter() {
+        const ctx = Deck.fit(cvScatter);
+        const w = cvScatter.clientWidth;
+        const h = cvScatter.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const pad = 44;
+        const pw = w - pad * 2;
+        const ph = h - pad * 2;
+
+        // 绘制坐标轴底色线与对角虚线
+        ctx.strokeStyle = '#D2DEE6';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(pad, pad, pw, ph);
+
+        // 45度对角虚线 (代表完全相关 y = x)
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = Deck.token('--aggregate');
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(pad, pad + ph);
+        ctx.lineTo(pad + pw, pad);
+        ctx.stroke();
+        ctx.restore();
+
+        // 标尺文字
+        ctx.fillStyle = Deck.token('--muted');
+        ctx.font = '12px "Noto Sans SC", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Tree 1 预测输出', pad + pw / 2, h - 12);
+        ctx.save();
+        ctx.translate(14, pad + ph / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText('Tree 2 预测输出', 0, 0);
+        ctx.restore();
+
+        // 获取树 1 与树 2 的预测点
+        const p1 = state.simData.predictions[0];
+        const p2 = state.simData.predictions[1];
+
+        // 确定极值范围 [-3, 3]
+        const minVal = -2.8;
+        const maxVal = 2.8;
+        const toX = val => pad + ((val - minVal) / (maxVal - minVal)) * pw;
+        const toY = val => pad + ph - ((val - minVal) / (maxVal - minVal)) * ph;
+
+        // 限制在绘图区内部，避免边缘溢出
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(pad, pad, pw, ph);
+        ctx.clip();
+
+        // 绘制样本预测点
+        ctx.fillStyle = Deck.token('--model');
+        for (let i = 0; i < N_SAMPLES; i++) {
+          const px = toX(p1[i]);
+          const py = toY(p2[i]);
+          ctx.beginPath();
+          ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+
+        // 在图右上角印出当前树对的精确相关系数
+        const pairRho = calcPearson(p1, p2);
+        ctx.fillStyle = Deck.token('--text');
+        ctx.font = '600 13px "Noto Sans SC", sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`树对样本相关 r = ${pairRho.toFixed(2)}`, pad + 12, pad + 22);
+      }
+
+      // 绘制理论曲线与当前树木数定位
+      function drawCurve() {
+        const ctx = Deck.fit(cvCurve);
+        const w = cvCurve.clientWidth;
+        const h = cvCurve.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const pad = 44;
+        const pw = w - pad * 2;
+        const ph = h - pad * 2;
+
+        // 坐标框
+        ctx.strokeStyle = '#D2DEE6';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(pad, pad, pw, ph);
+
+        const { meanRho, sigma2, ensembleVar, limitVar } = state.simData;
+
+        // X轴：B 从 1 到 60
+        // Y轴：方差从 0 到 1.8
+        const maxB = 60;
+        const maxY = 1.6;
+        const toX = b => pad + ((b - 1) / (maxB - 1)) * pw;
+        const toY = v => pad + ph - (Math.min(v, maxY) / maxY) * ph;
+
+        // 绘制下限水平虚线 limitVar = rho * sigma2
+        const yLimit = toY(limitVar);
+        ctx.save();
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = Deck.token('--muted');
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(pad, yLimit);
+        ctx.lineTo(pad + pw, yLimit);
+        ctx.stroke();
+        ctx.restore();
+
+        // 标注下限线文字
+        ctx.fillStyle = Deck.token('--muted');
+        ctx.font = '12px "Noto Sans SC", sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`方差下限 ρ·σ² = ${limitVar.toFixed(2)}`, pad + 8, yLimit - 6);
+
+        // 绘制实际方差曲线 Var(B) = rho*sigma2 + (1-rho)/B * sigma2
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(pad, pad, pw, ph);
+        ctx.clip();
+        ctx.strokeStyle = Deck.token('--aggregate');
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let b = 1; b <= maxB; b++) {
+          const varB = meanRho * sigma2 + ((1 - meanRho) / b) * sigma2;
+          const px = toX(b);
+          const py = toY(varB);
+          if (b === 1) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 标记当前用户设置的树木数 B
+        const curX = toX(state.nTrees);
+        const curY = toY(ensembleVar);
+
+        // 垂直引导线
+        ctx.save();
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = Deck.token('--aggregate');
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(curX, pad + ph);
+        ctx.lineTo(curX, curY);
+        ctx.stroke();
+        ctx.restore();
+
+        // 当前点大圆标
+        ctx.fillStyle = Deck.token('--aggregate');
+        ctx.beginPath();
+        ctx.arc(curX, curY, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(curX, curY, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 坐标轴标签
+        ctx.fillStyle = Deck.token('--muted');
+        ctx.font = '12px "Noto Sans SC", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('森林规模 B (树木棵数)', pad + pw / 2, h - 12);
+        ctx.save();
+        ctx.translate(14, pad + ph / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText('集成预测总方差 Var', 0, 0);
+        ctx.restore();
+
+        // 当前点读数：放在上方或下方，不与曲线重叠
+        ctx.fillStyle = Deck.token('--text');
+        ctx.font = '600 13px "Noto Sans SC", sans-serif';
+        ctx.textAlign = 'center';
+        const labelY = curY > pad + 30 ? curY - 14 : curY + 20;
+        ctx.fillText(`B=${state.nTrees} · Var=${ensembleVar.toFixed(2)}`, curX, labelY);
+      }
+
+      // 绑定滑块事件
+      sampleSlider.addEventListener('input', (e) => {
+        state.sampleRatio = parseFloat(e.target.value);
+        update();
+      });
+
+      maxFeatSlider.addEventListener('input', (e) => {
+        state.maxFeatures = parseInt(e.target.value, 10);
+        update();
+      });
+
+      nTreesSlider.addEventListener('input', (e) => {
+        state.nTrees = parseInt(e.target.value, 10);
+        update();
+      });
+
+      // 绑定预设按钮
+      Object.keys(presetBtns).forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+          btn.addEventListener('click', () => {
+            const cfg = presetBtns[id];
+            state.sampleRatio = cfg.sampleRatio;
+            state.maxFeatures = cfg.maxFeatures;
+            sampleSlider.value = state.sampleRatio;
+            maxFeatSlider.value = state.maxFeatures;
+            update();
+          });
+        }
+      });
+
+      // 重新抽样按钮
+      document.getElementById('btn-re-sample').addEventListener('click', () => {
+        state.seed = Math.floor(Math.random() * 10000);
+        update();
+      });
+
+      // 视窗尺寸变动自适应
+      Deck.onResize(() => {
+        drawScatter();
+        drawCurve();
+      });
+
+      // 初始化渲染
+      update();
+    })();
+  </script>
+</body>
+</html>

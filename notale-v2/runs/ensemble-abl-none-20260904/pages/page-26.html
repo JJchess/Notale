@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成不是自动增益</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, -apple-system, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      padding: var(--pad-y) var(--pad-x);
+      width: 1600px;
+      height: 900px;
+      overflow: hidden;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶栏 */
+    .header-block {
+      flex: 0 0 auto;
+      margin-bottom: 14px;
+    }
+    .header-block h1 {
+      margin: 0 0 4px 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .header-block .lead-text {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* 主实验与沙盘区：两栏布局 */
+    .workspace {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      gap: 24px;
+    }
+
+    /* 左栏：四维失效陷阱切换卡与量化推演 */
+    .left-col {
+      flex: 0 0 470px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .panel-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
+
+    .trap-btn {
+      appearance: none;
+      border: 1px solid rgba(39, 100, 143, 0.18);
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 9px 14px;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      transition: all var(--duration) var(--ease);
+    }
+    .trap-btn:hover {
+      border-color: var(--model);
+      background: rgba(255, 255, 255, 0.95);
+    }
+    .trap-btn.active {
+      background: var(--surface-strong);
+      border-color: var(--model);
+      box-shadow: inset 3px 0 0 0 var(--aggregate);
+    }
+    .trap-btn-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .trap-btn-tag {
+      font-size: var(--fs-tick);
+      color: var(--aggregate);
+      font-weight: 600;
+      background: rgba(195, 75, 34, 0.1);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .trap-btn.active .trap-btn-head {
+      color: var(--model);
+    }
+    .trap-btn-desc {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.3;
+    }
+
+    /* 左下机制解析与真实准则 */
+    .trap-detail-panel {
+      flex: 1 1 0;
+      min-height: 0;
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid rgba(83, 106, 120, 0.2);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .detail-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0 0 6px 0;
+    }
+    .detail-body {
+      font-size: 15px;
+      color: var(--text);
+      line-height: 1.42;
+      margin-bottom: 8px;
+    }
+    .detail-metric {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 13.5px;
+      color: var(--muted);
+    }
+    .metric-val {
+      font-family: var(--font-num, monospace);
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--text);
+    }
+    .metric-val.bad {
+      color: var(--aggregate);
+    }
+    .metric-val.good {
+      color: var(--sample);
+    }
+    .detail-rule {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed rgba(83, 106, 120, 0.25);
+      font-size: 13.5px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .detail-rule strong {
+      color: var(--text);
+    }
+
+    /* 右栏：可视化主证据区 (SVG 渲染真实机制图解与对比) */
+    .right-col {
+      flex: 1 1 0;
+      min-width: 0;
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid rgba(83, 106, 120, 0.2);
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .viz-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      border-bottom: 1px solid rgba(83, 106, 120, 0.15);
+      padding-bottom: 10px;
+    }
+    .viz-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .viz-sub {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .viz-container {
+      flex: 1 1 0;
+      min-height: 0;
+      position: relative;
+    }
+    .viz-container svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 底栏防御清单卡 */
+    .bottom-summary {
+      flex: 0 0 auto;
+      margin-top: 14px;
+      background: #EBF1F5;
+      border-radius: 6px;
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 15px;
+      color: var(--muted);
+    }
+    .summary-title {
+      font-weight: 600;
+      color: var(--text);
+      margin-right: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .summary-title::before {
+      content: "";
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--aggregate);
+    }
+    .summary-text {
+      flex: 1;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="26" data-total="27">
+  <div id="stage">
+    <!-- 顶部核心判断 -->
+    <header class="header-block">
+      <h1>集成不是自动增益：收益会被四类实际陷阱完全抵消</h1>
+      <p class="lead-text">模型组合能够降低误差的前提是成员具备独立互补的判断；若陷入相关性、校准、泄漏或成本陷阱，盲目集成将适得其反。</p>
+    </header>
+
+    <!-- 主工作区：左侧陷阱导引与定量指标，右侧直观机制与对比证据 -->
+    <main class="workspace">
+      <!-- 左栏：4类陷阱选择 -->
+      <section class="left-col min0">
+        <nav class="panel-nav" aria-label="陷阱类型切换">
+          <button class="trap-btn active" data-trap="diversity" id="btn-diversity">
+            <div class="trap-btn-head">
+              <span>1. 缺乏多样性 (高相关同质)</span>
+              <span class="trap-btn-tag">方差未降</span>
+            </div>
+            <div class="trap-btn-desc">基模型结构与训练集高度重叠，预测误差完全同步同向。</div>
+          </button>
+
+          <button class="trap-btn" data-trap="calibration" id="btn-calibration">
+            <div class="trap-btn-head">
+              <span>2. 概率未校准 (极端置信度)</span>
+              <span class="trap-btn-tag">被劣质票绑架</span>
+            </div>
+            <div class="trap-btn-desc">单模型输出 0.99 虚假高置信度，软投票时直接压制其余良性模型。</div>
+          </button>
+
+          <button class="trap-btn" data-trap="leakage" id="btn-leakage">
+            <div class="trap-btn-head">
+              <span>3. 特征与堆叠数据泄漏</span>
+              <span class="trap-btn-tag">线上断崖崩盘</span>
+            </div>
+            <div class="trap-btn-desc">Stacking 没做严谨的折外预测 (OOF)，元模型直接记忆训练标签。</div>
+          </button>
+
+          <button class="trap-btn" data-trap="cost" id="btn-cost">
+            <div class="trap-btn-head">
+              <span>4. 计算与工程推理成本</span>
+              <span class="trap-btn-tag">边际收益归零</span>
+            </div>
+            <div class="trap-btn-desc">增加 10 倍运算延迟仅换取 0.1% 验证提升，突破生产 SLA 限制。</div>
+          </button>
+        </nav>
+
+        <!-- 详细解释面板 -->
+        <article class="trap-detail-panel" id="detail-panel">
+          <div>
+            <h2 class="detail-title" id="panel-title">缺乏多样性：同质误差无法均摊</h2>
+            <p class="detail-body" id="panel-body">
+              当基分类器之间的预测相关系数 $\rho \to 1$ 时，集成的方差公式 $\text{Var} = \rho \sigma^2 + \frac{1-\rho}{M}\sigma^2$ 退化为 $\sigma^2$。5 个同向犯错的模型投票，无法纠正任何一个单点错误。
+            </p>
+          </div>
+          <div class="detail-metric" id="panel-metric">
+            <div class="metric-row">
+              <span>基模型平均误差相关系数 $\rho$:</span>
+              <span class="metric-val bad" id="metric-1">0.94 (强正相关)</span>
+            </div>
+            <div class="metric-row">
+              <span>理论方差缩减比例:</span>
+              <span class="metric-val bad" id="metric-2">仅 4.8% (接近单模型)</span>
+            </div>
+          </div>
+          <div class="detail-rule" id="panel-rule">
+            <strong>工程防御准则：</strong>引入异质算法族（树模型 + 线性模型 + 神经网络），并在特征子空间与样本重采样上强行施加扰动。
+          </div>
+        </article>
+      </section>
+
+      <!-- 右栏：机制图解与对比验证沙盘 -->
+      <section class="right-col min0">
+        <div class="viz-header">
+          <div class="viz-title" id="viz-head-title">
+            <span>陷阱机制对比：单模型 vs 盲目集成 vs 规范集成</span>
+          </div>
+          <div class="viz-sub" id="viz-head-sub">可直观观察误差重叠度与集成边界</div>
+        </div>
+        <div class="viz-container" id="viz-mount">
+          <svg id="viz-svg" viewBox="0 0 940 480" preserveAspectRatio="xMidYMid meet">
+            <!-- 动态通过脚本填充 SVG 图形与标注 -->
+          </svg>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部收束结论条 -->
+    <footer class="bottom-summary">
+      <div class="summary-title">集成前置核验</div>
+      <div class="summary-text" id="summary-banner">
+        在决定使用集成前，必须确认：模型误差是否互补？输出概率是否经过保序或 Platt 校准？Stacking 元特征是否纯净 OOF 生成？延迟增量是否在系统预算内？
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 状态配置数据：对应四类失效陷阱
+    const TRAPS_DATA = {
+      diversity: {
+        title: "缺乏多样性：同质误差无法均摊",
+        body: "集成降噪依赖于「独立性假设」。若 5 个基模型结构相似且在相同数据子集训练，预测相关系数高达 0.94。当测试样本处于疑难区域时，5 个模型同时给出相同错误分类，投票机制完全失效。",
+        m1Label: "基模型误差相关系数 ρ",
+        m1Val: "0.94 (强正相关)",
+        m1Bad: true,
+        m2Label: "集成对单模型方差降幅",
+        m2Val: "仅 -4.8% (近乎无增益)",
+        m2Bad: true,
+        rule: "引入异质算法（GBDT + 逻辑回归 + MLP），结合随机子空间（Feature Subsampling）强制破坏基模型对同一特征模式的共性偏置。",
+        renderSvg: (svg) => renderDiversityViz(svg)
+      },
+      calibration: {
+        title: "概率未校准：过度自信的坏票绑架总成",
+        body: "许多深层树模型或未正则化神经网络在叶节点输出极端置信度（如 0.999）。在软投票（Soft Voting）加权均值中，一个过度自信的错误预测直接碾压两个给出了 0.70 正确判断的模型，形成「劣币驱逐良币」。",
+        m1Label: "单坏模型极端置信度",
+        m1Val: "P(错)=0.995 (极端失真)",
+        m1Bad: true,
+        m2Label: "软投票最终输出决策",
+        m2Val: "错误判定 (被极端票绑架)",
+        m2Bad: true,
+        rule: "在集成前对各基模型的预测概率执行温度缩放 (Temperature Scaling)、Platt 缩放或保序回归校准，或退回硬投票（多数表决）。",
+        renderSvg: (svg) => renderCalibrationViz(svg)
+      },
+      leakage: {
+        title: "数据泄漏：Stacking 伪验证导致线上断崖",
+        body: "构建元学习器特征时，若直接使用基模型在全量训练集上的预测，基模型已完全记死训练标签。元模型会过度信赖单一模型，线上遇到新样本时遭遇断崖崩塌。",
+        m1Label: "泄漏版离线 vs 线上 AUC",
+        m1Val: "0.99 → 0.62 (严重过拟合)",
+        m1Bad: true,
+        m2Label: "规范 OOF 离线 vs 线上 AUC",
+        m2Val: "0.81 → 0.80 (泛化一致)",
+        m2Bad: false,
+        rule: "必须严格执行 K 折折外预测（OOF），确保元模型每一维特征都来自从未参与自身训练的验证折。",
+        renderSvg: (svg) => renderLeakageViz(svg)
+      },
+      cost: {
+        title: "计算成本：算力暴增但边际效益为零",
+        body: "实时系统有严格响应延迟 SLA（如 ≤25ms）。堆叠深层模型会令吞吐骤降，延迟上升 10 倍却仅微增 0.1% 验证精度，完全得不偿失。",
+        m1Label: "模型推理端到端延迟",
+        m1Val: "8ms (单模型) → 82ms (多模型)",
+        m1Bad: true,
+        m2Label: "测试集精准度增益",
+        m2Val: "+0.12% (低于工程采纳线)",
+        m2Bad: true,
+        rule: "部署前进行成本收益帕累托分析；延迟敏感场景优先通过知识蒸馏（Distillation）将集成知识压缩回单模型。",
+        renderSvg: (svg) => renderCostViz(svg)
+      }
+    };
+
+    // 辅助绘图函数：多样性缺失可视化
+    function renderDiversityViz(svg) {
+      svg.innerHTML = `
+        <g transform="translate(40, 30)">
+          <!-- 对比 1：同质模型 (缺乏多样性) -->
+          <g transform="translate(0, 0)">
+            <rect x="0" y="0" width="410" height="380" rx="8" fill="#F8FAFB" stroke="rgba(83,106,120,0.2)" stroke-width="1.5"/>
+            <text x="20" y="34" font-size="18" font-weight="700" fill="#122634">同质模型盲目集成 (高误差相关)</text>
+            <text x="20" y="58" font-size="14" fill="#536A78">基模型结构相仿，犯错样本位置完全重叠</text>
+
+            <!-- 5个模型的错误重叠分布 -->
+            <g transform="translate(30, 80)">
+              <!-- 模拟样本空间横轴 -->
+              <line x1="0" y1="210" x2="350" y2="210" stroke="#536A78" stroke-width="1"/>
+              <text x="350" y="225" font-size="12" fill="#536A78" text-anchor="end">样本空间分布 (难分边界)</text>
+
+              <!-- 5个模型预测错误区间 (高度重合在 X: 140~240) -->
+              <rect x="130" y="20" width="130" height="24" rx="4" fill="#27648F" opacity="0.8"/>
+              <text x="15" y="37" font-size="14" fill="#27648F" font-weight="600">模型 1 错误</text>
+
+              <rect x="135" y="55" width="125" height="24" rx="4" fill="#27648F" opacity="0.8"/>
+              <text x="15" y="72" font-size="14" fill="#27648F" font-weight="600">模型 2 错误</text>
+
+              <rect x="125" y="90" width="140" height="24" rx="4" fill="#27648F" opacity="0.8"/>
+              <text x="15" y="107" font-size="14" fill="#27648F" font-weight="600">模型 3 错误</text>
+
+              <rect x="130" y="125" width="135" height="24" rx="4" fill="#27648F" opacity="0.8"/>
+              <text x="15" y="142" font-size="14" fill="#27648F" font-weight="600">模型 4 错误</text>
+
+              <rect x="140" y="160" width="120" height="24" rx="4" fill="#27648F" opacity="0.8"/>
+              <text x="15" y="177" font-size="14" fill="#27648F" font-weight="600">模型 5 错误</text>
+
+              <!-- 错误穿透线 -->
+              <line x1="190" y1="10" x2="190" y2="200" stroke="#C34B22" stroke-width="2" stroke-dasharray="4,4"/>
+              <text x="195" y="15" font-size="13" fill="#C34B22" font-weight="600">共性死角</text>
+            </g>
+
+            <!-- 集成投票结果 -->
+            <rect x="20" y="310" width="370" height="50" rx="6" fill="#FDF2EE" stroke="#C34B22" stroke-width="1.5"/>
+            <text x="35" y="340" font-size="15" font-weight="700" fill="#C34B22">投票结果：共性死角 5 票全错，方差零削减</text>
+          </g>
+
+          <!-- 对比 2：异质互补模型 (有效集成) -->
+          <g transform="translate(450, 0)">
+            <rect x="0" y="0" width="410" height="380" rx="8" fill="#F8FAFB" stroke="rgba(83,106,120,0.2)" stroke-width="1.5"/>
+            <text x="20" y="34" font-size="18" font-weight="700" fill="#122634">异质模型互补集成 (低误差相关)</text>
+            <text x="20" y="58" font-size="14" fill="#536A78">树+线性+MLP，各模型盲区分散错开</text>
+
+            <!-- 3个互补模型的错开错误分布 -->
+            <g transform="translate(30, 80)">
+              <line x1="0" y1="210" x2="350" y2="210" stroke="#536A78" stroke-width="1"/>
+              <text x="350" y="225" font-size="12" fill="#536A78" text-anchor="end">样本空间分布 (互补覆盖)</text>
+
+              <rect x="40" y="30" width="80" height="28" rx="4" fill="#27648F" opacity="0.85"/>
+              <text x="15" y="50" font-size="14" fill="#27648F" font-weight="600">树模型(GBDT)</text>
+
+              <rect x="150" y="80" width="80" height="28" rx="4" fill="#2F7568" opacity="0.85"/>
+              <text x="15" y="100" font-size="14" fill="#2F7568" font-weight="600">线性逻辑回归</text>
+
+              <rect x="250" y="130" width="80" height="28" rx="4" fill="#536A78" opacity="0.85"/>
+              <text x="15" y="150" font-size="14" fill="#536A78" font-weight="600">浅层神经网络</text>
+
+              <!-- 覆盖示意 -->
+              <text x="75" y="24" font-size="12" fill="#27648F" text-anchor="middle">仅非线性区失灵</text>
+              <text x="190" y="74" font-size="12" fill="#2F7568" text-anchor="middle">仅边界交叠区失灵</text>
+              <text x="290" y="124" font-size="12" fill="#536A78" text-anchor="middle">仅高稀疏点失灵</text>
+            </g>
+
+            <!-- 集成投票结果 -->
+            <rect x="20" y="310" width="370" height="50" rx="6" fill="#F0F7F4" stroke="#237052" stroke-width="1.5"/>
+            <text x="35" y="340" font-size="15" font-weight="700" fill="#237052">多数表决：任意区间皆有 2/3 多数正确</text>
+          </g>
+        </g>
+      `;
+    }
+
+    // 辅助绘图函数：未校准概率的可视化
+    function renderCalibrationViz(svg) {
+      svg.innerHTML = `
+        <g transform="translate(40, 30)">
+          <!-- 左侧：未校准时的极端票绑架 -->
+          <g transform="translate(0, 0)">
+            <rect x="0" y="0" width="410" height="380" rx="8" fill="#F8FAFB" stroke="rgba(83,106,120,0.2)" stroke-width="1.5"/>
+            <text x="20" y="34" font-size="18" font-weight="700" fill="#122634">未校准：过度自信的坏票绑架</text>
+            <text x="20" y="58" font-size="14" fill="#536A78">深树模型叶片极纯，输出虚假极端概率</text>
+
+            <g transform="translate(20, 85)">
+              <!-- 模型 A (正确但温和) -->
+              <rect x="0" y="0" width="370" height="55" rx="6" fill="#FFFFFF" stroke="#2F7568" stroke-width="1.2"/>
+              <text x="14" y="26" font-size="14" font-weight="600" fill="#122634">模型 A (校准良性)</text>
+              <text x="14" y="44" font-size="13" fill="#2F7568">判定类别 [正例]：置信度 P = 0.65 (正确)</text>
+              <text x="350" y="35" font-size="18" font-weight="700" fill="#2F7568" text-anchor="end">+0.65</text>
+
+              <!-- 模型 B (正确但温和) -->
+              <rect x="0" y="68" width="370" height="55" rx="6" fill="#FFFFFF" stroke="#2F7568" stroke-width="1.2"/>
+              <text x="14" y="94" font-size="14" font-weight="600" fill="#122634">模型 B (校准良性)</text>
+              <text x="14" y="112" font-size="13" fill="#2F7568">判定类别 [正例]：置信度 P = 0.68 (正确)</text>
+              <text x="350" y="103" font-size="18" font-weight="700" fill="#2F7568" text-anchor="end">+0.68</text>
+
+              <!-- 模型 C (错误但极度自大) -->
+              <rect x="0" y="136" width="370" height="55" rx="6" fill="#FDF2EE" stroke="#C34B22" stroke-width="1.5"/>
+              <text x="14" y="162" font-size="14" font-weight="700" fill="#C34B22">模型 C (未校准深树) ⚠</text>
+              <text x="14" y="180" font-size="13" fill="#C34B22">判定类别 [负例]：置信度 P = 0.999 (错误但自负)</text>
+              <text x="350" y="171" font-size="18" font-weight="700" fill="#C34B22" text-anchor="end">-0.999</text>
+            </g>
+
+            <!-- 软投票计算 -->
+            <rect x="20" y="305" width="370" height="55" rx="6" fill="#FDF2EE" stroke="#C34B22" stroke-width="1.5"/>
+            <text x="30" y="327" font-size="14" fill="#122634">加权均值: (0.65 + 0.68 + 0.001) / 3 = <tspan font-weight="700" fill="#C34B22">0.444</tspan></text>
+            <text x="30" y="347" font-size="14" font-weight="700" fill="#C34B22">集成裁决：负例 (判定错误！被模型C单独绑架)</text>
+          </g>
+
+          <!-- 右侧：校准后的真实表现 -->
+          <g transform="translate(450, 0)">
+            <rect x="0" y="0" width="410" height="380" rx="8" fill="#F8FAFB" stroke="rgba(83,106,120,0.2)" stroke-width="1.5"/>
+            <text x="20" y="34" font-size="18" font-weight="700" fill="#122634">校准后集成 (温度缩放/Platt)</text>
+            <text x="20" y="58" font-size="14" fill="#536A78">概率真实反映后验可靠度，投票机制恢复</text>
+
+            <g transform="translate(20, 85)">
+              <rect x="0" y="0" width="370" height="55" rx="6" fill="#FFFFFF" stroke="rgba(83,106,120,0.2)"/>
+              <text x="14" y="26" font-size="14" font-weight="600" fill="#122634">模型 A (校准后)</text>
+              <text x="14" y="44" font-size="13" fill="#237052">校准概率 P = 0.64 (正例)</text>
+              <text x="350" y="35" font-size="18" font-weight="700" fill="#237052" text-anchor="end">+0.64</text>
+
+              <rect x="0" y="68" width="370" height="55" rx="6" fill="#FFFFFF" stroke="rgba(83,106,120,0.2)"/>
+              <text x="14" y="94" font-size="14" font-weight="600" fill="#122634">模型 B (校准后)</text>
+              <text x="14" y="112" font-size="13" fill="#237052">校准概率 P = 0.66 (正例)</text>
+              <text x="350" y="103" font-size="18" font-weight="700" fill="#237052" text-anchor="end">+0.66</text>
+
+              <rect x="0" y="136" width="370" height="55" rx="6" fill="#FFFFFF" stroke="rgba(83,106,120,0.2)"/>
+              <text x="14" y="162" font-size="14" font-weight="600" fill="#122634">模型 C (经过校准防虚标)</text>
+              <text x="14" y="180" font-size="13" fill="#536A78">真实可靠度收拢 P = 0.38 (正例P=0.38，负例P=0.62)</text>
+              <text x="350" y="171" font-size="18" font-weight="700" fill="#536A78" text-anchor="end">+0.38</text>
+            </g>
+
+            <!-- 校准后计算 -->
+            <rect x="20" y="305" width="370" height="55" rx="6" fill="#F0F7F4" stroke="#237052" stroke-width="1.5"/>
+            <text x="30" y="327" font-size="14" fill="#122634">加权均值: (0.64 + 0.66 + 0.38) / 3 = <tspan font-weight="700" fill="#237052">0.560</tspan></text>
+            <text x="30" y="347" font-size="14" font-weight="700" fill="#237052">集成裁决：正例 (判定正确！良性多数取胜)</text>
+          </g>
+        </g>
+      `;
+    }
+
+    // 辅助绘图函数：Stacking 泄漏机制
+    function renderLeakageViz(svg) {
+      svg.innerHTML = `
+        <g transform="translate(40, 30)">
+          <!-- 左侧：常见致命泄漏 -->
+          <g transform="translate(0, 0)">
+            <rect x="0" y="0" width="410" height="380" rx="8" fill="#F8FAFB" stroke="rgba(83,106,120,0.2)" stroke-width="1.5"/>
+            <text x="20" y="34" font-size="18" font-weight="700" fill="#122634">错误做法：全量训练集直出特征</text>
+            <text x="20" y="58" font-size="14" fill="#C34B22" font-weight="600">致命缺陷：基模型直接「背出」了训练标签</text>
+
+            <g transform="translate(20, 85)">
+              <rect x="0" y="0" width="370" height="70" rx="6" fill="#FFFFFF" stroke="#C34B22" stroke-width="1.2"/>
+              <text x="14" y="24" font-size="14" font-weight="600" fill="#122634">Step 1. 基模型在训练集完整训练</text>
+              <text x="14" y="44" font-size="13" fill="#536A78">基模型已记死样本：Train AUC = 0.999</text>
+              <text x="14" y="60" font-size="13" fill="#C34B22">生成特征 Meta-X 与真实 Target 强人工挂钩</text>
+
+              <path d="M 185 75 L 185 105" stroke="#C34B22" stroke-width="2" marker-end="url(#arrow-red)"/>
+
+              <rect x="0" y="110" width="370" height="70" rx="6" fill="#FDF2EE" stroke="#C34B22" stroke-width="1.5"/>
+              <text x="14" y="134" font-size="14" font-weight="700" fill="#C34B22">Step 2. 元学习器 (Meta-Model) 训练</text>
+              <text x="14" y="154" font-size="13" fill="#122634">元模型只需给该过拟合特征 100% 权重</text>
+              <text x="14" y="170" font-size="13" fill="#C34B22">离线交叉验证呈现虚假完美表现</text>
+            </g>
+
+            <rect x="20" y="295" width="370" height="65" rx="6" fill="#FDF2EE" stroke="#C34B22" stroke-width="1.5"/>
+            <text x="30" y="320" font-size="14" font-weight="700" fill="#C34B22">线上实测：面对全新测试集</text>
+            <text x="30" y="342" font-size="13" fill="#536A78">基模型记忆失效，元模型过度信赖该特征 → 崩溃</text>
+          </g>
+
+          <!-- 右侧：规范 OOF 交叉验证 -->
+          <g transform="translate(450, 0)">
+            <rect x="0" y="0" width="410" height="380" rx="8" fill="#F8FAFB" stroke="rgba(83,106,120,0.2)" stroke-width="1.5"/>
+            <text x="20" y="34" font-size="18" font-weight="700" fill="#122634">规范做法：K折折外预测 (OOF)</text>
+            <text x="20" y="58" font-size="14" fill="#237052" font-weight="600">元特征全部来自模型从未见过的验证折</text>
+
+            <g transform="translate(20, 85)">
+              <rect x="0" y="0" width="370" height="175" rx="6" fill="#FFFFFF" stroke="#2F7568" stroke-width="1.2"/>
+              <text x="14" y="24" font-size="14" font-weight="600" fill="#122634">5 折交叉切分生成纯净 Meta-Feature</text>
+
+              <!-- 5折拼接条图解 -->
+              <g transform="translate(14, 38)">
+                <rect x="0" y="0" width="58" height="20" fill="#2F7568" rx="3"/><text x="29" y="14" fill="#fff" font-size="11" text-anchor="middle">Fold 1</text>
+                <rect x="66" y="0" width="58" height="20" fill="#2F7568" rx="3"/><text x="95" y="14" fill="#fff" font-size="11" text-anchor="middle">Fold 2</text>
+                <rect x="132" y="0" width="58" height="20" fill="#2F7568" rx="3"/><text x="161" y="14" fill="#fff" font-size="11" text-anchor="middle">Fold 3</text>
+                <rect x="198" y="0" width="58" height="20" fill="#2F7568" rx="3"/><text x="227" y="14" fill="#fff" font-size="11" text-anchor="middle">Fold 4</text>
+                <rect x="264" y="0" width="58" height="20" fill="#2F7568" rx="3"/><text x="293" y="14" fill="#fff" font-size="11" text-anchor="middle">Fold 5</text>
+              </g>
+
+              <text x="14" y="85" font-size="13" fill="#122634">每个折的数据仅由其余 4 折训练的模型进行预测</text>
+              <text x="14" y="105" font-size="13" fill="#237052">拼接而成的 OOF 特征完整保留泛化误差分布</text>
+
+              <rect x="14" y="120" width="342" height="42" rx="4" fill="#F0F7F4" stroke="#237052" stroke-width="1"/>
+              <text x="24" y="145" font-size="13" font-weight="600" fill="#237052">元学习器学习到的是真实的泛化互补关系</text>
+            </g>
+
+            <rect x="20" y="295" width="370" height="65" rx="6" fill="#F0F7F4" stroke="#237052" stroke-width="1.5"/>
+            <text x="30" y="320" font-size="14" font-weight="700" fill="#237052">线上实测：泛化性稳固一致</text>
+            <text x="30" y="342" font-size="13" fill="#536A78">离线验证 AUC 0.81 与线上 0.80 完美吻合</text>
+          </g>
+        </g>
+      `;
+    }
+
+    // 辅助绘图函数：工程推理延迟与收益对比
+    function renderCostViz(svg) {
+      svg.innerHTML = `
+        <g transform="translate(40, 30)">
+          <!-- 延迟与效果帕累托曲线 -->
+          <g transform="translate(0, 0)">
+            <rect x="0" y="0" width="860" height="380" rx="8" fill="#F8FAFB" stroke="rgba(83,106,120,0.2)" stroke-width="1.5"/>
+            <text x="24" y="34" font-size="18" font-weight="700" fill="#122634">工程可行性帕累托评估：精度增益 vs 推理延迟与运维复杂度</text>
+            <text x="24" y="58" font-size="14" fill="#536A78">业务系统拥有硬性响应时延限制 (SLA ≤ 25ms)。盲目多层集成往往击穿生产底线</text>
+
+            <!-- 坐标系与对比柱状 -->
+            <g transform="translate(60, 90)">
+              <!-- 坐标轴 -->
+              <line x1="0" y1="220" x2="740" y2="220" stroke="#536A78" stroke-width="1.5"/>
+              <line x1="0" y1="220" x2="0" y2="20" stroke="#536A78" stroke-width="1.5"/>
+              <text x="740" y="240" font-size="13" fill="#536A78" text-anchor="end">不同方案</text>
+              <text x="-10" y="15" font-size="13" fill="#536A78">端到端响应延迟 (ms)</text>
+
+              <!-- SLA 警戒线 25ms (映射到 y=150) -->
+              <line x1="0" y1="140" x2="740" y2="140" stroke="#C34B22" stroke-width="1.5" stroke-dasharray="5,5"/>
+              <text x="730" y="132" font-size="13" font-weight="700" fill="#C34B22" text-anchor="end">生产硬性 SLA 上限: 25ms</text>
+
+              <!-- 方案 1: 单一轻量 LightGBM -->
+              <rect x="60" y="180" width="70" height="40" rx="4" fill="#2F7568"/>
+              <text x="95" y="172" font-size="14" font-weight="700" fill="#2F7568" text-anchor="middle">6ms</text>
+              <text x="95" y="242" font-size="13" fill="#122634" text-anchor="middle">单模型(LGB)</text>
+              <text x="95" y="260" font-size="12" fill="#536A78" text-anchor="middle">准确率: 87.2%</text>
+              <text x="95" y="278" font-size="12" fill="#237052" font-weight="600" text-anchor="middle">✔ 合格投入</text>
+
+              <!-- 方案 2: 3个异质模型加权 -->
+              <rect x="230" y="145" width="70" height="75" rx="4" fill="#27648F"/>
+              <text x="265" y="137" font-size="14" font-weight="700" fill="#27648F" text-anchor="middle">18ms</text>
+              <text x="265" y="242" font-size="13" fill="#122634" text-anchor="middle">3模型异质集成</text>
+              <text x="265" y="260" font-size="12" fill="#536A78" text-anchor="middle">准确率: 88.6% (+1.4%)</text>
+              <text x="265" y="278" font-size="12" fill="#237052" font-weight="600" text-anchor="middle">✔ 黄金性价比点</text>
+
+              <!-- 方案 3: 15个模型深层Stacking (击穿SLA) -->
+              <rect x="400" y="60" width="70" height="160" rx="4" fill="#C34B22"/>
+              <text x="435" y="52" font-size="14" font-weight="700" fill="#C34B22" text-anchor="middle">65ms</text>
+              <text x="435" y="242" font-size="13" fill="#122634" text-anchor="middle">15模型深度堆叠</text>
+              <text x="435" y="260" font-size="12" fill="#536A78" text-anchor="middle">准确率: 88.9% (+0.3%)</text>
+              <text x="435" y="278" font-size="12" fill="#C34B22" font-weight="700" text-anchor="middle">✘ 击穿SLA超限</text>
+
+              <!-- 方案 4: 知识蒸馏 (回压缩) -->
+              <rect x="570" y="170" width="70" height="50" rx="4" fill="#2F7568"/>
+              <text x="605" y="162" font-size="14" font-weight="700" fill="#2F7568" text-anchor="middle">8ms</text>
+              <text x="605" y="242" font-size="13" fill="#122634" text-anchor="middle">集成蒸馏至单模型</text>
+              <text x="605" y="260" font-size="12" fill="#536A78" text-anchor="middle">准确率: 88.4% (-0.2%)</text>
+              <text x="605" y="278" font-size="12" fill="#237052" font-weight="600" text-anchor="middle">✔ 最佳工业方案</text>
+            </g>
+          </g>
+        </g>
+      `;
+    }
+
+    // 切换交互逻辑
+    function setupTrapSwitch() {
+      const buttons = document.querySelectorAll('.trap-btn');
+      const panelTitle = document.getElementById('panel-title');
+      const panelBody = document.getElementById('panel-body');
+      const metric1 = document.getElementById('metric-1');
+      const metric2 = document.getElementById('metric-2');
+      const panelRule = document.getElementById('panel-rule');
+      const vizSvg = document.getElementById('viz-svg');
+
+      function switchTrap(trapKey) {
+        buttons.forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.trap === trapKey);
+        });
+
+        const data = TRAPS_DATA[trapKey];
+        if (!data) return;
+
+        panelTitle.textContent = data.title;
+        panelBody.textContent = data.body;
+
+        const m1Row = metric1.parentElement;
+        const m2Row = metric2.parentElement;
+        m1Row.querySelector('span').textContent = data.m1Label + ":";
+        m2Row.querySelector('span').textContent = data.m2Label + ":";
+
+        metric1.textContent = data.m1Val;
+        metric1.className = `metric-val ${data.m1Bad ? 'bad' : 'good'}`;
+        metric2.textContent = data.m2Val;
+        metric2.className = `metric-val ${data.m2Bad ? 'bad' : 'good'}`;
+
+        panelRule.innerHTML = `<strong>工程防御准则：</strong>${data.rule}`;
+
+        // 渲染对应 SVG 证据
+        data.renderSvg(vizSvg);
+      }
+
+      buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          switchTrap(btn.dataset.trap);
+        });
+      });
+
+      // 初始化第一项
+      switchTrap('diversity');
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      Deck.init({ index: 26, total: 27, keys: false });
+      setupTrapSwitch();
+    });
+  </script>
+</body>
+</html>

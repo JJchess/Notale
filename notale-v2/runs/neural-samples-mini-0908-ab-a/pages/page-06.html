@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>两层网络决策边界：非线性激活如何划分异或平面</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --w-bg: #F1F4F2;
+      --w-text: #151A18;
+      --w-muted: #5B6661;
+      --w-rule: #BAC4BF;
+      --w-struct: #1C4436;
+      --w-signal: #D43811;
+    }
+    #stage {
+      padding: 36px 56px 28px 56px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      row-gap: 16px;
+      color: var(--w-text);
+      font-family: var(--font-sans);
+      background: var(--w-bg);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--w-rule);
+      padding-bottom: 10px;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      margin: 0;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--w-text);
+    }
+    .header-sub {
+      font-size: var(--fs-sec);
+      color: var(--w-muted);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 460px 460px 1fr;
+      column-gap: 36px;
+      align-items: start;
+      min-height: 0;
+    }
+
+    .col-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .panel-head {
+      margin-bottom: 10px;
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      color: var(--w-text);
+      line-height: 1.2;
+    }
+    .panel-desc {
+      font-size: var(--fs-sec);
+      color: var(--w-muted);
+      margin: 4px 0 0 0;
+      line-height: 1.35;
+    }
+
+    .canvas-wrap {
+      position: relative;
+      width: 100%;
+      height: 410px;
+      border: 1px solid var(--w-rule);
+      background: #FFFFFF;
+      box-sizing: border-box;
+    }
+    .canvas-wrap canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .controls-group {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toggle-row {
+      display: flex;
+      gap: 8px;
+    }
+    .mode-btn {
+      flex: 1;
+      height: 38px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      border: 1px solid var(--w-rule);
+      background: #E4E8E5;
+      color: var(--w-text);
+      cursor: pointer;
+      border-radius: 0;
+      transition: all 0.12s ease;
+    }
+    .mode-btn.active {
+      background: var(--w-struct);
+      color: #FFFFFF;
+      border-color: var(--w-struct);
+    }
+    .slider-row {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .slider-label-line {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      color: var(--w-muted);
+    }
+    .slider-label-line b {
+      color: var(--w-text);
+      font-family: monospace;
+      font-size: var(--fs-body);
+    }
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      accent-color: var(--w-struct);
+      cursor: pointer;
+      margin: 0;
+    }
+
+    /* Right column: readout and table */
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--w-rule);
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
+    .stat-name {
+      font-size: var(--fs-sec);
+      color: var(--w-muted);
+    }
+    .stat-val {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      font-family: monospace;
+    }
+    .stat-val.good {
+      color: var(--w-struct);
+    }
+    .stat-val.bad {
+      color: var(--w-signal);
+    }
+
+    .truth-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-label);
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .truth-table th, .truth-table td {
+      border: 1px solid var(--w-rule);
+      padding: 8px 6px;
+    }
+    .truth-table th {
+      background: #E8ECE9;
+      color: var(--w-muted);
+      font-weight: 600;
+    }
+    .truth-table td.match {
+      color: var(--w-struct);
+      font-weight: 700;
+    }
+    .truth-table td.mismatch {
+      color: var(--w-signal);
+      font-weight: 700;
+      background: #FDF1EE;
+    }
+    .diag-box {
+      font-size: var(--fs-sec);
+      line-height: 1.55;
+      color: var(--w-text);
+      border-left: 3px solid var(--w-struct);
+      padding-left: 12px;
+      margin-bottom: 16px;
+      min-height: 70px;
+    }
+
+    .action-btn {
+      height: 40px;
+      border: 1px solid var(--w-rule);
+      background: #FFFFFF;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--w-text);
+      cursor: pointer;
+      width: 100%;
+    }
+    .action-btn:hover {
+      background: #E8ECE9;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>两层网络决策边界：非线性激活如何划分异或平面</h1>
+      <span class="header-sub">对比无激活（线性叠加仍线性）与 ReLU 激活（折叠特征空间）</span>
+    </header>
+
+    <div class="main-grid">
+      <!-- Panel 1: Input Space (x1, x2) -->
+      <section class="col-panel">
+        <div class="panel-head">
+          <h2 class="panel-title">输入空间 (x₁, x₂)</h2>
+          <p class="panel-desc">h₁, h₂ 分别生成阈值边界；浅绿底色为最终预测为 1 的区域。</p>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="cvInput"></canvas>
+        </div>
+        <div class="controls-group">
+          <div class="toggle-row">
+            <button id="btnRelu" class="mode-btn active" type="button">启用 ReLU 激活</button>
+            <button id="btnLinear" class="mode-btn" type="button">无激活（纯线性）</button>
+          </div>
+          <div class="slider-row">
+            <div class="slider-label-line">
+              <span>隐藏元 h₁ 偏置 b₁</span>
+              <b id="valB1">-0.50</b>
+            </div>
+            <input type="range" id="rngB1" min="-2.0" max="1.0" step="0.05" value="-0.50">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label-line">
+              <span>隐藏元 h₂ 偏置 b₂</span>
+              <b id="valB2">-1.50</b>
+            </div>
+            <input type="range" id="rngB2" min="-3.0" max="0.0" step="0.05" value="-1.50">
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 2: Hidden Space (h1, h2) -->
+      <section class="col-panel">
+        <div class="panel-head">
+          <h2 class="panel-title">隐层空间 (h₁, h₂)</h2>
+          <p class="panel-desc">样本经过激活后的坐标；输出神经元执行单次线性划分。</p>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="cvHidden"></canvas>
+        </div>
+        <div class="controls-group">
+          <div class="slider-row">
+            <div class="slider-label-line">
+              <span>输出层偏置 b_out</span>
+              <b id="valBOut">-0.20</b>
+            </div>
+            <input type="range" id="rngBOut" min="-1.5" max="1.0" step="0.05" value="-0.20">
+          </div>
+          <button id="btnPresetSolve" class="action-btn" type="button">
+            载入 XOR 完美解参数
+          </button>
+        </div>
+      </section>
+
+      <!-- Panel 3: Diagnostics & Truth Table -->
+      <section class="col-panel">
+        <div class="panel-head">
+          <h2 class="panel-title">因果推导与状态检验</h2>
+          <p class="panel-desc">四点异或真值表与二值预测输出对照。</p>
+        </div>
+
+        <div class="stat-row">
+          <span class="stat-name">分类准确率</span>
+          <span id="accVal" class="stat-val good">4 / 4 (100%)</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-name">可线性分离性</span>
+          <span id="sepVal" class="stat-val good">空间已折叠 (可分)</span>
+        </div>
+
+        <table class="truth-table">
+          <thead>
+            <tr>
+              <th>(x₁, x₂)</th>
+              <th>目标</th>
+              <th>隐层 (h₁, h₂)</th>
+              <th>预测</th>
+            </tr>
+          </thead>
+          <tbody id="tbTruth">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+
+        <div id="diagText" class="diag-box">
+          ReLU 将原点截断在 (0,0)，打破了对角共线，输出层通过单条线性超平面完美分割。
+        </div>
+
+        <button id="btnReset" class="action-btn" style="margin-top:auto;" type="button">重置初始状态</button>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看，XOR 是人工神经网络历史上最经典的分水岭。单层感知机无法用单条直线将 (0,1) 和 (1,0) 与 (0,0) 和 (1,1) 分开。
+    本页直接给出两层网络：隐藏层由两个节点组成，参数设定为 w1=[1, 1], w2=[1, 1]。
+    我们对比两个核心概念：
+    第一，如果去掉激活函数，无论堆叠多少层，输出层都只是输入的复合线性变换，在中间面板可以看到四个点仍然保持在同一条直线上，永远无法被单条直线分开；
+    第二，引入 ReLU 后，当输入同时为 0 时被截断至 (0,0)，当输入都为 1 时被 h2 激活并产生相对位移，使得四个点在隐层空间脱离共线，输出神经元只需一条简单的斜线就能完全分开两类。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // Fixed canonical weights
+      // Canonical XOR solver with 2 hidden units and 1 output unit:
+      // h1 = act(x1 + x2 - 0.5)
+      // h2 = act(x1 + x2 - 1.5)
+      // z_out = w_out1 * h1 + w_out2 * h2 + b_out
+      // Let's set w_out = [2.0, -4.0], b_out = -1.0:
+      // (0,0): h1=0, h2=0   => z_out = -1.0 < 0 (pred 0, target 0) ✓
+      // (1,0): h1=0.5, h2=0 => z_out = 2.0*0.5 - 1.0 = 0.0 >= 0 (pred 1, target 1) ✓
+      // (0,1): h1=0.5, h2=0 => z_out = 2.0*0.5 - 1.0 = 0.0 >= 0 (pred 1, target 1) ✓
+      // (1,1): h1=1.5, h2=0.5 => z_out = 2.0*1.5 - 4.0*0.5 - 1.0 = 3.0 - 2.0 - 1.0 = 0.0.
+      // To cleanly place (1,1) in class 0 and (1,0),(0,1) in class 1:
+      // Notice:
+      // at (1,0): h1=0.5, h2=0. We want z_out > 0.
+      // at (1,1): h1=1.5, h2=0.5. We want z_out < 0.
+      // Let z_out = 1.0 * h1 - 2.5 * h2 - 0.2:
+      // (0,0): 0 - 0.2 = -0.2 < 0 (pred 0) ✓
+      // (1,0): 0.5 - 0.2 = +0.3 >= 0 (pred 1) ✓
+      // (0,1): 0.5 - 0.2 = +0.3 >= 0 (pred 1) ✓
+      // (1,1): 1.5 - 2.5*(0.5) - 0.2 = 1.5 - 1.25 - 0.2 = +0.05 (still positive!)
+      // If w_out = [1.0, -3.0], b_out = -0.2:
+      // (0,0): -0.2 < 0 (pred 0) ✓
+      // (1,0): 0.5 - 0.2 = +0.3 >= 0 (pred 1) ✓
+      // (0,1): 0.5 - 0.2 = +0.3 >= 0 (pred 1) ✓
+      // (1,1): 1.5 - 3.0*(0.5) - 0.2 = 1.5 - 1.5 - 0.2 = -0.2 < 0 (pred 0) ✓
+      // Both classes have margin 0.2 to 0.3!
+      const W1 = [1.0, 1.0];
+      const W2 = [1.0, 1.0];
+      const W_OUT = [1.0, -3.0];
+
+      const SAMPLES = [
+        { x: [0, 0], y: 0, label: "(0,0)" },
+        { x: [1, 0], y: 1, label: "(1,0)" },
+        { x: [0, 1], y: 1, label: "(0,1)" },
+        { x: [1, 1], y: 0, label: "(1,1)" }
+      ];
+
+      const INITIAL_STATE = {
+        activation: "relu",
+        b1: -0.50,
+        b2: -1.50,
+        bOut: -0.20
+      };
+
+      let state = Object.assign({}, INITIAL_STATE);
+
+      // DOM Elements
+      const cvInput = document.getElementById("cvInput");
+      const cvHidden = document.getElementById("cvHidden");
+      const btnRelu = document.getElementById("btnRelu");
+      const btnLinear = document.getElementById("btnLinear");
+      const rngB1 = document.getElementById("rngB1");
+      const rngB2 = document.getElementById("rngB2");
+      const rngBOut = document.getElementById("rngBOut");
+      const valB1 = document.getElementById("valB1");
+      const valB2 = document.getElementById("valB2");
+      const valBOut = document.getElementById("valBOut");
+      const accVal = document.getElementById("accVal");
+      const sepVal = document.getElementById("sepVal");
+      const tbTruth = document.getElementById("tbTruth");
+      const diagText = document.getElementById("diagText");
+      const btnPresetSolve = document.getElementById("btnPresetSolve");
+      const btnReset = document.getElementById("btnReset");
+
+      function act(z) {
+        if (state.activation === "relu") {
+          return Math.max(0, z);
+        }
+        return z;
+      }
+
+      function forward(x1, x2) {
+        const z1 = W1[0] * x1 + W1[1] * x2 + state.b1;
+        const z2 = W2[0] * x1 + W2[1] * x2 + state.b2;
+        const h1 = act(z1);
+        const h2 = act(z2);
+        const zOut = W_OUT[0] * h1 + W_OUT[1] * h2 + state.bOut;
+        const pred = zOut >= 0 ? 1 : 0;
+        return { h1, h2, zOut, pred };
+      }
+
+      function checkLinearSeparability(hPoints) {
+        const p0 = hPoints[0].h;
+        const p1 = hPoints[1].h;
+        const p2 = hPoints[2].h;
+        const p3 = hPoints[3].h;
+
+        function ccw(A, B, C) {
+          return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0]);
+        }
+        function intersect(A, B, C, D) {
+          return (ccw(A, C, D) !== ccw(B, C, D)) && (ccw(A, B, C) !== ccw(A, B, D));
+        }
+
+        const dX = p3[0] - p0[0];
+        const dY = p3[1] - p0[1];
+        const cross1 = (p1[0] - p0[0]) * dY - (p1[1] - p0[1]) * dX;
+        const cross2 = (p2[0] - p0[0]) * dY - (p2[1] - p0[1]) * dX;
+        if (Math.abs(cross1) < 1e-4 && Math.abs(cross2) < 1e-4) {
+          return false;
+        }
+
+        return !intersect(p1, p2, p0, p3);
+      }
+
+      function drawInputSpace(ctx) {
+        const w = cvInput.width;
+        const h = cvInput.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const minX = -0.5, maxX = 1.5;
+        const minY = -0.5, maxY = 1.5;
+
+        function toPx(x1, x2) {
+          const px = ((x1 - minX) / (maxX - minX)) * w;
+          const py = h - ((x2 - minY) / (maxY - minY)) * h;
+          return [px, py];
+        }
+
+        // 1. High-resolution decision region
+        const res = 120;
+        const cellW = w / res;
+        const cellH = h / res;
+        for (let i = 0; i < res; i++) {
+          for (let j = 0; j < res; j++) {
+            const cx = minX + ((i + 0.5) / res) * (maxX - minX);
+            const cy = minY + ((j + 0.5) / res) * (maxY - minY);
+            const resPred = forward(cx, cy);
+            if (resPred.pred === 1) {
+              ctx.fillStyle = "rgba(28, 68, 54, 0.16)";
+              const px = (i / res) * w;
+              const py = h - ((j + 1) / res) * h;
+              ctx.fillRect(px, py, cellW + 0.5, cellH + 0.5);
+            }
+          }
+        }
+
+        // 2. Coordinate Grid & Axes
+        ctx.strokeStyle = "#BAC4BF";
+        ctx.lineWidth = 1;
+        const [oX, oY] = toPx(0, 0);
+        ctx.beginPath();
+        ctx.moveTo(0, oY); ctx.lineTo(w, oY);
+        ctx.moveTo(oX, 0); ctx.lineTo(oX, h);
+        ctx.stroke();
+
+        ctx.fillStyle = "#5B6661";
+        ctx.font = "14px sans-serif";
+        ctx.fillText("x₁ →", w - 36, oY - 8);
+        ctx.fillText("x₂ ↑", oX + 8, 20);
+
+        // 3. Hyperplanes: x1 + x2 + b = 0 => x2 = -x1 - b
+        function drawBoundary(bVal, color, dash, label) {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash(dash);
+          ctx.beginPath();
+          const pStart = toPx(minX, -minX - bVal);
+          const pEnd = toPx(maxX, -maxX - bVal);
+          ctx.moveTo(pStart[0], pStart[1]);
+          ctx.lineTo(pEnd[0], pEnd[1]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = color;
+          ctx.font = "bold 13px sans-serif";
+          const [lx, ly] = toPx(0.1, -0.1 - bVal);
+          ctx.fillText(label, lx + 8, ly - 8);
+        }
+
+        drawBoundary(state.b1, "#1C4436", [6, 4], "h₁ 阈值");
+        drawBoundary(state.b2, "#D43811", [4, 4], "h₂ 阈值");
+
+        // 4. Sample Points
+        SAMPLES.forEach(s => {
+          const [px, py] = toPx(s.x[0], s.x[1]);
+          ctx.beginPath();
+          ctx.arc(px, py, 9, 0, Math.PI * 2);
+          if (s.y === 1) {
+            ctx.fillStyle = "#1C4436";
+            ctx.fill();
+            ctx.strokeStyle = "#FFFFFF";
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          } else {
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fill();
+            ctx.strokeStyle = "#D43811";
+            ctx.lineWidth = 3;
+            ctx.stroke();
+          }
+
+          ctx.fillStyle = "#151A18";
+          ctx.font = "bold 13px monospace";
+          let tx = px + 12;
+          let ty = py + 5;
+          if (s.label === "(1,1)") { tx = px + 12; ty = py - 4; }
+          if (s.label === "(0,0)") { tx = px + 12; ty = py + 14; }
+          ctx.fillText(`${s.label} y=${s.y}`, tx, ty);
+        });
+      }
+
+      function drawHiddenSpace(ctx) {
+        const w = cvHidden.width;
+        const h = cvHidden.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const minH = -0.5, maxH = 2.0;
+        function toPx(h1, h2) {
+          const px = ((h1 - minH) / (maxH - minH)) * w;
+          const py = h - ((h2 - minH) / (maxH - minH)) * h;
+          return [px, py];
+        }
+
+        // 1. Output classifier hyperplane background
+        const res = 120;
+        const cellW = w / res;
+        const cellH = h / res;
+        for (let i = 0; i < res; i++) {
+          for (let j = 0; j < res; j++) {
+            const ch1 = minH + ((i + 0.5) / res) * (maxH - minH);
+            const ch2 = minH + ((j + 0.5) / res) * (maxH - minH);
+            const zOut = W_OUT[0] * ch1 + W_OUT[1] * ch2 + state.bOut;
+            if (zOut >= 0) {
+              ctx.fillStyle = "rgba(28, 68, 54, 0.16)";
+              const px = (i / res) * w;
+              const py = h - ((j + 1) / res) * h;
+              ctx.fillRect(px, py, cellW + 0.5, cellH + 0.5);
+            }
+          }
+        }
+
+        // 2. Axes
+        ctx.strokeStyle = "#BAC4BF";
+        ctx.lineWidth = 1;
+        const [oX, oY] = toPx(0, 0);
+        ctx.beginPath();
+        ctx.moveTo(0, oY); ctx.lineTo(w, oY);
+        ctx.moveTo(oX, 0); ctx.lineTo(oX, h);
+        ctx.stroke();
+
+        ctx.fillStyle = "#5B6661";
+        ctx.font = "14px sans-serif";
+        ctx.fillText("h₁ →", w - 36, oY - 8);
+        ctx.fillText("h₂ ↑", oX + 8, 20);
+
+        // 3. Decision Line: h2 = (h1 + bOut) / 3
+        ctx.strokeStyle = "#1C4436";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        const p1 = toPx(minH, (minH + state.bOut) / 3.0);
+        const p2 = toPx(maxH, (maxH + state.bOut) / 3.0);
+        ctx.moveTo(p1[0], p1[1]);
+        ctx.lineTo(p2[0], p2[1]);
+        ctx.stroke();
+
+        ctx.fillStyle = "#1C4436";
+        ctx.font = "bold 13px monospace";
+        ctx.fillText("输出层边界: h₁ - 3·h₂ + b_out = 0", p1[0] + 12, p1[1] - 8);
+
+        // 4. Sample Points in Hidden Space
+        SAMPLES.forEach(s => {
+          const res = forward(s.x[0], s.x[1]);
+          const [px, py] = toPx(res.h1, res.h2);
+
+          ctx.beginPath();
+          ctx.arc(px, py, 9, 0, Math.PI * 2);
+          if (s.y === 1) {
+            ctx.fillStyle = "#1C4436";
+            ctx.fill();
+            ctx.strokeStyle = "#FFFFFF";
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          } else {
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fill();
+            ctx.strokeStyle = "#D43811";
+            ctx.lineWidth = 3;
+            ctx.stroke();
+          }
+
+          ctx.fillStyle = "#151A18";
+          ctx.font = "bold 13px monospace";
+
+          // Avoid overlapping labels
+          let tx = px + 14;
+          let ty = py - 8;
+          let text = `${s.label} (${res.h1.toFixed(1)}, ${res.h2.toFixed(1)})`;
+          if (s.label === "(0,0)") {
+            tx = px - 85;
+            ty = py - 12;
+          } else if (s.label === "(1,0)") {
+            tx = px + 14;
+            ty = py - 8;
+          } else if (s.label === "(0,1)") {
+            tx = px + 14;
+            ty = py + 18;
+          } else if (s.label === "(1,1)") {
+            tx = px - 95;
+            ty = py - 14;
+          }
+          ctx.fillText(text, tx, ty);
+        });
+      }
+
+      function update() {
+        let correctCount = 0;
+        let rowsHtml = "";
+        const hPoints = [];
+
+        SAMPLES.forEach(s => {
+          const res = forward(s.x[0], s.x[1]);
+          hPoints.push({ h: [res.h1, res.h2], y: s.y });
+          const isCorrect = res.pred === s.y;
+          if (isCorrect) correctCount++;
+
+          rowsHtml += `
+            <tr>
+              <td><b>${s.label}</b></td>
+              <td>${s.y}</td>
+              <td>(${res.h1.toFixed(2)}, ${res.h2.toFixed(2)})</td>
+              <td class="${isCorrect ? 'match' : 'mismatch'}">${res.pred} ${isCorrect ? '✓' : '✗'}</td>
+            </tr>
+          `;
+        });
+
+        tbTruth.innerHTML = rowsHtml;
+        accVal.textContent = `${correctCount} / 4 (${correctCount * 25}%)`;
+        accVal.className = correctCount === 4 ? "stat-val good" : "stat-val bad";
+
+        const isSeparable = checkLinearSeparability(hPoints);
+        if (state.activation === "linear") {
+          sepVal.textContent = "保持共线 (不可分)";
+          sepVal.className = "stat-val bad";
+          diagText.textContent = "无非线性激活时，两层网络等价于单次线性变换。4 个点在隐层空间仍完全共线，单条直线无论如何平移都无法将异或两类分开。";
+        } else {
+          if (isSeparable) {
+            sepVal.textContent = "空间已折叠 (可分)";
+            sepVal.className = "stat-val good";
+            diagText.textContent = "ReLU 将 (0,0) 截断置零，(1,1) 则激活了第二个节点产生相对位移，彻底打破了对角共线，输出层单条直线即可完美分类！";
+          } else {
+            sepVal.textContent = "偏置越界 (折叠不足)";
+            sepVal.className = "stat-val bad";
+            diagText.textContent = "偏置过大或过小导致关键点未能落入非线性转折区。可点击【载入 XOR 完美解参数】恢复推荐配置。";
+          }
+        }
+
+        Deck.fit(cvInput);
+        drawInputSpace(cvInput.getContext("2d"));
+
+        Deck.fit(cvHidden);
+        drawHiddenSpace(cvHidden.getContext("2d"));
+      }
+
+      btnRelu.addEventListener("click", () => {
+        state.activation = "relu";
+        btnRelu.classList.add("active");
+        btnLinear.classList.remove("active");
+        update();
+      });
+
+      btnLinear.addEventListener("click", () => {
+        state.activation = "linear";
+        btnLinear.classList.add("active");
+        btnRelu.classList.remove("active");
+        update();
+      });
+
+      rngB1.addEventListener("input", (e) => {
+        state.b1 = parseFloat(e.target.value);
+        valB1.textContent = state.b1.toFixed(2);
+        update();
+      });
+
+      rngB2.addEventListener("input", (e) => {
+        state.b2 = parseFloat(e.target.value);
+        valB2.textContent = state.b2.toFixed(2);
+        update();
+      });
+
+      rngBOut.addEventListener("input", (e) => {
+        state.bOut = parseFloat(e.target.value);
+        valBOut.textContent = state.bOut.toFixed(2);
+        update();
+      });
+
+      btnPresetSolve.addEventListener("click", () => {
+        state.activation = "relu";
+        state.b1 = -0.50;
+        state.b2 = -1.50;
+        state.bOut = -0.20;
+        btnRelu.classList.add("active");
+        btnLinear.classList.remove("active");
+        rngB1.value = -0.50;
+        rngB2.value = -1.50;
+        rngBOut.value = -0.20;
+        valB1.textContent = "-0.50";
+        valB2.textContent = "-1.50";
+        valBOut.textContent = "-0.20";
+        update();
+      });
+
+      btnReset.addEventListener("click", () => {
+        Object.assign(state, INITIAL_STATE);
+        btnRelu.classList.add("active");
+        btnLinear.classList.remove("active");
+        rngB1.value = INITIAL_STATE.b1;
+        rngB2.value = INITIAL_STATE.b2;
+        rngBOut.value = INITIAL_STATE.bOut;
+        valB1.textContent = INITIAL_STATE.b1.toFixed(2);
+        valB2.textContent = INITIAL_STATE.b2.toFixed(2);
+        valBOut.textContent = INITIAL_STATE.bOut.toFixed(2);
+        update();
+      });
+
+      window.addEventListener("resize", update);
+
+      update();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF2;
+      --text: #142533;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      color: var(--text);
+      user-select: none;
+    }
+
+    header.deck-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-shrink: 0;
+    }
+
+    .title-wrap h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .title-wrap p {
+      margin: 6px 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .header-pills {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .layout-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 20px;
+      min-height: 0;
+    }
+
+    /* 左侧：重采样推演工作台 */
+    .workbench {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: var(--line) solid var(--surface-strong);
+      padding: 18px 22px;
+      box-shadow: 0 4px 16px rgba(20, 37, 51, 0.05);
+    }
+
+    .wb-sec-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin: 0;
+    }
+
+    .wb-sec-title span.sub {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    .original-pool-card {
+      background: #FFFFFF;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .pool-label-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .pool-items {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 8px;
+    }
+
+    .data-node {
+      height: 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 16px;
+      position: relative;
+      transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), border-color 0.18s var(--ease);
+      border: 1.5px solid transparent;
+      box-sizing: border-box;
+    }
+
+    .data-node .idx {
+      font-family: var(--font-num);
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .data-node .val-sub {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1;
+      margin-top: 3px;
+    }
+
+    .data-node.sampled-target {
+      transform: scale(1.08);
+      box-shadow: 0 0 0 2px var(--focus);
+    }
+
+    /* 抽样生成的多份子集比较区 */
+    .subsets-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .subset-row {
+      background: #FFFFFF;
+      border: 1.5px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: grid;
+      grid-template-columns: 140px 1fr 140px;
+      align-items: center;
+      gap: 14px;
+      cursor: pointer;
+      transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+    }
+
+    .subset-row:hover, .subset-row.active {
+      border-color: var(--learner);
+      background: #FAFDFE;
+      box-shadow: 0 2px 10px rgba(39, 93, 145, 0.08);
+    }
+
+    .subset-row.active {
+      outline: 2px solid var(--learner);
+    }
+
+    .subset-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .subset-meta .title {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--learner);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .subset-meta .badge {
+      font-size: 13px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--text);
+    }
+
+    .subset-meta .summary {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .subset-cells {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 5px;
+    }
+
+    .subset-cell {
+      height: 42px;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      font-weight: 600;
+      position: relative;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+
+    .subset-cell .dup-badge {
+      position: absolute;
+      top: -5px;
+      right: -5px;
+      background: var(--aggregate);
+      color: #fff;
+      font-size: 13px;
+      padding: 1px 4px;
+      border-radius: 4px;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .subset-stats {
+      text-align: right;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border-left: 1px dashed var(--surface-strong);
+      padding-left: 10px;
+    }
+
+    .subset-stats .stat-item {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .subset-stats .stat-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--text);
+    }
+
+    .subset-stats .oob-alert {
+      color: var(--aggregate);
+    }
+
+    /* 控制栏 */
+    .action-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 4px;
+      border-top: 1px solid var(--surface-strong);
+    }
+
+    .btn-resample {
+      background: var(--learner);
+      color: #FFFFFF;
+      border: none;
+      padding: 8px 18px;
+      font-size: var(--fs-sec);
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background var(--dur);
+    }
+
+    .btn-resample:hover {
+      background: #1c456d;
+    }
+
+    .btn-resample:active {
+      transform: translateY(1px);
+    }
+
+    .step-explain {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 右侧：统计规律与机制剖析 */
+    .theory-column {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .panel-box {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: var(--line) solid var(--surface-strong);
+      padding: 18px 20px;
+      box-shadow: 0 4px 16px rgba(20, 37, 51, 0.05);
+    }
+
+    .panel-box h2 {
+      margin: 0 0 12px;
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .formula-banner {
+      background: #FFFFFF;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .formula-banner .math-text {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.4;
+      font-family: var(--font-num), system-ui, sans-serif;
+    }
+
+    .formula-banner .math-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .key-metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .metric-card {
+      background: #FFFFFF;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+
+    .metric-card.highlight {
+      border-color: rgba(182, 59, 36, 0.4);
+      background: #FFF9F8;
+    }
+
+    .metric-title {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .metric-value {
+      font-family: var(--font-num);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+    }
+
+    .metric-value.red {
+      color: var(--aggregate);
+    }
+
+    .metric-value.blue {
+      color: var(--learner);
+    }
+
+    .metric-note {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+
+    /* 机制对比卡片 */
+    .mechanism-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .contrast-item {
+      background: #FFFFFF;
+      border-left: 3px solid var(--learner);
+      padding: 10px 14px;
+      border-radius: 0 6px 6px 0;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+    }
+
+    .contrast-item.oob-rule {
+      border-left-color: var(--aggregate);
+    }
+
+    .contrast-item strong {
+      color: var(--text);
+    }
+
+    .contrast-item p {
+      margin: 3px 0 0;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 交互联动高亮 */
+    .sample-inspector {
+      background: #FFFFFF;
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+      padding: 12px 14px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .insp-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+    }
+
+    .insp-status-badge {
+      font-size: 13px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: #EBF4FF;
+      color: var(--learner);
+    }
+
+    .insp-matrix {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 5px;
+      margin: 8px 0;
+    }
+
+    .insp-chip {
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 600;
+      background: #F0F4F8;
+      color: var(--muted);
+    }
+
+    .insp-chip.in-set {
+      background: #D8E7F5;
+      color: var(--learner);
+      font-weight: 700;
+    }
+
+    .insp-chip.oob-set {
+      background: #FDE8E5;
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+
+    .insp-explain {
+      font-size: 15px;
+      color: var(--text);
+      line-height: 1.45;
+      background: #FAFBFD;
+      padding: 10px 12px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body data-page="08" data-total="27">
+  <div id="stage">
+    <!-- 顶栏标题 -->
+    <header class="deck-header">
+      <div class="title-wrap">
+        <h1>Bootstrap 重采样：用有放回抽样制造相互不同的训练集</h1>
+        <p>从大小为 m 的原始数据集中进行 m 次有放回等概率抽取，构建彼此重叠但互有差异的基学习器数据源</p>
+      </div>
+      <div class="header-pills">
+        <span style="color:var(--muted); font-size:15px; font-weight:600;">Bagging 数据准备原理</span>
+      </div>
+    </header>
+
+    <!-- 主交互与内容区 -->
+    <main class="layout-grid min0">
+      <!-- 左栏：抽样实验室 -->
+      <section class="workbench min0">
+        <div class="wb-sec-title">
+          <span>重采样实验台（样本量 m = 10）</span>
+          <span class="sub">点击下方抽样子集可对比其入选分布与袋外样本</span>
+        </div>
+
+        <!-- 原数据集 D -->
+        <div class="original-pool-card">
+          <div class="pool-label-row">
+            <span>原始完整数据集 D（总数 m = 10，每个样本被抽中概率 1/m = 10%）</span>
+            <span id="pool-hint">每次抽取独立，抽后放回</span>
+          </div>
+          <div class="pool-items" id="pool-container">
+            <!-- 动态生成 10 个原始样本节点 -->
+          </div>
+        </div>
+
+        <!-- 3 个基学习器的 Bootstrap 重采样集 -->
+        <div class="subsets-container min0">
+          <div class="subset-row active" data-subset="0" id="subset-row-0">
+            <div class="subset-meta">
+              <span class="title">子集 D₁ <span>(基学习器 1)</span></span>
+              <span class="summary" id="sub-sum-0">包含 7 个独立样本</span>
+            </div>
+            <div class="subset-cells" id="cells-0"></div>
+            <div class="subset-stats">
+              <span class="stat-item">袋内去重: <span class="stat-val" id="unique-0">7/10</span></span>
+              <span class="stat-item oob-alert">袋外未见 (OOB): <span class="stat-val" id="oob-cnt-0">3 个</span></span>
+            </div>
+          </div>
+
+          <div class="subset-row" data-subset="1" id="subset-row-1">
+            <div class="subset-meta">
+              <span class="title">子集 D₂ <span>(基学习器 2)</span></span>
+              <span class="summary" id="sub-sum-1">包含 6 个独立样本</span>
+            </div>
+            <div class="subset-cells" id="cells-1"></div>
+            <div class="subset-stats">
+              <span class="stat-item">袋内去重: <span class="stat-val" id="unique-1">6/10</span></span>
+              <span class="stat-item oob-alert">袋外未见 (OOB): <span class="stat-val" id="oob-cnt-1">4 个</span></span>
+            </div>
+          </div>
+
+          <div class="subset-row" data-subset="2" id="subset-row-2">
+            <div class="subset-meta">
+              <span class="title">子集 D₃ <span>(基学习器 3)</span></span>
+              <span class="summary" id="sub-sum-2">包含 7 个独立样本</span>
+            </div>
+            <div class="subset-cells" id="cells-2"></div>
+            <div class="subset-stats">
+              <span class="stat-item">袋内去重: <span class="stat-val" id="unique-2">7/10</span></span>
+              <span class="stat-item oob-alert">袋外未见 (OOB): <span class="stat-val" id="oob-cnt-2">3 个</span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 控制底栏 -->
+        <div class="action-bar">
+          <div class="step-explain" id="action-tip">
+            提示：观察各子集，部分样本出现多次（角标显示频次），未入选样本即为该模型的 OOB
+          </div>
+          <button class="btn-resample" id="btn-re-resample">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19"/></svg>
+            重新执行有放回抽样
+          </button>
+        </div>
+      </section>
+
+      <!-- 右栏：理论极限、样本利用率与机制拆解 -->
+      <aside class="theory-column min0">
+        <!-- 理论收敛数学面板 -->
+        <div class="panel-box">
+          <h2>
+            <span>数学极限：约 36.8% 的袋外样本</span>
+            <span style="font-size:13px; color:var(--muted); font-weight:normal;">微积分极限推导</span>
+          </h2>
+          <div class="formula-banner">
+            <div class="math-text">
+              lim<sub>m → ∞</sub> (1 − 1/m)<sup>m</sup> = 1/e ≈ 36.79%
+            </div>
+            <div class="math-desc">样本在 m 次有放回抽取中<strong>一次都未被抽中</strong>的概率</div>
+          </div>
+
+          <div class="key-metric-grid">
+            <div class="metric-card highlight">
+              <div class="metric-title">袋外样本比例 (OOB)</div>
+              <div class="metric-value red">≈ 36.8%</div>
+              <div class="metric-note">未参与当前基学习器训练，是天然的零成本泛化验证集</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-title">袋内独立样本占比</div>
+              <div class="metric-value blue">≈ 63.2%</div>
+              <div class="metric-note">其余容量由重复采样的样本填充，保证训练集大小恒为 m</div>
+            </div>
+          </div>
+
+          <div class="mechanism-card">
+            <div class="contrast-item">
+              <strong>为什么必须是「有放回」？</strong>
+              <p>若无放回抽样，大小为 m 的子集必与原数据集完全相同，无法创造基学习器所需的数据多样性。</p>
+            </div>
+            <div class="contrast-item oob-rule">
+              <strong>差异性与相关性权衡</strong>
+              <p>子集之间约有 63.2% 的同分布样本重叠，既保证基模型学到主规律，又引入扰动促成误差相互抵消。</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 联动透视：当前选中子集的透视详情 -->
+        <div class="sample-inspector">
+          <div class="insp-head">
+            <span id="insp-title">子集 D₁ 的样本状态分布</span>
+            <span class="insp-status-badge" id="insp-badge">当前焦点</span>
+          </div>
+
+          <div>
+            <div style="font-size:13px; color:var(--muted); margin-bottom:6px;">全集 10 个样本在该子集中的角色：</div>
+            <div class="insp-matrix" id="insp-matrix">
+              <!-- 10个芯片 -->
+            </div>
+          </div>
+
+          <div class="insp-explain" id="insp-desc">
+            蓝色表示被抽中进入训练集的样本（多次抽中仍计入）；红色表示该模型从未见过的袋外样本（OOB），后续可在无需独立验证集的情况下评估该模型。
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      Deck.init({ index: 8, total: 27 });
+
+      const M = 10;
+      // 10个样本的预设元数据（类别与特征值），固定调色
+      const PALETTE = [
+        "#E8F1F5", "#DCEBF4", "#D0E4F2", "#C6DEF0", "#BBD7EE",
+        "#E8EFF6", "#D9E5F2", "#C9DBEE", "#BACEEA", "#ABC2E6"
+      ];
+
+      // 当前状态
+      let activeSubset = 0;
+      let subsetsData = [];
+
+      // 样本颜色分配
+      const sampleColors = [
+        { bg: "#EBF3FA", border: "#275D91", text: "#1E4B75" },
+        { bg: "#F1F5E8", border: "#4F7833", text: "#385923" },
+        { bg: "#FDF4E7", border: "#B57321", text: "#8A5412" },
+        { bg: "#F8EBF0", border: "#9A3B65", text: "#75274B" },
+        { bg: "#EEF8F6", border: "#247C6E", text: "#16594E" },
+        { bg: "#F5EFF9", border: "#6D3B8A", text: "#512869" },
+        { bg: "#F9F8E6", border: "#7E781B", text: "#5B5610" },
+        { bg: "#EAF6FA", border: "#226B85", text: "#144E62" },
+        { bg: "#FCEEE9", border: "#AD4329", text: "#822F1B" },
+        { bg: "#ECEEF8", border: "#3B4D8A", text: "#283769" }
+      ];
+
+      function renderOriginalPool() {
+        const container = document.getElementById("pool-container");
+        container.innerHTML = "";
+        for (let i = 0; i < M; i++) {
+          const item = document.createElement("div");
+          item.className = "data-node";
+          item.id = `node-${i}`;
+          item.style.background = sampleColors[i].bg;
+          item.style.borderColor = sampleColors[i].border;
+          item.style.color = sampleColors[i].text;
+          item.innerHTML = `
+            <span class="idx">x<sub>${i + 1}</sub></span>
+            <span class="val-sub">#${i + 1}</span>
+          `;
+          container.appendChild(item);
+        }
+      }
+
+      // 执行有放回抽样
+      function generateSubsets() {
+        subsetsData = [];
+        for (let s = 0; s < 3; s++) {
+          const samples = [];
+          const counts = Array(M).fill(0);
+          for (let k = 0; k < M; k++) {
+            const picked = Math.floor(Math.random() * M);
+            samples.push(picked);
+            counts[picked]++;
+          }
+          const uniqueSet = new Set(samples);
+          const oob = [];
+          for (let i = 0; i < M; i++) {
+            if (counts[i] === 0) oob.push(i);
+          }
+          subsetsData.push({
+            samples,
+            counts,
+            uniqueCount: uniqueSet.size,
+            oob
+          });
+        }
+        renderSubsets();
+        updateInspector();
+      }
+
+      function renderSubsets() {
+        for (let s = 0; s < 3; s++) {
+          const data = subsetsData[s];
+          const cellsContainer = document.getElementById(`cells-${s}`);
+          cellsContainer.innerHTML = "";
+
+          // 记录当前已经渲染到第几次，用于展示频次角标
+          const seenCount = Array(M).fill(0);
+
+          data.samples.forEach((sampleIdx) => {
+            seenCount[sampleIdx]++;
+            const cell = document.createElement("div");
+            cell.className = "subset-cell";
+            cell.style.background = sampleColors[sampleIdx].bg;
+            cell.style.borderColor = sampleColors[sampleIdx].border;
+            cell.style.color = sampleColors[sampleIdx].text;
+
+            let dupBadge = "";
+            if (seenCount[sampleIdx] > 1) {
+              dupBadge = `<span class="dup-badge">×${seenCount[sampleIdx]}</span>`;
+            }
+
+            cell.innerHTML = `
+              <span>x<sub>${sampleIdx + 1}</sub></span>
+              ${dupBadge}
+            `;
+            cellsContainer.appendChild(cell);
+          });
+
+          // 更新统计
+          document.getElementById(`unique-${s}`).textContent = `${data.uniqueCount}/${M}`;
+          document.getElementById(`oob-cnt-${s}`).textContent = `${data.oob.length} 个 (${data.oob.map(idx => `x${idx+1}`).join(', ')})`;
+          document.getElementById(`sub-sum-${s}`).textContent = `包含 ${data.uniqueCount} 个独立样本，容量 m = ${M}`;
+        }
+      }
+
+      function updateInspector() {
+        const curData = subsetsData[activeSubset];
+        document.getElementById("insp-title").textContent = `子集 D${activeSubset + 1} 的样本覆盖详情`;
+        document.getElementById("insp-badge").textContent = `基学习器 ${activeSubset + 1}`;
+
+        const matrix = document.getElementById("insp-matrix");
+        matrix.innerHTML = "";
+
+        for (let i = 0; i < M; i++) {
+          const chip = document.createElement("div");
+          chip.className = "insp-chip";
+          const cnt = curData.counts[i];
+          if (cnt > 0) {
+            chip.classList.add("in-set");
+            chip.innerHTML = `x<sub>${i+1}</sub> (${cnt}次)`;
+          } else {
+            chip.classList.add("oob-set");
+            chip.innerHTML = `x<sub>${i+1}</sub> (OOB)`;
+          }
+          matrix.appendChild(chip);
+        }
+
+        const oobListStr = curData.oob.map(i => `x<sub>${i+1}</sub>`).join("、");
+        document.getElementById("insp-desc").innerHTML = `
+          在子集 D<sub>${activeSubset + 1}</sub> 中，包含 <strong>${curData.uniqueCount}</strong> 个独立样本，占样本池的 ${(curData.uniqueCount/M*100).toFixed(0)}%；<br>
+          袋外样本共 <strong>${curData.oob.length}</strong> 个（${oobListStr}）。这批未参与训练的样本构成了天然且无交叉污染的验证集。
+        `;
+
+        // 高亮原始池中属于当前子集 OOB 的节点
+        for (let i = 0; i < M; i++) {
+          const node = document.getElementById(`node-${i}`);
+          if (node) {
+            if (curData.counts[i] === 0) {
+              node.style.opacity = "0.35";
+              node.style.transform = "scale(0.92)";
+              node.classList.remove("sampled-target");
+            } else {
+              node.style.opacity = "1";
+              node.style.transform = "scale(1)";
+              if (curData.counts[i] > 1) {
+                node.classList.add("sampled-target");
+              } else {
+                node.classList.remove("sampled-target");
+              }
+            }
+          }
+        }
+      }
+
+      function bindEvents() {
+        // 子集选择切换
+        for (let s = 0; s < 3; s++) {
+          const row = document.getElementById(`subset-row-${s}`);
+          row.addEventListener("click", () => {
+            activeSubset = s;
+            document.querySelectorAll(".subset-row").forEach((el, idx) => {
+              el.classList.toggle("active", idx === s);
+            });
+            updateInspector();
+          });
+        }
+
+        // 重新抽样按钮
+        const reBtn = document.getElementById("btn-re-resample");
+        reBtn.addEventListener("click", () => {
+          generateSubsets();
+        });
+      }
+
+      // 初始执行
+      renderOriginalPool();
+      generateSubsets();
+      bindEvents();
+
+      window.__NOTALE_READY__ = true;
+    })();
+  </script>
+</body>
+</html>

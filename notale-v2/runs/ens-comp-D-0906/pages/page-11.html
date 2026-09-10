@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="zh">
+<!--
+构图意图：
+1. 主对象是样本与单棵树之间的袋内（已见）/袋外（未见）矩阵，以及每个样本在未包含它的树上的聚合投票路径。
+2. 对象关系通过并置呈现：左侧显示 6 个样本在 5 棵树中的抽样包含状态（实心代表袋内，虚线圆圈代表袋外未见）；右侧显示针对高亮样本，所有未见树的预测汇入集成投票，当场算出袋外误差。
+3. 说明文字依附在矩阵列头、聚合汇聚线与极限概率标注（1 - 1/e ≈ 36.8%）旁，直观证明“无需留出验证集即可做无偏估计”。
+-->
+<head>
+  <meta charset="utf-8">
+  <title>袋外样本 OOB：复用每棵树未见过的样本估计泛化误差</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans SC Medium", system-ui, sans-serif;
+      --font-numeric: "Lato", "Noto Sans CJK SC", sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      font-family: var(--font-sans);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+
+    .math-stat {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      letter-spacing: -0.01em;
+    }
+
+    .math-stat strong {
+      color: var(--focus);
+      font-weight: var(--weight-bold);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 860px 1fr;
+      gap: 64px;
+      align-items: center;
+      height: 680px;
+    }
+
+    /* 左侧矩阵区域 */
+    .matrix-panel {
+      position: relative;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .matrix-title {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .matrix-title .legend {
+      display: flex;
+      gap: 24px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-ib {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--model);
+    }
+
+    .badge-oob {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px dashed var(--focus);
+      box-sizing: border-box;
+    }
+
+    .grid-table {
+      display: grid;
+      grid-template-columns: 140px repeat(5, 1fr);
+      row-gap: 14px;
+      column-gap: 12px;
+      align-items: center;
+    }
+
+    .col-header {
+      font-size: var(--fs-sec);
+      font-weight: var(--weight-medium);
+      color: var(--model);
+      text-align: center;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .row-header {
+      font-size: var(--fs-body);
+      font-weight: var(--weight-medium);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+    }
+
+    .row-header.active {
+      color: var(--focus);
+    }
+
+    .cell {
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      position: relative;
+      cursor: pointer;
+      transition: background var(--duration-fast) var(--ease-join);
+    }
+
+    .cell:hover {
+      background: rgba(46, 95, 120, 0.08);
+    }
+
+    .dot-in {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--model);
+      opacity: 0.85;
+    }
+
+    .dot-oob {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 2px dashed var(--focus);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-numeric);
+      font-size: var(--fs-tick);
+      font-weight: var(--weight-bold);
+      color: var(--focus);
+      background: rgba(198, 75, 46, 0.06);
+    }
+
+    .row-highlight {
+      background: rgba(198, 75, 46, 0.08);
+    }
+
+    /* 右侧推演面板 */
+    .eval-panel {
+      position: relative;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      border-left: 1px solid var(--line);
+      padding-left: 56px;
+    }
+
+    .eval-header {
+      margin-bottom: 28px;
+    }
+
+    .eval-header h2 {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      margin: 0 0 8px 0;
+    }
+
+    .eval-header p {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      margin: 0;
+    }
+
+    .tree-votes {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .vote-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(116, 129, 124, 0.2);
+      transition: all var(--duration-fast) var(--ease-join);
+    }
+
+    .vote-item.ignored {
+      opacity: 0.28;
+    }
+
+    .vote-item.oob-active {
+      opacity: 1;
+    }
+
+    .vote-name {
+      font-size: var(--fs-body);
+      font-weight: var(--weight-medium);
+    }
+
+    .vote-status {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .vote-val {
+      font-family: var(--font-numeric);
+      font-weight: var(--weight-bold);
+      color: var(--aggregate);
+    }
+
+    .agg-box {
+      border-top: 2px solid var(--aggregate);
+      padding-top: 20px;
+    }
+
+    .agg-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
+    }
+
+    .agg-label {
+      font-size: var(--fs-lead);
+      font-weight: var(--weight-bold);
+      color: var(--aggregate);
+    }
+
+    .agg-result {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      color: var(--aggregate);
+    }
+
+    .agg-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      margin: 0;
+    }
+
+    .sample-switch {
+      margin-top: 28px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .sample-btn {
+      border: 1px solid var(--line);
+      background: transparent;
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-family: var(--font-numeric);
+      color: var(--text);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all var(--duration-fast);
+    }
+
+    .sample-btn.active {
+      background: var(--focus);
+      border-color: var(--focus);
+      color: #fff;
+    }
+  </style>
+</head>
+<body data-page="11" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>袋外样本：无需独立验证集估计泛化误差</h1>
+      <div class="math-stat">
+        未入袋极限概率：(1 - 1/n)ⁿ → 1/e ≈ <strong>36.8%</strong>
+      </div>
+    </header>
+
+    <div class="main-grid">
+      <!-- 左：样本-模型归属矩阵 -->
+      <section class="matrix-panel">
+        <div class="matrix-title">
+          <span>样本抽样归属矩阵 (Bootstrap 采样)</span>
+          <div class="legend">
+            <span class="legend-item"><span class="badge-ib"></span>袋内训练 (~63.2%)</span>
+            <span class="legend-item"><span class="badge-oob"></span>袋外 OOB (用于测试)</span>
+          </div>
+        </div>
+
+        <div class="grid-table" id="matrixGrid">
+          <div class="col-header" style="text-align: left;">样本编号 (真值)</div>
+          <div class="col-header">决策树 1</div>
+          <div class="col-header">决策树 2</div>
+          <div class="col-header">决策树 3</div>
+          <div class="col-header">决策树 4</div>
+          <div class="col-header">决策树 5</div>
+
+          <!-- 动态填充数据行 -->
+        </div>
+      </section>
+
+      <!-- 右：OOB 聚合预测与无偏评估演示 -->
+      <section class="eval-panel">
+        <div class="eval-header">
+          <h2 id="evalTargetTitle">样本 x₄ 的袋外预测</h2>
+          <p id="evalTargetDesc">仅在未包含它的树上评估，杜绝数据泄露。</p>
+        </div>
+
+        <div class="tree-votes" id="votesList">
+          <!-- 动态渲染 5 棵树的投票或跳过状态 -->
+        </div>
+
+        <div class="agg-box">
+          <div class="agg-row">
+            <span class="agg-label">OOB 集成预测</span>
+            <span class="agg-result" id="aggVoteResult">类 A</span>
+          </div>
+          <p class="agg-desc" id="aggErrorState">与真值一致：OOB 误差为 0</p>
+        </div>
+
+        <div class="sample-switch">
+          <span style="font-size: var(--fs-label); color: var(--muted);">切换观察样本：</span>
+          <button class="sample-btn" data-id="1">x₁</button>
+          <button class="sample-btn" data-id="2">x₂</button>
+          <button class="sample-btn" data-id="3">x₃</button>
+          <button class="sample-btn active" data-id="4">x₄</button>
+          <button class="sample-btn" data-id="5">x₅</button>
+          <button class="sample-btn" data-id="6">x₆</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    在 Bagging 和随机森林中，每次 Bootstrap 抽样大小与原数据集相等且有放回。数学上，当样本量 n 很大时，一个特定样本不被抽中的概率极限是 1/e，约等于 36.8%。
+    这意味着，对于任意一棵树，都有大约三分之一以上的样本从未参与其训练，这些样本被称为“袋外样本”（Out-of-Bag, OOB）。
+    我们可以利用这种天然的未见性质：对每个样本 x_i，只让那些“未抽中 x_i 的树”对其进行预测并投票。
+    这样得到的 OOB 误差几乎等同于留出法交叉验证，完全省去了单独切分验证集或做 k 折交叉验证的额外算力开销。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      // 确定性矩阵数据（种子生成固定状态）
+      // 6 个样本，5 棵树；1 表示袋内（In-bag），0 表示袋外（OOB）
+      // 以及每棵树针对该样本的预测类别 (A 或 B)
+      const samples = [
+        { id: 1, name: "样本 x₁", label: "A", matrix: [1, 0, 1, 0, 1], preds: ["A", "A", "A", "A", "B"] },
+        { id: 2, name: "样本 x₂", label: "B", matrix: [0, 1, 0, 1, 0], preds: ["B", "B", "B", "A", "B"] },
+        { id: 3, name: "样本 x₃", label: "A", matrix: [1, 1, 0, 1, 0], preds: ["A", "A", "B", "A", "A"] },
+        { id: 4, name: "样本 x₄", label: "A", matrix: [0, 1, 1, 0, 1], preds: ["A", "B", "A", "A", "A"] },
+        { id: 5, name: "样本 x₅", label: "B", matrix: [1, 0, 1, 1, 0], preds: ["B", "B", "A", "B", "B"] },
+        { id: 6, name: "样本 x₆", label: "B", matrix: [0, 1, 0, 0, 1], preds: ["B", "A", "B", "B", "B"] }
+      ];
+
+      let currentSampleId = 4;
+      const matrixGrid = document.getElementById("matrixGrid");
+      const votesList = document.getElementById("votesList");
+      const evalTargetTitle = document.getElementById("evalTargetTitle");
+      const aggVoteResult = document.getElementById("aggVoteResult");
+      const aggErrorState = document.getElementById("aggErrorState");
+      const sampleBtns = document.querySelectorAll(".sample-btn");
+
+      function renderMatrix() {
+        // 先清理旧的数据行（保留表头 6 个元素）
+        while (matrixGrid.children.length > 6) {
+          matrixGrid.removeChild(matrixGrid.lastChild);
+        }
+
+        samples.forEach(s => {
+          const isSelected = s.id === currentSampleId;
+          // 行头
+          const rowHead = document.createElement("div");
+          rowHead.className = `row-header ${isSelected ? 'active' : ''}`;
+          rowHead.innerHTML = `<span>${s.name}</span> <span style="font-family: var(--font-numeric); font-size: var(--fs-tick); color: var(--muted);">(类 ${s.label})</span>`;
+          rowHead.onclick = () => selectSample(s.id);
+          matrixGrid.appendChild(rowHead);
+
+          // 5 个单元格
+          s.matrix.forEach((inBag, tIdx) => {
+            const cell = document.createElement("div");
+            cell.className = `cell ${isSelected ? 'row-highlight' : ''}`;
+            cell.onclick = () => selectSample(s.id);
+
+            if (inBag) {
+              cell.innerHTML = `<span class="dot-in" title="树 ${tIdx+1} 训练集包含此样本"></span>`;
+            } else {
+              cell.innerHTML = `<span class="dot-oob" title="袋外样本：树 ${tIdx+1} 从未见过">OOB</span>`;
+            }
+            matrixGrid.appendChild(cell);
+          });
+        });
+      }
+
+      function renderEval() {
+        const s = samples.find(item => item.id === currentSampleId);
+        if (!s) return;
+
+        evalTargetTitle.textContent = `${s.name} 的袋外预测与投票`;
+        votesList.innerHTML = "";
+
+        let oobCount = 0;
+        const oobVotes = {};
+
+        s.matrix.forEach((inBag, tIdx) => {
+          const voteDiv = document.createElement("div");
+          const pred = s.preds[tIdx];
+
+          if (inBag) {
+            voteDiv.className = "vote-item ignored";
+            voteDiv.innerHTML = `
+              <span class="vote-name">决策树 ${tIdx + 1}</span>
+              <span class="vote-status">训练已见 · 跳过</span>
+            `;
+          } else {
+            voteDiv.className = "vote-item oob-active";
+            voteDiv.innerHTML = `
+              <span class="vote-name">决策树 ${tIdx + 1}</span>
+              <span class="vote-status">袋外未见 → 预测：<span class="vote-val">类 ${pred}</span></span>
+            `;
+            oobCount++;
+            oobVotes[pred] = (oobVotes[pred] || 0) + 1;
+          }
+          votesList.appendChild(voteDiv);
+        });
+
+        // 计算聚合预测
+        let maxVoteClass = "无";
+        let maxVoteCount = -1;
+        for (const [cls, count] of Object.entries(oobVotes)) {
+          if (count > maxVoteCount) {
+            maxVoteCount = count;
+            maxVoteClass = cls;
+          }
+        }
+
+        aggVoteResult.textContent = `类 ${maxVoteClass} (${maxVoteCount}/${oobCount} 票)`;
+        if (maxVoteClass === s.label) {
+          aggErrorState.textContent = `与真实标签 (${s.label}) 一致：OOB 误差为 0`;
+          aggErrorState.style.color = "var(--muted)";
+        } else {
+          aggErrorState.textContent = `与真实标签 (${s.label}) 不符：产生 OOB 分类误差`;
+          aggErrorState.style.color = "var(--focus)";
+        }
+
+        // 更新按钮高亮
+        sampleBtns.forEach(btn => {
+          btn.classList.toggle("active", parseInt(btn.dataset.id) === currentSampleId);
+        });
+      }
+
+      function selectSample(id) {
+        currentSampleId = id;
+        renderMatrix();
+        renderEval();
+      }
+
+      sampleBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          selectSample(parseInt(btn.dataset.id));
+        });
+      });
+
+      renderMatrix();
+      renderEval();
+
+      window.__NOTALE_READY__ = true;
+    })();
+  </script>
+</body>
+</html>

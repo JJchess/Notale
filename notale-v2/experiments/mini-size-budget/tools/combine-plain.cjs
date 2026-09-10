@@ -1,0 +1,18 @@
+const fs=require('fs'),path=require('path'),terser=require('/tmp/notale-size-tools/node_modules/terser'),CleanCSS=require('/tmp/notale-size-tools/node_modules/clean-css'),{minify}=require('/tmp/notale-size-tools/node_modules/html-minifier-terser'),esbuild=require('/tmp/notale-discog-build/node_modules/esbuild');
+(async()=>{const out=[];for(const row of JSON.parse(fs.readFileSync('experiments/mini-size-budget/baseline.json'))){if(row.spec.files.some(f=>f.endsWith('.svelte')||f.endsWith('.jsx')))continue;
+ const dir=path.resolve('experiments/mini-size-budget/before',row.id),read=f=>{const override=path.join('experiments/mini-size-budget/author',row.id,f);return fs.readFileSync(fs.existsSync(override)?override:path.join(dir,f),'utf8')};let html=read('index.html');
+ const styles=[];html=html.replace(/<link\b[^>]*href="([^"]+)"[^>]*>/g,(tag,f)=>{if(!row.spec.files.includes(f)||!f.endsWith('.css'))return tag;let sheet=read(f);if(f==='mini-scrollbars.css')sheet=sheet.replaceAll(' !important','');else sheet=sheet.replace(/scrollbar-(?:width|color)\s*:[^;}]+;?/g,'');styles.push(sheet);return styles.length===1?'<!--MINI_STYLE-->':''});
+ const ast=require('/tmp/notale-size-tools/node_modules/postcss').parse(styles.join('\n'));ast.walkAtRules('media',rule=>{if(/(?:width|height)/.test(rule.params)&&!/(?:prefers|hover|pointer|color|resolution)/.test(rule.params)){if(require('/tmp/notale-size-tools/node_modules/css-mediaquery').match(rule.params,{type:'screen',width:'1600px',height:'900px'}))rule.replaceWith(...rule.nodes);else rule.remove();}});
+ const css=new CleanCSS({level:2,rebase:false}).minify(ast.toString());if(css.errors.length)throw Error(css.errors.join('\n'));html=html.replace('<!--MINI_STYLE-->',`<style>${css.styles}</style>`);
+ const scripts=[];let module=false;html=html.replace(/<script\b([^>]*)src="([^"]+)"([^>]*)><\/script>/g,(tag,a,f,b)=>{if(!row.spec.files.includes(f))return tag;module||=/type="module"/.test(a+b);scripts.push(f);return ''});
+ let js;
+ if(module){const build=await esbuild.build({entryPoints:[path.join(row.id==='artist-repetition-lab'?path.resolve('experiments/mini-size-budget/author',row.id):dir,scripts[0])],bundle:true,format:'esm',write:false,packages:'external',charset:'utf8',legalComments:'none'});js=build.outputFiles[0].text;}
+ else js=scripts.map(read).join('\n;\n');
+ if(!module)js=`document.addEventListener('DOMContentLoaded',()=>{${js}\n});`;
+ js=require('./pool-strings.cjs')(js);
+ const versions=await Promise.all([true,false].map(reduce_vars=>terser.minify(js,{module,toplevel:true,compress:{passes:3,reduce_vars},mangle:row.id==='artist-repetition-lab'?{properties:{regex:/^(originalHeight|expanded|rextent|margin|totalH|totalW|_svg|xdat|resizeHeight|setupAxes|updateAxes|updateHistogram|resizeIfNecessary|renderSongs|addAxis|updateAxis|bubbleText|linify|ylabel|getx|datx)$/}}:true,format:{comments:false,ascii_only:false}})));js=versions.map(v=>v.code).sort((a,b)=>a.length-b.length)[0];
+ const tag=`<script${module?' type="module"':''}>${js.replace(/<\/script/gi,'<\\/script')}</script>`;
+ html=html.replace(/<\/body>|<\/html>/,m=>tag+m);
+ html=await minify(html,{collapseWhitespace:true,conservativeCollapse:true,removeComments:true,removeRedundantAttributes:true,removeAttributeQuotes:false,keepClosingSlash:true});
+ const dest=`experiments/mini-size-budget/combined/${row.id}/index.html`;fs.mkdirSync(path.dirname(dest),{recursive:true});fs.writeFileSync(dest,html);out.push({id:row.id,chars:[...html].length,css:css.styles.length,js:[...js].length});
+ }fs.writeFileSync('experiments/mini-size-budget/plain-counts.json',JSON.stringify(out,null,2));console.log(out);})().catch(e=>{console.error(e);process.exit(1)});

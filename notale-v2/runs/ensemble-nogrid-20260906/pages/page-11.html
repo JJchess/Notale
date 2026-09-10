@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+      --bg: #F2F6F9;
+      --text: #172A3A;
+      --font-sans: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      overflow: hidden;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+    }
+
+    #forest-canvas {
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .cover-content {
+      position: absolute;
+      z-index: 5;
+      left: 104px;
+      top: 180px;
+      width: 620px;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .cover-title {
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      margin: 0 0 16px 0;
+    }
+
+    .cover-subtitle {
+      font-size: var(--fs-h2);
+      line-height: var(--lh-tight);
+      font-weight: 500;
+      color: var(--model);
+      margin: 0 0 28px 0;
+    }
+
+    .dual-random-tagline {
+      display: inline-flex;
+      align-items: center;
+      gap: 16px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(83, 101, 117, 0.2);
+      padding: 10px 18px;
+      border-radius: var(--radius);
+      box-shadow: 0 4px 16px rgba(23, 42, 58, 0.04);
+    }
+
+    .dual-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dual-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .dot-sample {
+      background: var(--model);
+    }
+
+    .dot-feature {
+      background: var(--diversity);
+    }
+
+    .dual-divider {
+      color: var(--muted);
+      opacity: 0.4;
+    }
+  </style>
+</head>
+<body data-page="11" data-total="26">
+  <div id="stage">
+    <canvas id="forest-canvas" class="cv-fill"></canvas>
+
+    <header class="cover-content">
+      <h1 class="cover-title">随机森林</h1>
+      <div class="cover-subtitle">同时随机化样本与特征</div>
+      <div class="dual-random-tagline">
+        <span class="dual-item"><span class="dual-dot dot-sample"></span>行扰动：Bootstrap 抽样</span>
+        <span class="dual-divider">|</span>
+        <span class="dual-item"><span class="dual-dot dot-feature"></span>列扰动：随机特征子集</span>
+      </div>
+    </header>
+  </div>
+
+  <aside class="notes" hidden>
+    这一部分我们正式进入随机森林。上一节讨论的 Bagging 主要依赖行重采样来制造弱分类器之间的差异；而随机森林在此基础上更进了一步——在决策树生长的每一个分叉节点，只在一组随机挑选的特征子集当中寻找最佳切分点。通过行随机与列随机的双重扰动，削弱了主导特征对整片森林结构的垄断，显著拉开了树与树之间的相关度，让集成决策拥有更平滑的方差抑制能力。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("forest-canvas");
+      let ctx = Deck.fit(canvas);
+
+      // 确定性伪随机
+      function seededRandom(seed) {
+        let state = seed >>> 0;
+        return () => {
+          state = (state + 0x6d2b79f5) >>> 0;
+          let n = state;
+          n = Math.imul(n ^ (n >>> 15), n | 1);
+          n ^= n + Math.imul(n ^ (n >>> 7), n | 61);
+          return ((n ^ (n >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      const SEED = 20260906;
+      const rng = seededRandom(SEED);
+
+      // 主题语义色
+      const colModel = Deck.token("--model") || "#245FA6";
+      const colDiversity = Deck.token("--diversity") || "#28785E";
+      const colAggregate = Deck.token("--aggregate") || "#C94F2D";
+      const colMuted = Deck.token("--muted") || "#536575";
+
+      // 树集合配置（多棵树在右侧生长，避开左侧文字排版区域）
+      // 树干基座群: x in [780, 1480], y in [760, 830]
+      const TREES = [
+        { x: 800,  y: 810, trunkH: 155, maxDepth: 4, spread: 0.58, scale: 0.98 },
+        { x: 970,  y: 815, trunkH: 175, maxDepth: 5, spread: 0.55, scale: 1.05 },
+        { x: 1140, y: 805, trunkH: 165, maxDepth: 5, spread: 0.60, scale: 1.02 },
+        { x: 1310, y: 815, trunkH: 175, maxDepth: 5, spread: 0.54, scale: 1.06 },
+        { x: 1470, y: 810, trunkH: 155, maxDepth: 4, spread: 0.58, scale: 0.96 }
+      ];
+
+      // 特征通道粒子流（从右上向左下穿梭，象征特征子集随机投影）
+      const FEATURE_CHANNELS = [
+        { y: 130, len: 480, speed: 0.6, featIdx: "x₁" },
+        { y: 180, len: 560, speed: 0.8, featIdx: "x₂" },
+        { y: 230, len: 420, speed: 0.5, featIdx: "x₃" },
+        { y: 280, len: 520, speed: 0.7, featIdx: "x₄" },
+        { y: 330, len: 460, speed: 0.9, featIdx: "x₅" }
+      ];
+
+      // 预生成每棵树的骨架线段与节点
+      function buildTreeSegments(tree, rnd) {
+        const segments = [];
+        const nodes = [];
+
+        function growBranch(x, y, angle, length, depth, width) {
+          const nx = x + Math.sin(angle) * length;
+          const ny = y - Math.cos(angle) * length;
+
+          // 随机决策分枝的特征选择标注
+          const featureChoice = rnd() > 0.45;
+
+          segments.push({
+            x1: x, y1: y, x2: nx, y2: ny,
+            depth, width,
+            featureChoice
+          });
+
+          nodes.push({
+            x: nx, y: ny,
+            depth,
+            isLeaf: depth >= tree.maxDepth,
+            featureChoice
+          });
+
+          if (depth < tree.maxDepth) {
+            const branchLen = length * (0.68 + rnd() * 0.12);
+            const spreadAngle = tree.spread * (0.85 + rnd() * 0.25);
+
+            // 决策树典型二叉分枝
+            growBranch(nx, ny, angle - spreadAngle * (0.45 + rnd() * 0.2), branchLen, depth + 1, Math.max(1.5, width * 0.72));
+            growBranch(nx, ny, angle + spreadAngle * (0.45 + rnd() * 0.2), branchLen, depth + 1, Math.max(1.5, width * 0.72));
+          }
+        }
+
+        growBranch(tree.x, tree.y, 0, tree.trunkH * tree.scale, 1, 4.2 * tree.scale);
+        return { segments, nodes };
+      }
+
+      const treeModels = TREES.map(t => {
+        const treeRnd = seededRandom(SEED + t.x);
+        return {
+          tree: t,
+          ...buildTreeSegments(t, treeRnd)
+        };
+      });
+
+      // 绘制函数
+      function draw(progress = 1.0) {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, 1600, 900);
+
+        // 1. 特征空间切片背景网格与随机子集通道 (右上象限)
+        ctx.save();
+        ctx.strokeStyle = "rgba(83, 101, 117, 0.08)";
+        ctx.lineWidth = 1;
+        for (let x = 750; x <= 1550; x += 60) {
+          ctx.beginPath();
+          ctx.moveTo(x, 60);
+          ctx.lineTo(x, 840);
+          ctx.stroke();
+        }
+        for (let y = 80; y <= 840; y += 60) {
+          ctx.beginPath();
+          ctx.moveTo(720, y);
+          ctx.lineTo(1560, y);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // 2. 特征采样指示线 (Feature subsampling tracks)
+        FEATURE_CHANNELS.forEach((ch, i) => {
+          const startX = 1000 + (i * 70);
+          const endX = 1520;
+          ctx.save();
+          ctx.strokeStyle = "rgba(40, 120, 94, 0.16)";
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 6]);
+          ctx.beginPath();
+          ctx.moveTo(startX, ch.y);
+          ctx.lineTo(endX, ch.y);
+          ctx.stroke();
+
+          // 采样标记节点
+          ctx.setLineDash([]);
+          ctx.fillStyle = colDiversity;
+          ctx.font = '600 13px "DIN Alternate", "PingFang SC", sans-serif';
+          ctx.fillText(ch.featIdx, startX - 24, ch.y + 4);
+
+          // 随机高亮抽中的特征点
+          const dotCount = 3;
+          for (let d = 0; d < dotCount; d++) {
+            const px = startX + 50 + d * 110 + (i * 23) % 45;
+            ctx.beginPath();
+            ctx.arc(px, ch.y, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = d === 1 ? colDiversity : "rgba(40, 120, 94, 0.35)";
+            ctx.fill();
+          }
+          ctx.restore();
+        });
+
+        // 3. 绘制森林的所有树枝与节点 (随机分枝)
+        treeModels.forEach(({ tree, segments, nodes }) => {
+          // 树干基部投影
+          ctx.save();
+          ctx.fillStyle = "rgba(23, 42, 58, 0.06)";
+          ctx.beginPath();
+          ctx.ellipse(tree.x, tree.y + 4, 34 * tree.scale, 8, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          // 枝干
+          segments.forEach(seg => {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(seg.x1, seg.y1);
+            ctx.lineTo(seg.x2, seg.y2);
+            ctx.strokeStyle = seg.featureChoice ? colDiversity : colModel;
+            ctx.lineWidth = seg.width;
+            ctx.lineCap = "round";
+            ctx.globalAlpha = 0.82;
+            ctx.stroke();
+            ctx.restore();
+          });
+
+          // 分裂节点与叶子预测节点
+          nodes.forEach(n => {
+            ctx.save();
+            if (n.isLeaf) {
+              // 叶子节点 (聚合输出投票)
+              ctx.beginPath();
+              ctx.arc(n.x, n.y, 4.5, 0, Math.PI * 2);
+              ctx.fillStyle = colAggregate;
+              ctx.fill();
+              ctx.strokeStyle = "#FFFFFF";
+              ctx.lineWidth = 1.5;
+              ctx.stroke();
+            } else {
+              // 分裂测试节点 (特征子集选取)
+              ctx.beginPath();
+              ctx.arc(n.x, n.y, 3, 0, Math.PI * 2);
+              ctx.fillStyle = n.featureChoice ? colDiversity : colModel;
+              ctx.fill();
+            }
+            ctx.restore();
+          });
+        });
+
+        // 4. 右侧顶栏特征子集标注 (标签说明)
+        ctx.save();
+        ctx.fillStyle = colMuted;
+        ctx.font = '500 14px "Avenir Next", "PingFang SC", sans-serif';
+        ctx.fillText("特征子集采样空间 m ≈ √p", 1180, 85);
+        ctx.fillStyle = "rgba(40, 120, 94, 0.7)";
+        ctx.beginPath();
+        ctx.arc(1166, 80, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      Deck.autofit(canvas, () => {
+        draw(1.0);
+      });
+    })();
+  </script>
+</body>
+</html>

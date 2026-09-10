@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --font-sans: "Noto Sans SC", "Noto Sans CJK SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      display: grid;
+      grid-template-rows: 84px 1fr;
+      gap: 20px;
+      position: relative;
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      color: var(--text);
+    }
+
+    .lead {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-tight);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 290px 1fr;
+      gap: 32px;
+      min-height: 0;
+    }
+
+    .param-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      justify-content: flex-start;
+      padding-top: 10px;
+    }
+
+    .param-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      padding: 16px 20px;
+      background: rgba(23, 62, 80, 0.05);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      cursor: pointer;
+      text-align: left;
+      transition: all var(--duration-fast) ease;
+      font-family: var(--font-sans);
+    }
+
+    .param-btn:hover {
+      background: rgba(46, 95, 120, 0.12);
+    }
+
+    .param-btn.active {
+      background: #ffffff;
+      border-color: var(--focus);
+      box-shadow: 0 2px 8px rgba(198, 75, 46, 0.15);
+    }
+
+    .param-name {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-bold);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .param-btn.active .param-name {
+      color: var(--focus);
+    }
+
+    .param-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-tight);
+    }
+
+    .display-panel {
+      display: grid;
+      grid-template-rows: 1fr auto;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .chart-box {
+      position: relative;
+      border: 1px solid var(--line);
+      background: #f4f6f4;
+      border-radius: 4px;
+      min-height: 0;
+    }
+
+    #chart {
+      width: 100%;
+      height: 100%;
+    }
+
+    .verdict-card {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      border-radius: 4px;
+      padding: 16px 22px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .verdict-left {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .verdict-title {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-bold);
+      color: var(--aggregate);
+      margin: 0;
+    }
+
+    .verdict-body {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      margin: 0;
+    }
+
+    .verdict-stat {
+      display: flex;
+      gap: 20px;
+      border-left: 1px solid var(--line);
+      padding-left: 24px;
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+
+    .stat-lbl {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    .stat-val {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-bold);
+      color: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="12" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>超参数调节：树数单调降方差，深度与特征决定权衡</h1>
+      <p class="lead">随机森林通过三个主干旋钮调控模型容量与树间相关性</p>
+    </header>
+
+    <div class="main-grid">
+      <nav class="param-nav" aria-label="关键超参数切换">
+        <button class="param-btn active" data-key="ntree" id="btn-ntree">
+          <span class="param-name">树的数量 n_estimators</span>
+          <span class="param-sub">单调降方差，偏差基本恒定</span>
+        </button>
+        <button class="param-btn" data-key="mfeat" id="btn-mfeat">
+          <span class="param-name">特征子集 max_features</span>
+          <span class="param-sub">相关性与单树偏差的直接权衡</span>
+        </button>
+        <button class="param-btn" data-key="depth" id="btn-depth">
+          <span class="param-name">叶约束 max_depth / min_leaf</span>
+          <span class="param-sub">单树拟合力控制基学习器偏差</span>
+        </button>
+      </nav>
+
+      <div class="display-panel min0">
+        <div class="chart-box min0">
+          <div id="chart" role="img" aria-label="随机森林超参数对偏差、方差与总误差的影响曲线"></div>
+        </div>
+
+        <div class="verdict-card">
+          <div class="verdict-left">
+            <h2 class="verdict-title" id="verdict-title">树数量：只降方差，不存在过拟合</h2>
+            <p class="verdict-body" id="verdict-desc">单树偏差恒定，增加树数平滑抵消独立波动；过饱和后仅耗算力，总误差收敛于极限。</p>
+          </div>
+          <div class="verdict-stat">
+            <div class="stat-item">
+              <span class="stat-lbl">推荐经验值</span>
+              <span class="stat-val" id="stat-rule">100 ~ 500</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-lbl">主导影响</span>
+              <span class="stat-val" id="stat-effect">纯降方差</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    本页梳理随机森林在实际工程中最核心的三个超参数调控逻辑。
+    第一是树的数量 n_estimators：增加树数只降低集成的方差，单树的平均偏差几乎恒定，因此树越多越好，不会因为树变多而过拟合，达到饱和点后主要瓶颈是计算与内存开销。
+    第二是划分特征数 max_features：如果设为所有特征，单树拟合好但树间相关性高；如果特征数过小，树间虽然独立但单树表达力受损偏差升高。通常分类任务取根号 d，回归取 d/3。
+    第三是单树深度与叶节点约束：完全生长的树单树方差大但偏差低，随机森林正是依靠完全生长保持低偏差、再用平均消除高方差；但加入叶约束可抑制噪声并加速训练。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var dataSets = {
+        ntree: {
+          xName: "树的数量 n_estimators",
+          xTicks: [5, 20, 50, 100, 200, 500],
+          xValues: [5, 20, 50, 100, 200, 500],
+          bias: [0.18, 0.178, 0.175, 0.175, 0.174, 0.174],
+          variance: [0.42, 0.22, 0.13, 0.08, 0.05, 0.04],
+          total: [0.60, 0.398, 0.305, 0.255, 0.224, 0.214],
+          title: "树数量：只降方差，不存在过拟合",
+          desc: "单树偏差恒定，增加树数平滑抵消独立波动；过饱和后仅耗算力，总误差收敛于极限。",
+          rule: "100 ~ 500",
+          effect: "纯降方差",
+          optIndex: 4,
+          optLabel: "饱和稳定区"
+        },
+        mfeat: {
+          xName: "随机特征子集大小 m (特征维数 d=64)",
+          xTicks: [2, 4, 8, 16, 32, 64],
+          xValues: [2, 4, 8, 16, 32, 64],
+          bias: [0.38, 0.28, 0.20, 0.17, 0.15, 0.14],
+          variance: [0.05, 0.07, 0.09, 0.14, 0.21, 0.32],
+          total: [0.43, 0.35, 0.29, 0.31, 0.36, 0.46],
+          title: "特征子集：相关性与单树表达力权衡",
+          desc: "m 过小削弱单树表达力致偏差上升；m 过大增加树间共性减弱降方差收益。分类推荐 √d。",
+          rule: "√d (分类) / d/3 (回归)",
+          effect: "权衡相关与偏差",
+          optIndex: 2,
+          optLabel: "最优 m ≈ √64 = 8"
+        },
+        depth: {
+          xName: "单树最大深度 max_depth",
+          xTicks: [2, 4, 8, 16, 32, "不限"],
+          xValues: [2, 4, 8, 16, 32, 48],
+          bias: [0.45, 0.30, 0.18, 0.15, 0.14, 0.14],
+          variance: [0.04, 0.06, 0.09, 0.12, 0.14, 0.15],
+          total: [0.49, 0.36, 0.27, 0.27, 0.28, 0.29],
+          title: "叶节点约束：深树低偏差，森林消方差",
+          desc: "每棵树充分生长以压低偏差，单树的高方差由集成消除；海量样本时可适度限制深度加速。",
+          rule: "默认不限 / 适度剪枝",
+          effect: "控制单树容量",
+          optIndex: 2,
+          optLabel: "最佳折中深度"
+        }
+      };
+
+      var chartDom = document.getElementById("chart");
+      var chart = echarts.init(chartDom, null, { renderer: "svg" });
+      var activeKey = "ntree";
+
+      function getOption(key) {
+        var d = dataSets[key];
+        return {
+          animationDuration: 400,
+          grid: {
+            left: 70,
+            right: 140,
+            top: 50,
+            bottom: 45
+          },
+          legend: {
+            top: 12,
+            right: 140,
+            itemGap: 24,
+            textStyle: {
+              color: "#17221F",
+              fontSize: 15,
+              fontFamily: "Noto Sans SC"
+            },
+            data: ["方差 (Variance)", "偏差平方 (Bias²)", "泛化总误差 (Total Error)"]
+          },
+          xAxis: {
+            type: "category",
+            name: d.xName,
+            nameLocation: "middle",
+            nameGap: 30,
+            nameTextStyle: {
+              color: "#46534F",
+              fontSize: 15,
+              fontWeight: 500
+            },
+            data: d.xTicks,
+            axisLine: { lineStyle: { color: "#74817C" } },
+            axisTick: { alignWithLabel: true },
+            axisLabel: {
+              color: "#46534F",
+              fontSize: 13,
+              fontFamily: "Lato, Noto Sans SC"
+            }
+          },
+          yAxis: {
+            type: "value",
+            name: "误差 / 分量",
+            nameTextStyle: {
+              color: "#46534F",
+              fontSize: 13
+            },
+            min: 0,
+            max: 0.7,
+            interval: 0.1,
+            axisLine: { show: true, lineStyle: { color: "#74817C" } },
+            splitLine: { lineStyle: { color: "rgba(116, 129, 124, 0.2)" } },
+            axisLabel: {
+              color: "#46534F",
+              fontSize: 13,
+              fontFamily: "Lato"
+            }
+          },
+          series: [
+            {
+              name: "方差 (Variance)",
+              type: "line",
+              smooth: 0.25,
+              data: d.variance,
+              lineStyle: { color: "#2E5F78", width: 2.5, type: "dashed" },
+              itemStyle: { color: "#2E5F78" },
+              symbol: "circle",
+              symbolSize: 6
+            },
+            {
+              name: "偏差平方 (Bias²)",
+              type: "line",
+              smooth: 0.25,
+              data: d.bias,
+              lineStyle: { color: "#8B6941", width: 2.5, type: "dotted" },
+              itemStyle: { color: "#8B6941" },
+              symbol: "rect",
+              symbolSize: 6
+            },
+            {
+              name: "泛化总误差 (Total Error)",
+              type: "line",
+              smooth: 0.25,
+              data: d.total,
+              lineStyle: { color: "#173E50", width: 4 },
+              itemStyle: { color: "#173E50" },
+              symbol: "circle",
+              symbolSize: 8,
+              markPoint: {
+                symbol: "pin",
+                symbolSize: 46,
+                data: [
+                  {
+                    name: "推荐点",
+                    coord: [d.optIndex, d.total[d.optIndex]],
+                    value: d.optLabel,
+                    itemStyle: { color: "#C64B2E" },
+                    label: {
+                      fontSize: 12,
+                      offset: [0, -4],
+                      formatter: function () { return ""; }
+                    }
+                  }
+                ]
+              },
+              markLine: {
+                symbol: "none",
+                silent: true,
+                lineStyle: { color: "#C64B2E", type: "dashed", width: 1.5 },
+                data: [
+                  {
+                    xAxis: d.optIndex,
+                    label: {
+                      formatter: d.optLabel,
+                      position: "insideEndTop",
+                      fontSize: 13,
+                      color: "#C64B2E",
+                      fontWeight: 600
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        };
+      }
+
+      function update(key) {
+        activeKey = key;
+        chart.setOption(getOption(key), true);
+
+        var d = dataSets[key];
+        document.getElementById("verdict-title").textContent = d.title;
+        document.getElementById("verdict-desc").textContent = d.desc;
+        document.getElementById("stat-rule").textContent = d.rule;
+        document.getElementById("stat-effect").textContent = d.effect;
+
+        document.querySelectorAll(".param-btn").forEach(function (btn) {
+          if (btn.dataset.key === key) {
+            btn.classList.add("active");
+          } else {
+            btn.classList.remove("active");
+          }
+        });
+      }
+
+      document.querySelectorAll(".param-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          update(this.dataset.key);
+        });
+      });
+
+      Deck.init({ index: 12, total: 26, keys: true });
+
+      update("ntree");
+
+      window.addEventListener("resize", function () {
+        chart.resize();
+      });
+    })();
+  </script>
+</body>
+</html>

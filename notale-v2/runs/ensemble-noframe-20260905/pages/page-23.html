@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>组合策略与方法选择</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F4F7FB;
+      --surface: #E8EEF5;
+      --text: #13243A;
+      --muted: #53667C;
+      --model: #2457A6;
+      --aggregate: #0F766E;
+      --focus: #C94B00;
+      --font-display: "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+      --font-sans: "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+      --font-numeric: "DIN Alternate", Bahnschrift, "DIN Next LT Pro", sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      background-color: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      isolation: isolate;
+    }
+
+    .cover-layout {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 500px 1fr;
+      column-gap: 20px;
+      align-items: center;
+      z-index: 2;
+    }
+
+    /* 左侧标题排版区 */
+    .title-block {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      z-index: 3;
+      padding-left: 20px;
+    }
+
+    .chapter-tag {
+      display: none;
+    }
+
+    h1.main-title {
+      font-family: var(--font-display);
+      font-size: 54px;
+      font-weight: 900;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      margin: 0 0 24px 0;
+    }
+
+    .subtitle-lead {
+      font-family: var(--font-sans);
+      font-size: 19px;
+      line-height: 1.55;
+      color: var(--muted);
+      margin: 0 0 32px 0;
+      max-width: 480px;
+    }
+
+    .strategy-pills {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .strategy-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface);
+      border: 1.5px solid rgba(83, 102, 124, 0.22);
+      border-radius: var(--radius);
+      padding: 10px 18px;
+    }
+
+    .strategy-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--model);
+    }
+    .strategy-dot.meta {
+      background: var(--aggregate);
+    }
+
+    .strategy-text {
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* 右侧主题图示区 */
+    .diagram-stage {
+      position: relative;
+      height: 720px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .diagram-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* SVG 内部样式 */
+    .model-box {
+      fill: var(--surface);
+      stroke: var(--model);
+      stroke-width: 2px;
+      rx: 8px;
+    }
+    .combiner-box {
+      fill: #DCF2EE;
+      stroke: var(--aggregate);
+      stroke-width: 2.5px;
+      rx: 10px;
+    }
+    .output-box {
+      fill: #E6F5F3;
+      stroke: var(--aggregate);
+      stroke-width: 3.5px;
+      rx: 10px;
+    }
+    .connector-model {
+      stroke: var(--model);
+      stroke-width: 2px;
+      fill: none;
+    }
+    .connector-aggregate {
+      stroke: var(--aggregate);
+      stroke-width: 4px;
+      fill: none;
+    }
+    .meta-flow {
+      stroke: var(--focus);
+      stroke-width: 2px;
+      stroke-dasharray: 5 4;
+      fill: none;
+    }
+    .text-model {
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 700;
+      fill: var(--model);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .text-combiner {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 800;
+      fill: var(--aggregate);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .text-output {
+      font-family: var(--font-display);
+      font-size: 17px;
+      font-weight: 900;
+      fill: var(--aggregate);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .badge-sub {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 500;
+      fill: var(--muted);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    /* 坐标刻度 / 虚线辅线 */
+    .guideline {
+      stroke: rgba(83, 102, 124, 0.18);
+      stroke-width: 1.5px;
+      stroke-dasharray: 4 4;
+    }
+
+    /* 运动与定格 */
+    .stream-particle {
+      fill: var(--model);
+      opacity: 0.85;
+    }
+    .stream-particle.meta {
+      fill: var(--aggregate);
+    }
+    .entering .stream-flow {
+      animation: dash 2.4s linear infinite;
+    }
+    @keyframes dash {
+      to {
+        stroke-dashoffset: -28;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .entering .stream-flow {
+        animation: none;
+      }
+    }
+  </style>
+</head>
+<body data-page="23" data-total="29">
+  <div id="stage" class="min0 entering">
+    <div class="cover-layout min0">
+      <div class="title-block min0">
+        <h1 class="main-title">组合策略<br>与方法选择</h1>
+        <p class="subtitle-lead">从直接汇聚预测结果，到借助元学习器组织成员模型输出，并结合误差特性确定集成路径。</p>
+        <div class="strategy-pills">
+          <div class="strategy-item">
+            <span class="strategy-dot"></span>
+            <span class="strategy-text">Voting 规则聚合</span>
+          </div>
+          <div class="strategy-item">
+            <span class="strategy-dot meta"></span>
+            <span class="strategy-text">Stacking 元模型</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="diagram-stage min0">
+        <svg class="diagram-svg" viewBox="0 0 960 700">
+          <defs>
+            <!-- 箭头标记 -->
+            <marker id="arr-model" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="#2457A6"/>
+            </marker>
+            <marker id="arr-agg" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M 0 1 L 9 5 L 0 9 z" fill="#0F766E"/>
+            </marker>
+          </defs>
+
+          <!-- 背景轻网格辅助线 -->
+          <line x1="40" y1="120" x2="900" y2="120" class="guideline" />
+          <line x1="40" y1="350" x2="900" y2="350" class="guideline" />
+          <line x1="40" y1="580" x2="900" y2="580" class="guideline" />
+          <line x1="260" y1="60" x2="260" y2="640" class="guideline" />
+          <line x1="580" y1="60" x2="580" y2="640" class="guideline" />
+
+          <!-- 输入数据点与分支输入流 -->
+          <g id="input-tier">
+            <circle cx="50" cy="350" r="10" fill="#13243A" />
+            <text x="50" y="380" class="badge-sub" font-weight="700">输入样本</text>
+            
+            <!-- 分流到三个异质基模型 -->
+            <path d="M 60 350 C 110 350, 110 170, 160 170" class="connector-model" />
+            <path d="M 60 350 L 160 350" class="connector-model" />
+            <path d="M 60 350 C 110 350, 110 530, 160 530" class="connector-model" />
+          </g>
+
+          <!-- 3 个基学习器 -->
+          <g id="base-models">
+            <!-- 模型 1 -->
+            <g transform="translate(160, 125)">
+              <rect width="145" height="90" class="model-box" />
+              <text x="72.5" y="36" class="text-model">基学习器 1</text>
+              <text x="72.5" y="60" class="badge-sub">高方差 · 随机森林</text>
+            </g>
+
+            <!-- 模型 2 -->
+            <g transform="translate(160, 305)">
+              <rect width="145" height="90" class="model-box" />
+              <text x="72.5" y="36" class="text-model">基学习器 2</text>
+              <text x="72.5" y="60" class="badge-sub">线性核 · 偏差稳定</text>
+            </g>
+
+            <!-- 模型 3 -->
+            <g transform="translate(160, 485)">
+              <rect width="145" height="90" class="model-box" />
+              <text x="72.5" y="36" class="text-model">基学习器 3</text>
+              <text x="72.5" y="60" class="badge-sub">非线性 · 梯度提升</text>
+            </g>
+          </g>
+
+          <!-- 输出汇聚路径到中间层：Voting 与 Stacking 双轨示意 -->
+          <!-- 上方路径 -->
+          <path d="M 305 170 C 420 170, 450 270, 520 280" class="connector-model stream-flow" marker-end="url(#arr-model)" stroke-dasharray="6 4" />
+          <!-- 中间路径 -->
+          <path d="M 305 350 L 520 350" class="connector-model stream-flow" marker-end="url(#arr-model)" stroke-dasharray="6 4" />
+          <!-- 下方路径 -->
+          <path d="M 305 530 C 420 530, 450 430, 520 420" class="connector-model stream-flow" marker-end="url(#arr-model)" stroke-dasharray="6 4" />
+
+          <!-- 中间组合核心：元学习器 / 聚合池 -->
+          <g id="aggregation-combiner" transform="translate(520, 245)">
+            <rect width="190" height="210" class="combiner-box" />
+            <text x="95" y="45" class="text-combiner">组合决策中心</text>
+            <line x1="20" y1="72" x2="170" y2="72" stroke="#0F766E" stroke-width="1.5" stroke-opacity="0.3" />
+            <text x="95" y="105" class="badge-sub" fill="#0F766E" font-weight="700">折外特征拼接 (OOF)</text>
+            <text x="95" y="135" class="badge-sub" fill="#13243A">硬投票 / 软投票加权</text>
+            <text x="95" y="165" class="badge-sub" fill="#53667C">元学习器拟合组合权重</text>
+          </g>
+
+          <!-- 最终收束聚合路径：主题签名「多模型路径汇入一条加粗 --aggregate 粗线」 -->
+          <path d="M 710 350 L 795 350" class="connector-aggregate" marker-end="url(#arr-agg)" />
+
+          <!-- 最终输出节点 -->
+          <g id="final-decision" transform="translate(795, 305)">
+            <rect width="135" height="90" class="output-box" />
+            <text x="67.5" y="38" class="text-output">集成预测</text>
+            <text x="67.5" y="62" class="badge-sub" fill="#0F766E" font-weight="700">最终判决</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学好，我们正式进入第四部分：组合策略与方法选择。
+    前面两章我们学习了基于同质模型的 Bagging 和 Boosting，但在实际工程中，我们往往拥有不同算法族群的基模型，或者需要从直接多数表决进阶到由元学习器自动权衡各方意见的 Stacking 机制。
+    这一章，我们将深入拆解 Voting 与 Stacking 的本质差异，剖析防止元模型数据泄漏的折外预测原则，并建立科学的方法选型指南。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 23, total: 29, keys: false });
+  </script>
+</body>
+</html>

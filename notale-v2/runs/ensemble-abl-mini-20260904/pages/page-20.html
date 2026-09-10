@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Stacking：学习如何组合模型</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      overflow: hidden;
+      background: radial-gradient(circle at 74% 48%, #FFFFFF 0%, #F5F9FA 42%, #E9EFF2 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+      padding: 72px 88px 64px 88px;
+    }
+
+    /* 背景微妙坐标网格与层次微光 */
+    .bg-grid {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.55;
+      background-image: 
+        linear-gradient(to right, rgba(83, 106, 120, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(83, 106, 120, 0.05) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    /* 标题区域 */
+    .cover-copy {
+      position: relative;
+      z-index: 5;
+      max-width: 620px;
+    }
+
+    .topic-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--aggregate);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+    }
+
+    .topic-pill::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--aggregate);
+    }
+
+    .cover-title {
+      font-size: 58px;
+      line-height: 1.14;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      margin: 0 0 24px 0;
+    }
+
+    .cover-title .title-accent {
+      color: var(--aggregate);
+      display: block;
+      margin-top: 4px;
+    }
+
+    .cover-lead {
+      font-size: var(--fs-lead);
+      line-height: 1.6;
+      color: var(--muted);
+      margin: 0;
+      max-width: 560px;
+    }
+
+    /* 底部辅助对比导引 */
+    .cover-footer {
+      position: relative;
+      z-index: 5;
+      display: flex;
+      align-items: flex-end;
+      gap: 48px;
+    }
+
+    .paradigm-shift {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 16px 22px;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid rgba(83, 106, 120, 0.16);
+      border-radius: 8px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 8px 24px rgba(18, 38, 52, 0.04);
+    }
+
+    .paradigm-step {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .paradigm-step .lbl {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    .paradigm-step .val {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .paradigm-step.target .val {
+      color: var(--aggregate);
+    }
+
+    .shift-arrow {
+      color: var(--muted);
+      font-size: 18px;
+      opacity: 0.6;
+    }
+
+    /* 主题图形：两层堆叠架构几何系统 */
+    .architecture-stage {
+      position: absolute;
+      right: 48px;
+      top: 40px;
+      width: 900px;
+      height: 820px;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    /* SVG 内部微动画与静止质感 */
+    .flow-stream {
+      stroke-dasharray: 8 6;
+      animation: flow-dash 24s linear infinite;
+    }
+
+    @keyframes flow-dash {
+      from { stroke-dashoffset: 200; }
+      to { stroke-dashoffset: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .flow-stream {
+        animation: none;
+      }
+    }
+  </style>
+</head>
+<body data-page="20" data-total="27">
+  <div id="stage">
+    <div class="bg-grid"></div>
+
+    <div class="cover-copy">
+      <div class="topic-pill">Ensemble Learning · Chapter 4</div>
+      <h1 class="cover-title">
+        Stacking
+        <span class="title-accent">学习如何组合模型</span>
+      </h1>
+      <p class="cover-lead">
+        放弃人工设定投票规则或硬性加权。让基学习器的预测向量转化为新特征，交由元学习器自适应拟合最优决策。
+      </p>
+    </div>
+
+    <!-- 底部范式转化提示 -->
+    <div class="cover-footer">
+      <div class="paradigm-shift">
+        <div class="paradigm-step">
+          <span class="lbl">Bagging / Boosting</span>
+          <span class="val">等权投票 · 贪心递推求和</span>
+        </div>
+        <span class="shift-arrow">→</span>
+        <div class="paradigm-step target">
+          <span class="lbl">Stacking</span>
+          <span class="val">元模型自学习组合规则</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主视觉系统：Stacking 两层分层折外转换与元学习器汇聚几何 -->
+    <svg class="architecture-stage" viewBox="0 0 900 820" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <!-- 投影滤镜 -->
+        <filter id="card-shadow" x="-10%" y="-10%" width="130%" height="135%" filterUnits="userSpaceOnUse">
+          <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#122634" flood-opacity="0.07" />
+          <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#122634" flood-opacity="0.04" />
+        </filter>
+        <filter id="meta-glow" x="-20%" y="-20%" width="150%" height="150%" filterUnits="userSpaceOnUse">
+          <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#C34B22" flood-opacity="0.16" />
+        </filter>
+
+        <!-- 汇聚渐变 -->
+        <linearGradient id="stream-1" x1="280" y1="230" x2="610" y2="410" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#27648F" stop-opacity="0.75" />
+          <stop offset="60%" stop-color="#27648F" stop-opacity="0.4" />
+          <stop offset="100%" stop-color="#C34B22" stop-opacity="0.8" />
+        </linearGradient>
+        <linearGradient id="stream-2" x1="280" y1="360" x2="610" y2="410" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#27648F" stop-opacity="0.75" />
+          <stop offset="60%" stop-color="#536A78" stop-opacity="0.3" />
+          <stop offset="100%" stop-color="#C34B22" stop-opacity="0.8" />
+        </linearGradient>
+        <linearGradient id="stream-3" x1="280" y1="490" x2="610" y2="410" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#27648F" stop-opacity="0.75" />
+          <stop offset="60%" stop-color="#27648F" stop-opacity="0.4" />
+          <stop offset="100%" stop-color="#C34B22" stop-opacity="0.8" />
+        </linearGradient>
+        <linearGradient id="stream-4" x1="280" y1="620" x2="610" y2="410" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#27648F" stop-opacity="0.75" />
+          <stop offset="60%" stop-color="#27648F" stop-opacity="0.4" />
+          <stop offset="100%" stop-color="#C34B22" stop-opacity="0.8" />
+        </linearGradient>
+
+        <linearGradient id="meta-grad" x1="610" y1="340" x2="820" y2="480" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#FFFFFF" />
+          <stop offset="100%" stop-color="#FBF7F5" />
+        </linearGradient>
+      </defs>
+
+      <!-- 顶层连线网络 (层级汇聚管线) -->
+      <g opacity="0.95">
+        <!-- 原始特征流到基模型 -->
+        <line x1="20" y1="425" x2="110" y2="230" stroke="#2F7568" stroke-width="2" stroke-opacity="0.4" stroke-dasharray="4 4" />
+        <line x1="20" y1="425" x2="110" y2="360" stroke="#2F7568" stroke-width="2" stroke-opacity="0.4" stroke-dasharray="4 4" />
+        <line x1="20" y1="425" x2="110" y2="490" stroke="#2F7568" stroke-width="2" stroke-opacity="0.4" stroke-dasharray="4 4" />
+        <line x1="20" y1="425" x2="110" y2="620" stroke="#2F7568" stroke-width="2" stroke-opacity="0.4" stroke-dasharray="4 4" />
+
+        <!-- 基模型输出到元特征矩阵 -->
+        <path d="M280 230 C330 230, 350 435, 375 435" stroke="url(#stream-1)" stroke-width="2.5" fill="none" class="flow-stream" />
+        <path d="M280 360 C330 360, 350 455, 375 455" stroke="url(#stream-2)" stroke-width="2.5" fill="none" class="flow-stream" />
+        <path d="M280 490 C330 490, 350 475, 375 475" stroke="url(#stream-3)" stroke-width="2.5" fill="none" class="flow-stream" />
+        <path d="M280 620 C330 620, 350 495, 375 495" stroke="url(#stream-4)" stroke-width="2.5" fill="none" class="flow-stream" />
+
+        <!-- 元特征矩阵穿过并输入元模型 -->
+        <path d="M545 465 L610 465" stroke="#C34B22" stroke-width="3" fill="none" class="flow-stream" />
+        <circle cx="610" cy="465" r="6" fill="#C34B22" />
+        <circle cx="610" cy="465" r="13" stroke="#C34B22" stroke-width="1.5" stroke-opacity="0.35" />
+      </g>
+
+      <!-- 数据集源头指示 (左侧微型数据桩) -->
+      <g transform="translate(10, 380)">
+        <rect x="0" y="0" width="36" height="90" rx="4" fill="#FFFFFF" stroke="#2F7568" stroke-width="1.5" filter="url(#card-shadow)" />
+        <line x1="8" y1="20" x2="28" y2="20" stroke="#2F7568" stroke-width="2" stroke-linecap="round" />
+        <line x1="8" y1="36" x2="28" y2="36" stroke="#2F7568" stroke-width="2" stroke-linecap="round" />
+        <line x1="8" y1="52" x2="28" y2="52" stroke="#2F7568" stroke-width="2" stroke-linecap="round" />
+        <line x1="8" y1="68" x2="24" y2="68" stroke="#2F7568" stroke-width="2" stroke-linecap="round" />
+        <text x="18" y="106" font-family="'Noto Sans SC', sans-serif" font-size="12" fill="#2F7568" font-weight="600" text-anchor="middle">训练集 X</text>
+      </g>
+
+      <!-- 第一层：基模型卡片集合 (Level-0 Base Learners) -->
+      <g>
+        <!-- 分区标签 -->
+        <text x="110" y="156" font-family="'Noto Sans SC', sans-serif" font-size="14" font-weight="700" fill="#27648F" letter-spacing="0.08em">初级学习层 · LEVEL-0</text>
+        <text x="110" y="178" font-family="'Noto Sans SC', sans-serif" font-size="13" fill="#536A78">异构模型群自主提取预测</text>
+
+        <!-- Base Model 1: Random Forest / Tree -->
+        <g transform="translate(110, 192)" filter="url(#card-shadow)">
+          <rect width="170" height="76" rx="8" fill="#FFFFFF" stroke="#D1DFE7" stroke-width="1.5" />
+          <rect x="0" y="0" width="6" height="76" rx="3" fill="#27648F" />
+          <text x="22" y="32" font-family="'Noto Sans SC', sans-serif" font-size="15" font-weight="700" fill="#122634">基模型 1</text>
+          <text x="22" y="52" font-family="'Noto Sans SC', sans-serif" font-size="13" fill="#536A78">随机森林 (RF)</text>
+          <circle cx="148" cy="38" r="14" fill="#F2F6F8" />
+          <path d="M148 30 L142 42 L154 42 Z" fill="#27648F" opacity="0.8" />
+        </g>
+
+        <!-- Base Model 2: Gradient Boosting -->
+        <g transform="translate(110, 322)" filter="url(#card-shadow)">
+          <rect width="170" height="76" rx="8" fill="#FFFFFF" stroke="#D1DFE7" stroke-width="1.5" />
+          <rect x="0" y="0" width="6" height="76" rx="3" fill="#27648F" />
+          <text x="22" y="32" font-family="'Noto Sans SC', sans-serif" font-size="15" font-weight="700" fill="#122634">基模型 2</text>
+          <text x="22" y="52" font-family="'Noto Sans SC', sans-serif" font-size="13" fill="#536A78">梯度提升 (GBDT)</text>
+          <circle cx="148" cy="38" r="14" fill="#F2F6F8" />
+          <path d="M142 42 L146 36 L150 40 L154 32" stroke="#27648F" stroke-width="2" fill="none" stroke-linecap="round" />
+        </g>
+
+        <!-- Base Model 3: Support Vector Machine -->
+        <g transform="translate(110, 452)" filter="url(#card-shadow)">
+          <rect width="170" height="76" rx="8" fill="#FFFFFF" stroke="#D1DFE7" stroke-width="1.5" />
+          <rect x="0" y="0" width="6" height="76" rx="3" fill="#27648F" />
+          <text x="22" y="32" font-family="'Noto Sans SC', sans-serif" font-size="15" font-weight="700" fill="#122634">基模型 3</text>
+          <text x="22" y="52" font-family="'Noto Sans SC', sans-serif" font-size="13" fill="#536A78">支持向量机 (SVM)</text>
+          <circle cx="148" cy="38" r="14" fill="#F2F6F8" />
+          <line x1="141" y1="44" x2="155" y2="32" stroke="#27648F" stroke-width="2" />
+        </g>
+
+        <!-- Base Model 4: Neural Net / Linear -->
+        <g transform="translate(110, 582)" filter="url(#card-shadow)">
+          <rect width="170" height="76" rx="8" fill="#FFFFFF" stroke="#D1DFE7" stroke-width="1.5" />
+          <rect x="0" y="0" width="6" height="76" rx="3" fill="#27648F" />
+          <text x="22" y="32" font-family="'Noto Sans SC', sans-serif" font-size="15" font-weight="700" fill="#122634">基模型 4</text>
+          <text x="22" y="52" font-family="'Noto Sans SC', sans-serif" font-size="13" fill="#536A78">多层感知机 (MLP)</text>
+          <circle cx="148" cy="38" r="14" fill="#F2F6F8" />
+          <circle cx="144" cy="38" r="3" fill="#27648F" />
+          <circle cx="152" cy="34" r="3" fill="#27648F" />
+          <circle cx="152" cy="42" r="3" fill="#27648F" />
+        </g>
+      </g>
+
+      <!-- 中间过渡区：元特征矩阵示意 (Meta-Feature Matrix) -->
+      <g transform="translate(375, 385)">
+        <rect x="0" y="0" width="170" height="160" rx="8" fill="#FFFFFF" stroke="#C34B22" stroke-dasharray="4 3" stroke-width="1.5" filter="url(#card-shadow)" />
+        <text x="85" y="26" font-family="'Noto Sans SC', sans-serif" font-size="13" font-weight="700" fill="#C34B22" text-anchor="middle">折外预测元特征矩阵</text>
+        <text x="85" y="44" font-family="'Noto Sans SC', sans-serif" font-size="11" fill="#536A78" text-anchor="middle">S = [p₁  p₂  p₃  p₄]</text>
+        
+        <!-- 表格特征行与样本点列 -->
+        <g transform="translate(16, 54)">
+          <rect width="138" height="20" rx="3" fill="#F2F6F8" />
+          <text x="12" y="15" font-family="'Noto Sans SC', sans-serif" font-size="11" fill="#27648F" font-weight="600">x₁ → [0.82, 0.79, 0.91, 0.85]</text>
+        </g>
+        <g transform="translate(16, 78)">
+          <rect width="138" height="20" rx="3" fill="#F2F6F8" />
+          <text x="12" y="15" font-family="'Noto Sans SC', sans-serif" font-size="11" fill="#27648F" font-weight="600">x₂ → [0.15, 0.22, 0.18, 0.10]</text>
+        </g>
+        <g transform="translate(16, 102)">
+          <rect width="138" height="20" rx="3" fill="#F2F6F8" />
+          <text x="12" y="15" font-family="'Noto Sans SC', sans-serif" font-size="11" fill="#27648F" font-weight="600">x₃ → [0.63, 0.58, 0.72, 0.60]</text>
+        </g>
+        <text x="85" y="142" font-family="'Noto Sans SC', sans-serif" font-size="11" fill="#2F7568" font-weight="600" text-anchor="middle">无标签泄漏的真实泛化预测</text>
+      </g>
+
+      <!-- 第二层：元学习器与最终决策 (Level-1 Meta-Learner) -->
+      <g transform="translate(620, 310)">
+        <!-- 分区标签 -->
+        <text x="0" y="-30" font-family="'Noto Sans SC', sans-serif" font-size="14" font-weight="700" fill="#C34B22" letter-spacing="0.08em">次级元学习层 · LEVEL-1</text>
+        <text x="0" y="-10" font-family="'Noto Sans SC', sans-serif" font-size="13" fill="#536A78">基于初级预测学习最佳组合策略</text>
+
+        <!-- 元学习器核心卡片 -->
+        <g filter="url(#meta-glow)">
+          <rect width="215" height="270" rx="12" fill="url(#meta-grad)" stroke="#C34B22" stroke-width="2" />
+          
+          <rect x="20" y="24" width="86" height="24" rx="4" fill="rgba(195, 75, 34, 0.12)" />
+          <text x="63" y="41" font-family="'Noto Sans SC', sans-serif" font-size="12" font-weight="700" fill="#C34B22" text-anchor="middle">META MODEL</text>
+
+          <text x="20" y="80" font-family="'Noto Sans SC', sans-serif" font-size="20" font-weight="700" fill="#122634">元学习器</text>
+          <text x="20" y="104" font-family="'Noto Sans SC', sans-serif" font-size="13" fill="#536A78">逻辑回归 / 线性回归</text>
+
+          <!-- 组合机制示意图谱 -->
+          <g transform="translate(20, 126)">
+            <rect width="175" height="70" rx="6" fill="#FFFFFF" stroke="#E2EBF0" />
+            <text x="12" y="24" font-family="'Noto Sans SC', sans-serif" font-size="12" fill="#536A78">自适应学习组合权重：</text>
+            <text x="12" y="48" font-family="'Noto Sans SC', sans-serif" font-size="14" font-weight="700" fill="#C34B22">ŷ = g(w₁p₁ + ... + w₄p₄)</text>
+          </g>
+
+          <!-- 最终输出出口指示 -->
+          <line x1="215" y1="155" x2="255" y2="155" stroke="#C34B22" stroke-width="3" stroke-linecap="round" />
+          <polygon points="255,149 267,155 255,161" fill="#C34B22" />
+          <text x="107" y="238" font-family="'Noto Sans SC', sans-serif" font-size="13" font-weight="600" fill="#237052" text-anchor="middle">输出高阶鲁棒集成预测</text>
+        </g>
+      </g>
+    </svg>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 20, total: 27 });
+  </script>
+</body>
+</html>

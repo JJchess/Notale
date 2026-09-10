@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    /* Swiss Grid 严格工程纸排版 */
+    #stage {
+      padding: 44px 56px 40px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 顶部题头区 */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2px solid var(--text);
+      padding-bottom: 14px;
+      margin-bottom: 22px;
+    }
+    .header-main {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .header-meta {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .meta-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-dim);
+      font-weight: 500;
+    }
+    .meta-tag span.badge {
+      font-family: var(--font-display);
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    /* 主工作区两栏结构：左侧损失函数曲线与惩罚解析，右侧公式推导与样本检验台 */
+    .workbench {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 36px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧图解模块 */
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      background: #FFFFFF;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 16px 20px 14px;
+      min-width: 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .panel-head .title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .panel-head .sub {
+      font-size: 13px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+
+    /* 真实标签切换控件 */
+    .label-toggle {
+      display: flex;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background: var(--bg-subtle);
+      flex-shrink: 0;
+    }
+    .toggle-btn {
+      appearance: none;
+      border: none;
+      background: transparent;
+      padding: 6px 14px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
+    }
+    .toggle-btn.active[data-target="1"] {
+      background: var(--class-a);
+      color: #FFF;
+    }
+    .toggle-btn.active[data-target="0"] {
+      background: var(--class-b);
+      color: #FFF;
+    }
+
+    /* 图表容器 */
+    .chart-container {
+      position: relative;
+      flex: 1;
+      min-height: 320px;
+    }
+    #chart {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 滑块交互探针区 */
+    .probe-bar {
+      margin-top: 10px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .probe-control {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+    }
+    .probe-control label {
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .slider-wrap {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+    }
+    .slider-wrap input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+      height: 6px;
+    }
+    .probe-readout {
+      display: flex;
+      gap: 16px;
+      align-items: baseline;
+    }
+    .readout-item {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      font-family: var(--font-mono);
+    }
+    .readout-item .lbl {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: var(--font-sans);
+    }
+    .readout-item .val {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .readout-item .val.highlight {
+      color: var(--accent);
+    }
+
+    /* 图表底部两行直观注释 */
+    .chart-annotations {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 10px;
+      font-size: 13px;
+      line-height: 1.45;
+      padding: 8px 12px;
+      background: var(--bg-subtle);
+      border-radius: var(--radius-sm);
+      border-left: 3px solid var(--border-strong);
+    }
+    .annot-box strong {
+      display: block;
+      color: var(--text);
+      margin-bottom: 2px;
+      font-size: 13px;
+    }
+    .annot-box span {
+      color: var(--text-dim);
+    }
+
+    /* 右侧逻辑与公式推导栏 */
+    .logic-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    /* 公式解析卡片 */
+    .formula-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 16px 18px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .formula-math {
+      padding: 10px 0;
+      text-align: center;
+      font-size: 18px;
+      border-bottom: 1px dashed var(--border);
+      margin-bottom: 10px;
+    }
+    .formula-breakdown {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 13.5px;
+      line-height: 1.5;
+      color: var(--text-dim);
+    }
+    .breakdown-row {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .breakdown-row .tag {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: var(--radius-sm);
+      text-align: center;
+    }
+    .tag-y1 { background: var(--class-a-soft); color: var(--class-a); border: 1px solid var(--class-a); }
+    .tag-y0 { background: var(--class-b-soft); color: var(--class-b); border: 1px solid var(--class-b); }
+
+    /* MSE 对比与极度惩罚解释 */
+    .contrast-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .contrast-card .title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .contrast-card .title::before {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 14px;
+      background: var(--accent);
+    }
+    .contrast-body {
+      font-size: 13.5px;
+      line-height: 1.55;
+      color: var(--text-dim);
+    }
+    .contrast-body b {
+      color: var(--text);
+    }
+
+    /* 批次样本实时求和试算表 */
+    .sample-table-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px 10px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .table-head-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .sample-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      font-family: var(--font-mono);
+      text-align: right;
+    }
+    .sample-table th {
+      padding: 4px 6px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border-strong);
+    }
+    .sample-table td {
+      padding: 5px 6px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+    .sample-table tr:first-child th:first-child,
+    .sample-table tr td:first-child {
+      text-align: left;
+    }
+    .sample-table tr.highlight td {
+      background: #FFF9F7;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .loss-total-bar {
+      margin-top: 6px;
+      padding-top: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-top: 2px solid var(--text);
+      font-size: 13.5px;
+    }
+    .loss-total-bar .val {
+      font-family: var(--font-mono);
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="15">
+  <div id="stage">
+    <!-- 顶部导航与题头 -->
+    <header>
+      <div class="header-main">
+        <h1 class="nt-title">损失函数：二元交叉熵如何量化概率分布差距</h1>
+        <p class="nt-subtitle">从对数似然推导凸性惩罚曲线，理解为何均方误差在二分类中会导致梯度消失</p>
+      </div>
+      <div class="header-meta">
+        <div class="meta-tag"><span class="badge">SECTION 08</span> 二分类损失机制</div>
+        <div class="meta-tag">Loss: Log-Likelihood</div>
+      </div>
+    </header>
+
+    <!-- 主展示区 -->
+    <div class="workbench">
+      <!-- 左栏：交互式损失函数曲线图 -->
+      <section class="chart-panel">
+        <div class="panel-head">
+          <div class="title-group">
+            <span class="nt-section-title">二元交叉熵损失曲线与梯度斜率</span>
+            <span class="sub">Binary Cross-Entropy Loss vs. Output Probability p</span>
+          </div>
+          <div class="label-toggle" role="radiogroup" aria-label="真实类别切换">
+            <button type="button" class="toggle-btn active" data-target="1" aria-checked="true">真实标签 y = 1（正例）</button>
+            <button type="button" class="toggle-btn" data-target="0" aria-checked="false">真实标签 y = 0（负例）</button>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <div id="chart"></div>
+        </div>
+
+        <!-- 交互滑块探针 -->
+        <div class="probe-bar">
+          <div class="probe-control">
+            <label for="prob-slider">调节预测概率 p：</label>
+            <div class="slider-wrap">
+              <input type="range" id="prob-slider" min="0.01" max="0.99" step="0.01" value="0.80">
+            </div>
+          </div>
+          <div class="probe-readout">
+            <div class="readout-item">
+              <span class="lbl">预测概率 p:</span>
+              <span class="val" id="readout-prob">0.80</span>
+            </div>
+            <div class="readout-item">
+              <span class="lbl">BCE 损失:</span>
+              <span class="val highlight" id="readout-loss">0.223</span>
+            </div>
+            <div class="readout-item">
+              <span class="lbl">梯度 |∂L/∂z|:</span>
+              <span class="val" id="readout-grad">0.200</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 教学几何说明 -->
+        <div class="chart-annotations">
+          <div class="annot-box">
+            <strong>对数惩罚的不对称性</strong>
+            <span id="annot-asymmetry">真实值 y = 1 时：预测 p 越接近 1，损失趋向 0；预测越远离 1，损失急剧飙升至无穷。</span>
+          </div>
+          <div class="annot-box">
+            <strong>为什么不采用均方误差 (MSE)？</strong>
+            <span>Sigmoid 输出在接近 0 或 1 时导数饱和；BCE 与 Sigmoid 配合求导正好对消饱和项，使梯度保持与误差成正比。</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：数学推导与 4 样本小批量试算 -->
+      <section class="logic-panel">
+        <!-- 公式卡片 -->
+        <div class="formula-card">
+          <div class="nt-section-title" style="font-size: 16px; margin-bottom: 4px;">单样本二元交叉熵定义</div>
+          <div class="formula-math" id="formula-bce">
+            <!-- 由 KaTeX 填充 -->
+          </div>
+          <div class="formula-breakdown">
+            <div class="breakdown-row">
+              <span class="tag tag-y1">当 y = 1 时</span>
+              <span>(1-y) 项清零，损失简缩为 -ln(p)。预测越接近 1，损失越小。</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="tag tag-y0">当 y = 0 时</span>
+              <span>y 项清零，损失简缩为 -ln(1-p)。预测越接近 0，损失越小。</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 梯度解析卡片 -->
+        <div class="contrast-card">
+          <div class="title">反向传播的完美契合：优雅的梯度</div>
+          <div class="contrast-body">
+            设末层未激活输出为 z，则 p = σ(z)。应用链式法则：
+            <div id="formula-gradient" style="margin: 8px 0; text-align: center; font-size: 15px;"></div>
+            Sigmoid 导数中产生的 p(1-p) 与交叉熵分母完全对消，回传梯度<b>恰好就是预测误差 (p - y)</b>。
+          </div>
+        </div>
+
+        <!-- 批量样本试算表 -->
+        <div class="sample-table-card">
+          <div class="table-head-row">
+            <div class="nt-section-title" style="font-size: 15px;">Mini-Batch 损失加权试算</div>
+            <span style="font-size: 12px; color: var(--muted); font-family: var(--font-mono);">N = 4 Samples</span>
+          </div>
+          <table class="sample-table">
+            <thead>
+              <tr>
+                <th>样本</th>
+                <th>真实标签 y</th>
+                <th>预测概率 p</th>
+                <th>状态判定</th>
+                <th>单点损失</th>
+              </tr>
+            </thead>
+            <tbody id="batch-tbody">
+              <!-- JS 渲染 -->
+            </tbody>
+          </table>
+          <div class="loss-total-bar">
+            <span>批次均值损失 $\mathcal{L}_{batch} = \frac{1}{N}\sum \mathcal{L}_i$</span>
+            <span class="val" id="batch-mean-loss">0.731</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看屏幕。上一节课我们通过前向传播，让网络在最后一层输出了一个介于 0 到 1 之间的概率值 y_hat。
+    那我们怎么衡量这个概率值到底准不准呢？
+    很多同学第一反应是：用回归里的均方差（MSE）行不行？答案是在分类问题中极不合适。
+    大家看左边这条由对数函数构成的损失曲线。当我们设定真实标签 y=1 时，如果网络预测是 0.9，损失只有 0.1；但如果网络极度自信却判断错了，预测成了 0.05，二元交叉熵损失会陡增到接近 3，甚至趋近无穷大！这种对“傲慢而错误”的严厉惩罚，是 MSE 远远做不到的。
+    更奇妙的是数学上的对消：右下角这个公式展示了为什么 Sigmoid 一定要配交叉熵——Sigmoid 在两端的导数本来会平缓到接近 0（也就是著名的梯度消失），但交叉熵的导数分母正好把这个因子消掉了，最终回传给参数的梯度就是干净的 (y_hat - y)。预测差多远，回传梯度就有多大！
+  </aside>
+
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      // 1. 初始化底盘翻页与文档标题
+      Deck.init({ index: 8, total: 15, title: "损失函数：用二元交叉熵量化预测概率分布与真实标签的差距" });
+
+      // 2. KaTeX 公式排版
+      var elFormulaBce = document.getElementById("formula-bce");
+      var elFormulaGrad = document.getElementById("formula-gradient");
+      var elBatchLossLabel = document.querySelector(".loss-total-bar span");
+      if (window.katex) {
+        katex.render(
+          "\\mathcal{L}(y, \\hat{y}) = -\\Big[ y \\ln(\\hat{y}) + (1 - y) \\ln(1 - \\hat{y}) \\Big]",
+          elFormulaBce,
+          { throwOnError: false, displayMode: true }
+        );
+        katex.render(
+          "\\frac{\\partial \\mathcal{L}}{\\partial z} = \\frac{\\partial \\mathcal{L}}{\\partial \\hat{y}} \\cdot \\frac{\\partial \\hat{y}}{\\partial z} = \\left( -\\frac{y}{\\hat{y}} + \\frac{1-y}{1-\\hat{y}} \\right) \\cdot \\hat{y}(1-\\hat{y}) = \\hat{y} - y",
+          elFormulaGrad,
+          { throwOnError: false, displayMode: false }
+        );
+        if (elBatchLossLabel) {
+          katex.render(
+            "\\text{批次均值损失 } \\mathcal{L}_{\\text{batch}} = \\frac{1}{N} \\sum_{i=1}^N \\mathcal{L}_i",
+            elBatchLossLabel,
+            { throwOnError: false, displayMode: false }
+          );
+        }
+      }
+
+      // 3. 状态管理
+      var state = {
+        targetY: 1,      // 真实标签 1 或 0
+        predProb: 0.80   // 滑块当前概率
+      };
+
+      // 批次样本定义（4 个典型样本，反映确定预测、微小偏差、临界犹豫、严重误判）
+      var batchSamples = [
+        { id: "S1", y: 1, prob: 0.92, note: "准确正例" },
+        { id: "S2", y: 1, prob: 0.75, note: "偏向正确" },
+        { id: "S3", y: 0, prob: 0.35, note: "偏向正确" },
+        { id: "S4", y: 0, prob: 0.88, note: "严重误判" }
+      ];
+
+      // 计算 BCE 损失（带数值保护 eps = 1e-7）
+      function bceLoss(y, p) {
+        var eps = 1e-7;
+        var pClamped = Math.max(eps, Math.min(1 - eps, p));
+        return -(y * Math.log(pClamped) + (1 - y) * Math.log(1 - pClamped));
+      }
+
+      // 均方误差 (MSE) 作为参照线：(p - y)^2
+      function mseLoss(y, p) {
+        return Math.pow(p - y, 2);
+      }
+
+      // DOM 引用
+      var slider = document.getElementById("prob-slider");
+      var readoutProb = document.getElementById("readout-prob");
+      var readoutLoss = document.getElementById("readout-loss");
+      var readoutGrad = document.getElementById("readout-grad");
+      var toggleBtns = document.querySelectorAll(".toggle-btn");
+      var chartHost = document.getElementById("chart");
+      var annotAsymmetry = document.getElementById("annot-asymmetry");
+      var batchTbody = document.getElementById("batch-tbody");
+      var batchMeanLossEl = document.getElementById("batch-mean-loss");
+
+      // 4. 渲染批次样本表格
+      function renderBatchTable() {
+        var html = "";
+        var totalLoss = 0;
+        batchSamples.forEach(function(s, idx) {
+          var loss = bceLoss(s.y, s.prob);
+          totalLoss += loss;
+          var isHighPenalty = loss > 1.0;
+          html += '<tr class="' + (isHighPenalty ? "highlight" : "") + '">';
+          html += '<td>' + s.id + '</td>';
+          html += '<td><span class="meta-tag" style="padding:1px 6px; font-size:11px;">' + s.y + '</span></td>';
+          html += '<td>' + s.prob.toFixed(2) + '</td>';
+          html += '<td style="font-family: var(--font-sans); font-size:12px;">' + s.note + '</td>';
+          html += '<td>' + loss.toFixed(3) + '</td>';
+          html += '</tr>';
+        });
+        batchTbody.innerHTML = html;
+        batchMeanLossEl.textContent = (totalLoss / batchSamples.length).toFixed(3);
+      }
+      renderBatchTable();
+
+      // 5. 初始化 ECharts 曲线
+      var chart = echarts.init(chartHost, null, { renderer: "svg" });
+
+      // 生成采样数据 (0.01 到 0.99)
+      function generateCurveData(targetY) {
+        var bcePoints = [];
+        var msePoints = [];
+        for (var i = 1; i <= 99; i++) {
+          var p = i / 100;
+          bcePoints.push([p, bceLoss(targetY, p)]);
+          msePoints.push([p, mseLoss(targetY, p)]);
+        }
+        return { bce: bcePoints, mse: msePoints };
+      }
+
+      function updateChart() {
+        var curve = generateCurveData(state.targetY);
+        var curLoss = bceLoss(state.targetY, state.predProb);
+        var curGrad = Math.abs(state.predProb - state.targetY);
+
+        var primaryColor = state.targetY === 1 ? "#1E6B65" : "#B64D79";
+        var softFillColor = state.targetY === 1 ? "rgba(30, 107, 101, 0.08)" : "rgba(182, 77, 121, 0.08)";
+
+        var option = {
+          animationDuration: 300,
+          grid: {
+            left: 56,
+            right: 48,
+            top: 36,
+            bottom: 44
+          },
+          tooltip: {
+            trigger: "axis",
+            axisPointer: { type: "cross", lineStyle: { color: "#9BA6A0", type: "dashed" } },
+            formatter: function(params) {
+              var pVal = parseFloat(params[0].value[0]).toFixed(2);
+              var bceVal = parseFloat(params[0].value[1]).toFixed(3);
+              var mseVal = parseFloat(params[1].value[1]).toFixed(3);
+              return "预测概率 p = " + pVal + "<br/>" +
+                     "<span style='color:" + primaryColor + "; font-weight:700;'>BCE 损失: " + bceVal + "</span><br/>" +
+                     "<span style='color:#64706A;'>MSE 参照: " + mseVal + "</span>";
+            }
+          },
+          xAxis: {
+            type: "value",
+            name: "预测概率 p",
+            nameLocation: "middle",
+            nameGap: 26,
+            min: 0,
+            max: 1,
+            interval: 0.1,
+            axisLine: { lineStyle: { color: "#9BA6A0" } },
+            axisTick: { show: true },
+            axisLabel: {
+              color: "#3E4743",
+              fontFamily: "ui-monospace, monospace",
+              formatter: function(v) { return v.toFixed(1); }
+            },
+            splitLine: { lineStyle: { color: "#E0E5E1", type: "dashed" } }
+          },
+          yAxis: {
+            type: "value",
+            name: "损失值 Loss",
+            nameTextStyle: { align: "right", color: "#3E4743", padding: [0, 8, 0, 0] },
+            min: 0,
+            max: 4.5,
+            interval: 1.0,
+            axisLine: { lineStyle: { color: "#9BA6A0" } },
+            axisLabel: {
+              color: "#3E4743",
+              fontFamily: "ui-monospace, monospace",
+              formatter: function(v) { return v.toFixed(1); }
+            },
+            splitLine: { lineStyle: { color: "#E0E5E1", type: "dashed" } }
+          },
+          series: [
+            {
+              name: "二元交叉熵 (BCE)",
+              type: "line",
+              data: curve.bce,
+              smooth: true,
+              showSymbol: false,
+              lineStyle: { width: 3.5, color: primaryColor },
+              areaStyle: { color: softFillColor }
+            },
+            {
+              name: "均方误差参照 (MSE)",
+              type: "line",
+              data: curve.mse,
+              smooth: true,
+              showSymbol: false,
+              lineStyle: { width: 1.8, color: "#9BA6A0", type: "dashed" }
+            },
+            {
+              name: "当前探针位置",
+              type: "scatter",
+              data: [[state.predProb, curLoss]],
+              symbolSize: 13,
+              itemStyle: {
+                color: "#E03E2D",
+                borderColor: "#FFFFFF",
+                borderWidth: 2,
+                shadowBlur: 6,
+                shadowColor: "rgba(224, 62, 45, 0.4)"
+              },
+              markLine: {
+                symbol: "none",
+                silent: true,
+                lineStyle: { color: "#E03E2D", type: "dotted", width: 1.5 },
+                label: { show: false },
+                data: [
+                  { xAxis: state.predProb },
+                  { yAxis: curLoss }
+                ]
+              },
+              markPoint: {
+                symbol: "circle",
+                symbolSize: 8,
+                itemStyle: { color: "#FFFFFF", borderColor: "#E03E2D", borderWidth: 2 },
+                data: [
+                  { coord: [state.predProb, curLoss] }
+                ]
+              }
+            }
+          ]
+        };
+
+        chart.setOption(option);
+
+        // 更新探针读数与文字
+        readoutProb.textContent = state.predProb.toFixed(2);
+        readoutLoss.textContent = curLoss.toFixed(3);
+        readoutGrad.textContent = curGrad.toFixed(3);
+
+        if (state.targetY === 1) {
+          annotAsymmetry.textContent = "真实值 y = 1 时：预测 p 越接近 1，损失趋向 0；预测越远离 1，损失急剧飙升至无穷。";
+        } else {
+          annotAsymmetry.textContent = "真实值 y = 0 时：预测 p 越接近 0，损失趋向 0；预测越远离 0，损失急剧飙升至无穷。";
+        }
+      }
+
+      // 监听窗口缩放与底盘事件
+      var ro = new ResizeObserver(function() {
+        chart.resize();
+      });
+      ro.observe(chartHost);
+
+      // 滑块事件
+      slider.addEventListener("input", function(e) {
+        state.predProb = parseFloat(e.target.value);
+        updateChart();
+      });
+
+      // 真实类别切换按钮
+      toggleBtns.forEach(function(btn) {
+        btn.addEventListener("click", function() {
+          toggleBtns.forEach(function(b) {
+            b.classList.remove("active");
+            b.setAttribute("aria-checked", "false");
+          });
+          btn.classList.add("active");
+          btn.setAttribute("aria-checked", "true");
+          state.targetY = parseInt(btn.dataset.target, 10);
+          updateChart();
+        });
+      });
+
+      // 首次绘制
+      updateChart();
+
+      // 清理
+      window.addEventListener("pagehide", function() {
+        ro.disconnect();
+        chart.dispose();
+      });
+    })();
+  </script>
+</body>
+</html>

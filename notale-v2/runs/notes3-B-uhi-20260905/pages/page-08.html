@@ -1,0 +1,833 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>城市地表能量分配与昼夜热岛响应</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      font-family: var(--font-sans);
+      box-sizing: border-box;
+      background: var(--bg);
+    }
+
+    /* 顶栏：标题与核心结论导引 */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--muted);
+      padding-bottom: 12px;
+    }
+    .title-wrap h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+    .title-wrap p {
+      margin: 4px 0 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .regime-badge {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    /* 主工作区：左侧控制与地表剖面，右侧24小时通量与温度响应曲线 */
+    .sim-grid {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 控制面板 */
+    .panel-left {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      padding: 16px;
+    }
+    .panel-left h2 {
+      margin: 0;
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .scenario-btns {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .scenario-btn {
+      background: var(--bg);
+      border: 1px solid var(--muted);
+      color: var(--text);
+      padding: 7px 4px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      border-radius: 3px;
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--dur) var(--ease);
+    }
+    .scenario-btn[aria-pressed="true"] {
+      background: var(--observed);
+      color: #fff;
+      border-color: var(--observed);
+      font-weight: 700;
+    }
+
+    .ctl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.45);
+      padding: 12px;
+      border-radius: 3px;
+      border: 1px solid rgba(80, 100, 107, 0.15);
+    }
+    .ctl-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .ctl-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      font-weight: 500;
+    }
+    .ctl-head .val {
+      font-family: var(--font-num);
+      font-weight: 700;
+    }
+    .ctl-row input[type="range"] {
+      width: 100%;
+      accent-color: var(--focus);
+      cursor: pointer;
+      margin: 2px 0;
+    }
+    .ctl-desc {
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* 地表能量微缩示意 */
+    .surface-diag {
+      margin-top: auto;
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .surface-diag-title {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .surface-bars {
+      display: flex;
+      height: 18px;
+      border-radius: 2px;
+      overflow: hidden;
+      border: 1px solid rgba(0,0,0,0.1);
+    }
+    .bar-veg { background: var(--vegetation); height: 100%; }
+    .bar-imp { background: var(--heat); height: 100%; }
+    .surface-legend {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .surface-legend span {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+
+    /* 右侧主视窗 */
+    .panel-right {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* 指标卡行 */
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      padding: 10px 14px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .metric-val {
+      font-size: var(--fs-h2);
+      font-family: var(--font-num);
+      font-weight: 700;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+    .metric-val .unit {
+      font-size: var(--fs-tick);
+      font-weight: 400;
+      color: var(--muted);
+    }
+    .metric-val.heat { color: var(--heat); }
+    .metric-val.cool { color: var(--cooling); }
+
+    /* 24小时物理图表区 */
+    .chart-container {
+      flex: 1;
+      min-height: 0;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      padding: 12px 16px 8px 16px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .chart-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .chart-legend {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .chart-legend .li {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .line-sw {
+      width: 14px;
+      height: 3px;
+      border-radius: 1px;
+      display: inline-block;
+    }
+
+    .canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 底部物理机制因果解读 */
+    .diag-box {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      padding: 10px 14px;
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .diag-text b {
+      color: var(--heat);
+    }
+    .diag-badge {
+      font-size: var(--fs-tick);
+      padding: 2px 8px;
+      background: var(--surface);
+      border: 1px solid var(--muted);
+      border-radius: 3px;
+      color: var(--text);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body data-page="08" data-total="19">
+  <div id="stage">
+    <header class="header">
+      <div class="title-wrap">
+        <h1>城市地表能量分配与昼夜热岛响应</h1>
+        <p>调整不透水率、人为热与风速，观察 24 小时地表通量与气温差的物理耦合演变</p>
+      </div>
+      <div class="regime-badge">
+        <button id="reset-btn" class="btn" style="padding:6px 14px; font-size:var(--fs-label); cursor:pointer; background:var(--surface); border:1px solid var(--muted); border-radius:3px;">重置基准</button>
+      </div>
+    </header>
+
+    <div class="sim-grid">
+      <!-- 左栏：情景与物理参数滑杆 -->
+      <section class="panel-left min0" aria-label="模型控制输入">
+        <h2>典型城市下垫面情景</h2>
+        <div class="scenario-btns" role="group" aria-label="快速情景选择">
+          <button type="button" class="scenario-btn" data-scene="commercial" aria-pressed="false">高密商业区</button>
+          <button type="button" class="scenario-btn" data-scene="residential" aria-pressed="true">中密居住区</button>
+          <button type="button" class="scenario-btn" data-scene="eco" aria-pressed="false">生态绿网区</button>
+        </div>
+
+        <div class="ctl-group">
+          <div class="ctl-row">
+            <div class="ctl-head">
+              <span>不透水铺装率 (1 - f_veg)</span>
+              <span class="val" id="val-imperv">70%</span>
+            </div>
+            <input type="range" id="param-imperv" min="10" max="95" step="5" value="70">
+            <div class="ctl-desc">
+              <span>高植被蒸散 (10%)</span>
+              <span>纯硬化截留 (95%)</span>
+            </div>
+          </div>
+
+          <div class="ctl-row">
+            <div class="ctl-head">
+              <span>人为热峰值通量 (Q_F max)</span>
+              <span class="val" id="val-qf">45 W/m²</span>
+            </div>
+            <input type="range" id="param-qf" min="0" max="120" step="5" value="45">
+            <div class="ctl-desc">
+              <span>郊区基线 (0 W/m²)</span>
+              <span>高密度交通与空调 (120 W/m²)</span>
+            </div>
+          </div>
+
+          <div class="ctl-row">
+            <div class="ctl-head">
+              <span>背景风速 (通风与对流条件)</span>
+              <span class="val" id="val-wind">1.8 m/s</span>
+            </div>
+            <input type="range" id="param-wind" min="0.5" max="5.0" step="0.1" value="1.8">
+            <div class="ctl-desc">
+              <span>微风静稳 (0.5 m/s)</span>
+              <span>强混合扩散 (5.0 m/s)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="surface-diag">
+          <div class="surface-diag-title">地表覆盖成分示意</div>
+          <div class="surface-bars">
+            <div class="bar-veg" id="bar-veg" style="width: 30%;"></div>
+            <div class="bar-imp" id="bar-imp" style="width: 70%;"></div>
+          </div>
+          <div class="surface-legend">
+            <span><i class="dot" style="background:var(--vegetation);"></i>植被 (潜热 Q_E)</span>
+            <span><i class="dot" style="background:var(--heat);"></i>硬化面 (储热 ΔQ_S & 显热)</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：24小时通量分解与气温响应 -->
+      <section class="panel-right min0">
+        <div class="metric-row">
+          <div class="metric-card">
+            <span class="metric-label">日间正午热岛强度 (ΔT_day)</span>
+            <span class="metric-val" id="res-dt-day">+1.8 <span class="unit">°C</span></span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">夜间最大热岛强度 (ΔT_night)</span>
+            <span class="metric-val heat" id="res-dt-night">+3.6 <span class="unit">°C</span></span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">波文比 (Q_H / Q_E 正午)</span>
+            <span class="metric-val" id="res-bowen">2.8 <span class="unit">无量纲</span></span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">夜间地表释放通量 (-ΔQ_S)</span>
+            <span class="metric-val cool" id="res-release">42 <span class="unit">W/m²</span></span>
+          </div>
+        </div>
+
+        <div class="chart-container min0">
+          <div class="chart-header">
+            <div class="chart-title">
+              <span>24小时能量通量与温差物理响应模拟</span>
+            </div>
+            <div class="chart-legend">
+              <span class="li"><i class="line-sw" style="background:var(--heat);"></i>显热 Q_H (城市)</span>
+              <span class="li"><i class="line-sw" style="background:var(--cooling);"></i>潜热 Q_E (蒸散)</span>
+              <span class="li"><i class="line-sw" style="background:#8C6239;"></i>储热项 ΔQ_S</span>
+              <span class="li"><i class="line-sw" style="background:var(--text); border-top: 2px dashed var(--text); height:0;"></i>热岛温差 (ΔT = T_urb - T_rur)</span>
+            </div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="sim-canvas" class="cv-fill"></canvas>
+          </div>
+        </div>
+
+        <div class="diag-box">
+          <div class="diag-text" id="diag-summary">
+            由于大比热容铺装白天大量储热（ΔQ_S 吸热），且缺乏潜热蒸散缓冲，热量在夜间持续释放加热近地层，形成<b>典型夜间热岛峰值</b>。
+          </div>
+          <div class="diag-badge" id="diag-phase">储热迟滞主导型</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 状态模型
+      const state = {
+        imperv: 70, // % 不透水比例 (0 - 100)
+        qf_max: 45, // W/m^2 人为热峰值
+        wind: 1.8,  // m/s 背景风速
+        activeScene: 'residential'
+      };
+
+      const scenes = {
+        commercial: { imperv: 90, qf_max: 85, wind: 1.2 },
+        residential: { imperv: 70, qf_max: 45, wind: 1.8 },
+        eco: { imperv: 25, qf_max: 15, wind: 2.2 }
+      };
+
+      // 物理计算模型：根据能量收支方程 R_n + Q_F = Q_H + Q_E + ΔQ_S
+      // 计算24小时每小时的通量分布与温度演化
+      function simulate24h(params) {
+        const hours = 24;
+        const impervFrac = params.imperv / 100;
+        const vegFrac = 1 - impervFrac;
+        const qfPeak = params.qf_max;
+        const wind = params.wind;
+
+        const data = {
+          t: [],
+          Rn: [],
+          QH: [],
+          QE: [],
+          dQS: [],
+          QF: [],
+          dt_uhi: []
+        };
+
+        // 简化的物理积分温度演化
+        // 郊区地表储热系数较小，植被高，夜间降温快
+        // 城市热容量与不透水率正相关，白天吸收储热，夜间持续释热
+        let urb_heat_accum = 0;
+        let rur_heat_accum = 0;
+
+        for (let h = 0; h <= hours; h++) {
+          const hour = h % 24;
+          data.t.push(h);
+
+          // 净辐射 Rn 近似正弦 (正午 12h 达到峰值 ~ 600 W/m2，夜间为负长波辐射 ~ -60 W/m2)
+          let solar = 0;
+          if (hour >= 6 && hour <= 18) {
+            solar = Math.sin((hour - 6) / 12 * Math.PI) * 720;
+          }
+          const Rn = solar - 65; // 净辐射
+          data.Rn.push(Rn);
+
+          // 人为热日变化曲线 (早晚高峰双峰 + 白天办公空调)
+          let qf_factor = 0.2;
+          if (hour >= 7 && hour <= 22) {
+            qf_factor = 0.6 + 0.4 * Math.sin((hour - 7) / 15 * Math.PI);
+            if (hour === 8 || hour === 18) qf_factor += 0.2; // 交通尖峰
+          }
+          const QF = qfPeak * qf_factor;
+          data.QF.push(QF);
+
+          // 城市能量平衡分配：
+          // 白天 Rn > 0：
+          // 蒸散潜热 QE 受植被覆盖率严格限制 (QE <= vegFrac * max_evap)
+          // 储热 dQS 与建筑材料蓄热率成正比
+          // 显热 QH = Rn + QF - QE - dQS
+          let QE, dQS, QH;
+
+          if (Rn > 0) {
+            // 白天
+            const potential_evap = Rn * 0.55;
+            QE = potential_evap * vegFrac; // 植被越多潜热越高
+            // 储热占比随硬化率增加
+            const storage_fraction = 0.15 + 0.35 * impervFrac;
+            dQS = (Rn + QF) * storage_fraction;
+            QH = Rn + QF - QE - dQS;
+          } else {
+            // 夜间：地表向外释放长波辐射，储热层向外释热 (dQS 为负)
+            // 不透水面越大，储热释放通量越大
+            const release_capacity = 20 + 55 * impervFrac;
+            dQS = -release_capacity * (1 - 0.03 * (hour < 6 ? (hour + 6) : (hour - 18)));
+            QE = 5 * vegFrac; // 夜间极弱蒸散或露水
+            QH = Rn + QF - QE - dQS; // 夜间 QH 通常接近 0 或轻微为负，受人为热和释热抵消
+          }
+
+          data.QH.push(QH);
+          data.QE.push(QE);
+          data.dQS.push(dQS);
+
+          // 连续昼夜温度演变动力学模型
+          // 城市热惯性大，储热释放产生相位滞后 (thermal lag)
+          // 白天 (06-18h)：城市显热偏高但由于对流边界层深厚，ΔT 维持在低位 (+0.5 ~ +1.5°C)
+          // 傍晚与夜间 (18-06h)：边界层塌缩，下垫面释放白天蓄热 -dQS，加之低风速阻碍扩散，形成夜间典型热岛峰值
+          let day_factor = Math.sin((hour - 6) / 12 * Math.PI);
+          let day_dt = 0.5 + 1.2 * impervFrac * Math.max(0, day_factor);
+
+          // 夜间释放项滞后峰值在 21:00 - 23:00
+          let night_decay = hour >= 18 ? (hour - 18) / 6 : (hour + 6) / 12;
+          let night_wave = Math.exp(-Math.pow(hour - 21.5, 2) / 18);
+          if (hour < 6) night_wave = Math.exp(-Math.pow(hour + 2.5, 2) / 18); // 凌晨平滑过渡
+          let night_dt = 1.0 + (impervFrac * 3.8 + (qfPeak / 100) * 1.5) * (0.55 + 0.45 * night_wave);
+
+          let dt_ideal;
+          if (hour >= 8 && hour <= 16) {
+            dt_ideal = day_dt;
+          } else if (hour > 16 && hour < 20) {
+            let blend = (hour - 16) / 4;
+            dt_ideal = day_dt * (1 - blend) + night_dt * blend;
+          } else if (hour >= 20 || hour <= 5) {
+            dt_ideal = night_dt;
+          } else {
+            let blend = (hour - 5) / 3;
+            dt_ideal = night_dt * (1 - blend) + day_dt * blend;
+          }
+
+          // 风速平流稀释与对流冲刷
+          const wind_factor = 2.0 / (0.8 + 0.65 * wind);
+          let dt = Math.max(0.2, dt_ideal * wind_factor);
+
+          data.dt_uhi.push(dt);
+        }
+
+        return data;
+      }
+
+      // DOM 元素
+      const paramImperv = document.getElementById('param-imperv');
+      const paramQf = document.getElementById('param-qf');
+      const paramWind = document.getElementById('param-wind');
+      const valImperv = document.getElementById('val-imperv');
+      const valQf = document.getElementById('val-qf');
+      const valWind = document.getElementById('val-wind');
+      const barVeg = document.getElementById('bar-veg');
+      const barImp = document.getElementById('bar-imp');
+
+      const resDtDay = document.getElementById('res-dt-day');
+      const resDtNight = document.getElementById('res-dt-night');
+      const resBowen = document.getElementById('res-bowen');
+      const resRelease = document.getElementById('res-release');
+      const diagSummary = document.getElementById('diag-summary');
+      const diagPhase = document.getElementById('diag-phase');
+      const canvas = document.getElementById('sim-canvas');
+      const resetBtn = document.getElementById('reset-btn');
+      const sceneBtns = document.querySelectorAll('.scenario-btn');
+
+      // 更新界面
+      function update() {
+        valImperv.textContent = `${state.imperv}%`;
+        valQf.textContent = `${state.qf_max} W/m²`;
+        valWind.textContent = `${state.wind.toFixed(1)} m/s`;
+
+        barVeg.style.width = `${100 - state.imperv}%`;
+        barImp.style.width = `${state.imperv}%`;
+
+        // 运行物理仿真
+        const sim = simulate24h(state);
+
+        // 指标提取
+        // 正午 12h 指标
+        const midday_idx = 12;
+        const qh_mid = sim.QH[midday_idx];
+        const qe_mid = Math.max(1, sim.QE[midday_idx]);
+        const bowen = (qh_mid / qe_mid).toFixed(1);
+
+        // 昼夜温差特征
+        const dt_day = sim.dt_uhi[13].toFixed(1); // 13:00 白天代表
+        const dt_night = sim.dt_uhi[22].toFixed(1); // 22:00 夜间代表
+        const release_val = Math.round(Math.abs(sim.dQS[22]));
+
+        resDtDay.innerHTML = `+${dt_day} <span class="unit">°C</span>`;
+        resDtNight.innerHTML = `+${dt_night} <span class="unit">°C</span>`;
+        resBowen.innerHTML = `${bowen} <span class="unit">无量纲</span>`;
+        resRelease.innerHTML = `${release_val} <span class="unit">W/m²</span>`;
+
+        // 诊断文本
+        if (state.imperv >= 75) {
+          diagSummary.innerHTML = `高密度硬化地表白天潜热蒸散严重受阻（波文比高达 ${bowen}），大量净辐射转入<b>建筑物基质储热</b>；夜间持续释放 ${release_val} W/m² 能量，在低风速下加剧了<b>强烈的夜间热岛峰值</b>。`;
+          diagPhase.textContent = '强储热延时释放型';
+          diagPhase.style.borderColor = 'var(--heat)';
+          diagPhase.style.color = 'var(--heat)';
+        } else if (state.imperv <= 35) {
+          diagSummary.innerHTML = `高植被覆被保障了充足的日间蒸散潜热耗散（Q_E 维持在高位），地表储热大幅削减；夜间地表降温迅速，热岛强度全天维持在极低安全阈值（< +${Math.max(dt_day, dt_night)} °C）。`;
+          diagPhase.textContent = '高蒸散缓冲型';
+          diagPhase.style.borderColor = 'var(--vegetation)';
+          diagPhase.style.color = 'var(--vegetation)';
+        } else {
+          diagSummary.innerHTML = `中密下垫面呈现典型昼夜特征：白天显热与蒸散平分秋色，夜间因建筑热惯性与人为热排放形成持续温和温差（夜间 +${dt_night} °C）。提高通风风速可显著冲刷该异常。`;
+          diagPhase.textContent = '平衡过渡型';
+          diagPhase.style.borderColor = 'var(--cooling)';
+          diagPhase.style.color = 'var(--cooling)';
+        }
+
+        // 绘制 Canvas
+        drawCharts(sim);
+      }
+
+      function drawCharts(sim) {
+        const ctx = Deck.fit(canvas);
+        const w = canvas.parentElement.clientWidth;
+        const h = canvas.parentElement.clientHeight;
+
+        ctx.clearRect(0, 0, w, h);
+
+        const padLeft = 55;
+        const padRight = 55;
+        const padTop = 30;
+        const padBottom = 35;
+        const innerW = w - padLeft - padRight;
+        const innerH = h - padTop - padBottom;
+
+        // 通量坐标系范围: -100 W/m2 到 +600 W/m2
+        const fluxMin = -100;
+        const fluxMax = 600;
+        const getYFlux = v => padTop + innerH - (v - fluxMin) / (fluxMax - fluxMin) * innerH;
+
+        // 右轴：热岛温差 0 到 6 °C
+        const dtMax = 6.0;
+        const getYDt = v => padTop + innerH - (v / dtMax) * innerH;
+
+        const getX = t => padLeft + (t / 24) * innerW;
+
+        // 背景昼夜阴影
+        // 0-6h 夜间, 6-18h 白天, 18-24h 夜间
+        ctx.fillStyle = 'rgba(80, 100, 107, 0.08)';
+        ctx.fillRect(getX(0), padTop, getX(6) - getX(0), innerH);
+        ctx.fillRect(getX(18), padTop, getX(24) - getX(18), innerH);
+
+        // 昼夜文字标签
+        ctx.font = '12px "Noto Sans SC"';
+        ctx.fillStyle = '#7a8c92';
+        ctx.textAlign = 'center';
+        ctx.fillText('清晨 / 夜间', (getX(0) + getX(6)) / 2, padTop + 16);
+        ctx.fillText('日间日照期', (getX(6) + getX(18)) / 2, padTop + 16);
+        ctx.fillText('夜间放热期', (getX(18) + getX(24)) / 2, padTop + 16);
+
+        // 水平零线
+        const yZero = getYFlux(0);
+        ctx.strokeStyle = '#9eb1b7';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padLeft, yZero);
+        ctx.lineTo(padLeft + innerW, yZero);
+        ctx.stroke();
+
+        // 辅助网格线与左侧通量刻度
+        ctx.strokeStyle = 'rgba(120, 140, 150, 0.18)';
+        ctx.fillStyle = '#50646B';
+        ctx.font = '12px Bahnschrift';
+        ctx.textAlign = 'right';
+
+        const ticksFlux = [-100, 0, 150, 300, 450, 600];
+        ticksFlux.forEach(flux => {
+          const y = getYFlux(flux);
+          ctx.beginPath();
+          ctx.moveTo(padLeft, y);
+          ctx.lineTo(padLeft + innerW, y);
+          ctx.stroke();
+          ctx.fillText(flux === 0 ? '0' : flux, padLeft - 8, y + 4);
+        });
+
+        // 左轴单位
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#50646B';
+        ctx.fillText('通量 (W/m²)', padLeft - 45, padTop - 12);
+
+        // 右轴温差刻度
+        ctx.textAlign = 'left';
+        const ticksDt = [0, 1.5, 3.0, 4.5, 6.0];
+        ticksDt.forEach(dt => {
+          const y = getYDt(dt);
+          ctx.fillText(`+${dt.toFixed(1)}°`, padLeft + innerW + 8, y + 4);
+        });
+        ctx.textAlign = 'right';
+        ctx.fillText('热岛温差 ΔT', padLeft + innerW + 48, padTop - 12);
+
+        // 时间轴刻度
+        ctx.textAlign = 'center';
+        for (let h = 0; h <= 24; h += 3) {
+          const x = getX(h);
+          ctx.fillText(`${h}:00`, x, padTop + innerH + 20);
+        }
+
+        // 曲线绘制函数
+        function drawCurve(pts, color, width, dash = []) {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = width;
+          ctx.setLineDash(dash);
+          ctx.beginPath();
+          for (let i = 0; i <= 24; i++) {
+            const x = getX(i);
+            const y = pts(i);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        // 1. 储热项 dQS
+        drawCurve(i => getYFlux(sim.dQS[i]), '#8C6239', 2.2);
+
+        // 2. 潜热 QE
+        drawCurve(i => getYFlux(sim.QE[i]), '#176B82', 2.2);
+
+        // 3. 显热 QH
+        drawCurve(i => getYFlux(sim.QH[i]), '#C63F20', 2.5);
+
+        // 4. 热岛温差 ΔT (右轴，加粗高对比度点划线)
+        drawCurve(i => getYDt(sim.dt_uhi[i]), '#17282E', 3.0, [6, 4]);
+
+        // 在夜间峰值点标注 ΔT
+        let maxDt = 0;
+        let maxDtHour = 22;
+        for (let i = 18; i <= 24; i++) {
+          if (sim.dt_uhi[i] > maxDt) {
+            maxDt = sim.dt_uhi[i];
+            maxDtHour = i;
+          }
+        }
+        const peakX = getX(maxDtHour);
+        const peakY = getYDt(maxDt);
+
+        ctx.fillStyle = '#17282E';
+        ctx.beginPath();
+        ctx.arc(peakX, peakY, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#C63F20';
+        ctx.font = '700 13px Bahnschrift';
+        ctx.textAlign = 'center';
+        ctx.fillText(`夜间峰值 +${maxDt.toFixed(1)}°C`, peakX - 25, peakY - 12);
+      }
+
+      // 事件监听
+      paramImperv.addEventListener('input', e => {
+        state.imperv = parseInt(e.target.value, 10);
+        clearSceneActive();
+        update();
+      });
+
+      paramQf.addEventListener('input', e => {
+        state.qf_max = parseInt(e.target.value, 10);
+        clearSceneActive();
+        update();
+      });
+
+      paramWind.addEventListener('input', e => {
+        state.wind = parseFloat(e.target.value);
+        clearSceneActive();
+        update();
+      });
+
+      function clearSceneActive() {
+        state.activeScene = null;
+        sceneBtns.forEach(btn => btn.setAttribute('aria-pressed', 'false'));
+      }
+
+      sceneBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const scName = btn.dataset.scene;
+          const sc = scenes[scName];
+          if (!sc) return;
+          state.imperv = sc.imperv;
+          state.qf_max = sc.qf_max;
+          state.wind = sc.wind;
+          state.activeScene = scName;
+
+          paramImperv.value = sc.imperv;
+          paramQf.value = sc.qf_max;
+          paramWind.value = sc.wind;
+
+          sceneBtns.forEach(b => b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'));
+          update();
+        });
+      });
+
+      resetBtn.addEventListener('click', () => {
+        const sc = scenes.residential;
+        state.imperv = sc.imperv;
+        state.qf_max = sc.qf_max;
+        state.wind = sc.wind;
+        state.activeScene = 'residential';
+
+        paramImperv.value = sc.imperv;
+        paramQf.value = sc.qf_max;
+        paramWind.value = sc.wind;
+
+        sceneBtns.forEach(b => b.setAttribute('aria-pressed', b.dataset.scene === 'residential' ? 'true' : 'false'));
+        update();
+      });
+
+      Deck.onResize(() => {
+        const sim = simulate24h(state);
+        drawCharts(sim);
+      });
+
+      // 初始化
+      update();
+      Deck.init({ index: 8, total: 19 });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+let value=false,callbacks=[];export const muted={subscribe(f){callbacks.push(f);f(value)},update(f){value=f(value);callbacks.forEach(f=>f(value))}};

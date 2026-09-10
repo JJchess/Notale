@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F7;
+      --surface: #FFFFFF;
+      --soft: #E3ECEF;
+      --text: #17272D;
+      --muted: #52666E;
+      --observed: #245A74;
+      --cause: #B13F2A;
+      --uncertain: #7A5B12;
+      --supported: #2D694C;
+      --selected: #D6E8EE;
+      --focus: #B13F2A;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      width: 1600px;
+      height: 900px;
+      padding: 48px 56px;
+      gap: 22px;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    .header-area {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .header-area h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .lead-text {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      display: none;
+    }
+
+    .board-layout {
+      display: grid;
+      grid-template-columns: 500px 1fr;
+      gap: 28px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* Left panel: Test selector & simulated result */
+    .controls-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: var(--surface);
+      border-radius: var(--r-md);
+      padding: 24px;
+      border: 1px solid var(--soft);
+      box-shadow: 0 4px 16px rgba(23,39,45,0.04);
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .test-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .test-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--bg);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-sm);
+      cursor: pointer;
+      text-align: left;
+      font-size: var(--fs-body);
+      font-family: inherit;
+      color: var(--text);
+      transition: background var(--fast), border-color var(--fast);
+    }
+    .test-btn:hover {
+      border-color: var(--observed);
+    }
+    .test-btn.active {
+      background: var(--selected);
+      border-color: var(--observed);
+      font-weight: 700;
+      color: var(--observed);
+    }
+    .test-tag {
+      font-size: var(--fs-tick);
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #E0ECF1;
+      color: var(--observed);
+    }
+
+    .outcome-box {
+      margin-top: auto;
+      padding: 16px;
+      background: var(--bg);
+      border-radius: var(--r-sm);
+      border: 1px solid var(--soft);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .outcome-header {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .outcome-stat {
+      font-size: var(--fs-body);
+      font-family: var(--font-num, monospace);
+      font-weight: 700;
+    }
+    .outcome-stat.pass { color: var(--supported); }
+    .outcome-stat.warn { color: var(--cause); }
+    .outcome-stat.null { color: var(--muted); }
+    .outcome-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    /* Right panel: Threat belief gauges & evidence updating */
+    .eval-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      background: var(--surface);
+      border-radius: var(--r-md);
+      padding: 24px;
+      border: 1px solid var(--soft);
+      box-shadow: 0 4px 16px rgba(23,39,45,0.04);
+    }
+
+    .threat-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex: 1;
+    }
+
+    .threat-card {
+      padding: 16px 20px;
+      background: var(--bg);
+      border-radius: var(--r-sm);
+      border: 1px solid var(--soft);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+    }
+    .threat-card.targeted {
+      border-color: var(--observed);
+      background: #F6FBFC;
+    }
+
+    .threat-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .threat-name {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .threat-status-tag {
+      font-size: var(--fs-label);
+      font-weight: 700;
+    }
+    .status-relieved { color: var(--supported); }
+    .status-alert { color: var(--cause); }
+    .status-untested { color: var(--muted); }
+
+    .gauge-track {
+      height: 10px;
+      background: var(--soft);
+      border-radius: 5px;
+      position: relative;
+      overflow: hidden;
+    }
+    .gauge-fill {
+      height: 100%;
+      border-radius: 5px;
+      transition: width var(--move) ease, background-color var(--fast);
+    }
+
+    .threat-footer {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    .summary-verdict {
+      padding: 16px 20px;
+      background: var(--bg);
+      border-radius: var(--r-sm);
+      border: 1px dashed var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .verdict-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .verdict-text {
+      font-size: var(--fs-sec);
+      color: var(--observed);
+      font-weight: 700;
+    }
+
+    .btn-reset {
+      background: none;
+      border: 1px solid var(--muted);
+      border-radius: var(--r-sm);
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-family: inherit;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .btn-reset:hover {
+      background: var(--soft);
+    }
+  </style>
+</head>
+<body data-page="20" data-total="24">
+  <div id="stage">
+    <header class="header-area">
+      <div>
+        <h1>稳健性证据更新：检验如何改写识别威胁</h1>
+      </div>
+      <button class="btn-reset" id="resetBtn">重置所有检验</button>
+    </header>
+
+    <main class="board-layout min0">
+      <!-- Left: Test Selection -->
+      <section class="controls-panel min0">
+        <h2 class="panel-title">
+          <span>选择施加的稳健性扰动</span>
+        </h2>
+        <div class="test-list" id="testButtons">
+          <button class="test-btn active" data-test="pretrend">
+            <span>事件研究前趋势检验</span>
+          </button>
+          <button class="test-btn" data-test="placebo_time">
+            <span>反事实伪处理时间置换</span>
+          </button>
+          <button class="test-btn" data-test="ctrl_var">
+            <span>逐步加入高维控制变量</span>
+          </button>
+          <button class="test-btn" data-test="sample_trim">
+            <span>剔除极值与特殊行政区</span>
+          </button>
+          <button class="test-btn" data-test="cluster_se">
+            <span>更高层级双重聚类标准误</span>
+          </button>
+        </div>
+
+        <div class="outcome-box" id="outcomeCard">
+          <div class="outcome-header">
+            <span id="outcomeName">前趋势检验</span>
+            <span class="outcome-stat pass" id="outcomeStat">系数平滑接近零</span>
+          </div>
+          <p class="outcome-desc" id="outcomeDesc">
+            处理前系数无先导趋势，有效排除事前选择性变动。
+          </p>
+        </div>
+      </section>
+
+      <!-- Right: Threat Belief Updating -->
+      <section class="eval-panel min0">
+        <div class="threat-cards" id="threatCards">
+          <!-- Threat 1 -->
+          <div class="threat-card targeted" id="card-trend">
+            <div class="threat-title-row">
+              <span class="threat-name">威胁 1：非平行趋势</span>
+              <span class="threat-status-tag status-relieved" id="tag-trend">威胁解除 (85%)</span>
+            </div>
+            <div class="gauge-track">
+              <div class="gauge-fill" id="gauge-trend" style="width: 15%; background-color: var(--supported);"></div>
+            </div>
+            <div class="threat-footer">
+              <span>残存风险程度</span>
+              <span id="label-trend">低风险 (15%)</span>
+            </div>
+          </div>
+
+          <!-- Threat 2 -->
+          <div class="threat-card" id="card-omitted">
+            <div class="threat-title-row">
+              <span class="threat-name">威胁 2：混杂冲击与遗漏变量</span>
+              <span class="threat-status-tag status-untested" id="tag-omitted">基准存疑 (60%)</span>
+            </div>
+            <div class="gauge-track">
+              <div class="gauge-fill" id="gauge-omitted" style="width: 60%; background-color: var(--uncertain);"></div>
+            </div>
+            <div class="threat-footer">
+              <span>残存风险程度</span>
+              <span id="label-omitted">中度风险 (60%)</span>
+            </div>
+          </div>
+
+          <!-- Threat 3 -->
+          <div class="threat-card" id="card-sample">
+            <div class="threat-title-row">
+              <span class="threat-name">威胁 3：离群值驱动估计</span>
+              <span class="threat-status-tag status-untested" id="tag-sample">基准存疑 (50%)</span>
+            </div>
+            <div class="gauge-track">
+              <div class="gauge-fill" id="gauge-sample" style="width: 50%; background-color: var(--uncertain);"></div>
+            </div>
+            <div class="threat-footer">
+              <span>残存风险程度</span>
+              <span id="label-sample">中度风险 (50%)</span>
+            </div>
+          </div>
+
+          <!-- Threat 4 -->
+          <div class="threat-card" id="card-inference">
+            <div class="threat-title-row">
+              <span class="threat-name">威胁 4：自相关致假阳性</span>
+              <span class="threat-status-tag status-untested" id="tag-inference">基准存疑 (55%)</span>
+            </div>
+            <div class="gauge-track">
+              <div class="gauge-fill" id="gauge-inference" style="width: 55%; background-color: var(--uncertain);"></div>
+            </div>
+            <div class="threat-footer">
+              <span>残存风险程度</span>
+              <span id="label-inference">中度风险 (55%)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="summary-verdict">
+          <span class="verdict-title">识别效度诊断结论</span>
+          <span class="verdict-text" id="verdictText">排除事前趋势差异，但无法排除政策同期的外生混杂。</span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // Canonical state of tests and threats
+      const TESTS = {
+        pretrend: {
+          name: "前趋势检验",
+          stat: "系数平滑接近零",
+          statusClass: "pass",
+          desc: "处理前系数无先导趋势，有效排除事前选择性变动。",
+          target: "trend",
+          risks: { trend: 15, omitted: 60, sample: 50, inference: 55 },
+          verdict: "排除事前趋势差异，但无法排除政策同期的外生混杂。"
+        },
+        placebo_time: {
+          name: "伪时间置换",
+          stat: "虚构期系数归零",
+          statusClass: "pass",
+          desc: "政策虚构提前 3 年，估计效应在统计与经济上均不显著。",
+          target: "trend",
+          risks: { trend: 20, omitted: 50, sample: 50, inference: 55 },
+          verdict: "效应确在政策落地时突变，锚定因果发生时点。"
+        },
+        ctrl_var: {
+          name: "加控制变量",
+          stat: "核心系数变动 < 6%",
+          statusClass: "pass",
+          desc: "加入固定效应与时变宏观变量后，处理效应保持稳定。",
+          target: "omitted",
+          risks: { trend: 35, omitted: 20, sample: 45, inference: 50 },
+          verdict: "系数对控制集不敏感，削弱可观测混杂偏差的威胁。"
+        },
+        sample_trim: {
+          name: "剔除极值样本",
+          stat: "缩尾后仍显著",
+          statusClass: "pass",
+          desc: "排除直辖市与前 1% 样本后，因果效应仍保持正向显著。",
+          target: "sample",
+          risks: { trend: 35, omitted: 45, sample: 15, inference: 50 },
+          verdict: "排除局部极端异常值或超大城市主导全盘结果的担忧。"
+        },
+        cluster_se: {
+          name: "高阶聚类标准误",
+          stat: "显著性依然维持",
+          statusClass: "pass",
+          desc: "聚类升至地级市并加入年份维，标准误略微扩大但仍显著。",
+          target: "inference",
+          risks: { trend: 35, omitted: 50, sample: 45, inference: 15 },
+          verdict: "证实推断结论在保守的残差自相关假设下仍然成立。"
+        }
+      };
+
+      let activeTestKey = "pretrend";
+
+      const ui = {
+        buttons: document.querySelectorAll(".test-btn"),
+        outcomeName: document.getElementById("outcomeName"),
+        outcomeStat: document.getElementById("outcomeStat"),
+        outcomeDesc: document.getElementById("outcomeDesc"),
+        verdictText: document.getElementById("verdictText"),
+        resetBtn: document.getElementById("resetBtn"),
+        cards: {
+          trend: document.getElementById("card-trend"),
+          omitted: document.getElementById("card-omitted"),
+          sample: document.getElementById("card-sample"),
+          inference: document.getElementById("card-inference")
+        },
+        tags: {
+          trend: document.getElementById("tag-trend"),
+          omitted: document.getElementById("tag-omitted"),
+          sample: document.getElementById("tag-sample"),
+          inference: document.getElementById("tag-inference")
+        },
+        gauges: {
+          trend: document.getElementById("gauge-trend"),
+          omitted: document.getElementById("gauge-omitted"),
+          sample: document.getElementById("gauge-sample"),
+          inference: document.getElementById("gauge-inference")
+        },
+        labels: {
+          trend: document.getElementById("label-trend"),
+          omitted: document.getElementById("label-omitted"),
+          sample: document.getElementById("label-sample"),
+          inference: document.getElementById("label-inference")
+        }
+      };
+
+      function updateUI() {
+        const test = TESTS[activeTestKey];
+
+        // Update buttons active class
+        ui.buttons.forEach(btn => {
+          btn.classList.toggle("active", btn.dataset.test === activeTestKey);
+        });
+
+        // Update outcome info
+        ui.outcomeName.textContent = test.name;
+        ui.outcomeStat.textContent = test.stat;
+        ui.outcomeStat.className = `outcome-stat ${test.statusClass}`;
+        ui.outcomeDesc.textContent = test.desc;
+        ui.verdictText.textContent = test.verdict;
+
+        // Update threat cards
+        const threatKeys = ["trend", "omitted", "sample", "inference"];
+        threatKeys.forEach(k => {
+          const isTargeted = (test.target === k);
+          const riskVal = test.risks[k];
+          ui.cards[k].classList.toggle("targeted", isTargeted);
+
+          // Gauge styling
+          ui.gauges[k].style.width = `${riskVal}%`;
+          let color = "var(--uncertain)";
+          let statusText = `基准存疑 (${riskVal}%)`;
+          let statusClass = "status-untested";
+          let riskLabel = `中度风险 (${riskVal}%)`;
+
+          if (riskVal <= 25) {
+            color = "var(--supported)";
+            statusText = `威胁解除 (${100 - riskVal}%)`;
+            statusClass = "status-relieved";
+            riskLabel = `低风险 (${riskVal}%)`;
+          } else if (riskVal >= 60) {
+            color = "var(--cause)";
+            statusText = `首要关切 (${riskVal}%)`;
+            statusClass = "status-alert";
+            riskLabel = `高风险 (${riskVal}%)`;
+          }
+
+          ui.gauges[k].style.backgroundColor = color;
+          ui.tags[k].textContent = statusText;
+          ui.tags[k].className = `threat-status-tag ${statusClass}`;
+          ui.labels[k].textContent = riskLabel;
+        });
+      }
+
+      ui.buttons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          activeTestKey = btn.dataset.test;
+          updateUI();
+        });
+      });
+
+      ui.resetBtn.addEventListener("click", () => {
+        activeTestKey = "pretrend";
+        updateUI();
+      });
+
+      // Initialize
+      Deck.init({ index: 20, total: 24 });
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

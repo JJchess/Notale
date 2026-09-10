@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+html[data-variant] {}
+#stage{ position:relative; overflow:hidden; }
+
+.kicker{
+  position:absolute; left:70px; top:44px;
+}
+.title{
+  position:absolute; left:70px; top:80px; right:70px;
+  max-width:1180px;
+}
+.title .zh{ display:block; }
+.title .en{
+  display:block; margin-top:10px; color:var(--muted);
+  font-size: 0.4em;
+}
+
+.layout{
+  position:absolute; left:70px; right:70px; top:296px; bottom:56px;
+  display:grid; grid-template-columns: 1fr 372px; gap:36px;
+}
+
+.plot-wrap{
+  position:relative; min-width:0; min-height:0;
+  display:grid; grid-template-rows: auto 1fr;
+  row-gap:14px;
+}
+.plot-head{
+  display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;
+  row-gap:8px;
+}
+.plot-head .nt-lead{
+  flex:1 1 560px;
+}
+.plot-head .nt-legend{
+  flex:0 0 auto; white-space:nowrap;
+}
+#chart{
+  position:relative; min-width:0; min-height:0;
+}
+
+.side{
+  min-width:0; display:flex; flex-direction:column; gap:22px;
+}
+.side .lead-block{
+}
+.side table.nt-data-table{
+  width:100%; border-collapse:collapse;
+}
+.side table.nt-data-table th,
+.side table.nt-data-table td{
+  text-align:right; padding:6px 8px;
+  font-family:var(--font-numeric);
+  font-size:var(--fs-tick);
+}
+.side table.nt-data-table th:first-child,
+.side table.nt-data-table td:first-child{
+  text-align:left; font-family:var(--font-sans);
+}
+.side table.nt-data-table thead th{
+  border-bottom:1.5px solid var(--text);
+  font-family:var(--font-sans);
+  font-size:var(--fs-label);
+  color:var(--muted);
+  font-weight:600;
+}
+.side table.nt-data-table td.compound{ color:var(--compound); font-weight:600; }
+.side table.nt-data-table td.linear{ color:var(--linear); }
+
+.diff-row td{ border-top:1px dashed var(--muted); padding-top:8px; }
+
+.note{
+  margin-top:auto;
+}
+
+.badge-gap{
+  position:absolute;
+  font-family:var(--font-numeric);
+  font-weight:700;
+  color:var(--compound);
+  pointer-events:none;
+}
+</style>
+</head>
+<body data-page="02" data-total="3">
+<div id="stage">
+
+  <p class="nt-kicker kicker">02 · Compounding vs. Linear</p>
+
+  <h1 class="nt-title title">
+    <span class="zh" lang="zh">复利不是每年固定加 20</span>
+    <span class="en" lang="en">Compounding is not +20 each year</span>
+  </h1>
+
+  <div class="layout">
+
+    <div class="plot-wrap">
+      <div class="plot-head">
+        <p class="nt-lead" style="margin:0;">
+          <span lang="zh">同一张图，两种规则：</span>
+          <span class="nt-series-label--compound" lang="zh">A(n) = 100 × (1+20%)ⁿ</span>
+          <span lang="zh">对比</span>
+          <span class="nt-series-label--linear" lang="zh">A(n) = 100 + 20n</span>
+        </p>
+        <div class="nt-legend">
+          <span class="nt-swatch" style="background:var(--compound);"></span><span class="nt-label">复利 20% / compound</span>
+          <span class="nt-swatch" style="background:var(--linear);"></span><span class="nt-label">固定 +20 / linear</span>
+        </div>
+      </div>
+      <div id="chart"></div>
+    </div>
+
+    <aside class="side">
+      <p class="nt-copy lead-block">
+        两条线第 0 年都是 100。复利每年按<b>当前金额</b>的 20% 增长，
+        增量本身逐年变大——第 1 年多 20，第 5 年多 41.47。
+        固定增加每年只加 20，增量恒定。
+      </p>
+
+      <table class="nt-data-table">
+        <thead>
+          <tr><th>年 n</th><th>复利 A(n)</th><th>固定 A(n)</th></tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+        <tfoot>
+          <tr class="diff-row"><td>差值</td><td colspan="2" id="diff-cell"></td></tr>
+        </tfoot>
+      </table>
+
+      <p class="nt-note note">
+        差值来自基数变化：第 n 年复利的增量是 <span style="font-family:var(--font-numeric)">20% × A(n−1)</span>，
+        而 A(n−1) 每年都比上一年更大；固定增加的增量恒为 20，与基数无关。
+      </p>
+    </aside>
+
+  </div>
+
+</div>
+<script src="assets/lib/echarts.min.js"></script>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // 确定性数据：A(n) = 100*(1+0.2)^n，四舍五入到分；固定增加 100+20n
+  var years = [0,1,2,3,4,5];
+  var compound = years.map(function(n){ return Math.round(100*Math.pow(1.2,n)*100)/100; });
+  var linear = years.map(function(n){ return 100 + 20*n; });
+  // 期望：100,120,144,172.8,207.36,248.832 -> 显示两位小数
+  var fmt2 = function(v){ return v.toFixed(2); };
+
+  var tbody = document.getElementById("table-body");
+  years.forEach(function(n, i){
+    var tr = document.createElement("tr");
+    tr.innerHTML = "<td>"+n+"</td><td class='compound'>"+fmt2(compound[i])+"</td><td class='linear'>"+fmt2(linear[i])+"</td>";
+    tbody.appendChild(tr);
+  });
+  var lastDiff = compound[5] - linear[5];
+  document.getElementById("diff-cell").textContent = "第 5 年 +" + fmt2(lastDiff);
+
+  var host = document.getElementById("chart");
+  var chart = echarts.init(host, null, { renderer: "svg" });
+
+  function seriesStyle(color, name, data, symbol, labelPosition){
+    return {
+      id: name,
+      name: name,
+      type: "line",
+      data: data,
+      symbol: symbol,
+      symbolSize: 8,
+      lineStyle: { color: color, width: 3.5 },
+      itemStyle: { color: color },
+      label: {
+        show: true,
+        formatter: function(p){ return fmt2(p.value); },
+        fontFamily: getComputedStyle(document.documentElement).getPropertyValue("--font-numeric") || "monospace",
+        fontSize: 13,
+        color: color,
+        position: labelPosition,
+        distance: 10
+      },
+      z: 3
+    };
+  }
+
+  function option(){
+    var compoundColor = Deck.token("--compound");
+    var linearColor = Deck.token("--linear");
+    var textColor = Deck.token("--text");
+    var mutedColor = Deck.token("--muted");
+    var numFont = getComputedStyle(document.documentElement).getPropertyValue("--font-numeric") || "monospace";
+    var sansFont = getComputedStyle(document.documentElement).getPropertyValue("--font-sans") || "sans-serif";
+
+    return {
+      animation: !Deck.reduced(),
+      grid: { left: 66, right: 40, top: 36, bottom: 46 },
+      xAxis: {
+        type: "category",
+        data: years,
+        name: "第 n 年 / year",
+        nameLocation: "middle",
+        nameGap: 30,
+        nameTextStyle: { color: mutedColor, fontFamily: sansFont, fontSize: 14 },
+        axisLine: { lineStyle: { color: mutedColor } },
+        axisLabel: { color: textColor, fontFamily: numFont, fontSize: 14 },
+        axisTick: { show: false }
+      },
+      yAxis: {
+        type: "value",
+        min: 0,
+        max: 280,
+        interval: 40,
+        name: "金额",
+        nameTextStyle: { color: mutedColor, fontFamily: sansFont, fontSize: 14 },
+        axisLabel: { color: textColor, fontFamily: numFont, fontSize: 13 },
+        splitLine: { lineStyle: { color: mutedColor, opacity: 0.25 } }
+      },
+      series: [
+        seriesStyle(compoundColor, "复利 compound", compound, "circle", "top"),
+        seriesStyle(linearColor, "固定 +20 linear", linear, "diamond", "bottom")
+      ]
+    };
+  }
+
+  chart.setOption(option(), { notMerge: true });
+
+  var ro = new ResizeObserver(function(){ chart.resize(); });
+  ro.observe(host);
+
+  window.addEventListener("pagehide", function(){
+    ro.disconnect();
+    chart.dispose();
+  });
+
+  Deck.init({ index: 2, total: 3 });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+    }
+
+    #field-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* 标题区域：在 1600x900 逻辑坐标系内精确定位 */
+    .title-group {
+      position: absolute;
+      left: var(--pad-x);
+      top: 260px;
+      z-index: 5;
+      max-width: 620px;
+    }
+
+    .series-kicker {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .series-kicker::before {
+      content: "";
+      display: inline-block;
+      width: 24px;
+      height: var(--stroke);
+      background: var(--rule);
+    }
+
+    h1.main-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      margin: 0 0 20px 0;
+      font-weight: 700;
+    }
+
+    .subtitle-lead {
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      margin: 0;
+      max-width: 540px;
+    }
+
+    /* 右下侧标注：群体多样收束为强集成 */
+    .meta-card {
+      position: absolute;
+      right: var(--pad-x);
+      bottom: var(--pad-y);
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .convergence-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--model);
+      font-weight: 600;
+    }
+
+    .convergence-badge::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="01" data-total="32">
+  <div id="stage">
+    <canvas id="field-canvas" class="cv-fill" aria-hidden="true"></canvas>
+
+    <div class="title-group">
+      <div class="series-kicker">机器学习概论 · 第八讲</div>
+      <h1 class="main-title">集成学习</h1>
+      <p class="subtitle-lead">从多样性基模型到统一强决策：多条预测路径在终点汇成一个稳健判断。</p>
+    </div>
+
+    <div class="meta-card">
+      <div class="convergence-badge">多模型汇聚为统一决策</div>
+      <div>Ensemble Learning: Combining Weak Learners</div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们好，今天我们进入第八讲——集成学习。
+    在机器学习中，单个模型往往受制于过拟合的高方差，或者欠拟合的高偏差。
+    集成学习的核心思想，就是通过训练多个基学习器，并巧妙地将它们结合起来，
+    让弱模型或者具差异性的个体相互补充，从而在终点收束为一个准确且稳健的强学习器。
+    我们这节课就来揭开集成背后的数学原理与三大经典家族：Bagging、随机森林与 Boosting。
+  </aside>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const canvas = document.getElementById("field-canvas");
+      const SEED = "ensemble-cover-2025";
+      const NUM_PATHS = 40;
+      const CONVERGENCE_POINT = { x: 1360, y: 450 }; // 汇聚终点
+
+      let ctx = null;
+      let model = null;
+      let stopAnim = () => {};
+
+      Deck.init({ index: 1, total: 32, keys: false });
+
+      function buildPaths() {
+        const rng = new Math.seedrandom(SEED);
+        const paths = [];
+
+        for (let i = 0; i < NUM_PATHS; i++) {
+          const tNorm = i / (NUM_PATHS - 1); // 0 ~ 1
+          // 起点分布在右半区发散源（约 x: 620~780，y: 90~810）
+          const startY = 100 + tNorm * 700 + (rng() - 0.5) * 36;
+          const startX = 640 + (rng() - 0.5) * 160;
+          
+          // 控制点 1：多样性探索发散
+          const cp1X = 800 + (rng() - 0.5) * 160;
+          const cp1Y = startY + (rng() - 0.5) * 160;
+
+          // 控制点 2：向汇聚点逐步收束
+          const cp2X = 1120 + (rng() - 0.5) * 70;
+          const cp2Y = CONVERGENCE_POINT.y + (tNorm - 0.5) * 200;
+
+          // 采样贝塞尔曲线点
+          const points = [];
+          const STEPS = 80;
+          for (let step = 0; step <= STEPS; step++) {
+            const u = step / STEPS;
+            const inv = 1 - u;
+            const px = inv * inv * inv * startX +
+                       3 * inv * inv * u * cp1X +
+                       3 * inv * u * u * cp2X +
+                       u * u * u * CONVERGENCE_POINT.x;
+            const py = inv * inv * inv * startY +
+                       3 * inv * inv * u * cp1Y +
+                       3 * inv * u * u * cp2Y +
+                       u * u * u * CONVERGENCE_POINT.y;
+            points.push({ x: px, y: py });
+          }
+
+          paths.push({
+            points,
+            alpha: 0.18 + rng() * 0.28,
+            width: 1.2 + rng() * 1.5,
+            speed: 0.00035 + rng() * 0.0004,
+            offset: rng()
+          });
+        }
+
+        return paths;
+      }
+
+      function drawStaticBackground(targetCtx) {
+        // 绘制坐标背景线，体现严谨的工程与数理结构
+        targetCtx.strokeStyle = "rgba(113, 130, 139, 0.14)";
+        targetCtx.lineWidth = 1;
+        targetCtx.beginPath();
+        for (let x = 600; x < 1600; x += 120) {
+          targetCtx.moveTo(x, 60);
+          targetCtx.lineTo(x, 840);
+        }
+        for (let y = 100; y < 850; y += 120) {
+          targetCtx.moveTo(560, y);
+          targetCtx.lineTo(1540, y);
+        }
+        targetCtx.stroke();
+
+        // 绘制各基学习器的预测轨迹
+        for (const p of model) {
+          targetCtx.beginPath();
+          targetCtx.moveTo(p.points[0].x, p.points[0].y);
+          for (let k = 1; k < p.points.length; k++) {
+            targetCtx.lineTo(p.points[k].x, p.points[k].y);
+          }
+          targetCtx.strokeStyle = `rgba(23, 98, 142, ${p.alpha})`;
+          targetCtx.lineWidth = p.width;
+          targetCtx.stroke();
+        }
+
+        // 终点收束为 4px 粗线（主题签名：多条等重蓝色预测路径在结论前收束为一条粗线）
+        targetCtx.beginPath();
+        targetCtx.moveTo(CONVERGENCE_POINT.x, CONVERGENCE_POINT.y);
+        targetCtx.lineTo(CONVERGENCE_POINT.x + 120, CONVERGENCE_POINT.y);
+        targetCtx.strokeStyle = "rgba(23, 98, 142, 0.95)";
+        targetCtx.lineWidth = 4;
+        targetCtx.stroke();
+
+        // 终点箭头
+        targetCtx.beginPath();
+        targetCtx.moveTo(CONVERGENCE_POINT.x + 120, CONVERGENCE_POINT.y);
+        targetCtx.lineTo(CONVERGENCE_POINT.x + 106, CONVERGENCE_POINT.y - 7);
+        targetCtx.lineTo(CONVERGENCE_POINT.x + 106, CONVERGENCE_POINT.y + 7);
+        targetCtx.closePath();
+        targetCtx.fillStyle = "rgba(23, 98, 142, 0.95)";
+        targetCtx.fill();
+
+        // 汇聚核心结点：使用主题 focus 橙色标记关键决策
+        targetCtx.beginPath();
+        targetCtx.arc(CONVERGENCE_POINT.x, CONVERGENCE_POINT.y, 6, 0, Math.PI * 2);
+        targetCtx.fillStyle = "#B83D0B";
+        targetCtx.fill();
+
+        targetCtx.beginPath();
+        targetCtx.arc(CONVERGENCE_POINT.x, CONVERGENCE_POINT.y, 13, 0, Math.PI * 2);
+        targetCtx.strokeStyle = "rgba(184, 61, 11, 0.35)";
+        targetCtx.lineWidth = 2;
+        targetCtx.stroke();
+      }
+
+      function drawTracerParticles(time) {
+        // 在轨迹上流动的粒子，展示信息流向汇聚点
+        ctx.fillStyle = "rgba(23, 98, 142, 0.85)";
+        for (let i = 0; i < model.length; i += 3) {
+          const p = model[i];
+          const progress = (p.offset + time * p.speed) % 1;
+          const idxFloat = progress * (p.points.length - 1);
+          const idx = Math.floor(idxFloat);
+          const nextIdx = Math.min(idx + 1, p.points.length - 1);
+          const frac = idxFloat - idx;
+          const cur = p.points[idx];
+          const next = p.points[nextIdx];
+          const x = cur.x + (next.x - cur.x) * frac;
+          const y = cur.y + (next.y - cur.y) * frac;
+
+          ctx.beginPath();
+          ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      const staticLayer = document.createElement("canvas");
+
+      function rebuild() {
+        ctx = Deck.fit(canvas);
+        if (!ctx) return;
+
+        model = buildPaths();
+
+        staticLayer.width = canvas.width;
+        staticLayer.height = canvas.height;
+        const sCtx = staticLayer.getContext("2d");
+        const ratio = canvas.__r || 1;
+        sCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+        sCtx.clearRect(0, 0, Deck.W, Deck.H);
+        drawStaticBackground(sCtx);
+
+        render(0);
+      }
+
+      function render(time) {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, Deck.W, Deck.H);
+        ctx.drawImage(staticLayer, 0, 0, Deck.W, Deck.H);
+        drawTracerParticles(time);
+      }
+
+      function init() {
+        rebuild();
+        Deck.onResize(() => {
+          rebuild();
+        });
+
+        stopAnim = Deck.loop(time => {
+          render(time);
+        }, { still: 4000 });
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>

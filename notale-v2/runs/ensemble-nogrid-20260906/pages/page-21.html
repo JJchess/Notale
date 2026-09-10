@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Header */
+    .page-head {
+      margin-bottom: 20px;
+    }
+    .page-title {
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+
+    /* Main Grid: 2 columns - left controls & params, right loss curves */
+    .content-grid {
+      display: grid;
+      grid-template-columns: 440px 1fr;
+      gap: 32px;
+      height: 680px;
+    }
+
+    /* Left control panel */
+    .param-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      background: var(--paper);
+      border-radius: var(--radius);
+      padding: 24px 20px;
+      box-shadow: 0 4px 16px rgba(23, 42, 58, 0.05);
+      border: 1px solid rgba(83, 101, 117, 0.15);
+    }
+
+    .regime-selector {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .regime-btn {
+      appearance: none;
+      background: var(--bg);
+      border: 2px solid transparent;
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      cursor: pointer;
+      text-align: left;
+      transition: all var(--dur) var(--ease);
+      font-family: var(--font-sans);
+    }
+    .regime-btn:hover {
+      border-color: rgba(36, 95, 166, 0.4);
+    }
+    .regime-btn.active {
+      background: #E8F0FE;
+      border-color: var(--model);
+    }
+    .regime-btn.active.overfit {
+      background: #FCEBE6;
+      border-color: var(--aggregate);
+    }
+    .regime-name {
+      display: block;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* Parameter Sliders */
+    .params-list {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(83, 101, 117, 0.15);
+    }
+    .param-item {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .param-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-label);
+    }
+    .param-label {
+      font-weight: 600;
+      color: var(--text);
+    }
+    .param-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--model);
+    }
+    .param-slider {
+      width: 100%;
+      accent-color: var(--model);
+      cursor: pointer;
+    }
+
+    /* Outcome badge */
+    .outcome-card {
+      margin-top: auto;
+      padding: 16px;
+      border-radius: var(--radius);
+      background: var(--bg);
+      border: 1px solid rgba(83, 101, 117, 0.2);
+    }
+    .outcome-card.danger {
+      border-color: var(--aggregate);
+      background: #FFF5F2;
+    }
+    .outcome-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .outcome-detail {
+      font-size: var(--fs-label);
+      color: var(--text);
+      line-height: var(--lh-copy);
+    }
+
+    /* Right Chart Panel */
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      background: var(--paper);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      box-shadow: 0 4px 16px rgba(23, 42, 58, 0.05);
+      border: 1px solid rgba(83, 101, 117, 0.15);
+      position: relative;
+    }
+    .chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .chart-legend {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: var(--fs-label);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .legend-line {
+      width: 22px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .legend-train {
+      background: var(--model);
+    }
+    .legend-test {
+      background: var(--aggregate);
+    }
+    .legend-stop {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--diversity);
+      display: inline-block;
+    }
+
+    #loss-chart {
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+    }
+
+    .chart-footer {
+      display: flex;
+      justify-content: space-between;
+      padding-top: 14px;
+      border-top: 1px solid rgba(83, 101, 117, 0.15);
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .metric-group {
+      display: flex;
+      gap: 24px;
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="21" data-total="26">
+  <div id="stage">
+    <header class="page-head">
+      <h1 class="page-title">学习率、树深与轮数共同决定泛化风险</h1>
+    </header>
+
+    <div class="content-grid">
+      <!-- Left Panel: Configurations -->
+      <div class="param-panel">
+        <div class="regime-selector">
+          <button id="btn-conservative" class="regime-btn active" type="button">
+            <span class="regime-name">稳健收敛策略</span>
+          </button>
+          <button id="btn-aggressive" class="regime-btn overfit" type="button">
+            <span class="regime-name">激进拟合策略</span>
+          </button>
+        </div>
+
+        <div class="params-list">
+          <div class="param-item">
+            <div class="param-header">
+              <label for="slider-lr" class="param-label">学习率 &eta;</label>
+              <span id="val-lr" class="param-val">0.05</span>
+            </div>
+            <input type="range" id="slider-lr" class="param-slider" min="0.01" max="0.5" step="0.01" value="0.05">
+          </div>
+
+          <div class="param-item">
+            <div class="param-header">
+              <label for="slider-depth" class="param-label">基树最大深度</label>
+              <span id="val-depth" class="param-val">3</span>
+            </div>
+            <input type="range" id="slider-depth" class="param-slider" min="1" max="8" step="1" value="3">
+          </div>
+
+          <div class="param-item">
+            <div class="param-header">
+              <label for="slider-rounds" class="param-label">迭代轮数</label>
+              <span id="val-rounds" class="param-val">120</span>
+            </div>
+            <input type="range" id="slider-rounds" class="param-slider" min="20" max="200" step="5" value="120">
+          </div>
+        </div>
+
+        <div id="outcome-badge" class="outcome-card">
+          <div id="outcome-title" class="outcome-title">平稳泛化状态</div>
+          <div id="outcome-text" class="outcome-detail">步长克制，单树容量受控，测试损失平稳收敛。</div>
+        </div>
+      </div>
+
+      <!-- Right Panel: ECharts Line Curves -->
+      <div class="chart-panel min0">
+        <div class="chart-head">
+          <span class="chart-title">训练损失与测试损失演化</span>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <span class="legend-line legend-train"></span>
+              <span>训练集损失</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line legend-test"></span>
+              <span>验证集损失</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-stop"></span>
+              <span>早停最优点 (Early Stop)</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="loss-chart" role="img" aria-label="迭代轮数与损失曲线"></div>
+
+        <div class="chart-footer">
+          <div class="metric-group">
+            <div>最佳早停轮数：<span id="metric-opt-round" class="metric-val">115</span></div>
+            <div>最小验证损失：<span id="metric-opt-loss" class="metric-val">0.182</span></div>
+            <div>过拟合差距：<span id="metric-gap" class="metric-val">0.051</span></div>
+          </div>
+          <div class="rule-hint">核心约束：小步长 + 浅树 + 早停截断</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    在 Boosting 家族中，后继模型总是在死磕当前尚未解决的残差或误分类样本。这种强大的拟合本能带来了一个致命风险：如果放任自流，模型很快就会去生搬硬套训练集里的随机噪声。
+    控制这种风险的核心在于三大约束：
+    第一，缩减学习率 eta，也就是让每棵新树的更新打个折，步子迈小一点，给后面的模型留出修正空间；
+    第二，限制单棵树的最大深度，通常只用 3 到 6 层的浅树，保证基学习器始终是高偏差、低方差的弱模型；
+    第三，监控验证集表现并在损失抬头前通过早停（Early Stopping）截断轮数。三者配合，才能在充分减小偏差的同时，避免泛化方差爆炸。
+  </aside>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      Deck.init({ index: 21, total: 26, keys: false });
+
+      var chartEl = document.getElementById('loss-chart');
+      var chart = echarts.init(chartEl, null, { renderer: 'svg' });
+
+      // Elements
+      var sliderLr = document.getElementById('slider-lr');
+      var sliderDepth = document.getElementById('slider-depth');
+      var sliderRounds = document.getElementById('slider-rounds');
+
+      var valLr = document.getElementById('val-lr');
+      var valDepth = document.getElementById('val-depth');
+      var valRounds = document.getElementById('val-rounds');
+
+      var btnConservative = document.getElementById('btn-conservative');
+      var btnAggressive = document.getElementById('btn-aggressive');
+
+      var outcomeBadge = document.getElementById('outcome-badge');
+      var outcomeTitle = document.getElementById('outcome-title');
+      var outcomeText = document.getElementById('outcome-text');
+
+      var metricOptRound = document.getElementById('metric-opt-round');
+      var metricOptLoss = document.getElementById('metric-opt-loss');
+      var metricGap = document.getElementById('metric-gap');
+
+      // Model simulation formula for loss curves
+      function computeLoss(lr, depth, totalRounds) {
+        var rounds = [];
+        var trainLoss = [];
+        var testLoss = [];
+
+        // Speed of fitting depends on lr and depth
+        var speed = lr * Math.pow(depth, 0.75) * 1.6;
+        var noiseSens = (lr * depth * 0.18);
+
+        var minTest = 999;
+        var bestRound = 1;
+
+        for (var t = 1; t <= totalRounds; t++) {
+          rounds.push(t);
+          // Train loss smoothly decreases towards noise floor
+          var tr = 0.85 * Math.exp(-speed * t * 0.12) + (0.02 / (1 + depth * 0.1));
+          trainLoss.push(Number(tr.toFixed(4)));
+
+          // Test loss drops, then may turn upwards due to overfitting
+          var biasTerm = 0.85 * Math.exp(-speed * t * 0.12) + 0.14;
+          var varTerm = 0.0006 * noiseSens * Math.pow(t, 1.45);
+          var te = biasTerm + varTerm;
+          testLoss.push(Number(te.toFixed(4)));
+
+          if (te < minTest) {
+            minTest = te;
+            bestRound = t;
+          }
+        }
+
+        return {
+          rounds: rounds,
+          train: trainLoss,
+          test: testLoss,
+          bestRound: bestRound,
+          bestLoss: minTest,
+          finalGap: testLoss[testLoss.length - 1] - trainLoss[trainLoss.length - 1]
+        };
+      }
+
+      function update() {
+        var lr = parseFloat(sliderLr.value);
+        var depth = parseInt(sliderDepth.value, 10);
+        var maxR = parseInt(sliderRounds.value, 10);
+
+        valLr.textContent = lr.toFixed(2);
+        valDepth.textContent = depth;
+        valRounds.textContent = maxR;
+
+        var sim = computeLoss(lr, depth, maxR);
+
+        metricOptRound.textContent = sim.bestRound;
+        metricOptLoss.textContent = sim.bestLoss.toFixed(3);
+        metricGap.textContent = sim.finalGap.toFixed(3);
+
+        // Overfitting check
+        var isOverfitting = (sim.finalGap > 0.18) || (sim.bestRound < maxR * 0.65);
+
+        if (isOverfitting) {
+          outcomeBadge.className = "outcome-card danger";
+          outcomeTitle.textContent = "高方差过拟合";
+          outcomeText.textContent = "模型强行拟合样本噪声，测试损失后期持续上翘。";
+        } else {
+          outcomeBadge.className = "outcome-card";
+          outcomeTitle.textContent = "平稳泛化状态";
+          outcomeText.textContent = "步长克制，单树容量受控，测试损失平稳收敛。";
+        }
+
+        var option = {
+          animation: false,
+          grid: {
+            left: 55,
+            right: 40,
+            top: 40,
+            bottom: 45
+          },
+          tooltip: {
+            trigger: 'axis'
+          },
+          xAxis: {
+            type: 'category',
+            name: '轮数',
+            nameTextStyle: { fontSize: 13, color: '#536575' },
+            data: sim.rounds,
+            axisLine: { lineStyle: { color: '#536575' } },
+            axisLabel: { color: '#536575', fontSize: 13, interval: Math.floor(maxR / 8) }
+          },
+          yAxis: {
+            type: 'value',
+            name: '损失值',
+            nameTextStyle: { fontSize: 13, color: '#536575' },
+            min: 0,
+            max: 0.9,
+            interval: 0.15,
+            axisLine: { lineStyle: { color: '#536575' } },
+            axisLabel: { color: '#536575', fontSize: 13, formatter: function(v){ return v.toFixed(2); } },
+            splitLine: { lineStyle: { color: '#E5EBF0' } }
+          },
+          series: [
+            {
+              name: '训练集损失',
+              type: 'line',
+              data: sim.train,
+              smooth: true,
+              showSymbol: false,
+              lineStyle: { color: '#245FA6', width: 3 }
+            },
+            {
+              name: '验证集损失',
+              type: 'line',
+              data: sim.test,
+              smooth: true,
+              showSymbol: false,
+              lineStyle: { color: '#C94F2D', width: 3 },
+              markPoint: {
+                data: [
+                  {
+                    coord: [sim.bestRound - 1, sim.bestLoss],
+                    symbol: 'circle',
+                    symbolSize: 12,
+                    itemStyle: { color: '#28785E', borderColor: '#FFFFFF', borderWidth: 2 },
+                    label: {
+                      show: true,
+                      formatter: '早停点: R' + sim.bestRound,
+                      position: 'top',
+                      color: '#28785E',
+                      fontWeight: 'bold',
+                      fontSize: 15
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        };
+
+        chart.setOption(option);
+      }
+
+      // Slider listeners
+      sliderLr.addEventListener('input', function() {
+        btnConservative.classList.remove('active');
+        btnAggressive.classList.remove('active');
+        update();
+      });
+      sliderDepth.addEventListener('input', function() {
+        btnConservative.classList.remove('active');
+        btnAggressive.classList.remove('active');
+        update();
+      });
+      sliderRounds.addEventListener('input', function() {
+        btnConservative.classList.remove('active');
+        btnAggressive.classList.remove('active');
+        update();
+      });
+
+      // Preset buttons
+      btnConservative.addEventListener('click', function() {
+        sliderLr.value = 0.05;
+        sliderDepth.value = 3;
+        sliderRounds.value = 120;
+        btnConservative.classList.add('active');
+        btnAggressive.classList.remove('active');
+        update();
+      });
+
+      btnAggressive.addEventListener('click', function() {
+        sliderLr.value = 0.25;
+        sliderDepth.value = 7;
+        sliderRounds.value = 160;
+        btnAggressive.classList.add('active');
+        btnConservative.classList.remove('active');
+        update();
+      });
+
+      update();
+
+      window.addEventListener('resize', function() {
+        chart.resize();
+      });
+    })();
+  </script>
+</body>
+</html>

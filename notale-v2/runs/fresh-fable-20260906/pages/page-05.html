@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>05 · Bagging</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+  .lab{ position:absolute; left:64px; top:196px; width:960px; height:580px; }
+  .lab .top{ display:flex; justify-content:space-between; align-items:center; height:40px; }
+  .lab canvas{ position:absolute; left:0; top:52px; width:960px; height:500px; }
+  .lab .cap{ position:absolute; left:0; right:0; bottom:0; font-size:14px; color:var(--muted); display:flex; justify-content:space-between; }
+  .side{ position:absolute; left:1064px; top:196px; width:472px; height:580px; display:grid; grid-template-rows:auto auto 1fr; gap:16px; }
+  .side .panel{ padding:20px 24px; }
+  .ctls{ display:grid; gap:14px; }
+  .check{ display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; cursor:pointer; user-select:none; }
+  .check input{ width:18px; height:18px; accent-color:var(--bag); margin:0; }
+  .mse{ display:grid; grid-template-columns:1fr 1fr auto; gap:12px; align-items:end; }
+  .mse .k{ font-size:13px; color:var(--muted); } .mse .v{ font-family:var(--font-num); font-size:32px; font-weight:600; letter-spacing:-.02em; margin-top:3px; }
+  .mse .drop{ font-family:var(--font-num); font-size:18px; font-weight:600; color:var(--bag); padding:4px 10px; background:var(--bag-bg); border-radius:8px; }
+  .curve{ position:relative; }
+  .curve h3{ font-size:15px; font-weight:700; margin-bottom:6px; }
+  .curve svg{ width:100%; height:200px; overflow:visible; }
+</style>
+</head>
+<body>
+<main id="stage">
+  <header class="hd">
+    <div class="kicker"><b>02 · Bagging</b>BREIMAN · 1996</div>
+    <h1>抽 B 份自助样本，各训一棵深树，预测取<em class="bag">平均</em></h1>
+    <p class="lede">每棵树都过拟合自己那份样本，但过拟合的方向各不相同。平均把这些各不相同的抖动抵消掉，<b>留下大家都同意的部分</b>。拖 B 看误差怎么落。</p>
+  </header>
+
+  <figure class="lab" aria-label="Bagging 回归演示">
+    <div class="top">
+      <div class="legend"><span><i class="dot" style="--c:var(--text);opacity:.4"></i>训练点 · 80</span><span><i style="--c:var(--single)"></i>单棵深树（全部数据）</span><span><i style="--c:var(--single-lt)"></i>每棵自助树</span><span><i style="--c:var(--bag)"></i>Bagging 平均</span><span><i class="dash" style="--c:var(--quiet)"></i>真实函数</span></div>
+      <label class="check"><input id="show" type="checkbox" checked> 显示每棵树</label>
+    </div>
+    <canvas id="cv"></canvas>
+    <figcaption class="cap"><span>所有树深度相同；误差在 300 个新点上测，含噪声下界约 0.032</span><span id="stat"></span></figcaption>
+  </figure>
+
+  <aside class="side">
+    <div class="panel ctls">
+      <div class="ctl" style="--acc:var(--bag)">
+        <label for="B">树的数量 B</label><output for="B">1</output>
+        <input id="B" type="range" min="1" max="60" step="1" value="1">
+      </div>
+      <div class="ctl" style="--acc:var(--single)">
+        <label for="D">每棵树的最大深度</label><output for="D">6</output>
+        <input id="D" type="range" min="1" max="8" step="1" value="6">
+        <div class="hint">深度低于 3 时树本身就钝，平均救不了偏差——这是下一节 Boosting 的事</div>
+      </div>
+    </div>
+    <div class="panel mse">
+      <div><div class="k">单棵树 · 测试 MSE</div><div class="v" style="color:var(--single)" id="m1">–</div></div>
+      <div><div class="k">Bagging · 测试 MSE</div><div class="v" style="color:var(--bag)" id="m2">–</div></div>
+      <div class="drop" id="drop">–</div>
+    </div>
+    <div class="panel curve">
+      <h3>测试误差随 B 的变化</h3>
+      <svg id="svg" viewBox="0 0 424 200"></svg>
+    </div>
+  </aside>
+</main>
+<script src="assets/base.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/ens.js"></script>
+<script>
+Ens.footer(5);
+var r = Ens.rng('bag-05'), train = Ens.sine1d(80, 0.18, r), test = Ens.sine1d(300, 0.18, Ens.rng('bag-05-test'));
+var BMAX = 60, boots = []; for (var b = 0; b < BMAX; b++) boots.push(Ens.bootstrap(80, r));
+var Bi = document.getElementById('B'), Di = document.getElementById('D'), show = document.getElementById('show');
+var single, trees, testPred, mseCurve, N = 320, gridPred;
+function mse(fn) { var s = 0; for (var i = 0; i < test.x.length; i++) { var d = fn(test.x[i]) - test.y[i]; s += d * d; } return s / test.x.length; }
+function refit() {
+  var depth = +Di.value;
+  single = Ens.regTree(train.x, train.y, { maxDepth: depth, minLeaf: 1 });
+  trees = boots.map(function (idx) { return Ens.regTree(idx.map(function (i) { return train.x[i]; }), idx.map(function (i) { return train.y[i]; }), { maxDepth: depth, minLeaf: 1 }); });
+  // 测试误差 vs B
+  var acc = new Float64Array(test.x.length); mseCurve = [];
+  trees.forEach(function (t, b) { var s = 0; for (var i = 0; i < test.x.length; i++) { acc[i] += t(test.x[i]); var d = acc[i] / (b + 1) - test.y[i]; s += d * d; } mseCurve.push(s / test.x.length); });
+  gridPred = trees.map(function (t) { var p = new Float64Array(N + 1); for (var k = 0; k <= N; k++) p[k] = t(k / N); return p; });
+  drawCurve(); draw();
+}
+var cv = document.getElementById('cv'), W = 960, H = 500, PAD = { l: 16, r: 16, t: 16, b: 16 }, ctx;
+function X(x) { return PAD.l + x * (W - PAD.l - PAD.r); }
+function Y(y) { return PAD.t + (1.0 - y) / 2.0 * (H - PAD.t - PAD.b); }
+function line(fn, color, width, dash) { ctx.setLineDash(dash || []); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath(); for (var k = 0; k <= N; k++) ctx[k ? 'lineTo' : 'moveTo'](X(k / N), Y(fn(k))); ctx.stroke(); ctx.setLineDash([]); }
+function draw() {
+  var B = +Bi.value; ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(29,35,39,.06)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(29,35,39,.4)'; for (var i = 0; i < 80; i++) { ctx.beginPath(); ctx.arc(X(train.x[i]), Y(train.y[i]), 3.5, 0, 7); ctx.fill(); }
+  line(function (k) { return train.f(k / N); }, 'rgba(106,113,119,.8)', 2, [6, 6]);
+  var avg = new Float64Array(N + 1);
+  for (var b = 0; b < B; b++) { var p = gridPred[b]; for (var k = 0; k <= N; k++) avg[k] += p[k] / B; if (show.checked) line(function (k) { return p[k]; }, 'rgba(92,110,130,' + Math.max(0.08, 0.5 / Math.sqrt(B)) + ')', 1.3); }
+  line(function (k) { return single(k / N); }, Deck.token('--single'), 2.2);
+  line(function (k) { return avg[k]; }, Deck.token('--bag'), 4);
+  var m1 = mse(single), m2 = mseCurve[B - 1];
+  document.getElementById('m1').textContent = m1.toFixed(3); document.getElementById('m2').textContent = m2.toFixed(3);
+  document.getElementById('drop').textContent = (m2 < m1 ? '−' : '+') + Math.abs((m2 - m1) / m1 * 100).toFixed(0) + '%';
+  document.getElementById('stat').textContent = 'B = ' + B + ' · 深度 ' + Di.value;
+  mark.attr('cx', sx(B)).attr('cy', sy(m2));
+}
+// 右下小图
+var svg = d3.select('#svg'), SW = 424, SH = 200, SM = { l: 44, r: 12, t: 12, b: 30 };
+var sx = d3.scaleLinear().domain([1, BMAX]).range([SM.l, SW - SM.r]), sy = d3.scaleLinear().range([SH - SM.b, SM.t]);
+var gx = svg.append('g').attr('class', 'axis').attr('transform', 'translate(0,' + (SH - SM.b) + ')'), gy = svg.append('g').attr('class', 'axis').attr('transform', 'translate(' + SM.l + ',0)');
+svg.append('text').attr('class', 'axis-title').attr('x', SW - SM.r).attr('y', SH - 2).attr('text-anchor', 'end').text('B');
+var sPath = svg.append('path').attr('fill', 'none').attr('stroke', Deck.token('--bag')).attr('stroke-width', 2.5);
+var sLine = svg.append('line').attr('stroke', Deck.token('--single')).attr('stroke-width', 1.5).attr('stroke-dasharray', '4 4');
+var sTxt = svg.append('text').attr('class', 'note').attr('text-anchor', 'end').attr('fill', Deck.token('--single'));
+var mark = svg.append('circle').attr('r', 6).attr('fill', Deck.token('--paper')).attr('stroke', Deck.token('--bag')).attr('stroke-width', 3);
+function drawCurve() {
+  var m1 = mse(single), hi = Math.max(m1, d3.max(mseCurve)) * 1.1, lo = Math.min(d3.min(mseCurve), m1) * 0.85;
+  sy.domain([lo, hi]);
+  gx.call(d3.axisBottom(sx).ticks(6).tickSize(-(SH - SM.t - SM.b)).tickPadding(8)).select('.domain').remove();
+  gy.call(d3.axisLeft(sy).ticks(4, '.2f').tickSize(-(SW - SM.l - SM.r)).tickPadding(8)).select('.domain').remove();
+  sPath.attr('d', d3.line().x(function (d, i) { return sx(i + 1); }).y(function (d) { return sy(d); })(mseCurve));
+  sLine.attr('x1', SM.l).attr('x2', SW - SM.r).attr('y1', sy(m1)).attr('y2', sy(m1));
+  sTxt.attr('x', SW - SM.r).attr('y', sy(m1) - 6).text('单棵树 ' + m1.toFixed(3));
+  mark.raise();
+}
+ctx = Deck.fit(cv);
+Deck.onResize(function () { ctx = Deck.fit(cv); draw(); });
+Ens.slider(Bi, null, draw); Ens.slider(Di, null, refit); show.addEventListener('change', draw);
+refit();
+// 开场：B 从 1 自动长到 25，让台阶磨平的过程被看到
+if (!Deck.reduced()) { var t0 = null, stop = Deck.loop(function (t) { var B = Math.min(25, 1 + Math.floor(t / 90)); if (+Bi.value !== B) { Bi.value = B; Bi.dispatchEvent(new Event('input')); } if (B >= 25) stop(); }); }
+</script>
+</body>
+</html>

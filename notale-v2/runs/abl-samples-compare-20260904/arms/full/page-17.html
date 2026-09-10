@@ -1,0 +1,750 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>梯度提升的残差视角：每棵新树拟合当前模型仍需修正的方向</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #stage {
+      padding: 22px var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin: 0;
+      font-size: var(--fs-lead);
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧可视化区 */
+    .visual-pane {
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 18px;
+      min-height: 0;
+      box-shadow: 0 1px 3px rgba(18, 38, 52, 0.04);
+    }
+
+    .visual-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .stage-indicator {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .stage-btn {
+      appearance: none;
+      border: 1px solid var(--surface-strong);
+      background: var(--bg);
+      color: var(--muted);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--duration) var(--ease);
+    }
+
+    .stage-btn:hover {
+      border-color: var(--model);
+      color: var(--text);
+    }
+
+    .stage-btn.active {
+      background: var(--model);
+      border-color: var(--model);
+      color: #ffffff;
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot-target {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--sample);
+    }
+
+    .line-model {
+      width: 18px;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--model);
+    }
+
+    .line-res {
+      width: 16px;
+      height: 2px;
+      border-top: 2px dashed var(--aggregate);
+    }
+
+    .chart-dual-container {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      gap: 8px;
+    }
+
+    .chart-box {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    .chart-box-title {
+      position: absolute;
+      top: 6px;
+      left: 12px;
+      z-index: 10;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+      background: rgba(255, 255, 255, 0.85);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .chart-box-title .badge {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .badge-primary { background: #e3eff7; color: var(--model); }
+    .badge-residual { background: #fbeae5; color: var(--aggregate); }
+
+    /* 右侧控制与推导面板 */
+    .side-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 3px rgba(18, 38, 52, 0.04);
+    }
+
+    .card-title {
+      margin: 0 0 8px 0;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .formula-box {
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 6px 10px;
+      margin-bottom: 8px;
+      text-align: center;
+      font-size: 15px;
+    }
+
+    .step-explain {
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .step-explain strong {
+      color: var(--text);
+    }
+
+    .metrics-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-label);
+      margin-top: 2px;
+    }
+
+    .metrics-table th, .metrics-table td {
+      padding: 4px 6px;
+      text-align: left;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+
+    .metrics-table th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: var(--fs-tick);
+    }
+
+    .metrics-table td.num-cell {
+      font-family: var(--font-num);
+      text-align: right;
+      font-weight: 600;
+    }
+
+    .num-target { color: var(--sample); }
+    .num-pred { color: var(--model); }
+    .num-res { color: var(--aggregate); }
+
+    .bottom-insight {
+      background: #fdfaf7;
+      border: 1px solid #f6ded6;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    .bottom-insight strong {
+      color: var(--aggregate);
+    }
+
+    .controls-row {
+      display: flex;
+      gap: 10px;
+      margin-top: auto;
+    }
+
+    .btn-action {
+      flex: 1;
+      height: 38px;
+      border: 1px solid var(--model);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--model);
+      font-size: var(--fs-label);
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all var(--duration) var(--ease);
+    }
+
+    .btn-action:hover {
+      background: var(--model);
+      color: #ffffff;
+    }
+
+    .btn-reset {
+      width: 74px;
+      height: 38px;
+      border: 1px solid var(--surface-strong);
+      background: var(--bg);
+      color: var(--muted);
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-reset:hover {
+      color: var(--text);
+      border-color: var(--muted);
+    }
+  </style>
+</head>
+<body data-page="17" data-total="27">
+  <div id="stage">
+    <header class="header-block">
+      <h1>梯度提升的残差视角：每棵新树拟合当前模型仍需修正的方向</h1>
+      <p class="subtitle">AdaBoost 通过重赋样本权重纠偏；梯度提升（GBDT）直接计算真实标签与当前集成的差值，让下一棵弱回归树专门拟合这一残差向量。</p>
+    </header>
+
+    <div class="main-grid min0">
+      <!-- 左侧图表对比区 -->
+      <section class="visual-pane min0" aria-label="残差拟合与累加过程图表">
+        <div class="visual-topbar">
+          <div class="stage-indicator" role="tablist" aria-label="迭代步选择">
+            <button class="stage-btn active" id="btn-step-0" role="tab" aria-selected="true">初始均值 <span class="math-slot">F₀</span></button>
+            <button class="stage-btn" id="btn-step-1" role="tab" aria-selected="false">第 1 轮：<span class="math-slot">h₁</span></button>
+            <button class="stage-btn" id="btn-step-2" role="tab" aria-selected="false">第 2 轮：<span class="math-slot">h₂</span></button>
+            <button class="stage-btn" id="btn-step-3" role="tab" aria-selected="false">第 3 轮：<span class="math-slot">h₃</span></button>
+          </div>
+          <div class="legend-row">
+            <span class="legend-item"><span class="dot-target"></span>样本 y</span>
+            <span class="legend-item"><span class="line-model"></span>集成预测 Fₘ(x)</span>
+            <span class="legend-item"><span class="line-res"></span>待学残差 rᵢ</span>
+          </div>
+        </div>
+
+        <div class="chart-dual-container min0">
+          <!-- 上半部分：原始空间与当前累加模型 F_m(x) -->
+          <div class="chart-box min0">
+            <div class="chart-box-title">
+              <span>当前累加预测：Fₘ(x) = Fₘ₋₁(x) + hₘ(x)</span>
+              <span class="badge badge-primary" id="upper-badge">均方误差 MSE: 2.14</span>
+            </div>
+            <div id="chart-primary" class="cv-fill"></div>
+          </div>
+          <!-- 下半部分：残差空间与新增回归树 h_m(x) -->
+          <div class="chart-box min0">
+            <div class="chart-box-title">
+              <span>当前残差空间与拟合树：rᵢ,ₘ = yᵢ - Fₘ₋₁(xᵢ)</span>
+              <span class="badge badge-residual" id="lower-badge">目标：拟合残差分布</span>
+            </div>
+            <div id="chart-residual" class="cv-fill"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧解析与控制区 -->
+      <aside class="side-pane min0">
+        <div class="card">
+          <h2 class="card-title">
+            <span id="step-title">初始基线：常数预测 F₀(x)</span>
+            <span class="unit" id="step-index" style="font-family: var(--font-num); font-size: var(--fs-label); color: var(--muted);">Step 0 / 3</span>
+          </h2>
+          
+          <div class="formula-box" id="step-formula">
+            <!-- 由 KaTeX 填充 -->
+          </div>
+
+          <div class="step-explain" id="step-description">
+            在平方损失函数 $L(y, \hat{y}) = \frac{1}{2}(y-\hat{y})^2$ 下，使总损失最小的初始常数即为所有样本的目标均值 $\bar{y}$。此时模型输出一条水平线。
+          </div>
+
+          <table class="metrics-table">
+            <thead>
+              <tr>
+                <th>典型采样点</th>
+                <th style="text-align:right">真实值 y</th>
+                <th style="text-align:right">集成 Fₘ(x)</th>
+                <th style="text-align:right">残差 r = y - F</th>
+              </tr>
+            </thead>
+            <tbody id="metrics-body">
+              <!-- 动态填充 -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="bottom-insight" id="bottom-insight-text">
+          <!-- 由 JS KaTeX 渲染 -->
+        </div>
+
+        <div class="controls-row">
+          <button class="btn-action" id="btn-next-step">
+            <span id="btn-next-text">训练第 1 棵新树拟合残差</span>
+          </button>
+          <button class="btn-reset" id="btn-reset-step">重置</button>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      // 1. 真实数据生成（固定 14 个样本点，体现非线性函数趋势）
+      var rawPoints = [
+        { x: 1.0, y: 1.2 },
+        { x: 1.6, y: 1.9 },
+        { x: 2.3, y: 2.7 },
+        { x: 2.9, y: 3.8 },
+        { x: 3.5, y: 3.6 },
+        { x: 4.2, y: 4.5 },
+        { x: 4.8, y: 3.1 },
+        { x: 5.5, y: 2.2 },
+        { x: 6.2, y: 1.7 },
+        { x: 6.9, y: 1.5 },
+        { x: 7.6, y: 2.4 },
+        { x: 8.3, y: 3.2 },
+        { x: 8.9, y: 4.1 },
+        { x: 9.5, y: 4.8 }
+      ];
+
+      // 计算均值 F0
+      var sumY = rawPoints.reduce(function (acc, p) { return acc + p.y; }, 0);
+      var meanY = Number((sumY / rawPoints.length).toFixed(2)); // ~ 2.91
+
+      // 定义三棵决策树桩 (stumps)，根据残差切分
+      // 树 1: 在 x=5.0 处切分
+      // x <= 5.0 的残差高，x > 5.0 的残差因峰后下降而低
+      // 预测值分别取均值
+      function stump1(x) {
+        return x <= 5.0 ? 0.65 : -0.76;
+      }
+
+      // 树 2: 拟合残差 1。在 x <= 3.0 或 3.0 < x <= 6.5 或 x > 6.5 划分，这里用简单树桩组合
+      function stump2(x) {
+        if (x <= 3.2) return -0.42;
+        if (x <= 6.5) return 0.58;
+        return -0.25;
+      }
+
+      // 树 3: 进一步修补两端峰值
+      function stump3(x) {
+        if (x <= 2.0) return -0.32;
+        if (x >= 8.0) return 0.62;
+        return -0.15;
+      }
+
+      // 计算密集平滑曲线点
+      var denseX = [];
+      for (var dx = 0.8; dx <= 9.8; dx += 0.05) {
+        denseX.push(Number(dx.toFixed(2)));
+      }
+
+      function getModelPrediction(step, x) {
+        var pred = meanY;
+        if (step >= 1) pred += stump1(x);
+        if (step >= 2) pred += stump2(x);
+        if (step >= 3) pred += stump3(x);
+        return Number(pred.toFixed(2));
+      }
+
+      function getTreeOutput(step, x) {
+        if (step === 1) return stump1(x);
+        if (step === 2) return stump2(x);
+        if (step === 3) return stump3(x);
+        return 0;
+      }
+
+      function calculateMSE(step) {
+        var se = 0;
+        rawPoints.forEach(function (p) {
+          var pred = getModelPrediction(step, p.x);
+          se += (p.y - pred) * (p.y - pred);
+        });
+        return (se / rawPoints.length).toFixed(3);
+      }
+
+      // 状态管理
+      var currentStep = 0; // 0, 1, 2, 3
+
+      var stepData = [
+        {
+          title: "初始基线：常数预测 F₀(x)",
+          indexStr: "Step 0 / 3",
+          formula: "F_0(x) = \\arg\\min_c \\sum_{i=1}^N L(y_i, c) = \\bar{y} = " + meanY,
+          desc: "在平方损失函数下，最优初始常数预测是所有标签均值。此时模型尚未提取输入特征信息，各点产生明显正负残差。",
+          upperBadge: "均方误差 MSE: " + calculateMSE(0),
+          lowerBadge: "初始残差 rᵢ = yᵢ - F₀",
+          nextBtn: "训练第 1 棵新树拟合残差"
+        },
+        {
+          title: "第 1 轮提升：加入回归树 h₁(x)",
+          indexStr: "Step 1 / 3",
+          formula: "F_1(x) = F_0(x) + h_1(x), \\quad h_1(x) \\approx (y - F_0)",
+          desc: "第 1 棵树以当前残差为目标进行区间二分切分。加到常数基线后，阶梯预测线迅速拉近与数据主趋势的距离。",
+          upperBadge: "均方误差 MSE: " + calculateMSE(1),
+          lowerBadge: "剩余残差 r_{i,2} = yᵢ - F₁",
+          nextBtn: "训练第 2 棵新树进一步修正"
+        },
+        {
+          title: "第 2 轮提升：加入回归树 h₂(x)",
+          indexStr: "Step 2 / 3",
+          formula: "F_2(x) = F_1(x) + h_2(x), \\quad h_2(x) \\approx (y - F_1)",
+          desc: "第 2 棵树针对上一轮未拟合好的残差切分，重点修补峰谷两侧的系统性偏差，整体均方误差进一步降低。",
+          upperBadge: "均方误差 MSE: " + calculateMSE(2),
+          lowerBadge: "剩余残差 r_{i,3} = yᵢ - F₂",
+          nextBtn: "训练第 3 棵新树精细调整"
+        },
+        {
+          title: "第 3 轮提升：加入回归树 h₃(x)",
+          indexStr: "Step 3 / 3",
+          formula: "F_3(x) = F_2(x) + h_3(x) = F_0(x) + \\sum_{m=1}^3 h_m(x)",
+          desc: "第 3 棵树吸收残留的细小波动。多个简单回归树的分段相加，组合出能够高度逼近真实样本分布的阶梯预测面。",
+          upperBadge: "均方误差 MSE: " + calculateMSE(3),
+          lowerBadge: "最终残差已大幅衰减接近 0",
+          nextBtn: "重新从初始状态观察"
+        }
+      ];
+
+      // 初始化 ECharts
+      var chartPrimaryDom = document.getElementById('chart-primary');
+      var chartResidualDom = document.getElementById('chart-residual');
+      var chartPrimary = echarts.init(chartPrimaryDom, null, { renderer: 'svg' });
+      var chartResidual = echarts.init(chartResidualDom, null, { renderer: 'svg' });
+
+      function renderKaTeX() {
+        var el = document.getElementById('step-formula');
+        katex.render(stepData[currentStep].formula, el, { throwOnError: false, displayMode: true });
+
+        var insightEl = document.getElementById('bottom-insight-text');
+        insightEl.innerHTML = '<strong>残差即负梯度方向：</strong> 对于均方损失，负梯度 <span id="grad-formula"></span> 恰好等于标准残差。新树拟合残差，即在函数空间中沿最速下降方向修正模型。';
+        katex.render("-\\frac{\\partial L}{\\partial F(x)} = y - F(x)", document.getElementById('grad-formula'), { throwOnError: false });
+      }
+
+      function updateTable() {
+        var tbody = document.getElementById('metrics-body');
+        // 取 4 个典型点：x=1.6, 4.2, 6.2, 9.5
+        var sampleIndices = [1, 5, 8, 13];
+        var html = '';
+        sampleIndices.forEach(function (idx) {
+          var p = rawPoints[idx];
+          var pred = getModelPrediction(currentStep, p.x);
+          var res = Number((p.y - pred).toFixed(2));
+          var resSign = res > 0 ? '+' + res.toFixed(2) : res.toFixed(2);
+          html += '<tr>' +
+            '<td>样本点 (x=' + p.x + ')</td>' +
+            '<td class="num-cell num-target">' + p.y.toFixed(2) + '</td>' +
+            '<td class="num-cell num-pred">' + pred.toFixed(2) + '</td>' +
+            '<td class="num-cell num-res">' + resSign + '</td>' +
+            '</tr>';
+        });
+        tbody.innerHTML = html;
+      }
+
+      function buildUpperOption(step) {
+        var predCurve = denseX.map(function (x) {
+          return [x, getModelPrediction(step, x)];
+        });
+        var scatterPoints = rawPoints.map(function (p) {
+          return [p.x, p.y];
+        });
+
+        // 残差虚线（连接真实点与预测线）
+        var residualLines = [];
+        rawPoints.forEach(function (p) {
+          var pred = getModelPrediction(step, p.x);
+          residualLines.push([
+            { coord: [p.x, p.y] },
+            { coord: [p.x, pred] }
+          ]);
+        });
+
+        return {
+          animationDuration: 350,
+          grid: { left: 45, right: 25, top: 40, bottom: 28 },
+          xAxis: {
+            type: 'value',
+            min: 0.5,
+            max: 10.0,
+            interval: 1,
+            axisLabel: { color: '#536A78', fontSize: 12 },
+            splitLine: { lineStyle: { color: '#E2EBF0', type: 'dashed' } }
+          },
+          yAxis: {
+            type: 'value',
+            min: 0.5,
+            max: 5.5,
+            interval: 1,
+            axisLabel: { color: '#536A78', fontSize: 12 },
+            splitLine: { lineStyle: { color: '#E2EBF0', type: 'dashed' } }
+          },
+          series: [
+            {
+              name: '真实样本',
+              type: 'scatter',
+              data: scatterPoints,
+              symbolSize: 10,
+              itemStyle: { color: '#2F7568', borderColor: '#ffffff', borderWidth: 1.5 },
+              z: 5
+            },
+            {
+              name: '集成预测 Fm(x)',
+              type: 'line',
+              data: predCurve,
+              smooth: false,
+              step: 'middle',
+              lineStyle: { color: '#27648F', width: 3.5 },
+              showSymbol: false,
+              z: 4
+            },
+            {
+              name: '残差差值',
+              type: 'lines',
+              coordinateSystem: 'cartesian2d',
+              data: residualLines,
+              lineStyle: { color: '#C34B22', width: 1.5, type: 'dashed' },
+              z: 2
+            }
+          ]
+        };
+      }
+
+      function buildLowerOption(step) {
+        // 当前步的残差散点：点位于 (x, y - F_{m-1})
+        // 如果 step === 0，残差即 y - F0
+        var prevStep = Math.max(0, step - 1);
+        var resScatter = rawPoints.map(function (p) {
+          var predPrev = getModelPrediction(prevStep, p.x);
+          var res = p.y - predPrev;
+          return [p.x, Number(res.toFixed(2))];
+        });
+
+        // 当前新树的拟合曲线 hm(x)
+        var treeCurve = denseX.map(function (x) {
+          var val = step === 0 ? 0 : getTreeOutput(step, x);
+          return [x, Number(val.toFixed(2))];
+        });
+
+        return {
+          animationDuration: 350,
+          grid: { left: 45, right: 25, top: 38, bottom: 28 },
+          xAxis: {
+            type: 'value',
+            min: 0.5,
+            max: 10.0,
+            interval: 1,
+            axisLabel: { color: '#536A78', fontSize: 12 },
+            splitLine: { lineStyle: { color: '#E2EBF0', type: 'dashed' } }
+          },
+          yAxis: {
+            type: 'value',
+            min: -2.5,
+            max: 2.5,
+            interval: 1,
+            axisLabel: { color: '#536A78', fontSize: 12 },
+            splitLine: { lineStyle: { color: '#E2EBF0', type: 'dashed' } }
+          },
+          series: [
+            {
+              name: '零基准线',
+              type: 'line',
+              data: [[0.5, 0], [10.0, 0]],
+              lineStyle: { color: '#536A78', width: 1.2, type: 'solid' },
+              showSymbol: false,
+              silent: true,
+              z: 1
+            },
+            {
+              name: '待拟合残差',
+              type: 'scatter',
+              data: resScatter,
+              symbolSize: 8,
+              itemStyle: { color: '#C34B22', borderColor: '#ffffff', borderWidth: 1 },
+              z: 4
+            },
+            {
+              name: '新增树拟合输出 hm(x)',
+              type: 'line',
+              data: treeCurve,
+              step: 'middle',
+              lineStyle: { color: '#C34B22', width: 2.8 },
+              showSymbol: false,
+              z: 3
+            }
+          ]
+        };
+      }
+
+      function updateUI() {
+        var data = stepData[currentStep];
+        document.getElementById('step-title').textContent = data.title;
+        document.getElementById('step-index').textContent = data.indexStr;
+        document.getElementById('step-description').innerHTML = data.desc;
+        document.getElementById('upper-badge').textContent = data.upperBadge;
+        document.getElementById('lower-badge').textContent = data.lowerBadge;
+        document.getElementById('btn-next-text').textContent = data.nextBtn;
+
+        // 切换按钮状态
+        for (var i = 0; i <= 3; i++) {
+          var btn = document.getElementById('btn-step-' + i);
+          if (btn) {
+            btn.classList.toggle('active', i === currentStep);
+            btn.setAttribute('aria-selected', i === currentStep ? 'true' : 'false');
+          }
+        }
+
+        renderKaTeX();
+        updateTable();
+
+        chartPrimary.setOption(buildUpperOption(currentStep), true);
+        chartResidual.setOption(buildLowerOption(currentStep), true);
+      }
+
+      // 事件绑定
+      for (var s = 0; s <= 3; s++) {
+        (function (stepIdx) {
+          var btn = document.getElementById('btn-step-' + stepIdx);
+          if (btn) {
+            btn.addEventListener('click', function () {
+              currentStep = stepIdx;
+              updateUI();
+            });
+          }
+        })(s);
+      }
+
+      document.getElementById('btn-next-step').addEventListener('click', function () {
+        currentStep = (currentStep + 1) % 4;
+        updateUI();
+      });
+
+      document.getElementById('btn-reset-step').addEventListener('click', function () {
+        currentStep = 0;
+        updateUI();
+      });
+
+      window.addEventListener('resize', function () {
+        chartPrimary.resize();
+        chartResidual.resize();
+      });
+
+      Deck.init({ index: 17, total: 27, keys: false });
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

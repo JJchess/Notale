@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>从生物到机器：感知机模型与罗森布拉特的 Mark I 硬件实现</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .page-header {
+      position: absolute;
+      left: 72px;
+      top: 56px;
+      right: 72px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+    }
+    .header-main {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .nt-title {
+      font-size: 36px;
+      line-height: 1.15;
+      font-family: var(--font-title);
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      margin: 0;
+    }
+    .nt-sub-claim {
+      font-size: 15px;
+      color: var(--text-muted);
+      margin: 0;
+    }
+    .header-tag {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--class-a);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      background: rgba(255, 255, 255, 0.4);
+    }
+
+    /* 主舞台：三区对齐架构图与硬件实物 */
+    .stage-grid {
+      position: absolute;
+      left: 72px;
+      top: 152px;
+      right: 72px;
+      bottom: 60px;
+      display: grid;
+      grid-template-columns: 860px 1fr;
+      gap: 48px;
+    }
+
+    /* 左侧：感知机三层架构与计算链路 */
+    .arch-container {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .arch-diagram {
+      width: 100%;
+      height: 480px;
+    }
+
+    /* 底部判别式 */
+    .formula-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--border);
+      padding-top: 16px;
+    }
+    .formula-item {
+      font-size: 15px;
+      color: var(--text-muted);
+    }
+    .formula-item strong {
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 18px;
+    }
+    .formula-rule {
+      font-size: 14px;
+      color: var(--class-b);
+      font-family: var(--font-mono);
+      background: var(--accent-soft-b);
+      padding: 4px 10px;
+    }
+
+    /* 右侧：Mark I 实物与工程实现 */
+    .hardware-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .photo-frame {
+      position: relative;
+      width: 100%;
+      height: 420px;
+      border: 1px solid var(--border);
+      background: #cfd8d2;
+      overflow: hidden;
+    }
+    .photo-frame img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      filter: contrast(1.05);
+    }
+    .photo-caption {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin: 0;
+      padding-left: 2px;
+    }
+    .spec-table {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 16px;
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+    }
+    .spec-item {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      border-bottom: 1px dashed var(--border-light);
+      padding-bottom: 4px;
+    }
+    .spec-k {
+      color: var(--text-muted);
+    }
+    .spec-v {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="19">
+  <div id="stage">
+    <header class="page-header">
+      <div class="header-main">
+        <h1 class="nt-title">感知机与 Mark I：计算硬件实现</h1>
+        <p class="nt-sub-claim">1957 年弗兰克·罗森布拉特将神经元突触电导具象化为电动电位器</p>
+      </div>
+      <div class="header-tag">HISTORICAL REIFICATION · 1957–1960</div>
+    </header>
+
+    <main class="stage-grid">
+      <!-- 左侧：从视网膜到电位器权重和阈值输出 -->
+      <section class="arch-container">
+        <svg class="arch-diagram" viewBox="0 0 880 480" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- 区域标注底框（极淡虚线界定三层） -->
+          <rect x="20" y="20" width="220" height="440" rx="2" stroke="var(--border)" stroke-dasharray="3 3" fill="rgba(255,255,255,0.1)"/>
+          <text x="36" y="52" fill="var(--text-muted)" font-family="var(--font-mono)" font-size="13" font-weight="700">S-POINTS / 感觉层</text>
+          <text x="36" y="74" fill="var(--text-sub)" font-family="var(--font-sans)" font-size="12">400 像素 CdS 光敏阵列</text>
+
+          <rect x="310" y="20" width="220" height="440" rx="2" stroke="var(--border)" stroke-dasharray="3 3" fill="rgba(255,255,255,0.1)"/>
+          <text x="326" y="52" fill="var(--text-muted)" font-family="var(--font-mono)" font-size="13" font-weight="700">A-UNITS / 联想层</text>
+          <text x="326" y="74" fill="var(--text-sub)" font-family="var(--font-sans)" font-size="12">固定随机连线抽特征</text>
+
+          <rect x="610" y="20" width="250" height="440" rx="2" stroke="var(--border)" stroke-dasharray="3 3" fill="rgba(255,255,255,0.1)"/>
+          <text x="626" y="52" fill="var(--text-muted)" font-family="var(--font-mono)" font-size="13" font-weight="700">R-UNITS / 响应层</text>
+          <text x="626" y="74" fill="var(--text-sub)" font-family="var(--font-sans)" font-size="12">电机旋钮权重 + 继电器激活</text>
+
+          <!-- S层 400 像素微型栅格代表 (20x20 光敏像元示意) -->
+          <g transform="translate(48, 120)">
+            <!-- 20x20 格子的外框与抽样像素 -->
+            <rect width="160" height="160" fill="#E4EAE6" stroke="var(--border)" stroke-width="1.5"/>
+            <!-- 模拟英文字母 E 或几何图样的投影 -->
+            <path d="M 32 32 H 128 V 56 H 64 V 72 H 112 V 96 H 64 V 104 H 128 V 128 H 32 Z" fill="var(--class-a)" opacity="0.85"/>
+            <text x="80" y="195" text-anchor="middle" fill="var(--text)" font-family="var(--font-mono)" font-size="12">20×20 摄影输入窗</text>
+            <text x="80" y="215" text-anchor="middle" fill="var(--text-sub)" font-family="var(--font-sans)" font-size="11">二值光敏信号 xᵢ ∈ {0, 1}</text>
+          </g>
+
+          <!-- S 到 A 的随机连线 (固定稀疏投射) -->
+          <g opacity="0.45" stroke="var(--text-sub)" stroke-width="1">
+            <path d="M 208 160 C 260 160, 260 150, 350 150"/>
+            <path d="M 208 190 C 260 190, 260 230, 350 230"/>
+            <path d="M 208 220 C 260 220, 260 310, 350 310"/>
+            <path d="M 208 250 C 260 250, 260 390, 350 390"/>
+          </g>
+
+          <!-- A-units 神经元节点 -->
+          <g>
+            <!-- A1 -->
+            <circle cx="370" cy="150" r="18" fill="#DAE1DC" stroke="var(--text)" stroke-width="2"/>
+            <text x="370" y="155" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700">a₁</text>
+            <!-- A2 -->
+            <circle cx="370" cy="230" r="18" fill="#DAE1DC" stroke="var(--text)" stroke-width="2"/>
+            <text x="370" y="235" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700">a₂</text>
+            <!-- 虚点省略 -->
+            <circle cx="370" cy="272" r="2.5" fill="var(--text-sub)"/>
+            <circle cx="370" cy="282" r="2.5" fill="var(--text-sub)"/>
+            <!-- A_m -->
+            <circle cx="370" cy="324" r="18" fill="#DAE1DC" stroke="var(--text)" stroke-width="2"/>
+            <text x="370" y="329" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700">aᵢ</text>
+
+            <circle cx="370" cy="400" r="18" fill="#DAE1DC" stroke="var(--text)" stroke-width="2"/>
+            <text x="370" y="405" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700">a₅₁₂</text>
+
+            <text x="440" y="278" text-anchor="middle" fill="var(--text-muted)" font-family="var(--font-mono)" font-size="11">512 个</text>
+            <text x="440" y="294" text-anchor="middle" fill="var(--text-muted)" font-family="var(--font-sans)" font-size="11">阈值单元</text>
+          </g>
+
+          <!-- A 到 R 的可调权重连接（马达驱动电位器指示） -->
+          <g stroke-width="2">
+            <!-- 连线 1 -->
+            <path d="M 388 150 L 650 270" stroke="var(--class-a)" stroke-dasharray="6 3"/>
+            <!-- 连线 2 -->
+            <path d="M 388 230 L 650 270" stroke="var(--class-a)"/>
+            <!-- 连线 3 -->
+            <path d="M 388 324 L 650 270" stroke="var(--class-b)"/>
+            <!-- 连线 4 -->
+            <path d="M 388 400 L 650 270" stroke="var(--class-a)" stroke-dasharray="6 3"/>
+          </g>
+
+          <!-- 权重电位器符号标注 (可变电阻/马达电位器) -->
+          <g transform="translate(510, 195)">
+            <rect x="-10" y="-14" width="62" height="28" fill="#FFF" stroke="var(--border)" rx="2"/>
+            <text x="21" y="5" text-anchor="middle" font-family="var(--font-mono)" font-size="12" fill="var(--class-a)" font-weight="700">w₁ (电机)</text>
+          </g>
+          <g transform="translate(510, 245)">
+            <rect x="-10" y="-14" width="62" height="28" fill="#FFF" stroke="var(--border)" rx="2"/>
+            <text x="21" y="5" text-anchor="middle" font-family="var(--font-mono)" font-size="12" fill="var(--class-a)" font-weight="700">w₂ (电机)</text>
+          </g>
+          <g transform="translate(510, 310)">
+            <rect x="-10" y="-14" width="62" height="28" fill="#FFF" stroke="var(--border)" rx="2"/>
+            <text x="21" y="5" text-anchor="middle" font-family="var(--font-mono)" font-size="12" fill="var(--class-b)" font-weight="700">wᵢ (电机)</text>
+          </g>
+
+          <!-- R 响应层核心节点 -->
+          <g transform="translate(680, 270)">
+            <!-- 累加求和圈 -->
+            <circle cx="0" cy="0" r="30" fill="#FFF" stroke="var(--text)" stroke-width="2.5"/>
+            <text x="0" y="8" text-anchor="middle" font-family="var(--font-title)" font-size="28" font-weight="800">Σ</text>
+            
+            <!-- 阈值阶跃比较器 -->
+            <path d="M 30 0 L 56 0" stroke="var(--text)" stroke-width="2"/>
+            <rect x="56" y="-22" width="44" height="44" fill="#E4EAE6" stroke="var(--text)" stroke-width="2"/>
+            <!-- 阶跃符号 -->
+            <path d="M 64 10 H 78 V -10 H 92" stroke="var(--class-b)" stroke-width="2" fill="none"/>
+
+            <!-- 输出连线 -->
+            <path d="M 100 0 L 132 0" stroke="var(--text)" stroke-width="2.5"/>
+            <circle cx="132" cy="0" r="4" fill="var(--class-a)"/>
+            <text x="142" y="-6" font-family="var(--font-mono)" font-size="14" font-weight="700" fill="var(--text)">y ∈ {±1}</text>
+            <text x="142" y="15" font-family="var(--font-sans)" font-size="11" fill="var(--text-muted)">分类决策</text>
+
+            <!-- 偏置/阈值 θ -->
+            <path d="M 0 30 L 0 52" stroke="var(--text)" stroke-width="1.5"/>
+            <text x="0" y="68" text-anchor="middle" font-family="var(--font-mono)" font-size="13" font-weight="700" fill="var(--text)">阈值 θ</text>
+          </g>
+        </svg>
+
+        <div class="formula-bar">
+          <div class="formula-item">
+            判别函数：<strong>y = sign( ∑ wᵢ aᵢ - θ )</strong>
+          </div>
+          <div class="formula-rule">
+            参数更新：Δwᵢ = η (y* - y) aᵢ
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：Mark I 真实历史机柜 -->
+      <section class="hardware-panel">
+        <div class="photo-frame">
+          <img src="assets/img/planner-0badf0a1bea8/00.png" alt="Mark I Perceptron 硬件实物与接线面板" title="Mark I Perceptron, Figure 2 of operator's manual, Cornell Aeronautical Laboratory (1960)">
+        </div>
+        <p class="photo-caption">
+          <strong>Mark I 操纵台（1960）</strong>：突触权重由微型直流马达驱动精密电位器转动调节。
+        </p>
+        <div class="spec-table">
+          <div class="spec-item">
+            <span class="spec-k">光电输入像元</span>
+            <span class="spec-v">20 × 20 (400 点)</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-k">联想单元</span>
+            <span class="spec-v">512 个 A 单元</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-k">权重物理载体</span>
+            <span class="spec-v">马达电位器</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-k">学习步进实现</span>
+            <span class="spec-v">电动螺线管脉冲</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    上一节我们看了生物神经元树突、胞体和轴突的分工。1957年，弗兰克·罗森布拉特在康奈尔航空实验室将这一生物直觉转化为一台真正的物理机器——Mark I Perceptron。
+    请看左侧的三层结构：最左边是400个硫化镉光敏电阻组成的视网膜输入层；中间是512个通过固定随机连线抽特征的联想单元；而最核心的右侧响应层，突触权重不是存储在内存里的数字，而是由真实的微型马达驱动的精密滑动电位器。
+    右图就是当年的操纵台照片。当分类出错时，继电器接通电源，马达旋转一小段角度改变电阻值，这就是历史上第一次在物理硬件上直接验证了感知机学习法则。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 3, total: 19 });
+  </script>
+</body>
+</html>

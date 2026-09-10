@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bagging 的方差收益</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, -apple-system, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: 22px var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      height: 900px;
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.15;
+    }
+
+    .lead-text {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .main-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 410px;
+      gap: 24px;
+      min-height: 0;
+    }
+
+    /* Left chart figure */
+    .chart-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      box-shadow: 0 4px 16px rgba(18, 38, 52, 0.04);
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-line {
+      width: 18px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .chart-body {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      margin-top: 10px;
+    }
+
+    #echarts-host {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-caption {
+      margin-top: 8px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid var(--surface-strong);
+      padding-top: 8px;
+    }
+
+    /* Right sidebar */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .formula-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 12px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(18, 38, 52, 0.04);
+    }
+
+    .formula-card h2 {
+      margin: 0;
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .math-block {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 18px;
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border: 1px solid var(--surface-strong);
+    }
+
+    .formula-breakdown {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .term-box {
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 6px 8px;
+      background: #fafcfd;
+    }
+
+    .term-box.term-bound {
+      border-color: rgba(195, 75, 34, 0.35);
+      background: rgba(195, 75, 34, 0.04);
+    }
+
+    .term-box.term-decay {
+      border-color: rgba(39, 100, 143, 0.35);
+      background: rgba(39, 100, 143, 0.04);
+    }
+
+    .term-tag {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .term-box.term-bound .term-tag { color: var(--aggregate); }
+    .term-box.term-decay .term-tag { color: var(--model); }
+
+    .term-desc {
+      font-size: 13.5px;
+      color: var(--muted);
+      line-height: 1.3;
+      margin: 0;
+    }
+
+    .control-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 12px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(18, 38, 52, 0.04);
+    }
+
+    .ctl-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .ctl-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .ctl-val {
+      font-size: 15px;
+      color: var(--aggregate);
+      font-weight: 700;
+      font-family: var(--font-num);
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--surface-strong);
+      outline: none;
+      margin: 3px 0;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--aggregate);
+      cursor: pointer;
+      border: 2px solid #FFFFFF;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      transition: transform 0.1s ease;
+    }
+
+    input[type="range"]:focus::-webkit-slider-thumb {
+      outline: 2px solid var(--focus);
+    }
+
+    .presets {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-preset {
+      flex: 1;
+      padding: 5px 0;
+      border-radius: 6px;
+      border: 1px solid var(--surface-strong);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .btn-preset:hover {
+      background: var(--surface-strong);
+    }
+
+    .btn-preset.active {
+      background: var(--aggregate);
+      color: #FFFFFF;
+      border-color: var(--aggregate);
+    }
+
+    .metrics-panel {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 12px;
+      padding: 10px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 4px 16px rgba(18, 38, 52, 0.04);
+    }
+
+    .metric-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+
+    .metric-item:last-child {
+      border-bottom: none;
+    }
+
+    .metric-name {
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .metric-value {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: var(--font-num);
+      color: var(--text);
+    }
+
+    .metric-value.highlight {
+      color: var(--aggregate);
+    }
+
+    .metric-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-left: 4px;
+      font-weight: 400;
+    }
+
+    #fallback-table {
+      position: absolute;
+      inset: 20px;
+      background: #FFFFFF;
+      overflow: auto;
+      z-index: 10;
+      padding: 16px;
+    }
+  </style>
+</head>
+<body data-page="08" data-total="27">
+  <div id="stage">
+    <header>
+      <h1>Bagging 的方差收益：平均削弱波动，树间相关性决定收益底线</h1>
+      <p class="lead-text" id="lead-p">
+        单棵决策树高方差；对 <span id="eq-b">\(B\)</span> 棵树简单平均可让可消除的独立误差按 <span id="eq-b2">\(1/B\)</span> 迅速衰减，但无法消除树之间的共同模式。
+      </p>
+    </header>
+
+    <main class="main-grid">
+      <!-- Left Chart -->
+      <figure class="chart-panel">
+        <div class="chart-header">
+          <div class="chart-title">集成方差随着树数量 <span id="eq-b3">\(B\)</span> 增长的收敛曲线</div>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <span class="legend-line" style="background: var(--aggregate);"></span>
+              <span>当前集成方差 <span id="eq-varf">\(\text{Var}(\bar{f})\)</span></span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line" style="background: var(--aggregate); border-top: 2px dashed var(--aggregate); height: 0;"></span>
+              <span>相关性底线 <span id="eq-rhosig">\(\rho \sigma^2\)</span></span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line" style="background: var(--muted); border-top: 2px dotted var(--muted); height: 0;"></span>
+              <span>理想独立上限 (<span id="eq-rho0">\(\rho=0\)</span>)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-body">
+          <div id="echarts-host"></div>
+          <div id="fallback-table" hidden>
+            <table style="width:100%; border-collapse:collapse; text-align:left;">
+              <thead>
+                <tr style="border-bottom: 1px solid #ccc;">
+                  <th>树数 B</th>
+                  <th>集成方差 (ρ=0.5)</th>
+                  <th>理论下限 (ρσ²)</th>
+                </tr>
+              </thead>
+              <tbody id="fallback-rows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="chart-caption">
+          <span>横轴：基学习器数量 <span id="eq-bdomain">\(B \in [1, 100]\)</span>；纵轴：归一化方差（以单树 <span id="eq-sig1">\(\sigma^2 = 1.0\)</span> 为基准）</span>
+          <span id="asymptote-note">当树数量趋向无穷时，方差趋近于底线 ρσ²</span>
+        </div>
+      </figure>
+
+      <!-- Right Column -->
+      <aside class="sidebar">
+        <!-- Exact variance decomposition formula -->
+        <section class="formula-card">
+          <h2>方差分解恒等式</h2>
+          <div class="math-block" id="math-formula">
+            <!-- KaTeX rendered here -->
+          </div>
+          <div class="formula-breakdown">
+            <div class="term-box term-bound">
+              <div class="term-tag">不可消除底线</div>
+              <p class="term-desc">
+                <strong id="eq-bound-term">\(\rho \sigma^2\)</strong><br>
+                树间越相似，多采样的树越无法互补，方差无法降到此值以下。
+              </p>
+            </div>
+            <div class="term-box term-decay">
+              <div class="term-tag">随树数衰减项</div>
+              <p class="term-desc">
+                <strong id="eq-decay-term">\(\frac{1 - \rho}{B}\sigma^2\)</strong><br>
+                基学习器各不相同的差异部分，平均后按 1/B 快速削减。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Interactive correlation controls -->
+        <section class="control-card">
+          <div class="ctl-row">
+            <div class="ctl-label-row">
+              <label for="rho-slider">树间皮尔逊相关系数 <span id="eq-ctl-rho">\(\rho\)</span></label>
+              <span class="ctl-val" id="rho-val">0.45</span>
+            </div>
+            <input type="range" id="rho-slider" min="0" max="0.9" step="0.05" value="0.45" aria-label="树间相关系数 rho">
+          </div>
+
+          <div class="ctl-row">
+            <div class="ctl-label-row">
+              <label for="b-slider">树的数量 <span id="eq-ctl-b">\(B\)</span></label>
+              <span class="ctl-val" id="b-val">30</span>
+            </div>
+            <input type="range" id="b-slider" min="1" max="100" step="1" value="30" aria-label="树数量 B">
+          </div>
+
+          <div class="ctl-row">
+            <span style="font-size: 13.5px; color: var(--muted); font-weight: 600;">典型场景预设</span>
+            <div class="presets">
+              <button type="button" class="btn-preset" data-rho="0.0">理想独立 (ρ=0)</button>
+              <button type="button" class="btn-preset active" data-rho="0.45">普通 Bagging</button>
+              <button type="button" class="btn-preset" data-rho="0.80">强特征主导</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Current calculated metrics -->
+        <section class="metrics-panel">
+          <div class="metric-item">
+            <span class="metric-name">单树原始方差 <span id="eq-metric-sig">\(\sigma^2\)</span></span>
+            <span class="metric-value">1.00</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-name">当前集成方差 <span id="eq-metric-var">\(\text{Var}(\bar{f})\)</span></span>
+            <span class="metric-value highlight" id="metric-var">0.468</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-name">方差收益（相对削减率）</span>
+            <span class="metric-value" id="metric-gain">53.2%</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-name">理论不可削减下限 <span id="eq-metric-lim">\(\rho\sigma^2\)</span></span>
+            <span class="metric-value" style="color: var(--aggregate);" id="metric-limit">0.450</span>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // Render KaTeX formulas
+      try {
+        var kR = function (id, tex, disp) {
+          var el = document.getElementById(id);
+          if (el) katex.render(tex, el, { throwOnError: false, displayMode: !!disp });
+        };
+        kR('math-formula', "\\text{Var}(\\bar{f}) = \\rho\\sigma^2 + \\frac{1-\\rho}{B}\\sigma^2", true);
+        kR('eq-b', "B");
+        kR('eq-b2', "1/B");
+        kR('eq-b3', "B");
+        kR('eq-varf', "\\text{Var}(\\bar{f})");
+        kR('eq-rhosig', "\\rho \\sigma^2");
+        kR('eq-rho0', "\\rho=0");
+        kR('eq-bdomain', "B \\in [1, 100]");
+        kR('eq-sig1', "\\sigma^2 = 1.0");
+        kR('eq-bound-term', "\\rho \\sigma^2");
+        kR('eq-decay-term', "\\frac{1 - \\rho}{B}\\sigma^2");
+        kR('eq-ctl-rho', "\\rho");
+        kR('eq-ctl-b', "B");
+        kR('eq-metric-sig', "\\sigma^2");
+        kR('eq-metric-var', "\\text{Var}(\\bar{f})");
+        kR('eq-metric-lim', "\\rho\\sigma^2");
+      } catch (e) {
+        console.error(e);
+      }
+
+      var host = document.getElementById('echarts-host');
+      var sliderRho = document.getElementById('rho-slider');
+      var sliderB = document.getElementById('b-slider');
+      var rhoValEl = document.getElementById('rho-val');
+      var bValEl = document.getElementById('b-val');
+      var metricVarEl = document.getElementById('metric-var');
+      var metricGainEl = document.getElementById('metric-gain');
+      var metricLimitEl = document.getElementById('metric-limit');
+      var asymptoteNote = document.getElementById('asymptote-note');
+      var presetBtns = document.querySelectorAll('.btn-preset');
+
+      var state = {
+        sigma2: 1.0,
+        rho: 0.45,
+        B: 30
+      };
+
+      // Generate curve data points for B = 1..100
+      function computeCurve(rho, sigma2) {
+        var points = [];
+        for (var b = 1; b <= 100; b++) {
+          var v = rho * sigma2 + ((1 - rho) / b) * sigma2;
+          points.push([b, Number(v.toFixed(4))]);
+        }
+        return points;
+      }
+
+      function computeIdealCurve(sigma2) {
+        var points = [];
+        for (var b = 1; b <= 100; b++) {
+          var v = sigma2 / b;
+          points.push([b, Number(v.toFixed(4))]);
+        }
+        return points;
+      }
+
+      var idealData = computeIdealCurve(state.sigma2);
+
+      // Populate fallback table
+      var fallbackRows = document.getElementById('fallback-rows');
+      var checkBs = [1, 5, 10, 20, 50, 100];
+      checkBs.forEach(function (b) {
+        var tr = document.createElement('tr');
+        var v = (state.rho + (1 - state.rho) / b).toFixed(3);
+        tr.innerHTML = '<td style="padding:4px 8px;">' + b + '</td><td style="padding:4px 8px;">' + v + '</td><td style="padding:4px 8px;">' + state.rho.toFixed(2) + '</td>';
+        fallbackRows.appendChild(tr);
+      });
+
+      var chart = null;
+      try {
+        if (!window.echarts) throw new Error("ECharts not loaded");
+        chart = echarts.init(host, null, { renderer: 'svg' });
+      } catch (err) {
+        document.getElementById('fallback-table').hidden = false;
+      }
+
+      function updateChart() {
+        if (!chart) return;
+
+        var currentCurve = computeCurve(state.rho, state.sigma2);
+        var currentVar = state.rho * state.sigma2 + ((1 - state.rho) / state.B) * state.sigma2;
+        var asymptote = state.rho * state.sigma2;
+
+        var option = {
+          animation: false,
+          grid: {
+            left: 56,
+            right: 48,
+            top: 36,
+            bottom: 48
+          },
+          tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(255, 255, 255, 0.96)',
+            borderColor: '#E2EBF0',
+            textStyle: { color: '#122634', fontSize: 13 },
+            formatter: function (params) {
+              var b = params[0].value[0];
+              var v = params[0].value[1];
+              var ideal = (state.sigma2 / b).toFixed(3);
+              return '<div style="font-weight:600; margin-bottom:4px;">树数量 B = ' + b + '</div>' +
+                     '当前集成方差: <b>' + v + '</b><br>' +
+                     '不可削减底线: <b>' + asymptote.toFixed(3) + '</b><br>' +
+                     '若完全独立 (ρ=0): ' + ideal;
+            }
+          },
+          xAxis: {
+            type: 'value',
+            min: 1,
+            max: 100,
+            name: '树数量 B',
+            nameLocation: 'end',
+            nameTextStyle: { color: '#536A78', fontSize: 13, padding: [0, 0, -28, 0] },
+            splitLine: { lineStyle: { color: '#F0F4F6' } },
+            axisLine: { lineStyle: { color: '#536A78' } },
+            axisLabel: { color: '#536A78', fontSize: 13 }
+          },
+          yAxis: {
+            type: 'value',
+            min: 0,
+            max: 1.05,
+            interval: 0.2,
+            name: '集成方差 Var',
+            nameTextStyle: { color: '#536A78', fontSize: 13 },
+            splitLine: { lineStyle: { color: '#E2EBF0' } },
+            axisLine: { lineStyle: { color: '#536A78' } },
+            axisLabel: { color: '#536A78', fontSize: 13 }
+          },
+          series: [
+            {
+              id: 'current-curve',
+              name: '集成方差',
+              type: 'line',
+              smooth: true,
+              data: currentCurve,
+              lineStyle: { color: '#C34B22', width: 3.5 },
+              showSymbol: false,
+              markPoint: {
+                data: [
+                  {
+                    coord: [state.B, Number(currentVar.toFixed(4))],
+                    symbol: 'circle',
+                    symbolSize: 12,
+                    itemStyle: { color: '#C34B22', borderColor: '#FFFFFF', borderWidth: 2 },
+                    label: {
+                      show: true,
+                      position: 'top',
+                      formatter: 'B=' + state.B + '\nVar=' + currentVar.toFixed(3),
+                      color: '#C34B22',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                      padding: [3, 6],
+                      borderRadius: 4
+                    }
+                  }
+                ]
+              },
+              markLine: {
+                symbol: ['none', 'none'],
+                data: [
+                  // Asymptote line rho * sigma2
+                  {
+                    yAxis: asymptote,
+                    lineStyle: { color: '#C34B22', type: 'dashed', width: 2 },
+                    label: {
+                      formatter: '底线 ρσ² = ' + asymptote.toFixed(2),
+                      position: 'insideEndTop',
+                      color: '#C34B22',
+                      fontSize: 12,
+                      fontWeight: 600
+                    }
+                  },
+                  // Current B vertical line
+                  {
+                    xAxis: state.B,
+                    lineStyle: { color: '#536A78', type: 'dotted', width: 1.5 },
+                    label: { show: false }
+                  }
+                ]
+              }
+            },
+            {
+              id: 'ideal-curve',
+              name: '理想完全独立 (ρ=0)',
+              type: 'line',
+              smooth: true,
+              data: idealData,
+              lineStyle: { color: '#536A78', width: 2, type: 'dotted' },
+              showSymbol: false
+            }
+          ]
+        };
+
+        chart.setOption(option);
+      }
+
+      function updateUI() {
+        var currentVar = state.rho * state.sigma2 + ((1 - state.rho) / state.B) * state.sigma2;
+        var asymptote = state.rho * state.sigma2;
+        var gainPct = ((1 - currentVar / state.sigma2) * 100).toFixed(1);
+
+        rhoValEl.textContent = state.rho.toFixed(2);
+        bValEl.textContent = state.B;
+
+        metricVarEl.textContent = currentVar.toFixed(3);
+        metricGainEl.textContent = gainPct + '%';
+        metricLimitEl.textContent = asymptote.toFixed(3);
+
+        if (state.rho === 0) {
+          asymptoteNote.textContent = '当 ρ = 0 时无相关性，方差随 B 增长理论收敛到 0';
+        } else {
+          asymptoteNote.textContent = '当 B 趋向无穷时，方差趋近于不可削减的底线 ρσ² = ' + asymptote.toFixed(2);
+        }
+
+        updateChart();
+      }
+
+      sliderRho.addEventListener('input', function (e) {
+        state.rho = parseFloat(e.target.value);
+        presetBtns.forEach(function (btn) {
+          btn.classList.toggle('active', Math.abs(parseFloat(btn.dataset.rho) - state.rho) < 0.01);
+        });
+        updateUI();
+      });
+
+      sliderB.addEventListener('input', function (e) {
+        state.B = parseInt(e.target.value, 10);
+        updateUI();
+      });
+
+      presetBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var targetRho = parseFloat(this.dataset.rho);
+          state.rho = targetRho;
+          sliderRho.value = targetRho;
+          presetBtns.forEach(function (b) { b.classList.remove('active'); });
+          this.classList.add('active');
+          updateUI();
+        });
+      });
+
+      window.addEventListener('resize', function () {
+        if (chart) chart.resize();
+      });
+
+      Deck.init({ index: 8, total: 27, keys: false });
+
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

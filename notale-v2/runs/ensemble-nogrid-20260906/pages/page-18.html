@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F9;
+      --text: #172A3A;
+      --font-sans: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      margin-top: 8px;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      max-width: 900px;
+    }
+    .badge-formula {
+      background: var(--paper);
+      border: 1px solid rgba(83, 101, 117, 0.2);
+      border-radius: var(--radius);
+      padding: 10px 18px;
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      color: var(--text);
+      box-shadow: 0 4px 12px rgba(23, 42, 58, 0.04);
+    }
+    .badge-formula b {
+      color: var(--aggregate);
+    }
+
+    /* 主画板网格 */
+    .flow-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1.05fr;
+      gap: 24px;
+      height: 610px;
+      margin-top: 14px;
+    }
+
+    .step-card {
+      background: var(--paper);
+      border-radius: var(--radius);
+      border: 1px solid rgba(83, 101, 117, 0.16);
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      box-shadow: 0 6px 20px rgba(23, 42, 58, 0.03);
+    }
+
+    .step-card.active-card {
+      border-color: rgba(36, 95, 166, 0.4);
+    }
+
+    .step-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      border-bottom: 1px solid rgba(83, 101, 117, 0.1);
+      padding-bottom: 10px;
+    }
+
+    .step-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .step-num {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: rgba(36, 95, 166, 0.12);
+      color: var(--model);
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+    }
+
+    .step-metric {
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .step-metric span {
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .canvas-wrap {
+      flex: 1;
+      position: relative;
+      border-radius: 6px;
+      background: #F9FBFC;
+      border: 1px dashed rgba(83, 101, 117, 0.15);
+      overflow: hidden;
+    }
+
+    .step-footer {
+      margin-top: 14px;
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      min-height: 48px;
+    }
+    .step-footer strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* 箭头连接指示 */
+    .flow-connector {
+      position: absolute;
+      top: 50%;
+      right: -16px;
+      width: 32px;
+      height: 32px;
+      background: var(--bg);
+      border: 2px solid rgba(83, 101, 117, 0.25);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      transform: translateY(-50%);
+      color: var(--muted);
+      font-weight: bold;
+    }
+
+    /* 控件条 */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4px;
+    }
+    .legend {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot-pos { background: var(--aggregate); }
+    .dot-neg { background: var(--model); }
+    .dot-wrong { border: 2px solid #D9381E; background: transparent; }
+
+    .btn-group {
+      display: flex;
+      gap: 12px;
+    }
+    .btn {
+      padding: 6px 16px;
+      border: 1px solid rgba(83, 101, 117, 0.3);
+      background: var(--paper);
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+      font-family: inherit;
+    }
+    .btn:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+    .btn.active {
+      background: var(--model);
+      border-color: var(--model);
+      color: #fff;
+    }
+  </style>
+</head>
+<body data-page="18" data-total="26">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>AdaBoost 的样本聚焦与加权表决</h1>
+        <div class="lead">误分类样本权重大幅提升，基学习器按泛化误差获得投票权</div>
+      </div>
+      <div class="badge-formula">
+        H(x) = sign(<b>∑ αₘ hₘ(x)</b>)
+      </div>
+    </header>
+
+    <div class="flow-grid">
+      <!-- 阶段 1: 弱学习器 1 划分与初态 -->
+      <div class="step-card min0">
+        <div class="step-header">
+          <div class="step-title">
+            <span class="step-num">1</span>
+            初轮划分 h₁
+          </div>
+          <div class="step-metric">误差率 ε₁ = <span>0.30</span></div>
+        </div>
+        <div class="canvas-wrap min0">
+          <canvas id="cv1" class="cv-fill"></canvas>
+        </div>
+        <div class="step-footer">
+          初始等权（w = 0.10）。决策树桩切于 x₁ = 2.7，左侧 3 个正例被误判。
+        </div>
+        <div class="flow-connector" aria-hidden="true">→</div>
+      </div>
+
+      <!-- 阶段 2: 权重重构与弱学习器 2 -->
+      <div class="step-card min0">
+        <div class="step-header">
+          <div class="step-title">
+            <span class="step-num">2</span>
+            权重重分配与 h₂
+          </div>
+          <div class="step-metric">赋权 α₁ = <span>0.42</span></div>
+        </div>
+        <div class="canvas-wrap min0">
+          <canvas id="cv2" class="cv-fill"></canvas>
+        </div>
+        <div class="step-footer">
+          误分点权重放大近 3 倍（圆圈扩大）。h₂ 被迫转向横切以优先修正难分样本。
+        </div>
+        <div class="flow-connector" aria-hidden="true">→</div>
+      </div>
+
+      <!-- 阶段 3: 加权线性组合 -->
+      <div class="step-card min0 active-card">
+        <div class="step-header">
+          <div class="step-title">
+            <span class="step-num">3</span>
+            加权投票集成 H(x)
+          </div>
+          <div class="step-metric">总误差 ε_ens = <span>0.00</span></div>
+        </div>
+        <div class="canvas-wrap min0">
+          <canvas id="cv3" class="cv-fill"></canvas>
+        </div>
+        <div class="step-footer">
+          基模型依表现加权叠加（0.42h₁ + 0.65h₂ + ...），组合出单树桩无法完成的折线边界。
+        </div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <div class="legend">
+        <div class="legend-item"><span class="dot dot-pos"></span> 正例 (+1)</div>
+        <div class="legend-item"><span class="dot dot-neg"></span> 负例 (-1)</div>
+        <div class="legend-item"><span class="dot dot-wrong"></span> 当前轮误分类</div>
+        <div class="legend-item" style="margin-left: 8px;">圆圈面积 ∝ 样本权重 wᵢ</div>
+      </div>
+      <div class="btn-group">
+        <button class="btn active" id="btn-show-all">整体因果回路</button>
+        <button class="btn" id="btn-hl-wrong">追踪被放大样本</button>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学请看 AdaBoost 最核心的两条机制：样本关注度动态更新与加权表决。
+    在第一步，所有样本权重均等，弱分类器 h1 产生 3 个误分类样本。
+    在第二步，通过 exp(α) 因子成倍放大了这 3 个误分样本的权重，在图中表现为圆圈显著变大；弱分类器 h2 被迫优先照顾这些难分样本，调整切分线。
+    最后在第三步，弱分类器并不是简单少数服从多数，而是根据各自错误率计算出的权重 α 进行加权求和，最终组合出精准的非线性决策边界。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      // 10个经典二维点：x从1到9，y从1到9
+      // 正例 y=+1, 负例 y=-1
+      const points = [
+        { id: 1, x: 1.5, y: 7.5, yTrue: 1 },
+        { id: 2, x: 2.0, y: 5.5, yTrue: 1 },
+        { id: 3, x: 1.8, y: 3.0, yTrue: 1 },
+        { id: 4, x: 3.5, y: 8.0, yTrue: 1 },
+        { id: 5, x: 4.2, y: 6.5, yTrue: 1 },
+        { id: 6, x: 3.8, y: 4.2, yTrue: 1 },
+        { id: 7, x: 6.5, y: 7.0, yTrue: -1 },
+        { id: 8, x: 7.5, y: 5.0, yTrue: -1 },
+        { id: 9, x: 8.0, y: 2.5, yTrue: -1 },
+        { id: 10, x: 6.0, y: 2.8, yTrue: -1 }
+      ];
+
+      // 阶段 1: 均等权重 0.1
+      // h1: 若 x < 2.5 预测 -1, 否则 +1 (造成 id 1,2,3 误分类，因为其实际为+1)
+      const w1 = Array(10).fill(0.1);
+      const err1 = [1, 2, 3]; // 误分id
+
+      // 阶段 2: 权重更新
+      // 误分样本增大到 ~0.24，其余缩小到 ~0.04
+      const w2 = points.map(p => err1.includes(p.id) ? 0.238 : 0.041);
+      // h2: 设横向切分 y = 4.8，优先保上方大圆
+      const err2 = [6, 10]; 
+
+      // 状态
+      let highlightWrong = false;
+
+      function renderCanvas(id, drawFn) {
+        const cv = document.getElementById(id);
+        Deck.autofit(cv, ctx => {
+          const w = cv.width / (window.devicePixelRatio || 1);
+          const h = cv.height / (window.devicePixelRatio || 1);
+          ctx.clearRect(0, 0, w, h);
+          drawFn(ctx, w, h);
+        });
+      }
+
+      function toScreen(pt, w, h) {
+        const pad = 36;
+        const sx = pad + (pt.x / 10) * (w - pad * 2);
+        const sy = h - pad - (pt.y / 10) * (h - pad * 2);
+        return { x: sx, y: sy };
+      }
+
+      function drawPoints(ctx, w, h, weights, wrongIds, focusWrong) {
+        points.forEach(p => {
+          const s = toScreen(p, w, h);
+          const isWrong = wrongIds.includes(p.id);
+          const weight = weights[p.id - 1] || 0.1;
+          // 半径与权重挂钩
+          const r = Math.sqrt(weight * 10) * 11 + 4;
+
+          const isPos = p.yTrue === 1;
+          const color = isPos ? Deck.token('--aggregate') : Deck.token('--model');
+
+          ctx.save();
+          if (focusWrong && !isWrong) {
+            ctx.globalAlpha = 0.25;
+          }
+
+          // 背景扩散光圈
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = isPos ? 'rgba(201, 79, 45, 0.12)' : 'rgba(36, 95, 166, 0.12)';
+          ctx.fill();
+
+          // 实心点
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, r * 0.55, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+
+          // 符号 + / -
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = 'bold ' + Math.max(10, Math.round(r * 0.6)) + 'px ' + Deck.token('--font-sans');
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(isPos ? '+' : '−', s.x, s.y + 0.5);
+
+          // 误分高亮红圈
+          if (isWrong) {
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, r + 4, 0, Math.PI * 2);
+            ctx.strokeStyle = '#D9381E';
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([4, 3]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+
+          // 标注权重值
+          ctx.fillStyle = Deck.token('--muted');
+          ctx.font = '12px ' + Deck.token('--font-num');
+          ctx.textAlign = 'center';
+          ctx.fillText('w=' + weight.toFixed(2), s.x, s.y + r + 13);
+
+          ctx.restore();
+        });
+      }
+
+      function drawStep1(ctx, w, h) {
+        // 背景微弱网格
+        drawGrid(ctx, w, h);
+
+        // 弱分类器 1 边界: x = 2.5
+        const pTop = toScreen({ x: 2.7, y: 10 }, w, h);
+        const pBottom = toScreen({ x: 2.7, y: 0 }, w, h);
+
+        // 阴影预测区
+        ctx.fillStyle = 'rgba(36, 95, 166, 0.05)';
+        ctx.fillRect(0, 0, pTop.x, h);
+        ctx.fillStyle = 'rgba(201, 79, 45, 0.05)';
+        ctx.fillRect(pTop.x, 0, w - pTop.x, h);
+
+        // 分割线
+        ctx.beginPath();
+        ctx.moveTo(pTop.x, 0);
+        ctx.lineTo(pTop.x, h);
+        ctx.strokeStyle = Deck.token('--model');
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // 标签
+        drawBoundaryLabel(ctx, pTop.x + 8, 30, 'h₁(x): x₁ = 2.7', Deck.token('--model'));
+
+        // 样本
+        drawPoints(ctx, w, h, w1, err1, highlightWrong);
+      }
+
+      function drawStep2(ctx, w, h) {
+        drawGrid(ctx, w, h);
+
+        // 弱分类器 2 边界: y = 5.0 横切
+        const pLeft = toScreen({ x: 0, y: 5.0 }, w, h);
+        const pRight = toScreen({ x: 10, y: 5.0 }, w, h);
+
+        ctx.fillStyle = 'rgba(201, 79, 45, 0.05)';
+        ctx.fillRect(0, 0, w, pLeft.y);
+        ctx.fillStyle = 'rgba(36, 95, 166, 0.05)';
+        ctx.fillRect(0, pLeft.y, w, h - pLeft.y);
+
+        ctx.beginPath();
+        ctx.moveTo(0, pLeft.y);
+        ctx.lineTo(w, pLeft.y);
+        ctx.strokeStyle = Deck.token('--diversity');
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        drawBoundaryLabel(ctx, 30, pLeft.y - 22, 'h₂(x): x₂ = 5.0', Deck.token('--diversity'));
+
+        drawPoints(ctx, w, h, w2, err2, highlightWrong);
+      }
+
+      function drawStep3(ctx, w, h) {
+        drawGrid(ctx, w, h);
+
+        // 集成组合边界：折线决策面
+        // 当加权求和后，左上方为 +1，右侧及右下为 -1
+        const b1 = toScreen({ x: 5.2, y: 10 }, w, h);
+        const b2 = toScreen({ x: 5.2, y: 4.5 }, w, h);
+        const b3 = toScreen({ x: 10, y: 4.5 }, w, h);
+
+        // 填充组合决策域
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(b1.x, 0);
+        ctx.lineTo(b2.x, b2.y);
+        ctx.lineTo(w, b3.y);
+        ctx.lineTo(w, 0);
+        ctx.closePath();
+
+        // 组合折线
+        ctx.beginPath();
+        ctx.moveTo(b1.x, 0);
+        ctx.lineTo(b2.x, b2.y);
+        ctx.lineTo(w, b2.y);
+        ctx.strokeStyle = Deck.token('--aggregate');
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+
+        // 正负区域着色
+        ctx.fillStyle = 'rgba(201, 79, 45, 0.08)';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(b1.x, 0);
+        ctx.lineTo(b2.x, b2.y);
+        ctx.lineTo(0, b2.y);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(36, 95, 166, 0.05)';
+        ctx.beginPath();
+        ctx.moveTo(b1.x, 0);
+        ctx.lineTo(w, 0);
+        ctx.lineTo(w, h);
+        ctx.lineTo(0, h);
+        ctx.lineTo(0, b2.y);
+        ctx.lineTo(b2.x, b2.y);
+        ctx.closePath();
+        ctx.fill();
+
+        drawBoundaryLabel(ctx, b2.x - 130, b2.y - 20, '集成边界: H(x)', Deck.token('--aggregate'));
+
+        // 最终状态权重均摊或标准展示，无错误圈
+        const finalWeights = Array(10).fill(0.1);
+        drawPoints(ctx, w, h, finalWeights, [], false);
+      }
+
+      function drawGrid(ctx, w, h) {
+        ctx.strokeStyle = 'rgba(83, 101, 117, 0.08)';
+        ctx.lineWidth = 1;
+        for (let i = 1; i <= 9; i++) {
+          const p1 = toScreen({ x: i, y: 0 }, w, h);
+          const p2 = toScreen({ x: i, y: 10 }, w, h);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+
+          const p3 = toScreen({ x: 0, y: i }, w, h);
+          const p4 = toScreen({ x: 10, y: i }, w, h);
+          ctx.beginPath();
+          ctx.moveTo(p3.x, p3.y);
+          ctx.lineTo(p4.x, p4.y);
+          ctx.stroke();
+        }
+      }
+
+      function drawBoundaryLabel(ctx, x, y, text, color) {
+        ctx.save();
+        ctx.font = '600 13px ' + Deck.token('--font-sans');
+        const m = ctx.measureText(text);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+        ctx.fillRect(x - 4, y - 12, m.width + 8, 20);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - 4, y - 12, m.width + 8, 20);
+        ctx.fillStyle = color;
+        ctx.fillText(text, x, y + 2);
+        ctx.restore();
+      }
+
+      function redrawAll() {
+        renderCanvas('cv1', drawStep1);
+        renderCanvas('cv2', drawStep2);
+        renderCanvas('cv3', drawStep3);
+      }
+
+      redrawAll();
+
+      const btnAll = document.getElementById('btn-show-all');
+      const btnHl = document.getElementById('btn-hl-wrong');
+
+      btnAll.addEventListener('click', () => {
+        highlightWrong = false;
+        btnAll.classList.add('active');
+        btnHl.classList.remove('active');
+        redrawAll();
+      });
+
+      btnHl.addEventListener('click', () => {
+        highlightWrong = true;
+        btnHl.classList.add('active');
+        btnAll.classList.remove('active');
+        redrawAll();
+      });
+
+      Deck.init({ index: 18, total: 26 });
+    })();
+  </script>
+</body>
+</html>

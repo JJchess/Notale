@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{ padding:32px 72px 22px; display:flex; flex-direction:column; gap:0; }
+
+.head{ display:flex; align-items:baseline; justify-content:space-between; gap:32px; }
+.head h1{ font-size:var(--fs-h2); }
+.head .nt-note{ max-width:520px; }
+
+/* ===== sentence rail ===== */
+.rail{ display:flex; align-items:flex-end; gap:0; margin-top:14px; }
+.tok{ position:relative; display:flex; flex-direction:column; align-items:center;
+  width:110px; cursor:pointer; padding-bottom:10px; border:none; background:none; font-family:var(--font-sans); }
+.tok .w{ font-size:var(--fs-lead); font-weight:700; color:var(--muted); transition:color .15s; white-space:nowrap; }
+.tok[data-seen="true"] .w{ color:var(--text); }
+.tok[data-active="true"] .w{ color:var(--accent); }
+.tok .idx{ font-size:var(--fs-tick); color:var(--muted); margin-top:4px; font-family:var(--font-sans); }
+.tok .dot{ width:10px; height:10px; border-radius:50%; background:var(--line); margin-top:8px; transition:background .15s, transform .15s; }
+.tok[data-seen="true"] .dot{ background:var(--stable); }
+.tok[data-active="true"] .dot{ background:var(--accent); transform:scale(1.35); }
+.rail-line{ position:relative; height:2px; background:var(--line); margin:0 -55px; flex:1; align-self:flex-end; margin-bottom:19px; }
+
+/* ===== main grid: hidden state bars | cell mechanism ===== */
+main{ display:grid; grid-template-columns: 1.15fr 1fr; gap:56px; margin-top:14px; }
+
+.panel-title{ font-size:var(--fs-sec); font-weight:700; margin-bottom:10px; }
+
+/* hidden state bar chart */
+.bars{ display:flex; flex-direction:column; gap:12px; }
+.bar-row{ display:grid; grid-template-columns:64px 1fr 96px; align-items:center; gap:14px; }
+.bar-row .lbl{ font-size:var(--fs-label); color:var(--muted); font-family:var(--font-sans); }
+.bar-track{ position:relative; height:30px; background:var(--bg); border:1px solid var(--line); }
+.bar-mid{ position:absolute; left:50%; top:0; bottom:0; width:1px; background:var(--line); }
+.bar-fill{ position:absolute; top:2px; bottom:2px; transition:left .25s ease, width .25s ease, background .25s ease; }
+.bar-fill.prev{ opacity:.28; background:var(--muted) !important; transition:none; }
+.bar-row .val{ font-size:var(--fs-tick); font-family:var(--font-sans); text-align:right; white-space:nowrap; }
+.bar-row .delta{ font-size:var(--fs-tick); color:var(--muted); }
+
+/* cell mechanism svg */
+.cellwrap{ max-width:380px; }
+.cellwrap svg{ width:100%; height:auto; display:block; }
+.cellwrap .nt-node-label{ font-family:var(--font-sans); }
+
+/* history heat strip */
+.history{ margin-top:10px; }
+.history .panel-title{ margin-bottom:8px; }
+.hist-grid{ display:grid; grid-template-columns: 64px repeat(9, 1fr); gap:4px; align-items:center; }
+.hist-row-label{ font-size:var(--fs-label); color:var(--muted); font-family:var(--font-sans); }
+.hist-cell{ height:26px; position:relative; border:1px solid var(--line); }
+.hist-cell.head{ border:none; height:auto; font-size:var(--fs-tick); color:var(--muted); text-align:center; font-family:var(--font-sans); }
+.hist-cell[data-current="true"]{ outline:2px solid var(--accent); outline-offset:1px; }
+
+/* controls */
+.nt-controls{ margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:24px; }
+.nt-control-row{ gap:12px; }
+.readout{ font-size:var(--fs-label); color:var(--muted); font-family:var(--font-sans); }
+.readout b{ color:var(--text); font-family:var(--font-sans); }
+
+.explain{ min-height:1.4em; margin-top:10px !important; }
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+
+  <div class="head">
+    <h1 class="nt-title" style="font-size:var(--fs-h2)">逐词展开：隐藏状态怎样被改写</h1>
+    <p class="nt-note">同一组参数 (W<sub>x</sub>, W<sub>h</sub>, b) 在每一步重复使用；h 只有 3 个分量，点词或翻页逐步计算 h<sub>t</sub> = tanh(W<sub>x</sub>x<sub>t</sub> + W<sub>h</sub>h<sub>t-1</sub> + b)。</p>
+  </div>
+
+  <div class="rail" id="rail"></div>
+
+  <main>
+    <div class="min0">
+      <div class="panel-title">隐藏状态 h<sub>t</sub>（3 个分量）</div>
+      <div class="bars" id="bars"></div>
+      <div class="explain nt-note" id="explain" style="margin-top:22px"></div>
+    </div>
+
+    <div class="min0">
+      <div class="panel-title">这一步在算什么</div>
+      <div class="cellwrap" id="cellwrap"></div>
+    </div>
+  </main>
+
+  <div class="history">
+    <div class="panel-title">全部步的轨迹：颜色深浅是数值，方框是当前步</div>
+    <div class="hist-grid" id="histGrid"></div>
+  </div>
+
+  <div class="nt-controls">
+    <div class="nt-control-row">
+      <button class="nt-button" id="prevBtn" data-action="prev">上一词</button>
+      <button class="nt-button" id="nextBtn" data-action="next">下一词</button>
+      <button class="nt-button" id="resetBtn" data-action="reset">重置</button>
+    </div>
+    <div class="readout">第 <b id="stepNo">0</b> / 8 步 · 也可用 ← → 键翻词</div>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  // ---- canonical data: fixed teaching weights, precomputed forward pass ----
+  const WORDS = ["the","movie","was","not","really","that","good","overall"];
+  const EMB = {
+    the:[0.1,0.0], movie:[0.2,-0.1], was:[0.0,0.1], not:[-0.9,0.6],
+    really:[0.3,0.5], that:[0.1,0.4], good:[0.8,0.2], overall:[0.1,-0.2]
+  };
+  const Wx = [[1.1,-0.3],[0.4,1.0],[-0.6,0.7]];
+  const Wh = [[0.8,-0.2,0.1],[0.1,0.7,-0.3],[-0.2,0.1,0.6]];
+  const B  = [0,0,0];
+
+  function tanh(v){ return Math.tanh(v); }
+  function step(h, x){
+    const out = [0,0,0];
+    for (let i=0;i<3;i++){
+      let s = B[i];
+      s += Wx[i][0]*x[0] + Wx[i][1]*x[1];
+      s += Wh[i][0]*h[0] + Wh[i][1]*h[1] + Wh[i][2]*h[2];
+      out[i] = tanh(s);
+    }
+    return out;
+  }
+
+  // precompute full history: index 0 = zero state, index 1..8 after each word
+  const HIST = [[0,0,0]];
+  for (const w of WORDS) HIST.push(step(HIST[HIST.length-1], EMB[w]));
+
+  // annotations: which component moves the most at this step, and narrative
+  function biggestDelta(prev, cur){
+    let idx=0, best=-1;
+    for (let i=0;i<3;i++){ const d=Math.abs(cur[i]-prev[i]); if (d>best){best=d; idx=i;} }
+    return {idx, delta: cur[idx]-prev[idx]};
+  }
+
+  const NOTES = {
+    0: "初始隐藏状态全为 0，还没有读入任何词。",
+    1: "读入「the」：三个分量都只有很小的变化，这是个中性词。",
+    2: "读入「movie」：h₀ 明显上升——主语被写入状态。",
+    3: "读入「was」：变化不大，语法功能词贡献有限。",
+    4: "读入「not」：h₂ 从 -0.13 猛跳到 +0.70，否定信号被强力写入状态。",
+    5: "读入「really」：h₂ 从 0.70 略降到 0.66，否定痕迹基本保留。",
+    6: "读入「that」：h₂ 几乎不变（0.64），信息仍留在状态里。",
+    7: "读入「good」：h₂ 被砸到 0.17——强烈的正面词几乎抹掉了「not」留下的痕迹。",
+    8: "读入「overall」：状态继续被覆写，句首和句中的信息都已很难分辨。"
+  };
+
+  // ---- DOM refs ----
+  const railEl = document.getElementById("rail");
+  const barsEl = document.getElementById("bars");
+  const cellEl = document.getElementById("cellwrap");
+  const histEl = document.getElementById("histGrid");
+  const explainEl = document.getElementById("explain");
+  const stepNoEl = document.getElementById("stepNo");
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  const resetBtn = document.getElementById("resetBtn");
+
+  const state = { t: 0 }; // 0..8, index into HIST / WORDS
+
+  function buildRail(){
+    railEl.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    const startTok = makeToken(-1, "∅");
+    frag.appendChild(startTok);
+    WORDS.forEach((w, i) => {
+      if (i>0){
+        const line = document.createElement("div");
+        line.className = "rail-line";
+        frag.appendChild(line);
+      } else {
+        const line = document.createElement("div");
+        line.className = "rail-line";
+        frag.appendChild(line);
+      }
+      frag.appendChild(makeToken(i, w));
+    });
+    railEl.appendChild(frag);
+  }
+  function makeToken(i, label){
+    const btn = document.createElement("button");
+    btn.className = "tok";
+    btn.dataset.t = String(i+1); // maps to HIST/step index (0 = start)
+    btn.innerHTML = `<span class="w">${label}</span><span class="dot"></span><span class="idx">${i<0?"start":"t="+(i+1)}</span>`;
+    btn.addEventListener("click", () => { state.t = i+1; render(); });
+    return btn;
+  }
+
+  function fmt(v){ return (v>=0?"+":"") + v.toFixed(2); }
+
+  function renderBars(){
+    const cur = HIST[state.t];
+    const prev = HIST[Math.max(0, state.t-1)];
+    const big = state.t>0 ? biggestDelta(prev, cur) : {idx:-1, delta:0};
+    barsEl.innerHTML = "";
+    for (let i=0;i<3;i++){
+      const row = document.createElement("div");
+      row.className = "bar-row";
+      const pct = v => 50 + v*45; // map [-1,1] -> [5,95]%
+      const curPct = pct(cur[i]);
+      const prevPct = pct(prev[i]);
+      const isBig = i===big.idx;
+      row.innerHTML = `
+        <div class="lbl">h<sub>${i}</sub></div>
+        <div class="bar-track">
+          <div class="bar-mid"></div>
+          <div class="bar-fill prev" style="left:${Math.min(curPct===prevPct?prevPct:prevPct,prevPct)}%; width:2px;"></div>
+          <div class="bar-fill" style="
+            left:${Math.min(curPct,50)}%;
+            width:${Math.abs(curPct-50)}%;
+            background:${isBig ? 'var(--accent)' : (cur[i]>=0?'var(--stable)':'var(--muted)')};
+          "></div>
+        </div>
+        <div class="val">${fmt(cur[i])}${state.t>0?`<div class="delta">${isBig?"改写最大 ":""}Δ${fmt(cur[i]-prev[i])}</div>`:""}</div>
+      `;
+      barsEl.appendChild(row);
+    }
+  }
+
+  function renderCell(){
+    const w = state.t>0 ? WORDS[state.t-1] : null;
+    const x = w ? EMB[w] : [0,0];
+    const prev = HIST[Math.max(0,state.t-1)];
+    const cur = HIST[state.t];
+    const W=520,H=340;
+    cellEl.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}">
+      <text x="16" y="24" font-size="13" fill="var(--muted)">输入词向量 x<tspan font-size="11">t</tspan></text>
+      <text x="16" y="46" class="nt-mono" font-size="17" fill="var(--text)">${w?`“${w}” = [${x[0].toFixed(1)}, ${x[1].toFixed(1)}]`:"（还没有输入）"}</text>
+
+      <text x="16" y="80" font-size="13" fill="var(--muted)">上一状态 h<tspan font-size="11">t-1</tspan></text>
+      <text x="16" y="102" class="nt-mono" font-size="15" fill="var(--text)">[${prev.map(v=>v.toFixed(2)).join(", ")}]</text>
+
+      <path class="nt-diagram-line" d="M 150 46 C 220 46, 220 90, 150 90" fill="none"/>
+      <path class="nt-diagram-line" d="M 260 102 L 260 132" marker-end="url(#arrow)"/>
+      <path class="nt-diagram-line" d="M 150 46 L 260 46 L 260 132" fill="none" marker-end="url(#arrow)"/>
+
+      <rect x="150" y="140" width="220" height="56" rx="4" fill="none" stroke="var(--text)" stroke-width="var(--diagram-line-width)"/>
+      <text x="260" y="164" text-anchor="middle" class="nt-mono" font-size="14" fill="var(--text)">Wₓ·x + W_h·h + b</text>
+      <text x="260" y="183" text-anchor="middle" font-size="11" fill="var(--muted)">同一组参数，每步复用</text>
+
+      <path class="nt-diagram-line" d="M 260 196 L 260 222" marker-end="url(#arrow)"/>
+      <text x="260" y="244" text-anchor="middle" class="nt-mono" font-size="15" fill="var(--accent)">tanh( · )</text>
+
+      <path class="nt-diagram-line" d="M 260 254 L 260 276" marker-end="url(#arrow)"/>
+      <text x="16" y="302" font-size="13" fill="var(--muted)">新状态 h<tspan font-size="11">t</tspan></text>
+      <text x="16" y="324" class="nt-mono" font-size="15" fill="var(--text)">[${cur.map(v=>v.toFixed(2)).join(", ")}]</text>
+
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="var(--text)"/>
+        </marker>
+      </defs>
+    </svg>`;
+  }
+
+  function renderHistory(){
+    histEl.innerHTML = "";
+    // header row
+    const corner = document.createElement("div");
+    corner.className = "hist-cell head";
+    corner.textContent = "";
+    histEl.appendChild(corner);
+    for (let t=0;t<=8;t++){
+      const h = document.createElement("div");
+      h.className = "hist-cell head";
+      h.textContent = t===0 ? "∅" : WORDS[t-1];
+      histEl.appendChild(h);
+    }
+    for (let i=0;i<3;i++){
+      const lbl = document.createElement("div");
+      lbl.className = "hist-row-label";
+      lbl.innerHTML = `h<sub>${i}</sub>`;
+      histEl.appendChild(lbl);
+      for (let t=0;t<=8;t++){
+        const v = HIST[t][i];
+        const cell = document.createElement("div");
+        cell.className = "hist-cell";
+        const a = Math.min(1, Math.abs(v));
+        cell.style.background = v>=0
+          ? `rgba(var(--stable-rgb, 90,110,90), ${0.12+a*0.75})`
+          : `rgba(var(--muted-rgb, 140,140,140), ${0.12+a*0.75})`;
+        cell.style.background = v>=0
+          ? Deck.rgba('--stable', 0.15+a*0.75)
+          : Deck.rgba('--accent', 0.10+a*0.6);
+        if (t===state.t) cell.dataset.current = "true";
+        cell.title = v.toFixed(3);
+        histEl.appendChild(cell);
+      }
+    }
+  }
+
+  function render(){
+    // tokens
+    document.querySelectorAll(".tok").forEach(btn => {
+      const t = +btn.dataset.t;
+      btn.dataset.active = String(t === state.t);
+      btn.dataset.seen = String(t <= state.t);
+    });
+    renderBars();
+    renderCell();
+    renderHistory();
+    explainEl.textContent = NOTES[state.t];
+    stepNoEl.textContent = String(state.t);
+    prevBtn.disabled = state.t === 0;
+    nextBtn.disabled = state.t === 8;
+  }
+
+  function go(delta){
+    state.t = Math.max(0, Math.min(8, state.t + delta));
+    render();
+  }
+
+  prevBtn.addEventListener("click", () => go(-1));
+  nextBtn.addEventListener("click", () => go(1));
+  resetBtn.addEventListener("click", () => { state.t = 0; render(); });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight"){ e.preventDefault(); go(1); }
+    if (e.key === "ArrowLeft"){ e.preventDefault(); go(-1); }
+  });
+
+  buildRail();
+  render();
+})();
+</script>
+</body>
+</html>

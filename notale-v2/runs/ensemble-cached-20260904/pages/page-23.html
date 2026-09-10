@@ -1,0 +1,1026 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>折外预测矩阵的形成</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    .header-block {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+    .header-left h1 {
+      font-size: var(--fs-h1);
+      margin: 0 0 6px 0;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+    .header-left p {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+    .header-right {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    /* 核心舞台布局 */
+    .interaction-stage {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 280px 1fr 340px;
+      gap: 20px;
+    }
+
+    /* 左侧控制栏与模式选择 */
+    .control-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .panel-sec-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    .segmented-ctl {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .mode-btn {
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      font-size: var(--fs-sec);
+      text-align: left;
+      cursor: pointer;
+      color: var(--text);
+      transition: all var(--duration) var(--ease);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .mode-btn:hover {
+      border-color: var(--muted);
+    }
+    .mode-btn.active {
+      background: #EAF2F6;
+      border-color: var(--model);
+      box-shadow: inset 3px 0 0 var(--model);
+    }
+    .mode-btn.leak.active {
+      background: #FDF0EB;
+      border-color: var(--aggregate);
+      box-shadow: inset 3px 0 0 var(--aggregate);
+    }
+    .mode-btn .title {
+      font-weight: 700;
+      font-size: var(--fs-sec);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .mode-btn .desc {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .fold-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .fold-btns {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+    }
+    .fold-btn {
+      padding: 8px 0;
+      text-align: center;
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      font-weight: 700;
+      cursor: pointer;
+      color: var(--text);
+      transition: all var(--duration) var(--ease);
+    }
+    .fold-btn:hover {
+      background: #E3EDF2;
+    }
+    .fold-btn.active {
+      background: var(--model);
+      color: #FFF;
+      border-color: var(--model);
+    }
+
+    .auto-play-bar {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .btn-act {
+      flex: 1;
+      padding: 8px 12px;
+      background: var(--surface-strong);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all var(--duration) var(--ease);
+    }
+    .btn-act:hover {
+      background: #D3E0E8;
+    }
+    .btn-act.primary {
+      background: var(--model);
+      color: #FFF;
+    }
+    .btn-act.primary:hover {
+      background: #1F5277;
+    }
+
+    /* 中间流水线大画幅 */
+    .flow-workbench {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+    }
+    .workbench-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .step-badge {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--model);
+      background: #EAF2F6;
+      padding: 4px 10px;
+      border-radius: 12px;
+    }
+    .step-badge.leak {
+      color: var(--aggregate);
+      background: #FDF0EB;
+    }
+
+    .pipeline-diagram {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      display: grid;
+      grid-template-columns: 220px 48px 1fr;
+      align-items: stretch;
+      gap: 12px;
+    }
+
+    /* 原始数据与折结构 */
+    .data-folds-col {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .col-lbl {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .folds-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .fold-box {
+      flex: 1;
+      border: 2px solid var(--surface-strong);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: #F8FAFC;
+      transition: all var(--duration) var(--ease);
+      position: relative;
+    }
+    .fold-box .fold-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .fold-box .fold-role {
+      font-size: 13px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .fold-box.is-train {
+      border-color: #B2D1E5;
+      background: #F0F6FA;
+    }
+    .fold-box.is-train .fold-role {
+      background: #D9E9F3;
+      color: var(--model);
+    }
+    .fold-box.is-val {
+      border-color: #A3D2C8;
+      background: #EDF7F5;
+    }
+    .fold-box.is-val .fold-role {
+      background: #CBE6E0;
+      color: var(--sample);
+    }
+    .fold-box.is-leak {
+      border-color: #F6C8BA;
+      background: #FDF3F0;
+    }
+    .fold-box.is-leak .fold-role {
+      background: #FAD9CE;
+      color: var(--aggregate);
+    }
+
+    /* 箭头连接过渡区 */
+    .arrow-connector {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+    }
+    .arrow-icon {
+      width: 28px;
+      height: 28px;
+      stroke: var(--muted);
+      stroke-width: 2;
+      fill: none;
+    }
+
+    /* 基模型训练与预测槽 */
+    .models-col {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .models-lanes {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .model-lane {
+      flex: 1;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      background: #FDFEFE;
+      padding: 12px 16px;
+      display: grid;
+      grid-template-columns: 150px 1fr 150px;
+      align-items: center;
+      gap: 16px;
+    }
+    .model-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .model-name {
+      font-weight: 700;
+      font-size: var(--fs-sec);
+      color: var(--model);
+    }
+    .model-status {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .model-bar-visual {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+    .flow-indicator {
+      width: 100%;
+      height: 22px;
+      background: var(--surface-strong);
+      border-radius: 11px;
+      overflow: hidden;
+      display: flex;
+      position: relative;
+    }
+    .flow-seg {
+      height: 100%;
+      transition: width var(--duration) var(--ease);
+    }
+    .flow-seg.train {
+      background: var(--model);
+    }
+    .flow-seg.val {
+      background: var(--sample);
+    }
+    .flow-seg.leak {
+      background: var(--aggregate);
+    }
+    .output-preview {
+      text-align: right;
+      font-family: var(--font-num);
+      font-size: 13px;
+    }
+    .output-val-pill {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      background: #EDF7F5;
+      color: var(--sample);
+      border: 1px solid #B8E0D7;
+    }
+    .output-val-pill.leak {
+      background: #FDF3F0;
+      color: var(--aggregate);
+      border-color: #F7CEC2;
+    }
+
+    /* 底部执行状态条 */
+    .flow-status-bar {
+      border-top: 1px solid var(--surface-strong);
+      padding-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+    }
+    .status-left {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--sample);
+    }
+    .status-dot.leak {
+      background: var(--aggregate);
+    }
+
+    /* 右侧元特征矩阵面板 */
+    .meta-matrix-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .matrix-title-wrap {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .matrix-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .matrix-subtitle {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    /* 矩阵表格视图 */
+    .matrix-table-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 6px;
+      background: #FAFCFD;
+    }
+    .m-row-header {
+      display: grid;
+      grid-template-columns: 52px repeat(3, 1fr) 48px;
+      gap: 4px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--surface-strong);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-align: center;
+    }
+    .m-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .m-fold-group {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 52px repeat(3, 1fr) 48px;
+      gap: 4px;
+      align-items: center;
+      padding: 2px 0;
+      border-radius: 4px;
+      transition: background var(--duration) var(--ease);
+    }
+    .m-fold-group.highlight {
+      background: #E8F4F8;
+    }
+    .m-fold-group.highlight.leak {
+      background: #FDF0EC;
+    }
+    .m-tag {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.2;
+    }
+    .m-cell {
+      height: 100%;
+      min-height: 38px;
+      background: var(--surface);
+      border: 1px dashed #D0DCE3;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-num);
+      font-size: 13px;
+      color: #94A8B5;
+      transition: all var(--duration) var(--ease);
+    }
+    .m-cell.filled {
+      background: #EDF7F5;
+      border: 1px solid #A8D9CE;
+      color: var(--sample);
+      font-weight: 700;
+    }
+    .m-cell.filled.leak {
+      background: #FDF3F0;
+      border: 1px solid #F6C5B7;
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+    .m-cell.highlight-pulse {
+      box-shadow: 0 0 0 2px var(--sample);
+    }
+    .m-cell.highlight-pulse.leak {
+      box-shadow: 0 0 0 2px var(--aggregate);
+    }
+    .m-cell.target-y {
+      border: 1px solid var(--surface-strong);
+      background: #F0F4F7;
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* 诊断指标卡 */
+    .diagnosis-card {
+      border-top: 1px solid var(--surface-strong);
+      padding-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .diag-metric {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+    }
+    .diag-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: var(--fs-body);
+    }
+    .diag-val.ok {
+      color: var(--answer);
+    }
+    .diag-val.bad {
+      color: var(--aggregate);
+    }
+
+    .diag-msg {
+      font-size: 13px;
+      line-height: 1.4;
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: #EDF7F5;
+      color: #1A5445;
+      border-left: 3px solid var(--answer);
+    }
+    .diag-msg.leak {
+      background: #FDF0EC;
+      color: #7D280B;
+      border-left: 3px solid var(--aggregate);
+    }
+
+    /* 辅助说明条 */
+    .legend-row {
+      display: flex;
+      gap: 14px;
+      font-size: 13px;
+      color: var(--muted);
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .lg-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+    }
+    .lg-dot.train { background: var(--model); }
+    .lg-dot.val { background: var(--sample); }
+    .lg-dot.leak { background: var(--aggregate); }
+  </style>
+</head>
+<body data-page="23" data-total="27">
+  <div id="stage">
+    <!-- 顶部概览 -->
+    <header class="header-block">
+      <div class="header-left">
+        <h1>折外预测矩阵的形成与防泄漏模拟</h1>
+        <p>探索 K 折切分下，基模型如何协同生成没有标签泄漏的“元特征矩阵”供元学习器训练。</p>
+      </div>
+      <div class="header-right">
+        <div class="legend-row">
+          <div class="legend-item"><span class="lg-dot train"></span>基模型训练折 (Train)</div>
+          <div class="legend-item"><span class="lg-dot val"></span>折外验证折 (OOF Val)</div>
+          <div class="legend-item"><span class="lg-dot leak"></span>自训练泄漏 (In-Fold Leak)</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 交互主体 -->
+    <main class="interaction-stage">
+      <!-- 左栏：控制与切分方案 -->
+      <aside class="control-panel">
+        <div>
+          <div class="panel-sec-title">训练预测策略</div>
+          <div class="segmented-ctl">
+            <button class="mode-btn active" id="btnModeOOF" type="button">
+              <span class="title">
+                规范 K 折折外预测 (OOF)
+                <span class="tag" style="background:#CBE6E0;color:#1A5445;padding:1px 6px;border-radius:3px;font-size:11px;">合法</span>
+              </span>
+              <span class="desc">模型只对未参与训练的样本输出预测，消除过拟合虚假偏置。</span>
+            </button>
+            <button class="mode-btn leak" id="btnModeLeak" type="button">
+              <span class="title">
+                全量同折自预测 (Leakage)
+                <span class="tag" style="background:#FAD9CE;color:#7D280B;padding:1px 6px;border-radius:3px;font-size:11px;">严重泄漏</span>
+              </span>
+              <span class="desc">基模型在自身训练集上输出预测，记忆标签导致元学习器信任失真。</span>
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <div class="panel-sec-title">单折步进查看</div>
+          <div class="fold-selector">
+            <div class="fold-btns" id="foldButtons">
+              <button class="fold-btn active" data-fold="0" type="button">折 1</button>
+              <button class="fold-btn" data-fold="1" type="button">折 2</button>
+              <button class="fold-btn" data-fold="2" type="button">折 3</button>
+              <button class="fold-btn" data-fold="3" type="button">折 4</button>
+              <button class="fold-btn" data-fold="4" type="button">折 5</button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="panel-sec-title">流程控制</div>
+          <div class="auto-play-bar">
+            <button class="btn-act primary" id="btnAutoRun" type="button">
+              <span id="runIcon">▶</span> 逐折演练填满
+            </button>
+            <button class="btn-act" id="btnReset" type="button">重置</button>
+          </div>
+        </div>
+
+        <div style="flex:1; min-height:0;"></div>
+
+        <div style="font-size:13px; color:var(--muted); line-height:1.45; background:#F8FAFC; padding:10px; border-radius:6px; border:1px solid var(--surface-strong);">
+          <strong style="color:var(--text);">判定准则：</strong>
+          元学习器的每个训练样本 (x_meta, y)，其元特征必须来自<strong>未参与过该样本训练</strong>的基模型副本。
+        </div>
+      </aside>
+
+      <!-- 中栏：流程流水线图解 -->
+      <section class="flow-workbench">
+        <div class="workbench-header">
+          <div class="panel-sec-title" style="margin:0;">数据切分与基模型副本协作</div>
+          <span class="step-badge" id="stepBadge">正在考察：第 1 折验证集</span>
+        </div>
+
+        <div class="pipeline-diagram">
+          <!-- 原始数据 5 折表示 -->
+          <div class="data-folds-col">
+            <div class="col-lbl">
+              <span>原始训练集 (N=100)</span>
+              <span>5 划分</span>
+            </div>
+            <div class="folds-container" id="foldsContainer">
+              <!-- 动态渲染 5 折方块 -->
+            </div>
+          </div>
+
+          <!-- 连线箭头指示 -->
+          <div class="arrow-connector">
+            <svg class="arrow-icon" viewBox="0 0 24 24">
+              <path d="M5 12h14M13 5l7 7-7 7" />
+            </svg>
+          </div>
+
+          <!-- 基模型并行池 -->
+          <div class="models-col">
+            <div class="col-lbl">
+              <span>基模型池 (并行训练与推断)</span>
+              <span>输出元特征</span>
+            </div>
+            <div class="models-lanes" id="modelsLanes">
+              <!-- 动态填充 3 个模型 -->
+            </div>
+          </div>
+        </div>
+
+        <div class="flow-status-bar">
+          <div class="status-left">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">基模型仅在第 2, 3, 4, 5 折训练，向第 1 折输出无泄漏预测。</span>
+          </div>
+          <div style="font-family:var(--font-num); font-size:14px; font-weight:700; color:var(--muted);" id="progressText">
+            折进度: 1 / 5
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：元特征矩阵 $S$ -->
+      <aside class="meta-matrix-panel">
+        <div class="matrix-title-wrap">
+          <div class="matrix-title">元特征矩阵 S</div>
+          <div class="matrix-subtitle">维度: N × M</div>
+        </div>
+
+        <div class="matrix-table-wrap">
+          <div class="m-row-header">
+            <span>样本折</span>
+            <span>M₁ 树</span>
+            <span>M₂ SVM</span>
+            <span>M₃ 线性</span>
+            <span>真值 y</span>
+          </div>
+          <div class="m-body" id="matrixRows">
+            <!-- 5 个折对应的矩阵块 -->
+          </div>
+        </div>
+
+        <!-- 诊断与泄漏检测 -->
+        <div class="diagnosis-card">
+          <div class="diag-metric">
+            <span style="color:var(--muted);">特征与真值信息泄漏度</span>
+            <span class="diag-val ok" id="leakMetric">0.0% (安全)</span>
+          </div>
+          <div class="diag-metric">
+            <span style="color:var(--muted);">元学习器泛化信噪比</span>
+            <span class="diag-val ok" id="generalizeMetric">高 (契合测试环境)</span>
+          </div>
+
+          <div class="diag-msg" id="diagMsg">
+            <strong>OOF 机制生效：</strong>元特征矩阵拼装完成后，元学习器学到的组合权重能完全迁移至真实测试集。
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      // 预置固定模拟数值，确保真实确定性
+      const FOLD_COUNT = 5;
+      const MODELS = [
+        { id: "m1", name: "RF 随机森林", type: "Tree" },
+        { id: "m2", name: "SVM 支持向量", type: "Kernel" },
+        { id: "m3", name: "Ridge 岭回归", type: "Linear" }
+      ];
+
+      // 固定数据模拟真值 y 与不同模型在 OOF / Leak 状态下的输出值 (保证合理教学真实感)
+      const DATA_FOLDS = [
+        { fold: 0, range: "1~20", targetY: "1.2", oof: ["1.18", "1.24", "1.15"], leak: ["1.20", "1.21", "1.20"] },
+        { fold: 1, range: "21~40", targetY: "3.5", oof: ["3.42", "3.61", "3.48"], leak: ["3.50", "3.49", "3.50"] },
+        { fold: 2, range: "41~60", targetY: "0.8", oof: ["0.85", "0.79", "0.82"], leak: ["0.80", "0.81", "0.80"] },
+        { fold: 3, range: "61~80", targetY: "2.1", oof: ["2.08", "2.17", "2.05"], leak: ["2.10", "2.10", "2.11"] },
+        { fold: 4, range: "81~100", targetY: "4.0", oof: ["3.91", "4.12", "3.96"], leak: ["4.00", "3.99", "4.00"] }
+      ];
+
+      // 状态管理
+      let state = {
+        mode: "oof",       // 'oof' | 'leak'
+        currentFold: 0,    // 0..4
+        filledFolds: new Set([0]),
+        isPlaying: false,
+        timer: null
+      };
+
+      // UI 引用
+      const elModeOOF = document.getElementById("btnModeOOF");
+      const elModeLeak = document.getElementById("btnModeLeak");
+      const elFoldBtns = document.getElementById("foldButtons");
+      const elAutoRun = document.getElementById("btnAutoRun");
+      const elRunIcon = document.getElementById("runIcon");
+      const elReset = document.getElementById("btnReset");
+      const elFoldsContainer = document.getElementById("foldsContainer");
+      const elModelsLanes = document.getElementById("modelsLanes");
+      const elStepBadge = document.getElementById("stepBadge");
+      const elStatusDot = document.getElementById("statusDot");
+      const elStatusText = document.getElementById("statusText");
+      const elProgressText = document.getElementById("progressText");
+      const elMatrixRows = document.getElementById("matrixRows");
+      const elLeakMetric = document.getElementById("leakMetric");
+      const elGeneralizeMetric = document.getElementById("generalizeMetric");
+      const elDiagMsg = document.getElementById("diagMsg");
+
+      function updateUI() {
+        const isLeak = state.mode === "leak";
+
+        // 1. 切换模式按钮状态
+        elModeOOF.classList.toggle("active", !isLeak);
+        elModeLeak.classList.toggle("active", isLeak);
+
+        // 2. 单折按钮状态
+        const foldBtnNodes = elFoldBtns.querySelectorAll(".fold-btn");
+        foldBtnNodes.forEach((btn, idx) => {
+          btn.classList.toggle("active", idx === state.currentFold);
+        });
+
+        // 3. 渲染左侧数据折
+        elFoldsContainer.innerHTML = "";
+        DATA_FOLDS.forEach((f, idx) => {
+          const isCurrent = idx === state.currentFold;
+          const box = document.createElement("div");
+          box.className = "fold-box";
+
+          let roleLabel = "";
+          if (isLeak) {
+            box.classList.add("is-leak");
+            roleLabel = "训练且自身预测";
+          } else {
+            if (isCurrent) {
+              box.classList.add("is-val");
+              roleLabel = "★ 当前折外验证 (OOF)";
+            } else {
+              box.classList.add("is-train");
+              roleLabel = "基模型训练折";
+            }
+          }
+
+          box.innerHTML = `
+            <div class="fold-title">
+              <span>折 ${idx + 1}</span>
+              <span style="font-size:12px; font-weight:normal; color:var(--muted);">(${f.range})</span>
+            </div>
+            <div class="fold-role">${roleLabel}</div>
+          `;
+          elFoldsContainer.appendChild(box);
+        });
+
+        // 4. 渲染基模型运行面板
+        elModelsLanes.innerHTML = "";
+        const foldData = DATA_FOLDS[state.currentFold];
+        MODELS.forEach((m, mIdx) => {
+          const lane = document.createElement("div");
+          lane.className = "model-lane";
+
+          const predVal = isLeak ? foldData.leak[mIdx] : foldData.oof[mIdx];
+          const segClass = isLeak ? "leak" : "val";
+          const pillClass = isLeak ? "leak" : "";
+
+          lane.innerHTML = `
+            <div class="model-info">
+              <div class="model-name">${m.name}</div>
+              <div class="model-status">${isLeak ? "全量重合拟合" : "Fold " + (state.currentFold + 1) + " 独立模型"}</div>
+            </div>
+            <div class="model-bar-visual">
+              <div class="flow-indicator">
+                <div class="flow-seg ${isLeak ? 'leak' : 'train'}" style="width: ${isLeak ? '100%' : '80%'};"></div>
+                ${!isLeak ? '<div class="flow-seg val" style="width: 20%;"></div>' : ''}
+              </div>
+            </div>
+            <div class="output-preview">
+              <span style="font-size:11px; color:var(--muted); display:block;">产出元特征值</span>
+              <span class="output-val-pill ${pillClass}">S[:,${mIdx + 1}] = ${predVal}</span>
+            </div>
+          `;
+          elModelsLanes.appendChild(lane);
+        });
+
+        // 5. 提示文案与徽章
+        if (isLeak) {
+          elStepBadge.textContent = "全量同折自测模式（严重警告）";
+          elStepBadge.className = "step-badge leak";
+          elStatusDot.className = "status-dot leak";
+          elStatusText.textContent = `严重缺陷：模型在自身训练集 (折 ${state.currentFold + 1}) 上直接产出预测，记忆了样本真值标签！`;
+        } else {
+          elStepBadge.textContent = `正在考察：第 ${state.currentFold + 1} 折外验证`;
+          elStepBadge.className = "step-badge";
+          elStatusDot.className = "status-dot";
+          const trainFolds = [1, 2, 3, 4, 5].filter(x => x !== state.currentFold + 1).join(", ");
+          elStatusText.textContent = `严谨隔离：模型仅在折 [${trainFolds}] 训练，对未见过的折 ${state.currentFold + 1} 生成纯净预测。`;
+        }
+        elProgressText.textContent = `填满进度: ${state.filledFolds.size} / 5 折`;
+
+        // 6. 渲染元特征矩阵表格
+        elMatrixRows.innerHTML = "";
+        DATA_FOLDS.forEach((f, fIdx) => {
+          const rowGroup = document.createElement("div");
+          const isCurrent = fIdx === state.currentFold;
+          const isFilled = state.filledFolds.has(fIdx);
+
+          rowGroup.className = `m-fold-group ${isCurrent ? 'highlight' : ''} ${isLeak ? 'leak' : ''}`;
+
+          let cellsHtml = `<div class="m-tag">折 ${fIdx + 1}<br><span style="font-size:11px;color:var(--muted);">${f.range}</span></div>`;
+
+          MODELS.forEach((m, mIdx) => {
+            const val = isLeak ? f.leak[mIdx] : f.oof[mIdx];
+            if (isFilled) {
+              const pulse = isCurrent ? "highlight-pulse" : "";
+              const leakCls = isLeak ? "leak" : "";
+              cellsHtml += `<div class="m-cell filled ${leakCls} ${pulse}">${val}</div>`;
+            } else {
+              cellsHtml += `<div class="m-cell">待填入</div>`;
+            }
+          });
+
+          cellsHtml += `<div class="m-cell target-y">${f.targetY}</div>`;
+          rowGroup.innerHTML = cellsHtml;
+          elMatrixRows.appendChild(rowGroup);
+        });
+
+        // 7. 诊断面板信息更新
+        if (isLeak) {
+          elLeakMetric.textContent = "100.0% (严重危险)";
+          elLeakMetric.className = "diag-val bad";
+          elGeneralizeMetric.textContent = "极差 (虚高评分陷阱)";
+          elGeneralizeMetric.className = "diag-val bad";
+          elDiagMsg.className = "diag-msg leak";
+          elDiagMsg.innerHTML = `
+            <strong>信息泄漏危害：</strong>基模型在训练集上几乎“作弊式”记住了真值（残差极小）。元学习器会盲目偏信某单一模型，在真实未知测试集上将发生<strong>灾难性过拟合</strong>！
+          `;
+        } else {
+          elLeakMetric.textContent = "0.0% (完全隔离)";
+          elLeakMetric.className = "diag-val ok";
+          elGeneralizeMetric.textContent = "高 (真实验证分布一致)";
+          elGeneralizeMetric.className = "diag-val ok";
+          elDiagMsg.className = "diag-msg";
+          elDiagMsg.innerHTML = `
+            <strong>OOF 机制保障：</strong>矩阵中每一行元特征，均来自未参与该样本训练的模型副本。元学习器学习到的是真实的<strong>泛化误差分布与协作互补关系</strong>。
+          `;
+        }
+      }
+
+      // 事件接线
+      elModeOOF.addEventListener("click", () => {
+        stopAuto();
+        state.mode = "oof";
+        state.filledFolds.add(state.currentFold);
+        updateUI();
+      });
+
+      elModeLeak.addEventListener("click", () => {
+        stopAuto();
+        state.mode = "leak";
+        state.filledFolds.add(state.currentFold);
+        updateUI();
+      });
+
+      elFoldBtns.addEventListener("click", (e) => {
+        const btn = e.target.closest(".fold-btn");
+        if (!btn) return;
+        stopAuto();
+        const fold = parseInt(btn.dataset.fold, 10);
+        state.currentFold = fold;
+        state.filledFolds.add(fold);
+        updateUI();
+      });
+
+      function stopAuto() {
+        if (state.isPlaying) {
+          clearInterval(state.timer);
+          state.isPlaying = false;
+          elRunIcon.textContent = "▶";
+          elAutoRun.querySelector("span:last-child")?.remove();
+          elAutoRun.innerHTML = `<span id="runIcon">▶</span> 逐折演练填满`;
+        }
+      }
+
+      elAutoRun.addEventListener("click", () => {
+        if (state.isPlaying) {
+          stopAuto();
+          return;
+        }
+
+        state.isPlaying = true;
+        elAutoRun.innerHTML = `<span id="runIcon">⏸</span> 暂停演示`;
+
+        // 逐折推演
+        state.timer = setInterval(() => {
+          let nextFold = (state.currentFold + 1) % FOLD_COUNT;
+          state.currentFold = nextFold;
+          state.filledFolds.add(nextFold);
+          updateUI();
+
+          if (state.filledFolds.size === FOLD_COUNT && nextFold === FOLD_COUNT - 1) {
+            stopAuto();
+          }
+        }, 1100);
+      });
+
+      elReset.addEventListener("click", () => {
+        stopAuto();
+        state.currentFold = 0;
+        state.filledFolds = new Set([0]);
+        updateUI();
+      });
+
+      // 初始化底盘与视图
+      Deck.init({ index: 23, total: 27 });
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

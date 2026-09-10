@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>热红外遥感的空间连续性与四大观测约束</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 页面特定布局：左侧空间连续格局（遥感热红外影像透视），右侧四大约束切片联动 */
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      gap: 20px;
+      overflow: hidden;
+    }
+
+    .header-area {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex: none;
+    }
+
+    .title-group h1 {
+      margin: 0 0 6px 0;
+      font-size: var(--fs-h1);
+      color: var(--text);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .title-group p {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .status-badge b {
+      color: var(--text);
+      font-family: var(--font-num);
+    }
+
+    /* 主舞台双栏 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 820px 1fr;
+      gap: 28px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧遥感视窗 */
+    .sensor-viewer {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .viewer-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      background: rgba(220, 231, 234, 0.45);
+      border-bottom: 1px solid var(--surface-strong);
+      font-size: var(--fs-label);
+    }
+
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text);
+    }
+
+    .toolbar-left .tag {
+      font-weight: 600;
+    }
+
+    .viewer-canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      background: #0d1a20;
+    }
+
+    .viewer-footer {
+      padding: 12px 18px;
+      background: var(--surface);
+      border-top: 1px solid var(--surface-strong);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      font-size: var(--fs-sec);
+    }
+
+    .legend-bar-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .temp-scale-bar {
+      width: 200px;
+      height: 10px;
+      border-radius: 3px;
+      background: linear-gradient(to right, #176B82, #6EB3C2, #E8EFF1, #E58668, #C63F20);
+    }
+
+    .scale-ticks {
+      display: flex;
+      justify-content: space-between;
+      width: 200px;
+      font-family: var(--font-num);
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* 右侧控制与约束卡片 */
+    .constraints-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .constraint-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+      outline: none;
+      text-align: left;
+    }
+
+    .constraint-card:hover {
+      border-color: var(--muted);
+      transform: translateY(-1px);
+    }
+
+    .constraint-card.active {
+      border-color: var(--focus);
+      background: #fff;
+      box-shadow: 0 4px 14px rgba(23, 40, 46, 0.08);
+    }
+
+    .constraint-card.active::before {
+      content: "";
+      position: absolute;
+      left: -1px;
+      top: 10px;
+      bottom: 10px;
+      width: 3px;
+      background: var(--focus);
+      border-radius: 2px;
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-meta {
+      font-size: var(--fs-label);
+      font-family: var(--font-num);
+      color: var(--muted);
+    }
+
+    .card-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    .constraint-card.active .card-desc {
+      color: var(--text);
+    }
+
+    .card-detail {
+      margin-top: 4px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--surface-strong);
+      display: none;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .constraint-card.active .card-detail {
+      display: block;
+    }
+
+    .key-metric {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+      color: var(--focus);
+      font-weight: 700;
+    }
+
+    /* 底部综合结论条 */
+    .summary-bar {
+      background: var(--surface-strong);
+      border-radius: 6px;
+      padding: 12px 18px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      line-height: 1.4;
+    }
+
+    .summary-bar b {
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="11" data-total="19">
+  <div id="stage">
+    <!-- 头部说明 -->
+    <header class="header-area min0">
+      <div class="title-group min0">
+        <h1>热红外遥感：连续二维场与四大观测约束</h1>
+        <p>卫星热红外反演提供了地面站点无法企及的全域覆盖，但瞬时反演的地表温度（LST）并非无缝真实真理。</p>
+      </div>
+      <div class="status-badge">
+        <span>当前观测视窗：</span>
+        <b id="satelliteName">Landsat 8/9 TIRS (10:30 AM)</b>
+      </div>
+    </header>
+
+    <!-- 主展示区：左侧影像交互渲染，右侧四个约束切换与定量推演 -->
+    <div class="main-grid min0">
+      <!-- 左侧：热红外遥感反演影像模拟 -->
+      <section class="sensor-viewer min0" aria-label="热红外遥感成像视窗">
+        <div class="viewer-toolbar">
+          <div class="toolbar-left">
+            <span class="tag" data-kind="observed">辐射传输与地表反演</span>
+            <span id="pixelRes">空间分辨率：100m（热红外重采样至30m）</span>
+          </div>
+          <div class="toolbar-right">
+            <span class="note" id="inspectStateNote">点击右侧约束查看误差机理</span>
+          </div>
+        </div>
+
+        <div class="viewer-canvas-wrap min0">
+          <canvas id="satCanvas" class="cv-fill"></canvas>
+        </div>
+
+        <div class="viewer-footer">
+          <div class="legend-bar-group">
+            <span style="color:var(--muted); font-size:var(--fs-label);">地表温度 LST:</span>
+            <div>
+              <div class="temp-scale-bar"></div>
+              <div class="scale-ticks">
+                <span>24°C</span>
+                <span>30°C</span>
+                <span>36°C</span>
+                <span>42°C</span>
+                <span>48°C</span>
+              </div>
+            </div>
+          </div>
+          <div style="font-size:var(--fs-label); color:var(--muted);" id="legendDetail">
+            水体 / 稠密林冠 &rarr; 密闭建筑群 / 沥青广场
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：四大约束条件选项卡式对比 -->
+      <section class="constraints-panel min0" aria-label="四大观测限制">
+        <!-- 约束 1: 过境时刻 -->
+        <button class="constraint-card active" data-constraint="orbit" tabindex="0" type="button">
+          <div class="card-head">
+            <div class="card-title">
+              <span class="tag" data-kind="heat">约束 01</span>
+              <span>过境时刻与日变化脱节</span>
+            </div>
+            <span class="card-meta">极轨卫星固定窗口</span>
+          </div>
+          <p class="card-desc">
+            太阳同步轨道卫星（如 Landsat 约 10:30、MODIS 上午 10:30 / 下午 1:30）仅能捕获日间单一片段，无法直接捕捉午后最高温时刻（14–15时）及夜间气温热岛峰值。
+          </p>
+          <div class="card-detail">
+            <strong>关键偏差：</strong>日间地表热岛常在正午左右受太阳辐射主导达峰值，而空气热岛常在日落后由蓄热释放主导。若直接拿上午 10:30 的 LST 代替夜间热岛强度，会产生系统性高估或相位错位。
+          </div>
+        </button>
+
+        <!-- 约束 2: 云层遮挡与晴空偏差 -->
+        <button class="constraint-card" data-constraint="clouds" tabindex="0" type="button">
+          <div class="card-head">
+            <div class="card-title">
+              <span class="tag" data-kind="uncertain">约束 02</span>
+              <span>云遮蔽与晴空样本偏差</span>
+            </div>
+            <span class="card-meta">有效波段 8–14 μm</span>
+          </div>
+          <p class="card-desc">
+            热红外辐射无法穿透云层。遥感反演必须剔除有云像元；若云下地表缺失，长期统计仅代表「极端晴朗干燥」天气下的热岛，存在显著的晴空选择偏差（Clear-sky Bias）。
+          </p>
+          <div class="card-detail">
+            <strong>关键偏差：</strong>夏季对流云多发于午后，导致晴空样本天然偏向微风、强日照、高蒸散亏缺的强热岛日，平均热岛强度被系统性放大 1.2–2.5°C。
+          </div>
+        </button>
+
+        <!-- 约束 3: 比辐射率反演不确定性 -->
+        <button class="constraint-card" data-constraint="emissivity" tabindex="0" type="button">
+          <div class="card-head">
+            <div class="card-title">
+              <span class="tag" data-kind="cooling">约束 03</span>
+              <span>地表发射率未知导致的测温误差</span>
+            </div>
+            <span class="card-meta">ε 估计敏感度</span>
+          </div>
+          <p class="card-desc">
+            传感器接收到的是热辐射亮度，反演温度必须已知发射率 ε。城市由混凝土、金属、玻璃与植被复杂混合，ε 变化范围大（0.88–0.98），难以逐像元精确标定。
+          </p>
+          <div class="card-detail">
+            <strong>关键敏感度：</strong>在常温下，发射率 Δε = 0.01（仅 1% 的低估），反演得到的表面动理学温度就会产生 <span class="key-metric">0.5–0.8°C</span> 的误差。金属屋面高反射低发射率极易导致“假低温”。
+          </div>
+        </button>
+
+        <!-- 约束 4: 粗分辨率下的像元混合 -->
+        <button class="constraint-card" data-constraint="pixels" tabindex="0" type="button">
+          <div class="card-head">
+            <div class="card-title">
+              <span class="tag" data-kind="observed">约束 04</span>
+              <span>粗分辨率与次像元混合效应</span>
+            </div>
+            <span class="card-meta">30m–1000m 尺度平滑</span>
+          </div>
+          <p class="card-desc">
+            热红外波段物理孔径限制导致分辨率通常较粗（MODIS 1km，Landsat 100m）。单个像元内杂糅了向阳屋顶、阴影街道、行道树与草坪，输出的辐射温度是斯蒂芬-玻尔兹曼四次方非线性加权均值。
+          </p>
+          <div class="card-detail">
+            <strong>关键效应：</strong>行道树的微气候降温往往局限于 10–30 米尺度，在 100m 像元中被四周大面积沥青完全“淹没稀释”，无法支撑街区尺度的精准降温评估。
+          </div>
+        </button>
+      </section>
+    </div>
+
+    <!-- 底部总结栏 -->
+    <footer class="summary-bar min0">
+      <div>
+        <b>结论与规范：</b>遥感热红外适合刻画“地表二维梯度与宏观分布”，但不能简单等同于“近地人体暴露风险”。定量研究必须校准过境时刻、修正发射率，并与地面气温走航/微气象站网结合。
+      </div>
+      <div style="font-family:var(--font-num); color:var(--muted); font-size:var(--fs-tick); flex:none; margin-left:16px;">
+        VO-08 // THERMAL-INFRARED-LIMITS
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("satCanvas");
+      const cards = document.querySelectorAll(".constraint-card");
+      const inspectStateNote = document.getElementById("inspectStateNote");
+      const satelliteName = document.getElementById("satelliteName");
+      const pixelRes = document.getElementById("pixelRes");
+      const legendDetail = document.getElementById("legendDetail");
+
+      let activeConstraint = "orbit";
+      let animFrame = null;
+      let timeTick = 0;
+
+      // 遥感场景模拟网格数据生成 (60x36 格子代表典型城市地块到郊区水体/林地的空间连续体)
+      const GRID_COLS = 64;
+      const GRID_ROWS = 40;
+      const sceneData = [];
+
+      // 预生成地块属性：0 水体, 1 林地公园, 2 居民住宅, 3 密集商业高楼, 4 工业区/沥青大货场
+      for (let r = 0; r < GRID_ROWS; r++) {
+        sceneData[r] = [];
+        for (let c = 0; c < GRID_COLS; c++) {
+          const distToCenter = Math.hypot(c - 36, r - 20) / 26; // 城市中心偏右中
+          const isWater = (c < 14 && Math.sin(r * 0.25 + c * 0.1) > 0.15) || (c > 54 && r > 28);
+          const isPark = (c > 22 && c < 30 && r > 12 && r < 24) || (distToCenter > 1.2 && !isWater);
+          const isIndustrial = (c > 44 && c < 58 && r > 8 && r < 22);
+
+          let baseLST = 34; // 基础中等温度
+          let emiss = 0.96; // 默认发射率
+          let landType = "dense";
+
+          if (isWater) {
+            baseLST = 25.5 + Math.sin(r * 0.1) * 0.8;
+            emiss = 0.99;
+            landType = "water";
+          } else if (isPark) {
+            baseLST = 28.5 + (Math.sin(c + r) * 1.2);
+            emiss = 0.98;
+            landType = "park";
+          } else if (isIndustrial) {
+            baseLST = 44.5 + ((c * 17 + r * 13) % 7) * 0.6;
+            emiss = 0.89; // 金属与开阔粗沥青低发射率
+            landType = "industrial";
+          } else {
+            // 城区与建筑
+            const urbanIntensity = Math.max(0, 1 - distToCenter);
+            baseLST = 32 + urbanIntensity * 12 + ((c * 11 + r * 7) % 5) * 0.8;
+            emiss = 0.93;
+            landType = "urban";
+          }
+
+          sceneData[r][c] = {
+            baseLST,
+            emiss,
+            landType,
+            c, r
+          };
+        }
+      }
+
+      // 颜色映射算法：将 24°C ~ 48°C 映射到热力色阶
+      function getHeatColor(t, alpha = 1) {
+        const clamped = Math.max(24, Math.min(48, t));
+        const norm = (clamped - 24) / 24; // 0 ~ 1
+
+        let r, g, b;
+        if (norm < 0.25) {
+          // 24 - 30: #176B82 -> #6EB3C2
+          const p = norm / 0.25;
+          r = Math.round(23 + (110 - 23) * p);
+          g = Math.round(107 + (179 - 107) * p);
+          b = Math.round(130 + (194 - 130) * p);
+        } else if (norm < 0.5) {
+          // 30 - 36: #6EB3C2 -> #E8EFF1
+          const p = (norm - 0.25) / 0.25;
+          r = Math.round(110 + (232 - 110) * p);
+          g = Math.round(179 + (239 - 179) * p);
+          b = Math.round(194 + (241 - 194) * p);
+        } else if (norm < 0.75) {
+          // 36 - 42: #E8EFF1 -> #E58668
+          const p = (norm - 0.5) / 0.25;
+          r = Math.round(232 + (229 - 232) * p);
+          g = Math.round(239 + (134 - 239) * p);
+          b = Math.round(241 + (104 - 241) * p);
+        } else {
+          // 42 - 48: #E58668 -> #C63F20
+          const p = (norm - 0.75) / 0.25;
+          r = Math.round(229 + (198 - 229) * p);
+          g = Math.round(134 + (63 - 134) * p);
+          b = Math.round(104 + (32 - 104) * p);
+        }
+
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
+
+      function drawScene() {
+        const ctx = Deck.fit(canvas);
+        if (!ctx) return;
+
+        const w = canvas.width / (window.devicePixelRatio || 1);
+        const h = canvas.height / (window.devicePixelRatio || 1);
+
+        ctx.clearRect(0, 0, w, h);
+
+        const cellW = w / GRID_COLS;
+        const cellH = h / GRID_ROWS;
+
+        // 根据 activeConstraint 的影响因子计算呈现的像元表面温度
+        for (let r = 0; r < GRID_ROWS; r++) {
+          for (let c = 0; c < GRID_COLS; c++) {
+            const item = sceneData[r][c];
+            let renderTemp = item.baseLST;
+            let isMasked = false;
+
+            if (activeConstraint === "orbit") {
+              // 过境时刻模拟：展现 10:30 上午地表受直射急剧升温，建筑屋面极热，而水体因热容大仍极冷
+              // 叠加卫星扫描轨线动态
+              renderTemp = item.baseLST;
+            } else if (activeConstraint === "clouds") {
+              // 云遮挡模拟：生成斑状低云与厚卷云，无法透射热红外
+              const cloudNoise = Math.sin(c * 0.15 + timeTick * 0.02) * Math.cos(r * 0.18 + timeTick * 0.015) +
+                                 Math.sin((c + r) * 0.1) * 0.5;
+              if (cloudNoise > 0.45) {
+                isMasked = true; // 被云层完全遮挡，缺失数据像元
+              } else if (cloudNoise > 0.28) {
+                // 薄云污染，温度被拉低假冷
+                renderTemp = item.baseLST - 7.5;
+              }
+            } else if (activeConstraint === "emissivity") {
+              // 发射率不确定性模拟：工业区和金属屋面因误设 ε = 0.96，反演计算出异常“假低温”或局部噪点
+              if (item.landType === "industrial") {
+                // 真实 ε 只有 0.88，若假定 0.96，反演动理学温度直接被压低 4-6°C！
+                renderTemp = item.baseLST - 5.8;
+              } else if (item.landType === "urban") {
+                renderTemp = item.baseLST + ((c % 2 === 0) ? 1.2 : -1.0);
+              }
+            } else if (activeConstraint === "pixels") {
+              // 混合像元模拟：粗分辨率（将 8x8 格子融合为单一均值）
+              const blockR = Math.floor(r / 6) * 6;
+              const blockC = Math.floor(c / 6) * 6;
+              let sumT = 0;
+              let cnt = 0;
+              for (let br = 0; br < 6; br++) {
+                for (let bc = 0; bc < 6; bc++) {
+                  if (blockR + br < GRID_ROWS && blockC + bc < GRID_COLS) {
+                    sumT += sceneData[blockR + br][blockC + bc].baseLST;
+                    cnt++;
+                  }
+                }
+              }
+              renderTemp = sumT / cnt;
+            }
+
+            const x = c * cellW;
+            const y = r * cellH;
+
+            if (isMasked) {
+              // 绘制无数据/云屏蔽像元（斜纹与中性灰）
+              ctx.fillStyle = "#1e2e34";
+              ctx.fillRect(x, y, cellW + 0.5, cellH + 0.5);
+              ctx.strokeStyle = "rgba(232, 239, 241, 0.2)";
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(x, y);
+              ctx.lineTo(x + cellW, y + cellH);
+              ctx.stroke();
+            } else {
+              ctx.fillStyle = getHeatColor(renderTemp);
+              ctx.fillRect(x, y, cellW + 0.5, cellH + 0.5);
+            }
+          }
+        }
+
+        // 绘制矢量辅助标线与状态标注
+        drawOverlays(ctx, w, h);
+      }
+
+      function drawOverlays(ctx, w, h) {
+        ctx.save();
+
+        if (activeConstraint === "orbit") {
+          // 绘制卫星过境扫描轨道线
+          const scanX = ((timeTick * 1.5) % (w + 160)) - 80;
+          ctx.strokeStyle = "rgba(169, 47, 24, 0.7)";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([6, 4]);
+          ctx.beginPath();
+          ctx.moveTo(scanX, 0);
+          ctx.lineTo(scanX - 40, h);
+          ctx.stroke();
+
+          // 标注过境时刻
+          const labelX = Math.max(70, Math.min(w - 70, scanX));
+          ctx.setLineDash([]);
+          ctx.fillStyle = "rgba(23, 40, 46, 0.9)";
+          ctx.fillRect(labelX - 65, 20, 130, 26);
+          ctx.strokeStyle = "rgba(220, 231, 234, 0.6)";
+          ctx.strokeRect(labelX - 65, 20, 130, 26);
+          ctx.fillStyle = "#F7FAFA";
+          ctx.font = "12px Bahnschrift, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("过境时刻: 10:32 AM", labelX, 37);
+        } else if (activeConstraint === "clouds") {
+          // 标出“数据缺失区（Cloud Masked）”
+          ctx.fillStyle = "rgba(115, 95, 42, 0.9)";
+          ctx.fillRect(36, 32, 190, 28);
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "13px 'Noto Sans SC', sans-serif";
+          ctx.fillText("云遮蔽区：热红外数据缺失", 46, 51);
+        } else if (activeConstraint === "emissivity") {
+          // 框选金属工业区“虚假冷区”
+          const cellW = w / GRID_COLS;
+          const cellH = h / GRID_ROWS;
+          const rx = 44 * cellW;
+          const ry = 8 * cellH;
+          const rw = 14 * cellW;
+          const rh = 14 * cellH;
+
+          ctx.strokeStyle = "#A92F18";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(rx, ry, rw, rh);
+
+          ctx.fillStyle = "rgba(169, 47, 24, 0.88)";
+          ctx.fillRect(rx, ry - 28, 170, 24);
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "12px 'Noto Sans SC', sans-serif";
+          ctx.fillText("低发射率伪像: 测温低估 5.8°C", rx + 8, ry - 12);
+        } else if (activeConstraint === "pixels") {
+          // 绘制粗网格边界线，突显 100m/1km 像元拼块
+          const cellW = (w / GRID_COLS) * 6;
+          const cellH = (h / GRID_ROWS) * 6;
+          ctx.strokeStyle = "rgba(23, 40, 46, 0.35)";
+          ctx.lineWidth = 1;
+          for (let x = 0; x < w; x += cellW) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, h);
+            ctx.stroke();
+          }
+          for (let y = 0; y < h; y += cellH) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w, y);
+            ctx.stroke();
+          }
+
+          ctx.fillStyle = "rgba(23, 40, 46, 0.85)";
+          ctx.fillRect(w - 230, 24, 206, 30);
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "12px 'Noto Sans SC', sans-serif";
+          ctx.fillText("大像元混合：林荫微气候被平滑抹除", w - 220, 44);
+        }
+
+        ctx.restore();
+      }
+
+      function updateCardDetails() {
+        if (activeConstraint === "orbit") {
+          satelliteName.textContent = "Landsat 8/9 TIRS (10:30 AM)";
+          pixelRes.textContent = "瞬时过境：上午地表剧烈升温，夜间主峰完全盲区";
+          inspectStateNote.textContent = "动态演示：极轨卫星扫描过境瞬间，仅存单一时相";
+          legendDetail.textContent = "太阳直射下向阳面与水体温差剧增（日间表面热岛最大期）";
+        } else if (activeConstraint === "clouds") {
+          satelliteName.textContent = "MODIS / Landsat 剔除有云像元";
+          pixelRes.textContent = "有效覆盖率：仅 35%–55%（受季风与盛夏积云强阻断）";
+          inspectStateNote.textContent = "动态演示：黑色斜纹为云层遮挡导致反演完全缺失";
+          legendDetail.textContent = "非云即晴统计导致强热岛天候选择偏差";
+        } else if (activeConstraint === "emissivity") {
+          satelliteName.textContent = "地表反演算法（ split-window / 单窗算法）";
+          pixelRes.textContent = "发射率误差传导：Δε=0.01 引起约 0.6°C 动理学测温偏差";
+          inspectStateNote.textContent = "高亮区域：彩钢瓦与铝合金屋面因低发射率反演为假低温";
+          legendDetail.textContent = "混杂材料比辐射率不确定性直接污染局部温差";
+        } else if (activeConstraint === "pixels") {
+          satelliteName.textContent = "尺度粗化：聚合至 100m–1000m 热红外网格";
+          pixelRes.textContent = "热红外像元尺度：热辐射按面积与四次方非线性混合";
+          inspectStateNote.textContent = "网格分块：单个像元杂糅道路、行道树与建筑，无法识别单栋建筑";
+          legendDetail.textContent = "降温微气候被周边高温铺装稀释";
+        }
+      }
+
+      function loop() {
+        timeTick++;
+        drawScene();
+        animFrame = requestAnimationFrame(loop);
+      }
+
+      // 卡片点击交互
+      cards.forEach(card => {
+        card.addEventListener("click", () => {
+          cards.forEach(c => c.classList.remove("active"));
+          card.classList.add("active");
+          activeConstraint = card.dataset.constraint;
+          updateCardDetails();
+          drawScene();
+        });
+      });
+
+      // 初始化底盘适配与循环
+      Deck.autofit(canvas, drawScene);
+      updateCardDetails();
+
+      if (!Deck.reduced()) {
+        animFrame = requestAnimationFrame(loop);
+      } else {
+        drawScene();
+      }
+
+      window.addEventListener("pagehide", () => {
+        if (animFrame) cancelAnimationFrame(animFrame);
+      });
+    })();
+  </script>
+</body>
+</html>

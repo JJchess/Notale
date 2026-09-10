@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>二氧化碳浓度与光反应产物协同控制糖合成</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      font-family: var(--font-sans);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    /* 顶部标题区 */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 12px;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: 0.5px;
+    }
+    .header-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主操作与视图区 */
+    .lab-grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 48px;
+      align-items: start;
+      margin-top: 12px;
+    }
+
+    /* 左侧控制器 */
+    .ctrl-col {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .param-block {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .param-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .param-val {
+      font-family: var(--font-mono);
+      color: var(--text);
+      font-size: var(--fs-sec);
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      background: var(--rule);
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--focus);
+      cursor: pointer;
+      box-shadow: 0 0 0 2px var(--bg);
+      transition: transform var(--dur-state);
+    }
+    input[type="range"]:focus-visible::-webkit-slider-thumb {
+      outline: 2px solid var(--focus);
+      outline-offset: 3px;
+    }
+
+    /* 状态指示徽标 */
+    .bottleneck-box {
+      border-top: 1px solid var(--rule);
+      padding-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .state-tag {
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .state-tag.co2 { color: var(--carbon-fix); }
+    .state-tag.light { color: var(--action-green); }
+    .state-tag.co-lim { color: var(--focus); }
+
+    .state-detail {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    /* 右侧图表与反应流 */
+    .vis-col {
+      display: grid;
+      grid-template-rows: auto 340px;
+      gap: 20px;
+    }
+
+    /* 速率读数条 */
+    .rate-bar-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 12px;
+    }
+    .rate-title {
+      font-size: var(--fs-h2);
+      margin: 0;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .rate-num {
+      font-family: var(--font-mono);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--energy-bond);
+    }
+    .rate-unit {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+
+    /* 坐标系画布 */
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 360px;
+    }
+    canvas {
+      display: block;
+    }
+
+    /* 底部说明 */
+    footer {
+      border-top: 1px solid var(--rule);
+      padding-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .legend-row {
+      display: flex;
+      gap: 28px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot.co2 { background: var(--carbon-fix); }
+    .dot.light { background: var(--action-green); }
+    .dot.rate { background: var(--energy-bond); }
+  </style>
+</head>
+<body data-page="12" data-total="16">
+  <div id="stage">
+    <header>
+      <h1>CO₂ 与光反应产物的协同控制</h1>
+      <p class="header-desc">双底物米氏动力学</p>
+    </header>
+
+    <div class="lab-grid">
+      <!-- 左列：交互滑块与限制因子判断 -->
+      <div class="ctrl-col min0">
+        <div class="param-block">
+          <div class="param-header">
+            <span>CO₂ 浓度 (胞间)</span>
+            <span class="param-val" id="co2-val">400 μmol/mol</span>
+          </div>
+          <div class="slider-row">
+            <input id="slider-co2" type="range" min="50" max="1000" step="10" value="400" aria-label="二氧化碳浓度">
+          </div>
+        </div>
+
+        <div class="param-block">
+          <div class="param-header">
+            <span>[H] 与 ATP 供应 (光反应)</span>
+            <span class="param-val" id="light-val">60 %</span>
+          </div>
+          <div class="slider-row">
+            <input id="slider-light" type="range" min="10" max="100" step="2" value="60" aria-label="光反应产物供应量">
+          </div>
+        </div>
+
+        <div class="bottleneck-box">
+          <div class="state-tag" id="status-tag">
+            <span class="dot" id="status-dot"></span>
+            <span id="status-text">CO₂ 限制阶段</span>
+          </div>
+          <p class="state-detail" id="status-desc">
+            光能供应充足，糖合成受限于羧化速率。
+          </p>
+        </div>
+      </div>
+
+      <!-- 右列：动力学曲线与当前工作点 -->
+      <div class="vis-col min0">
+        <div class="rate-bar-row">
+          <h2 class="rate-title">
+            <span>糖合成速率</span>
+            <span class="rate-num" id="rate-display">24.5</span>
+            <span class="rate-unit">μmol·m⁻²·s⁻¹</span>
+          </h2>
+          <div class="legend-row">
+            <div class="legend-item"><span class="dot light"></span><span>光反应供能上限</span></div>
+            <div class="legend-item"><span class="dot rate"></span><span>瞬时工作点</span></div>
+          </div>
+        </div>
+
+        <div class="chart-container min0">
+          <canvas id="chart-cv" class="cv-fill"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <span>J = min(J_CO₂, J_光)</span>
+      <span>拖动滑块观察限制因子迁移与饱和拐点</span>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    本实验模拟二氧化碳浓度与光反应产物（ATP/[H]）对卡尔文循环糖合成速率的协同调控。
+    当二氧化碳浓度较低时，反应处于陡峭上升段，RuBisCO催化的固定步骤是主要瓶颈；
+    随着二氧化碳增多，体系速率达到由光反应产物决定的平直饱和天花板，转为光能受限区。
+    只有同时提升光能供应和二氧化碳浓度，才能彻底打破限速，推高糖合成速率。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 12, total: 16 });
+
+    // 模型常量与状态
+    const KM_CO2 = 250; // 微摩尔
+    const VMAX_BASE = 60; // 最大饱和速度
+
+    const state = {
+      co2: 400,
+      lightRatio: 0.60
+    };
+
+    // DOM 元素引用
+    const sliderCo2 = document.getElementById('slider-co2');
+    const sliderLight = document.getElementById('slider-light');
+    const co2Val = document.getElementById('co2-val');
+    const lightVal = document.getElementById('light-val');
+    const rateDisplay = document.getElementById('rate-display');
+    const statusTag = document.getElementById('status-tag');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const statusDesc = document.getElementById('status-desc');
+    const cv = document.getElementById('chart-cv');
+
+    // 计算速率模型
+    function calcRate(co2, lightRatio) {
+      // 碳反应能力（米氏方程）
+      const jRubisco = (VMAX_BASE * co2) / (co2 + KM_CO2);
+      // 光反应供能决定的最大再生上限
+      const jLight = VMAX_BASE * lightRatio * 0.85;
+      // 最终合成速率为最小因子决定
+      const netRate = Math.min(jRubisco, jLight);
+      return { netRate, jRubisco, jLight };
+    }
+
+    function updateModel() {
+      const { netRate, jRubisco, jLight } = calcRate(state.co2, state.lightRatio);
+
+      // 数值显示
+      co2Val.textContent = `${state.co2} μmol/mol`;
+      lightVal.textContent = `${Math.round(state.lightRatio * 100)} %`;
+      rateDisplay.textContent = netRate.toFixed(1);
+
+      // 瓶颈因子判定与文字更新
+      const diff = jRubisco - jLight;
+      statusTag.className = 'state-tag';
+
+      if (diff < -1.5) {
+        statusTag.classList.add('co2');
+        statusDot.className = 'dot co2';
+        statusText.textContent = 'CO₂ 限制阶段';
+        statusDesc.textContent = '供能富余，增光不增产；提升 CO₂ 浓度可线性增加产率。';
+      } else if (diff > 1.5) {
+        statusTag.classList.add('light');
+        statusDot.className = 'dot light';
+        statusText.textContent = '光反应供能限制阶段';
+        statusDesc.textContent = '已达供能极限；继续通入 CO₂ 无法增产，须增强光反应。';
+      } else {
+        statusTag.classList.add('co-lim');
+        statusDot.className = 'dot';
+        statusDot.style.background = 'var(--focus)';
+        statusText.textContent = '双向协同临界点';
+        statusDesc.textContent = '羧化速率与光反应供能精确匹配，协同效率最佳。';
+      }
+
+      drawChart();
+    }
+
+    function drawChart() {
+      const ctx = Deck.fit(cv);
+      const w = cv.offsetWidth;
+      const h = cv.offsetHeight;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // 坐标系边距
+      const padLeft = 60;
+      const padBottom = 40;
+      const padTop = 20;
+      const padRight = 30;
+
+      const plotW = w - padLeft - padRight;
+      const plotH = h - padTop - padBottom;
+
+      // 比例尺定义: CO2 0..1000, 速率 0..50
+      const maxCo2 = 1000;
+      const maxRate = 50;
+
+      function toX(co2) { return padLeft + (co2 / maxCo2) * plotW; }
+      function toY(r) { return padTop + plotH - (r / maxRate) * plotH; }
+
+      const ruleColor = Deck.token('--rule') || '#253527';
+      const mutedColor = Deck.token('--muted') || '#8D9B8C';
+      const carbonColor = Deck.token('--carbon-fix') || '#3E8DA8';
+      const lightColor = Deck.token('--action-green') || '#52B766';
+      const rateColor = Deck.token('--energy-bond') || '#E0683A';
+      const focusColor = Deck.token('--focus') || '#F2B93B';
+
+      // 绘制坐标轴
+      ctx.strokeStyle = ruleColor;
+      ctx.lineWidth = 1.5;
+
+      ctx.beginPath();
+      // X 轴
+      ctx.moveTo(padLeft, padTop + plotH);
+      ctx.lineTo(padLeft + plotW, padTop + plotH);
+      // Y 轴
+      ctx.moveTo(padLeft, padTop);
+      ctx.lineTo(padLeft, padTop + plotH);
+      ctx.stroke();
+
+      // 刻度与标签
+      ctx.fillStyle = mutedColor;
+      ctx.font = '13px "Latin Modern Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      // X 轴刻度
+      for (let c = 200; c <= maxCo2; c += 200) {
+        const x = toX(c);
+        ctx.beginPath();
+        ctx.moveTo(x, padTop + plotH);
+        ctx.lineTo(x, padTop + plotH + 5);
+        ctx.stroke();
+        ctx.fillText(c, x, padTop + plotH + 8);
+      }
+      ctx.font = '14px "PT Sans", sans-serif';
+      ctx.fillText('CO₂ 浓度 (μmol/mol)', padLeft + plotW / 2, padTop + plotH + 24);
+
+      // Y 轴刻度
+      ctx.font = '13px "Latin Modern Mono", monospace';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      for (let r = 10; r <= maxRate; r += 10) {
+        const y = toY(r);
+        ctx.beginPath();
+        ctx.moveTo(padLeft - 5, y);
+        ctx.lineTo(padLeft, y);
+        ctx.stroke();
+        ctx.fillText(r, padLeft - 8, y);
+
+        // 弱网格辅助线
+        ctx.save();
+        ctx.strokeStyle = 'rgba(37, 53, 39, 0.4)';
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, y);
+        ctx.lineTo(padLeft + plotW, y);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 计算并画出光反应产物供应上限水平线
+      const jLightCap = VMAX_BASE * state.lightRatio * 0.85;
+      const yCap = toY(jLightCap);
+
+      ctx.strokeStyle = lightColor;
+      ctx.setLineDash([5, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(padLeft, yCap);
+      ctx.lineTo(padLeft + plotW, yCap);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 标注上限文字
+      ctx.font = '12px "Latin Modern Mono", monospace';
+      ctx.fillStyle = lightColor;
+      ctx.textAlign = 'right';
+      ctx.fillText(`光反应供能阈值 (${jLightCap.toFixed(1)})`, padLeft + plotW - 6, yCap - 10);
+
+      // 绘制二氧化碳潜在米氏饱和曲线 (虚线)
+      ctx.strokeStyle = 'rgba(62, 141, 168, 0.45)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      for (let c = 0; c <= maxCo2; c += 10) {
+        const rCo2 = (VMAX_BASE * c) / (c + KM_CO2);
+        const x = toX(c);
+        const y = toY(rCo2);
+        if (c === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 绘制实际糖合成速率折线（min(J_CO2, J_light) 形成的平顶曲线）
+      ctx.strokeStyle = rateColor;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let c = 0; c <= maxCo2; c += 10) {
+        const { netRate } = calcRate(c, state.lightRatio);
+        const x = toX(c);
+        const y = toY(netRate);
+        if (c === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // 标记当前工作点
+      const { netRate } = calcRate(state.co2, state.lightRatio);
+      const currX = toX(state.co2);
+      const currY = toY(netRate);
+
+      // 纵向工作点指示线
+      ctx.strokeStyle = 'rgba(242, 185, 59, 0.5)';
+      ctx.setLineDash([2, 3]);
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(currX, padTop + plotH);
+      ctx.lineTo(currX, currY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 突出外圈与实心点
+      ctx.fillStyle = focusColor;
+      ctx.beginPath();
+      ctx.arc(currX, currY, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#0D140E';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // 在工作点旁标注坐标数值
+      ctx.font = '13px "Latin Modern Mono", monospace';
+      ctx.fillStyle = '#E1E8DE';
+      ctx.textAlign = currX > padLeft + plotW - 120 ? 'right' : 'left';
+      const labelOffset = currX > padLeft + plotW - 120 ? -12 : 12;
+      ctx.fillText(`(${state.co2}, ${netRate.toFixed(1)})`, currX + labelOffset, currY - 14);
+    }
+
+    // 事件绑定
+    sliderCo2.addEventListener('input', (e) => {
+      state.co2 = parseFloat(e.target.value);
+      updateModel();
+    });
+
+    sliderLight.addEventListener('input', (e) => {
+      state.lightRatio = parseFloat(e.target.value) / 100;
+      updateModel();
+    });
+
+    // 缩放自适应重绘
+    Deck.onResize(() => {
+      drawChart();
+    });
+
+    // 初始化
+    updateModel();
+  </script>
+</body>
+</html>

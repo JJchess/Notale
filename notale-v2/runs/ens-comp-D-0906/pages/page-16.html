@@ -1,0 +1,365 @@
+<!doctype html>
+<!--
+构图意图：
+1. 主对象是 AdaBoost 单轮更新中 10 个一维样本的权重演化，以及从基分类器错误率 εₘ 到模型话语权 αₘ 的确定性转换。
+2. 左侧展示连续映射关系：错误率 εₘ 决定弱分类器权重 αₘ = ½ ln((1-ε)/ε)；右侧展示样本权重的离散升降：错分样本乘 e^α，正确样本乘 e^(-α)。
+3. 说明文字与公式严格依附于对应的数学节点和样本点柱体上，不设额外装饰框板。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", -apple-system, system-ui, sans-serif;
+      --font-numeric: "Lato", sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      margin-top: 8px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      margin-top: 8px;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 主证据区：左侧错误率-话语权关系，右侧样本权重演化对照 */
+    .evidence-grid {
+      display: grid;
+      grid-template-columns: 560px 1fr;
+      gap: 56px;
+      height: 640px;
+      align-items: start;
+    }
+
+    .sec-title {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--aggregate);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .sec-title .katex {
+      font-size: 22px;
+    }
+
+    /* 左栏：alpha 曲线与当前判决点 */
+    .alpha-pane {
+      position: relative;
+    }
+
+    .curve-svg {
+      width: 560px;
+      height: 380px;
+      overflow: visible;
+    }
+
+    .curve-line {
+      fill: none;
+      stroke: var(--model);
+      stroke-width: 3.5;
+      stroke-linecap: round;
+    }
+
+    .axis-line {
+      stroke: var(--line);
+      stroke-width: 1.5;
+    }
+
+    .tick-label {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-tick);
+      fill: var(--muted);
+      text-anchor: middle;
+    }
+
+    .formula-note {
+      margin-top: 14px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 右栏：样本权重更新直方对照 */
+    .weights-pane {
+      position: relative;
+    }
+
+    .weight-bars-svg {
+      width: 100%;
+      height: 480px;
+      overflow: visible;
+    }
+
+    .sample-label {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-label);
+      text-anchor: middle;
+      fill: var(--text);
+    }
+
+    .val-text {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-tick);
+      text-anchor: middle;
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 28px;
+      margin-top: 14px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+    }
+  </style>
+</head>
+<body data-page="16" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>错误率定话语权，错分点获更高权重</h1>
+      <div class="lead">分类误差低于随机猜测即赋予正向话语权；被判错的样本在下一轮成为重点关注对象</div>
+    </header>
+
+    <main class="evidence-grid">
+      <!-- 左侧：弱分类器权重 alpha_m 计算 -->
+      <section class="alpha-pane min0">
+        <div class="sec-title">
+          <span>模型话语权</span>
+          <span class="katex-eq" data-tex="\alpha_m = \frac{1}{2}\ln\frac{1-\epsilon_m}{\epsilon_m}"></span>
+        </div>
+
+        <svg class="curve-svg" viewBox="0 0 560 380">
+          <!-- 坐标系 -->
+          <!-- X轴 40 到 520, Y轴 340 到 40 -->
+          <!-- baseline: y = 240 (对应 alpha = 0, 即 epsilon = 0.5) -->
+          <line x1="60" y1="240" x2="520" y2="240" class="axis-line" stroke-dasharray="4 4" />
+          <line x1="60" y1="340" x2="60" y2="30" class="axis-line" />
+          <line x1="60" y1="340" x2="520" y2="340" class="axis-line" />
+
+          <!-- X 轴刻度: epsilon in [0.05, 0.5] -->
+          <!-- 映射: x = 60 + (eps / 0.6) * 440 -->
+          <text x="60" y="360" class="tick-label">0.0</text>
+          <text x="133" y="360" class="tick-label">0.1</text>
+          <text x="206" y="360" class="tick-label">0.2</text>
+          <text x="280" y="360" class="tick-label">0.3</text>
+          <text x="353" y="360" class="tick-label">0.4</text>
+          <text x="426" y="360" class="tick-label">0.5</text>
+          <text x="490" y="360" class="tick-label">εₘ</text>
+
+          <!-- Y 轴刻度: alpha in [0, 2.0] -->
+          <!-- alpha=0 -> y=240; alpha=1.0 -> y=140; alpha=2.0 -> y=40 -->
+          <text x="48" y="244" class="tick-label" text-anchor="end">0.0</text>
+          <text x="48" y="144" class="tick-label" text-anchor="end">1.0</text>
+          <text x="48" y="44" class="tick-label" text-anchor="end">2.0</text>
+          <text x="48" y="22" class="tick-label" text-anchor="end">αₘ</text>
+
+          <!-- 理论曲线 -->
+          <!-- 动态在 JS 绘制或者硬编码路径 -->
+          <path id="alpha-curve" class="curve-line" />
+
+          <!-- 当前分类器标注点: eps=0.30 -> alpha = 0.5 * ln(0.7/0.3) = 0.4236 -->
+          <!-- x = 60 + (0.3/0.6)*440 = 280; y = 240 - 0.4236*100 = 197.6 -->
+          <line x1="280" y1="340" x2="280" y2="198" stroke="var(--focus)" stroke-width="1.5" stroke-dasharray="3 3" />
+          <line x1="60" y1="198" x2="280" y2="198" stroke="var(--focus)" stroke-width="1.5" stroke-dasharray="3 3" />
+          <circle cx="280" cy="198" r="6" fill="var(--focus)" />
+          
+          <text x="292" y="192" font-size="15" fill="var(--focus)" font-weight="500">ε₁ = 0.30 → α₁ = 0.42</text>
+          <text x="426" y="225" font-size="13" fill="var(--muted)" text-anchor="middle">随机猜测 α = 0</text>
+        </svg>
+
+        <div class="formula-note">
+          误差率越低，话语权 αₘ 越大；当误差率接近 0.5 时降至 0。
+        </div>
+      </section>
+
+      <!-- 右侧：10 个样本从 D1 到 D2 的权重更新 -->
+      <section class="weights-pane min0">
+        <div class="sec-title">
+          <span>样本训练权重重分配</span>
+          <span class="katex-eq" data-tex="w_{m+1,i} \propto w_{m,i} \cdot \exp(-\alpha_m y_i G_m(x_i))"></span>
+        </div>
+
+        <svg class="weight-bars-svg" viewBox="0 0 850 450">
+          <!-- 顶部对比图例 -->
+          <g id="bars-group"></g>
+        </svg>
+
+        <div class="legend-row">
+          <div class="legend-item">
+            <div class="legend-dot" style="background: var(--model);"></div>
+            <span>正确分类（权重衰减 ×0.65）</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background: var(--focus);"></div>
+            <span>错误分类（权重放大 ×1.53）</span>
+          </div>
+          <div class="legend-item" style="margin-left: auto; font-family: var(--font-numeric);">
+            归一化因子 Z₁ = 0.916
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页我们来看 AdaBoost 核心的单轮递推机制。
+    整个更新过程分为两个核心动作：
+    第一步，根据弱分类器 G_m 在当前加权数据集上的分类错误率 epsilon_m，计算其自身的模型权重 alpha_m。公式为二分之一对数几率。大家可以看到左边的曲线，当错误率为 0.5 时，相当于随机猜测，话语权为 0；当错误率逐渐下降到 0.1、甚至 0.05 时，话语权快速拉升，赋予极高的表决票数。
+    第二步，利用算出的 alpha_m 调整训练样本的分布权重。被本轮模型预测错误的样本，权重乘上 e 的正 alpha 次方，显著增大；预测正确的样本乘上 e 的负 alpha 次方，相对缩小。
+    右侧图中展示了一个 10 个样本的具体案例，原本均匀分布的权重 0.1，在第 6、7、8 号样本被错分后，它们的权重被放大到了 0.167，成为下一轮弱学习器必须攻克的难题。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // KaTeX 渲染
+    document.querySelectorAll('.katex-eq').forEach(el => {
+      katex.render(el.dataset.tex, el, { throwOnError: false });
+    });
+
+    // 绘制左侧 alpha 曲线
+    // x: eps in [0.05, 0.55], y: alpha = 0.5 * ln((1-eps)/eps)
+    // 映射: x(eps) = 60 + (eps / 0.6) * 440
+    // y(alpha) = 240 - alpha * 100
+    const curvePath = [];
+    for (let eps = 0.04; eps <= 0.52; eps += 0.01) {
+      const alpha = 0.5 * Math.log((1 - eps) / eps);
+      const px = 60 + (eps / 0.6) * 440;
+      const py = 240 - alpha * 100;
+      curvePath.push(`${curvePath.length === 0 ? 'M' : 'L'} ${px.toFixed(1)} ${py.toFixed(1)}`);
+    }
+    document.getElementById('alpha-curve').setAttribute('d', curvePath.join(' '));
+
+    // 右侧直方图：10个样本在第1轮与第2轮的权重对比
+    // 假设 10 个样本，x1 到 x10
+    // 初始 D1: 每个样本 0.10
+    // 错分样本: 6, 7, 8 (共3个, eps=0.30)
+    // alpha = 0.5 * ln(0.7 / 0.3) = 0.4236
+    // 正确样本权重乘 exp(-alpha) = sqrt(0.3/0.7) = 0.6546 -> 未归一化 0.06546
+    // 错误样本权重乘 exp(alpha) = sqrt(0.7/0.3) = 1.5275 -> 未归一化 0.15275
+    // Z = 7 * 0.06546 + 3 * 0.15275 = 0.4582 + 0.4582 = 0.9165
+    // 归一化后 D2:
+    // 正确: 0.06546 / 0.9165 = 0.0714 (约 0.071)
+    // 错误: 0.15275 / 0.9165 = 0.1667 (约 0.167)
+    const samples = [
+      { id: 1, correct: true, w1: 0.10, w2: 0.071 },
+      { id: 2, correct: true, w1: 0.10, w2: 0.071 },
+      { id: 3, correct: true, w1: 0.10, w2: 0.071 },
+      { id: 4, correct: true, w1: 0.10, w2: 0.071 },
+      { id: 5, correct: true, w1: 0.10, w2: 0.071 },
+      { id: 6, correct: false, w1: 0.10, w2: 0.167 },
+      { id: 7, correct: false, w1: 0.10, w2: 0.167 },
+      { id: 8, correct: false, w1: 0.10, w2: 0.167 },
+      { id: 9, correct: true, w1: 0.10, w2: 0.071 },
+      { id: 10, correct: true, w1: 0.10, w2: 0.071 }
+    ];
+
+    const barsGroup = document.getElementById('bars-group');
+    const startX = 60;
+    const colWidth = 74;
+    const baseY = 360;
+    const maxValHeight = 1400; // 0.167 * 1400 ≈ 233px
+
+    // 基准线与刻度
+    let svgContent = `
+      <!-- 背景基线与刻度 -->
+      <line x1="40" y1="${baseY}" x2="810" y2="${baseY}" stroke="var(--line)" stroke-width="1.5" />
+      <line x1="40" y1="${baseY - 0.10 * maxValHeight}" x2="810" y2="${baseY - 0.10 * maxValHeight}" stroke="var(--line)" stroke-dasharray="3 3" opacity="0.6" />
+      <text x="35" y="${baseY - 0.10 * maxValHeight + 4}" class="tick-label" text-anchor="end">0.10 (初值)</text>
+      <text x="35" y="${baseY - 0.167 * maxValHeight + 4}" class="tick-label" text-anchor="end">0.167</text>
+      <line x1="40" y1="${baseY - 0.167 * maxValHeight}" x2="810" y2="${baseY - 0.167 * maxValHeight}" stroke="var(--line)" stroke-dasharray="2 2" opacity="0.3" />
+    `;
+
+    samples.forEach((s, idx) => {
+      const cx = startX + idx * colWidth + 24;
+      const barW = 26;
+      
+      // 第1轮权重柱状（浅灰虚线框或半透明中性灰）
+      const h1 = s.w1 * maxValHeight;
+      const y1 = baseY - h1;
+
+      // 第2轮权重柱状
+      const h2 = s.w2 * maxValHeight;
+      const y2 = baseY - h2;
+      const color = s.correct ? 'var(--model)' : 'var(--focus)';
+
+      svgContent += `
+        <!-- 样本 ${s.id} -->
+        <!-- D1 原权重 -->
+        <rect x="${cx - barW - 2}" y="${y1}" width="${barW}" height="${h1}" fill="var(--line)" opacity="0.4" rx="2" />
+        <text x="${cx - barW / 2 - 2}" y="${y1 - 6}" class="val-text" fill="var(--muted)">.10</text>
+
+        <!-- D2 新权重 -->
+        <rect x="${cx + 2}" y="${y2}" width="${barW}" height="${h2}" fill="${color}" rx="2" />
+        <text x="${cx + barW / 2 + 2}" y="${y2 - 6}" class="val-text" fill="${color}" font-weight="500">${s.w2.toFixed(3).replace('0.', '.')}</text>
+
+        <!-- 样本标签 -->
+        <text x="${cx}" y="${baseY + 22}" class="sample-label">x${s.id}</text>
+        <text x="${cx}" y="${baseY + 40}" font-size="13" fill="${s.correct ? 'var(--muted)' : 'var(--focus)'}" text-anchor="middle" font-weight="${s.correct ? '400' : '500'}">
+          ${s.correct ? '对' : '错'}
+        </text>
+      `;
+    });
+
+    // 分组对比说明标注
+    svgContent += `
+      <!-- 图内对照说明 -->
+      <g transform="translate(60, 40)">
+        <rect x="0" y="0" width="14" height="14" fill="var(--line)" opacity="0.4" rx="2" />
+        <text x="22" y="12" font-size="15" fill="var(--muted)">初始权重 D₁（均匀 0.10）</text>
+        <rect x="220" y="0" width="14" height="14" fill="var(--aggregate)" rx="2" />
+        <text x="242" y="12" font-size="15" fill="var(--text)">更新后权重 D₂（加权调整）</text>
+      </g>
+    `;
+
+    barsGroup.innerHTML = svgContent;
+  </script>
+</body>
+</html>

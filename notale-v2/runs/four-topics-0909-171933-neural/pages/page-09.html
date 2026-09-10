@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 56px 64px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      user-select: none;
+    }
+    .header-group {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .nt-title {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+    }
+    .nt-lead {
+      margin: 8px 0 0 0;
+      color: #3b4e43;
+      font-size: var(--fs-lead);
+    }
+    .switch-tabs {
+      display: flex;
+      gap: 12px;
+      background: rgba(22, 32, 27, 0.06);
+      padding: 4px;
+      border-radius: 4px;
+    }
+    .switch-btn {
+      border: none;
+      background: transparent;
+      font-family: var(--font-sans);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      padding: 8px 18px;
+      cursor: pointer;
+      border-radius: 3px;
+      transition: background 0.18s, color 0.18s;
+    }
+    .switch-btn.active {
+      background: var(--text);
+      color: #DAE1DC;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      height: 620px;
+      align-items: stretch;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.45);
+      border: 1px solid rgba(22, 32, 27, 0.12);
+      border-radius: 6px;
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid rgba(22, 32, 27, 0.1);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .func-name {
+      font-family: var(--font-title);
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+    .func-formula {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      color: #2e4337;
+      font-weight: 600;
+    }
+
+    .chart-container {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+    svg.plot-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .card-footer {
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 12px;
+      border-top: 1px dashed rgba(22, 32, 27, 0.15);
+      font-size: var(--fs-label);
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .badge-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .badge-sat .badge-dot { background: #c84b31; }
+    .badge-sat { color: #8e2b17; }
+    .badge-ok .badge-dot { background: #1f6f8b; }
+    .badge-ok { color: #164e62; }
+
+    .chart-legend {
+      display: flex;
+      gap: 20px;
+      font-size: 13px;
+      color: #3b4e43;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .line-swatch {
+      width: 20px;
+      height: 3px;
+      border-radius: 1px;
+    }
+
+    /* SVG elements */
+    .axis-line { stroke: rgba(22, 32, 27, 0.35); stroke-width: 1.5; }
+    .grid-line { stroke: rgba(22, 32, 27, 0.08); stroke-dasharray: 4 4; stroke-width: 1; }
+    .tick-text { font-size: 12px; fill: rgba(22, 32, 27, 0.6); font-family: var(--font-sans); }
+    .fn-curve { fill: none; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+    .grad-curve { fill: none; stroke-width: 2.5; stroke-dasharray: 5 4; stroke-linecap: round; }
+    .sat-region { fill: rgba(200, 75, 49, 0.12); }
+    .zero-line { stroke: rgba(22, 32, 27, 0.15); stroke-width: 1; }
+    .mark-point { stroke: #fff; stroke-width: 2; }
+    .annot-text { font-size: 13px; font-weight: 600; font-family: var(--font-sans); }
+  </style>
+</head>
+<body data-page="NN" data-total="19">
+  <div id="stage">
+    <div class="header-group">
+      <div>
+        <h1 class="nt-title">常用激活函数辨析：饱和区与单侧抑制</h1>
+        <p class="nt-lead">激活函数导数决定反向传播流速：Sigmoid 双侧饱和截断梯度，ReLU 单侧抑制无饱和</p>
+      </div>
+      <div class="switch-tabs" role="tablist">
+        <button class="switch-btn active" id="btn-compare" role="tab" aria-selected="true">对比视图</button>
+        <button class="switch-btn" id="btn-inspect" role="tab" aria-selected="false">检视 z=3.5 梯度</button>
+      </div>
+    </div>
+
+    <div class="main-grid">
+      <!-- Card 1: Sigmoid -->
+      <div class="card" id="card-sigmoid">
+        <div class="card-header">
+          <span class="func-name">Sigmoid</span>
+          <span class="func-formula">σ(z) = 1/(1+e⁻ᶻ)</span>
+        </div>
+        <div class="chart-container">
+          <svg class="plot-svg" id="svg-sigmoid" viewBox="0 0 680 430"></svg>
+        </div>
+        <div class="card-footer">
+          <div class="chart-legend">
+            <span class="legend-item"><span class="line-swatch" style="background: #1f6f8b;"></span>σ(z)</span>
+            <span class="legend-item"><span class="line-swatch" style="background: #c84b31; height: 2px; border-top: 2px dashed #c84b31;"></span>σ′(z)</span>
+          </div>
+          <div class="status-badge badge-sat" id="badge-sig">
+            <span class="badge-dot"></span>
+            <span>两端导数趋近 0（弥散）</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: ReLU -->
+      <div class="card" id="card-relu">
+        <div class="card-header">
+          <span class="func-name">ReLU</span>
+          <span class="func-formula">f(z) = max(0, z)</span>
+        </div>
+        <div class="chart-container">
+          <svg class="plot-svg" id="svg-relu" viewBox="0 0 680 430"></svg>
+        </div>
+        <div class="card-footer">
+          <div class="chart-legend">
+            <span class="legend-item"><span class="line-swatch" style="background: #1f6f8b;"></span>f(z)</span>
+            <span class="legend-item"><span class="line-swatch" style="background: #2e7d32; height: 2px; border-top: 2px dashed #2e7d32;"></span>f′(z)</span>
+          </div>
+          <div class="status-badge badge-ok" id="badge-relu">
+            <span class="badge-dot" style="background: #2e7d32;"></span>
+            <span>正半轴导数恒为 1</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    在多层神经网络中，激活函数的选择直接决定反向传播的梯度衰减速度。
+    Sigmoid 将实数域压缩在零到一之间，但当输入绝对值大于 4 时，曲线进入饱和平坦区，导数最高仅为 0.25 并急剧衰减至 0。每经过一层，反向传播梯度至少缩减四分之三，引发梯度弥散。
+    ReLU 在正区间导数恒为 1，彻底消除了饱和区；在负区间输出与梯度均为 0，形成单侧稀疏抑制，兼具计算高效与特征解耦优势。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 9, total: 19, keys: false });
+
+    // Range & mapping
+    const W = 680, H = 430;
+    const pad = { left: 54, right: 30, top: 30, bottom: 45 };
+    const innerW = W - pad.left - pad.right;
+    const innerH = H - pad.top - pad.bottom;
+
+    // Coordinate converters: z in [-6, 6]
+    const zMin = -6, zMax = 6;
+    function toX(z) {
+      return pad.left + ((z - zMin) / (zMax - zMin)) * innerW;
+    }
+    // Sigmoid Y: [-0.2, 1.2]
+    function toYSig(y) {
+      const yMin = -0.15, yMax = 1.15;
+      return pad.top + ((yMax - y) / (yMax - yMin)) * innerH;
+    }
+    // ReLU Y: [-1, 5]
+    function toYRelu(y) {
+      const yMin = -0.6, yMax = 5.2;
+      return pad.top + ((yMax - y) / (yMax - yMin)) * innerH;
+    }
+
+    let currentMode = 'compare'; // 'compare' or 'inspect'
+    let inspectProbeZ = 3.5;
+
+    function renderSigmoid() {
+      const svg = document.getElementById('svg-sigmoid');
+      let h = '';
+
+      // Grid lines
+      [-4, 0, 4].forEach(z => {
+        const x = toX(z);
+        h += `<line class="grid-line" x1="${x}" y1="${pad.top}" x2="${x}" y2="${H - pad.bottom}"/>`;
+        h += `<text class="tick-text" x="${x}" y="${H - pad.bottom + 20}" text-anchor="middle">${z}</text>`;
+      });
+
+      [0, 0.5, 1.0].forEach(y => {
+        const py = toYSig(y);
+        h += `<line class="grid-line" x1="${pad.left}" y1="${py}" x2="${W - pad.right}" y2="${py}"/>`;
+        h += `<text class="tick-text" x="${pad.left - 10}" y="${py + 4}" text-anchor="end">${y}</text>`;
+      });
+
+      // Axes
+      const y0 = toYSig(0);
+      const x0 = toX(0);
+      h += `<line class="axis-line" x1="${pad.left}" y1="${y0}" x2="${W - pad.right}" y2="${y0}"/>`;
+      h += `<line class="axis-line" x1="${x0}" y1="${pad.top}" x2="${x0}" y2="${H - pad.bottom}"/>`;
+
+      // Saturation regions (|z| > 2.8)
+      const xSatL = toX(-2.8);
+      const xSatR = toX(2.8);
+      h += `<rect class="sat-region" x="${pad.left}" y="${pad.top}" width="${xSatL - pad.left}" height="${innerH}"/>`;
+      h += `<rect class="sat-region" x="${xSatR}" y="${pad.top}" width="${W - pad.right - xSatR}" height="${innerH}"/>`;
+      h += `<text class="annot-text" x="${(pad.left + xSatL)/2}" y="${pad.top + 24}" fill="#c84b31" text-anchor="middle">负饱和</text>`;
+      h += `<text class="annot-text" x="${(xSatR + W - pad.right)/2}" y="${pad.top + 24}" fill="#c84b31" text-anchor="middle">正饱和</text>`;
+
+      // Curves
+      let pathSig = 'M';
+      let pathGrad = 'M';
+      const steps = 120;
+      for (let i = 0; i <= steps; i++) {
+        const z = zMin + (i / steps) * (zMax - zMin);
+        const sig = 1 / (1 + Math.exp(-z));
+        const grad = sig * (1 - sig);
+        const px = toX(z);
+        const pySig = toYSig(sig);
+        const pyGrad = toYSig(grad);
+        pathSig += `${i === 0 ? '' : 'L'}${px.toFixed(1)} ${pySig.toFixed(1)}`;
+        pathGrad += `${i === 0 ? '' : 'L'}${px.toFixed(1)} ${pyGrad.toFixed(1)}`;
+      }
+
+      h += `<path class="fn-curve" stroke="#1f6f8b" d="${pathSig}"/>`;
+      h += `<path class="grad-curve" stroke="#c84b31" d="${pathGrad}"/>`;
+
+      // Peak annotation for Sigmoid's derivative
+      const px0 = toX(0);
+      const pyGradMax = toYSig(0.25);
+      h += `<circle cx="${px0}" cy="${pyGradMax}" r="4" fill="#c84b31" class="mark-point"/>`;
+      h += `<text class="annot-text" x="${px0 + 10}" y="${pyGradMax - 8}" fill="#c84b31">最大导数 0.25</text>`;
+
+      // If in inspect mode, show probe value
+      if (currentMode === 'inspect') {
+        const probeX = toX(inspectProbeZ);
+        const sigVal = 1 / (1 + Math.exp(-inspectProbeZ));
+        const gradVal = sigVal * (1 - sigVal);
+        const pyVal = toYSig(sigVal);
+        const pyGVal = toYSig(gradVal);
+
+        h += `<line x1="${probeX}" y1="${pad.top}" x2="${probeX}" y2="${H - pad.bottom}" stroke="#16201B" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+        h += `<circle cx="${probeX}" cy="${pyVal}" r="5" fill="#1f6f8b" class="mark-point"/>`;
+        h += `<circle cx="${probeX}" cy="${pyGVal}" r="5" fill="#c84b31" class="mark-point"/>`;
+        h += `<rect x="${probeX - 110}" y="${pyGVal - 32}" width="102" height="24" rx="3" fill="#16201B"/>`;
+        h += `<text x="${probeX - 59}" y="${pyGVal - 16}" fill="#fff" font-size="12" font-family="var(--font-sans)" font-weight="600" text-anchor="middle">梯度 = ${gradVal.toFixed(3)}</text>`;
+      }
+
+      svg.innerHTML = h;
+    }
+
+    function renderReLU() {
+      const svg = document.getElementById('svg-relu');
+      let h = '';
+
+      // Grid lines
+      [-4, 0, 4].forEach(z => {
+        const x = toX(z);
+        h += `<line class="grid-line" x1="${x}" y1="${pad.top}" x2="${x}" y2="${H - pad.bottom}"/>`;
+        h += `<text class="tick-text" x="${x}" y="${H - pad.bottom + 20}" text-anchor="middle">${z}</text>`;
+      });
+
+      [0, 2, 4].forEach(y => {
+        const py = toYRelu(y);
+        h += `<line class="grid-line" x1="${pad.left}" y1="${py}" x2="${W - pad.right}" y2="${py}"/>`;
+        h += `<text class="tick-text" x="${pad.left - 10}" y="${py + 4}" text-anchor="end">${y}</text>`;
+      });
+
+      // Axes
+      const y0 = toYRelu(0);
+      const x0 = toX(0);
+      h += `<line class="axis-line" x1="${pad.left}" y1="${y0}" x2="${W - pad.right}" y2="${y0}"/>`;
+      h += `<line class="axis-line" x1="${x0}" y1="${pad.top}" x2="${x0}" y2="${H - pad.bottom}"/>`;
+
+      // Dead ReLU / Sparsity region (z < 0)
+      h += `<rect fill="rgba(22, 32, 27, 0.05)" x="${pad.left}" y="${pad.top}" width="${x0 - pad.left}" height="${innerH}"/>`;
+      h += `<text class="annot-text" x="${(pad.left + x0)/2}" y="${pad.top + 24}" fill="#3b4e43" text-anchor="middle">单侧抑制 (输出 0)</text>`;
+      h += `<text class="annot-text" x="${(x0 + W - pad.right)/2}" y="${pad.top + 24}" fill="#2e7d32" text-anchor="middle">线性区 (导数 1)</text>`;
+
+      // Curves
+      // ReLU function
+      const pxStart = toX(zMin);
+      const pxZero = toX(0);
+      const pxEnd = toX(zMax);
+      const pyZero = toYRelu(0);
+      const pyEnd = toYRelu(zMax);
+      const pathRelu = `M${pxStart} ${pyZero} L${pxZero} ${pyZero} L${pxEnd} ${pyEnd}`;
+
+      // Derivative: 0 for z < 0, 1 for z > 0
+      const pyGrad0 = toYRelu(0);
+      const pyGrad1 = toYRelu(1);
+      const pathGradLeft = `M${pxStart} ${pyGrad0} L${pxZero} ${pyGrad0}`;
+      const pathGradRight = `M${pxZero} ${pyGrad1} L${pxEnd} ${pyGrad1}`;
+
+      h += `<path class="fn-curve" stroke="#1f6f8b" d="${pathRelu}"/>`;
+      h += `<path class="grad-curve" stroke="#2e7d32" d="${pathGradLeft}"/>`;
+      h += `<path class="grad-curve" stroke="#2e7d32" d="${pathGradRight}"/>`;
+      h += `<line x1="${pxZero}" y1="${pyGrad0}" x2="${pxZero}" y2="${pyGrad1}" stroke="#2e7d32" stroke-width="1.5" stroke-dasharray="2 2"/>`;
+
+      // Constant slope annotation
+      const pxMid = toX(2.2);
+      h += `<circle cx="${pxMid}" cy="${pyGrad1}" r="4" fill="#2e7d32" class="mark-point"/>`;
+      h += `<text class="annot-text" x="${pxMid + 10}" y="${pyGrad1 - 10}" fill="#2e7d32">导数恒为 1.0</text>`;
+
+      // If in inspect mode, show probe value
+      if (currentMode === 'inspect') {
+        const probeX = toX(inspectProbeZ);
+        const reluVal = Math.max(0, inspectProbeZ);
+        const gradVal = inspectProbeZ > 0 ? 1 : 0;
+        const pyVal = toYRelu(reluVal);
+        const pyGVal = toYRelu(gradVal);
+
+        h += `<line x1="${probeX}" y1="${pad.top}" x2="${probeX}" y2="${H - pad.bottom}" stroke="#16201B" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+        h += `<circle cx="${probeX}" cy="${pyVal}" r="5" fill="#1f6f8b" class="mark-point"/>`;
+        h += `<circle cx="${probeX}" cy="${pyGVal}" r="5" fill="#2e7d32" class="mark-point"/>`;
+        h += `<rect x="${probeX + 12}" y="${pyGVal - 12}" width="98" height="24" rx="3" fill="#16201B"/>`;
+        h += `<text x="${probeX + 61}" y="${pyGVal + 4}" fill="#fff" font-size="12" font-family="var(--font-sans)" font-weight="600" text-anchor="middle">梯度 = ${gradVal.toFixed(1)}</text>`;
+      }
+
+      svg.innerHTML = h;
+    }
+
+    function renderAll() {
+      renderSigmoid();
+      renderReLU();
+    }
+
+    // Interactive switch
+    const btnCompare = document.getElementById('btn-compare');
+    const btnInspect = document.getElementById('btn-inspect');
+
+    btnCompare.addEventListener('click', () => {
+      currentMode = 'compare';
+      btnCompare.classList.add('active');
+      btnCompare.setAttribute('aria-selected', 'true');
+      btnInspect.classList.remove('active');
+      btnInspect.setAttribute('aria-selected', 'false');
+      renderAll();
+    });
+
+    btnInspect.addEventListener('click', () => {
+      currentMode = 'inspect';
+      btnInspect.classList.add('active');
+      btnInspect.setAttribute('aria-selected', 'true');
+      btnCompare.classList.remove('active');
+      btnCompare.setAttribute('aria-selected', 'false');
+      renderAll();
+    });
+
+    renderAll();
+  </script>
+</body>
+</html>

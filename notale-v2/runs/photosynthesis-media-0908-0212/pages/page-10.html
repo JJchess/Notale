@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: var(--text);
+      user-select: none;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .core-eq {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--model);
+      letter-spacing: 0.02em;
+      font-weight: 500;
+    }
+    .canvas-box {
+      position: relative;
+      width: 100%;
+      height: 616px;
+    }
+    footer {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 32px;
+      border-top: 1px solid var(--rule);
+      padding-top: 14px;
+    }
+    .state-info {
+      display: flex;
+      align-items: baseline;
+      gap: 20px;
+    }
+    .step-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--focus);
+      white-space: nowrap;
+    }
+    .step-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-tight);
+    }
+    .stepper {
+      display: flex;
+      gap: 12px;
+    }
+    .step-btn {
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      padding: 7px 18px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all var(--motion-fast) var(--ease-out);
+    }
+    .step-btn:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+    .step-btn.active {
+      background: var(--model);
+      border-color: var(--model);
+      color: #fff;
+    }
+  </style>
+</head>
+<body data-page="10" data-total="25">
+  <div id="stage">
+    <header>
+      <h1>水的光解与希尔反应：氧气、电子与质子的源头</h1>
+      <div class="core-eq">2H₂O → 4H⁺ + 4e⁻ + O₂</div>
+    </header>
+
+    <div class="canvas-box">
+      <canvas id="cv" class="cv-fill"></canvas>
+    </div>
+
+    <footer>
+      <div class="state-info">
+        <span id="stepTitle" class="step-title">基态结合 (S₀ 态)</span>
+        <span id="stepDesc" class="step-desc">两个 H₂O 进入 Mn₄CaO₅ 活性中心，OEC 处于最低氧化态。</span>
+      </div>
+      <div class="stepper" id="stepper">
+        <button class="step-btn active" data-s="0">S₀ 结合水</button>
+        <button class="step-btn" data-s="1">S₁~S₃ 阶梯脱质子</button>
+        <button class="step-btn" data-s="4">S₄ 释氧产出</button>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    本页聚焦光反应最初也是最关键的物质转化事件：水的光解。
+    1937年罗宾·希尔在离体叶绿体实验中证明，光照下水释放氧气并提供电子，并不依赖二氧化碳。
+    在光系统 II 的放氧复合体（OEC）中，核心是一个由4个锰原子和1个钙原子构成的催化簇。
+    由于每失去一个电子不足以直接氧化水，Kok 提出的 S-状态钟机制显示，OEC 需要连续被 P680+ 氧化4次，由 S₀ 逐级积累正电荷到 S₄，最终一举将两个水分子氧化为一分子氧气，释放4个质子进入囊腔，4个电子注入反应中心弥补空穴。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      Deck.init({ index: 10, total: 25 });
+
+      const cv = document.getElementById('cv');
+      const stepTitle = document.getElementById('stepTitle');
+      const stepDesc = document.getElementById('stepDesc');
+      const buttons = document.querySelectorAll('.step-btn');
+
+      const STEPS = [
+        {
+          id: 0,
+          title: "基态结合 (S₀ 态)",
+          desc: "两个 H₂O 进入 Mn₄CaO₅ 活性中心，OEC 处于最低氧化态。"
+        },
+        {
+          id: 1,
+          title: "逐级电荷积累 (S₁ ~ S₃ 态)",
+          desc: "连续吸收光子：每失去 1e⁻ 补给 P680⁺，释放 1H⁺ 入类囊体腔。"
+        },
+        {
+          id: 4,
+          title: "释氧与电子注入 (S₄ → S₀ 态)",
+          desc: "累计转移 4e⁻，形成 O=O 双键释放 O₂，4H⁺ 建立跨膜质子梯度。"
+        }
+      ];
+
+      let curStep = 0;
+
+      const colText = Deck.token('--text') || '#142630';
+      const colMuted = Deck.token('--muted') || '#50616B';
+      const colModel = Deck.token('--model') || '#17628E';
+      const colFocus = Deck.token('--focus') || '#B83D0B';
+      const colRule = Deck.token('--rule') || '#71828B';
+
+      function draw(ctx) {
+        const w = 1488;
+        const h = 616;
+        ctx.clearRect(0, 0, w, h);
+
+        // 1. 膜空间基底划分
+        const memY = 240;
+        const memH = 140;
+
+        // 膜带淡淡底色区分跨膜区域
+        ctx.fillStyle = 'rgba(23, 98, 142, 0.05)';
+        ctx.fillRect(40, memY, 1020, memH);
+
+        // 膜界面虚线
+        ctx.strokeStyle = colRule;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(40, memY);
+        ctx.lineTo(1060, memY);
+        ctx.moveTo(40, memY + memH);
+        ctx.lineTo(1060, memY + memH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 空间标注
+        ctx.font = 'bold 16px var(--font-sans)';
+        ctx.fillStyle = colMuted;
+        ctx.textAlign = 'left';
+        ctx.fillText('基质 (Stroma, pH ≈ 8)', 44, memY - 20);
+        ctx.fillText('类囊体膜 (Thylakoid Membrane)', 44, memY + 36);
+        ctx.fillText('类囊体腔 (Lumen, pH ≈ 5) —— 质子富集区', 44, memY + memH + 34);
+
+        // 2. 左侧：Kok 氧化钟 (S-State Clock)
+        const clockX = 320;
+        const clockY = 310;
+        const clockR = 118;
+        const states = [
+          { name: 'S₀', angle: -Math.PI / 2 },
+          { name: 'S₁', angle: -Math.PI / 2 + 1.256 },
+          { name: 'S₂', angle: -Math.PI / 2 + 2.513 },
+          { name: 'S₃', angle: -Math.PI / 2 + 3.77 },
+          { name: 'S₄', angle: -Math.PI / 2 + 5.026 }
+        ];
+
+        // 环形轨道
+        ctx.beginPath();
+        ctx.arc(clockX, clockY, clockR, 0, Math.PI * 2);
+        ctx.strokeStyle = colRule;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.font = '18px var(--font-display)';
+        ctx.fillStyle = colText;
+        ctx.textAlign = 'center';
+        ctx.fillText('Kok 氧化钟', clockX, clockY - 14);
+        ctx.font = '14px var(--font-sans)';
+        ctx.fillStyle = colMuted;
+        ctx.fillText('4次闪光循环释氧', clockX, clockY + 14);
+
+        // 画 5 个 S 状态
+        states.forEach((s, idx) => {
+          const nx = clockX + clockR * Math.cos(s.angle);
+          const ny = clockY + clockR * Math.sin(s.angle);
+          const isCurrent = (curStep === 0 && idx === 0) ||
+                            (curStep === 1 && idx >= 1 && idx <= 3) ||
+                            (curStep === 4 && idx === 4);
+
+          ctx.beginPath();
+          ctx.arc(nx, ny, 24, 0, Math.PI * 2);
+          ctx.fillStyle = isCurrent ? colFocus : '#E8EEF1';
+          ctx.fill();
+          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = isCurrent ? colFocus : colModel;
+          ctx.stroke();
+
+          ctx.font = 'bold 15px var(--font-sans)';
+          ctx.fillStyle = isCurrent ? '#FFFFFF' : colText;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(s.name, nx, ny);
+
+          // 标注跃迁脱出的电子
+          if (idx < 4) {
+            const midA = s.angle + 0.628;
+            const mx = clockX + (clockR + 34) * Math.cos(midA);
+            const my = clockY + (clockR + 34) * Math.sin(midA);
+            ctx.font = '13px var(--font-sans)';
+            ctx.fillStyle = colModel;
+            ctx.fillText('-1e⁻', mx, my);
+          }
+        });
+
+        // 3. 中部：光系统 II (PSII) 与 OEC 放氧复合体
+        const ps2X = 570;
+        const ps2Y = memY - 36;
+        const ps2W = 380;
+        const ps2H = memH + 96;
+
+        // 膜蛋白边界 (白色实底微投影，直切边框)
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(ps2X, ps2Y, ps2W, ps2H);
+        ctx.strokeStyle = colModel;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(ps2X, ps2Y, ps2W, ps2H);
+
+        ctx.font = '16px var(--font-display)';
+        ctx.fillStyle = colModel;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText('光系统 II 反应中心复合体 (PS II)', ps2X + ps2W / 2, ps2Y + 16);
+
+        // P680 与电子受体区
+        ctx.font = '15px var(--font-sans)';
+        ctx.fillStyle = colText;
+        ctx.fillText('P680⁺ (极端强氧化电位 E° ≈ +1.25V)', ps2X + ps2W / 2, ps2Y + 54);
+
+        ctx.font = '13px var(--font-sans)';
+        ctx.fillStyle = colMuted;
+        ctx.fillText('经酪氨酸残基 (Y_Z) 快速传导电子空穴', ps2X + ps2W / 2, ps2Y + 80);
+
+        // 放氧复合体 OEC (Mn4CaO5) 位于近类囊体腔侧
+        const oecX = ps2X + ps2W / 2;
+        const oecY = ps2Y + ps2H - 52;
+
+        ctx.fillStyle = curStep === 4 ? colFocus : '#DCE5EA';
+        ctx.fillRect(oecX - 110, oecY - 26, 220, 52);
+        ctx.strokeStyle = curStep === 4 ? colFocus : colModel;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(oecX - 110, oecY - 26, 220, 52);
+
+        ctx.font = 'bold 16px var(--font-sans)';
+        ctx.fillStyle = curStep === 4 ? '#FFFFFF' : colText;
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Mn₄CaO₅ 催化活性簇 (OEC)', oecX, oecY);
+
+        // 4. 输入流：2 H2O 进入 OEC
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = colModel;
+        ctx.beginPath();
+        ctx.moveTo(oecX - 180, oecY + 70);
+        ctx.lineTo(oecX - 70, oecY + 26);
+        ctx.stroke();
+
+        ctx.fillStyle = colModel;
+        ctx.beginPath();
+        ctx.arc(oecX - 70, oecY + 26, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = 'bold 18px var(--font-display)';
+        ctx.textAlign = 'right';
+        ctx.fillText('2 H₂O', oecX - 190, oecY + 76);
+
+        // 5. 产物三分支连线
+        // 分支 A: 4e- 注入 P680+ 弥补空穴 (粗实线)
+        ctx.strokeStyle = colModel;
+        ctx.lineWidth = (curStep >= 1) ? 4 : 2;
+        ctx.beginPath();
+        ctx.moveTo(oecX, oecY - 26);
+        ctx.lineTo(oecX, ps2Y + 110);
+        ctx.stroke();
+
+        // 箭头
+        ctx.beginPath();
+        ctx.moveTo(oecX - 7, ps2Y + 122);
+        ctx.lineTo(oecX, ps2Y + 106);
+        ctx.lineTo(oecX + 7, ps2Y + 122);
+        ctx.stroke();
+
+        ctx.font = 'bold 15px var(--font-sans)';
+        ctx.fillStyle = colModel;
+        ctx.textAlign = 'left';
+        ctx.fillText('4e⁻ 逐级弥补空穴', oecX + 12, (oecY + ps2Y + 100) / 2);
+
+        // 分支 B: 4H+ 注入囊腔
+        const hY = oecY + 86;
+        ctx.strokeStyle = (curStep >= 1) ? colFocus : colRule;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(oecX + 30, oecY + 26);
+        ctx.lineTo(oecX + 60, hY);
+        ctx.stroke();
+
+        ctx.font = 'bold 16px var(--font-display)';
+        ctx.fillStyle = (curStep >= 1) ? colFocus : colMuted;
+        ctx.textAlign = 'left';
+        ctx.fillText('4 H⁺ 释放进入囊腔', oecX + 72, hY + 4);
+
+        // 分支 C: O2 作为副产物释放向右扩散
+        const o2X = ps2X + ps2W + 36;
+        ctx.strokeStyle = (curStep === 4) ? colFocus : colRule;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(oecX + 110, oecY);
+        ctx.lineTo(o2X, oecY);
+        ctx.stroke();
+
+        ctx.font = 'bold 18px var(--font-display)';
+        ctx.fillStyle = (curStep === 4) ? colFocus : colRule;
+        ctx.fillText('O₂ ↑ (排出)', o2X + 10, oecY + 2);
+
+        // 6. 右侧：罗宾·希尔实验证据对比区 (独立干净排布)
+        const expX = 1120;
+        const expY = 80;
+
+        ctx.strokeStyle = colRule;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(expX - 36, expY);
+        ctx.lineTo(expX - 36, expY + 460);
+        ctx.stroke();
+
+        ctx.textAlign = 'left';
+        ctx.font = '18px var(--font-display)';
+        ctx.fillStyle = colText;
+        ctx.fillText('希尔反应经典实验证据 (1937)', expX, expY + 10);
+
+        ctx.font = '15px var(--font-sans)';
+        ctx.fillStyle = colText;
+        const expLines = [
+          { t: '实验设计', bold: true, color: colModel },
+          { t: '• 体系：离体破碎叶绿体 + 光照', bold: false, color: colText },
+          { t: '• 排除：系统内严格无 CO₂ 参与', bold: false, color: colText },
+          { t: '• 加入：人工外源电子受体 (Fe³⁺)', bold: false, color: colText },
+          { t: '', bold: false, color: colText },
+          { t: '核心观测结果', bold: true, color: colModel },
+          { t: '• 依然持续剧烈释放 O₂', bold: false, color: colText },
+          { t: '• Fe³⁺ 快速被还原为 Fe²⁺', bold: false, color: colText },
+          { t: '', bold: false, color: colText },
+          { t: '判决性结论', bold: true, color: colFocus },
+          { t: '1. 水的分解与糖的合成完全解耦', bold: false, color: colText },
+          { t: '2. 氧气 100% 来源于水，而非 CO₂', bold: false, color: colText },
+          { t: '3. 水是光反应全部电子的终极源头', bold: false, color: colText }
+        ];
+
+        let curY = expY + 46;
+        expLines.forEach(item => {
+          if (!item.t) {
+            curY += 12;
+            return;
+          }
+          ctx.font = item.bold ? 'bold 15px var(--font-sans)' : '15px var(--font-sans)';
+          ctx.fillStyle = item.color;
+          ctx.fillText(item.t, expX, curY);
+          curY += 25;
+        });
+      }
+
+      function update(stepIdx) {
+        curStep = stepIdx;
+        const info = STEPS.find(s => s.id === stepIdx) || STEPS[0];
+        stepTitle.textContent = info.title;
+        stepDesc.textContent = info.desc;
+
+        buttons.forEach(btn => {
+          btn.classList.toggle('active', parseInt(btn.dataset.s) === stepIdx);
+        });
+
+        draw(cv.getContext('2d'));
+      }
+
+      buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          update(parseInt(btn.dataset.s));
+        });
+      });
+
+      Deck.autofit(cv, draw);
+      update(0);
+    })();
+  </script>
+</body>
+</html>

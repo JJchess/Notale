@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    .header {
+      margin-bottom: 24px;
+    }
+    .header h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      margin: 0 0 8px 0;
+      color: var(--aggregate);
+    }
+    .header p {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: var(--lh-tight);
+    }
+
+    /* 主对比布局：左右两列 */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 36px;
+      height: 720px;
+    }
+
+    /* 机制卡片 */
+    .card {
+      display: flex;
+      flex-direction: column;
+      background: rgba(255, 255, 255, 0.45);
+      border-radius: 6px;
+      padding: 24px 28px;
+      border-top: 4px solid var(--model);
+      position: relative;
+    }
+    .card.boosting {
+      border-top-color: var(--focus);
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 12px;
+    }
+    .card-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-bold);
+      color: var(--text);
+    }
+    .card-badge {
+      font-size: var(--fs-label);
+      font-weight: var(--weight-medium);
+      color: #123040;
+    }
+    .card.boosting .card-badge {
+      color: #8c2810;
+    }
+
+    /* SVG 架构图示区 */
+    .diagram-wrap {
+      height: 230px;
+      width: 100%;
+      position: relative;
+    }
+    .diagram-wrap svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 核心属性对照表 */
+    .props-list {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      row-gap: 20px;
+      column-gap: 18px;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(116, 129, 124, 0.35);
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+    }
+    .prop-name {
+      color: var(--muted);
+      font-weight: var(--weight-medium);
+      white-space: nowrap;
+    }
+    .prop-val {
+      color: var(--text);
+      font-weight: var(--weight-regular);
+    }
+    .prop-val strong {
+      font-weight: var(--weight-bold);
+    }
+    .bagging .prop-val strong {
+      color: var(--model);
+    }
+    .boosting .prop-val strong {
+      color: var(--focus);
+    }
+
+    /* 误差分解小条 */
+    .error-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-family: var(--font-numeric);
+      font-size: var(--fs-sec);
+      background: rgba(46, 95, 120, 0.12);
+      color: var(--model);
+    }
+    .boosting .error-tag {
+      background: rgba(198, 75, 46, 0.12);
+      color: var(--focus);
+    }
+
+    /* 底部收束结论条 */
+    .summary-strip {
+      grid-column: 1 / -1;
+      display: none;
+    }
+
+    /* 连线与节点样式 */
+    .node-box {
+      fill: #ffffff;
+      stroke: var(--line);
+      stroke-width: 1.5;
+      rx: 4;
+    }
+    .node-box.accent-bag {
+      stroke: var(--model);
+      stroke-width: 2;
+    }
+    .node-box.accent-agg {
+      fill: var(--aggregate);
+      stroke: var(--aggregate);
+    }
+    .node-box.accent-agg text {
+      fill: #ffffff;
+    }
+    .node-box.accent-boost {
+      stroke: var(--focus);
+      stroke-width: 2;
+    }
+    .node-text {
+      font-size: 13px;
+      fill: var(--text);
+      text-anchor: middle;
+      dominant-baseline: central;
+      font-family: var(--font-sans);
+    }
+    .node-text-white {
+      fill: #ffffff;
+      font-weight: var(--weight-medium);
+    }
+    .flow-line {
+      stroke: var(--line);
+      stroke-width: 1.5;
+      fill: none;
+    }
+    .flow-line-agg {
+      stroke: var(--aggregate);
+      stroke-width: 2.5;
+      fill: none;
+    }
+    .flow-line-boost {
+      stroke: var(--focus);
+      stroke-width: 2;
+      fill: none;
+    }
+    .weight-hint {
+      font-size: 13px;
+      fill: var(--focus);
+      font-weight: var(--weight-medium);
+      text-anchor: middle;
+    }
+  </style>
+</head>
+<body data-page="22" data-total="26">
+  <div id="stage">
+    <header class="header">
+      <h1>Bagging 与 Boosting 的机制对照</h1>
+      <p>并行采样降方差，串行迭代纠偏差；两种范式在拓扑结构与噪声敏感性上各具优势。</p>
+    </header>
+
+    <div class="comparison-grid">
+      <!-- 左列：Bagging -->
+      <section class="card bagging">
+        <div class="card-head">
+          <span class="card-title">Bagging（Bootstrap 聚合）</span>
+          <span class="card-badge">独立并行采样</span>
+        </div>
+
+        <div class="diagram-wrap">
+          <svg viewBox="0 0 680 200">
+            <defs>
+              <marker id="arrow-bag" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <polygon points="0 1, 7 4, 0 7" fill="#74817C"/>
+              </marker>
+              <marker id="arrow-agg" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <polygon points="0 1, 7 4, 0 7" fill="#173E50"/>
+              </marker>
+            </defs>
+
+            <!-- 原始数据 -->
+            <rect x="20" y="75" width="80" height="50" class="node-box" />
+            <text x="60" y="100" class="node-text">训练集 D</text>
+
+            <!-- 并行分支连接线 -->
+            <path d="M 100 90 C 140 90, 150 35, 185 35" class="flow-line" marker-end="url(#arrow-bag)"/>
+            <path d="M 100 100 L 185 100" class="flow-line" marker-end="url(#arrow-bag)"/>
+            <path d="M 100 110 C 140 110, 150 165, 185 165" class="flow-line" marker-end="url(#arrow-bag)"/>
+
+            <!-- 子采样集 -->
+            <rect x="190" y="15" width="84" height="42" class="node-box" />
+            <text x="232" y="36" class="node-text">采样子集 D₁</text>
+
+            <rect x="190" y="79" width="84" height="42" class="node-box" />
+            <text x="232" y="100" class="node-text">采样子集 D₂</text>
+
+            <rect x="190" y="143" width="84" height="42" class="node-box" />
+            <text x="232" y="164" class="node-text">采样子集 Dₘ</text>
+
+            <!-- 基模型 -->
+            <path d="M 274 36 L 325 36" class="flow-line" marker-end="url(#arrow-bag)"/>
+            <path d="M 274 100 L 325 100" class="flow-line" marker-end="url(#arrow-bag)"/>
+            <path d="M 274 164 L 325 164" class="flow-line" marker-end="url(#arrow-bag)"/>
+
+            <rect x="330" y="15" width="104" height="42" class="node-box accent-bag" />
+            <text x="382" y="36" class="node-text">强学习器 h₁</text>
+
+            <rect x="330" y="79" width="104" height="42" class="node-box accent-bag" />
+            <text x="382" y="100" class="node-text">强学习器 h₂</text>
+
+            <rect x="330" y="143" width="104" height="42" class="node-box accent-bag" />
+            <text x="382" y="164" class="node-text">强学习器 hₘ</text>
+
+            <!-- 汇入聚合 -->
+            <path d="M 434 36 C 475 36, 485 92, 520 96" class="flow-line-agg" marker-end="url(#arrow-agg)"/>
+            <path d="M 434 100 L 520 100" class="flow-line-agg" marker-end="url(#arrow-agg)"/>
+            <path d="M 434 164 C 475 164, 485 108, 520 104" class="flow-line-agg" marker-end="url(#arrow-agg)"/>
+
+            <!-- 最终聚合 -->
+            <rect x="525" y="75" width="125" height="50" class="node-box accent-agg" />
+            <text x="587" y="100" class="node-text node-text-white">等权投票 / 平均</text>
+          </svg>
+        </div>
+
+        <div class="props-list">
+          <span class="prop-name">计算拓扑</span>
+          <span class="prop-val"><strong>严格并行</strong>：各子模型训练独立解耦</span>
+
+          <span class="prop-name">误差主攻</span>
+          <span class="prop-val"><strong>降方差</strong>：平滑单模型过拟合，<span class="error-tag">Var ∝ 1/M</span></span>
+
+          <span class="prop-name">基学习器</span>
+          <span class="prop-val"><strong>强模型</strong>：高方差、低偏差（如深层决策树）</span>
+
+          <span class="prop-name">样本权重</span>
+          <span class="prop-val"><strong>等权</strong>：有放回自举采样，各样本概率均等</span>
+
+          <span class="prop-name">噪声敏感</span>
+          <span class="prop-val"><strong>低</strong>：异常值被随机子集稀释，整体稳定</span>
+        </div>
+      </section>
+
+      <!-- 右列：Boosting -->
+      <section class="card boosting">
+        <div class="card-head">
+          <span class="card-title">Boosting（自适应提升）</span>
+          <span class="card-badge">串行残差迭代</span>
+        </div>
+
+        <div class="diagram-wrap">
+          <svg viewBox="0 0 680 200">
+            <defs>
+              <marker id="arrow-boost" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <polygon points="0 1, 7 4, 0 7" fill="#C64B2E"/>
+              </marker>
+            </defs>
+
+            <!-- 轮次 1 -->
+            <rect x="15" y="75" width="88" height="50" class="node-box" />
+            <text x="59" y="95" class="node-text">初始权重 w₁</text>
+            <text x="59" y="112" class="node-text" style="font-size:13px;fill:var(--muted)">等权分布</text>
+
+            <path d="M 103 100 L 140 100" class="flow-line-boost" marker-end="url(#arrow-boost)"/>
+
+            <!-- 基学习器 1 -->
+            <rect x="145" y="75" width="88" height="50" class="node-box accent-boost" />
+            <text x="189" y="95" class="node-text">弱基学习器 h₁</text>
+            <text x="189" y="112" class="node-text" style="font-size:13px;fill:#8c2810">权重 α₁</text>
+
+            <!-- 反馈更新至轮次 2 -->
+            <path d="M 233 100 L 275 100" class="flow-line-boost" marker-end="url(#arrow-boost)"/>
+            <path d="M 189 75 C 189 35, 319 35, 319 70" class="flow-line-boost" stroke-dasharray="3 3" marker-end="url(#arrow-boost)"/>
+            <text x="254" y="32" class="weight-hint">错题提权 ↑</text>
+
+            <!-- 轮次 2 -->
+            <rect x="280" y="75" width="88" height="50" class="node-box" />
+            <text x="324" y="95" class="node-text">调整权重 w₂</text>
+            <text x="324" y="112" class="node-text" style="font-size:13px;fill:#8c2810">聚焦难例</text>
+
+            <path d="M 368 100 L 405 100" class="flow-line-boost" marker-end="url(#arrow-boost)"/>
+
+            <!-- 基学习器 2 -->
+            <rect x="410" y="75" width="88" height="50" class="node-box accent-boost" />
+            <text x="454" y="95" class="node-text">弱基学习器 h₂</text>
+            <text x="454" y="112" class="node-text" style="font-size:13px;fill:#8c2810">权重 α₂</text>
+
+            <path d="M 498 100 L 535 100" class="flow-line-boost" marker-end="url(#arrow-boost)"/>
+
+            <!-- 组合加权输出 -->
+            <rect x="540" y="75" width="125" height="50" class="node-box accent-agg" />
+            <text x="602" y="95" class="node-text node-text-white">加权聚合输出</text>
+            <text x="602" y="112" class="node-text" style="font-size:13px;fill:#DCE2DE">∑ αₘ · hₘ(x)</text>
+          </svg>
+        </div>
+
+        <div class="props-list">
+          <span class="prop-name">计算拓扑</span>
+          <span class="prop-val"><strong>串行迭代</strong>：后一轮依赖前一轮误差，难以并行</span>
+
+          <span class="prop-name">误差主攻</span>
+          <span class="prop-val"><strong>降偏差</strong>：逐轮纠偏，<span class="error-tag">弱模型累加成强模型</span></span>
+
+          <span class="prop-name">基学习器</span>
+          <span class="prop-val"><strong>弱模型</strong>：高偏差、低方差（如浅层决策树桩）</span>
+
+          <span class="prop-name">样本权重</span>
+          <span class="prop-val"><strong>动态自适应</strong>：错分样本加权，强制关注难例</span>
+
+          <span class="prop-name">噪声敏感</span>
+          <span class="prop-val"><strong>高</strong>：离群噪点极易被反复加权造成过拟合</span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    在前面的章节中，我们分别学完了 Bagging（以随机森林为代表）和 Boosting（以 AdaBoost 和 GBDT 为代表）。
+    今天我们通过这一页把它们的核心机制放在一起对比：
+    第一，计算拓扑上，Bagging 是完全独立的并行抽样，各模型互不干扰，横向拓展能力极强；而 Boosting 是串行的误差传递过程，必须等上一个模型跑完才能算出下一个样本的权重。
+    第二，在误差分解上，Bagging 的基模型往往是较深、高方差的决策树，靠平均来消除方差；而 Boosting 的基模型通常很浅、偏差较高，靠一轮轮纠偏来降低偏差。
+    第三，这直接决定了它们对噪声的容忍度：Bagging 能有效稀释噪声，而 Boosting 会因为把离群噪点当成“顽固错题”死磕提权，从而极易对噪声过拟合。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 22, total: 26 });
+  </script>
+</body>
+</html>

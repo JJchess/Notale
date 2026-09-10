@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{
+  padding:56px 72px;
+  display:flex;flex-direction:column;
+}
+.head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px}
+.head h1{font-size:var(--fs-h2);margin:0;font-weight:800}
+.progress{display:flex;gap:8px;align-items:center}
+.progress .dot{width:12px;height:12px;border-radius:2px;border:1.5px solid var(--line);background:transparent}
+.progress .dot[data-done="true"]{background:var(--accent);border-color:var(--accent)}
+.progress span{font-size:var(--fs-label);color:var(--muted)}
+
+.board{
+  flex:1;min-height:0;
+  display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;
+  gap:14px;margin-top:12px;
+}
+.q{
+  min-height:0;display:flex;flex-direction:column;
+  border:1px solid var(--line);padding:10px 18px;position:relative;
+}
+.q[data-state="correct"]{border-color:var(--accent)}
+.q[data-state="wrong"]{border-color:var(--muted)}
+.qhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.qhead .tag{font-size:var(--fs-label);color:var(--muted)}
+.qhead .num{font-size:var(--fs-label);color:var(--muted);font-weight:700}
+.prompt{font-size:var(--fs-body);line-height:1.35;margin:0 0 6px}
+.prompt b{font-weight:700;color:var(--text)}
+
+.body{flex:1;min-height:0;display:flex;gap:14px}
+.viz{flex:1;min-height:0;min-width:0;position:relative}
+.side{width:190px;display:flex;flex-direction:column;gap:5px;flex-shrink:0;min-height:0}
+
+.nt-control-row{display:flex;gap:6px;flex-wrap:nowrap}
+.nt-button{font-size:var(--fs-label);padding:5px 10px;cursor:pointer;white-space:nowrap}
+.nt-button[aria-pressed="true"]{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.evid{font-size:var(--fs-label);line-height:1.35;color:var(--muted);flex:1;min-height:0;overflow:auto}
+.evid b{color:var(--text)}
+.evid .verdict{display:block;margin-top:6px;font-weight:700}
+.verdict.ok{color:var(--accent)}
+.verdict.no{color:var(--text)}
+.nt-mono{font-family:var(--font-sans)}
+
+svg text{font-family:var(--font-sans)}
+.axis{stroke:var(--line);stroke-width:1}
+.tick{fill:var(--muted);font-size:11px}
+.curve{fill:none;stroke:var(--muted);stroke-width:var(--chart-line-width,2)}
+.curve.hot{stroke:var(--accent)}
+.dotp{fill:var(--accent)}
+.gridcell{stroke:var(--line);stroke-width:1}
+.gridcell.on{fill:var(--stable);opacity:.35}
+.gridcell.win{stroke:var(--accent);stroke-width:2}
+.cellval{font-size:12px;fill:var(--muted)}
+.gatebar{fill:var(--muted)}
+.gatebar.forget{fill:var(--text)}
+.gatebar.keep{fill:var(--accent)}
+
+.footer{margin-top:14px;font-size:var(--fs-body);color:var(--muted);min-height:26px;line-height:1.4}
+.footer b{color:var(--text)}
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+  <div class="head">
+    <h1 class="nt-title" style="font-size:var(--fs-h2)">离堂检验：四条因果链</h1>
+    <div class="progress" id="progress" aria-live="polite">
+      <span id="progressLabel">0 / 4 已解决</span>
+      <span class="dot" data-q="0"></span><span class="dot" data-q="1"></span><span class="dot" data-q="2"></span><span class="dot" data-q="3"></span>
+    </div>
+  </div>
+
+  <div class="board" id="board"></div>
+  <div class="footer" id="footer"></div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(() => {
+"use strict";
+
+/* ---------- Q1: 梯度下降更新 ---------- */
+// 真实计算：w=1.0, x=2.0, y_true=0, 预测 = w*x, loss=(pred-y)^2, dL/dw = 2*(pred-y)*x
+const Q1 = { w:1.0, x:2.0, yTrue:0 };
+function q1Compute(lr){
+  const pred = Q1.w * Q1.x;
+  const err = pred - Q1.yTrue;
+  const grad = 2 * err * Q1.x;
+  const wNew = Q1.w - lr * grad;
+  const predNew = wNew * Q1.x;
+  const lossOld = err*err;
+  const lossNew = (predNew - Q1.yTrue)**2;
+  return {pred, err, grad, wNew, predNew, lossOld, lossNew};
+}
+
+/* ---------- Q2: CNN 输出尺寸 ---------- */
+// 输出尺寸公式：floor((W - K + 2P)/S) + 1
+function q2Compute(W,K,P,S){
+  return Math.floor((W - K + 2*P)/S) + 1;
+}
+const Q2 = { W:7, K:3, P:0, S:2 }; // 学生要给出正确 outH
+
+/* ---------- Q3: LSTM 门控 ---------- */
+// 简化：cell_old=0.8, forget_gate 与 input_gate 由学生选择的门值决定
+// cell_new = forget*cell_old + input*candidate ; candidate=1.0（新信息)
+const Q3 = { cellOld:0.8, candidate:1.0 };
+function q3Compute(forget, input){
+  const cellNew = forget*Q3.cellOld + input*Q3.candidate;
+  return {cellNew};
+}
+
+/* ---------- Q4: 架构匹配 ---------- */
+const Q4_TASKS = [
+  {id:"img", label:"卫星图像地块分类", key:"cnn"},
+  {id:"seq", label:"心跳传感器异常检测(长序列)", key:"rnn"},
+  {id:"tab", label:"银行客户流失表格预测", key:"mlp"},
+];
+const Q4_OPTIONS = [
+  {key:"mlp", label:"MLP"},
+  {key:"cnn", label:"CNN"},
+  {key:"rnn", label:"RNN"},
+];
+const Q4_REASON = {
+  cnn: "像素邻域有局部空间结构，卷积的局部连接与权重共享能利用这一点。",
+  rnn: "输入是随时间演变的序列，需要递推状态压缩历史信息。",
+  mlp: "表格特征之间没有强制的空间或时序邻接关系，全连接层不做多余假设。"
+};
+
+const state = {
+  q1: { lr:0.1, checked:false },
+  q2: { guess:null, checked:false },
+  q3: { forget:0.5, input:0.5, target:"keep", checked:false },
+  q4: { picks:{img:null, seq:null, tab:null}, checked:false },
+  solved:[false,false,false,false]
+};
+
+function setSolved(i, ok){
+  state.solved[i] = ok;
+  document.querySelectorAll('.dot')[i].dataset.done = ok ? "true" : "false";
+  const n = state.solved.filter(Boolean).length;
+  document.getElementById('progressLabel').textContent = `${n} / 4 已解决`;
+  const footer = document.getElementById('footer');
+  if(n===4){
+    footer.innerHTML = "<b>四条链都对齐了证据：更新会改损失、尺寸随卷积核和步幅确定、遗忘由门控数值决定、结构选择跟着数据形状走。</b>";
+  } else if(n===0){
+    footer.textContent = "每题先做出判断，再看模型算出的真实结果。";
+  } else {
+    footer.innerHTML = `已解决 ${n} 题，剩下 ${4-n} 题继续追证据。`;
+  }
+}
+
+/* ================= Q1 render ================= */
+function renderQ1(){
+  const r = q1Compute(state.q1.lr);
+  const q = document.getElementById('q1');
+  q.dataset.state = state.q1.checked ? (r.lossNew < r.lossOld ? "correct" : "wrong") : "";
+
+  const svg = q.querySelector('.viz');
+  const W=300,H=150, pad=28;
+  const wMin=-1, wMax=3;
+  const lossOf = w => (w*Q1.x - Q1.yTrue)**2;
+  const pts=[];
+  for(let i=0;i<=60;i++){
+    const w = wMin + (wMax-wMin)*i/60;
+    pts.push([w, lossOf(w)]);
+  }
+  const lossMax = Math.max(...pts.map(p=>p[1]));
+  const X = w => pad + (w-wMin)/(wMax-wMin)*(W-2*pad);
+  const Y = l => H-pad - l/lossMax*(H-2*pad);
+  const path = pts.map((p,i)=> (i?'L':'M')+X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)).join(' ');
+
+  svg.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="100%">
+      <line class="axis" x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}"/>
+      <line class="axis" x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad}"/>
+      <text class="tick" x="${W-pad-6}" y="${H-pad+16}" text-anchor="end">w</text>
+      <text class="tick" x="${pad-6}" y="${pad+8}" text-anchor="end">loss</text>
+      <path class="curve" d="${path}"/>
+      <circle class="dotp" cx="${X(Q1.w).toFixed(1)}" cy="${Y(r.lossOld).toFixed(1)}" r="4"/>
+      <circle class="dotp" cx="${X(r.wNew).toFixed(1)}" cy="${Y(r.lossNew).toFixed(1)}" r="4" opacity="0.55"/>
+      <text class="tick" x="${X(Q1.w).toFixed(1)}" y="${Y(r.lossOld)-8}" text-anchor="middle">w=${Q1.w}</text>
+      <text class="tick" x="${X(r.wNew).toFixed(1)}" y="${Y(r.lossNew)-8}" text-anchor="middle">w'=${r.wNew.toFixed(2)}</text>
+    </svg>`;
+
+  const side = q.querySelector('.side');
+  side.innerHTML = `
+    <div class="nt-control-label" style="font-size:11px;color:var(--muted)">学习率</div>
+    <div class="nt-control-row" id="q1lr" style="gap:4px"></div>
+    <button class="nt-button" id="q1check" style="margin-top:4px">检验这一步</button>
+  `;
+  const lrs=[0.01,0.1,0.6];
+  side.querySelector('#q1lr').innerHTML = lrs.map(v=>
+    `<button class="nt-button" data-lr="${v}" aria-pressed="${state.q1.lr===v}" style="padding:4px 7px;font-size:11px">${v}</button>`).join('');
+
+  const evid = q.querySelector('.evid');
+  evid.innerHTML = `
+    w=1.0, x=2.0, y=0 → 预测=<b>${r.pred.toFixed(2)}</b>，误差=<b>${r.err.toFixed(2)}</b><br>
+    梯度 dL/dw = 2·误差·x = <b>${r.grad.toFixed(2)}</b><br>
+    w' = w − lr·梯度 = 1.0 − ${state.q1.lr}×${r.grad.toFixed(2)} = <b>${r.wNew.toFixed(3)}</b><br>
+    损失 ${r.lossOld.toFixed(2)} → ${r.lossNew.toFixed(2)}
+    ${state.q1.checked ? `<span class="verdict ${r.lossNew<r.lossOld?'ok':'no'}">${r.lossNew<r.lossOld?'✓ 这一步让损失下降':'✗ 步长过大，损失反而变大或震荡'}</span>` : ''}
+  `;
+}
+
+/* ================= Q2 render ================= */
+function renderQ2(){
+  const q = document.getElementById('q2');
+  const correct = q2Compute(Q2.W,Q2.K,Q2.P,Q2.S);
+  q.dataset.state = state.q2.checked ? (state.q2.guess===correct ? "correct":"wrong") : "";
+
+  const svg = q.querySelector('.viz');
+  const cell = 26, gap=2;
+  const grid=[];
+  for(let r=0;r<Q2.W;r++) for(let c=0;c<Q2.W;c++) grid.push([r,c]);
+  // 演示一个窗口位置(stride=2,取第0个窗口的覆盖区域高亮)
+  const winR=0, winC=0;
+  const W=Q2.W*(cell+gap), H=W;
+  let cells = grid.map(([r,c])=>{
+    const inWin = r>=winR && r<winR+Q2.K && c>=winC && c<winC+Q2.K;
+    return `<rect class="gridcell ${inWin?'on':''}" x="${c*(cell+gap)}" y="${r*(cell+gap)}" width="${cell}" height="${cell}" fill="none"/>`;
+  }).join('');
+  svg.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%">${cells}
+    <text class="tick" x="${W/2}" y="${H+2}" text-anchor="middle" dy="10">${Q2.W}×${Q2.W} 输入，核 ${Q2.K}×${Q2.K}，步幅 ${Q2.S}，padding ${Q2.P}（高亮=一个窗口）</text>
+  </svg>`;
+
+  const side = q.querySelector('.side');
+  side.innerHTML = `
+    <div class="nt-control-label" style="font-size:11px;color:var(--muted)">你的答案：输出边长</div>
+    <div class="nt-control-row" id="q2guess" style="gap:4px"></div>
+    <button class="nt-button" id="q2check" style="margin-top:4px">检验尺寸</button>
+  `;
+  const guesses=[2,3,4,5];
+  side.querySelector('#q2guess').innerHTML = guesses.map(v=>
+    `<button class="nt-button" data-g="${v}" aria-pressed="${state.q2.guess===v}" style="padding:4px 7px;font-size:11px">${v}</button>`).join('');
+
+  const evid = q.querySelector('.evid');
+  evid.innerHTML = `
+    公式：⌊(W−K+2P)/S⌋+1<br>
+    = ⌊(${Q2.W}−${Q2.K}+2×${Q2.P})/${Q2.S}⌋+1 = <b>${correct}</b>
+    ${state.q2.checked ? `<span class="verdict ${state.q2.guess===correct?'ok':'no'}">${state.q2.guess===correct?`✓ 输出是 ${correct}×${correct}`:`✗ 正确输出是 ${correct}×${correct}，不是 ${state.q2.guess}×${state.q2.guess}`}</span>` : ''}
+  `;
+}
+
+/* ================= Q3 render ================= */
+function renderQ3(){
+  const q = document.getElementById('q3');
+  const r = q3Compute(state.q3.forget, state.q3.input);
+  // target: keep(希望cell接近老值0.8,即forget高input低) / overwrite(希望接近candidate1.0,forget低input高)
+  const wantHigh = state.q3.target==='keep';
+  const ok = wantHigh ? r.cellNew >= 0.65 : r.cellNew <= 0.35;
+  q.dataset.state = state.q3.checked ? (ok?"correct":"wrong") : "";
+
+  const svg = q.querySelector('.viz');
+  const W=300,H=150,barW=44;
+  const bars=[
+    {label:'旧记忆', val:Q3.cellOld, x:20, cls:''},
+    {label:'遗忘门×旧', val:state.q3.forget*Q3.cellOld, x:90, cls:'forget'},
+    {label:'输入门×新', val:state.q3.input*Q3.candidate, x:160, cls:'keep'},
+    {label:'新记忆', val:r.cellNew, x:230, cls:'keep'}
+  ];
+  const scale = v => v*90;
+  svg.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%">
+    <line class="axis" x1="10" y1="${H-24}" x2="${W-10}" y2="${H-24}"/>
+    ${bars.map(b=>`
+      <rect class="gatebar ${b.cls}" x="${b.x}" y="${H-24-scale(b.val)}" width="${barW}" height="${scale(b.val)}"/>
+      <text class="tick" x="${b.x+barW/2}" y="${H-24-scale(b.val)-6}" text-anchor="middle">${b.val.toFixed(2)}</text>
+      <text class="tick" x="${b.x+barW/2}" y="${H-6}" text-anchor="middle">${b.label}</text>
+    `).join('')}
+  </svg>`;
+
+  const side = q.querySelector('.side');
+  side.innerHTML = `
+    <div class="nt-control-label" style="font-size:11px;color:var(--muted)">任务：${wantHigh?'保留旧信息':'用新信息覆盖'}</div>
+    <div class="nt-control-label" style="font-size:11px;color:var(--muted);margin-top:2px">遗忘门</div>
+    <div class="nt-control-row" id="q3forget" style="gap:3px"></div>
+    <div class="nt-control-label" style="font-size:11px;color:var(--muted)">输入门</div>
+    <div class="nt-control-row" id="q3input" style="gap:3px"></div>
+    <button class="nt-button" id="q3check" style="margin-top:4px">检验记忆</button>
+  `;
+  const vals=[0.1,0.5,0.9];
+  side.querySelector('#q3forget').innerHTML = vals.map(v=>
+    `<button class="nt-button" data-forget="${v}" aria-pressed="${state.q3.forget===v}" style="padding:3px 5px;font-size:10px">${v}</button>`).join('');
+  side.querySelector('#q3input').innerHTML = vals.map(v=>
+    `<button class="nt-button" data-input="${v}" aria-pressed="${state.q3.input===v}" style="padding:3px 5px;font-size:10px">${v}</button>`).join('');
+
+  const evid = q.querySelector('.evid');
+  evid.innerHTML = `
+    细胞状态 = 遗忘门×旧记忆 + 输入门×新信息<br>
+    = ${state.q3.forget}×${Q3.cellOld} + ${state.q3.input}×${Q3.candidate} = <b>${r.cellNew.toFixed(2)}</b><br>
+    目标：${wantHigh?'新记忆应接近旧值 0.8（≥0.65）':'新记忆应接近新信息 1.0 而非旧值（≤0.35）'}
+    ${state.q3.checked ? `<span class="verdict ${ok?'ok':'no'}">${ok?'✓ 门控数值实现了目标':'✗ 门控组合没有达到目标，调整两个门再试'}</span>` : ''}
+  `;
+}
+
+/* ================= Q4 render ================= */
+function renderQ4(){
+  const q = document.getElementById('q4');
+  const allPicked = Object.values(state.q4.picks).every(v=>v!==null);
+  const allCorrect = Q4_TASKS.every(t => state.q4.picks[t.id]===t.key);
+  q.dataset.state = state.q4.checked ? (allCorrect?"correct":"wrong") : "";
+
+  const svg = q.querySelector('.viz');
+  const rowH=28;
+  svg.innerHTML = `<svg viewBox="0 0 300 ${Q4_TASKS.length*rowH+10}" width="100%" height="100%">
+    ${Q4_TASKS.map((t,i)=>{
+      const y = i*rowH+16;
+      const pick = state.q4.picks[t.id];
+      const correct = state.q4.checked && pick===t.key;
+      const wrong = state.q4.checked && pick && pick!==t.key;
+      return `<text x="0" y="${y}" class="tick" fill="var(--text)" font-size="12">${t.label}</text>
+        <text x="300" y="${y}" text-anchor="end" class="tick" font-size="12"
+          fill="${correct?'var(--accent)':wrong?'var(--muted)':'var(--muted)'}">${pick?Q4_OPTIONS.find(o=>o.key===pick).label:'未选'}${correct?' ✓':wrong?' ✗':''}</text>`;
+    }).join('')}
+  </svg>`;
+
+  const side = q.querySelector('.side');
+  side.innerHTML = `<div id="q4picks" style="display:flex;flex-direction:column;gap:4px"></div>
+    <button class="nt-button" id="q4check" style="margin-top:8px;flex-shrink:0">检验三处匹配</button>`;
+  side.querySelector('#q4picks').innerHTML = Q4_TASKS.map((t,i)=>`
+    <div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:1px">任务${i+1}</div>
+      <div class="nt-control-row" data-task="${t.id}" style="gap:3px;flex-wrap:nowrap">
+        ${Q4_OPTIONS.map(o=>`<button class="nt-button" data-task="${t.id}" data-opt="${o.key}" aria-pressed="${state.q4.picks[t.id]===o.key}" style="padding:3px 5px;font-size:10px;flex:1">${o.label}</button>`).join('')}
+      </div>
+    </div>`).join('');
+
+  const evid = q.querySelector('.evid');
+  let reasonHtml = '';
+  if(state.q4.checked){
+    reasonHtml = Q4_TASKS.map(t=>{
+      const ok = state.q4.picks[t.id]===t.key;
+      return `<div style="margin-top:4px"><b>${t.label}</b>：${ok?'✓ ':'✗ 应选 '+Q4_OPTIONS.find(o=>o.key===t.key).label+'。'}${Q4_REASON[t.key]}</div>`;
+    }).join('');
+  }
+  evid.innerHTML = `结构假设要匹配数据形状：空间邻接→CNN，时间递推→RNN，无强制邻接→MLP。${reasonHtml}`;
+}
+
+/* ================= layout ================= */
+function q(id, tag, num){
+  return `<div class="q" id="${id}">
+    <div class="qhead"><span class="tag">${tag}</span><span class="num">${num}</span></div>
+    <p class="prompt"></p>
+    <div class="body"><div class="viz"></div><div class="side"></div></div>
+    <div class="evid"></div>
+  </div>`;
+}
+document.getElementById('board').innerHTML =
+  q('q1','参数更新','Q1') + q('q2','CNN 尺寸','Q2') + q('q3','LSTM 遗忘','Q3') + q('q4','架构选择','Q4');
+
+document.querySelector('#q1 .prompt').innerHTML = '一次梯度下降更新后，损失一定下降吗？选一个学习率，追踪 <b>w → w′</b> 和损失的变化。';
+document.querySelector('#q2 .prompt').innerHTML = `输入 <b>${Q2.W}×${Q2.W}</b>，卷积核 <b>${Q2.K}×${Q2.K}</b>，步幅 <b>${Q2.S}</b>，padding <b>${Q2.P}</b>。输出特征图边长是多少？`;
+document.querySelector('#q3 .prompt').innerHTML = '细胞状态旧值 <b>0.8</b>，新信息候选值 <b>1.0</b>。调整遗忘门与输入门，让新记忆达成给定目标。';
+document.querySelector('#q4 .prompt').innerHTML = '三个任务，各自最合理的起点结构是什么？选择会检验数据的空间/时序/表格形状。';
+
+renderQ1(); renderQ2(); renderQ3(); renderQ4();
+setSolved(0,false); setSolved(1,false); setSolved(2,false); setSolved(3,false);
+
+document.getElementById('board').addEventListener('click', (e)=>{
+  const t = e.target;
+  if(!t.matches('button')) return;
+
+  if(t.dataset.lr){ state.q1.lr = +t.dataset.lr; state.q1.checked=false; renderQ1(); }
+  if(t.id==='q1check'){ state.q1.checked = true; renderQ1();
+    const r = q1Compute(state.q1.lr); setSolved(0, r.lossNew < r.lossOld); }
+
+  if(t.dataset.g){ state.q2.guess = +t.dataset.g; state.q2.checked=false; renderQ2(); }
+  if(t.id==='q2check'){ if(state.q2.guess===null) return; state.q2.checked = true; renderQ2();
+    setSolved(1, state.q2.guess === q2Compute(Q2.W,Q2.K,Q2.P,Q2.S)); }
+
+  if(t.dataset.forget){ state.q3.forget = +t.dataset.forget; state.q3.checked=false; renderQ3(); }
+  if(t.dataset.input){ state.q3.input = +t.dataset.input; state.q3.checked=false; renderQ3(); }
+  if(t.id==='q3check'){ state.q3.checked = true; renderQ3();
+    const r = q3Compute(state.q3.forget, state.q3.input);
+    const wantHigh = state.q3.target==='keep';
+    setSolved(2, wantHigh ? r.cellNew>=0.65 : r.cellNew<=0.35); }
+
+  if(t.dataset.task){ state.q4.picks[t.dataset.task] = t.dataset.opt; state.q4.checked=false; renderQ4(); }
+  if(t.id==='q4check'){
+    if(Object.values(state.q4.picks).some(v=>v===null)) return;
+    state.q4.checked = true; renderQ4();
+    setSolved(3, Q4_TASKS.every(task => state.q4.picks[task.id]===task.key));
+  }
+});
+
+Deck.init({ index:44, total:44 });
+})();
+</script>
+</body>
+</html>

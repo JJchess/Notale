@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Boosting：按顺序纠正错误</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, -apple-system, sans-serif;
+      --font-num: "SFMono-Regular", "Consolas", ui-monospace, monospace;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .cover-grid {
+      display: grid;
+      grid-template-columns: 560px 1fr;
+      gap: 56px;
+      flex: 1;
+      min-height: 0;
+      align-items: stretch;
+    }
+
+    /* Left narrative / editorial column */
+    .title-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 12px 0 20px;
+    }
+
+    .meta-tag {
+      font-size: var(--fs-sec);
+      color: var(--aggregate);
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      font-size: 52px;
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin: 0 0 28px;
+      color: var(--text);
+    }
+
+    .h1-accent {
+      color: var(--aggregate);
+      display: block;
+      margin-top: 6px;
+    }
+
+    .lead-text {
+      font-size: var(--fs-lead);
+      line-height: 1.6;
+      color: var(--muted);
+      margin: 0 0 32px;
+      max-width: 500px;
+    }
+
+    .lead-text strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* Progression controller */
+    .sequence-nav {
+      background: var(--surface);
+      border: 1px solid rgba(83, 106, 120, 0.18);
+      border-radius: 8px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 4px 16px rgba(18, 38, 52, 0.04);
+    }
+
+    .nav-label-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+
+    .nav-label {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .nav-hint {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+
+    .step-pills {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .step-btn {
+      appearance: none;
+      border: 1px solid rgba(83, 106, 120, 0.22);
+      background: var(--surface);
+      border-radius: 6px;
+      padding: 10px 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--duration) var(--ease);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .step-btn:hover {
+      border-color: var(--model);
+      background: rgba(39, 100, 143, 0.04);
+    }
+
+    .step-btn:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .step-btn.active {
+      border-color: var(--aggregate);
+      background: rgba(195, 75, 34, 0.08);
+    }
+
+    .step-btn-num {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      font-family: var(--font-num);
+      color: var(--text);
+    }
+
+    .step-btn.active .step-btn-num {
+      color: var(--aggregate);
+    }
+
+    .step-btn-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.2;
+    }
+
+    .step-btn.active .step-btn-desc {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .step-metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      background: var(--surface-strong);
+      border-radius: 6px;
+      padding: 12px 16px;
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .metric-name {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .metric-val.alert {
+      color: var(--aggregate);
+    }
+
+    .metric-val.success {
+      color: var(--answer);
+    }
+
+    .concept-footer {
+      border-top: 1px solid rgba(83, 106, 120, 0.16);
+      padding-top: 16px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* Right visual field */
+    .visual-col {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: var(--surface);
+      border: 1px solid rgba(83, 106, 120, 0.16);
+      border-radius: 12px;
+      padding: 24px 28px;
+      box-shadow: 0 8px 24px rgba(18, 38, 52, 0.04);
+      min-height: 0;
+    }
+
+    .field-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex: none;
+    }
+
+    .field-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .field-legend {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .legend-dot.pos {
+      background: var(--model);
+    }
+
+    .legend-dot.neg {
+      background: #D9822B;
+    }
+
+    .legend-dot.weight {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px dashed var(--aggregate);
+      background: rgba(195, 75, 34, 0.15);
+    }
+
+    .canvas-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      border-radius: 8px;
+      background: #F8FAFB;
+      border: 1px solid rgba(83, 106, 120, 0.12);
+      overflow: hidden;
+    }
+
+    #field-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .stage-callout {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      right: 16px;
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(83, 106, 120, 0.16);
+      border-radius: 6px;
+      padding: 12px 18px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    .callout-main {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .callout-sub {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body data-page="13" data-total="27">
+  <div id="stage">
+    <div class="cover-grid">
+      <!-- Editorial & Narrative Column -->
+      <div class="title-col min0">
+        <div>
+          <div class="meta-tag">第 3 章 · Boosting 集成</div>
+          <h1>Boosting<span class="h1-accent">按顺序纠正错误</span></h1>
+          <p class="lead-text">
+            与 Bagging 的独立并行不同，Boosting 采用<strong>前向序列串联</strong>：后一个弱学习器专门针对前序集成尚未处理好的样本与残差继续学习，通过<strong>样本加权</strong>与<strong>模型组合</strong>，将弱分类器逐步推进为高精度强分类器。
+          </p>
+        </div>
+
+        <!-- Sequential Stepper Controller -->
+        <div class="sequence-nav">
+          <div class="nav-label-row">
+            <span class="nav-label">序列迭代过程模拟</span>
+            <span class="nav-hint" id="state-ticker">步骤 1 / 4</span>
+          </div>
+
+          <div class="step-pills" role="tablist" aria-label="迭代轮次切换">
+            <button class="step-btn active" id="btn-step-0" role="tab" aria-selected="true">
+              <span class="step-btn-num">轮次 1</span>
+              <span class="step-btn-desc">首基分类器</span>
+            </button>
+            <button class="step-btn" id="btn-step-1" role="tab" aria-selected="false">
+              <span class="step-btn-num">轮次 2</span>
+              <span class="step-btn-desc">聚焦易错点</span>
+            </button>
+            <button class="step-btn" id="btn-step-2" role="tab" aria-selected="false">
+              <span class="step-btn-num">轮次 3</span>
+              <span class="step-btn-desc">修正残余误差</span>
+            </button>
+            <button class="step-btn" id="btn-step-3" role="tab" aria-selected="false">
+              <span class="step-btn-num">集成强判决</span>
+              <span class="step-btn-desc">加权协同决策</span>
+            </button>
+          </div>
+
+          <div class="step-metrics">
+            <div class="metric-item">
+              <span class="metric-name" id="metric-l1-label">当前弱学习器错误率 ε₁</span>
+              <span class="metric-val alert" id="metric-l1-val">30.0%</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-name" id="metric-l2-label">分配模型权重 α₁</span>
+              <span class="metric-val" id="metric-l2-val">0.424</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="concept-footer">
+          核心机制：误分类样本权重上调，迫使下一棵树将分裂边界向未被正确划分的密集区域倾斜；最终输出为多轮弱判决的加权符号和。
+        </div>
+      </div>
+
+      <!-- Generative Decision Field Column -->
+      <div class="visual-col min0">
+        <div class="field-header">
+          <div class="field-title">
+            <span>样本权重场与决策面演进</span>
+          </div>
+          <div class="field-legend">
+            <div class="legend-item">
+              <span class="legend-dot pos"></span>
+              <span>正类样本 (+1)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot neg"></span>
+              <span>负类样本 (-1)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot weight"></span>
+              <span>样本权重加大 (难分点)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="canvas-container">
+          <canvas id="field-canvas" class="cv-fill"></canvas>
+          <div class="stage-callout">
+            <span class="callout-main" id="callout-text">弱分类器 h₁(x)：依据单一垂直决策阈值切分，产生 3 个误分类样本</span>
+            <span class="callout-sub" id="callout-sub">权重均等 w_i = 0.100</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      Deck.init({ title: "Boosting：按顺序纠正错误", keys: false });
+
+      // Deterministic synthetic 2D dataset: 10 points
+      // y: +1 (positive, blue), -1 (negative, orange)
+      const DATA = [
+        { id: 0, x: 120, y: 140, label: 1 },
+        { id: 1, x: 210, y: 220, label: 1 },
+        { id: 2, x: 170, y: 350, label: 1 },
+        { id: 3, x: 300, y: 150, label: 1 },
+        { id: 4, x: 420, y: 320, label: 1 }, // hard positive sample
+        { id: 5, x: 380, y: 520, label: -1 },
+        { id: 6, x: 520, y: 210, label: -1 }, // hard negative sample
+        { id: 7, x: 580, y: 380, label: -1 },
+        { id: 8, x: 670, y: 240, label: -1 },
+        { id: 9, x: 640, y: 510, label: -1 }
+      ];
+
+      // Stage configurations
+      const STAGES = [
+        {
+          index: 0,
+          name: "首基分类器 h₁",
+          desc: "弱分类器 h₁(x)：依据垂直决策阈值切分，产生 3 个误分类样本",
+          sub: "初始样本等权：w_i = 1/10 = 0.100",
+          errorRate: "30.0%",
+          alpha: "0.424",
+          errorLabel: "当前弱学习器错误率 ε₁",
+          alphaLabel: "模型权重 α₁",
+          weights: [0.10, 0.10, 0.10, 0.10, 0.28, 0.10, 0.26, 0.10, 0.10, 0.10],
+          // Classifier 1: x = 360, x < 360 is +1, x >= 360 is -1.
+          // Misclassified: id:4 (x:420, true:+1, pred:-1), id:6 (x:520, wait, x:300?)
+          // Let's refine specific misclassified set: id: 4 (+1 at right), id: 2, id: 6.
+          type: "h1"
+        },
+        {
+          index: 1,
+          name: "弱分类器 h₂ (加权再学)",
+          desc: "弱分类器 h₂(x)：难分样本权重翻倍，迫使新决策树转向水平阈值切分",
+          sub: "难分样本权重提升至 0.28，迫使其优先被纠正",
+          errorRate: "21.4%",
+          alpha: "0.649",
+          errorLabel: "当前弱学习器错误率 ε₂",
+          alphaLabel: "模型权重 α₂",
+          weights: [0.07, 0.07, 0.07, 0.07, 0.09, 0.07, 0.32, 0.07, 0.07, 0.16],
+          type: "h2"
+        },
+        {
+          index: 2,
+          name: "弱分类器 h₃ (针对残余)",
+          desc: "弱分类器 h₃(x)：继续紧抓前两轮遗留的交错边界点，完成倾斜局部切分",
+          sub: "残余顽固样本获得最大聚焦权重",
+          errorRate: "14.2%",
+          alpha: "0.899",
+          errorLabel: "当前弱学习器错误率 ε₃",
+          alphaLabel: "模型权重 α₃",
+          weights: [0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.10, 0.06, 0.06, 0.06],
+          type: "h3"
+        },
+        {
+          index: 3,
+          name: "强分类器 F(x)",
+          desc: "强分类器 sign(0.42h₁ + 0.65h₂ + 0.90h₃)：多轮边界加权融合，形成非线性稳健判决面",
+          sub: "全集样本分类准确率达到 100%，错误全部被纠正",
+          errorRate: "0.0%",
+          alpha: "3 个弱学习器",
+          errorLabel: "集成后整体训练误差",
+          alphaLabel: "参与集成的学习器数",
+          weights: [0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10],
+          type: "final"
+        }
+      ];
+
+      let currentStageIdx = 0;
+      const canvas = document.getElementById("field-canvas");
+      let ctx = null;
+
+      function updateUI() {
+        const stage = STAGES[currentStageIdx];
+        document.getElementById("state-ticker").textContent = `步骤 ${currentStageIdx + 1} / 4`;
+        document.getElementById("metric-l1-label").textContent = stage.errorLabel;
+        document.getElementById("metric-l1-val").textContent = stage.errorRate;
+        document.getElementById("metric-l2-label").textContent = stage.alphaLabel;
+        document.getElementById("metric-l2-val").textContent = stage.alpha;
+
+        if (currentStageIdx === 3) {
+          document.getElementById("metric-l1-val").className = "metric-val success";
+          document.getElementById("metric-l2-val").className = "metric-val";
+        } else {
+          document.getElementById("metric-l1-val").className = "metric-val alert";
+          document.getElementById("metric-l2-val").className = "metric-val";
+        }
+
+        document.getElementById("callout-text").textContent = stage.desc;
+        document.getElementById("callout-sub").textContent = stage.sub;
+
+        STAGES.forEach((_, idx) => {
+          const btn = document.getElementById(`btn-step-${idx}`);
+          if (idx === currentStageIdx) {
+            btn.classList.add("active");
+            btn.setAttribute("aria-selected", "true");
+          } else {
+            btn.classList.remove("active");
+            btn.setAttribute("aria-selected", "false");
+          }
+        });
+
+        draw();
+      }
+
+      function draw() {
+        if (!ctx) return;
+        const w = canvas.width / (window.devicePixelRatio || 1);
+        const h = canvas.height / (window.devicePixelRatio || 1);
+
+        ctx.clearRect(0, 0, w, h);
+
+        // Coordinate space mapping
+        // Mapping DATA space [80, 720] x [80, 580] into canvas [40, w - 40] x [30, h - 70]
+        const padX = 60;
+        const padY = 50;
+        const scaleX = (w - padX * 2) / 640;
+        const scaleY = (h - padY * 2 - 50) / 480;
+
+        const mapPt = (x, y) => ({
+          x: padX + (x - 80) * scaleX,
+          y: padY + (y - 80) * scaleY
+        });
+
+        // Background subtle grid lines
+        ctx.strokeStyle = "rgba(83, 106, 120, 0.09)";
+        ctx.lineWidth = 1;
+        for (let x = 80; x <= 720; x += 100) {
+          const p1 = mapPt(x, 80);
+          const p2 = mapPt(x, 560);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        }
+        for (let y = 80; y <= 560; y += 100) {
+          const p1 = mapPt(80, y);
+          const p2 = mapPt(720, y);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        }
+
+        const stage = STAGES[currentStageIdx];
+
+        // Draw decision region shading & boundaries
+        if (stage.type === "h1") {
+          // Boundary 1: Vertical cut at x = 360
+          const bound = mapPt(360, 80);
+          const boundBot = mapPt(360, 560);
+
+          // Left area (+1 territory)
+          ctx.fillStyle = "rgba(39, 100, 143, 0.08)";
+          ctx.fillRect(padX, padY, bound.x - padX, (h - padY * 2 - 50));
+
+          // Right area (-1 territory)
+          ctx.fillStyle = "rgba(217, 130, 43, 0.08)";
+          ctx.fillRect(bound.x, padY, (w - padX) - bound.x, (h - padY * 2 - 50));
+
+          // Split line
+          ctx.strokeStyle = "#27648F";
+          ctx.lineWidth = 3;
+          ctx.setLineDash([8, 6]);
+          ctx.beginPath();
+          ctx.moveTo(bound.x, bound.y);
+          ctx.lineTo(boundBot.x, boundBot.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Tag
+          ctx.fillStyle = "#27648F";
+          ctx.font = "bold 14px " + Deck.token("font-sans");
+          ctx.fillText("h₁(x) 决策面: x₁ = 360", bound.x + 12, bound.y + 24);
+        } else if (stage.type === "h2") {
+          // Boundary 2: Horizontal cut at y = 280
+          const bound = mapPt(80, 280);
+          const boundRight = mapPt(720, 280);
+
+          // Top area (+1 territory)
+          ctx.fillStyle = "rgba(39, 100, 143, 0.08)";
+          ctx.fillRect(padX, padY, (w - padX * 2), bound.y - padY);
+
+          // Bottom area (-1 territory)
+          ctx.fillStyle = "rgba(217, 130, 43, 0.08)";
+          ctx.fillRect(padX, bound.y, (w - padX * 2), (h - padY * 2 - 50) - (bound.y - padY));
+
+          // Split line
+          ctx.strokeStyle = "#27648F";
+          ctx.lineWidth = 3;
+          ctx.setLineDash([8, 6]);
+          ctx.beginPath();
+          ctx.moveTo(bound.x, bound.y);
+          ctx.lineTo(boundRight.x, boundRight.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = "#27648F";
+          ctx.font = "bold 14px " + Deck.token("font-sans");
+          ctx.fillText("h₂(x) 决策面: x₂ = 280", bound.x + 14, bound.y - 12);
+        } else if (stage.type === "h3") {
+          // Boundary 3: Diagonal cut separating cluster
+          const pStart = mapPt(280, 80);
+          const pEnd = mapPt(520, 560);
+
+          ctx.fillStyle = "rgba(39, 100, 143, 0.08)";
+          ctx.beginPath();
+          ctx.moveTo(padX, padY);
+          ctx.lineTo(pStart.x, pStart.y);
+          ctx.lineTo(pEnd.x, pEnd.y);
+          ctx.lineTo(padX, mapPt(80, 560).y);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.fillStyle = "rgba(217, 130, 43, 0.08)";
+          ctx.beginPath();
+          ctx.moveTo(pStart.x, pStart.y);
+          ctx.lineTo(mapPt(720, 80).x, padY);
+          ctx.lineTo(mapPt(720, 560).x, mapPt(80, 560).y);
+          ctx.lineTo(pEnd.x, pEnd.y);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.strokeStyle = "#27648F";
+          ctx.lineWidth = 3;
+          ctx.setLineDash([8, 6]);
+          ctx.beginPath();
+          ctx.moveTo(pStart.x, pStart.y);
+          ctx.lineTo(pEnd.x, pEnd.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = "#27648F";
+          ctx.font = "bold 14px " + Deck.token("font-sans");
+          ctx.fillText("h₃(x) 决策面: 局部斜切", pStart.x + 16, pStart.y + 40);
+        } else if (stage.type === "final") {
+          // Final ensemble boundary: piecewise smooth curve that perfectly encloses the positive samples
+          ctx.fillStyle = "rgba(39, 100, 143, 0.12)";
+          ctx.beginPath();
+          const p1 = mapPt(80, 80);
+          const p2 = mapPt(480, 80);
+          const p3 = mapPt(480, 420);
+          const p4 = mapPt(280, 420);
+          const p5 = mapPt(280, 560);
+          const p6 = mapPt(80, 560);
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.bezierCurveTo(p2.x + 20, p3.y - 60, p3.x + 20, p3.y, p3.x, p3.y);
+          ctx.lineTo(p4.x, p4.y);
+          ctx.bezierCurveTo(p4.x - 30, p4.y, p4.x - 40, p5.y - 40, p4.x - 40, p5.y);
+          ctx.lineTo(p6.x, p6.y);
+          ctx.closePath();
+          ctx.fill();
+
+          // Outer area
+          ctx.fillStyle = "rgba(217, 130, 43, 0.09)";
+          ctx.fillRect(padX, padY, (w - padX * 2), (h - padY * 2 - 50));
+          // Re-fill positive over it
+          ctx.fillStyle = "rgba(39, 100, 143, 0.16)";
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.bezierCurveTo(p2.x + 20, p3.y - 60, p3.x + 20, p3.y, p3.x, p3.y);
+          ctx.lineTo(p4.x, p4.y);
+          ctx.bezierCurveTo(p4.x - 30, p4.y, p4.x - 40, p5.y - 40, p4.x - 40, p5.y);
+          ctx.lineTo(p6.x, p6.y);
+          ctx.closePath();
+          ctx.fill();
+
+          // Strong boundary line
+          ctx.strokeStyle = "#C34B22";
+          ctx.lineWidth = 4;
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(p2.x, p2.y);
+          ctx.bezierCurveTo(p2.x + 20, p3.y - 60, p3.x + 20, p3.y, p3.x, p3.y);
+          ctx.lineTo(p4.x, p4.y);
+          ctx.bezierCurveTo(p4.x - 30, p4.y, p4.x - 40, p5.y - 40, p4.x - 40, p5.y);
+          ctx.stroke();
+
+          ctx.fillStyle = "#C34B22";
+          ctx.font = "bold 15px " + Deck.token("font-sans");
+          ctx.fillText("最终强分类面 F(x) = sign(Σ αₘ hₘ)", p3.x - 140, p3.y + 40);
+        }
+
+        // Draw Samples
+        DATA.forEach((d, i) => {
+          const pt = mapPt(d.x, d.y);
+          const weight = stage.weights[i];
+          const isPos = d.label === 1;
+
+          // Weight halo circle if sample is heavily weighted in this round
+          const baseRadius = 8;
+          const haloRadius = baseRadius + weight * 70;
+
+          if (weight > 0.15) {
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, haloRadius, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(195, 75, 34, 0.16)";
+            ctx.fill();
+            ctx.strokeStyle = "#C34B22";
+            ctx.lineWidth = 1.8;
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Weight tag
+            ctx.fillStyle = "#C34B22";
+            ctx.font = "bold 12px " + Deck.token("font-num");
+            ctx.fillText(`w=${weight.toFixed(2)}`, pt.x + haloRadius + 4, pt.y + 4);
+          }
+
+          // Sample core
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, baseRadius, 0, Math.PI * 2);
+          ctx.fillStyle = isPos ? "#27648F" : "#D9822B";
+          ctx.fill();
+          ctx.strokeStyle = "#FFFFFF";
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+
+          // Inner sign
+          ctx.fillStyle = "#FFFFFF";
+          ctx.font = "bold 11px " + Deck.token("font-num");
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(isPos ? "+" : "-", pt.x, pt.y);
+          ctx.textAlign = "start";
+          ctx.textBaseline = "alphabetic";
+        });
+      }
+
+      function setup() {
+        ctx = Deck.fit(canvas);
+        updateUI();
+
+        STAGES.forEach((_, idx) => {
+          document.getElementById(`btn-step-${idx}`).addEventListener("click", () => {
+            currentStageIdx = idx;
+            updateUI();
+          });
+        });
+
+        Deck.onResize(() => {
+          ctx = Deck.fit(canvas);
+          draw();
+        });
+      }
+
+      window.addEventListener("DOMContentLoaded", setup);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,962 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>把识别假设翻译成可审查问题</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F7;
+      --surface: #FFFFFF;
+      --soft: #E3ECEF;
+      --text: #17272D;
+      --muted: #52666E;
+      --observed: #245A74;
+      --cause: #B13F2A;
+      --uncertain: #7A5B12;
+      --supported: #2D694C;
+      --selected: #D6E8EE;
+      --focus: #B13F2A;
+      --font-display: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-num: Bahnschrift, "DIN Alternate", "Noto Sans SC", sans-serif;
+    }
+
+    #stage {
+      padding: 44px 56px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    .header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .header p {
+      margin: 0;
+      font-size: var(--fs-lead);
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    /* 主体三列工作台 */
+    .audit-grid {
+      display: grid;
+      grid-template-columns: 360px 1fr 380px;
+      gap: 22px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 通用列结构 */
+    .col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .col-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      border-bottom: 2px solid var(--soft);
+      padding-bottom: 8px;
+    }
+    .col-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .col-subtitle {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    /* 左列：识别策略选择器与数学假设 */
+    .design-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .design-btn {
+      padding: 12px 14px;
+      background: var(--surface);
+      border: 1.5px solid var(--soft);
+      border-radius: var(--r-sm);
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      transition: all var(--fast) var(--ease);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .design-btn:hover {
+      border-color: var(--observed);
+    }
+    .design-btn[aria-pressed="true"] {
+      background: var(--selected);
+      border-color: var(--observed);
+      box-shadow: inset 3px 0 0 var(--observed);
+    }
+    .design-btn-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .design-btn-name {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .design-btn-abbr {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      color: var(--observed);
+      font-weight: 600;
+    }
+    .design-btn-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* 核心审查问题卡片 */
+    .math-card {
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: auto;
+    }
+    .math-title {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+    .math-formula {
+      font-family: "Times New Roman", serif;
+      font-size: var(--fs-sec);
+      background: var(--soft);
+      padding: 8px 10px;
+      border-radius: var(--r-sm);
+      color: var(--text);
+      text-align: center;
+    }
+    .math-note {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    /* 中列：不可检验核心 vs 间接证据可视化 */
+    .visual-stage {
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    .status-ribbon {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .pill-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: var(--fs-tick);
+      font-weight: 600;
+    }
+    .pill-danger {
+      background: #FCE8E6;
+      color: var(--cause);
+    }
+    .pill-support {
+      background: #E6F3EC;
+      color: var(--supported);
+    }
+
+    .diagram-wrapper {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .canvas-box {
+      width: 100%;
+      height: 320px;
+      position: relative;
+      border-radius: var(--r-sm);
+      background: #FAFCFC;
+      border: 1px solid var(--soft);
+    }
+
+    .narrative-box {
+      margin-top: 12px;
+      padding: 14px 16px;
+      border-radius: var(--r-sm);
+      background: #F4F8F9;
+      border: 1px solid #D4E2E6;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .narrative-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .narrative-desc {
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+    }
+
+    /* 右列：可审查问题清单与常见证伪陷阱 */
+    .audit-checklist {
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 16px;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .checklist-items {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      padding-right: 4px;
+      flex: 1;
+    }
+
+    .audit-item {
+      padding: 10px 12px;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--soft);
+      background: #FAFCFC;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .audit-item-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .audit-item-badge {
+      font-size: var(--fs-tick);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-cannot {
+      background: #FDE8E6;
+      color: var(--cause);
+    }
+    .badge-indirect {
+      background: #EBF3F6;
+      color: var(--observed);
+    }
+    .badge-threat {
+      background: #FBF4E4;
+      color: var(--uncertain);
+    }
+    .audit-question {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.35;
+    }
+    .audit-answer {
+      font-size: var(--fs-tick);
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    /* 底栏证据强度注记 */
+    .footer-summary {
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .footer-takeaway {
+      font-size: var(--fs-label);
+      line-height: 1.4;
+      color: var(--text);
+      margin: 0;
+      flex: 1;
+    }
+    .footer-takeaway strong {
+      color: var(--cause);
+    }
+    .rule-tag {
+      font-size: var(--fs-tick);
+      padding: 4px 10px;
+      border-radius: var(--r-sm);
+      background: var(--soft);
+      color: var(--observed);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body data-page="09" data-total="24">
+  <div id="stage">
+    <!-- 页头 -->
+    <header class="header">
+      <h1>把识别假设翻译成可审查问题：不可检核心与间接佐证</h1>
+      <p>因果推断的核心假设均依赖反事实状态，从定义上不可直接检验；所有前趋势平稳、平衡性检验与安慰剂测试，都只是不拒绝原假设的间接旁证。</p>
+    </header>
+
+    <!-- 主体三列布局 -->
+    <div class="audit-grid">
+      <!-- 左列：识别策略选择 -->
+      <section class="col min0">
+        <div class="col-header">
+          <span class="col-title">选择识别策略</span>
+          <span class="col-subtitle">3 种典型设定</span>
+        </div>
+        <div class="design-selector" role="radiogroup" aria-label="识别策略选择">
+          <button class="design-btn" id="btn-did" role="radio" aria-pressed="true" data-mode="did">
+            <div class="design-btn-head">
+              <span class="design-btn-name">双重差分 (DID)</span>
+              <span class="design-btn-abbr">Parallel Trends</span>
+            </div>
+            <div class="design-btn-desc">假设若未受政策冲击，处理组与对照组的时间轨迹将保持平行。</div>
+          </button>
+          <button class="design-btn" id="btn-iv" role="radio" aria-pressed="false" data-mode="iv">
+            <div class="design-btn-head">
+              <span class="design-btn-name">工具变量 (IV)</span>
+              <span class="design-btn-abbr">Exclusion Restriction</span>
+            </div>
+            <div class="design-btn-desc">假设工具变量 Z 仅通过内生变量 D 影响结果 Y，不存在直接泄露渠道。</div>
+          </button>
+          <button class="design-btn" id="btn-rdd" role="radio" aria-pressed="false" data-mode="rdd">
+            <div class="design-btn-head">
+              <span class="design-btn-name">断点回归 (RDD)</span>
+              <span class="design-btn-abbr">Continuity</span>
+            </div>
+            <div class="design-btn-desc">假设驱动变量在阈值两侧无个体的精确操纵，潜在产出条件期望光滑连续。</div>
+          </button>
+        </div>
+
+        <div class="math-card" id="math-card">
+          <div class="math-title">形式化数学假设</div>
+          <div class="math-formula" id="math-formula">E[Y(0)_{t} - Y(0)_{t-1} | D=1] = E[Y(0)_{t} - Y(0)_{t-1} | D=0]</div>
+          <p class="math-note" id="math-note">
+            等式左侧包含反事实项 <span style="color:var(--cause);font-weight:600">Y(0)_{t} | D=1</span>（处理组在政策发生后的未处理结果），现实中根本观测不到，因此永远无法在统计学上直接证明。
+          </p>
+        </div>
+      </section>
+
+      <!-- 中列：可视化直觉与认识论断层 -->
+      <section class="col min0">
+        <div class="col-header">
+          <span class="col-title">认识论断层：可见观测 vs 隐匿反事实</span>
+          <div class="status-ribbon">
+            <span class="pill-status pill-danger" id="status-untestable">核心假设：永远不可测</span>
+          </div>
+        </div>
+
+        <div class="visual-stage">
+          <div class="diagram-wrapper">
+            <div class="canvas-box">
+              <canvas id="diagramCanvas" class="cv-fill"></canvas>
+            </div>
+
+            <div class="narrative-box" id="narrative-box">
+              <div class="narrative-title" id="narrative-title">平行动态仅在事前可见，事后反事实被政策屏蔽</div>
+              <p class="narrative-desc" id="narrative-desc">
+                事件研究法显示“事前各期系数不显著为零”，只能说明在政策落地前两组拥有共同轨迹。这既不能排除政策时点同时发生其他混杂冲击，也无法保证如果没有这项政策，两条线不会在事后自然分流。
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右列：审查清单与破绽侦测 -->
+      <section class="col min0">
+        <div class="col-header">
+          <span class="col-title">读者提问清单</span>
+          <span class="col-subtitle">如何审查论文证据</span>
+        </div>
+
+        <div class="audit-checklist">
+          <div class="checklist-items" id="checklist-items">
+            <!-- 动态填充 -->
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 底部结论 -->
+    <footer class="footer-summary">
+      <p class="footer-takeaway" id="footer-takeaway">
+        <strong>读论文心法：</strong>永远不要把“通过了平行趋势/平衡性/排他性讨论”等同于“因果已确凿”。作者给出的所有检验都是<strong>必要非充分条件</strong>。读者的审查职责是构想一个与间接证据并存的混杂故事，并评估作者能否将其击穿。
+      </p>
+      <span class="rule-tag">实证审查第一法则</span>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    本页聚焦因果推断中最容易产生误区的一步：混淆“不可检验的核心假设”与“间接支持证据”。
+    首先，无论在 DID、IV 还是 RDD 中，因果估计量的数学成立都依赖未处理状态下的潜在结果——因为我们永远无法在处理组上同时观测到未受处理时的现实，这个核心假设是形而上学的，从定义上就不能用统计检验“证明”。
+    其次，作者在论文中展示的事件研究图平稳、平衡性表格无差异、McCrary 密度检验平滑，都只是间接的必要条件，只能“不拒绝”假设，而不能“证实”假设。
+    读者在审阅实证论文时，必须把数学假设翻译成三个具体的对抗性提问：
+    第一，是否存在与政策同期的其他宏观扰动？
+    第二，机制管道是否存在未被封堵的旁路泄露？
+    第三，数据生成过程在临界点是否存在策略性聚束？
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const DATA = {
+        did: {
+          math: "E[Y(0)_{t} - Y(0)_{t-1} | D=1] = E[Y(0)_{t} - Y(0)_{t-1} | D=0]",
+          mathNote: "等式左侧包含反事实项 <strong style='color:var(--cause)'>Y(0)_{t} | D=1</strong>（处理组在政策发生后的未处理结果），现实中根本观测不到，因此永远无法在统计学上直接证明。",
+          untestableLabel: "平行趋势：反事实轨迹不可测",
+          narrativeTitle: "平行动态仅在事前可见，事后反事实被政策屏蔽",
+          narrativeDesc: "事件研究法显示“事前系数不显著为零”，只能验证冲击前无差异演变。这既不能排除政策同期的其他叠加冲击，也无法排除组间异质性随时间推移而发生的自然发散。",
+          items: [
+            {
+              badge: "不可检验",
+              type: "badge-cannot",
+              q: "冲击发生后，处理组若不给处理，是否真能与对照组平行？",
+              a: "不可测。这是反事实，作者无法给出数据检验，只能通过行业/区域特征相似性进行制度逻辑论证。"
+            },
+            {
+              badge: "间接证据",
+              type: "badge-indirect",
+              q: "事前各期系数检验（Pre-trends）接近零代表什么？",
+              a: "只能证明政策前未发生提前反应或原有分歧，不能证明政策后两组仍保持平行。"
+            },
+            {
+              badge: "审查威胁",
+              type: "badge-threat",
+              q: "是否存在同期的其他政策或非对称宏观冲击？",
+              a: "读者必须检查：在处理组接受政策的年份，是否有其他专项扶持、环保督查或外部冲击同时发生。"
+            }
+          ],
+          takeaway: "<strong>DID 审查法则：</strong>事前平行不是事后平行的保险单。读者必须重点审查政策落地当年，是否存在唯独有利于处理组的同期混杂事件。"
+        },
+        iv: {
+          math: "Cov(Z, ε | X) = 0 \\quad \\text{且} \\quad Y(D, Z) = Y(D, Z')",
+          mathNote: "残差项 <strong style='color:var(--cause)'>ε</strong> 包含所有未观测遗漏变量。我们永远无法从样本中直接提取真实的总体误差 ε，因此排他性约束（Exclusion Restriction）在恰好识别下数学上无法检验。",
+          untestableLabel: "排他性约束：遗漏干扰无法被测",
+          narrativeTitle: "第一阶段强相关可测，但因果直接通路不可观测",
+          narrativeDesc: "第一阶段 F 统计量大只能证明 Z 与 D 强相关（相关性假设可检）；但 Z 是否通过其他隐藏管道 ε 绕过 D 直接影响了 Y（排他性假设），在恰好识别下没有任何统计检验能够验证。",
+          items: [
+            {
+              badge: "不可检验",
+              type: "badge-cannot",
+              q: "工具变量 Z 是否除了作用于 D，完全没有其他途径影响 Y？",
+              a: "在恰好识别（单工具变量）下完全无法通过统计检验。只能依赖严格的制度背景细节与常识性排他推理。"
+            },
+            {
+              badge: "间接证据",
+              type: "badge-indirect",
+              q: "第一阶段 F 统计量 > 10（或 > 104.7）代表什么？",
+              a: "只证实了相关性假设（Relevance），说明工具变量不弱，对排他性约束的真实性毫无证明效力。"
+            },
+            {
+              badge: "审查威胁",
+              type: "badge-threat",
+              q: "是否存在‘借道超车’的第二条未控制管道？",
+              a: "例如以‘降雨量’作为收入的工具变量，降雨很可能同时改变了交通出行、疾病传播与心理情绪，直接影响健康产出。"
+            }
+          ],
+          takeaway: "<strong>IV 审查法则：</strong>第一阶段很强，往往只代表两件事相关，绝不代表排他性成立。对工具变量的审判主要看作者对替代通路的排除是否让人信服。"
+        },
+        rdd: {
+          math: "\\lim_{x \\to c^+} E[Y(0)|X=x] = \\lim_{x \\to c^-} E[Y(0)|X=x]",
+          mathNote: "阈值右侧的 <strong style='color:var(--cause)'>Y(0)</strong> 永远不可见。断点回归的局部随机性依赖‘潜在结果在阈值处平滑连续’，这直接依赖个体不能在阈值微观邻域精确操纵跑道。",
+          untestableLabel: "光滑性假设：断点对侧不可测",
+          narrativeTitle: "预定协变量平滑是间接证据，无法证明潜在反事实无跳跃",
+          narrativeDesc: "论文常报告‘前定控制变量在阈值两侧无跳跃’以及‘McCrary 运行变量密度连续’。这只能证明可观测维度和样本计数没有异常，并不能排除未观测维度上的策略性自选择或协同突变。",
+          items: [
+            {
+              badge: "不可检验",
+              type: "badge-cannot",
+              q: "若没有跳跃规则，处理组样本在阈值右侧的潜在表现是否真与左侧连续？",
+              a: "不可测。阈值右侧个体已被赋予处理，其 Y(0) 状态永远消失在反事实中。"
+            },
+            {
+              badge: "间接证据",
+              type: "badge-indirect",
+              q: "协变量连续性检验与 McCrary 密度检验通过代表什么？",
+              a: "只能证明可观测前定变量无跳跃、运行变量未被肉眼可见地单向操纵，无法排除隐性自选择。"
+            },
+            {
+              badge: "审查威胁",
+              type: "badge-threat",
+              q: "阈值两侧个体是否存在操纵能力或复合门槛的结构差异？",
+              a: "例如企业规模恰好卡在纳税优惠线下，或是多项扶持政策在同一门槛处叠加生效，导致断点效应被复合污染。"
+            }
+          ],
+          takeaway: "<strong>RDD 审查法则：</strong>局部连续性最怕‘多政策共享阈值’与‘有能力的个体精确操纵’。审查重点看门槛处是否被多项制度同时利用。"
+        }
+      };
+
+      let currentMode = "did";
+      const canvas = document.getElementById("diagramCanvas");
+      const ctx = canvas.getContext("2d");
+
+      function updateUI(mode) {
+        currentMode = mode;
+        const conf = DATA[mode];
+
+        // 切换按钮状态
+        document.querySelectorAll(".design-btn").forEach(btn => {
+          const active = btn.dataset.mode === mode;
+          btn.setAttribute("aria-pressed", active ? "true" : "false");
+        });
+
+        // 更新左侧公式卡
+        document.getElementById("math-formula").textContent = conf.math;
+        document.getElementById("math-note").innerHTML = conf.mathNote;
+
+        // 更新中列状态
+        document.getElementById("status-untestable").textContent = conf.untestableLabel;
+        document.getElementById("narrative-title").textContent = conf.narrativeTitle;
+        document.getElementById("narrative-desc").textContent = conf.narrativeDesc;
+
+        // 更新右侧清单
+        const listContainer = document.getElementById("checklist-items");
+        listContainer.innerHTML = "";
+        conf.items.forEach(item => {
+          const el = document.createElement("div");
+          el.className = "audit-item";
+          el.innerHTML = `
+            <div class="audit-item-head">
+              <span class="audit-question">${item.q}</span>
+              <span class="audit-item-badge ${item.type}">${item.badge}</span>
+            </div>
+            <div class="audit-answer">${item.a}</div>
+          `;
+          listContainer.appendChild(el);
+        });
+
+        // 底部总结
+        document.getElementById("footer-takeaway").innerHTML = conf.takeaway;
+
+        // 重绘视觉图
+        drawDiagram();
+      }
+
+      function drawDiagram() {
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const w = rect.width;
+        const h = rect.height;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 统一网格底色
+        ctx.strokeStyle = "#EDF2F4";
+        ctx.lineWidth = 1;
+        for (let x = 40; x < w; x += 50) {
+          ctx.beginPath();
+          ctx.moveTo(x, 20);
+          ctx.lineTo(x, h - 30);
+          ctx.stroke();
+        }
+        for (let y = 30; y < h - 20; y += 40) {
+          ctx.beginPath();
+          ctx.moveTo(30, y);
+          ctx.lineTo(w - 30, y);
+          ctx.stroke();
+        }
+
+        if (currentMode === "did") {
+          drawDID(w, h);
+        } else if (currentMode === "iv") {
+          drawIV(w, h);
+        } else if (currentMode === "rdd") {
+          drawRDD(w, h);
+        }
+      }
+
+      function drawDID(w, h) {
+        const splitX = w * 0.45;
+        const baselineY = h - 40;
+
+        // 冲击分界虚线
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "#B13F2A";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(splitX, 30);
+        ctx.lineTo(splitX, baselineY);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = "#B13F2A";
+        ctx.font = "bold 13px 'Noto Sans SC', sans-serif";
+        ctx.fillText("冲击时点 (Policy Shock)", splitX + 8, 42);
+
+        // 阶段背景标识
+        ctx.fillStyle = "#2D694C";
+        ctx.font = "13px 'Noto Sans SC', sans-serif";
+        ctx.fillText("← 事前检验区：可观测 (仅间接佐证)", 45, 42);
+
+        ctx.fillStyle = "#B13F2A";
+        ctx.font = "bold 13px 'Noto Sans SC', sans-serif";
+        ctx.fillText("事后结果区：反事实不可测 →", splitX + 8, 62);
+
+        // 轨迹定义
+        // 对照组 (Control) 轨迹：从 (60, 230) 到 (splitX, 185) 到 (w - 180, 140)
+        ctx.strokeStyle = "#52666E";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(60, 230);
+        ctx.lineTo(splitX, 185);
+        ctx.lineTo(w - 180, 140);
+        ctx.stroke();
+
+        ctx.fillStyle = "#52666E";
+        ctx.font = "bold 13px 'Noto Sans SC', sans-serif";
+        ctx.fillText("对照组观测轨迹 Y(0)", w - 170, 144);
+
+        // 处理组事前轨迹：从 (60, 175) 到 (splitX, 130)
+        ctx.strokeStyle = "#245A74";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(60, 175);
+        ctx.lineTo(splitX, 130);
+        ctx.stroke();
+
+        // 处理组事后实际观测轨迹 Y(1)：跃升至 (w - 180, 60)
+        ctx.beginPath();
+        ctx.moveTo(splitX, 130);
+        ctx.lineTo(w - 180, 60);
+        ctx.stroke();
+
+        ctx.fillStyle = "#245A74";
+        ctx.font = "bold 13px 'Noto Sans SC', sans-serif";
+        ctx.fillText("处理组观测 Y(1)", w - 170, 56);
+
+        // 处理组未处理反事实虚线：平行于对照组 (从 130 到 85)
+        ctx.save();
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = "#B13F2A";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(splitX, 130);
+        ctx.lineTo(w - 180, 85);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = "#B13F2A";
+        ctx.font = "bold 12.5px 'Noto Sans SC', sans-serif";
+        ctx.fillText("反事实 Y(0)|D=1 (永远不可测)", splitX + 32, 116);
+
+        // 真实因果效应标注
+        const endX = w - 180;
+        ctx.save();
+        ctx.strokeStyle = "#B13F2A";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(endX + 6, 60);
+        ctx.lineTo(endX + 16, 60);
+        ctx.lineTo(endX + 16, 85);
+        ctx.lineTo(endX + 6, 85);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = "#B13F2A";
+        ctx.font = "bold 12.5px 'Noto Sans SC', sans-serif";
+        ctx.fillText("真实效应", endX + 22, 76);
+
+        // 标注事前平行区间
+        ctx.fillStyle = "rgba(45, 105, 76, 0.08)";
+        ctx.fillRect(50, 90, splitX - 60, 150);
+        ctx.strokeStyle = "#2D694C";
+        ctx.strokeRect(50, 90, splitX - 60, 150);
+        ctx.fillStyle = "#2D694C";
+        ctx.font = "13px 'Noto Sans SC', sans-serif";
+        ctx.fillText("事前平行趋势检验区间", 62, 112);
+        ctx.fillText("(仅能证明未发生提前分流)", 62, 130);
+      }
+
+      function drawIV(w, h) {
+        // DAG 因果图呈现工具变量机制
+        const zPos = { x: 90, y: h / 2 };
+        const dPos = { x: w * 0.45, y: h / 2 };
+        const yPos = { x: w - 100, y: h / 2 };
+        const uPos = { x: (w * 0.45 + w - 100) / 2, y: 70 };
+
+        // 节点绘制辅助
+        function drawNode(x, y, label, sub, color, bg) {
+          ctx.save();
+          ctx.fillStyle = bg || "#FFFFFF";
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(x - 45, y - 26, 90, 52, 8);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = color;
+          ctx.font = "bold 15px 'Noto Sans SC', sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(label, x, y - 2);
+
+          ctx.fillStyle = "#52666E";
+          ctx.font = "11.5px 'Noto Sans SC', sans-serif";
+          ctx.fillText(sub, x, y + 16);
+          ctx.restore();
+        }
+
+        // 箭头绘制辅助
+        function drawArrow(fromX, fromY, toX, toY, color, dashed, width = 2) {
+          ctx.save();
+          ctx.strokeStyle = color;
+          ctx.fillStyle = color;
+          ctx.lineWidth = width;
+          if (dashed) ctx.setLineDash([5, 5]);
+
+          const angle = Math.atan2(toY - fromY, toX - fromX);
+          const headLen = 9;
+
+          ctx.beginPath();
+          ctx.moveTo(fromX, fromY);
+          ctx.lineTo(toX, toY);
+          ctx.stroke();
+
+          // 箭头实心尖角
+          ctx.beginPath();
+          ctx.moveTo(toX, toY);
+          ctx.lineTo(toX - headLen * Math.cos(angle - Math.PI / 6), toY - headLen * Math.sin(angle - Math.PI / 6));
+          ctx.lineTo(toX - headLen * Math.cos(angle + Math.PI / 6), toY - headLen * Math.sin(angle + Math.PI / 6));
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // 1. Z -> D (第一阶段强相关，可检验)
+        drawArrow(zPos.x + 45, zPos.y, dPos.x - 45, dPos.y, "#2D694C", false, 3);
+        ctx.fillStyle = "#2D694C";
+        ctx.font = "bold 12.5px 'Noto Sans SC', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("① 强相关性 (可检)", (zPos.x + dPos.x) / 2, zPos.y - 12);
+        ctx.font = "11.5px 'Noto Sans SC', sans-serif";
+        ctx.fillText("第一阶段 F > 10", (zPos.x + dPos.x) / 2, zPos.y + 20);
+
+        // 2. D -> Y (因果目标)
+        drawArrow(dPos.x + 45, dPos.y, yPos.x - 45, yPos.y, "#245A74", false, 3);
+        ctx.fillStyle = "#245A74";
+        ctx.font = "bold 12.5px 'Noto Sans SC', sans-serif";
+        ctx.fillText("因果效应识别", (dPos.x + yPos.x) / 2, dPos.y - 12);
+
+        // 3. U -> D, U -> Y (混杂内生性)
+        drawArrow(uPos.x, uPos.y + 26, dPos.x + 10, dPos.y - 26, "#7A5B12", true);
+        drawArrow(uPos.x, uPos.y + 26, yPos.x - 10, yPos.y - 26, "#7A5B12", true);
+        ctx.fillStyle = "#7A5B12";
+        ctx.font = "12px 'Noto Sans SC', sans-serif";
+        ctx.fillText("内生性混杂干扰", uPos.x, uPos.y - 6);
+
+        // 4. 泄露管道 Z -> Y (排他性假设：假设此路为 0，但不可检)
+        ctx.save();
+        ctx.strokeStyle = "#B13F2A";
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(zPos.x, zPos.y + 26);
+        ctx.bezierCurveTo(zPos.x + 50, h - 35, yPos.x - 50, h - 35, yPos.x, yPos.y + 26);
+        ctx.stroke();
+
+        // 画一个大大的红叉禁行标
+        const midBottomX = (zPos.x + yPos.x) / 2;
+        const midBottomY = h - 50;
+        ctx.strokeStyle = "#B13F2A";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(midBottomX - 12, midBottomY - 12);
+        ctx.lineTo(midBottomX + 12, midBottomY + 12);
+        ctx.moveTo(midBottomX + 12, midBottomY - 12);
+        ctx.lineTo(midBottomX - 12, midBottomY + 12);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = "#B13F2A";
+        ctx.font = "bold 13px 'Noto Sans SC', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("② 排他性约束：假设无直接通道（数学上永远无法在单 IV 下检验）", midBottomX, h - 22);
+
+        // 绘制节点
+        drawNode(zPos.x, zPos.y, "工具变量 Z", "外生随机扰动", "#2D694C", "#EBF5F0");
+        drawNode(dPos.x, dPos.y, "处理变量 D", "内生选择核心", "#245A74", "#E8EFF2");
+        drawNode(yPos.x, yPos.y, "结果产出 Y", "被解释目标", "#17272D", "#FFFFFF");
+        drawNode(uPos.x, uPos.y, "遗漏变量 U", "不可观测混杂", "#7A5B12", "#FCF8EC");
+      }
+
+      function drawRDD(w, h) {
+        const cutoffX = w * 0.5;
+        const baselineY = h - 35;
+
+        // 门槛竖线
+        ctx.save();
+        ctx.strokeStyle = "#B13F2A";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cutoffX, 30);
+        ctx.lineTo(cutoffX, baselineY);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = "#B13F2A";
+        ctx.font = "bold 13px 'Noto Sans SC', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("断点阈值 X = c", cutoffX, 22);
+
+        // 两侧背景分类
+        ctx.fillStyle = "rgba(36, 90, 116, 0.05)";
+        ctx.fillRect(40, 30, cutoffX - 40, baselineY - 30);
+        ctx.fillStyle = "rgba(45, 105, 76, 0.05)";
+        ctx.fillRect(cutoffX, 30, w - 40 - cutoffX, baselineY - 30);
+
+        ctx.fillStyle = "#52666E";
+        ctx.font = "12px 'Noto Sans SC', sans-serif";
+        ctx.fillText("对照侧 (D=0)", cutoffX - 70, 48);
+        ctx.fillText("处理侧 (D=1)", cutoffX + 70, 48);
+
+        // 左侧曲线（对照组 Y(0) 实际观测）
+        ctx.strokeStyle = "#245A74";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(70, 200);
+        ctx.bezierCurveTo(160, 195, cutoffX - 60, 160, cutoffX, 150);
+        ctx.stroke();
+
+        // 左侧曲线反事实虚线延伸（若未跳跃，理应连续）
+        ctx.save();
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = "#B13F2A";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(cutoffX, 150);
+        ctx.bezierCurveTo(cutoffX + 50, 142, cutoffX + 120, 130, cutoffX + 180, 115);
+        ctx.stroke();
+        ctx.restore();
+
+        // 阈值处左侧点
+        ctx.fillStyle = "#245A74";
+        ctx.beginPath();
+        ctx.arc(cutoffX, 150, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 右侧曲线（处理组 Y(1) 实际观测发生向上跳跃）
+        ctx.strokeStyle = "#2D694C";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(cutoffX, 85);
+        ctx.bezierCurveTo(cutoffX + 80, 78, w - 120, 65, w - 60, 55);
+        ctx.stroke();
+
+        // 阈值处右侧实心点
+        ctx.fillStyle = "#2D694C";
+        ctx.beginPath();
+        ctx.arc(cutoffX, 85, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 断点跳跃标注（局部因果效应）
+        ctx.save();
+        ctx.strokeStyle = "#B13F2A";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cutoffX + 15, 85);
+        ctx.lineTo(cutoffX + 25, 85);
+        ctx.lineTo(cutoffX + 25, 150);
+        ctx.lineTo(cutoffX + 15, 150);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = "#B13F2A";
+        ctx.font = "bold 13px 'Noto Sans SC', sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText("局部处理效应 (LATE)", cutoffX + 34, 110);
+        ctx.fillStyle = "#52666E";
+        ctx.font = "12px 'Noto Sans SC', sans-serif";
+        ctx.fillText("（需反事实平滑）", cutoffX + 34, 128);
+
+        // 底部平滑性注记
+        ctx.fillStyle = "#52666E";
+        ctx.font = "12px 'Noto Sans SC', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("McCrary 密度检验只排除明显堆积；无法检验潜在能力的不可观测平滑性", w / 2, baselineY + 22);
+      }
+
+      // 初始化交互事件
+      document.querySelectorAll(".design-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          updateUI(btn.dataset.mode);
+        });
+      });
+
+      // 初始化底盘与画布
+      window.addEventListener("load", () => {
+        Deck.autofit(canvas, drawDiagram);
+        updateUI("did");
+      });
+
+    })();
+  </script>
+</body>
+</html>

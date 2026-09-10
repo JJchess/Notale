@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    /* 页面特定布局与图表样式 */
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    header.page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2px solid var(--surface-strong);
+      padding-bottom: 14px;
+    }
+
+    .title-group h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .title-group p {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .meta-tag {
+      font-size: var(--fs-label);
+      font-family: var(--font-num);
+      color: var(--learner);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+
+    /* 主工作区两栏 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 430px;
+      gap: 28px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧图表区 */
+    .chart-panel {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 22px 26px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    /* 图表头部两行精简布局，杜绝标题挤压溢出 */
+    .chart-header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .chart-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .chart-legends {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .legend-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+
+    .dot-correct {
+      background: var(--learner);
+      opacity: 0.85;
+    }
+
+    .dot-wrong {
+      background: var(--aggregate);
+    }
+
+    .dot-line {
+      width: 22px;
+      height: 2px;
+      background: var(--muted);
+      border-top: 2px dashed var(--muted);
+    }
+
+    .plot-container {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+
+    .plot-container svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .bar-rect {
+      transition: height var(--dur) var(--ease), y var(--dur) var(--ease), fill var(--dur) var(--ease);
+      cursor: pointer;
+    }
+
+    .bar-rect:hover {
+      filter: brightness(0.9);
+    }
+
+    .bar-rect.active {
+      stroke: var(--focus);
+      stroke-width: 3px;
+    }
+
+    .chart-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid var(--surface-strong);
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 右侧推导与结论卡片 */
+    .aside-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .formula-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+
+    .formula-card h3 {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .formula-card .katex-block {
+      margin: 8px 0;
+      font-size: 17px;
+      text-align: center;
+      color: var(--text);
+    }
+
+    .desc-text {
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+      color: var(--muted);
+    }
+
+    .desc-text strong {
+      color: var(--text);
+    }
+
+    /* 样本抽检卡片 */
+    .inspect-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .inspect-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .inspect-readouts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 10px 0;
+    }
+
+    .readout-box {
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+
+    .readout-box .lbl {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      display: block;
+    }
+
+    .readout-box .val {
+      font-family: var(--font-num);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .readout-box .val.red {
+      color: var(--aggregate);
+    }
+
+    .readout-box .val.blue {
+      color: var(--learner);
+    }
+
+    .inspect-insight {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      padding: 10px 12px;
+      background: rgba(39, 93, 145, 0.08);
+      border-radius: 6px;
+      border-left: 3px solid var(--learner);
+    }
+
+    .inspect-insight.wrong-highlight {
+      background: rgba(182, 59, 36, 0.08);
+      border-left-color: var(--aggregate);
+    }
+
+    /* 轮次切换控制器 */
+    .round-ctrls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .btn-round {
+      border: 1.5px solid var(--surface-strong);
+      background: var(--surface);
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+
+    .btn-round:hover {
+      border-color: var(--learner);
+      color: var(--learner);
+    }
+
+    .btn-round.active {
+      background: var(--learner);
+      border-color: var(--learner);
+      color: #fff;
+    }
+  </style>
+</head>
+<body data-page="16" data-total="27">
+  <div id="stage">
+    <header class="page-head">
+      <div class="title-group">
+        <h1>AdaBoost 的样本权重：错分样本在下一轮获得更高关注度</h1>
+        <p>每一轮迭代结束后，样本权重依分类正误发生指数级分化，强迫下一个弱分类器主攻残存盲区</p>
+      </div>
+      <div class="round-ctrls">
+        <span style="font-size:var(--fs-label); color:var(--muted); margin-right:4px;">观察轮次转变：</span>
+        <button class="btn-round active" id="btn-t1" data-round="1">第 1 轮初态 (均匀)</button>
+        <button class="btn-round" id="btn-t2" data-round="2">更新至第 2 轮 (分化)</button>
+      </div>
+    </header>
+
+    <div class="main-grid">
+      <!-- 左侧柱状对比图 -->
+      <section class="chart-panel">
+        <div class="chart-header">
+          <div class="chart-header-row">
+            <div class="chart-title" id="plot-caption">第 1 轮初态：所有样本权重均等 (w₁ = 0.100)</div>
+            <div class="chart-legends">
+              <div class="legend-item">
+                <span class="legend-dot dot-correct"></span>
+                <span>分类正确（权重削减）</span>
+              </div>
+              <div class="legend-item">
+                <span class="legend-dot dot-wrong"></span>
+                <span>分类错误（权重拉升）</span>
+              </div>
+              <div class="legend-item">
+                <span class="dot-line"></span>
+                <span>初始基准线 (0.100)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="plot-container" id="plot-box">
+          <svg id="svg-bars" viewBox="0 0 940 430" preserveAspectRatio="none">
+            <!-- 坐标系辅助线与刻度 -->
+            <g id="grid-lines"></g>
+            <line id="baseline-ref" x1="60" y1="280" x2="910" y2="280" stroke="#536777" stroke-dasharray="4,4" stroke-width="1.5"></line>
+            <text id="baseline-text" x="914" y="284" font-size="12" fill="#536777" font-family="var(--font-num)">w=0.10</text>
+            <!-- 柱群 -->
+            <g id="bars-group"></g>
+            <!-- 顶部动态标注 -->
+            <g id="labels-group"></g>
+            <!-- X 轴刻度标签 -->
+            <g id="axis-x"></g>
+          </svg>
+        </div>
+
+        <div class="chart-footer">
+          <span id="footer-summary">基分类器错误率 ε₁ = 0.30，模型权重 α₁ = 0.424；3 个样本被误判</span>
+          <span>点击上方任意柱形可查看样本权重演化推导</span>
+        </div>
+      </section>
+
+      <!-- 右侧原理与当前抽检 -->
+      <aside class="aside-panel min0">
+        <!-- 权重更新公式与机制 -->
+        <div class="formula-card">
+          <h3>样本权重更新率</h3>
+          <div class="katex-block" id="math-formula"></div>
+          <p class="desc-text" id="math-expl">
+            当判断正确（<span id="katex-correct"></span>）时乘以衰减因子 <strong id="katex-decay"></strong>；当判断错误（<span id="katex-wrong"></span>）时乘以放大因子 <strong id="katex-grow"></strong>。<span id="katex-norm"></span> 为规范化因子，保持 <span id="katex-sum"></span>。
+          </p>
+        </div>
+
+        <!-- 样本单点核验卡 -->
+        <div class="inspect-card">
+          <div>
+            <div class="inspect-title" id="inspect-name">样本 x₇ 权重明细</div>
+            <p class="desc-text" id="inspect-sub">真实标签 y₇ = +1，基分类器预测 h₁(x₇) = -1（判断错误）</p>
+
+            <div class="inspect-readouts">
+              <div class="readout-box">
+                <span class="lbl">第 1 轮初始权重 w₁</span>
+                <span class="val" id="val-w1">0.100</span>
+              </div>
+              <div class="readout-box">
+                <span class="lbl">第 2 轮更新权重 w₂</span>
+                <span class="val red" id="val-w2">0.167</span>
+              </div>
+            </div>
+
+            <div class="inspect-readouts" style="margin-top:0;">
+              <div class="readout-box">
+                <span class="lbl">权重相对变化</span>
+                <span class="val red" id="val-ratio">+66.7%</span>
+              </div>
+              <div class="readout-box">
+                <span class="lbl">在总损失中占比</span>
+                <span class="val" id="val-share">1/6</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="inspect-insight wrong-highlight" id="inspect-detail">
+            误判样本权重从 0.100 上升至 0.167。下一轮基学习器在计算带权分类误差时，若继续误判 x₇，付出的损失代价将是正确样本的 2.33 倍。
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      // 10个典型样本的标准 AdaBoost 数值设定 (规范教学用典型数据集)
+      // N = 10, w_1 = 0.1
+      // 假设 round 1: 弱分类器 h1 在样本 x4, x7, x9 处判断错误 (3/10 错分)
+      // 错误率 e1 = 0.30
+      // 模型权重 alpha1 = 0.5 * ln((1 - 0.3) / 0.3) = 0.5 * ln(7/3) ≈ 0.42365
+      // exp(-alpha1) = sqrt(3/7) ≈ 0.65465
+      // exp(+alpha1) = sqrt(7/3) ≈ 1.52753
+      // Z1 = 7 * 0.1 * 0.65465 + 3 * 0.1 * 1.52753 = 0.45826 + 0.45826 = 0.91652 = 2 * sqrt(0.3 * 0.7)
+      // w_correct = 0.1 * 0.65465 / 0.91652 = 0.07143 (即 1/14)
+      // w_wrong   = 0.1 * 1.52753 / 0.91652 = 0.16667 (即 1/6)
+      // 7 * (1/14) + 3 * (1/6) = 0.5 + 0.5 = 1.0 (严格守恒)
+      
+      const SAMPLES = [
+        { id: 1, label: "+1", pred: "+1", wrong: false, w1: 0.100, w2: 0.071 },
+        { id: 2, label: "+1", pred: "+1", wrong: false, w1: 0.100, w2: 0.071 },
+        { id: 3, label: "-1", pred: "-1", wrong: false, w1: 0.100, w2: 0.071 },
+        { id: 4, label: "+1", pred: "-1", wrong: true,  w1: 0.100, w2: 0.167 },
+        { id: 5, label: "-1", pred: "-1", wrong: false, w1: 0.100, w2: 0.071 },
+        { id: 6, label: "-1", pred: "-1", wrong: false, w1: 0.100, w2: 0.071 },
+        { id: 7, label: "+1", pred: "-1", wrong: true,  w1: 0.100, w2: 0.167 },
+        { id: 8, label: "+1", pred: "+1", wrong: false, w1: 0.100, w2: 0.071 },
+        { id: 9, label: "-1", pred: "+1", wrong: true,  w1: 0.100, w2: 0.167 },
+        { id: 10, label: "-1", pred: "-1", wrong: false, w1: 0.100, w2: 0.071 },
+      ];
+
+      let currentRound = 1;
+      let selectedSampleId = 7; // 默认选中错分的 x7
+
+      const svgBars = document.getElementById("svg-bars");
+      const gridLines = document.getElementById("grid-lines");
+      const barsGroup = document.getElementById("bars-group");
+      const labelsGroup = document.getElementById("labels-group");
+      const axisX = document.getElementById("axis-x");
+      const plotCaption = document.getElementById("plot-caption");
+      const footerSummary = document.getElementById("footer-summary");
+
+      // 渲染 Katex
+      function renderMath() {
+        katex.render("w_{t+1, i} = \\frac{w_{t, i}}{Z_t} \\exp\\bigl(-\\alpha_t y_i h_t(x_i)\\bigr)", document.getElementById("math-formula"), { displayMode: true, throwOnError: false });
+        katex.render("y_i h_t(x_i) = +1", document.getElementById("katex-correct"), { throwOnError: false });
+        katex.render("e^{-\\alpha_t} \\approx 0.65", document.getElementById("katex-decay"), { throwOnError: false });
+        katex.render("y_i h_t(x_i) = -1", document.getElementById("katex-wrong"), { throwOnError: false });
+        katex.render("e^{+\\alpha_t} \\approx 1.53", document.getElementById("katex-grow"), { throwOnError: false });
+        katex.render("Z_t", document.getElementById("katex-norm"), { throwOnError: false });
+        katex.render("\\sum w_{t+1,i} = 1", document.getElementById("katex-sum"), { throwOnError: false });
+      }
+
+      // 坐标映射
+      // 图表内部坐标：宽 940，高 430
+      // 绘图区：X: 80 ~ 890，Y: 40 ~ 360 (高 320)
+      // 最大刻度 0.20 -> Y = 50, 0.00 -> Y = 360
+      const X_START = 85;
+      const X_END = 890;
+      const Y_BASE = 360;
+      const Y_TOP = 50;
+      const MAX_W = 0.20;
+
+      function scaleY(val) {
+        return Y_BASE - (val / MAX_W) * (Y_BASE - Y_TOP);
+      }
+
+      function initGrid() {
+        gridLines.innerHTML = "";
+        const ticks = [0.00, 0.05, 0.10, 0.15, 0.20];
+        ticks.forEach(t => {
+          const y = scaleY(t);
+          const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          line.setAttribute("x1", "70");
+          line.setAttribute("y1", y);
+          line.setAttribute("x2", "900");
+          line.setAttribute("y2", y);
+          line.setAttribute("stroke", "#D7E1E8");
+          line.setAttribute("stroke-width", "1");
+          gridLines.appendChild(line);
+
+          const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          txt.setAttribute("x", "40");
+          txt.setAttribute("y", y + 4);
+          txt.setAttribute("font-size", "12");
+          txt.setAttribute("fill", "#536777");
+          txt.setAttribute("font-family", "var(--font-num)");
+          txt.setAttribute("text-anchor", "start");
+          txt.textContent = t.toFixed(2);
+          gridLines.appendChild(txt);
+        });
+
+        // 基准线 0.10 的真实 Y 坐标
+        const baseLineY = scaleY(0.10);
+        const baselineRef = document.getElementById("baseline-ref");
+        baselineRef.setAttribute("y1", baseLineY);
+        baselineRef.setAttribute("y2", baseLineY);
+        const baselineText = document.getElementById("baseline-text");
+        baselineText.setAttribute("y", baseLineY + 4);
+      }
+
+      function updateChart(animate) {
+        barsGroup.innerHTML = "";
+        labelsGroup.innerHTML = "";
+        axisX.innerHTML = "";
+
+        const totalWidth = X_END - X_START;
+        const colStep = totalWidth / SAMPLES.length;
+        const barWidth = 48;
+
+        SAMPLES.forEach((s, idx) => {
+          const cx = X_START + idx * colStep + colStep / 2;
+          const barX = cx - barWidth / 2;
+          const val = currentRound === 1 ? s.w1 : s.w2;
+          const barY = scaleY(val);
+          const barHeight = Y_BASE - barY;
+
+          // 柱形
+          const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          rect.setAttribute("class", "bar-rect" + (s.id === selectedSampleId ? " active" : ""));
+          rect.setAttribute("x", barX);
+          rect.setAttribute("y", barY);
+          rect.setAttribute("width", barWidth);
+          rect.setAttribute("height", barHeight);
+          rect.setAttribute("rx", "4");
+
+          // 配色规则：
+          // 第1轮所有样本都是均等 0.100，用中性/learner色
+          // 第2轮时，错分样本标为 aggregate (红)，正确样本为 learner (蓝)
+          if (currentRound === 1) {
+            rect.setAttribute("fill", "#275D91");
+            rect.setAttribute("opacity", "0.75");
+          } else {
+            if (s.wrong) {
+              rect.setAttribute("fill", "#B63B24");
+              rect.setAttribute("opacity", "0.95");
+            } else {
+              rect.setAttribute("fill", "#275D91");
+              rect.setAttribute("opacity", "0.75");
+            }
+          }
+
+          rect.addEventListener("click", () => {
+            selectedSampleId = s.id;
+            updateChart(false);
+            updateInspectCard();
+          });
+
+          barsGroup.appendChild(rect);
+
+          // 柱顶数值
+          const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          label.setAttribute("x", cx);
+          label.setAttribute("y", barY - 8);
+          label.setAttribute("text-anchor", "middle");
+          label.setAttribute("font-size", "13");
+          label.setAttribute("font-weight", "700");
+          label.setAttribute("font-family", "var(--font-num)");
+          label.setAttribute("fill", currentRound === 2 && s.wrong ? "#B63B24" : "#142533");
+          label.textContent = val.toFixed(3);
+          labelsGroup.appendChild(label);
+
+          // X 轴标签
+          const xLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          xLabel.setAttribute("x", cx);
+          xLabel.setAttribute("y", Y_BASE + 24);
+          xLabel.setAttribute("text-anchor", "middle");
+          xLabel.setAttribute("font-size", "14");
+          xLabel.setAttribute("font-weight", s.id === selectedSampleId ? "700" : "500");
+          xLabel.setAttribute("fill", s.id === selectedSampleId ? "var(--focus)" : "var(--text)");
+          xLabel.textContent = "x" + s.id;
+          axisX.appendChild(xLabel);
+
+          // 判别记号 (正确/错误)
+          if (currentRound === 2) {
+            const statusMark = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            statusMark.setAttribute("x", cx);
+            statusMark.setAttribute("y", Y_BASE + 42);
+            statusMark.setAttribute("text-anchor", "middle");
+            statusMark.setAttribute("font-size", "12");
+            statusMark.setAttribute("font-weight", "700");
+            statusMark.setAttribute("fill", s.wrong ? "var(--aggregate)" : "var(--correct)");
+            statusMark.textContent = s.wrong ? "误判" : "正确";
+            axisX.appendChild(statusMark);
+          }
+        });
+
+        if (currentRound === 1) {
+          plotCaption.textContent = "第 1 轮初态：所有样本权重均等 (w₁ = 0.100)";
+          footerSummary.textContent = "尚未进行分类拟合，全样本受到基学习器相同程度的关注";
+        } else {
+          plotCaption.textContent = "第 2 轮更新后：错分样本权重拉升，正确样本权重回落";
+          footerSummary.textContent = "弱分类器 h₁ 错误率 ε₁ = 0.30，权重 α₁ = 0.424；3 个误判样本占据 50% 总权重";
+        }
+      }
+
+      function updateInspectCard() {
+        const s = SAMPLES.find(item => item.id === selectedSampleId) || SAMPLES[6];
+        const isWrong = s.wrong;
+        
+        document.getElementById("inspect-name").textContent = `样本 x${s.id} 权重明细`;
+        document.getElementById("inspect-sub").textContent = `真实标签 y = ${s.label}，预测输出 h₁(x) = ${s.pred}（${isWrong ? "分类错误" : "分类正确"}）`;
+        
+        document.getElementById("val-w1").textContent = s.w1.toFixed(3);
+        const w2El = document.getElementById("val-w2");
+        w2El.textContent = s.w2.toFixed(3);
+        
+        const ratioEl = document.getElementById("val-ratio");
+        const detailEl = document.getElementById("inspect-detail");
+
+        if (isWrong) {
+          w2El.className = "val red";
+          ratioEl.className = "val red";
+          ratioEl.textContent = "+66.7%";
+          document.getElementById("val-share").textContent = "16.7% (1/6)";
+          detailEl.className = "inspect-insight wrong-highlight";
+          detailEl.innerHTML = `<strong>误判放大效应：</strong>由于上一轮被误判，权重由 0.100 上升到 0.167。此时 3 个错分样本合计占据了 50.0% 的权重总量。新分类器若继续忽视 x${s.id}，将承受 2.33 倍于正确样本的严厉惩罚。`;
+        } else {
+          w2El.className = "val blue";
+          ratioEl.className = "val blue";
+          ratioEl.textContent = "-28.6%";
+          document.getElementById("val-share").textContent = "7.1% (1/14)";
+          detailEl.className = "inspect-insight";
+          detailEl.innerHTML = `<strong>正判衰减效应：</strong>因该样本已被弱分类器成功解决，权重由 0.100 降为 0.071。学习器在后续迭代中不必再耗费过大容量拟合此类容易样本，算力集中转向残余错误。`;
+        }
+      }
+
+      // 控制按钮绑定
+      const btnT1 = document.getElementById("btn-t1");
+      const btnT2 = document.getElementById("btn-t2");
+
+      btnT1.addEventListener("click", function(){
+        currentRound = 1;
+        btnT1.classList.add("active");
+        btnT2.classList.remove("active");
+        updateChart(true);
+      });
+
+      btnT2.addEventListener("click", function(){
+        currentRound = 2;
+        btnT2.classList.add("active");
+        btnT1.classList.remove("active");
+        updateChart(true);
+      });
+
+      // 初始化
+      initGrid();
+      updateChart(false);
+      updateInspectCard();
+      renderMath();
+
+      Deck.init({ index: 16, total: 27 });
+    })();
+  </script>
+</body>
+</html>

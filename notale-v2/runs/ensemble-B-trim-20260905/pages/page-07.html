@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bagging 与随机森林</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 64px 72px 56px 72px;
+      box-sizing: border-box;
+    }
+
+    /* 生成背景画布 */
+    #forest-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* 顶层排版区 */
+    .header-zone {
+      position: relative;
+      z-index: 5;
+      max-width: 900px;
+    }
+
+    .chapter-tag {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--learner);
+      margin-bottom: 16px;
+    }
+
+    h1.page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      margin: 0 0 20px 0;
+    }
+
+    p.lead-text {
+      font-size: var(--fs-lead);
+      line-height: 1.6;
+      color: var(--muted);
+      margin: 0 0 22px 0;
+      max-width: 720px;
+    }
+
+    .module-points {
+      display: flex;
+      gap: 16px;
+    }
+
+    .module-chip {
+      background: rgba(247, 250, 252, 0.85);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 10px 16px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .module-chip .idx {
+      font-family: var(--font-num, sans-serif);
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      color: var(--learner);
+    }
+
+    /* 底部收束与特征标牌 */
+    .footer-zone {
+      position: relative;
+      z-index: 5;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 32px;
+    }
+
+    .forest-stats-strip {
+      display: flex;
+      gap: 20px;
+      background: rgba(247, 250, 252, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 24px;
+      box-shadow: 0 10px 30px rgba(20, 37, 51, 0.05);
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .stat-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    .stat-val {
+      font-family: var(--font-num, sans-serif);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--learner);
+    }
+
+    .stat-val.agg {
+      color: var(--aggregate);
+    }
+
+    .stat-divider {
+      width: 1px;
+      height: 38px;
+      background: var(--surface-strong);
+      margin: auto 4px;
+    }
+
+    .guide-callout {
+      max-width: 440px;
+      background: rgba(247, 250, 252, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 22px;
+      box-shadow: 0 10px 30px rgba(20, 37, 51, 0.05);
+    }
+
+    .guide-callout p {
+      margin: 0;
+      font-size: var(--fs-label);
+      line-height: 1.55;
+      color: var(--text);
+    }
+
+    .guide-callout strong {
+      color: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="07" data-total="27">
+  <div id="stage">
+    <canvas id="forest-canvas" class="cv-fill"></canvas>
+
+    <div class="header-zone">
+      <div class="chapter-tag">第二模块 · 并行集成范式</div>
+      <h1 class="page-title">Bagging 与随机森林</h1>
+      <p class="lead-text">
+        通过自助重采样制造相互独立的样本扰动，再以特征子采样打散决策树的分裂视角。多棵高方差弱相关树在叶端汇流，以民主投票或平均抵消个体波动。
+      </p>
+      <div class="module-points">
+        <div class="module-chip">
+          <span class="idx">01</span>
+          <span>Bootstrap 重采样与袋外 OOB 评估</span>
+        </div>
+        <div class="module-chip">
+          <span class="idx">02</span>
+          <span>随机特征子空间分裂去相关</span>
+        </div>
+        <div class="module-chip">
+          <span class="idx">03</span>
+          <span>并行训练与平均/多数表决收敛</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-zone">
+      <div class="forest-stats-strip">
+        <div class="stat-item">
+          <span class="stat-label">基学习器生成</span>
+          <span class="stat-val">Bootstrap 采样</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <span class="stat-label">关键去相关机制</span>
+          <span class="stat-val">特征子集随机分裂</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <span class="stat-label">集成聚合目标</span>
+          <span class="stat-val agg">降低预测方差 Var(H)</span>
+        </div>
+      </div>
+
+      <div class="guide-callout">
+        <p>
+          每个独立的决策树根据随机子集长出差异化分支，最终在右侧收敛为统一的集成判决流。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      Deck.init({ index: 7, total: 27, keys: false });
+
+      const canvas = document.getElementById("forest-canvas");
+      let ctx = null;
+
+      // 标题安全排斥区（基于 1600×900 逻辑坐标）
+      const TITLE_EXCLUSION = {
+        x1: 40,
+        y1: 40,
+        x2: 820,
+        y2: 360
+      };
+
+      const FOOTER_EXCLUSION = {
+        x1: 40,
+        y1: 720,
+        x2: 1560,
+        y2: 880
+      };
+
+      const SEED = "bagging-forest-seed-07";
+      const NUM_TREES = 7; // 生成 7 棵具象的随机决策树主干与分支
+
+      // 树的根节点起始位置在左中至中下方，树冠向右中上方汇聚
+      // 树的生长向右上方延展，叶端汇聚成聚合流线向右侧 consensus 汇入
+      function createForestModel() {
+        const rng = new Math.seedrandom(SEED);
+
+        const trees = [];
+        const roots = [
+          { x: 140, y: 560, scale: 0.85, angle: -0.32, depth: 5 },
+          { x: 320, y: 640, scale: 0.95, angle: -0.42, depth: 5 },
+          { x: 500, y: 660, scale: 1.05, angle: -0.52, depth: 5 },
+          { x: 680, y: 650, scale: 1.10, angle: -0.65, depth: 5 },
+          { x: 860, y: 640, scale: 1.00, angle: -0.78, depth: 5 },
+          { x: 1040, y: 610, scale: 0.95, angle: -0.92, depth: 5 },
+          { x: 1220, y: 560, scale: 0.85, angle: -1.05, depth: 5 }
+        ];
+
+        const consensusPoint = { x: 1460, y: 340 };
+
+        roots.forEach((root, treeIdx) => {
+          const branches = [];
+          const leaves = [];
+
+          function growBranch(x, y, length, angle, depth, currentWidth) {
+            if (depth <= 0) {
+              leaves.push({ x, y, treeIdx });
+              return;
+            }
+
+            // 计算终点
+            const nextX = x + Math.cos(angle) * length;
+            const nextY = y + Math.sin(angle) * length;
+
+            branches.push({
+              x1: x,
+              y1: y,
+              x2: nextX,
+              y2: nextY,
+              depth,
+              width: currentWidth,
+              treeIdx
+            });
+
+            // 分裂出 2 个子分支（代表决策树的二叉分裂特征）
+            const splitAngle1 = angle - (0.24 + rng() * 0.18);
+            const splitAngle2 = angle + (0.24 + rng() * 0.18);
+            const nextLen = length * (0.68 + rng() * 0.14);
+            const nextW = Math.max(1.0, currentWidth * 0.7);
+
+            growBranch(nextX, nextY, nextLen, splitAngle1, depth - 1, nextW);
+            growBranch(nextX, nextY, nextLen, splitAngle2, depth - 1, nextW);
+          }
+
+          const initLength = 95 * root.scale;
+          growBranch(root.x, root.y, initLength, root.angle, root.depth, 4.0 * root.scale);
+
+          // 从部分叶子节点生成流向 consensusPoint 的聚合连线（平滑贝塞尔）
+          const consensusStreams = [];
+          leaves.forEach((lf, leafIdx) => {
+            if (leafIdx % 2 === 0) {
+              // 贝塞尔控制点
+              const cx1 = lf.x + (consensusPoint.x - lf.x) * 0.45;
+              const cy1 = lf.y - 40 - rng() * 80;
+              const cx2 = lf.x + (consensusPoint.x - lf.x) * 0.8;
+              const cy2 = consensusPoint.y + (rng() - 0.5) * 60;
+              consensusStreams.push({
+                x1: lf.x,
+                y1: lf.y,
+                cx1,
+                cy1,
+                cx2,
+                cy2,
+                x2: consensusPoint.x,
+                y2: consensusPoint.y,
+                alpha: 0.15 + rng() * 0.25
+              });
+            }
+          });
+
+          trees.push({
+            root,
+            branches,
+            leaves,
+            consensusStreams
+          });
+        });
+
+        // 汇集节点脉动粒子
+        const streamParticles = [];
+        for (let i = 0; i < 48; i++) {
+          const tree = trees[Math.floor(rng() * trees.length)];
+          const stream = tree.consensusStreams[Math.floor(rng() * tree.consensusStreams.length)];
+          if (stream) {
+            streamParticles.push({
+              stream,
+              t: rng(),
+              speed: 0.003 + rng() * 0.005,
+              size: 2 + rng() * 2.5
+            });
+          }
+        }
+
+        return { trees, consensusPoint, streamParticles };
+      }
+
+      const model = createForestModel();
+
+      function getBezierPoint(p0, p1, p2, p3, t) {
+        const u = 1 - t;
+        const tt = t * t;
+        const uu = u * u;
+        const uuu = uu * u;
+        const ttt = tt * t;
+
+        const x = uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x;
+        const y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+        return { x, y };
+      }
+
+      function drawScene(time) {
+        if (!ctx) return;
+
+        ctx.clearRect(0, 0, Deck.W, Deck.H);
+
+        // 颜色提取
+        const learnerRgb = Deck.rgb("learner") || [39, 93, 145];
+        const aggregateRgb = Deck.rgb("aggregate") || [182, 59, 36];
+        const surfaceRgb = Deck.rgb("surface-strong") || [215, 225, 232];
+
+        // 1. 绘制底层连接网络/流向聚合中心的贝塞尔束
+        model.trees.forEach(tree => {
+          tree.consensusStreams.forEach(s => {
+            ctx.beginPath();
+            ctx.moveTo(s.x1, s.y1);
+            ctx.bezierCurveTo(s.cx1, s.cy1, s.cx2, s.cy2, s.x2, s.y2);
+            ctx.strokeStyle = `rgba(${learnerRgb[0]}, ${learnerRgb[1]}, ${learnerRgb[2]}, ${s.alpha * 0.45})`;
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+          });
+        });
+
+        // 2. 绘制树枝干
+        model.trees.forEach(tree => {
+          tree.branches.forEach(b => {
+            ctx.beginPath();
+            ctx.moveTo(b.x1, b.y1);
+            ctx.lineTo(b.x2, b.y2);
+
+            const depthAlpha = 0.25 + (b.depth / 5) * 0.55;
+            ctx.strokeStyle = `rgba(${learnerRgb[0]}, ${learnerRgb[1]}, ${learnerRgb[2]}, ${depthAlpha})`;
+            ctx.lineWidth = b.width;
+            ctx.lineCap = "round";
+            ctx.stroke();
+          });
+
+          // 绘制根部节点基点
+          ctx.beginPath();
+          ctx.arc(tree.root.x, tree.root.y, 5, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${learnerRgb[0]}, ${learnerRgb[1]}, ${learnerRgb[2]}, 0.8)`;
+          ctx.fill();
+
+          // 绘制叶子节点（分裂决策终端）
+          tree.leaves.forEach(lf => {
+            ctx.beginPath();
+            ctx.arc(lf.x, lf.y, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(${learnerRgb[0]}, ${learnerRgb[1]}, ${learnerRgb[2]}, 0.5)`;
+            ctx.fill();
+          });
+        });
+
+        // 3. 动态流转粒子：从各个叶端汇入最终 consensus 中心
+        model.streamParticles.forEach(p => {
+          p.t += p.speed;
+          if (p.t > 1) p.t = 0;
+
+          const s = p.stream;
+          const pos = getBezierPoint(
+            { x: s.x1, y: s.y1 },
+            { x: s.cx1, y: s.cy1 },
+            { x: s.cx2, y: s.cy2 },
+            { x: s.x2, y: s.y2 },
+            p.t
+          );
+
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, p.size, 0, Math.PI * 2);
+          // 随着趋向终点，颜色从 learner 蓝渐变为 aggregate 红
+          const r = Math.round(learnerRgb[0] + (aggregateRgb[0] - learnerRgb[0]) * p.t);
+          const g = Math.round(learnerRgb[1] + (aggregateRgb[1] - learnerRgb[1]) * p.t);
+          const b = Math.round(learnerRgb[2] + (aggregateRgb[2] - learnerRgb[2]) * p.t);
+          const alpha = 0.3 + 0.6 * p.t;
+
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+          ctx.fill();
+        });
+
+        // 4. 绘制右侧集成共识核心（Consensus Core）
+        const cp = model.consensusPoint;
+        const pulse = 1 + 0.08 * Math.sin(time * 0.003);
+
+        // 外层汇聚光环
+        ctx.beginPath();
+        ctx.arc(cp.x, cp.y, 42 * pulse, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${aggregateRgb[0]}, ${aggregateRgb[1]}, ${aggregateRgb[2]}, 0.08)`;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(cp.x, cp.y, 24, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${aggregateRgb[0]}, ${aggregateRgb[1]}, ${aggregateRgb[2]}, 0.16)`;
+        ctx.fill();
+        ctx.strokeStyle = `rgba(${aggregateRgb[0]}, ${aggregateRgb[1]}, ${aggregateRgb[2]}, 0.5)`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(cp.x, cp.y, 8, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${aggregateRgb[0]}, ${aggregateRgb[1]}, ${aggregateRgb[2]}, 0.95)`;
+        ctx.fill();
+
+        // 标签：集成共识
+        ctx.font = "600 14px " + (Deck.token("font-sans") || "sans-serif");
+        ctx.fillStyle = `rgba(${aggregateRgb[0]}, ${aggregateRgb[1]}, ${aggregateRgb[2]}, 0.9)`;
+        ctx.textAlign = "center";
+        ctx.fillText("集成决策 consensus", cp.x, cp.y + 44);
+      }
+
+      function init() {
+        ctx = Deck.fit(canvas);
+        drawScene(0);
+
+        if (!Deck.reduced()) {
+          Deck.loop(time => {
+            drawScene(time);
+          }, { still: 1600 });
+        }
+      }
+
+      init();
+      Deck.onResize(() => {
+        ctx = Deck.fit(canvas);
+        drawScene(1600);
+      });
+    })();
+  </script>
+</body>
+</html>

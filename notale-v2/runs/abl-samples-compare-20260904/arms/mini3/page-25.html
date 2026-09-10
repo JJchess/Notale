@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bagging、Boosting 与 Stacking 的选择</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部题头 */
+    .header-block {
+      flex: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .header-block h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+    .header-block .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 诊断问诊条（快速选择器） */
+    .diagnosis-nav {
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 18px;
+      box-shadow: 0 2px 8px rgba(18, 38, 52, 0.04);
+    }
+    .diagnosis-label {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .diagnosis-label strong {
+      color: var(--text);
+    }
+    .method-tabs {
+      display: flex;
+      gap: 10px;
+    }
+    .tab-btn {
+      appearance: none;
+      border: 1px solid var(--surface-strong);
+      background: var(--bg);
+      color: var(--muted);
+      padding: 7px 16px;
+      border-radius: 6px;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all var(--duration) var(--ease);
+    }
+    .tab-btn:hover {
+      border-color: var(--muted);
+      color: var(--text);
+    }
+    .tab-btn.active {
+      background: var(--text);
+      color: var(--surface);
+      border-color: var(--text);
+    }
+    .tab-btn .tag-pill {
+      font-size: var(--fs-tick);
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .tab-btn:not(.active) .tag-pill {
+      background: var(--surface-strong);
+      color: var(--muted);
+    }
+
+    /* 主视区：三列结构对齐 */
+    .comparison-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      min-height: 0;
+    }
+
+    .column-card {
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 10px;
+      padding: 16px 18px;
+      box-sizing: border-box;
+      transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease), transform var(--duration) var(--ease);
+      position: relative;
+    }
+    .column-card.highlighted {
+      border-color: var(--model);
+      box-shadow: 0 6px 20px rgba(39, 100, 143, 0.12);
+      transform: translateY(-2px);
+    }
+    .column-card.highlighted::before {
+      content: "";
+      position: absolute;
+      top: -1px;
+      left: 16px;
+      right: 16px;
+      height: 3px;
+      background: var(--model);
+      border-radius: 3px 3px 0 0;
+    }
+
+    .card-top {
+      flex: none;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+      margin-bottom: 12px;
+    }
+    .card-headline {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 4px;
+    }
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+    .target-badge {
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.02em;
+    }
+    .target-badge.variance {
+      background: #EAF2F7;
+      color: var(--model);
+    }
+    .target-badge.bias {
+      background: #FBEFEA;
+      color: var(--aggregate);
+    }
+    .target-badge.diversity {
+      background: #EBF4F0;
+      color: var(--sample);
+    }
+    .card-summary {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.35;
+      margin: 0;
+    }
+
+    /* 图解架构区 (SVG) */
+    .card-diagram-box {
+      height: 150px;
+      flex: none;
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      overflow: hidden;
+      position: relative;
+    }
+    .card-diagram-box svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 逐项对照槽位 */
+    .card-specs {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 14px;
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+    }
+    .spec-item {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .spec-label {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .spec-value {
+      color: var(--text);
+      font-size: var(--fs-sec);
+    }
+    .spec-value strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .recommendation-box {
+      flex: none;
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: var(--bg);
+      border-radius: 6px;
+      border-left: 3px solid var(--muted);
+      font-size: var(--fs-sec);
+    }
+    .column-card.highlighted .recommendation-box {
+      border-left-color: var(--model);
+      background: #F4F8FA;
+    }
+    .recommendation-box .rec-title {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .column-card.highlighted .recommendation-box .rec-title {
+      color: var(--model);
+    }
+
+    /* 底部判别法脚部总结条 */
+    .bottom-bar {
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px 20px;
+      box-shadow: 0 1px 4px rgba(18, 38, 52, 0.03);
+    }
+    .rule-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .rule-pill {
+      display: inline-flex;
+      align-items: center;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      gap: 8px;
+    }
+    .rule-pill code {
+      font-family: var(--font-num);
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      font-size: var(--fs-tick);
+    }
+    .rule-arrow {
+      color: var(--muted);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body data-page="25" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题 -->
+    <header class="header-block">
+      <h1>集成范式抉择：高方差、高偏差与异质互补</h1>
+      <p class="lead">
+        根据基学习器的主要瓶颈与多样性来源对号入座：不同集成方法改变预测分布的数学机制截然不同。
+      </p>
+    </header>
+
+    <!-- 问诊模式导航 -->
+    <nav class="diagnosis-nav" aria-label="核心病因过滤">
+      <div class="diagnosis-label">
+        <span>当前面对的核心瓶颈：</span>
+        <strong id="current-diagnosis-name">全部横向对照</strong>
+      </div>
+      <div class="method-tabs" role="tablist">
+        <button class="tab-btn active" data-target="all" role="tab" aria-selected="true">
+          <span>完整矩阵</span>
+        </button>
+        <button class="tab-btn" data-target="bagging" role="tab" aria-selected="false">
+          <span>Bagging</span>
+          <span class="tag-pill">高方差</span>
+        </button>
+        <button class="tab-btn" data-target="boosting" role="tab" aria-selected="false">
+          <span>Boosting</span>
+          <span class="tag-pill">高偏差</span>
+        </button>
+        <button class="tab-btn" data-target="stacking" role="tab" aria-selected="false">
+          <span>Stacking</span>
+          <span class="tag-pill">异质互补</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- 三栏核心机制对照 -->
+    <div class="comparison-grid min0">
+      <!-- 列 1: Bagging -->
+      <section class="column-card min0" id="card-bagging">
+        <div class="card-top">
+          <div class="card-headline">
+            <h2 class="card-title">Bagging</h2>
+            <span class="target-badge variance">优先解决高方差</span>
+          </div>
+          <p class="card-summary">独立并行采样，利用大数定律均化单模型扰动。</p>
+        </div>
+
+        <div class="card-diagram-box">
+          <svg viewBox="0 0 450 150" aria-label="Bagging 架构图">
+            <!-- 样本子集 -->
+            <g fill="none" stroke="#2F7568" stroke-width="1.5">
+              <rect x="25" y="25" width="80" height="28" rx="4" fill="#EBF4F0" />
+              <rect x="25" y="62" width="80" height="28" rx="4" fill="#EBF4F0" />
+              <rect x="25" y="99" width="80" height="28" rx="4" fill="#EBF4F0" />
+            </g>
+            <g font-size="12" fill="#2F7568" font-family="Noto Sans SC" font-weight="600" text-anchor="middle">
+              <text x="65" y="44">Bootstrap 1</text>
+              <text x="65" y="81">Bootstrap 2</text>
+              <text x="65" y="118">Bootstrap B</text>
+            </g>
+
+            <!-- 箭头向模型 -->
+            <path d="M105 39 H 145" stroke="#536A78" stroke-width="1.5" marker-end="url(#arrow-head)" />
+            <path d="M105 76 H 145" stroke="#536A78" stroke-width="1.5" marker-end="url(#arrow-head)" />
+            <path d="M105 113 H 145" stroke="#536A78" stroke-width="1.5" marker-end="url(#arrow-head)" />
+
+            <!-- 同质复杂模型 -->
+            <g fill="none" stroke="#27648F" stroke-width="1.5">
+              <rect x="150" y="25" width="95" height="28" rx="4" fill="#EAF2F7" />
+              <rect x="150" y="62" width="95" height="28" rx="4" fill="#EAF2F7" />
+              <rect x="150" y="99" width="95" height="28" rx="4" fill="#EAF2F7" />
+            </g>
+            <g font-size="12" fill="#27648F" font-family="Noto Sans SC" font-weight="600" text-anchor="middle">
+              <text x="197" y="44">深决策树 1</text>
+              <text x="197" y="81">深决策树 2</text>
+              <text x="197" y="118">深决策树 B</text>
+            </g>
+
+            <!-- 汇聚线 -->
+            <path d="M245 39 Q 295 39 310 70" stroke="#536A78" stroke-width="1.5" fill="none" />
+            <path d="M245 76 H 310" stroke="#536A78" stroke-width="1.5" />
+            <path d="M245 113 Q 295 113 310 82" stroke="#536A78" stroke-width="1.5" fill="none" />
+            <path d="M310 76 H 330" stroke="#536A78" stroke-width="1.5" marker-end="url(#arrow-head)" />
+
+            <!-- 结合策略 -->
+            <rect x="335" y="48" width="88" height="56" rx="6" fill="#122634" />
+            <text x="379" y="74" font-size="13" fill="#FFFFFF" font-family="Noto Sans SC" font-weight="700" text-anchor="middle">等权平均</text>
+            <text x="379" y="92" font-size="11" fill="#E2EBF0" font-family="Noto Sans SC" text-anchor="middle">/ 多数投票</text>
+
+            <!-- 顶部并联标识 -->
+            <text x="225" y="16" font-size="11" fill="#536A78" font-family="Noto Sans SC" text-anchor="middle">独立并行训练 · 互不依赖</text>
+          </svg>
+        </div>
+
+        <div class="card-specs">
+          <div class="spec-item">
+            <span class="spec-label">基学习器要求</span>
+            <span class="spec-value"><strong>强而敏感（高方差）</strong>，如未剪枝深决策树</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-label">多样性来源</span>
+            <span class="spec-value">有放回重采样 + 特征随机子空间（随机森林）</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-label">数学收益机制</span>
+            <span class="spec-value">方差降为 <strong style="font-family:var(--font-num);">ρσ² + (1-ρ)σ²/B</strong>，偏差基本不变</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-label">工程特点</span>
+            <span class="spec-value">高度天然并行，对少量离群噪声鲁棒</span>
+          </div>
+        </div>
+
+        <div class="recommendation-box">
+          <div class="rec-title">典型采用场景</div>
+          <div>特征维度高、单模型极易过拟合；需同时输出袋外估计（OOB）与特征重要度。</div>
+        </div>
+      </section>
+
+      <!-- 列 2: Boosting -->
+      <section class="column-card min0" id="card-boosting">
+        <div class="card-top">
+          <div class="card-headline">
+            <h2 class="card-title">Boosting</h2>
+            <span class="target-badge bias">逐步降低偏差</span>
+          </div>
+          <p class="card-summary">串行前向加法迭代，新模型专门拟合前序残差或错分样本。</p>
+        </div>
+
+        <div class="card-diagram-box">
+          <svg viewBox="0 0 450 150" aria-label="Boosting 架构图">
+            <!-- 链式串行 -->
+            <!-- 弱模型 1 -->
+            <rect x="25" y="55" width="85" height="42" rx="4" fill="#EAF2F7" stroke="#27648F" stroke-width="1.5" />
+            <text x="67" y="73" font-size="12" fill="#27648F" font-family="Noto Sans SC" font-weight="700" text-anchor="middle">基学习器 1</text>
+            <text x="67" y="88" font-size="11" fill="#536A78" font-family="Noto Sans SC" text-anchor="middle">浅层弱树 (d=3)</text>
+
+            <!-- 错分重赋权/残差传递 -->
+            <path d="M110 76 H 160" stroke="#C34B22" stroke-width="2" marker-end="url(#arrow-head-red)" />
+            <text x="135" y="68" font-size="10" fill="#C34B22" font-family="Noto Sans SC" font-weight="600" text-anchor="middle">传残差</text>
+
+            <!-- 弱模型 2 -->
+            <rect x="165" y="55" width="85" height="42" rx="4" fill="#EAF2F7" stroke="#27648F" stroke-width="1.5" />
+            <text x="207" y="73" font-size="12" fill="#27648F" font-family="Noto Sans SC" font-weight="700" text-anchor="middle">基学习器 2</text>
+            <text x="207" y="88" font-size="11" fill="#536A78" font-family="Noto Sans SC" text-anchor="middle">拟合前步负梯度</text>
+
+            <!-- 虚线过渡到 M -->
+            <path d="M250 76 H 295" stroke="#C34B22" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#arrow-head-red)" />
+
+            <!-- 弱模型 M -->
+            <rect x="300" y="55" width="85" height="42" rx="4" fill="#EAF2F7" stroke="#27648F" stroke-width="1.5" />
+            <text x="342" y="73" font-size="12" fill="#27648F" font-family="Noto Sans SC" font-weight="700" text-anchor="middle">基学习器 M</text>
+            <text x="342" y="88" font-size="11" fill="#536A78" font-family="Noto Sans SC" text-anchor="middle">修正剩余失误</text>
+
+            <!-- 顶部加权累加 -->
+            <path d="M67 55 V 32 Q 67 22 80 22 H 390 Q 405 22 405 50 V 68" stroke="#C34B22" stroke-width="1.5" fill="none" />
+            <path d="M207 55 V 22" stroke="#C34B22" stroke-width="1.5" />
+            <path d="M342 55 V 22" stroke="#C34B22" stroke-width="1.5" />
+            
+            <circle cx="405" cy="76" r="14" fill="#C34B22" />
+            <text x="405" y="81" font-size="16" fill="#FFFFFF" font-family="Noto Sans SC" font-weight="700" text-anchor="middle">∑</text>
+
+            <rect x="135" y="6" width="200" height="18" rx="3" fill="#FFFFFF" opacity="0.9" />
+            <text x="235" y="19" font-size="11" fill="#C34B22" font-family="Noto Sans SC" font-weight="700" text-anchor="middle">加法模型：F_M(x) = ∑ η·h_m(x)</text>
+          </svg>
+        </div>
+
+        <div class="card-specs">
+          <div class="spec-item">
+            <span class="spec-label">基学习器要求</span>
+            <span class="spec-value"><strong>弱而稳定（高偏差）</strong>，如深度 3~6 的浅树桩</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-label">多样性来源</span>
+            <span class="spec-value">动态样本分布（AdaBoost）或梯度伪残差（GBDT）</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-label">数学收益机制</span>
+            <span class="spec-value">在前向阶段持续压降偏差；过拟合风险随轮数递增</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-label">工程特点</span>
+            <span class="spec-value">串行依赖强；极度依赖步长收缩（学习率）防过拟合</span>
+          </div>
+        </div>
+
+        <div class="recommendation-box">
+          <div class="rec-title">典型采用场景</div>
+          <div>表格结构化数据竞赛基准；追求极高精度，且已做足异常值与噪声清洗。</div>
+        </div>
+      </section>
+
+      <!-- 列 3: Stacking -->
+      <section class="column-card min0" id="card-stacking">
+        <div class="card-top">
+          <div class="card-headline">
+            <h2 class="card-title">Stacking</h2>
+            <span class="target-badge diversity">异质模型优势互补</span>
+          </div>
+          <p class="card-summary">训练元学习器，发现不同算法归纳偏置之间的互补区域。</p>
+        </div>
+
+        <div class="card-diagram-box">
+          <svg viewBox="0 0 450 150" aria-label="Stacking 架构图">
+            <!-- 异质模型 -->
+            <g fill="none" stroke="#27648F" stroke-width="1.5">
+              <rect x="25" y="25" width="105" height="28" rx="4" fill="#EAF2F7" />
+              <rect x="25" y="62" width="105" height="28" rx="4" fill="#EAF2F7" />
+              <rect x="25" y="99" width="105" height="28" rx="4" fill="#EAF2F7" />
+            </g>
+            <g font-size="12" fill="#27648F" font-family="Noto Sans SC" font-weight="600" text-anchor="middle">
+              <text x="77" y="44">GBDT (树模型)</text>
+              <text x="77" y="81">MLP (神经网络)</text>
+              <text x="77" y="118">Ridge (线性模型)</text>
+            </g>
+
+            <!-- K 折交叉折外预测特征流 -->
+            <path d="M130 39 H 230" stroke="#2F7568" stroke-width="1.5" marker-end="url(#arrow-head-green)" />
+            <path d="M130 76 H 230" stroke="#2F7568" stroke-width="1.5" marker-end="url(#arrow-head-green)" />
+            <path d="M130 113 H 230" stroke="#2F7568" stroke-width="1.5" marker-end="url(#arrow-head-green)" />
+
+            <!-- 元特征矩阵容器 -->
+            <rect x="235" y="28" width="70" height="96" rx="4" fill="#EBF4F0" stroke="#2F7568" stroke-width="1.5" stroke-dasharray="4 2" />
+            <text x="270" y="56" font-size="11" fill="#2F7568" font-family="Noto Sans SC" font-weight="700" text-anchor="middle">K-折</text>
+            <text x="270" y="73" font-size="11" fill="#2F7568" font-family="Noto Sans SC" font-weight="700" text-anchor="middle">折外预测</text>
+            <text x="270" y="90" font-size="11" fill="#2F7568" font-family="Noto Sans SC" text-anchor="middle">OOF 特征</text>
+
+            <!-- 连接到第二层 -->
+            <path d="M305 76 H 335" stroke="#536A78" stroke-width="1.5" marker-end="url(#arrow-head)" />
+
+            <!-- 元模型 -->
+            <rect x="340" y="50" width="92" height="52" rx="6" fill="#122634" />
+            <text x="386" y="72" font-size="12" fill="#FFFFFF" font-family="Noto Sans SC" font-weight="700" text-anchor="middle">第二层元模型</text>
+            <text x="386" y="89" font-size="11" fill="#E2EBF0" font-family="Noto Sans SC" text-anchor="middle">简单回归/逻辑回归</text>
+
+            <text x="200" y="16" font-size="11" fill="#2F7568" font-family="Noto Sans SC" font-weight="600" text-anchor="middle">算法家族异质 · 严防标签泄漏</text>
+          </svg>
+        </div>
+
+        <div class="card-specs">
+          <div class="spec-item">
+            <span class="spec-label">基学习器要求</span>
+            <span class="spec-value"><strong>彼此异质且能力均衡</strong>，来自不同数学原理</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-label">多样性来源</span>
+            <span class="spec-value">不同算法假说的空间划分差异（树 vs 凸边界 vs 超平面）</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-label">数学收益机制</span>
+            <span class="spec-value">学习模型预测误差的正交性，由元模型动态加权分派</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-label">工程特点</span>
+            <span class="spec-value">必须用 <strong>K 折交叉折外预测（OOF）</strong> 构建元特征</span>
+          </div>
+        </div>
+
+        <div class="recommendation-box">
+          <div class="rec-title">典型采用场景</div>
+          <div>多种模型性能接近但各有所长，追求极致指标且计算预算充足（多阶段管线）。</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 底部核心决策准则 -->
+    <footer class="bottom-bar">
+      <div class="rule-title">
+        <span>工程选型诊断准则：</span>
+      </div>
+      <div class="rule-pill">
+        <span>单模型过拟合严重 / 方差主导</span>
+        <span class="rule-arrow">➔</span>
+        <code>Bagging / 随机森林</code>
+      </div>
+      <div class="rule-pill">
+        <span>单模型欠拟合 / 偏差主导且噪声低</span>
+        <span class="rule-arrow">➔</span>
+        <code>GBDT / XGBoost / LightGBM</code>
+      </div>
+      <div class="rule-pill">
+        <span>多种不同类模型均已调优</span>
+        <span class="rule-arrow">➔</span>
+        <code>K 折折外 Stacking</code>
+      </div>
+    </footer>
+
+    <!-- SVG 箭头定义 -->
+    <svg style="position: absolute; width: 0; height: 0; overflow: hidden;" aria-hidden="true">
+      <defs>
+        <marker id="arrow-head" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#536A78" />
+        </marker>
+        <marker id="arrow-head-red" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#C34B22" />
+        </marker>
+        <marker id="arrow-head-green" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2F7568" />
+        </marker>
+      </defs>
+    </svg>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      Deck.init({ index: 25, total: 27 });
+
+      const tabs = document.querySelectorAll('.tab-btn');
+      const cards = {
+        bagging: document.getElementById('card-bagging'),
+        boosting: document.getElementById('card-boosting'),
+        stacking: document.getElementById('card-stacking')
+      };
+      const diagnosisText = document.getElementById('current-diagnosis-name');
+
+      const descriptions = {
+        all: "全部横向对照：从数学机制、多样性来源到数据流向的统一矩阵",
+        bagging: "高方差主导：单模型能力强但泛化波动剧烈，首选 Bagging 降方差",
+        boosting: "高偏差主导：单模型表达受限，首选串行加法迭代逐步消解残差",
+        stacking: "异质互补主导：多种不同数学原理的模型优势正交，首选 Stacking 联合调优"
+      };
+
+      function setView(target) {
+        tabs.forEach(btn => {
+          const isActive = btn.dataset.target === target;
+          btn.classList.toggle('active', isActive);
+          btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+
+        diagnosisText.textContent = descriptions[target] || descriptions.all;
+
+        Object.keys(cards).forEach(key => {
+          const card = cards[key];
+          if (target === 'all') {
+            card.classList.remove('highlighted');
+            card.style.opacity = '1';
+          } else if (target === key) {
+            card.classList.add('highlighted');
+            card.style.opacity = '1';
+          } else {
+            card.classList.remove('highlighted');
+            card.style.opacity = '0.45';
+          }
+        });
+      }
+
+      tabs.forEach(btn => {
+        btn.addEventListener('click', () => {
+          setView(btn.dataset.target);
+        });
+      });
+
+      // 键盘数字键快捷交互
+      window.addEventListener('keydown', (e) => {
+        if (e.key === '1') setView('bagging');
+        if (e.key === '2') setView('boosting');
+        if (e.key === '3') setView('stacking');
+        if (e.key === '0' || e.key === 'Escape') setView('all');
+      });
+    })();
+  </script>
+</body>
+</html>

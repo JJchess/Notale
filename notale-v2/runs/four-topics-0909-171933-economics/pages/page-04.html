@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>沉没成本与边际权衡</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 56px 80px 48px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      row-gap: 28px;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    /* 顶部标题区 */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2px solid var(--border-strong);
+      padding-bottom: 16px;
+    }
+    .header-title h1 {
+      margin: 0;
+      font-size: 36px;
+      font-family: var(--font-display);
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.5px;
+      line-height: 1.15;
+    }
+    .header-title p {
+      margin: 6px 0 0;
+      font-size: 16px;
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+    }
+    .scenario-nav {
+      display: flex;
+      gap: 10px;
+    }
+    .scenario-btn {
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .scenario-btn:hover {
+      border-color: var(--text);
+      color: var(--text);
+    }
+    .scenario-btn.active {
+      background: var(--text);
+      border-color: var(--text);
+      color: var(--bg);
+    }
+
+    /* 主体布局：左侧参数与沙盘，右侧对照与裁决证据 */
+    main {
+      display: grid;
+      grid-template-columns: 500px 1fr;
+      column-gap: 48px;
+      min-height: 0;
+    }
+
+    /* 左侧控制与沙盘区 */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .context-desc {
+      font-size: 15px;
+      line-height: 1.45;
+      color: var(--text);
+      padding: 10px 14px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+    }
+
+    .slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .row-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 14px;
+      font-family: var(--font-sans);
+    }
+    .row-label {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .row-val {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .row-val.sunk { color: var(--text-dim); }
+    .row-val.cost { color: var(--econ-supply); }
+    .row-val.rev { color: var(--econ-demand); }
+
+    input[type=range] {
+      width: 100%;
+      accent-color: var(--text);
+      cursor: pointer;
+      margin: 0;
+    }
+
+    .action-choice {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .choice-btn {
+      flex: 1;
+      padding: 12px 14px;
+      border: 2px solid var(--border-strong);
+      background: var(--bg);
+      font-family: var(--font-sans);
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+    .choice-btn:hover {
+      background: var(--bg-subtle);
+    }
+    .choice-btn.selected {
+      background: var(--text);
+      color: var(--bg);
+      border-color: var(--text);
+    }
+
+    /* 右侧图表与证据区 */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    /* 视觉计量条对比：边际 vs 总账 */
+    .chart-panel {
+      border: 1px solid var(--border);
+      padding: 22px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      background: #FAF8F3;
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px dashed var(--border);
+      padding-bottom: 10px;
+    }
+    .panel-title {
+      font-size: 16px;
+      font-weight: 700;
+      font-family: var(--font-sans);
+      color: var(--text);
+    }
+    .rule-tag {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 2px;
+    }
+    .tag-rational {
+      background: #E1EFF4;
+      color: var(--econ-demand);
+    }
+
+    .bars-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .bar-item {
+      display: grid;
+      grid-template-columns: 140px 1fr 110px;
+      align-items: center;
+      gap: 16px;
+    }
+    .bar-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .bar-track {
+      height: 30px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      position: absolute;
+      left: 0;
+      top: 0;
+      transition: width 0.2s ease;
+    }
+    .bar-fill.fill-sunk {
+      background: repeating-linear-gradient(45deg, #D4D2C9, #D4D2C9 6px, #E2DFD6 6px, #E2DFD6 12px);
+    }
+    .bar-fill.fill-marginal-cost { background: var(--econ-supply); }
+    .bar-fill.fill-marginal-rev { background: var(--econ-demand); }
+    .bar-num {
+      font-family: var(--font-mono);
+      font-size: 16px;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    /* 决策裁决与后果反馈卡 */
+    .verdict-box {
+      border: 2px solid var(--border-strong);
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: var(--bg);
+    }
+    .verdict-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .verdict-title {
+      font-size: 18px;
+      font-weight: 700;
+      font-family: var(--font-sans);
+    }
+    .status-badge {
+      font-size: 14px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border: 1.5px solid currentColor;
+    }
+    .badge-correct { color: #15803D; }
+    .badge-trap { color: #B91C1C; }
+
+    .verdict-content {
+      font-size: 15px;
+      line-height: 1.5;
+      color: var(--text);
+    }
+    .verdict-math {
+      font-family: var(--font-mono);
+      font-size: 15px;
+      font-weight: 600;
+      padding: 8px 12px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* 概念警示条目 */
+    .axiom-box {
+      border: 1px solid var(--border);
+      padding: 12px 18px;
+      background: #F2EFE8;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .axiom-box strong {
+      color: var(--text);
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body data-page="04" data-total="16">
+  <div id="stage">
+    <header>
+      <div class="header-title">
+        <h1 class="nt-title">沉没成本与边际决策</h1>
+        <p>往者不可谏：决定是否追加投入的唯一依据，是未来的边际收益能否覆盖边际成本。</p>
+      </div>
+      <nav class="scenario-nav" aria-label="情境案例切换">
+        <button class="scenario-btn active" data-scenario="0">研发芯片项目</button>
+        <button class="scenario-btn" data-scenario="1">雨夜电影票</button>
+        <button class="scenario-btn" data-scenario="2">衰退老厂技改</button>
+      </nav>
+    </header>
+
+    <main>
+      <!-- 左侧：参数滑块与行动决定 -->
+      <section class="left-col">
+        <div class="context-desc" id="scenarioDesc">
+          已投入 5000 万，竞品突击发布致未来预期收益降至 3000 万；尚需追加 2000 万完工。
+        </div>
+
+        <div class="slider-group">
+          <div class="control-row">
+            <div class="row-header">
+              <span class="row-label">已沉没历史成本 (不可收回)</span>
+              <span class="row-val sunk" id="sunkVal">5,000 万</span>
+            </div>
+            <input type="range" id="sunkSlider" min="0" max="10000" step="500" value="5000">
+          </div>
+
+          <div class="control-row">
+            <div class="row-header">
+              <span class="row-label">未来需追加成本 (边际成本 MC)</span>
+              <span class="row-val cost" id="costVal">2,000 万</span>
+            </div>
+            <input type="range" id="costSlider" min="500" max="8000" step="500" value="2000">
+          </div>
+
+          <div class="control-row">
+            <div class="row-header">
+              <span class="row-label">完工后预期总收益 (边际收益 MR)</span>
+              <span class="row-val rev" id="revVal">3,000 万</span>
+            </div>
+            <input type="range" id="revSlider" min="500" max="10000" step="500" value="3000">
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 14px; font-weight: 700; margin-bottom: 8px; color: var(--text);">面对当下的决策选择：</div>
+          <div class="action-choice">
+            <button class="choice-btn" id="btnContinue" data-choice="continue">
+              追加投入并完工
+            </button>
+            <button class="choice-btn" id="btnStop" data-choice="stop">
+              立即止损停止
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：对比图表与经济学裁决 -->
+      <section class="right-col">
+        <div class="chart-panel">
+          <div class="panel-head">
+            <span class="panel-title">未来边际账本 vs 历史总账本</span>
+            <span class="rule-tag tag-rational" id="marginalRule">MR &gt; MC: 边际有利</span>
+          </div>
+
+          <div class="bars-container">
+            <!-- 沉没成本条目 -->
+            <div class="bar-item">
+              <span class="bar-name">已沉没历史成本</span>
+              <div class="bar-track">
+                <div class="bar-fill fill-sunk" id="barSunk" style="width: 50%;"></div>
+              </div>
+              <span class="bar-num" id="barSunkNum" style="color: var(--text-dim);">5,000</span>
+            </div>
+
+            <!-- 边际成本 MC -->
+            <div class="bar-item">
+              <span class="bar-name">边际追加成本 (MC)</span>
+              <div class="bar-track">
+                <div class="bar-fill fill-marginal-cost" id="barCost" style="width: 20%;"></div>
+              </div>
+              <span class="bar-num" id="barCostNum" style="color: var(--econ-supply);">2,000</span>
+            </div>
+
+            <!-- 边际收益 MR -->
+            <div class="bar-item">
+              <span class="bar-name">未来边际收益 (MR)</span>
+              <div class="bar-track">
+                <div class="bar-fill fill-marginal-rev" id="barRev" style="width: 30%;"></div>
+              </div>
+              <span class="bar-num" id="barRevNum" style="color: var(--econ-demand);">3,000</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 决策后果反馈卡 -->
+        <div class="verdict-box" id="verdictBox">
+          <div class="verdict-header">
+            <span class="verdict-title" id="verdictTitle">请选择您的决策</span>
+            <span class="status-badge" id="verdictBadge">等待决策</span>
+          </div>
+          <div class="verdict-content" id="verdictText">
+            请基于当前的边际成本与预期收益，点击左侧按钮做出选择。
+          </div>
+          <div class="verdict-math" id="verdictMath">
+            <span>净收益对比：边际净利 <span id="mathMarginal">+1,000 万</span></span>
+            <span>会计总账亏损 <span id="mathTotal">-4,000 万</span></span>
+          </div>
+        </div>
+
+        <div class="axiom-box">
+          <div style="font-size: 24px;">💡</div>
+          <div>
+            <strong>沉没成本谬误（Sunk Cost Fallacy）：</strong>
+            因为“已经投了那么多”而硬着头皮继续，往往会将历史亏损进一步放大。无论沉没多少，未来的最优决策只看未来边际净收益。
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 演讲备课要点 -->
+    <aside class="notes" hidden>
+      本页核心概念是沉没成本（Sunk Cost）与边际决策逻辑。
+      学生最容易陷入“总账亏损就要放弃”或“沉没了太多必须继续回本”的心理陷阱。
+      通过调节滑块可以清晰看到：不管已沉没成本滑到 0 还是 1 亿，只要未来的边际收益（MR）大于追加成本（MC），理性选择就必然是继续完工，因为追加投入能多收回净差额，减少总损失。
+    </aside>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      // 3 个典型场景预设
+      const SCENARIOS = [
+        {
+          name: "研发芯片项目",
+          unit: "万",
+          desc: "已投入 5,000 万，突遇市场技术迭代；追加 2,000 万即可量产，预期获利 3,000 万。",
+          sunk: 5000,
+          cost: 2000,
+          rev: 3000,
+          sunkMax: 10000,
+          costMax: 6000,
+          revMax: 8000,
+          step: 500
+        },
+        {
+          name: "雨夜电影票",
+          unit: "元",
+          desc: "花了 80 元买了无法退改的电影票。突降暴雨，如果冒雨前往需付出 50 元打车及感冒风险，而观影体验预期仅值 30 元。",
+          sunk: 80,
+          cost: 50,
+          rev: 30,
+          sunkMax: 200,
+          costMax: 100,
+          revMax: 100,
+          step: 5
+        },
+        {
+          name: "衰退老厂技改",
+          unit: "万",
+          desc: "老厂已建设投入 8,000 万。环保升级还需追加 3,000 万，但行业产能过剩，改建后产出收益仅值 1,500 万。",
+          sunk: 8000,
+          cost: 3000,
+          rev: 1500,
+          sunkMax: 15000,
+          costMax: 6000,
+          revMax: 6000,
+          step: 500
+        }
+      ];
+
+      let state = {
+        scenarioIdx: 0,
+        sunk: 5000,
+        cost: 2000,
+        rev: 3000,
+        choice: 'continue' // 'continue' | 'stop'
+      };
+
+      // UI 元素
+      const ui = {
+        scenarioBtns: document.querySelectorAll('.scenario-btn'),
+        desc: document.getElementById('scenarioDesc'),
+        sunkSlider: document.getElementById('sunkSlider'),
+        costSlider: document.getElementById('costSlider'),
+        revSlider: document.getElementById('revSlider'),
+        sunkVal: document.getElementById('sunkVal'),
+        costVal: document.getElementById('costVal'),
+        revVal: document.getElementById('revVal'),
+        btnContinue: document.getElementById('btnContinue'),
+        btnStop: document.getElementById('btnStop'),
+        barSunk: document.getElementById('barSunk'),
+        barCost: document.getElementById('barCost'),
+        barRev: document.getElementById('barRev'),
+        barSunkNum: document.getElementById('barSunkNum'),
+        barCostNum: document.getElementById('barCostNum'),
+        barRevNum: document.getElementById('barRevNum'),
+        marginalRule: document.getElementById('marginalRule'),
+        verdictTitle: document.getElementById('verdictTitle'),
+        verdictBadge: document.getElementById('verdictBadge'),
+        verdictText: document.getElementById('verdictText'),
+        verdictMath: document.getElementById('verdictMath'),
+        mathMarginal: document.getElementById('mathMarginal'),
+        mathTotal: document.getElementById('mathTotal')
+      };
+
+      function updateScenarioUI(idx) {
+        state.scenarioIdx = idx;
+        const sc = SCENARIOS[idx];
+        ui.scenarioBtns.forEach((btn, i) => {
+          btn.classList.toggle('active', i === idx);
+        });
+
+        ui.sunkSlider.max = sc.sunkMax;
+        ui.sunkSlider.step = sc.step;
+        ui.sunkSlider.value = sc.sunk;
+
+        ui.costSlider.max = sc.costMax;
+        ui.costSlider.step = sc.step;
+        ui.costSlider.value = sc.cost;
+
+        ui.revSlider.max = sc.revMax;
+        ui.revSlider.step = sc.step;
+        ui.revSlider.value = sc.rev;
+
+        state.sunk = sc.sunk;
+        state.cost = sc.cost;
+        state.rev = sc.rev;
+        ui.desc.textContent = sc.desc;
+
+        render();
+      }
+
+      function fmt(val) {
+        const sc = SCENARIOS[state.scenarioIdx];
+        return val.toLocaleString() + ' ' + sc.unit;
+      }
+
+      function render() {
+        const sc = SCENARIOS[state.scenarioIdx];
+        ui.sunkVal.textContent = fmt(state.sunk);
+        ui.costVal.textContent = fmt(state.cost);
+        ui.revVal.textContent = fmt(state.rev);
+
+        // 计算比例尺：找三者最大值与基准值
+        const maxVal = Math.max(state.sunk, state.cost, state.rev, 100);
+        ui.barSunk.style.width = `${(state.sunk / maxVal) * 100}%`;
+        ui.barCost.style.width = `${(state.cost / maxVal) * 100}%`;
+        ui.barRev.style.width = `${(state.rev / maxVal) * 100}%`;
+
+        ui.barSunkNum.textContent = state.sunk.toLocaleString();
+        ui.barCostNum.textContent = state.cost.toLocaleString();
+        ui.barRevNum.textContent = state.rev.toLocaleString();
+
+        // 边际逻辑判据
+        const isMarginalBeneficial = state.rev > state.cost;
+        const marginalNet = state.rev - state.cost;
+        const totalNetIfContinue = state.rev - state.cost - state.sunk;
+        const totalNetIfStop = -state.sunk;
+
+        if (isMarginalBeneficial) {
+          ui.marginalRule.className = 'rule-tag tag-rational';
+          ui.marginalRule.textContent = `MR > MC: 边际增益 (+${marginalNet.toLocaleString()})`;
+        } else {
+          ui.marginalRule.className = 'rule-tag';
+          ui.marginalRule.style.background = '#FEE2E2';
+          ui.marginalRule.style.color = 'var(--econ-supply)';
+          ui.marginalRule.textContent = `MR ≤ MC: 边际净亏 (${marginalNet.toLocaleString()})`;
+        }
+
+        // 按钮状态
+        ui.btnContinue.classList.toggle('selected', state.choice === 'continue');
+        ui.btnStop.classList.toggle('selected', state.choice === 'stop');
+
+        // 裁决反馈
+        const isRational = (isMarginalBeneficial && state.choice === 'continue') ||
+                           (!isMarginalBeneficial && state.choice === 'stop');
+
+        if (isRational) {
+          ui.verdictBadge.className = 'status-badge badge-correct';
+          ui.verdictBadge.textContent = '符合理性经济选择';
+        } else {
+          ui.verdictBadge.className = 'status-badge badge-trap';
+          ui.verdictBadge.textContent = '陷入沉没成本陷阱';
+        }
+
+        if (state.choice === 'continue') {
+          if (isMarginalBeneficial) {
+            ui.verdictTitle.textContent = '正确选择：追加投入完工';
+            ui.verdictText.textContent = `尽管会计账面上总亏损仍达 ${Math.abs(totalNetIfContinue).toLocaleString()} ${sc.unit}，但追加完工比立即停工多收回了 ${marginalNet.toLocaleString()} ${sc.unit} 边际净额，挽回了部分损失。沉没成本已成定局，不应阻碍当下的理性推进。`;
+          } else {
+            ui.verdictTitle.textContent = '决策失误：盲目追加投入';
+            ui.verdictText.textContent = `追加成本 (${fmt(state.cost)}) 高于未来能带来的收益 (${fmt(state.rev)})。继续追加只会让总亏损从 ${Math.abs(totalNetIfStop).toLocaleString()} 扩大到 ${Math.abs(totalNetIfContinue).toLocaleString()}。不要为了“拯救已经花掉的钱”而投入更多好钱！`;
+          }
+        } else {
+          if (!isMarginalBeneficial) {
+            ui.verdictTitle.textContent = '正确选择：果断止损';
+            ui.verdictText.textContent = `边际成本超过边际收益，继续做只会越陷越深。及时止损将损失锁定在已沉没的 ${fmt(state.sunk)}，避免了净亏损 ${Math.abs(marginalNet).toLocaleString()} ${sc.unit} 的进一步恶化。`;
+          } else {
+            ui.verdictTitle.textContent = '决策失误：因噎废食放弃净收益';
+            ui.verdictText.textContent = `虽然前面沉没了 ${fmt(state.sunk)} 让人沮丧，但眼前的边际追加能够产生 +${marginalNet.toLocaleString()} 的净现金流。此时放弃等于将本可多回收的收益白白扔掉！`;
+          }
+        }
+
+        ui.mathMarginal.textContent = (marginalNet >= 0 ? '+' : '') + marginalNet.toLocaleString() + ' ' + sc.unit;
+        ui.mathTotal.textContent = (state.choice === 'continue' ? totalNetIfContinue : totalNetIfStop).toLocaleString() + ' ' + sc.unit;
+      }
+
+      // 事件绑定
+      ui.scenarioBtns.forEach((btn, idx) => {
+        btn.addEventListener('click', () => updateScenarioUI(idx));
+      });
+
+      ui.sunkSlider.addEventListener('input', e => {
+        state.sunk = Number(e.target.value);
+        render();
+      });
+      ui.costSlider.addEventListener('input', e => {
+        state.cost = Number(e.target.value);
+        render();
+      });
+      ui.revSlider.addEventListener('input', e => {
+        state.rev = Number(e.target.value);
+        render();
+      });
+
+      ui.btnContinue.addEventListener('click', () => {
+        state.choice = 'continue';
+        render();
+      });
+      ui.btnStop.addEventListener('click', () => {
+        state.choice = 'stop';
+        render();
+      });
+
+      // 初始化
+      updateScenarioUI(0);
+      Deck.init({ index: 4, total: 16 });
+    })();
+  </script>
+</body>
+</html>

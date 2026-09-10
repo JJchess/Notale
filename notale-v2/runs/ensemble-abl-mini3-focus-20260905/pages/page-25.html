@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      background: var(--bg);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* 顶部标题区与核心断言 */
+    .header-block {
+      flex: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+    .header-titles h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.15;
+      margin: 0 0 6px 0;
+      letter-spacing: -0.02em;
+    }
+    .header-titles p {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .mode-switch {
+      display: flex;
+      gap: 6px;
+      background: var(--surface);
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+    }
+    .btn-tab {
+      background: transparent;
+      border: none;
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
+    }
+    .btn-tab:hover {
+      color: var(--text);
+      background: rgba(0,0,0,0.03);
+    }
+    .btn-tab.active {
+      background: var(--surface-strong);
+      color: var(--text);
+    }
+
+    /* 主证据场：三路问题与三路方法精确对齐 */
+    .evidence-stage {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+    }
+
+    /* 单个路径列 */
+    .path-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 16px 18px 18px 18px;
+      border: 1px solid var(--surface-strong);
+      box-shadow: 0 4px 16px rgba(18, 38, 52, 0.04);
+      cursor: pointer;
+      transition: transform var(--duration) var(--ease), box-shadow var(--duration) var(--ease), border-color var(--duration) var(--ease);
+      position: relative;
+    }
+    .path-col:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(18, 38, 52, 0.08);
+    }
+    .path-col.active {
+      border-color: var(--focus);
+      box-shadow: 0 0 0 1px var(--focus), 0 8px 24px rgba(155, 63, 17, 0.12);
+    }
+
+    /* 列内小标头 */
+    .col-header {
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+    .method-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .method-badge {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      color: #fff;
+    }
+    .badge-bagging { background: var(--sample); }
+    .badge-boosting { background: var(--aggregate); }
+    .badge-stacking { background: var(--model); }
+
+    .problem-target {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    /* 视觉示意图卡片：SVG 容器 */
+    .diagram-wrap {
+      flex: 1;
+      min-height: 250px;
+      position: relative;
+      background: var(--bg);
+      border-radius: 8px;
+      border: 1px solid rgba(0,0,0,0.05);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .diagram-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 机制剖析卡片区 */
+    .col-breakdown {
+      flex: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .kv-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+    }
+    .kv-label {
+      flex: none;
+      width: 80px;
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+    .kv-val {
+      flex: 1;
+      color: var(--text);
+    }
+    .kv-val em {
+      font-style: normal;
+      font-weight: 700;
+    }
+    .kv-val .hl-sample { color: var(--sample); }
+    .kv-val .hl-boosting { color: var(--aggregate); }
+    .kv-val .hl-stacking { color: var(--model); }
+
+    /* 底部判别规则条 */
+    .footer-rule {
+      flex: none;
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+    }
+    .rule-title {
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .rule-desc {
+      color: var(--muted);
+      display: flex;
+      gap: 28px;
+    }
+    .rule-item b {
+      color: var(--text);
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body data-page="25" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题与导语 -->
+    <header class="header-block">
+      <div class="header-titles">
+        <h1>集成范式选择：针对误差根源匹配组合机制</h1>
+        <p>集成不是无目的堆砌模型：高方差依赖扰动平滑，残余误差依赖序列纠偏，异质强模型依赖加权融合。</p>
+      </div>
+      <div class="mode-switch" role="tablist" aria-label="方法对比切换">
+        <button class="btn-tab active" data-target="all" role="tab" aria-selected="true">三路对照</button>
+        <button class="btn-tab" data-target="bagging" role="tab" aria-selected="false">Bagging 平滑</button>
+        <button class="btn-tab" data-target="boosting" role="tab" aria-selected="false">Boosting 纠偏</button>
+        <button class="btn-tab" data-target="stacking" role="tab" aria-selected="false">Stacking 互补</button>
+      </div>
+    </header>
+
+    <!-- 主证据场：三列结构对齐三类问题与方法 -->
+    <main class="evidence-stage min0">
+      
+      <!-- 路径 1: Bagging -->
+      <section class="path-col active" id="col-bagging" tabindex="0" role="region" aria-label="Bagging 路径">
+        <div class="col-header">
+          <div class="method-name">
+            <span>Bagging</span>
+            <span class="method-badge badge-bagging">随机森林</span>
+          </div>
+          <div class="problem-target">优先解：<strong>高方差 / 易过拟合</strong></div>
+        </div>
+
+        <div class="diagram-wrap min0">
+          <svg class="diagram-svg" viewBox="0 0 460 250" preserveAspectRatio="xMidYMid meet">
+            <!-- 样本重抽样并行分支 -->
+            <g id="bagging-samples">
+              <rect x="25" y="24" width="76" height="44" rx="6" fill="#FFFFFF" stroke="#2F7568" stroke-width="1.8"/>
+              <text x="63" y="44" text-anchor="middle" font-size="13" font-weight="700" fill="#2F7568">Bootstrap 1</text>
+              <text x="63" y="58" text-anchor="middle" font-size="13" fill="#536A78">有放回重抽</text>
+
+              <rect x="25" y="103" width="76" height="44" rx="6" fill="#FFFFFF" stroke="#2F7568" stroke-width="1.8"/>
+              <text x="63" y="123" text-anchor="middle" font-size="13" font-weight="700" fill="#2F7568">Bootstrap 2</text>
+              <text x="63" y="137" text-anchor="middle" font-size="13" fill="#536A78">有放回重抽</text>
+
+              <rect x="25" y="182" width="76" height="44" rx="6" fill="#FFFFFF" stroke="#2F7568" stroke-width="1.8"/>
+              <text x="63" y="202" text-anchor="middle" font-size="13" font-weight="700" fill="#2F7568">Bootstrap B</text>
+              <text x="63" y="216" text-anchor="middle" font-size="13" fill="#536A78">有放回重抽</text>
+            </g>
+
+            <!-- 箭头向右 -->
+            <path d="M 104 46 L 142 46" stroke="#536A78" stroke-width="1.5" marker-end="url(#arr-muted)" fill="none"/>
+            <path d="M 104 125 L 142 125" stroke="#536A78" stroke-width="1.5" marker-end="url(#arr-muted)" fill="none"/>
+            <path d="M 104 204 L 142 204" stroke="#536A78" stroke-width="1.5" marker-end="url(#arr-muted)" fill="none"/>
+
+            <!-- 基模型：高方差同质深树 -->
+            <g id="bagging-models">
+              <rect x="146" y="24" width="102" height="44" rx="6" fill="#FFFFFF" stroke="#27648F" stroke-width="1.8"/>
+              <text x="197" y="44" text-anchor="middle" font-size="13" font-weight="700" fill="#27648F">深决策树 1</text>
+              <text x="197" y="58" text-anchor="middle" font-size="13" fill="#536A78">高方差·拟合噪声</text>
+
+              <rect x="146" y="103" width="102" height="44" rx="6" fill="#FFFFFF" stroke="#27648F" stroke-width="1.8"/>
+              <text x="197" y="123" text-anchor="middle" font-size="13" font-weight="700" fill="#27648F">深决策树 2</text>
+              <text x="197" y="137" text-anchor="middle" font-size="13" fill="#536A78">高方差·拟合噪声</text>
+
+              <rect x="146" y="182" width="102" height="44" rx="6" fill="#FFFFFF" stroke="#27648F" stroke-width="1.8"/>
+              <text x="197" y="202" text-anchor="middle" font-size="13" font-weight="700" fill="#27648F">深决策树 B</text>
+              <text x="197" y="216" text-anchor="middle" font-size="13" fill="#536A78">高方差·拟合噪声</text>
+            </g>
+
+            <!-- 汇聚连线到平均池 -->
+            <path d="M 252 46 L 316 116" stroke="#2F7568" stroke-width="1.8" stroke-dasharray="3 3" fill="none"/>
+            <path d="M 252 125 L 314 125" stroke="#2F7568" stroke-width="1.8" stroke-dasharray="3 3" fill="none"/>
+            <path d="M 252 204 L 316 134" stroke="#2F7568" stroke-width="1.8" stroke-dasharray="3 3" fill="none"/>
+
+            <!-- 聚合机制：等权平均/多数投票 -->
+            <g id="bagging-agg">
+              <circle cx="350" cy="125" r="32" fill="#E2EBF0" stroke="#2F7568" stroke-width="2"/>
+              <text x="350" y="122" text-anchor="middle" font-size="13" font-weight="700" fill="#122634">等权平均</text>
+              <text x="350" y="138" text-anchor="middle" font-size="13" fill="#2F7568">抵消扰动</text>
+
+              <path d="M 384 125 L 412 125" stroke="#2F7568" stroke-width="2" marker-end="url(#arr-sample)" fill="none"/>
+              <text x="434" y="118" text-anchor="middle" font-size="13" font-weight="700" fill="#2F7568">方差 ↓</text>
+              <text x="434" y="136" text-anchor="middle" font-size="13" fill="#536A78">偏差 ≈</text>
+            </g>
+
+            <defs>
+              <marker id="arr-muted" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M 0 0 L 6 3 L 0 6 z" fill="#536A78"/>
+              </marker>
+              <marker id="arr-sample" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M 0 0 L 6 3 L 0 6 z" fill="#2F7568"/>
+              </marker>
+              <marker id="arr-agg" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M 0 0 L 6 3 L 0 6 z" fill="#C34B22"/>
+              </marker>
+              <marker id="arr-model" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M 0 0 L 6 3 L 0 6 z" fill="#27648F"/>
+              </marker>
+            </defs>
+          </svg>
+        </div>
+
+        <div class="col-breakdown">
+          <div class="kv-row">
+            <span class="kv-label">基模型要求</span>
+            <span class="kv-val"><em class="hl-sample">高方差同质基学习器</em>（充分生长的深决策树，单体容易拟合噪声）</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-label">多样性来源</span>
+            <span class="kv-val">Bootstrap 样本扰动 + 随机特征切分（相互降低单树相关性）</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-label">训练架构</span>
+            <span class="kv-val"><strong>完全并行</strong>；各基模型训练互不依赖，计算扩展性极高</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-label">适用场景</span>
+            <span class="kv-val">特征维数高、样本扰动敏感、单模型过拟合严重时</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 路径 2: Boosting -->
+      <section class="path-col active" id="col-boosting" tabindex="0" role="region" aria-label="Boosting 路径">
+        <div class="col-header">
+          <div class="method-name">
+            <span>Boosting</span>
+            <span class="method-badge badge-boosting">GBDT / XGBoost</span>
+          </div>
+          <div class="problem-target">优先解：<strong>欠拟合 / 残余高偏差</strong></div>
+        </div>
+
+        <div class="diagram-wrap min0">
+          <svg class="diagram-svg" viewBox="0 0 460 250" preserveAspectRatio="xMidYMid meet">
+            <!-- 序列接力链条 -->
+            <!-- Stage 1 -->
+            <g id="boost-s1">
+              <rect x="22" y="52" width="86" height="52" rx="6" fill="#FFFFFF" stroke="#27648F" stroke-width="1.8"/>
+              <text x="65" y="75" text-anchor="middle" font-size="13" font-weight="700" fill="#27648F">弱学习器 h₁</text>
+              <text x="65" y="93" text-anchor="middle" font-size="13" fill="#536A78">浅树(低方差)</text>
+
+              <rect x="22" y="140" width="86" height="42" rx="6" fill="#FFF" stroke="#C34B22" stroke-width="1.5" stroke-dasharray="2 2"/>
+              <text x="65" y="158" text-anchor="middle" font-size="13" font-weight="700" fill="#C34B22">残差 r₁</text>
+              <text x="65" y="173" text-anchor="middle" font-size="13" fill="#536A78">遗留未解错误</text>
+            </g>
+
+            <!-- 连线到 Stage 2 -->
+            <path d="M 65 104 L 65 137" stroke="#C34B22" stroke-width="1.5" marker-end="url(#arr-agg)" fill="none"/>
+            <path d="M 110 161 L 160 85" stroke="#C34B22" stroke-width="1.8" marker-end="url(#arr-agg)" fill="none"/>
+
+            <!-- Stage 2 -->
+            <g id="boost-s2">
+              <rect x="165" y="52" width="86" height="52" rx="6" fill="#FFFFFF" stroke="#27648F" stroke-width="1.8"/>
+              <text x="208" y="75" text-anchor="middle" font-size="13" font-weight="700" fill="#27648F">弱学习器 h₂</text>
+              <text x="208" y="93" text-anchor="middle" font-size="13" fill="#C34B22">专门拟合 r₁</text>
+
+              <rect x="165" y="140" width="86" height="42" rx="6" fill="#FFF" stroke="#C34B22" stroke-width="1.5" stroke-dasharray="2 2"/>
+              <text x="208" y="158" text-anchor="middle" font-size="13" font-weight="700" fill="#C34B22">收缩残差 r₂</text>
+              <text x="208" y="173" text-anchor="middle" font-size="13" fill="#536A78">误差逐级衰减</text>
+            </g>
+
+            <path d="M 208 104 L 208 137" stroke="#C34B22" stroke-width="1.5" marker-end="url(#arr-agg)" fill="none"/>
+            <path d="M 253 161 L 305 85" stroke="#C34B22" stroke-width="1.8" marker-end="url(#arr-agg)" fill="none"/>
+
+            <!-- Stage 3 (累加和) -->
+            <g id="boost-s3">
+              <rect x="310" y="52" width="102" height="52" rx="6" fill="#FFFFFF" stroke="#C34B22" stroke-width="2"/>
+              <text x="361" y="75" text-anchor="middle" font-size="13" font-weight="700" fill="#C34B22">累加：Σ αₘhₘ</text>
+              <text x="361" y="93" text-anchor="middle" font-size="13" fill="#536A78">梯度下降累积</text>
+
+              <!-- 结果状态 -->
+              <rect x="310" y="140" width="102" height="42" rx="6" fill="#E2EBF0" stroke="#C34B22" stroke-width="1.5"/>
+              <text x="361" y="158" text-anchor="middle" font-size="13" font-weight="700" fill="#C34B22">偏差 ↓↓</text>
+              <text x="361" y="173" text-anchor="middle" font-size="13" fill="#536A78">需防过拟合 (η)</text>
+            </g>
+
+            <path d="M 361 104 L 361 137" stroke="#C34B22" stroke-width="1.5" marker-end="url(#arr-agg)" fill="none"/>
+
+            <!-- 序列箭头标注 -->
+            <text x="230" y="234" text-anchor="middle" font-size="13" font-weight="700" fill="#C34B22">前序模型固定 · 后续模型专攻前序错误</text>
+          </svg>
+        </div>
+
+        <div class="col-breakdown">
+          <div class="kv-row">
+            <span class="kv-label">基模型要求</span>
+            <span class="kv-val"><em class="hl-boosting">低方差、弱拟合力基模型</em>（常用深度 3–6 的浅决策树桩，单体欠拟合）</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-label">多样性来源</span>
+            <span class="kv-val">序列重加权 / 负梯度拟合（每轮训练集目标强制转向前轮难分点）</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-label">训练架构</span>
+            <span class="kv-val"><strong>严格序列串行</strong>；后一棵树必须等待前序全体预测给出残差</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-label">适用场景</span>
+            <span class="kv-val">追求高精度上限、结构化表格数据、基模型表达力受限时</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 路径 3: Stacking -->
+      <section class="path-col active" id="col-stacking" tabindex="0" role="region" aria-label="Stacking 路径">
+        <div class="col-header">
+          <div class="method-name">
+            <span>Stacking</span>
+            <span class="method-badge badge-stacking">多层堆叠</span>
+          </div>
+          <div class="problem-target">优先解：<strong>多架构模型优势互补</strong></div>
+        </div>
+
+        <div class="diagram-wrap min0">
+          <svg class="diagram-svg" viewBox="0 0 460 250" preserveAspectRatio="xMidYMid meet">
+            <!-- 第一层：异质初级基模型 -->
+            <g id="stack-l1">
+              <rect x="22" y="24" width="90" height="44" rx="6" fill="#FFFFFF" stroke="#27648F" stroke-width="1.8"/>
+              <text x="67" y="44" text-anchor="middle" font-size="13" font-weight="700" fill="#27648F">GBDT</text>
+              <text x="67" y="58" text-anchor="middle" font-size="13" fill="#536A78">擅长表格分裂</text>
+
+              <rect x="22" y="103" width="90" height="44" rx="6" fill="#FFFFFF" stroke="#27648F" stroke-width="1.8"/>
+              <text x="67" y="123" text-anchor="middle" font-size="13" font-weight="700" fill="#27648F">神经网络</text>
+              <text x="67" y="137" text-anchor="middle" font-size="13" fill="#536A78">擅长稠密表征</text>
+
+              <rect x="22" y="182" width="90" height="44" rx="6" fill="#FFFFFF" stroke="#27648F" stroke-width="1.8"/>
+              <text x="67" y="202" text-anchor="middle" font-size="13" font-weight="700" fill="#27648F">线性模型</text>
+              <text x="67" y="216" text-anchor="middle" font-size="13" fill="#536A78">擅长全局单调</text>
+            </g>
+
+            <!-- 中间层：折外元特征 -->
+            <g id="stack-meta-feat">
+              <path d="M 114 46 L 168 85" stroke="#27648F" stroke-width="1.5" fill="none"/>
+              <path d="M 114 125 L 168 125" stroke="#27648F" stroke-width="1.5" fill="none"/>
+              <path d="M 114 204 L 168 165" stroke="#27648F" stroke-width="1.5" fill="none"/>
+
+              <rect x="170" y="70" width="104" height="110" rx="6" fill="#FFFFFF" stroke="#2F7568" stroke-width="1.8" stroke-dasharray="3 3"/>
+              <text x="222" y="98" text-anchor="middle" font-size="13" font-weight="700" fill="#2F7568">元特征矩阵</text>
+              <text x="222" y="118" text-anchor="middle" font-size="13" fill="#122634">OOF 预测列</text>
+              <text x="222" y="138" text-anchor="middle" font-size="13" fill="#536A78">[ŷ₁, ŷ₂, ŷ₃]</text>
+              <text x="222" y="162" text-anchor="middle" font-size="13" font-weight="700" fill="#C34B22">K折防数据泄漏</text>
+            </g>
+
+            <!-- 第二层：元学习器 -->
+            <path d="M 276 125 L 308 125" stroke="#27648F" stroke-width="2" marker-end="url(#arr-model)" fill="none"/>
+
+            <g id="stack-l2">
+              <rect x="312" y="95" width="128" height="60" rx="8" fill="#E2EBF0" stroke="#27648F" stroke-width="2"/>
+              <text x="376" y="120" text-anchor="middle" font-size="13" font-weight="700" fill="#27648F">元学习器</text>
+              <text x="376" y="138" text-anchor="middle" font-size="13" fill="#122634">学习组合权重</text>
+
+              <text x="376" y="170" text-anchor="middle" font-size="13" font-weight="700" fill="#27648F">综合优势 ＞ 单体最佳</text>
+            </g>
+
+            <text x="230" y="234" text-anchor="middle" font-size="13" font-weight="700" fill="#27648F">初级模型各展所长 · 元模型判定在何种情境信赖谁</text>
+          </svg>
+        </div>
+
+        <div class="col-breakdown">
+          <div class="kv-row">
+            <span class="kv-label">基模型要求</span>
+            <span class="kv-val"><em class="hl-stacking">异质强学习器</em>（决策树、神经网络、线性回归等具备不同假设空间）</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-label">多样性来源</span>
+            <span class="kv-val">模型架构差异与归纳偏置互补（不同算法在不同样本区域犯错）</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-label">训练架构</span>
+            <span class="kv-val"><strong>分层两阶段</strong>；必须严格使用 K 折交叉验证生成折外元特征（OOF）</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-label">适用场景</span>
+            <span class="kv-val">已有多种高性能单模型、需进一步压榨预测极值（如竞赛后期）</span>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- 底部：决策收束准则 -->
+    <footer class="footer-rule">
+      <div class="rule-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        <span>工程选型判定法则</span>
+      </div>
+      <div class="rule-desc">
+        <span class="rule-item">树太深且不稳定？选 <b>Bagging</b>（靠平均压低方差）</span>
+        <span class="rule-item">浅树表达力不够、残差显著？选 <b>Boosting</b>（靠迭代消减偏差）</span>
+        <span class="rule-item">已有多架构成熟模型互不服输？选 <b>Stacking</b>（靠元学习器融合）</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      Deck.init({ index: 25, total: 27, keys: false });
+
+      const tabs = Array.from(document.querySelectorAll('.btn-tab'));
+      const cols = {
+        bagging: document.getElementById('col-bagging'),
+        boosting: document.getElementById('col-boosting'),
+        stacking: document.getElementById('col-stacking')
+      };
+
+      function setMode(target) {
+        tabs.forEach(t => {
+          const isCurrent = t.dataset.target === target;
+          t.classList.toggle('active', isCurrent);
+          t.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+        });
+
+        if (target === 'all') {
+          Object.values(cols).forEach(col => {
+            col.style.opacity = '1';
+            col.classList.add('active');
+            col.style.filter = 'none';
+          });
+        } else {
+          Object.entries(cols).forEach(([key, col]) => {
+            const isMatch = (key === target);
+            col.classList.toggle('active', isMatch);
+            col.style.opacity = isMatch ? '1' : '0.35';
+            col.style.filter = isMatch ? 'none' : 'grayscale(0.6)';
+          });
+        }
+      }
+
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          setMode(tab.dataset.target);
+        });
+      });
+
+      // 支持直接点击列卡片聚焦
+      Object.entries(cols).forEach(([key, col]) => {
+        col.addEventListener('click', () => {
+          setMode(key);
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

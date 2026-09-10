@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 14px;
+      margin-bottom: 22px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .summary {
+      font-size: var(--fs-lead);
+      font-family: var(--font-mono);
+      color: var(--structure);
+      font-weight: 700;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 960px 480px;
+      gap: 48px;
+      height: 740px;
+      align-items: start;
+    }
+
+    /* 左侧主体：LSTM 架构图解 */
+    .cell-view {
+      position: relative;
+      width: 960px;
+      height: 720px;
+      background: var(--bg);
+    }
+
+    #cellSvg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧控制与推演 */
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding-top: 4px;
+    }
+
+    .gate-nav {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .gate-btn {
+      appearance: none;
+      background: none;
+      border: 1px solid var(--rule);
+      padding: 10px 0;
+      font-size: var(--fs-sec);
+      font-family: inherit;
+      cursor: pointer;
+      color: var(--text);
+      text-align: center;
+      transition: color var(--motion-fast), border-color var(--motion-fast);
+    }
+
+    .gate-btn.active {
+      border-color: var(--signal);
+      color: var(--signal);
+      font-weight: 700;
+      border-width: 2px;
+    }
+
+    /* 状态与公式 */
+    .gate-info {
+      border-left: 3px solid var(--signal);
+      padding-left: 14px;
+    }
+
+    .gate-title-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .gate-name {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .gate-formula {
+      font-family: var(--font-mono);
+      font-size: var(--fs-label);
+      color: var(--structure);
+      font-weight: 600;
+    }
+
+    .gate-desc {
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+      color: var(--text);
+    }
+
+    /* 状态计算推导框 */
+    .sliders {
+      border-top: 1px solid var(--rule);
+      padding-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .slider-item {
+      display: grid;
+      grid-template-columns: 110px 1fr 54px;
+      align-items: center;
+      gap: 12px;
+      font-size: var(--fs-label);
+    }
+
+    .slider-item label {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .slider-item input[type="range"] {
+      appearance: none;
+      height: 4px;
+      background: var(--rule);
+      outline: none;
+    }
+
+    .slider-item input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      background: var(--structure);
+      cursor: pointer;
+      border: none;
+    }
+
+    .slider-item input[type="range"].active-thumb::-webkit-slider-thumb {
+      background: var(--signal);
+    }
+
+    .slider-num {
+      font-family: var(--font-mono);
+      font-size: var(--fs-sec);
+      text-align: right;
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    /* 数值核对与结论 */
+    .output-summary {
+      border-top: 1px solid var(--rule);
+      padding-top: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .out-box {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .out-label {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .out-val {
+      font-family: var(--font-mono);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--structure);
+    }
+
+    .verdict {
+      border: 1px solid var(--structure);
+      padding: 14px 16px;
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+      color: var(--text);
+      margin-top: 4px;
+    }
+
+    .verdict strong {
+      color: var(--structure);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>LSTM 门控机制：恒常流动的细胞状态</h1>
+      <div class="summary">C<sub>t</sub> = f<sub>t</sub> ⊙ C<sub>t-1</sub> + i<sub>t</sub> ⊙ C̃<sub>t</sub></div>
+    </header>
+
+    <div class="layout">
+      <!-- 左侧 LSTM 架构图解 -->
+      <div class="cell-view min0">
+        <svg id="cellSvg" viewBox="0 0 960 720">
+          <defs>
+            <marker id="m-struct" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 7 4 L 0 7 z" fill="var(--structure)" />
+            </marker>
+            <marker id="m-signal" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 7 4 L 0 7 z" fill="var(--signal)" />
+            </marker>
+            <marker id="m-muted" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 7 4 L 0 7 z" fill="var(--muted)" />
+            </marker>
+          </defs>
+
+          <!-- 顶部细胞状态主干道 (Highway) -->
+          <g id="highway">
+            <rect x="90" y="80" width="790" height="60" fill="none" stroke="var(--rule)" stroke-dasharray="4 4" />
+            <text x="106" y="68" font-size="15" font-family="var(--font-sans)" font-weight="700" fill="var(--structure)">细胞状态恒常传送带 (CELL STATE HIGHWAY)</text>
+            
+            <path d="M 90 110 L 875 110" stroke="var(--structure)" stroke-width="4" marker-end="m-struct" />
+            <text x="75" y="115" font-size="18" font-family="var(--font-mono)" font-weight="700" fill="var(--structure)" text-anchor="end">Cₜ₋₁</text>
+            <text x="895" y="115" font-size="18" font-family="var(--font-mono)" font-weight="700" fill="var(--structure)" text-anchor="start">Cₜ</text>
+          </g>
+
+          <!-- 主干道运算节点：乘法点 (遗忘) 与加法点 (融合) -->
+          <!-- 乘法点 1 -->
+          <g id="mult-f-node" transform="translate(260, 110)">
+            <circle r="18" fill="var(--bg)" stroke="var(--structure)" stroke-width="2.5" />
+            <text y="6" font-size="22" font-weight="700" fill="var(--structure)" text-anchor="middle">×</text>
+          </g>
+
+          <!-- 加法点 -->
+          <g id="add-node" transform="translate(520, 110)">
+            <circle r="18" fill="var(--bg)" stroke="var(--structure)" stroke-width="2.5" />
+            <text y="7" font-size="24" font-weight="700" fill="var(--structure)" text-anchor="middle">+</text>
+          </g>
+
+          <!-- 底部输入汇入总线 [h_t-1, x_t] -->
+          <g id="bus-in">
+            <path d="M 120 620 L 790 620" stroke="var(--rule)" stroke-width="2" />
+            <text x="105" y="625" font-size="16" font-family="var(--font-mono)" font-weight="700" fill="var(--muted)" text-anchor="end">[hₜ₋₁, xₜ]</text>
+            <!-- 各支路引线 -->
+            <path d="M 260 620 L 260 380" stroke="var(--rule)" stroke-width="2" marker-end="m-muted" />
+            <path d="M 440 620 L 440 440" stroke="var(--rule)" stroke-width="2" />
+            <path d="M 580 620 L 580 440" stroke="var(--rule)" stroke-width="2" />
+            <path d="M 720 620 L 720 440" stroke="var(--rule)" stroke-width="2" marker-end="m-muted" />
+          </g>
+
+          <!-- 1. 遗忘门盒 -->
+          <g id="box-f" transform="translate(260, 340)">
+            <rect id="rect-f" x="-46" y="-25" width="92" height="50" fill="var(--bg)" stroke="var(--signal)" stroke-width="2.5" />
+            <text y="6" font-size="18" font-family="var(--font-mono)" font-weight="700" fill="var(--structure)" text-anchor="middle">σ (fₜ)</text>
+            <path d="M 0 -25 L 0 -212" stroke="var(--structure)" stroke-width="2.5" marker-end="m-struct" />
+            <text id="svg-f-val" x="14" y="-115" font-size="16" font-family="var(--font-mono)" font-weight="700" fill="var(--signal)">0.85</text>
+          </g>
+
+          <!-- 2. 输入门与候选状态 -->
+          <g id="box-i" transform="translate(440, 400)">
+            <rect id="rect-i" x="-42" y="-24" width="84" height="48" fill="var(--bg)" stroke="var(--structure)" stroke-width="2" />
+            <text y="6" font-size="18" font-family="var(--font-mono)" font-weight="700" fill="var(--structure)" text-anchor="middle">σ (iₜ)</text>
+            <text id="svg-i-val" x="14" y="-70" font-size="16" font-family="var(--font-mono)" font-weight="700" fill="var(--structure)">0.70</text>
+          </g>
+
+          <g id="box-cand" transform="translate(580, 400)">
+            <rect id="rect-cand" x="-50" y="-24" width="100" height="48" fill="var(--bg)" stroke="var(--structure)" stroke-width="2" />
+            <text y="6" font-size="16" font-family="var(--font-mono)" font-weight="700" fill="var(--structure)" text-anchor="middle">tanh (C̃ₜ)</text>
+            <text id="svg-cand-val" x="14" y="-70" font-size="16" font-family="var(--font-mono)" font-weight="700" fill="var(--structure)">+0.60</text>
+          </g>
+
+          <!-- 输入门乘法汇合点 -->
+          <g id="mult-i-node" transform="translate(520, 260)">
+            <circle r="16" fill="var(--bg)" stroke="var(--structure)" stroke-width="2" />
+            <text y="5" font-size="20" font-weight="700" fill="var(--structure)" text-anchor="middle">×</text>
+            <!-- 汇合折线 -->
+            <path d="M -80 116 L -80 0 L -16 0" stroke="var(--structure)" stroke-width="2" fill="none" />
+            <path d="M 60 116 L 60 0 L 16 0" stroke="var(--structure)" stroke-width="2" fill="none" />
+            <!-- 送入加法点 -->
+            <path d="M 0 -16 L 0 -132" stroke="var(--structure)" stroke-width="2.5" marker-end="m-struct" />
+          </g>
+
+          <!-- 3. 输出门与隐状态生成 -->
+          <g id="box-o" transform="translate(720, 400)">
+            <rect id="rect-o" x="-42" y="-24" width="84" height="48" fill="var(--bg)" stroke="var(--structure)" stroke-width="2" />
+            <text y="6" font-size="18" font-family="var(--font-mono)" font-weight="700" fill="var(--structure)" text-anchor="middle">σ (oₜ)</text>
+            <text id="svg-o-val" x="14" y="-70" font-size="16" font-family="var(--font-mono)" font-weight="700" fill="var(--structure)">0.90</text>
+          </g>
+
+          <!-- 细胞状态 tanh 引出节点 -->
+          <g id="tanh-out" transform="translate(800, 220)">
+            <rect x="-32" y="-18" width="64" height="36" fill="var(--bg)" stroke="var(--structure)" stroke-width="2" />
+            <text y="6" font-size="16" font-family="var(--font-mono)" font-weight="700" fill="var(--structure)" text-anchor="middle">tanh</text>
+            <!-- 引线从 C_t 主通道折向向下 -->
+            <path d="M -150 -110 L 0 -110 L 0 -18" stroke="var(--structure)" stroke-width="2" fill="none" />
+          </g>
+
+          <!-- 输出门乘法点 -->
+          <g id="mult-o-node" transform="translate(800, 400)">
+            <circle r="18" fill="var(--bg)" stroke="var(--structure)" stroke-width="2.5" />
+            <text y="6" font-size="22" font-weight="700" fill="var(--structure)" text-anchor="middle">×</text>
+            <!-- tanh 向下连接 -->
+            <path d="M 0 -162 L 0 -18" stroke="var(--structure)" stroke-width="2" />
+            <!-- o_t 水平进入 -->
+            <path d="M -38 0 L -18 0" stroke="var(--structure)" stroke-width="2" />
+            <!-- 最终输出 h_t 箭头 -->
+            <path d="M 18 0 L 80 0" stroke="var(--structure)" stroke-width="3" marker-end="m-struct" />
+            <text x="96" y="6" font-size="18" font-family="var(--font-mono)" font-weight="700" fill="var(--structure)">hₜ</text>
+          </g>
+        </svg>
+      </div>
+
+      <!-- 右侧解析与数值调控 -->
+      <div class="panel min0">
+        <!-- 门控切换选择器 -->
+        <div class="gate-nav">
+          <button class="gate-btn active" data-gate="f">遗忘门 fₜ</button>
+          <button class="gate-btn" data-gate="i">输入门 iₜ</button>
+          <button class="gate-btn" data-gate="o">输出门 oₜ</button>
+        </div>
+
+        <!-- 门控定义卡片 -->
+        <div class="gate-info">
+          <div class="gate-title-row">
+            <span class="gate-name" id="gateTitle">遗忘门</span>
+            <span class="gate-formula" id="gateFormula">fₜ = σ(W_f · [hₜ₋₁, xₜ] + b_f)</span>
+          </div>
+          <div class="gate-desc" id="gateDesc">
+            由前一隐状态与当前输入经 Sigmoid 输出 [0, 1] 掩码。数值为 0 则彻底丢弃旧记忆，数值为 1 则全量穿透保留。
+          </div>
+        </div>
+
+        <!-- 数值计算推演面板 -->
+        <div class="sliders">
+          <div class="slider-item">
+            <label>历史 Cₜ₋₁</label>
+            <input type="range" id="sl-cprev" min="-2" max="2" step="0.05" value="1.20">
+            <span class="slider-num" id="nm-cprev">1.20</span>
+          </div>
+          <div class="slider-item">
+            <label>遗忘门 fₜ</label>
+            <input type="range" id="sl-f" min="0" max="1" step="0.05" value="0.85" class="active-thumb">
+            <span class="slider-num" id="nm-f">0.85</span>
+          </div>
+          <div class="slider-item">
+            <label>输入门 iₜ</label>
+            <input type="range" id="sl-i" min="0" max="1" step="0.05" value="0.70">
+            <span class="slider-num" id="nm-i">0.70</span>
+          </div>
+          <div class="slider-item">
+            <label>候选态 C̃ₜ</label>
+            <input type="range" id="sl-cand" min="-1" max="1" step="0.05" value="0.60">
+            <span class="slider-num" id="nm-cand">+0.60</span>
+          </div>
+          <div class="slider-item">
+            <label>输出门 oₜ</label>
+            <input type="range" id="sl-o" min="0" max="1" step="0.05" value="0.90">
+            <span class="slider-num" id="nm-o">0.90</span>
+          </div>
+        </div>
+
+        <!-- 实时计算结果 -->
+        <div class="output-summary">
+          <div class="out-box">
+            <span class="out-label">更新后细胞状态 Cₜ</span>
+            <span class="out-val" id="res-c">1.44</span>
+          </div>
+          <div class="out-box">
+            <span class="out-label">当前可见隐状态 hₜ</span>
+            <span class="out-val" id="res-h">0.80</span>
+          </div>
+        </div>
+
+        <!-- 核心机制结论 -->
+        <div class="verdict">
+          <strong>加法传送带解决梯度消失：</strong><br>
+          反向传播时误差沿主干道 ∂Cₜ/∂Cₜ₋₁ = fₜ 直接线性穿透，不受连续矩阵连乘的指数衰减压制，使长程信息稳定跨步流动。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们，上一页我们看清了传统 RNN 的死穴：跨时间连乘导致的梯度消失。
+    LSTM 破局的关键，就在于顶部这条“细胞状态恒常传送带”。
+    请看公式：C_t 等于 f_t 乘上旧状态，再加上 i_t 乘上新候选。
+    这个结构里最精妙的是中间的“加号”：加法使得误差在沿时间反向传播时，直接获得线性通道，梯度不会被矩阵连乘吞噬。
+    三个门控各司其职：遗忘门过滤历史，输入门把控写入，输出门则在需要时才将内部记忆投影为可见的隐状态 h_t。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      const GATE_SPECS = {
+        f: {
+          title: "遗忘门",
+          formula: "fₜ = σ(W_f · [hₜ₋₁, xₜ] + b_f)",
+          desc: "由前一隐状态与当前输入经 Sigmoid 输出 [0, 1] 掩码。数值为 0 则彻底丢弃旧记忆，数值为 1 则全量穿透保留。",
+          rectId: "rect-f",
+          sliderId: "sl-f"
+        },
+        i: {
+          title: "输入门",
+          formula: "iₜ = σ(W_i · [hₜ₋₁, xₜ] + b_i)",
+          desc: "与候选状态 C̃ₜ 配合，决定当前时刻的新观察与新特征以何种强度写入主干道细胞状态。",
+          rectId: "rect-i",
+          sliderId: "sl-i"
+        },
+        o: {
+          title: "输出门",
+          formula: "oₜ = σ(W_o · [hₜ₋₁, xₜ] + b_o)",
+          desc: "从长程细胞状态 Cₜ 中提取并过滤出当前任务需要的表征，经激活形成可见隐状态 hₜ = oₜ ⊙ tanh(Cₜ)。",
+          rectId: "rect-o",
+          sliderId: "sl-o"
+        }
+      };
+
+      const gateBtns = document.querySelectorAll('.gate-btn');
+      const gateTitle = document.getElementById('gateTitle');
+      const gateFormula = document.getElementById('gateFormula');
+      const gateDesc = document.getElementById('gateDesc');
+
+      const slCprev = document.getElementById('sl-cprev');
+      const slF = document.getElementById('sl-f');
+      const slI = document.getElementById('sl-i');
+      const slCand = document.getElementById('sl-cand');
+      const slO = document.getElementById('sl-o');
+
+      const nmCprev = document.getElementById('nm-cprev');
+      const nmF = document.getElementById('nm-f');
+      const nmI = document.getElementById('nm-i');
+      const nmCand = document.getElementById('nm-cand');
+      const nmO = document.getElementById('nm-o');
+
+      const resC = document.getElementById('res-c');
+      const resH = document.getElementById('res-h');
+
+      const svgF = document.getElementById('svg-f-val');
+      const svgI = document.getElementById('svg-i-val');
+      const svgCand = document.getElementById('svg-cand-val');
+      const svgO = document.getElementById('svg-o-val');
+
+      function calculate() {
+        const cp = parseFloat(slCprev.value);
+        const f = parseFloat(slF.value);
+        const i = parseFloat(slI.value);
+        const cand = parseFloat(slCand.value);
+        const o = parseFloat(slO.value);
+
+        // LSTM 真实公式
+        const ct = f * cp + i * cand;
+        const ht = o * Math.tanh(ct);
+
+        nmCprev.textContent = cp.toFixed(2);
+        nmF.textContent = f.toFixed(2);
+        nmI.textContent = i.toFixed(2);
+        nmCand.textContent = (cand >= 0 ? '+' : '') + cand.toFixed(2);
+        nmO.textContent = o.toFixed(2);
+
+        resC.textContent = ct.toFixed(2);
+        resH.textContent = ht.toFixed(2);
+
+        svgF.textContent = f.toFixed(2);
+        svgI.textContent = i.toFixed(2);
+        svgCand.textContent = (cand >= 0 ? '+' : '') + cand.toFixed(2);
+        svgO.textContent = o.toFixed(2);
+      }
+
+      function setGate(key) {
+        const spec = GATE_SPECS[key];
+        gateTitle.textContent = spec.title;
+        gateFormula.textContent = spec.formula;
+        gateDesc.textContent = spec.desc;
+
+        gateBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.gate === key));
+
+        // 重置所有门描边
+        ['rect-f', 'rect-i', 'rect-o'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.setAttribute('stroke', 'var(--structure)');
+            el.setAttribute('stroke-width', '2');
+          }
+        });
+
+        // 标红当前门
+        const activeRect = document.getElementById(spec.rectId);
+        if (activeRect) {
+          activeRect.setAttribute('stroke', 'var(--signal)');
+          activeRect.setAttribute('stroke-width', '3');
+        }
+
+        // 高亮滑块
+        [slF, slI, slO].forEach(sl => sl.classList.remove('active-thumb'));
+        const activeSlider = document.getElementById(spec.sliderId);
+        if (activeSlider) activeSlider.classList.add('active-thumb');
+      }
+
+      gateBtns.forEach(btn => {
+        btn.addEventListener('click', () => setGate(btn.dataset.gate));
+      });
+
+      [slCprev, slF, slI, slCand, slO].forEach(sl => {
+        sl.addEventListener('input', calculate);
+      });
+
+      // 初始化
+      setGate('f');
+      calculate();
+
+      if (window.Deck) {
+        Deck.init({ index: 23, total: 32 });
+      }
+    })();
+  </script>
+</body>
+</html>

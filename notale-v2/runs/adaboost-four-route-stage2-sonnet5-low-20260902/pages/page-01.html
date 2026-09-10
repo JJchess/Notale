@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{
+  --bg:#EEF1F5;
+  --surface:#FAFBFC;
+  --text:#111820;
+  --muted:#657181;
+  --weak:#617CA8;
+  --correct:#294E86;
+  --weight:#164E9B;
+  --error:#C64232;
+  --line:#C8D0DB;
+  --focus:#164E9B;
+  --font-sans:"Noto Sans CJK SC",ui-sans-serif,system-ui,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --font-display:"Clear Sans","Noto Sans CJK SC",ui-sans-serif,sans-serif;
+}
+html,body{width:100%;height:100%;}
+body{background:var(--bg);}
+#stage{
+  position:relative;
+  background:var(--bg);
+  color:var(--text);
+  overflow:hidden;
+}
+#field{
+  position:absolute;
+  inset:0;
+  z-index:1;
+}
+.cover-copy{
+  position:absolute;
+  left:96px;
+  top:300px;
+  width:560px;
+  z-index:5;
+  pointer-events:none;
+}
+.kicker{
+  font-family:var(--font-mono);
+  font-size:16px;
+  letter-spacing:.18em;
+  color:var(--weight);
+  font-weight:700;
+}
+h1{
+  margin:18px 0 0;
+  font-family:var(--font-display);
+  font-size:78px;
+  font-weight:700;
+  line-height:1.08;
+  letter-spacing:-.01em;
+  color:var(--text);
+}
+.lead{
+  margin-top:26px;
+  font-size:22px;
+  line-height:1.5;
+  color:var(--muted);
+  max-width:490px;
+}
+.eq-row{
+  margin-top:34px;
+  display:flex;
+  align-items:baseline;
+  gap:14px;
+  font-family:var(--font-mono);
+  font-size:20px;
+  color:var(--text);
+}
+.eq-row .sym{color:var(--weight);font-weight:700;}
+.eq-row .plus{color:var(--muted);}
+</style>
+</head>
+<body data-page="1" data-total="16">
+<div id="stage">
+  <canvas id="field" class="cv-fill" aria-hidden="true"></canvas>
+
+  <div class="cover-copy">
+    <div class="kicker">ENSEMBLE OF WEAK CLASSIFIERS</div>
+    <h1>AdaBoost<br>算法</h1>
+    <p class="lead">把一群只比随机猜测强一点的弱分类器，按各自的权重叠加，投票组合成一个强分类器。</p>
+    <div class="eq-row"><span class="sym">H(x)</span><span class="plus">=</span><span>sign(&sum; &alpha;<sub>t</sub> h<sub>t</sub>(x))</span></div>
+  </div>
+
+  <span id="live-status" class="sr-only" aria-live="polite"></span>
+</div>
+
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+'use strict';
+
+var W = 1600, H = 900;
+var REPRESENTATIVE_MS = 15200;
+
+var CONFIG = Object.freeze({
+  seed: 'notale-adaboost-01',
+  nPoints: 46,
+  nClassifiers: 7,
+  fieldLeft: 760,
+  fieldRight: 1560,
+  fieldTop: 90,
+  fieldBottom: 810,
+  stepMs: 1500,
+  holdMs: 2600
+});
+
+var canvas = document.getElementById('field');
+var liveStatus = document.getElementById('live-status');
+var ctx = null;
+var model = null;
+var stopLoop = function(){};
+var offResize = function(){};
+var lastTime = REPRESENTATIVE_MS;
+var palette = {};
+
+Deck.init({ keys:false });
+
+function readPalette(){
+  palette.bg = Deck.rgb('bg');
+  palette.text = Deck.rgb('text');
+  palette.muted = Deck.rgb('muted');
+  palette.weak = Deck.rgb('weak');
+  palette.correct = Deck.rgb('correct');
+  palette.weight = Deck.rgb('weight');
+  palette.error = Deck.rgb('error');
+  palette.line = Deck.rgb('line');
+}
+
+function rgba(rgb, a){ return 'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+a+')'; }
+
+// true separating boundary: a gentle sine curve across the field
+function trueBoundaryY(x){
+  var t = (x - CONFIG.fieldLeft) / (CONFIG.fieldRight - CONFIG.fieldLeft);
+  var cy = (CONFIG.fieldTop + CONFIG.fieldBottom) / 2;
+  return cy + Math.sin(t * Math.PI * 1.4 + 0.4) * 150 + (t - 0.5) * 90;
+}
+
+function buildPoints(rng){
+  var pts = [];
+  for (var i = 0; i < CONFIG.nPoints; i++){
+    var x = CONFIG.fieldLeft + 40 + rng() * (CONFIG.fieldRight - CONFIG.fieldLeft - 80);
+    var y = CONFIG.fieldTop + 30 + rng() * (CONFIG.fieldBottom - CONFIG.fieldTop - 60);
+    var boundaryY = trueBoundaryY(x);
+    var label = y < boundaryY ? 1 : -1;
+    pts.push({ x:x, y:y, label:label, weight:1/CONFIG.nPoints });
+  }
+  return pts;
+}
+
+// a weak classifier: a vertical or horizontal threshold line with a side polarity
+function buildClassifiers(rng, points){
+  var stumps = [];
+  for (var k = 0; k < CONFIG.nClassifiers; k++){
+    var vertical = rng() > 0.42;
+    var pos, polarity;
+    if (vertical){
+      pos = CONFIG.fieldLeft + 100 + rng() * (CONFIG.fieldRight - CONFIG.fieldLeft - 200);
+    } else {
+      pos = CONFIG.fieldTop + 80 + rng() * (CONFIG.fieldBottom - CONFIG.fieldTop - 160);
+    }
+    polarity = rng() > 0.5 ? 1 : -1;
+    stumps.push({ vertical:vertical, pos:pos, polarity:polarity });
+  }
+
+  // evaluate each stump's weighted error against current point weights, boost-style
+  var w = points.map(function(p){ return p.weight; });
+  var rounds = [];
+  for (var r = 0; r < stumps.length; r++){
+    var s = stumps[r];
+    var err = 0, total = 0;
+    var preds = points.map(function(p){
+      var side = s.vertical ? (p.x < s.pos ? 1 : -1) : (p.y < s.pos ? 1 : -1);
+      return side * s.polarity;
+    });
+    for (var i = 0; i < points.length; i++){
+      total += w[i];
+      if (preds[i] !== points[i].label) err += w[i];
+    }
+    err = Math.max(0.001, Math.min(0.999, err / total));
+    var alpha = 0.5 * Math.log((1 - err) / err);
+    // reweight
+    var newW = [];
+    var sum = 0;
+    for (var j = 0; j < points.length; j++){
+      var factor = Math.exp(-alpha * points[j].label * preds[j]);
+      newW[j] = w[j] * factor;
+      sum += newW[j];
+    }
+    for (var m = 0; m < newW.length; m++) newW[m] /= sum;
+    w = newW;
+
+    rounds.push({
+      stump: s,
+      alpha: Math.abs(alpha),
+      err: err,
+      weightsAfter: w.slice(),
+      preds: preds
+    });
+  }
+  return rounds;
+}
+
+function buildModel(){
+  var rng = new Math.seedrandom(CONFIG.seed);
+  var points = buildPoints(rng);
+  var rounds = buildClassifiers(rng, points);
+  return { points: points, rounds: rounds };
+}
+
+// quiet zone: keep left title area clear of dense marks (title occupies x<720)
+function inQuiet(x){ return x < 700; }
+
+function drawAxesAndPoints(g, time, activeRounds){
+  var pts = model.points;
+  var totalDuration = CONFIG.stepMs * model.rounds.length;
+  var cyclePos = time % (totalDuration + CONFIG.holdMs);
+  var roundIndex = Math.min(model.rounds.length - 1, Math.floor(cyclePos / CONFIG.stepMs));
+  var weights = roundIndex >= 0 ? model.rounds[roundIndex].weightsAfter : pts.map(function(p){return p.weight;});
+
+  for (var i = 0; i < pts.length; i++){
+    var p = pts[i];
+    if (inQuiet(p.x)) continue;
+    var wv = weights[i] !== undefined ? weights[i] : p.weight;
+    var norm = Deck.clamp(wv * CONFIG.nPoints, 0.4, 3.2);
+    var radius = 4.2 + norm * 2.4;
+    var color = p.label === 1 ? palette.correct : palette.error;
+    g.beginPath();
+    g.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    g.fillStyle = rgba(color, 0.86);
+    g.fill();
+    if (p.label === -1){
+      g.lineWidth = 1.2;
+      g.strokeStyle = rgba(palette.error, 0.5);
+      g.stroke();
+    }
+  }
+}
+
+function drawWeakLine(g, round, alphaFade){
+  var s = round.stump;
+  g.save();
+  g.strokeStyle = rgba(palette.weak, 0.5 * alphaFade);
+  g.lineWidth = 1.6;
+  g.setLineDash([7, 6]);
+  g.beginPath();
+  if (s.vertical){
+    g.moveTo(s.pos, CONFIG.fieldTop);
+    g.lineTo(s.pos, CONFIG.fieldBottom);
+  } else {
+    g.moveTo(CONFIG.fieldLeft, s.pos);
+    g.lineTo(CONFIG.fieldRight, s.pos);
+  }
+  g.stroke();
+  g.restore();
+}
+
+function strongBoundaryYAt(x, rounds){
+  // weighted vote across included rounds, sampled at several y to find sign change
+  var best = null;
+  var prevSign = null;
+  var prevY = null;
+  for (var y = CONFIG.fieldTop; y <= CONFIG.fieldBottom; y += 4){
+    var sum = 0;
+    for (var r = 0; r < rounds.length; r++){
+      var s = rounds[r].stump;
+      var side = s.vertical ? (x < s.pos ? 1 : -1) : (y < s.pos ? 1 : -1);
+      sum += rounds[r].alpha * side * s.polarity;
+    }
+    var sign = sum >= 0 ? 1 : -1;
+    if (prevSign !== null && sign !== prevSign){
+      return y;
+    }
+    prevSign = sign;
+    prevY = y;
+  }
+  return prevY;
+}
+
+function drawStrongBoundary(g, rounds, alphaFade){
+  if (!rounds.length) return;
+  g.save();
+  g.strokeStyle = rgba(palette.weight, 0.92 * alphaFade);
+  g.lineWidth = 3.4;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.beginPath();
+  var started = false;
+  for (var x = CONFIG.fieldLeft + 6; x <= CONFIG.fieldRight - 6; x += 6){
+    if (inQuiet(x)) continue;
+    var y = strongBoundaryYAt(x, rounds);
+    if (y === null) continue;
+    if (!started){ g.moveTo(x, y); started = true; }
+    else g.lineTo(x, y);
+  }
+  g.stroke();
+  g.restore();
+}
+
+function drawFrame(time){
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = rgba(palette.bg, 1);
+  ctx.fillRect(0, 0, W, H);
+
+  // faint field border
+  ctx.save();
+  ctx.strokeStyle = rgba(palette.line, 0.6);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(CONFIG.fieldLeft, CONFIG.fieldTop, CONFIG.fieldRight - CONFIG.fieldLeft, CONFIG.fieldBottom - CONFIG.fieldTop);
+  ctx.restore();
+
+  var rounds = model.rounds;
+  var totalDuration = CONFIG.stepMs * rounds.length;
+  var cycle = totalDuration + CONFIG.holdMs;
+  var t = time % cycle;
+  var roundIndex = Math.min(rounds.length, Math.floor(t / CONFIG.stepMs) + 1);
+  var inHold = t >= totalDuration;
+  if (inHold) roundIndex = rounds.length;
+
+  var localT = inHold ? 1 : (t % CONFIG.stepMs) / CONFIG.stepMs;
+  var revealCount = Math.max(1, roundIndex);
+
+  drawAxesAndPoints(ctx, time, rounds);
+
+  for (var i = 0; i < revealCount; i++){
+    var isLast = i === revealCount - 1 && !inHold;
+    var fade = isLast ? Deck.clamp(localT * 2.2, 0, 1) : 1;
+    drawWeakLine(ctx, rounds[i], fade);
+  }
+
+  var includedRounds = rounds.slice(0, revealCount);
+  var boundaryFade = inHold ? 1 : Deck.clamp((revealCount / rounds.length), 0.18, 1);
+  if (includedRounds.length >= 2){
+    drawStrongBoundary(ctx, includedRounds, boundaryFade);
+  }
+
+  // round counter label near field top, outside quiet zone
+  ctx.save();
+  ctx.font = '14px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-mono');
+  ctx.fillStyle = rgba(palette.muted, 0.85);
+  ctx.textAlign = 'left';
+  var label = inHold
+    ? '第 ' + rounds.length + ' 轮 · 强分类器 H(x) 收敛'
+    : '第 ' + Math.min(revealCount, rounds.length) + ' / ' + rounds.length + ' 轮弱分类器';
+  ctx.fillText(label, CONFIG.fieldLeft + 14, CONFIG.fieldTop + 22);
+  ctx.restore();
+}
+
+function render(time){
+  if (!ctx || !model) return;
+  drawFrame(time);
+}
+
+function rebuild(){
+  ctx = Deck.fit(canvas);
+  if (!ctx) return;
+  readPalette();
+  model = buildModel();
+  render(lastTime);
+}
+
+function startMotion(){
+  stopMotion();
+  if (Deck.reduced()){
+    render(REPRESENTATIVE_MS);
+    lastTime = REPRESENTATIVE_MS;
+    return;
+  }
+  var baseTime = 0;
+  stopLoop = Deck.loop(function(elapsed){
+    lastTime = baseTime + elapsed;
+    render(lastTime);
+  }, { still: REPRESENTATIVE_MS });
+}
+
+function stopMotion(){ stopLoop(); stopLoop = function(){}; }
+
+function onResize(){ rebuild(); }
+
+offResize = Deck.onResize(onResize);
+rebuild();
+startMotion();
+
+window.addEventListener('pagehide', function(){
+  stopMotion();
+  offResize();
+});
+})();
+</script>
+</body>
+</html>

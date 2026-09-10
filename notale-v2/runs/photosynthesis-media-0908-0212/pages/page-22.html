@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: grid;
+      grid-template-rows: auto 1fr;
+      row-gap: 20px;
+      color: var(--text);
+      font-family: var(--font-sans);
+      user-select: none;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: var(--stroke) solid var(--rule);
+      padding-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 500;
+    }
+
+    .subtitle {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 310px 1fr;
+      gap: 36px;
+      min-height: 0;
+    }
+
+    /* Controls Panel */
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .ctrl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .ctrl-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+
+    .ctrl-val {
+      font-family: var(--font-display);
+      font-size: var(--fs-lead);
+      color: var(--model);
+      font-weight: 600;
+    }
+
+    .ctrl-val small {
+      font-size: var(--fs-tick);
+      font-weight: normal;
+      color: var(--text);
+      opacity: 0.8;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      background: #c5d4dc;
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--model);
+      border: 2px solid #fff;
+      cursor: grab;
+      transition: transform var(--motion-fast);
+    }
+
+    input[type="range"]:active::-webkit-slider-thumb {
+      cursor: grabbing;
+      transform: scale(1.15);
+      background: var(--focus);
+    }
+
+    .presets {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    button.preset-btn {
+      background: transparent;
+      border: 1.5px solid var(--rule);
+      padding: 8px 10px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 4px;
+      text-align: center;
+      transition: all var(--motion-fast);
+    }
+
+    button.preset-btn:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+
+    button.preset-btn[aria-pressed="true"] {
+      background: var(--model);
+      border-color: var(--model);
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .limiter-box {
+      margin-top: auto;
+      border-top: 1px solid var(--rule);
+      padding-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .limiter-tag {
+      font-size: var(--fs-tick);
+      color: var(--text);
+      opacity: 0.75;
+    }
+
+    .limiter-name {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      font-weight: 600;
+      color: var(--focus);
+    }
+
+    .limiter-reason {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: var(--lh-copy);
+    }
+
+    /* Simulation & Curve Canvas Container */
+    .view-area {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      min-height: 0;
+    }
+
+    .chart-container {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+
+    svg.main-plot {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .axis-line {
+      stroke: var(--rule);
+      stroke-width: var(--stroke);
+    }
+
+    .tick-text {
+      font-size: var(--fs-tick);
+      fill: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    .axis-title {
+      font-size: var(--fs-label);
+      fill: var(--text);
+      font-family: var(--font-sans);
+      font-weight: 500;
+    }
+
+    .grid-line {
+      stroke: #ccd8de;
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+    }
+
+    .curve-bg {
+      fill: none;
+      stroke: var(--model);
+      stroke-width: var(--stroke);
+      opacity: 0.25;
+      stroke-dasharray: 4 4;
+    }
+
+    .curve-active {
+      fill: none;
+      stroke: var(--model);
+      stroke-width: var(--stroke-strong);
+    }
+
+    .zero-line {
+      stroke: var(--rule);
+      stroke-width: 1;
+    }
+
+    .operating-point {
+      transition: cx var(--motion-fast), cy var(--motion-fast);
+    }
+
+    /* Readings in-flow with layout */
+    .reading-stat {
+      position: absolute;
+      right: 16px;
+      top: 10px;
+      text-align: right;
+    }
+
+    .reading-title {
+      font-size: var(--fs-tick);
+      color: var(--text);
+      opacity: 0.75;
+    }
+
+    .reading-val {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      font-weight: 600;
+      color: var(--focus);
+      line-height: 1.1;
+    }
+
+    .reading-val small {
+      font-size: var(--fs-tick);
+      font-weight: normal;
+      color: var(--text);
+      opacity: 0.8;
+    }
+
+    .reading-sub {
+      font-size: var(--fs-tick);
+      color: var(--text);
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body data-page="22" data-total="25">
+  <div id="stage">
+    <header>
+      <h1>多环境因子交互下的光合速率测定</h1>
+      <div class="subtitle">Liebig–Blackman 最低因子定律实态模拟</div>
+    </header>
+
+    <main class="workspace">
+      <!-- Controls -->
+      <section class="controls" aria-label="环境调控面板">
+        <div class="ctrl-group">
+          <div class="ctrl-head">
+            <span>光照强度 (I)</span>
+            <span class="ctrl-val" id="val-light">600 <small>μmol·m⁻²·s⁻¹</small></span>
+          </div>
+          <input type="range" id="input-light" min="0" max="1800" step="20" value="600">
+        </div>
+
+        <div class="ctrl-group">
+          <div class="ctrl-head">
+            <span>CO₂ 浓度 (C)</span>
+            <span class="ctrl-val" id="val-co2">400 <small>μmol·mol⁻¹</small></span>
+          </div>
+          <input type="range" id="input-co2" min="50" max="1200" step="25" value="400">
+        </div>
+
+        <div class="ctrl-group">
+          <div class="ctrl-head">
+            <span>环境温度 (T)</span>
+            <span class="ctrl-val" id="val-temp">25 <small>°C</small></span>
+          </div>
+          <input type="range" id="input-temp" min="5" max="45" step="1" value="25">
+        </div>
+
+        <div class="ctrl-group" style="margin-top:4px;">
+          <div class="ctrl-head">典型生境预设</div>
+          <div class="presets">
+            <button type="button" class="preset-btn" data-l="1200" data-c="400" data-t="25">晴朗正午</button>
+            <button type="button" class="preset-btn" data-l="200" data-c="400" data-t="22">阴天林下</button>
+            <button type="button" class="preset-btn" data-l="1400" data-c="900" data-t="28">温室增肥</button>
+            <button type="button" class="preset-btn" data-l="1500" data-c="400" data-t="38">高温干旱</button>
+          </div>
+        </div>
+
+        <div class="limiter-box">
+          <div class="limiter-tag">当前首要限制因子</div>
+          <div class="limiter-name" id="limiter-name">光强限制</div>
+          <div class="limiter-reason" id="limiter-desc">提高光照可显著增加光反应能量生成。</div>
+        </div>
+      </section>
+
+      <!-- View & Dynamic Plot -->
+      <section class="view-area">
+        <div class="chart-container">
+          <svg id="plot" class="main-plot" viewBox="0 0 1060 620" preserveAspectRatio="none">
+            <!-- Grid Lines -->
+            <g id="grid"></g>
+
+            <!-- Zero axis -->
+            <line id="zero-axis" class="zero-line" x1="70" y1="520" x2="1030" y2="520" />
+
+            <!-- Main Coordinate Axes -->
+            <line class="axis-line" x1="70" y1="580" x2="1030" y2="580" />
+            <line class="axis-line" x1="70" y1="40" x2="70" y2="580" />
+
+            <!-- Axes Labels -->
+            <text class="axis-title" x="1030" y="612" text-anchor="end">光照强度 (μmol·m⁻²·s⁻¹)</text>
+            <text class="axis-title" x="20" y="32" text-anchor="start">光合速率 (μmol CO₂·m⁻²·s⁻¹)</text>
+
+            <!-- Axis Ticks -->
+            <g id="ticks-x"></g>
+            <g id="ticks-y"></g>
+
+            <!-- Reference Family Curves under current T: Low & High CO2 comparison -->
+            <path id="curve-low-co2" class="curve-bg" />
+            <path id="curve-high-co2" class="curve-bg" />
+
+            <!-- Main Response Curve (Pn vs Light) -->
+            <path id="curve-net" class="curve-active" />
+
+            <!-- Droplines & Operating Point -->
+            <line id="proj-x" stroke="var(--focus)" stroke-width="1.5" stroke-dasharray="3 3" />
+            <line id="proj-y" stroke="var(--focus)" stroke-width="1.5" stroke-dasharray="3 3" />
+
+            <circle id="pt-comp" r="4.5" fill="#fff" stroke="var(--model)" stroke-width="2" />
+            <text id="lbl-comp" font-size="13" fill="var(--text)" text-anchor="middle" y="535">补偿点</text>
+
+            <circle id="pt-sat" r="4.5" fill="#fff" stroke="var(--model)" stroke-width="2" />
+            <text id="lbl-sat" font-size="13" fill="var(--text)" text-anchor="middle">饱和点</text>
+
+            <circle id="pt-op" class="operating-point" r="7" fill="var(--focus)" stroke="#fff" stroke-width="2" />
+          </svg>
+
+          <!-- Real-time Reading Badge -->
+          <div class="reading-stat">
+            <div class="reading-title">净光合速率 Pn</div>
+            <div class="reading-val" id="read-pn">+18.4 <small>μmol·m⁻²·s⁻¹</small></div>
+            <div class="reading-sub" id="read-detail">总光合 21.2 · 暗呼吸 2.8</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <aside class="notes" hidden>
+      这一页我们通过多因子动态响应模型来实证布莱克曼最低因子定律。
+      光合速率不是单一因子决定的，而是由光反应产生ATP/NADPH的能力、暗反应RuBisCO羧化能力，以及温度对酶促活性的共同约束决定的。
+      请同学们尝试调节光强、CO2浓度和温度：当光照极强时，曲线到达平台，此时限制因子转为CO2供应或酶活性；如果温度过高，呼吸消耗急剧上升甚至引发光抑制与酶变性。
+    </aside>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 22, total: 25 });
+
+    // Biophysical Photosynthesis Surrogate (Farquhar-von Caemmerer-Berry inspired)
+    function calcPhotosynthesis(I, C, T) {
+      // 1. Temperature factor for enzymatic max rate
+      const tOpt = 28;
+      let fT = Math.exp(-Math.pow((T - tOpt) / 11, 2));
+      if (T > 35) {
+        fT *= Math.max(0, 1 - (T - 35) * 0.08);
+      }
+
+      // 2. Dark Respiration Rd
+      const Rd = 1.0 * Math.pow(2.0, (T - 20) / 10);
+
+      // 3. Light-limited rate Aj
+      // Max electron transport capacity Jmax scaled realistically so curve saturates around 600~1000
+      const Jmax = 90 * fT;
+      const alpha = 0.08;
+      const J = (alpha * I) / Math.sqrt(1 + Math.pow((alpha * I) / Jmax, 2));
+      const Aj = (J / 3.2) * (C / (C + 50));
+
+      // 4. Rubisco/CO2-limited rate Ac
+      const Vcmax = 42 * fT;
+      const Kc = 220 * Math.pow(1.8, (T - 25) / 10);
+      const Ac = Vcmax * (C / (C + Kc));
+
+      // Gross rate
+      const Pg = Math.min(Aj, Ac);
+      const Pn = Pg - Rd;
+
+      // Determine active limiting factor
+      let limiter = '光强限制';
+      let reason = '光反应同化力不足，补光可显著提升光合产率。';
+      if (T > 36) {
+        limiter = '高温胁迫';
+        reason = '气孔阻力激增、酶热变性且呼吸消耗剧烈攀升。';
+      } else if (T < 14) {
+        limiter = '低温抑制';
+        reason = '光合酶催化活性低下，卡尔文循环周转停滞。';
+      } else if (Ac <= Aj * 0.98) {
+        limiter = 'CO₂ 限制';
+        reason = '羧化底物不足，光反应形成的同化力已过剩。';
+      }
+
+      return { Pg, Rd, Pn, Aj, Ac, limiter, reason };
+    }
+
+    // Chart Coordinates
+    const plotBounds = {
+      xMin: 70, xMax: 1030,
+      yMin: 40, yMax: 580,
+      lightMin: 0, lightMax: 1800,
+      pnMin: -10, pnMax: 40
+    };
+
+    function mapX(light) {
+      return plotBounds.xMin + (light - plotBounds.lightMin) / (plotBounds.lightMax - plotBounds.lightMin) * (plotBounds.xMax - plotBounds.xMin);
+    }
+    function mapY(pn) {
+      return plotBounds.yMax - (pn - plotBounds.pnMin) / (plotBounds.pnMax - plotBounds.pnMin) * (plotBounds.yMax - plotBounds.yMin);
+    }
+
+    const inLight = document.getElementById('input-light');
+    const inCo2 = document.getElementById('input-co2');
+    const inTemp = document.getElementById('input-temp');
+    const valLight = document.getElementById('val-light');
+    const valCo2 = document.getElementById('val-co2');
+    const valTemp = document.getElementById('val-temp');
+    const limiterName = document.getElementById('limiter-name');
+    const limiterDesc = document.getElementById('limiter-desc');
+
+    const pathNet = document.getElementById('curve-net');
+    const pathLowCo2 = document.getElementById('curve-low-co2');
+    const pathHighCo2 = document.getElementById('curve-high-co2');
+
+    const ptOp = document.getElementById('pt-op');
+    const projX = document.getElementById('proj-x');
+    const projY = document.getElementById('proj-y');
+    const ptComp = document.getElementById('pt-comp');
+    const lblComp = document.getElementById('lbl-comp');
+    const ptSat = document.getElementById('pt-sat');
+    const lblSat = document.getElementById('lbl-sat');
+
+    const readPn = document.getElementById('read-pn');
+    const readDetail = document.getElementById('read-detail');
+
+    function setupAxes() {
+      const gGrid = document.getElementById('grid');
+      const gTicksX = document.getElementById('ticks-x');
+      const gTicksY = document.getElementById('ticks-y');
+
+      [-10, 0, 10, 20, 30, 40].forEach(yVal => {
+        const yPx = mapY(yVal);
+        if (yVal !== 0) {
+          const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          l.setAttribute('class', 'grid-line');
+          l.setAttribute('x1', plotBounds.xMin);
+          l.setAttribute('x2', plotBounds.xMax);
+          l.setAttribute('y1', yPx);
+          l.setAttribute('y2', yPx);
+          gGrid.appendChild(l);
+        }
+        const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        txt.setAttribute('class', 'tick-text');
+        txt.setAttribute('x', plotBounds.xMin - 10);
+        txt.setAttribute('y', yPx + 4);
+        txt.setAttribute('text-anchor', 'end');
+        txt.textContent = yVal;
+        gTicksY.appendChild(txt);
+      });
+
+      [0, 300, 600, 900, 1200, 1500, 1800].forEach(xVal => {
+        const xPx = mapX(xVal);
+        if (xVal > 0) {
+          const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          l.setAttribute('class', 'grid-line');
+          l.setAttribute('x1', xPx);
+          l.setAttribute('x2', xPx);
+          l.setAttribute('y1', plotBounds.yMin);
+          l.setAttribute('y2', plotBounds.yMax);
+          gGrid.appendChild(l);
+        }
+        const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        txt.setAttribute('class', 'tick-text');
+        txt.setAttribute('x', xPx);
+        txt.setAttribute('y', plotBounds.yMax + 20);
+        txt.setAttribute('text-anchor', 'middle');
+        txt.textContent = xVal;
+        gTicksX.appendChild(txt);
+      });
+
+      document.getElementById('zero-axis').setAttribute('y1', mapY(0));
+      document.getElementById('zero-axis').setAttribute('y2', mapY(0));
+    }
+
+    setupAxes();
+
+    function buildPath(cVal, tVal) {
+      let d = '';
+      const step = 20;
+      for (let curL = 0; curL <= 1800; curL += step) {
+        const res = calcPhotosynthesis(curL, cVal, tVal);
+        const x = mapX(curL);
+        const y = mapY(res.Pn);
+        d += (curL === 0 ? `M ${x.toFixed(1)} ${y.toFixed(1)}` : ` L ${x.toFixed(1)} ${y.toFixed(1)}`);
+      }
+      return d;
+    }
+
+    function update() {
+      const L = parseFloat(inLight.value);
+      const C = parseFloat(inCo2.value);
+      const T = parseFloat(inTemp.value);
+
+      valLight.innerHTML = `${L} <small>μmol·m⁻²·s⁻¹</small>`;
+      valCo2.innerHTML = `${C} <small>μmol·mol⁻¹</small>`;
+      valTemp.innerHTML = `${T} <small>°C</small>`;
+
+      // Compute Background comparison curves under same temperature
+      pathLowCo2.setAttribute('d', buildPath(200, T));
+      pathHighCo2.setAttribute('d', buildPath(800, T));
+
+      // Active Curve computation & critical points
+      let dStr = '';
+      let compLight = null;
+      let satLight = null;
+      let prevPn = null;
+      const step = 20;
+      let maxPnOnCurve = -999;
+      let pnList = [];
+
+      for (let curL = 0; curL <= 1800; curL += step) {
+        const res = calcPhotosynthesis(curL, C, T);
+        pnList.push({ L: curL, Pn: res.Pn });
+        if (res.Pn > maxPnOnCurve) maxPnOnCurve = res.Pn;
+        const x = mapX(curL);
+        const y = mapY(res.Pn);
+        dStr += (curL === 0 ? `M ${x.toFixed(1)} ${y.toFixed(1)}` : ` L ${x.toFixed(1)} ${y.toFixed(1)}`);
+
+        if (prevPn !== null && compLight === null && prevPn < 0 && res.Pn >= 0) {
+          compLight = (curL - step) + (0 - prevPn) / (res.Pn - prevPn) * step;
+        }
+        prevPn = res.Pn;
+      }
+
+      // Saturation light threshold: reaches 96% of peak
+      const satThreshold = maxPnOnCurve * 0.96;
+      for (let i = 0; i < pnList.length; i++) {
+        if (pnList[i].Pn >= satThreshold) {
+          satLight = pnList[i].L;
+          break;
+        }
+      }
+
+      pathNet.setAttribute('d', dStr);
+
+      // Current operating point
+      const cur = calcPhotosynthesis(L, C, T);
+      const opX = mapX(L);
+      const opY = mapY(cur.Pn);
+
+      ptOp.setAttribute('cx', opX);
+      ptOp.setAttribute('cy', opY);
+
+      projX.setAttribute('x1', opX);
+      projX.setAttribute('y1', opY);
+      projX.setAttribute('x2', opX);
+      projX.setAttribute('y2', mapY(0));
+
+      projY.setAttribute('x1', plotBounds.xMin);
+      projY.setAttribute('y1', opY);
+      projY.setAttribute('x2', opX);
+      projY.setAttribute('y2', opY);
+
+      // Compensation Point
+      if (compLight !== null && compLight <= 1700) {
+        const cx = mapX(compLight);
+        const cy = mapY(0);
+        ptComp.style.display = '';
+        lblComp.style.display = '';
+        ptComp.setAttribute('cx', cx);
+        ptComp.setAttribute('cy', cy);
+        lblComp.setAttribute('x', cx);
+        lblComp.setAttribute('y', cy + 18);
+        lblComp.textContent = `补偿点 ${Math.round(compLight)}`;
+      } else {
+        ptComp.style.display = 'none';
+        lblComp.style.display = 'none';
+      }
+
+      // Saturation Point
+      if (satLight !== null && satLight < 1700 && maxPnOnCurve > 4) {
+        const sx = mapX(satLight);
+        const sy = mapY(calcPhotosynthesis(satLight, C, T).Pn);
+        ptSat.style.display = '';
+        lblSat.style.display = '';
+        ptSat.setAttribute('cx', sx);
+        ptSat.setAttribute('cy', sy);
+        lblSat.setAttribute('x', sx);
+        lblSat.setAttribute('y', sy - 14);
+        lblSat.textContent = `饱和点 ${Math.round(satLight)}`;
+      } else {
+        ptSat.style.display = 'none';
+        lblSat.style.display = 'none';
+      }
+
+      // Stat displays
+      const sign = cur.Pn >= 0 ? '+' : '';
+      readPn.innerHTML = `${sign}${cur.Pn.toFixed(1)} <small>μmol·m⁻²·s⁻¹</small>`;
+      readDetail.textContent = `总光合 ${cur.Pg.toFixed(1)} · 暗呼吸 ${cur.Rd.toFixed(1)}`;
+
+      limiterName.textContent = cur.limiter;
+      limiterDesc.textContent = cur.reason;
+
+      checkPresetMatch(L, C, T);
+    }
+
+    function checkPresetMatch(l, c, t) {
+      document.querySelectorAll('.preset-btn').forEach(btn => {
+        const bl = parseFloat(btn.dataset.l);
+        const bc = parseFloat(btn.dataset.c);
+        const bt = parseFloat(btn.dataset.t);
+        const matched = (bl === l && bc === c && bt === t);
+        btn.setAttribute('aria-pressed', matched ? 'true' : 'false');
+      });
+    }
+
+    [inLight, inCo2, inTemp].forEach(ctrl => {
+      ctrl.addEventListener('input', update);
+    });
+
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        inLight.value = btn.dataset.l;
+        inCo2.value = btn.dataset.c;
+        inTemp.value = btn.dataset.t;
+        update();
+      });
+    });
+
+    update();
+  </script>
+</body>
+</html>

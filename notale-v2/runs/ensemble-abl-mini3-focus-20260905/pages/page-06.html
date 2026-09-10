@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bagging 与随机森林</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --muted: #536A78;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+    }
+
+    /* 视觉主区舞台 */
+    .visual-stage {
+      position: absolute;
+      left: 640px;
+      top: 60px;
+      width: 900px;
+      height: 570px;
+      z-index: 2;
+    }
+
+    .canvas-panel {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      box-shadow: 0 10px 32px rgba(18, 38, 52, 0.06);
+      overflow: hidden;
+    }
+
+    .cv-main {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .top-meta {
+      position: relative;
+      z-index: 5;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 540px;
+    }
+
+    .chapter-tag {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--model);
+      letter-spacing: 0.04em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chapter-tag::before {
+      content: "";
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--model);
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 5;
+      margin-top: 40px;
+      max-width: 530px;
+    }
+
+    .title {
+      font-size: var(--fs-h1);
+      line-height: 1.18;
+      font-weight: 800;
+      color: var(--text);
+      margin: 0 0 24px 0;
+      letter-spacing: -0.01em;
+    }
+
+    .lead-desc {
+      font-size: var(--fs-body);
+      line-height: 1.68;
+      color: var(--muted);
+      margin: 0 0 28px 0;
+    }
+
+    .lead-desc b {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .formula-callout {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 18px 20px;
+      box-shadow: 0 4px 14px rgba(18, 38, 52, 0.04);
+    }
+
+    .formula-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .formula-math {
+      font-size: var(--fs-lead);
+      font-family: var(--font-num, monospace);
+      color: var(--aggregate);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .formula-note {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    /* 浮动图例 */
+    .legend-overlay {
+      position: absolute;
+      top: 18px;
+      left: 20px;
+      z-index: 4;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 2px 8px rgba(18, 38, 52, 0.04);
+      backdrop-filter: blur(4px);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    .legend-swatch {
+      width: 20px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .legend-swatch.base-tree {
+      background: rgba(39, 100, 143, 0.5);
+    }
+
+    .legend-swatch.forest-avg {
+      background: var(--aggregate);
+      height: 4px;
+    }
+
+    .legend-swatch.truth-target {
+      border-top: 2px dashed #536A78;
+      height: 0;
+    }
+
+    .legend-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(47, 117, 104, 0.6);
+    }
+
+    /* 底部三联卡片 */
+    .stage-footer {
+      position: relative;
+      z-index: 5;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 24px;
+      margin-top: 24px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 18px 22px;
+      box-shadow: 0 4px 16px rgba(18, 38, 52, 0.04);
+    }
+
+    .card-num {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+    }
+
+    .card-num.sample-c { color: var(--sample); }
+    .card-num.model-c { color: var(--model); }
+    .card-num.agg-c { color: var(--aggregate); }
+
+    .card-heading {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 8px 0;
+    }
+
+    .card-text {
+      font-size: var(--fs-sec);
+      line-height: 1.55;
+      color: var(--muted);
+      margin: 0 0 12px 0;
+    }
+
+    .card-value {
+      font-size: var(--fs-h2);
+      font-family: var(--font-num, monospace);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .card-value span {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: normal;
+    }
+  </style>
+</head>
+<body data-page="06" data-total="27">
+  <div id="stage">
+    <!-- 左侧内容列 -->
+    <div style="display:flex; flex-direction:column; justify-content:flex-start; width:540px;">
+      <div class="top-meta min0">
+        <div class="chapter-tag">第二模块 · 并行集成范式</div>
+      </div>
+
+      <div class="hero-content min0">
+        <h1 class="title">Bagging 与随机森林</h1>
+        <p class="lead-desc">
+          单棵深度决策树对样本扰动极度敏感，呈现出<b>高方差与阶梯抖动</b>。
+          Bagging 通过<b>Bootstrap 有放回抽样</b>培养一组多样化基树，
+          随机森林进一步引入<b>特征子空间随机分裂</b>削弱树间关联。<br>
+          各树独立预测的均值运算，将随机震颤相互抵消，沉淀为平滑准确的集成判断。
+        </p>
+
+        <div class="formula-callout min0">
+          <div class="formula-title">
+            <span>森林方差收敛关系</span>
+            <span style="color:var(--muted); font-size:var(--fs-tick); font-weight:normal;">Breiman 森林理论</span>
+          </div>
+          <div class="formula-math">
+            Var(F) = ρ · σ² + [(1 - ρ) / B] · σ²
+          </div>
+          <p class="formula-note">
+            随基树数量 B 增加，非同步方差项趋向于 0；极限预测方差仅受树间相关性 ρ 约束。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧居中大视觉焦点区 -->
+    <div class="visual-stage min0">
+      <div class="canvas-panel">
+        <div class="legend-overlay">
+          <div class="legend-item">
+            <div class="legend-swatch base-tree"></div>
+            <span>单棵决策树预测 fb(x)（共 18 棵·高方差阶跃）</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch forest-avg"></div>
+            <span style="font-weight:700; color:var(--text);">森林平均预测 F(x) = (1/B) Σ fb(x)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch truth-target"></div>
+            <span>潜在真实目标函数 f*(x)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot"></div>
+            <span>带噪声的训练样本观测点</span>
+          </div>
+        </div>
+        <canvas id="ensemble-canvas" class="cv-main"></canvas>
+      </div>
+    </div>
+
+    <!-- 底部三联叙事卡片 -->
+    <div class="stage-footer min0">
+      <div class="card min0">
+        <div class="card-num sample-c">STEP 01 · 样本与特征双重随机化</div>
+        <h2 class="card-heading">Bootstrap 与子空间扰动</h2>
+        <p class="card-text">
+          每棵树自原始数据有放回抽取约 63.2% 独有样本，并在每个节点仅评估随机子集特征，从源头打破决策同步性。
+        </p>
+        <div class="card-value">
+          63.2% <span>样本利用率 · 36.8% 构成袋外 OOB</span>
+        </div>
+      </div>
+
+      <div class="card min0">
+        <div class="card-num model-c">STEP 02 · 18 棵独立生长的基决策树</div>
+        <h2 class="card-heading">多样性弱相关基树群</h2>
+        <p class="card-text">
+          因局部样本差异和特征屏蔽，各树在不同区间产生错位的分段台阶。单看任意一棵均有过拟合震颤。
+        </p>
+        <div class="card-value">
+          B = 18 <span>独立决策树 · 阶梯式分段拟合</span>
+        </div>
+      </div>
+
+      <div class="card min0">
+        <div class="card-num agg-c">STEP 03 · 平均运算消除随机震颤</div>
+        <h2 class="card-heading">方差消除与收敛稳定</h2>
+        <p class="card-text">
+          正负错配的预测偏差在加权平均中被互相冲抵，原本陡峭的阶梯函数汇聚为一条贴近真实函数的平滑曲线。
+        </p>
+        <div class="card-value">
+          -72.4% <span>预测方差降低 · 逼近潜在真实曲线</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const cv = document.getElementById("ensemble-canvas");
+      const CONFIG = {
+        seed: 847291,
+        numTrees: 18,
+        dataPoints: 96
+      };
+
+      function mulberry32(a) {
+        return function() {
+          let t = a += 0x6D2B79F5;
+          t = Math.imul(t ^ t >>> 15, t | 1);
+          t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+      }
+
+      function trueTarget(x) {
+        return 0.48 + 0.31 * Math.sin(x * Math.PI * 2.2) + 0.15 * Math.cos(x * Math.PI * 4.4);
+      }
+
+      function generateTreePredictor(rand) {
+        const numSplits = 8 + Math.floor(rand() * 5);
+        const splits = [];
+        for (let i = 0; i < numSplits; i++) splits.push(rand());
+        splits.sort((a, b) => a - b);
+
+        const values = [];
+        let prev = 0;
+        for (let i = 0; i <= splits.length; i++) {
+          const current = (i < splits.length) ? splits[i] : 1.0;
+          const midX = (prev + current) / 2;
+          const noise = (rand() - 0.5) * 0.32;
+          values.push(Math.max(0.08, Math.min(0.92, trueTarget(midX) + noise)));
+          prev = current;
+        }
+
+        return function predict(x) {
+          for (let i = 0; i < splits.length; i++) {
+            if (x < splits[i]) return values[i];
+          }
+          return values[values.length - 1];
+        };
+      }
+
+      const rand = mulberry32(CONFIG.seed);
+      const trees = [];
+      for (let i = 0; i < CONFIG.numTrees; i++) {
+        trees.push({
+          predict: generateTreePredictor(rand),
+          alpha: 0.18 + (i % 3) * 0.05
+        });
+      }
+
+      const samples = [];
+      for (let i = 0; i < CONFIG.dataPoints; i++) {
+        const x = rand();
+        const y = Math.max(0.05, Math.min(0.95, trueTarget(x) + (rand() - 0.5) * 0.22));
+        samples.push({ x, y });
+      }
+
+      function draw(ctx) {
+        const w = cv.clientWidth || 900;
+        const h = cv.clientHeight || 570;
+
+        ctx.clearRect(0, 0, w, h);
+
+        const padLeft = 68;
+        const padRight = 36;
+        const padTop = 64;
+        const padBottom = 58;
+        const pw = w - padLeft - padRight;
+        const ph = h - padTop - padBottom;
+
+        // 1. 坐标背景与标尺网格
+        ctx.strokeStyle = "rgba(83, 106, 120, 0.12)";
+        ctx.lineWidth = 1;
+        const gridX = 5;
+        const gridY = 4;
+
+        for (let i = 0; i <= gridX; i++) {
+          const gx = padLeft + (pw / gridX) * i;
+          ctx.beginPath();
+          ctx.moveTo(gx, padTop);
+          ctx.lineTo(gx, padTop + ph);
+          ctx.stroke();
+
+          // 刻度值
+          ctx.fillStyle = "#536A78";
+          ctx.font = "12px monospace";
+          ctx.textAlign = "center";
+          ctx.fillText((i / gridX).toFixed(1), gx, padTop + ph + 20);
+        }
+
+        for (let j = 0; j <= gridY; j++) {
+          const gy = padTop + (ph / gridY) * j;
+          ctx.beginPath();
+          ctx.moveTo(padLeft, gy);
+          ctx.lineTo(padLeft + pw, gy);
+          ctx.stroke();
+
+          ctx.fillStyle = "#536A78";
+          ctx.font = "12px monospace";
+          ctx.textAlign = "right";
+          const val = (1.0 - (j / gridY) * 1.0).toFixed(1);
+          ctx.fillText(val, padLeft - 10, gy + 4);
+        }
+
+        // 坐标轴标签
+        ctx.fillStyle = "#122634";
+        ctx.font = "14px 'Noto Sans SC', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("特征输入空间 x ∈ [0, 1]", padLeft + pw / 2, h - 16);
+
+        ctx.save();
+        ctx.translate(22, padTop + ph / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = "center";
+        ctx.fillText("目标值 / 预测值 y", 0, 0);
+        ctx.restore();
+
+        // 2. 绘制散点数据 (Bootstrap 采样的数据背景)
+        for (const pt of samples) {
+          const sx = padLeft + pt.x * pw;
+          const sy = padTop + ph - pt.y * ph;
+          ctx.fillStyle = "rgba(47, 117, 104, 0.35)";
+          ctx.beginPath();
+          ctx.arc(sx, sy, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 3. 绘制 18 棵单决策树预测阶跃曲线
+        const steps = 300;
+        for (let t = 0; t < trees.length; t++) {
+          const tree = trees[t];
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(39, 100, 143, ${tree.alpha})`;
+          ctx.lineWidth = 1.6;
+
+          let prevY = null;
+          for (let s = 0; s <= steps; s++) {
+            const normX = s / steps;
+            const predY = tree.predict(normX);
+            const px = padLeft + normX * pw;
+            const py = padTop + ph - predY * ph;
+
+            if (s === 0) {
+              ctx.moveTo(px, py);
+            } else {
+              ctx.lineTo(px, prevY);
+              ctx.lineTo(px, py);
+            }
+            prevY = py;
+          }
+          ctx.stroke();
+        }
+
+        // 4. 潜在真实曲线 f*(x)
+        ctx.save();
+        ctx.setLineDash([6, 5]);
+        ctx.strokeStyle = "rgba(18, 38, 52, 0.6)";
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        for (let s = 0; s <= steps; s++) {
+          const normX = s / steps;
+          const ty = trueTarget(normX);
+          const px = padLeft + normX * pw;
+          const py = padTop + ph - ty * ph;
+          if (s === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 5. 森林整体集成预测 F(x) = (1/B) Σ fb(x)
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = "#C34B22";
+        ctx.lineWidth = 4;
+        ctx.lineJoin = "round";
+
+        for (let s = 0; s <= steps; s++) {
+          const normX = s / steps;
+          let sum = 0;
+          for (let t = 0; t < trees.length; t++) {
+            sum += trees[t].predict(normX);
+          }
+          const avg = sum / trees.length;
+          const px = padLeft + normX * pw;
+          const py = padTop + ph - avg * ph;
+
+          if (s === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      Deck.init({ title: "Bagging 与随机森林", keys: false });
+      Deck.autofit(cv, draw);
+    })();
+  </script>
+</body>
+</html>

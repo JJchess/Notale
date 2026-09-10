@@ -1,0 +1,977 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Out-of-fold 预测防止信息泄漏</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF2;
+      --text: #142533;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    header {
+      flex-shrink: 0;
+      border-bottom: 2px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+
+    .title-group h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .title-group p {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* Main workspace */
+    .workspace {
+      display: grid;
+      grid-template-columns: 1010px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .col-left {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .col-right {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    /* Top control bar inside left col */
+    .stage-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--surface);
+      border: 2px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 8px 16px;
+    }
+
+    .step-label {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btns {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn {
+      appearance: none;
+      background: var(--surface);
+      border: 2px solid var(--surface-strong);
+      color: var(--muted);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+
+    .btn:hover {
+      border-color: var(--learner);
+      color: var(--text);
+    }
+
+    .btn[aria-pressed="true"] {
+      background: var(--learner);
+      border-color: var(--learner);
+      color: #fff;
+    }
+
+    .btn.alert[aria-pressed="true"] {
+      background: var(--aggregate);
+      border-color: var(--aggregate);
+      color: #fff;
+    }
+
+    /* Interactive diagram canvas/container */
+    .diagram-panel {
+      flex: 1;
+      background: var(--surface);
+      border: 2px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      min-height: 0;
+    }
+
+    .diagram-panel h2 {
+      margin: 0 0 10px 0;
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .status-badge {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid currentColor;
+    }
+
+    .status-badge.safe {
+      color: var(--correct);
+      background: #E8F4EC;
+    }
+
+    .status-badge.danger {
+      color: var(--aggregate);
+      background: #FDEEED;
+    }
+
+    .svg-stage-box {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      width: 100%;
+    }
+
+    .svg-stage-box svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Right side cards */
+    .card {
+      background: var(--surface);
+      border: 2px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      box-sizing: border-box;
+    }
+
+    .card h2 {
+      margin: 0 0 8px 0;
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .contrast-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-label);
+      margin-top: 2px;
+    }
+
+    .contrast-table th {
+      text-align: left;
+      padding: 4px 8px;
+      border-bottom: 2px solid var(--surface-strong);
+      color: var(--muted);
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .contrast-table td {
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--surface-strong);
+      vertical-align: top;
+      line-height: 1.35;
+    }
+
+    .contrast-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .contrast-table .row-danger {
+      background: #FDF2F0;
+    }
+
+    .contrast-table .row-safe {
+      background: #EDF7F1;
+    }
+
+    .metric-val {
+      font-family: var(--font-num), monospace;
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .flow-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .step-item {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 8px 12px;
+      background: var(--bg);
+      border-radius: 8px;
+      border-left: 4px solid var(--learner);
+    }
+
+    .step-item.alert {
+      border-left-color: var(--aggregate);
+    }
+
+    .step-item.correct {
+      border-left-color: var(--correct);
+    }
+
+    .step-num {
+      font-family: var(--font-num), monospace;
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--learner);
+      flex-shrink: 0;
+      width: 20px;
+    }
+
+    .step-text {
+      font-size: var(--fs-label);
+      line-height: 1.4;
+      color: var(--text);
+    }
+
+    .step-text strong {
+      color: var(--text);
+    }
+
+    /* Visual indicators */
+    .legend-row {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--surface-strong);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body data-page="23" data-total="27">
+  <div id="stage">
+    <header>
+      <div class="title-group">
+        <h1>Out-of-fold 预测防止信息泄漏</h1>
+        <p>元学习器的输入特征必须由基模型对<strong>未参与其训练的样本</strong>预测产出；直接输入训练集自测预测会使过拟合模型垄断权重，引发测试期泛化崩溃。</p>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <!-- Left: Interactive Diagram -->
+      <div class="col-left min0">
+        <div class="stage-toolbar">
+          <div class="step-label" id="modeLabel">
+            <span>当前展示：</span>
+            <span id="activeModeText" style="color:var(--learner)">5 折折外预测装配（全览）</span>
+          </div>
+          <div class="btns" role="tablist">
+            <button class="btn" id="btnAll" aria-pressed="true" onclick="setMode('all')">5折总装</button>
+            <button class="btn" id="btnF1" aria-pressed="false" onclick="setMode('f1')">第 1 折</button>
+            <button class="btn" id="btnF2" aria-pressed="false" onclick="setMode('f2')">第 2 折</button>
+            <button class="btn" id="btnF3" aria-pressed="false" onclick="setMode('f3')">第 3 折</button>
+            <button class="btn" id="btnF4" aria-pressed="false" onclick="setMode('f4')">第 4 折</button>
+            <button class="btn" id="btnF5" aria-pressed="false" onclick="setMode('f5')">第 5 折</button>
+            <button class="btn alert" id="btnLeak" aria-pressed="false" onclick="setMode('leak')">对比：同样本泄漏</button>
+          </div>
+        </div>
+
+        <div class="diagram-panel min0">
+          <h2>
+            <span id="panelTitle">K-Fold 折外预测如何组装成元特征矩阵 Z</span>
+            <span class="status-badge safe" id="statusBadge">样本隔离严格安全 · 无标签透传</span>
+          </h2>
+
+          <div class="svg-stage-box min0">
+            <svg id="diagramSvg" viewBox="0 0 970 470">
+              <defs>
+                <marker id="arr-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M 0 1 L 8 5 L 0 9 z" fill="#275D91"/>
+                </marker>
+                <marker id="arr-red" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M 0 1 L 8 5 L 0 9 z" fill="#B63B24"/>
+                </marker>
+                <marker id="arr-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M 0 1 L 8 5 L 0 9 z" fill="#2E6A45"/>
+                </marker>
+              </defs>
+
+              <!-- Background Guides -->
+              <g id="bgGuides">
+                <rect x="20" y="24" width="220" height="426" rx="8" fill="#F4F8FA" stroke="#D7E1E8" stroke-width="1.5"/>
+                <text x="32" y="44" fill="#536777" font-size="13" font-weight="700">原始训练集 D (N个样本)</text>
+
+                <rect x="330" y="24" width="200" height="426" rx="8" fill="#F4F8FA" stroke="#D7E1E8" stroke-width="1.5"/>
+                <text x="342" y="44" fill="#536777" font-size="13" font-weight="700">基学习器组 (M个模型)</text>
+
+                <rect x="620" y="24" width="330" height="426" rx="8" fill="#F4F8FA" stroke="#D7E1E8" stroke-width="1.5"/>
+                <text x="632" y="44" fill="#536777" font-size="13" font-weight="700">元特征矩阵 Z 与元模型</text>
+              </g>
+
+              <!-- Dynamic SVG Content generated by JS -->
+              <g id="dynamicContent"></g>
+            </svg>
+          </div>
+
+          <div class="legend-row">
+            <div class="legend-item">
+              <div class="swatch" style="background:#275D91"></div>
+              <span>参与训练的模型与样本</span>
+            </div>
+            <div class="legend-item">
+              <div class="swatch" style="background:#E29578"></div>
+              <span>被保留的验证折（未见样本）</span>
+            </div>
+            <div class="legend-item">
+              <div class="swatch" style="background:#2E6A45"></div>
+              <span>生成的纯净折外预测（OOF）</span>
+            </div>
+            <div class="legend-item">
+              <div class="swatch" style="background:#B63B24"></div>
+              <span>泄漏预测（同样本近乎0误差）</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Detailed Evidence & Comparative Mechanics -->
+      <div class="col-right min0">
+        <!-- Leakage comparison card -->
+        <div class="card">
+          <h2>
+            <span>直接自训自测 vs K折外预测</span>
+            <span style="font-size:var(--fs-tick);color:var(--muted);font-weight:600;">泄漏对比</span>
+          </h2>
+          <table class="contrast-table">
+            <thead>
+              <tr>
+                <th style="width:23%;">机制</th>
+                <th style="width:38%;">元特征来源</th>
+                <th style="width:39%;">元学习器判定</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="row-danger">
+                <td><strong>同样本预测</strong><br><span style="font-size:var(--fs-tick);color:#B63B24;">(Naive Leak)</span></td>
+                <td>基模型在自身训练集上回放，复杂深树训练误差仅 <span class="metric-val">1.2%</span></td>
+                <td>元模型判定深树“近乎全对”，分配极端权重；测试期深树泛化误差 <span class="metric-val">18.5%</span> 导致集成崩溃</td>
+              </tr>
+              <tr class="row-safe">
+                <td><strong>K折外预测</strong><br><span style="font-size:var(--fs-tick);color:#2E6A45;">(OOF 隔离)</span></td>
+                <td>样本 x<sub>i</sub> ∈ F<sub>k</sub> 仅由未包含 F<sub>k</sub> 的模型预测，真实暴露误差 <span class="metric-val">17.8%</span></td>
+                <td>元模型获知各基模型在真实未知样本上的错误分布与互补区间，权重收敛到稳健配比</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Operational protocol card -->
+        <div class="card">
+          <h2>
+            <span>Stacking 标准两阶段执行流</span>
+            <span style="font-size:var(--fs-tick);color:var(--muted);font-weight:600;">生产闭环</span>
+          </h2>
+          <div class="flow-steps">
+            <div class="step-item correct">
+              <div class="step-num">01</div>
+              <div class="step-text">
+                <strong>生成折外元特征：</strong>训练集切为 K 折；第 k 轮在 D \ F<sub>k</sub> 上训练基模型，对 F<sub>k</sub> 预测。拼接得到与 D 严格同阶的纯净特征矩阵 Z<sub>train</sub>。
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-num">02</div>
+              <div class="step-text">
+                <strong>拟合元学习器：</strong>以 Z<sub>train</sub> 为输入特征、以真实标签 y 为目标，拟合第二层元模型（如带正则化的 ElasticNet 或浅层线性模型）。
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-num">03</div>
+              <div class="step-text">
+                <strong>测试期推理对齐：</strong>基模型在全量 D 上重训一次生成测试特征 Z<sub>test</sub>（或取 K 折子模型预测均值），输入元学习器输出最终预测。
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // State management
+    const state = {
+      mode: 'all' // 'all', 'f1', 'f2', 'f3', 'f4', 'f5', 'leak'
+    };
+
+    const folds = [
+      { id: 1, name: "Fold 1", range: "样本 1 ~ 200", y: 72, h: 58 },
+      { id: 2, name: "Fold 2", range: "样本 201 ~ 400", y: 140, h: 58 },
+      { id: 3, name: "Fold 3", range: "样本 401 ~ 600", y: 208, h: 58 },
+      { id: 4, name: "Fold 4", range: "样本 601 ~ 800", y: 276, h: 58 },
+      { id: 5, name: "Fold 5", range: "样本 801 ~ 1000", y: 344, h: 58 }
+    ];
+
+    const models = [
+      { id: 1, name: "基模型 1", type: "Random Forest", y: 95 },
+      { id: 2, name: "基模型 2", type: "XGBoost", y: 205 },
+      { id: 3, name: "基模型 3", type: "Linear Model", y: 315 }
+    ];
+
+    function setMode(newMode) {
+      state.mode = newMode;
+      // update buttons
+      const btnMap = {
+        all: 'btnAll',
+        f1: 'btnF1',
+        f2: 'btnF2',
+        f3: 'btnF3',
+        f4: 'btnF4',
+        f5: 'btnF5',
+        leak: 'btnLeak'
+      };
+      Object.keys(btnMap).forEach(k => {
+        const el = document.getElementById(btnMap[k]);
+        if (el) el.setAttribute('aria-pressed', k === newMode ? 'true' : 'false');
+      });
+
+      // Update text & badge
+      const activeModeText = document.getElementById('activeModeText');
+      const panelTitle = document.getElementById('panelTitle');
+      const statusBadge = document.getElementById('statusBadge');
+
+      if (newMode === 'leak') {
+        activeModeText.textContent = "常规同样本训练（严重信息泄漏）";
+        activeModeText.style.color = "var(--aggregate)";
+        panelTitle.textContent = "全量数据同样本自训自测：深层过拟合掩盖泛化短板";
+        statusBadge.textContent = "严重警告 · 标签透传导致过拟合瀑布";
+        statusBadge.className = "status-badge danger";
+      } else if (newMode === 'all') {
+        activeModeText.textContent = "5 折折外预测装配（全览）";
+        activeModeText.style.color = "var(--learner)";
+        panelTitle.textContent = "K-Fold 折外预测如何无缝拼接成完整元特征矩阵 Z";
+        statusBadge.textContent = "样本隔离严格安全 · 无标签透传";
+        statusBadge.className = "status-badge safe";
+      } else {
+        const foldNum = newMode.replace('f', '');
+        activeModeText.textContent = `第 ${foldNum} 折独立运算：以未见折生成元特征分块`;
+        activeModeText.style.color = "var(--correct)";
+        panelTitle.textContent = `第 ${foldNum} 折：由其余 4 折训练的模型对 Fold ${foldNum} 预测`;
+        statusBadge.textContent = `Fold ${foldNum} 隔离验证 · 产生对应第 ${foldNum} 行切片`;
+        statusBadge.className = "status-badge safe";
+      }
+
+      renderDiagram();
+    }
+
+    function renderDiagram() {
+      const g = document.getElementById('dynamicContent');
+      g.innerHTML = '';
+
+      const mode = state.mode;
+      const isLeak = mode === 'leak';
+      const activeFoldId = mode.startsWith('f') ? parseInt(mode.replace('f', '')) : null;
+
+      // 1. Draw Dataset Folds
+      folds.forEach(f => {
+        let isValidation = false;
+        let isTrain = false;
+        let fillColor = "#D7E1E8";
+        let strokeColor = "#B0C4DE";
+        let textColor = "#142533";
+
+        if (isLeak) {
+          fillColor = "#FCE8E6";
+          strokeColor = "#B63B24";
+        } else if (activeFoldId !== null) {
+          if (f.id === activeFoldId) {
+            isValidation = true;
+            fillColor = "#F4DCD6";
+            strokeColor = "#E29578";
+            textColor = "#B63B24";
+          } else {
+            isTrain = true;
+            fillColor = "#DCE7F2";
+            strokeColor = "#275D91";
+            textColor = "#275D91";
+          }
+        } else {
+          // 'all' mode: all contribute cleanly
+          fillColor = "#E2EBF1";
+          strokeColor = "#275D91";
+        }
+
+        const foldGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+        // Rect
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", "36");
+        rect.setAttribute("y", f.y);
+        rect.setAttribute("width", "188");
+        rect.setAttribute("height", f.h);
+        rect.setAttribute("rx", "6");
+        rect.setAttribute("fill", fillColor);
+        rect.setAttribute("stroke", strokeColor);
+        rect.setAttribute("stroke-width", isValidation || (isLeak && f.id === 1) ? "2.5" : "1.5");
+        foldGroup.appendChild(rect);
+
+        // Text
+        const textTitle = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        textTitle.setAttribute("x", "48");
+        textTitle.setAttribute("y", f.y + 24);
+        textTitle.setAttribute("font-size", "15");
+        textTitle.setAttribute("font-weight", "700");
+        textTitle.setAttribute("fill", textColor);
+        textTitle.textContent = f.name;
+        foldGroup.appendChild(textTitle);
+
+        const textSub = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        textSub.setAttribute("x", "48");
+        textSub.setAttribute("y", f.y + 45);
+        textSub.setAttribute("font-size", "12");
+        textSub.setAttribute("fill", "#536777");
+        textSub.textContent = f.range;
+        foldGroup.appendChild(textSub);
+
+        // State Badge on Fold
+        const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        tag.setAttribute("x", "212");
+        tag.setAttribute("y", f.y + 24);
+        tag.setAttribute("text-anchor", "end");
+        tag.setAttribute("font-size", "12");
+        tag.setAttribute("font-weight", "600");
+
+        if (isLeak) {
+          tag.setAttribute("fill", "#B63B24");
+          tag.textContent = "全量自训";
+        } else if (activeFoldId !== null) {
+          if (isValidation) {
+            tag.setAttribute("fill", "#B63B24");
+            tag.textContent = "未见验证折";
+          } else {
+            tag.setAttribute("fill", "#275D91");
+            tag.textContent = "训练折 (In-fold)";
+          }
+        } else {
+          tag.setAttribute("fill", "#2E6A45");
+          tag.textContent = `1/${folds.length} 互斥折`;
+        }
+        foldGroup.appendChild(tag);
+
+        g.appendChild(foldGroup);
+      });
+
+      // 2. Draw Models
+      models.forEach(m => {
+        const mg = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+        const mRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        mRect.setAttribute("x", "346");
+        mRect.setAttribute("y", m.y);
+        mRect.setAttribute("width", "168");
+        mRect.setAttribute("height", "78");
+        mRect.setAttribute("rx", "8");
+        mRect.setAttribute("fill", "#FFFFFF");
+        mRect.setAttribute("stroke", isLeak ? "#B63B24" : "#275D91");
+        mRect.setAttribute("stroke-width", "2");
+        mg.appendChild(mRect);
+
+        const mName = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        mName.setAttribute("x", "360");
+        mName.setAttribute("y", m.y + 28);
+        mName.setAttribute("font-size", "16");
+        mName.setAttribute("font-weight", "700");
+        mName.setAttribute("fill", "#142533");
+        mName.textContent = m.name;
+        mg.appendChild(mName);
+
+        const mType = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        mType.setAttribute("x", "360");
+        mType.setAttribute("y", m.y + 48);
+        mType.setAttribute("font-size", "13");
+        mType.setAttribute("fill", "#536777");
+        mType.textContent = m.type;
+        mg.appendChild(mType);
+
+        const mStatus = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        mStatus.setAttribute("x", "360");
+        mStatus.setAttribute("y", m.y + 68);
+        mStatus.setAttribute("font-size", "12");
+        mStatus.setAttribute("font-weight", "600");
+        if (isLeak) {
+          mStatus.setAttribute("fill", "#B63B24");
+          mStatus.textContent = "拟合全部 D（含目标泄露）";
+        } else if (activeFoldId !== null) {
+          mStatus.setAttribute("fill", "#275D91");
+          mStatus.textContent = `在 D \\ Fold ${activeFoldId} 上拟合`;
+        } else {
+          mStatus.setAttribute("fill", "#2E6A45");
+          mStatus.textContent = "5折轮训聚合";
+        }
+        mg.appendChild(mStatus);
+
+        g.appendChild(mg);
+      });
+
+      // 3. Draw Meta-Matrix Z
+      const zg = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+      // Z Table Container
+      const zBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      zBox.setAttribute("x", "636");
+      zBox.setAttribute("y", "72");
+      zBox.setAttribute("width", "180");
+      zBox.setAttribute("height", "330");
+      zBox.setAttribute("rx", "6");
+      zBox.setAttribute("fill", "#FFFFFF");
+      zBox.setAttribute("stroke", "#275D91");
+      zBox.setAttribute("stroke-width", "2");
+      zg.appendChild(zBox);
+
+      // Z Headers
+      const colLabels = ["M1:RF", "M2:GB", "M3:LR"];
+      colLabels.forEach((lbl, ci) => {
+        const colHdr = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        colHdr.setAttribute("x", 636 + 30 + ci * 59);
+        colHdr.setAttribute("y", "64");
+        colHdr.setAttribute("text-anchor", "middle");
+        colHdr.setAttribute("font-size", "11");
+        colHdr.setAttribute("font-weight", "700");
+        colHdr.setAttribute("fill", "#275D91");
+        colHdr.textContent = lbl;
+        zg.appendChild(colHdr);
+      });
+
+      // Draw slices corresponding to folds
+      folds.forEach(f => {
+        const sliceY = f.y;
+        const sliceH = f.h;
+        const isTargetSlice = (activeFoldId === f.id);
+
+        let sliceFill = "#F4F8FA";
+        let sliceStroke = "#D7E1E8";
+        let sliceText = "OOF 切片";
+        let textColor = "#536777";
+
+        if (isLeak) {
+          sliceFill = "#FDEEED";
+          sliceStroke = "#B63B24";
+          sliceText = "同样本预测 (虚高)";
+          textColor = "#B63B24";
+        } else if (activeFoldId !== null) {
+          if (isTargetSlice) {
+            sliceFill = "#E3F4EA";
+            sliceStroke = "#2E6A45";
+            sliceText = `★ OOF 预测块 (${f.name})`;
+            textColor = "#2E6A45";
+          } else {
+            sliceFill = "#FFFFFF";
+            sliceStroke = "#E8EEF2";
+            sliceText = "其他折装配完成";
+            textColor = "#94A3B8";
+          }
+        } else {
+          sliceFill = "#EDF7F1";
+          sliceStroke = "#2E6A45";
+          sliceText = `Fold ${f.id} 纯净预测`;
+          textColor = "#2E6A45";
+        }
+
+        const sRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        sRect.setAttribute("x", "638");
+        sRect.setAttribute("y", sliceY);
+        sRect.setAttribute("width", "176");
+        sRect.setAttribute("height", sliceH - 2);
+        sRect.setAttribute("rx", "4");
+        sRect.setAttribute("fill", sliceFill);
+        sRect.setAttribute("stroke", sliceStroke);
+        sRect.setAttribute("stroke-width", isTargetSlice ? "2" : "1");
+        zg.appendChild(sRect);
+
+        // Columns dividers
+        for (let i = 1; i < 3; i++) {
+          const divLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          divLine.setAttribute("x1", 638 + i * 59);
+          divLine.setAttribute("y1", sliceY);
+          divLine.setAttribute("x2", 638 + i * 59);
+          divLine.setAttribute("y2", sliceY + sliceH - 2);
+          divLine.setAttribute("stroke", sliceStroke);
+          divLine.setAttribute("stroke-width", "1");
+          divLine.setAttribute("stroke-dasharray", "2,2");
+          zg.appendChild(divLine);
+        }
+
+        const sText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        sText.setAttribute("x", "726");
+        sText.setAttribute("y", sliceY + sliceH / 2 + 5);
+        sText.setAttribute("text-anchor", "middle");
+        sText.setAttribute("font-size", isTargetSlice ? "13" : "11");
+        sText.setAttribute("font-weight", isTargetSlice ? "700" : "500");
+        sText.setAttribute("fill", textColor);
+        sText.textContent = sliceText;
+        zg.appendChild(sText);
+      });
+
+      // Meta learner block on the right
+      const metaBlock = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      const mBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      mBox.setAttribute("x", "838");
+      mBox.setAttribute("y", "170");
+      mBox.setAttribute("width", "96");
+      mBox.setAttribute("height", "140");
+      mBox.setAttribute("rx", "8");
+      mBox.setAttribute("fill", "#275D91");
+      metaBlock.appendChild(mBox);
+
+      const mt1 = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      mt1.setAttribute("x", "886");
+      mt1.setAttribute("y", "215");
+      mt1.setAttribute("text-anchor", "middle");
+      mt1.setAttribute("font-size", "16");
+      mt1.setAttribute("font-weight", "700");
+      mt1.setAttribute("fill", "#FFFFFF");
+      mt1.textContent = "元学习器";
+      metaBlock.appendChild(mt1);
+
+      const mt2 = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      mt2.setAttribute("x", "886");
+      mt2.setAttribute("y", "240");
+      mt2.setAttribute("text-anchor", "middle");
+      mt2.setAttribute("font-size", "12");
+      mt2.setAttribute("fill", "#D7E1E8");
+      mt2.textContent = "Meta-Model";
+      metaBlock.appendChild(mt2);
+
+      const mt3 = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      mt3.setAttribute("x", "886");
+      mt3.setAttribute("y", "275");
+      mt3.setAttribute("text-anchor", "middle");
+      mt3.setAttribute("font-size", "12");
+      mt3.setAttribute("font-weight", "600");
+      mt3.setAttribute("fill", "#FFD166");
+      mt3.textContent = "学互补权重";
+      metaBlock.appendChild(mt3);
+
+      zg.appendChild(metaBlock);
+
+      // Arrow from Z into Meta-Learner
+      const arrZtoMeta = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      arrZtoMeta.setAttribute("x1", "816");
+      arrZtoMeta.setAttribute("y1", "240");
+      arrZtoMeta.setAttribute("x2", "834");
+      arrZtoMeta.setAttribute("y2", "240");
+      arrZtoMeta.setAttribute("stroke", "#275D91");
+      arrZtoMeta.setAttribute("stroke-width", "3");
+      arrZtoMeta.setAttribute("marker-end", "url(#arr-blue)");
+      zg.appendChild(arrZtoMeta);
+
+      g.appendChild(zg);
+
+      // 4. Draw Connecting Flow Paths
+      const flowsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+      if (isLeak) {
+        // Leaking mode: All data flows to models, and models predict straight onto D
+        models.forEach((m, idx) => {
+          const p1 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          p1.setAttribute("d", `M 224 240 C 280 240, 290 ${m.y + 39}, 342 ${m.y + 39}`);
+          p1.setAttribute("fill", "none");
+          p1.setAttribute("stroke", "#B63B24");
+          p1.setAttribute("stroke-width", "2");
+          p1.setAttribute("marker-end", "url(#arr-red)");
+          flowsGroup.appendChild(p1);
+
+          const p2 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          p2.setAttribute("d", `M 514 ${m.y + 39} C 570 ${m.y + 39}, 580 240, 634 240`);
+          p2.setAttribute("fill", "none");
+          p2.setAttribute("stroke", "#B63B24");
+          p2.setAttribute("stroke-width", "2");
+          p2.setAttribute("stroke-dasharray", "4,3");
+          p2.setAttribute("marker-end", "url(#arr-red)");
+          flowsGroup.appendChild(p2);
+        });
+
+        // Leakage annotation banner
+        const warnRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        warnRect.setAttribute("x", "225");
+        warnRect.setAttribute("y", "420");
+        warnRect.setAttribute("width", "410");
+        warnRect.setAttribute("height", "28");
+        warnRect.setAttribute("rx", "5");
+        warnRect.setAttribute("fill", "#FCE8E6");
+        warnRect.setAttribute("stroke", "#B63B24");
+        flowsGroup.appendChild(warnRect);
+
+        const warnText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        warnText.setAttribute("x", "430");
+        warnText.setAttribute("y", "439");
+        warnText.setAttribute("text-anchor", "middle");
+        warnText.setAttribute("font-size", "13");
+        warnText.setAttribute("font-weight", "700");
+        warnText.setAttribute("fill", "#B63B24");
+        warnText.textContent = "致命错误：基模型自己评价自己，过拟合记忆当作真实泛化能力！";
+        flowsGroup.appendChild(warnText);
+
+      } else if (activeFoldId !== null) {
+        // Specific Fold mode:
+        // Training data (other folds) -> Models (fit)
+        folds.filter(f => f.id !== activeFoldId).forEach(f => {
+          const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          p.setAttribute("d", `M 224 ${f.y + 30} C 280 ${f.y + 30}, 280 240, 342 240`);
+          p.setAttribute("fill", "none");
+          p.setAttribute("stroke", "#275D91");
+          p.setAttribute("stroke-width", "1.5");
+          p.setAttribute("stroke-dasharray", "3,3");
+          flowsGroup.appendChild(p);
+        });
+
+        // Target Validation Fold -> predicts via models -> writes to fold row in Z
+        const targetFold = folds.find(f => f.id === activeFoldId);
+        const pVal = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        pVal.setAttribute("d", `M 224 ${targetFold.y + 30} C 290 ${targetFold.y + 30}, 290 180, 342 180`);
+        pVal.setAttribute("fill", "none");
+        pVal.setAttribute("stroke", "#B63B24");
+        pVal.setAttribute("stroke-width", "2.5");
+        pVal.setAttribute("marker-end", "url(#arr-red)");
+        flowsGroup.appendChild(pVal);
+
+        // Models output out-of-fold prediction to target slice in Z
+        models.forEach(m => {
+          const pOut = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          pOut.setAttribute("d", `M 514 ${m.y + 39} C 570 ${m.y + 39}, 570 ${targetFold.y + 30}, 634 ${targetFold.y + 30}`);
+          pOut.setAttribute("fill", "none");
+          pOut.setAttribute("stroke", "#2E6A45");
+          pOut.setAttribute("stroke-width", "2");
+          pOut.setAttribute("marker-end", "url(#arr-green)");
+          flowsGroup.appendChild(pOut);
+        });
+
+        // Annotation banner
+        const infoRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        infoRect.setAttribute("x", "225");
+        infoRect.setAttribute("y", "420");
+        infoRect.setAttribute("width", "410");
+        infoRect.setAttribute("height", "28");
+        infoRect.setAttribute("rx", "5");
+        infoRect.setAttribute("fill", "#EDF7F1");
+        infoRect.setAttribute("stroke", "#2E6A45");
+        flowsGroup.appendChild(infoRect);
+
+        const infoText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        infoText.setAttribute("x", "430");
+        infoText.setAttribute("y", "439");
+        infoText.setAttribute("text-anchor", "middle");
+        infoText.setAttribute("font-size", "13");
+        infoText.setAttribute("font-weight", "700");
+        infoText.setAttribute("fill", "#2E6A45");
+        infoText.textContent = `安全隔离：本组模型从未见过 Fold ${activeFoldId}，产出纯正折外泛化预测！`;
+        flowsGroup.appendChild(infoText);
+
+      } else {
+        // 'all' mode: Summary showing full assembly
+        models.forEach(m => {
+          const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          p.setAttribute("d", `M 514 ${m.y + 39} C 570 ${m.y + 39}, 570 240, 634 240`);
+          p.setAttribute("fill", "none");
+          p.setAttribute("stroke", "#2E6A45");
+          p.setAttribute("stroke-width", "2");
+          p.setAttribute("marker-end", "url(#arr-green)");
+          flowsGroup.appendChild(p);
+        });
+
+        // Connect dataset to models generally
+        const pIn = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        pIn.setAttribute("d", "M 224 240 C 280 240, 280 240, 342 240");
+        pIn.setAttribute("fill", "none");
+        pIn.setAttribute("stroke", "#275D91");
+        pIn.setAttribute("stroke-width", "3");
+        pIn.setAttribute("marker-end", "url(#arr-blue)");
+        flowsGroup.appendChild(pIn);
+
+        const infoRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        infoRect.setAttribute("x", "225");
+        infoRect.setAttribute("y", "420");
+        infoRect.setAttribute("width", "410");
+        infoRect.setAttribute("height", "28");
+        infoRect.setAttribute("rx", "5");
+        infoRect.setAttribute("fill", "#E8EEF2");
+        infoRect.setAttribute("stroke", "#D7E1E8");
+        flowsGroup.appendChild(infoRect);
+
+        const infoText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        infoText.setAttribute("x", "430");
+        infoText.setAttribute("y", "439");
+        infoText.setAttribute("text-anchor", "middle");
+        infoText.setAttribute("font-size", "13");
+        infoText.setAttribute("font-weight", "600");
+        infoText.setAttribute("fill", "#536777");
+        infoText.textContent = "5 折无缝拼接：整个 N×M 元特征矩阵均由各自互斥的外折模型产生";
+        flowsGroup.appendChild(infoText);
+      }
+
+      g.appendChild(flowsGroup);
+    }
+
+    // Initialize
+    Deck.init({ index: 23, total: 27 });
+    renderDiagram();
+  </script>
+</body>
+</html>

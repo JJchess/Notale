@@ -1,0 +1,1 @@
+const c={up:[0,-1,0],right:[1,0,1],down:[2,1,0],left:[3,0,-1]};export default function s(e,o,l){const r=c[l],t=e.find(n=>n.row===o.row&&n.col===o.col);return!r||!t||t.walls[r[0]]?null:{row:o.row+r[1],col:o.col+r[2]}}

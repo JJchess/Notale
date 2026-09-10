@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --font-mono: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+    }
+
+    header {
+      position: absolute;
+      left: 56px;
+      top: 32px;
+      right: 56px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .kicker-rule {
+      font-family: var(--font-mono);
+      font-size: var(--fs-sec);
+      color: var(--model);
+      font-weight: 500;
+    }
+
+    /* 三列等高布局：对比残差拟合的串行逼近与损失函数负梯度的通用统一 */
+    .view-grid {
+      position: absolute;
+      left: 56px;
+      top: 110px;
+      width: 1488px;
+      height: 610px;
+      display: grid;
+      grid-template-columns: 460px 480px 508px;
+      gap: 20px;
+    }
+
+    .col {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .col-header {
+      margin-bottom: 12px;
+      height: 46px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+    }
+    .col-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      line-height: var(--lh-tight);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .col-subtitle {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .chart-box {
+      flex: 1;
+      position: relative;
+    }
+
+    /* 右侧推导与损失函数映射表 */
+    .unified-matrix {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 20px;
+      padding: 8px 0 0 10px;
+      box-sizing: border-box;
+    }
+
+    .math-card {
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--rule);
+    }
+    .math-formula {
+      font-family: var(--font-mono);
+      font-size: var(--fs-h2);
+      color: var(--model);
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin: 6px 0 4px 0;
+    }
+    .math-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      margin: 0;
+    }
+
+    .loss-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-label);
+    }
+    .loss-table th {
+      text-align: left;
+      font-weight: 600;
+      color: var(--muted);
+      padding: 6px 6px;
+      border-bottom: 1px solid var(--rule);
+    }
+    .loss-table td {
+      padding: 10px 6px;
+      border-bottom: 1px solid rgba(113, 130, 139, 0.25);
+      vertical-align: middle;
+      line-height: 1.35;
+    }
+    .loss-table .loss-name {
+      font-weight: 600;
+      color: var(--text);
+    }
+    .loss-table .loss-grad {
+      font-family: var(--font-mono);
+      color: var(--model);
+      font-weight: 600;
+    }
+    .loss-table .loss-focus {
+      color: var(--focus);
+      font-weight: 600;
+    }
+
+    /* 底部步骤说明条 */
+    .footer-bar {
+      position: absolute;
+      left: 56px;
+      bottom: 30px;
+      width: 1488px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid var(--rule);
+      padding-top: 16px;
+    }
+    .footer-takeaway {
+      font-size: var(--fs-lead);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .footer-takeaway b {
+      color: var(--focus);
+      font-weight: 600;
+    }
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .legend-line {
+      width: 22px;
+      height: 3px;
+      border-radius: 1.5px;
+    }
+    .legend-point {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+    }
+  </style>
+</head>
+<body data-page="23" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>梯度提升统一视角：拟合残差即拟合负梯度</h1>
+      <div class="kicker-rule">F<sub>m</sub>(x) = F<sub>m-1</sub>(x) + γ<sub>m</sub>h<sub>m</sub>(x)</div>
+    </header>
+
+    <div class="view-grid">
+      <!-- 视口 1：平方损失下的残差拟合过程 -->
+      <div class="col" data-step="0">
+        <div class="col-header">
+          <div class="col-title">平方损失特例：真实残差</div>
+          <div class="col-subtitle">y - F(x) 确定基学习器拟合目标</div>
+        </div>
+        <div class="chart-box">
+          <canvas id="cv-residual" class="cv-fill"></canvas>
+        </div>
+      </div>
+
+      <!-- 视口 2：函数空间的最速下降（负梯度视角） -->
+      <div class="col" data-step="1">
+        <div class="col-header">
+          <div class="col-title">函数空间最速下降</div>
+          <div class="col-subtitle">沿损失下降最快的负梯度方向更新</div>
+        </div>
+        <div class="chart-box">
+          <canvas id="cv-gradient" class="cv-fill"></canvas>
+        </div>
+      </div>
+
+      <!-- 视口 3：通用公式与任意可导损失函数映射 -->
+      <div class="col" data-step="2">
+        <div class="col-header">
+          <div class="col-title">统一任意可导损失</div>
+          <div class="col-subtitle">负梯度为所有可微损失提供伪残差</div>
+        </div>
+        <div class="unified-matrix">
+          <div class="math-card">
+            <div class="math-formula">r<sub>im</sub> = - [ ∂L(y<sub>i</sub>, F(x<sub>i</sub>)) / ∂F(x<sub>i</sub>) ]</div>
+            <p class="math-desc">基学习器 h<sub>m</sub> 拟合由负梯度构成的伪残差目标。</p>
+          </div>
+
+          <table class="loss-table">
+            <thead>
+              <tr>
+                <th>损失函数</th>
+                <th>负梯度 (伪残差)</th>
+                <th>演进算法</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="loss-name">平方损失 ½(y - F)²</td>
+                <td class="loss-grad">y - F(x)</td>
+                <td>经典 GBDT 回归</td>
+              </tr>
+              <tr>
+                <td class="loss-name">绝对损失 |y - F|</td>
+                <td class="loss-grad">sign(y - F(x))</td>
+                <td>中位数提升</td>
+              </tr>
+              <tr>
+                <td class="loss-name">对数损失 log(1+e<sup>-yF</sup>)</td>
+                <td class="loss-grad loss-focus">y / (1 + e<sup>yF</sup>)</td>
+                <td>LogitBoost</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <div class="footer-takeaway">
+        <span>AdaBoost 调整<b>样本权重</b>；梯度提升则在<b>函数空间沿负梯度</b>串行纠错。</span>
+      </div>
+      <div class="legend-row">
+        <div class="legend-item">
+          <div class="legend-point" style="background: var(--text);"></div>
+          <span>真值 y</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-line" style="background: var(--muted); border-top: 2px dashed var(--muted); height: 0;"></div>
+          <span>前轮 F<sub>m-1</sub></span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-line" style="background: var(--focus);"></div>
+          <span>负梯度方向</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-line" style="background: var(--model); height: 4px;"></div>
+          <span>更新后 F<sub>m</sub></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    在前面的章节中，我们看到 AdaBoost 是通过改变样本分布权重来实现对错误样本的聚焦。
+    而梯度提升（Gradient Boosting）提供了一个更为普遍且优美的统一视角：
+    首先看左图，在最直观的平方损失下，每一步模型没能解释的部分就是真实的残差 y - F(x)，下一棵树直接去拟合这个残差；
+    再看中图，弗里德曼（Friedman）指出，如果我们将模型预测值 F(x) 视为自变量，那么残差恰好是平方损失函数对 F(x) 求导后的负梯度；
+    这意味着，提升树的本质是在“函数空间”中做梯度下降。
+    最后看右侧的统一视角：只要损失函数可导，无论处理的是绝对误差、Huber 损失还是分类对数似然，我们都可以计算负梯度作为“伪残差”，并让弱学习器去拟合它。这样一来，各类 Boosting 算法被彻底统一到最优化框架中。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 23, total: 32 });
+
+      // 左图：平方损失残差拟合
+      const cvResidual = document.getElementById("cv-residual");
+      Deck.autofit(cvResidual, function (ctx) {
+        const w = cvResidual.width / (window.devicePixelRatio || 1);
+        const h = cvResidual.height / (window.devicePixelRatio || 1);
+
+        const padLeft = 46, padRight = 24, padTop = 30, padBottom = 40;
+        const gw = w - padLeft - padRight;
+        const gh = h - padTop - padBottom;
+
+        // 真实数据点
+        const points = [
+          { x: 0.12, y: 0.22 },
+          { x: 0.28, y: 0.48 },
+          { x: 0.44, y: 0.38 },
+          { x: 0.62, y: 0.82 },
+          { x: 0.78, y: 0.72 },
+          { x: 0.90, y: 0.92 }
+        ];
+
+        // 前一轮阶梯拟合 F_m-1 (两段常量)
+        const f_prev = (x) => (x < 0.52 ? 0.36 : 0.68);
+        // 新弱学习器拟合残差 h_m
+        const h_m = (x) => (x < 0.52 ? (x < 0.20 ? -0.14 : 0.08) : (x < 0.75 ? 0.14 : 0.24));
+        // 更新后 F_m = F_m-1 + 0.8 * h_m
+        const f_curr = (x) => f_prev(x) + 0.85 * h_m(x);
+
+        const toPx = (x) => padLeft + x * gw;
+        const toPy = (y) => padTop + (1 - y) * gh;
+
+        // 绘制坐标轴与网格刻度
+        ctx.strokeStyle = Deck.rgba("rule", 0.35);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padLeft, padTop);
+        ctx.lineTo(padLeft, padTop + gh);
+        ctx.lineTo(padLeft + gw, padTop + gh);
+        ctx.stroke();
+
+        ctx.font = "12px sans-serif";
+        ctx.fillStyle = Deck.rgba("muted", 0.9);
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        [0, 0.5, 1.0].forEach(v => {
+          const y = toPy(v);
+          ctx.fillText(v.toFixed(1), padLeft - 8, y);
+          ctx.beginPath();
+          ctx.moveTo(padLeft - 3, y);
+          ctx.lineTo(padLeft, y);
+          ctx.stroke();
+        });
+
+        // 绘制残差连接虚线和残差标注
+        points.forEach((pt) => {
+          const px = toPx(pt.x);
+          const py = toPy(pt.y);
+          const pfy = toPy(f_prev(pt.x));
+
+          ctx.strokeStyle = Deck.rgba("focus", 0.85);
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(px, pfy);
+          ctx.lineTo(px, py);
+          ctx.stroke();
+
+          // 箭头尖端
+          const arrowDir = pt.y > f_prev(pt.x) ? -1 : 1;
+          ctx.fillStyle = Deck.token("focus");
+          ctx.beginPath();
+          ctx.moveTo(px, py);
+          ctx.lineTo(px - 3.5, py - arrowDir * 6);
+          ctx.lineTo(px + 3.5, py - arrowDir * 6);
+          ctx.fill();
+        });
+
+        // 前一轮模型阶梯虚线 F_m-1
+        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = Deck.token("muted");
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(toPx(0.05), toPy(f_prev(0.05)));
+        ctx.lineTo(toPx(0.52), toPy(f_prev(0.51)));
+        ctx.lineTo(toPx(0.52), toPy(f_prev(0.53)));
+        ctx.lineTo(toPx(0.95), toPy(f_prev(0.95)));
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 新模型阶梯粗线 F_m
+        ctx.strokeStyle = Deck.token("model");
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        let first = true;
+        for (let x = 0.05; x <= 0.95; x += 0.01) {
+          const px = toPx(x);
+          const py = toPy(f_curr(x));
+          if (first) { ctx.moveTo(px, py); first = false; }
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // 真实样本散点
+        points.forEach(pt => {
+          ctx.fillStyle = Deck.token("text");
+          ctx.beginPath();
+          ctx.arc(toPx(pt.x), toPy(pt.y), 5, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // 图内局部文字批注
+        ctx.font = "14px sans-serif";
+        ctx.fillStyle = Deck.token("focus");
+        ctx.textAlign = "left";
+        ctx.fillText("拟合残差 r = y - F(x)", toPx(0.18), toPy(0.72));
+
+        ctx.font = "13px sans-serif";
+        ctx.fillStyle = Deck.token("model");
+        ctx.fillText("更新后 F_m(x)", toPx(0.66), toPy(0.60));
+      });
+
+      // 中图：函数空间中的最速梯度下降
+      const cvGradient = document.getElementById("cv-gradient");
+      Deck.autofit(cvGradient, function (ctx) {
+        const w = cvGradient.width / (window.devicePixelRatio || 1);
+        const h = cvGradient.height / (window.devicePixelRatio || 1);
+
+        const cx = w * 0.48;
+        const cy = h * 0.48;
+
+        // 绘制损失函数等高线碗状椭圆
+        const radii = [45, 85, 130, 180, 235];
+        ctx.lineWidth = 1.2;
+        radii.forEach((r, idx) => {
+          ctx.strokeStyle = Deck.rgba("rule", 0.35 + idx * 0.06);
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, r * 1.35, r * 0.85, -0.3, 0, Math.PI * 2);
+          ctx.stroke();
+        });
+
+        // 损失中心标记 L 最优点 F*
+        ctx.fillStyle = Deck.token("model");
+        ctx.beginPath();
+        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.font = "13px sans-serif";
+        ctx.fillStyle = Deck.token("text");
+        ctx.textAlign = "center";
+        ctx.fillText("极小值 F*(x)", cx, cy + 18);
+
+        // 梯度下降轨迹路径点
+        const traj = [
+          { x: cx + 190, y: cy - 130, label: "F₀" },
+          { x: cx + 80,  y: cy - 90,  label: "F₁" },
+          { x: cx + 25,  y: cy - 35,  label: "F₂" },
+          { x: cx + 5,   y: cy - 10,  label: "Fₘ" }
+        ];
+
+        // 绘制迭代步进箭头
+        for (let i = 0; i < traj.length - 1; i++) {
+          const p1 = traj[i];
+          const p2 = traj[i + 1];
+
+          // 步进方向线
+          ctx.strokeStyle = Deck.token("focus");
+          ctx.lineWidth = i === 1 ? 3 : 2;
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+
+          // 箭头
+          const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+          ctx.fillStyle = Deck.token("focus");
+          ctx.beginPath();
+          ctx.moveTo(p2.x, p2.y);
+          ctx.lineTo(p2.x - 9 * Math.cos(angle - Math.PI / 7), p2.y - 9 * Math.sin(angle - Math.PI / 7));
+          ctx.lineTo(p2.x - 9 * Math.cos(angle + Math.PI / 7), p2.y - 9 * Math.sin(angle + Math.PI / 7));
+          ctx.fill();
+
+          // 点
+          ctx.fillStyle = Deck.token("text");
+          ctx.beginPath();
+          ctx.arc(p1.x, p1.y, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 标签（放在点右上方，避免与连线和下角标重叠）
+          ctx.font = "14px 'SF Mono', sans-serif";
+          ctx.fillStyle = Deck.token("text");
+          ctx.textAlign = "left";
+          ctx.fillText(p1.label, p1.x + 10, p1.y - 10);
+        }
+
+        // 当前步负梯度切线与方向标注
+        const mid = traj[1];
+        ctx.font = "13px sans-serif";
+        ctx.fillStyle = Deck.token("focus");
+        ctx.textAlign = "left";
+        ctx.fillText("- ∇_F L: 负梯度", mid.x + 12, mid.y + 18);
+
+        // 说明文字：函数空间
+        ctx.font = "14px sans-serif";
+        ctx.fillStyle = Deck.token("muted");
+        ctx.textAlign = "left";
+        ctx.fillText("损失曲面 L(y, F)", 36, 42);
+        ctx.font = "12px sans-serif";
+        ctx.fillText("基模型 h_m 逼近当前负梯度方向", 36, 62);
+      });
+    })();
+  </script>
+</body>
+</html>

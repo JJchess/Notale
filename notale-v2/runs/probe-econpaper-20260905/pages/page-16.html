@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F7;
+      --text: #17272D;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: 56px 64px 48px 64px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+    }
+
+    /* Generative Canvas Background */
+    #field-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* Content layers */
+    .header-zone {
+      position: relative;
+      z-index: 10;
+      max-width: 1080px;
+    }
+
+    .chapter-flag {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--cause);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .chapter-flag::after {
+      content: "";
+      display: inline-block;
+      width: 32px;
+      height: 2px;
+      background: var(--cause);
+      opacity: 0.7;
+    }
+
+    .title-main {
+      font-size: 40px;
+      line-height: 1.2;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      margin: 0 0 16px 0;
+    }
+
+    .lead-copy {
+      font-size: var(--fs-lead);
+      line-height: 1.55;
+      color: var(--text);
+      max-width: 960px;
+      margin: 0;
+    }
+
+    /* Central focal anchor / semantic readout cards */
+    .anchor-grid {
+      position: relative;
+      z-index: 10;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 24px;
+      align-items: stretch;
+      margin-top: auto;
+      margin-bottom: 24px;
+    }
+
+    .benchmark-card {
+      background: var(--surface);
+      border: 1px solid rgba(82, 102, 110, 0.24);
+      border-radius: var(--r-md);
+      padding: 24px 28px;
+      box-shadow: 0 8px 24px rgba(23, 39, 45, 0.05);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .benchmark-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .benchmark-val {
+      font-family: var(--font-num, monospace);
+      font-size: 36px;
+      font-weight: 800;
+      color: var(--observed);
+      line-height: 1.1;
+      margin-top: 2px;
+    }
+
+    .benchmark-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin-top: 8px;
+      line-height: 1.45;
+    }
+
+    .disturb-guide {
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(82, 102, 110, 0.22);
+      border-radius: var(--r-md);
+      padding: 24px 28px;
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .guide-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .guide-tag {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--cause);
+    }
+
+    .guide-desc {
+      font-size: var(--fs-body);
+      color: var(--text);
+      line-height: 1.4;
+      font-weight: 700;
+    }
+
+    .guide-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* Footer / Deck Roadmap */
+    .deck-footer {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 16px;
+      border-top: 1px solid rgba(82, 102, 110, 0.18);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .roadmap-list {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+    }
+
+    .roadmap-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .roadmap-num {
+      font-family: var(--font-num, monospace);
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .roadmap-item.active .roadmap-num {
+      color: var(--cause);
+    }
+
+    .roadmap-item.active {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .visual-legend {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-size: var(--fs-label);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-line {
+      width: 18px;
+      height: 2px;
+      border-radius: 1px;
+    }
+
+    .legend-line.baseline {
+      background: var(--observed);
+      height: 3px;
+    }
+
+    .legend-line.robust {
+      background: var(--supported);
+    }
+
+    .legend-line.threat {
+      background: var(--cause);
+      opacity: 0.65;
+    }
+  </style>
+</head>
+<body data-page="16" data-total="24">
+  <div id="stage">
+    <canvas id="field-canvas" class="cv-fill" aria-hidden="true"></canvas>
+
+    <div class="header-zone">
+      <div class="chapter-flag">第四模块 · 稳健性检验</div>
+      <h1 class="title-main">稳健性检验：证据是否随合理扰动而存活</h1>
+      <p class="lead-copy">
+        基准回归给出了因果点估计与置信区间，但实证研究的结论脆弱与否，取决于它在模型设定、样本边界、测度误差与统计推断施加合理冲击时，核心系数能否保持方向稳定与经济含义自洽。
+      </p>
+    </div>
+
+    <div class="anchor-grid">
+      <div class="benchmark-card">
+        <div class="benchmark-title">
+          <span>基准识别锚点 (Baseline)</span>
+          <span style="font-size:12px; font-weight:600; color:var(--supported); background:rgba(45,105,76,0.12); padding:2px 8px; border-radius:4px;">95% CI 稳固</span>
+        </div>
+        <div class="benchmark-val">β̂ = 0.342</div>
+        <div class="benchmark-sub">SE = 0.048 · t = 7.13 · 控制核心混淆因素与双重固定效应</div>
+      </div>
+
+      <div class="disturb-guide">
+        <div class="guide-col">
+          <div class="guide-tag">设定扰动</div>
+          <div class="guide-desc">控制变量集与固定效应阶数</div>
+          <div class="guide-sub">检验系数是否对特定协变量或多项式趋势过度敏感</div>
+        </div>
+        <div class="guide-col" style="border-left: 1px solid rgba(82,102,110,0.15); padding-left: 18px;">
+          <div class="guide-tag">样本扰动</div>
+          <div class="guide-desc">截尾、剔除极端子群与重抽样</div>
+          <div class="guide-sub">确认主导结论的不是个别离群值或单一特殊区域</div>
+        </div>
+        <div class="guide-col" style="border-left: 1px solid rgba(82,102,110,0.15); padding-left: 18px;">
+          <div class="guide-tag">证伪与安慰剂</div>
+          <div class="guide-desc">伪处理期、虚构受影响群体</div>
+          <div class="guide-sub">在不应产生效应的维度验证效应量精确归零</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="deck-footer">
+      <div class="roadmap-list">
+        <div class="roadmap-item">
+          <span class="roadmap-num">01</span>
+          <span>论文识别策略</span>
+        </div>
+        <div class="roadmap-item">
+          <span class="roadmap-num">02</span>
+          <span>因果识别威胁</span>
+        </div>
+        <div class="roadmap-item">
+          <span class="roadmap-num">03</span>
+          <span>结果与诊断</span>
+        </div>
+        <div class="roadmap-item active">
+          <span class="roadmap-num">04</span>
+          <span>稳健性检验</span>
+        </div>
+        <div class="roadmap-item">
+          <span class="roadmap-num">05</span>
+          <span>工作流整合</span>
+        </div>
+      </div>
+
+      <div class="visual-legend">
+        <div class="legend-item">
+          <span class="legend-line baseline"></span>
+          <span>基准效应轨迹</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-line robust"></span>
+          <span>存活扰动束 (95% CI)</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-line threat"></span>
+          <span>证伪安慰剂收敛于 0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+  (() => {
+    "use strict";
+
+    const canvas = document.getElementById("field-canvas");
+    const SEED = "econ-robust-cover-seed-2026";
+    const REPRESENTATIVE_TIME = 4200;
+
+    let ctx;
+    let model;
+    let stopLoop = () => {};
+    let removeResize = () => {};
+
+    // Exclusion boxes to keep text clear and crisp
+    const EXCLUSION_BOXES = [
+      { x: 40, y: 30, w: 990, h: 320 },      // Header and title area
+      { x: 40, y: 560, w: 1520, h: 290 }     // Bottom cards and footer
+    ];
+
+    function isInsideExclusion(x, y, padding = 15) {
+      for (const b of EXCLUSION_BOXES) {
+        if (
+          x >= b.x - padding &&
+          x <= b.x + b.w + padding &&
+          y >= b.y - padding &&
+          y <= b.y + b.h + padding
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Build streamline trajectories representing robustness perturbations
+    // Trajectories start from left (model specification space), pass through
+    // causal estimation window, showing surviving cluster around baseline β=0.342,
+    // plus placebo paths converging toward zero.
+    function buildModel() {
+      const rng = new Math.seedrandom(SEED);
+      const paths = [];
+
+      // Focal corridor: center Y ~ 430 in logical coordinates, height window 340-520
+      const baselineY = 430;
+      const numLines = 76;
+
+      for (let i = 0; i < numLines; i++) {
+        const t = i / (numLines - 1); // 0 to 1
+        // Assign types: 0: Placebo (converges to 520, which represents zero effect)
+        // 1: Baseline / Robust cluster (surrounds baselineY=430)
+        // 2: Boundary test
+        const isPlacebo = i < 16;
+        const isBaseline = i >= 36 && i <= 40;
+
+        let startY;
+        let targetY;
+        let colorKey;
+        let alpha;
+        let width;
+
+        if (isPlacebo) {
+          startY = 350 + (rng() - 0.5) * 120;
+          targetY = 515 + (rng() - 0.5) * 22; // converges to zero axis
+          colorKey = "cause";
+          alpha = 0.22 + rng() * 0.18;
+          width = 1.0 + rng() * 0.6;
+        } else if (isBaseline) {
+          startY = baselineY + (rng() - 0.5) * 8;
+          targetY = baselineY + (rng() - 0.5) * 6;
+          colorKey = "observed";
+          alpha = 0.85;
+          width = 2.4;
+        } else {
+          // Robust surviving bundle
+          const distFromBase = (rng() - 0.5) * 90;
+          startY = baselineY + distFromBase * 1.4 + (rng() - 0.5) * 40;
+          targetY = baselineY + distFromBase * 0.7; // converges inward (robustness)
+          colorKey = "supported";
+          alpha = 0.18 + rng() * 0.28;
+          width = 0.9 + rng() * 1.2;
+        }
+
+        // Generate smooth curve points across x: 100 -> 1550
+        const points = [];
+        const startX = 60 + rng() * 100;
+        const endX = 1540 - rng() * 80;
+        const steps = 60;
+        const amp1 = (rng() - 0.5) * 55;
+        const amp2 = (rng() - 0.5) * 40;
+        const freq = 1.8 + rng() * 1.5;
+
+        for (let s = 0; s <= steps; s++) {
+          const u = s / steps;
+          const px = startX + (endX - startX) * u;
+          // Sigmoid blend from startY to targetY + harmonic perturbation
+          const blend = 1 / (1 + Math.exp(-6 * (u - 0.5)));
+          const wave = Math.sin(u * Math.PI * freq) * (1 - u) * amp1 + Math.sin(u * Math.PI * 4) * amp2 * (u);
+          const py = startY + (targetY - startY) * blend + wave;
+          points.push({ x: px, y: py });
+        }
+
+        paths.push({
+          points,
+          colorKey,
+          alpha,
+          width,
+          isBaseline,
+          pulsePhase: rng(),
+          speed: 0.00015 + rng() * 0.0002
+        });
+      }
+
+      return { paths, baselineY };
+    }
+
+    function render(time) {
+      if (!ctx || !model) return;
+
+      ctx.clearRect(0, 0, Deck.W, Deck.H);
+
+      const observedRgb = Deck.rgb("observed");
+      const supportedRgb = Deck.rgb("supported");
+      const causeRgb = Deck.rgb("cause");
+      const mutedRgb = Deck.rgb("muted");
+
+      // Draw subtle grid / axis lines for economic identification benchmark
+      ctx.save();
+      ctx.setLineDash([4, 8]);
+      ctx.strokeStyle = `rgba(${mutedRgb.join(",")}, 0.18)`;
+      ctx.lineWidth = 1;
+
+      // Zero-effect reference axis (y ~ 515)
+      ctx.beginPath();
+      ctx.moveTo(340, 515);
+      ctx.lineTo(1520, 515);
+      ctx.stroke();
+
+      // Baseline estimate reference axis (y = 430)
+      ctx.beginPath();
+      ctx.moveTo(340, 430);
+      ctx.lineTo(1520, 430);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label on the right margin of axes
+      ctx.font = "bold 13px monospace";
+      ctx.fillStyle = `rgba(${observedRgb.join(",")}, 0.9)`;
+      ctx.fillText("β̂ = 0.342 [基准估计值]", 1360, 422);
+      ctx.fillStyle = `rgba(${causeRgb.join(",")}, 0.85)`;
+      ctx.fillText("β̂ = 0.000 [安慰剂无效应零线]", 1360, 508);
+      ctx.restore();
+
+      // Draw perturbation streamlines
+      for (const path of model.paths) {
+        let rgb = supportedRgb;
+        if (path.colorKey === "cause") rgb = causeRgb;
+        if (path.colorKey === "observed") rgb = observedRgb;
+
+        ctx.beginPath();
+        let inStroke = false;
+
+        for (let i = 0; i < path.points.length; i++) {
+          const pt = path.points[i];
+          const inside = isInsideExclusion(pt.x, pt.y);
+
+          if (!inside) {
+            if (!inStroke) {
+              ctx.moveTo(pt.x, pt.y);
+              inStroke = true;
+            } else {
+              ctx.lineTo(pt.x, pt.y);
+            }
+          } else {
+            inStroke = false;
+          }
+        }
+
+        ctx.strokeStyle = `rgba(${rgb.join(",")}, ${path.alpha})`;
+        ctx.lineWidth = path.width;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.stroke();
+
+        // Traveling pulse on active lines
+        if (path.width > 1.2) {
+          const progress = (path.pulsePhase + time * path.speed) % 1;
+          const idx = Math.floor(progress * (path.points.length - 1));
+          const p1 = path.points[idx];
+          const p2 = path.points[Math.min(idx + 1, path.points.length - 1)];
+          const frac = (progress * (path.points.length - 1)) - idx;
+          const pulseX = p1.x + (p2.x - p1.x) * frac;
+          const pulseY = p1.y + (p2.y - p1.y) * frac;
+
+          if (!isInsideExclusion(pulseX, pulseY, 20)) {
+            ctx.beginPath();
+            ctx.arc(pulseX, pulseY, path.isBaseline ? 3.5 : 2.2, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(${rgb.join(",")}, 0.85)`;
+            ctx.fill();
+          }
+        }
+      }
+    }
+
+    function rebuild() {
+      ctx = Deck.fit(canvas);
+      if (!ctx) return;
+      model = buildModel();
+      render(REPRESENTATIVE_TIME);
+    }
+
+    function start() {
+      stopLoop();
+      stopLoop = Deck.loop(time => {
+        render(time);
+      }, { still: REPRESENTATIVE_TIME });
+    }
+
+    function init() {
+      Deck.init({ index: 16, total: 24, keys: false });
+      rebuild();
+      start();
+      removeResize = Deck.onResize(() => {
+        rebuild();
+      });
+    }
+
+    init();
+  })();
+  </script>
+</body>
+</html>

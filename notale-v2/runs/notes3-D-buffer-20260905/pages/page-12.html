@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>弱酸—强碱滴定的分段计算</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      gap: 16px;
+    }
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧图表区 */
+    .chart-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      height: 100%;
+    }
+    .chart-card .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--muted);
+    }
+    .plot-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      border-radius: 10px;
+      background: #EBF3F4;
+    }
+    #chartHost {
+      width: 100%;
+      height: 100%;
+    }
+    .chart-fallback {
+      position: absolute;
+      inset: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 12px;
+      background: var(--paper);
+      padding: 24px;
+      border-radius: 8px;
+    }
+
+    /* 右侧控制与模型解读区 */
+    .detail-card {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      height: 100%;
+    }
+    .stage-tabs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .stage-btn {
+      padding: 8px 6px;
+      min-height: 42px;
+      font-size: var(--fs-label);
+      border-radius: 8px;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .slider-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 12px;
+      background: var(--selected);
+      padding: 10px 14px;
+      border-radius: 8px;
+    }
+    .model-box {
+      border: 1px solid #D1DFE3;
+      background: #F8FAFB;
+      padding: 14px 16px;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .model-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .model-badge {
+      font-weight: 700;
+      font-size: var(--fs-label);
+    }
+    .formula-display {
+      font-family: var(--font-num);
+      font-size: 16px;
+      color: var(--text);
+      background: var(--paper);
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid #D1DFE3;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .balance-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-label);
+    }
+    .balance-table th, .balance-table td {
+      padding: 6px 8px;
+      text-align: left;
+      border-bottom: 1px solid #E1EBEF;
+    }
+    .balance-table th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: var(--fs-tick);
+      background: #F0F6F7;
+    }
+    .balance-table .num {
+      font-weight: 700;
+      color: var(--text);
+    }
+    .contrast-note {
+      margin-top: auto;
+      background: #FEF7EC;
+      border: 1px solid #F1DCBD;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="12" data-total="17">
+  <div id="stage">
+    <header class="header-block">
+      <h1>弱酸—强碱滴定的分段计算</h1>
+      <p class="lead">0.100 mol/L 乙酸（20.00 mL，pKa = 4.76）加入 0.100 mol/L NaOH：溶液主导物种随反应进程切换，必须选用对应的化学平衡模型。</p>
+    </header>
+
+    <main class="focus layout">
+      <!-- 左栏：滴定曲线与分段标记图 -->
+      <section class="panel chart-card min0">
+        <div class="top-bar">
+          <div class="legend">
+            <span class="li" style="color:var(--buffer)"><span class="sw line"></span>滴定曲线 pH</span>
+            <span class="li" style="color:var(--acid)"><span class="sw" style="background:var(--acid)"></span>弱酸起始/缓冲</span>
+            <span class="li" style="color:var(--focus)"><span class="sw" style="background:var(--focus)"></span>共轭碱水解(当量点)</span>
+            <span class="li" style="color:var(--base)"><span class="sw" style="background:var(--base)"></span>强碱过量</span>
+          </div>
+          <div class="hint">点击图上点或右侧阶段可快速跳转</div>
+        </div>
+
+        <div class="plot-container min0">
+          <div id="chartHost" role="img" aria-label="弱酸强碱滴定曲线与四个特征分段"></div>
+          <div id="chartFallback" class="chart-fallback" hidden>
+            <h3>分段计算关键数据对照表</h3>
+            <p>1. 起始电离 (0 mL): [H+] = √(c·Ka), pH = 2.88</p>
+            <p>2. 缓冲共存 (10 mL, 半当量点): [HAc]=[Ac-], pH = pKa = 4.76</p>
+            <p>3. 中和完成 (20 mL, 当量点): Ac- 水解, [OH-] = √(c·Kb), pH = 8.73</p>
+            <p>4. 强碱过量 (25 mL): 过量 NaOH 主导, [OH-] = 0.011 mol/L, pH = 12.05</p>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:var(--fs-sec); color:var(--muted);">
+          <span>横轴：加入 NaOH 体积 V (mL) · 当量点 = 20.00 mL</span>
+          <span>体系：20.00 mL 0.100 mol/L CH₃COOH + 0.100 mol/L NaOH</span>
+        </div>
+      </section>
+
+      <!-- 右栏：交互控制与当前状态计算模型解析 -->
+      <section class="panel detail-card min0">
+        <div class="stage-tabs">
+          <button class="btn stage-btn" id="btn0" onclick="setVolume(0)">① 起始电离<br><span class="num" style="font-size:13px">0.00 mL</span></button>
+          <button class="btn stage-btn" id="btn1" onclick="setVolume(10)">② 缓冲共存<br><span class="num" style="font-size:13px">10.00 mL</span></button>
+          <button class="btn stage-btn" id="btn2" onclick="setVolume(20)">③ 中和完成<br><span class="num" style="font-size:13px">20.00 mL</span></button>
+          <button class="btn stage-btn" id="btn3" onclick="setVolume(25)">④ 强碱过量<br><span class="num" style="font-size:13px">25.00 mL</span></button>
+        </div>
+
+        <div class="ctl">
+          <div class="slider-row">
+            <span style="font-weight:700">滴定剂体积</span>
+            <input type="range" id="volSlider" min="0" max="30" step="0.2" value="10.0" oninput="setVolume(parseFloat(this.value))">
+            <span class="big sm" style="font-size:34px;"><span class="num" id="readoutVol">10.0</span><span class="unit">mL</span></span>
+          </div>
+        </div>
+
+        <!-- 读数与适用模型区块 -->
+        <div class="model-box">
+          <div class="model-title-row">
+            <span class="tag" id="stageTag">② 缓冲共存区</span>
+            <div style="display:flex; align-items:baseline; gap:6px;">
+              <span style="font-size:var(--fs-label); color:var(--muted)">当前计算 pH</span>
+              <span class="big sm" id="readoutPH" style="color:var(--buffer); font-size:36px;">4.76</span>
+            </div>
+          </div>
+
+          <div style="font-size:var(--fs-sec); color:var(--text);" id="stageDesc">
+            弱酸 CH₃COOH 与生成产物 CH₃COO⁻ 构成共轭酸碱缓冲对，抵抗 pH 改变。
+          </div>
+
+          <div class="formula-display">
+            <span style="color:var(--muted); font-size:15px; font-weight:700; white-space:nowrap;">适用模型</span>
+            <span id="formulaText" style="line-height:1.35;">pH = pK_a + \lg \frac{[A^-]}{[HA]}</span>
+          </div>
+        </div>
+
+        <!-- 组分浓度对比表 -->
+        <table class="balance-table">
+          <thead>
+            <tr>
+              <th>主要物种</th>
+              <th>物质量 (mmol)</th>
+              <th>总浓度 (mol/L)</th>
+              <th>主导控制平衡</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <!-- 动态填充 -->
+          </tbody>
+        </table>
+
+        <!-- 教学对比与本质提炼 -->
+        <div class="contrast-note" id="contrastNote">
+          <strong>计算要诀：</strong>判断滴定曲线各点的本质，是看反应后<strong>容器里到底剩下了什么</strong>。不可用一个经验公式套用全程。
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    本页聚焦弱酸滴定的核心计算思想：分段选用模型。
+    很多学生在这里容易死记硬背公式，却不知道公式的适用前提。
+    我们把它拆为四个清晰阶段：
+    第一阶段：未滴定（0 mL），纯弱酸电离平衡，利用 Ka 一元弱酸近似公式计算；
+    第二阶段：当量点前（例如半当量点 10 mL），弱酸与生成的共轭碱盐共存，形成缓冲体系，使用 Henderson-Hasselbalch 缓冲公式；
+    第三阶段：化学计量点（20 mL），弱酸完全转化为醋酸钠，此时是共轭碱水解平衡，pH 大于 7，利用 Kb 计算；
+    第四阶段：过量区（如 25 mL），强碱完全压制弱碱水解，直接按过量氢氧根计算。
+    理解这四种模型的切换，才能把握酸碱滴定背后的溶液化学真实状态。
+  </aside>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      // 体系常数：20.00 mL 0.100 mol/L HAc (pKa = 4.76, Ka = 1.75e-5)
+      // 滴定剂：0.100 mol/L NaOH
+      var V0 = 20.0;
+      var C0 = 0.100;
+      var Cb = 0.100;
+      var pKa = 4.757;
+      var Ka = Math.pow(10, -pKa);
+      var Kw = 1.0e-14;
+      var Kb = Kw / Ka;
+
+      // 精确求解滴定各体积下的 pH
+      function calcPH(V) {
+        if (V <= 0.001) {
+          // 起始电离: [H+] = sqrt(Ka * C0)
+          var h = Math.sqrt(Ka * C0);
+          return -Math.log10(h);
+        }
+        var totalV = V0 + V;
+        var n_acid_init = V0 * C0; // 2.0 mmol
+        var n_base_add = V * Cb;   // V * 0.1 mmol
+
+        if (V < 19.95) {
+          // 缓冲共存区：未反应 HAc 与生成的 Ac-
+          var n_hac = n_acid_init - n_base_add;
+          var n_ac = n_base_add;
+          // HH 方程: pH = pKa + log10(n_ac / n_hac)
+          return pKa + Math.log10(n_ac / n_hac);
+        } else if (V >= 19.95 && V <= 20.05) {
+          // 当量点 (20.00 mL): 纯 Ac- 水解
+          // [Ac-] = 2.0 mmol / 40.0 mL = 0.050 mol/L
+          var c_salt = n_acid_init / totalV;
+          var oh = Math.sqrt(Kb * c_salt);
+          var h = Kw / oh;
+          return -Math.log10(h);
+        } else {
+          // 强碱过量区: 强碱主导 [OH-]
+          var n_oh_excess = n_base_add - n_acid_init;
+          var c_oh = n_oh_excess / totalV;
+          var h = Kw / c_oh;
+          return -Math.log10(h);
+        }
+      }
+
+      // 生成连续曲线点集 (0 到 30 mL)
+      var curveData = [];
+      for (var v = 0; v <= 30.01; v += 0.25) {
+        var roundedV = Math.round(v * 100) / 100;
+        // 在 20 mL 附近做高密采样
+        if (Math.abs(roundedV - 20) < 0.3 && roundedV !== 20.0) {
+          continue;
+        }
+        var ph = calcPH(roundedV);
+        curveData.push([roundedV, Math.round(ph * 100) / 100]);
+      }
+      // 确保包含 20.00 mL 精确点
+      curveData.push([20.0, Math.round(calcPH(20.0) * 100) / 100]);
+      curveData.sort(function(a, b) { return a[0] - b[0]; });
+
+      // 特征四点
+      var keyStages = [
+        { v: 0.0, name: "① 起始电离", tag: "起始弱酸电离", tagClass: "acid" },
+        { v: 10.0, name: "② 缓冲共存", tag: "共轭缓冲对", tagClass: "buffer" },
+        { v: 20.0, name: "③ 中和完成", tag: "共轭碱水解", tagClass: "base" },
+        { v: 25.0, name: "④ 强碱过量", tag: "过量强碱控制", tagClass: "base" }
+      ];
+
+      var currentVol = 10.0;
+      var chart = null;
+
+      var chartHost = document.getElementById("chartHost");
+      var readoutVol = document.getElementById("readoutVol");
+      var readoutPH = document.getElementById("readoutPH");
+      var volSlider = document.getElementById("volSlider");
+      var stageTag = document.getElementById("stageTag");
+      var stageDesc = document.getElementById("stageDesc");
+      var formulaText = document.getElementById("formulaText");
+      var tableBody = document.getElementById("tableBody");
+      var contrastNote = document.getElementById("contrastNote");
+
+      function getStageInfo(V) {
+        if (V < 0.5) {
+          return {
+            index: 0,
+            tag: "① 起始电离点",
+            tagClass: "tag acid",
+            phColor: "var(--acid)",
+            desc: "滴定尚未开始，溶液为纯弱酸体系。pH 仅由乙酸自身的微弱解离决定。",
+            formula: "[H⁺] ≈ √(c·K_a) = √(0.100 × 1.75×10⁻⁵) = 1.32×10⁻³ mol/L",
+            note: "<strong>注意区分：</strong>同浓度 0.1 mol/L 强酸 HCl 的 pH = 1.00，而弱酸仅微弱电离，起始 pH 显著偏高（2.88）。",
+            species: [
+              { name: "CH₃COOH", n: "2.00", c: "0.1000", role: "未电离母体（主导）" },
+              { name: "CH₃COO⁻", n: "0.026", c: "0.0013", role: "极少量电离" },
+              { name: "H₃O⁺", n: "0.026", c: "0.0013", role: "决定 pH 读数" }
+            ]
+          };
+        } else if (V < 19.8) {
+          var n_hac = (20 * 0.1 - V * 0.1).toFixed(2);
+          var n_ac = (V * 0.1).toFixed(2);
+          var totV = (20 + V).toFixed(1);
+          var isHalf = Math.abs(V - 10.0) < 0.4;
+          return {
+            index: 1,
+            tag: isHalf ? "② 半当量点 (pH = pKa)" : "② 缓冲共存区",
+            tagClass: "tag buffer",
+            phColor: "var(--buffer)",
+            desc: isHalf ?
+              "滴入 10.00 mL 时，恰好一半弱酸被中和，[CH₃COOH] = [CH₃COO⁻]，缓冲能力达到极值峰。" :
+              "弱酸 CH₃COOH 与中和生成的弱酸根 CH₃COO⁻ 构筑经典缓冲对，平抑外加碱的 pH 扰动。",
+            formula: "pH = pK_a + lg([Ac⁻]/[HAc]) = 4.76 + lg(" + n_ac + "/" + n_hac + ")",
+            note: isHalf ?
+              "<strong>核心考点：</strong>半当量点处 [共轭碱]/[弱酸] = 1，对数项为 0，直接测得弱酸的 pKa = 4.76。" :
+              "<strong>模型特征：</strong>在此区间内无需考虑水的自偶电离，由 Henderson-Hasselbalch 方程直接掌控。",
+            species: [
+              { name: "CH₃COOH", n: n_hac, c: (n_hac/totV).toFixed(4), role: "剩余弱酸分子" },
+              { name: "CH₃COO⁻", n: n_ac, c: (n_ac/totV).toFixed(4), role: "生成共轭碱离子" },
+              { name: "Na⁺", n: n_ac, c: (n_ac/totV).toFixed(4), role: "旁观阳离子" }
+            ]
+          };
+        } else if (V >= 19.8 && V <= 20.5) {
+          var totV2 = (20 + V).toFixed(1);
+          return {
+            index: 2,
+            tag: "③ 中和完成 (当量点)",
+            tagClass: "tag",
+            phColor: "var(--focus)",
+            desc: "滴入 20.00 mL 时酸碱化学计量比为 1:1，弱酸全部转化为强碱弱酸盐 CH₃COONa，共轭碱微弱水解使溶液呈弱碱性。",
+            formula: "[OH⁻] ≈ √(c·K_b) = √(0.050 × 5.71×10⁻¹⁰) = 5.35×10⁻⁶ mol/L → pH = 8.73",
+            note: "<strong>关键警示：</strong>强酸—强碱滴定当量点 pH = 7.00；弱酸滴定当量点<strong>决不是中性</strong>，而是显碱性（pH ≈ 8.73）。",
+            species: [
+              { name: "CH₃COO⁻", n: "2.00", c: (2.0/totV2).toFixed(4), role: "强电解质阴离子（发生水解）" },
+              { name: "Na⁺", n: "2.00", c: (2.0/totV2).toFixed(4), role: "旁观阳离子" },
+              { name: "OH⁻", n: "0.0002", c: "5.35×10⁻⁶", role: "水解产生，使 pH > 7" }
+            ]
+          };
+        } else {
+          var n_oh = (V * 0.1 - 2.0).toFixed(2);
+          var totV3 = (20 + V).toFixed(1);
+          var c_oh = (n_oh / totV3).toFixed(4);
+          return {
+            index: 3,
+            tag: "④ 强碱过量区",
+            tagClass: "tag base",
+            phColor: "var(--base)",
+            desc: "化学计量点后，继续滴入的 NaOH 成为过量强碱。强碱完全电离出的 OH⁻ 远远大于弱酸根的水解量。",
+            formula: "[OH⁻] ≈ n(过量NaOH) / V_总 = " + n_oh + " / " + totV3 + " = " + c_oh + " mol/L",
+            note: "<strong>模型简化：</strong>过量强碱强烈同离子效应彻底抑制了弱酸根水解，直接按强电解质过量求 [OH⁻] 即可。",
+            species: [
+              { name: "OH⁻ (过量)", n: n_oh, c: c_oh, role: "决定强碱性 pH" },
+              { name: "Na⁺", n: (V * 0.1).toFixed(2), c: ((V*0.1)/totV3).toFixed(4), role: "全量钠离子" },
+              { name: "CH₃COO⁻", n: "2.00", c: (2.0/totV3).toFixed(4), role: "水解受压制" }
+            ]
+          };
+        }
+      }
+
+      function updateUI(V) {
+        currentVol = V;
+        var ph = calcPH(V);
+        var phStr = ph.toFixed(2);
+        var volStr = V.toFixed(1);
+
+        readoutVol.textContent = volStr;
+        volSlider.value = V;
+        readoutPH.textContent = phStr;
+
+        var info = getStageInfo(V);
+        readoutPH.style.color = info.phColor;
+        stageTag.className = info.tagClass;
+        stageTag.textContent = info.tag;
+        stageDesc.textContent = info.desc;
+        formulaText.textContent = info.formula;
+        contrastNote.innerHTML = info.note;
+
+        // 更新按钮高亮
+        for (var i = 0; i < 4; i++) {
+          var btn = document.getElementById("btn" + i);
+          if (i === info.index) {
+            btn.classList.add("primary");
+          } else {
+            btn.classList.remove("primary");
+          }
+        }
+
+        // 更新表格
+        var html = "";
+        info.species.forEach(function(s) {
+          html += "<tr>" +
+            "<td><strong>" + s.name + "</strong></td>" +
+            "<td class='num'>" + s.n + "</td>" +
+            "<td class='num'>" + s.c + "</td>" +
+            "<td style='color:var(--muted); font-size:15px;'>" + s.role + "</td>" +
+          "</tr>";
+        });
+        tableBody.innerHTML = html;
+
+        // 更新图表散点高亮点
+        if (chart) {
+          chart.setOption({
+            series: [
+              {}, // 曲线保持不变
+              {
+                id: "currentPoint",
+                data: [[V, ph]]
+              }
+            ]
+          });
+        }
+      }
+
+      window.setVolume = function(V) {
+        updateUI(V);
+      };
+
+      // 初始化 ECharts
+      function initChart() {
+        try {
+          if (!window.echarts) throw new Error("ECharts missing");
+          chart = echarts.init(chartHost, null, { renderer: "svg" });
+
+          var option = {
+            animation: false,
+            grid: {
+              top: 36,
+              right: 32,
+              bottom: 46,
+              left: 56
+            },
+            tooltip: {
+              trigger: "axis",
+              axisPointer: { type: "line" },
+              formatter: function(params) {
+                var p = params[0];
+                return "加入 NaOH: <b>" + p.value[0].toFixed(1) + " mL</b><br>体系 pH: <b>" + p.value[1].toFixed(2) + "</b>";
+              }
+            },
+            xAxis: {
+              type: "value",
+              min: 0,
+              max: 30,
+              interval: 5,
+              name: "V (mL)",
+              nameLocation: "end",
+              nameTextStyle: { color: "#526970", fontSize: 13 },
+              axisLine: { lineStyle: { color: "#526970", width: 2 } },
+              axisTick: { show: true },
+              axisLabel: { color: "#142B33", fontFamily: "Bahnschrift", fontSize: 13 },
+              splitLine: { lineStyle: { color: "#D8E3E5", type: "dashed" } }
+            },
+            yAxis: {
+              type: "value",
+              min: 0,
+              max: 14,
+              interval: 2,
+              name: "pH",
+              nameTextStyle: { color: "#526970", fontSize: 13, align: "right" },
+              axisLine: { lineStyle: { color: "#526970", width: 2 } },
+              axisTick: { show: true },
+              axisLabel: { color: "#142B33", fontFamily: "Bahnschrift", fontSize: 13 },
+              splitLine: { lineStyle: { color: "#D8E3E5" } }
+            },
+            series: [
+              {
+                id: "curve",
+                name: "滴定曲线",
+                type: "line",
+                smooth: true,
+                showSymbol: false,
+                data: curveData,
+                lineStyle: {
+                  width: 4,
+                  color: "#08746E"
+                },
+                markArea: {
+                  silent: true,
+                  data: [
+                    [
+                      {
+                        name: "缓冲平缓区",
+                        xAxis: 2.0,
+                        itemStyle: { color: "rgba(8, 116, 110, 0.08)" },
+                        label: {
+                          position: "insideTopLeft",
+                          color: "#08746E",
+                          fontSize: 13,
+                          fontWeight: "bold",
+                          offset: [10, 10]
+                        }
+                      },
+                      { xAxis: 18.0 }
+                    ],
+                    [
+                      {
+                        name: "pH 陡跃区",
+                        xAxis: 19.8,
+                        itemStyle: { color: "rgba(196, 90, 0, 0.12)" },
+                        label: {
+                          position: "top",
+                          color: "#C45A00",
+                          fontSize: 13,
+                          fontWeight: "bold"
+                        }
+                      },
+                      { xAxis: 20.5 }
+                    ]
+                  ]
+                },
+                markPoint: {
+                  symbol: "circle",
+                  symbolSize: 10,
+                  data: [
+                    { name: "0 mL (pH 2.88)", coord: [0, 2.88], itemStyle: { color: "#B43F2B" }, label: { show: true, formatter: "0 mL (pH 2.88)", position: "right", color: "#B43F2B", fontSize: 13 } },
+                    { name: "半当量点 (10 mL)", coord: [10, 4.76], itemStyle: { color: "#08746E" }, label: { show: true, formatter: "半当量点\n(pH=pKa=4.76)", position: "bottom", color: "#08746E", fontSize: 13 } },
+                    { name: "当量点 (20 mL)", coord: [20, 8.73], itemStyle: { color: "#C45A00" }, label: { show: true, formatter: "当量点\n(pH 8.73)", position: "left", color: "#C45A00", fontSize: 13 } }
+                  ]
+                }
+              },
+              {
+                id: "currentPoint",
+                name: "当前位置",
+                type: "scatter",
+                data: [[10.0, 4.76]],
+                symbolSize: 18,
+                itemStyle: {
+                  color: "#FFFFFF",
+                  borderColor: "#C45A00",
+                  borderWidth: 4,
+                  shadowBlur: 8,
+                  shadowColor: "rgba(0,0,0,0.25)"
+                },
+                z: 10
+              }
+            ]
+          };
+
+          chart.setOption(option);
+
+          // 点击图表时定位到该体积
+          chart.on("click", function(params) {
+            if (params.data && typeof params.data[0] === "number") {
+              setVolume(Math.round(params.data[0] * 10) / 10);
+            }
+          });
+
+          window.addEventListener("resize", function() {
+            if (chart) chart.resize();
+          });
+        } catch(e) {
+          document.getElementById("chartFallback").hidden = false;
+        }
+      }
+
+      initChart();
+      updateUI(10.0);
+      Deck.init({ title: "弱酸—强碱滴定的分段计算", keys: false });
+    })();
+  </script>
+</body>
+</html>

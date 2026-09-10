@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F4F7FB;
+      --surface: #E8EEF5;
+      --text: #13243A;
+      --muted: #53667C;
+      --model: #2457A6;
+      --aggregate: #0F766E;
+      --focus: #C94B00;
+      --font-display: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: "DIN Alternate", "Bahnschrift", system-ui, sans-serif;
+      --fs-h1: 34px;
+      --fs-h2: 22px;
+      --fs-lead: 19px;
+      --fs-body: 18px;
+      --fs-sec: 16px;
+      --fs-label: 15px;
+      --fs-tick: 13px;
+      --radius: 8px;
+      --line: 2px;
+      --dur-fast: 160ms;
+      --dur-base: 320ms;
+      --ease: cubic-bezier(.2,.75,.25,1);
+      --pad-x: 56px;
+      --pad-y: 28px;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      flex: none;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      margin: 6px 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+    }
+
+    main {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 860px 1fr;
+      gap: 28px;
+      align-items: stretch;
+    }
+
+    /* 左侧主图区：并行训练与聚合流程 */
+    .flow-panel {
+      position: relative;
+      background: #FFFFFF;
+      border: var(--line) solid var(--surface);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px 14px;
+      box-sizing: border-box;
+    }
+
+    .flow-panel .panel-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .flow-svg {
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+    }
+
+    /* 右侧对比区：单模型波动 vs 集成平滑 */
+    .compare-panel {
+      background: #FFFFFF;
+      border: var(--line) solid var(--surface);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      gap: 16px;
+    }
+
+    .curve-card {
+      background: var(--bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--surface);
+      padding: 14px 16px 12px;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+
+    .card-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .card-badge {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .badge-high {
+      background: #FEE2E2;
+      color: #991B1B;
+    }
+
+    .badge-low {
+      background: #CCFBF1;
+      color: var(--aggregate);
+    }
+
+    .chart-container {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    .chart-container svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px dashed #D5DFEB;
+    }
+
+    .stat-val {
+      font-family: var(--font-numeric);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .val-aggregate {
+      color: var(--aggregate);
+    }
+
+    /* SVG 内部公用排版 */
+    text {
+      font-family: var(--font-sans);
+    }
+    .num {
+      font-family: var(--font-numeric);
+    }
+  </style>
+</head>
+<body data-page="08" data-total="29">
+  <div id="stage">
+    <!-- 主标题精炼并严格对齐字阶 -->
+    <header>
+      <h1>Bagging：并行训练高方差模型，以聚合抵消波动</h1>
+      <p class="lead">各基学习器在不同重采样集上独立拟合，平均运算相互对冲特异扰动。</p>
+    </header>
+
+    <main>
+      <!-- 左侧：并行与聚合架构机制图 (减少 5 行密集重复，精炼为 3 路展开 + 省略汇聚，字数与清晰度更优) -->
+      <section class="flow-panel min0">
+        <div class="panel-title">
+          <span>重采样 → 并行训练 → 聚合决策</span>
+        </div>
+        <svg class="flow-svg" viewBox="0 0 820 630" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="arr-model" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2457A6" />
+            </marker>
+            <marker id="arr-agg" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#0F766E" />
+            </marker>
+          </defs>
+
+          <!-- 1. 原始训练集 D -->
+          <g transform="translate(30, 240)">
+            <rect x="0" y="0" width="130" height="130" rx="8" fill="#F4F7FB" stroke="#53667C" stroke-width="2"/>
+            <text x="65" y="48" fill="#13243A" font-size="18" font-weight="700" text-anchor="middle">原始训练集</text>
+            <text x="65" y="82" fill="#53667C" font-size="22" font-weight="700" font-family="DIN Alternate" text-anchor="middle">D (N 个)</text>
+            <text x="65" y="110" fill="#53667C" font-size="13" text-anchor="middle">全量样本</text>
+          </g>
+
+          <!-- 2. 分支连线与采样集 D_b -->
+          <!-- 路 1: 顶部 y=85 -->
+          <path d="M 160 275 C 205 275, 205 125, 245 125" fill="none" stroke="#2457A6" stroke-width="2" marker-end="url(#arr-model)"/>
+          <g transform="translate(250, 85)">
+            <rect x="0" y="0" width="125" height="80" rx="8" fill="#F4F7FB" stroke="#2457A6" stroke-width="2"/>
+            <text x="62" y="36" fill="#2457A6" font-size="16" font-weight="700" text-anchor="middle">重采样集 D₁</text>
+            <text x="62" y="62" fill="#53667C" font-size="13" text-anchor="middle">有放回抽样 N 个</text>
+          </g>
+
+          <!-- 路 2: 中部 y=265 -->
+          <path d="M 160 305 L 245 305" fill="none" stroke="#2457A6" stroke-width="2" marker-end="url(#arr-model)"/>
+          <g transform="translate(250, 265)">
+            <rect x="0" y="0" width="125" height="80" rx="8" fill="#F4F7FB" stroke="#2457A6" stroke-width="2"/>
+            <text x="62" y="36" fill="#2457A6" font-size="16" font-weight="700" text-anchor="middle">重采样集 D₂</text>
+            <text x="62" y="62" fill="#53667C" font-size="13" text-anchor="middle">有放回抽样 N 个</text>
+          </g>
+
+          <!-- 路 3: 底部 y=445 -->
+          <path d="M 160 335 C 205 335, 205 485, 245 485" fill="none" stroke="#2457A6" stroke-width="2" marker-end="url(#arr-model)"/>
+          <g transform="translate(250, 445)">
+            <rect x="0" y="0" width="125" height="80" rx="8" fill="#F4F7FB" stroke="#2457A6" stroke-width="2"/>
+            <text x="62" y="36" fill="#2457A6" font-size="16" font-weight="700" text-anchor="middle">重采样集 D_B</text>
+            <text x="62" y="62" fill="#53667C" font-size="13" text-anchor="middle">有放回抽样 N 个</text>
+          </g>
+
+          <!-- 中间省略符号 -->
+          <circle cx="312" cy="385" r="3" fill="#53667C"/>
+          <circle cx="312" cy="400" r="3" fill="#53667C"/>
+          <circle cx="312" cy="415" r="3" fill="#53667C"/>
+
+          <!-- 3. 基学习器训练列 -->
+          <path d="M 375 125 L 425 125" fill="none" stroke="#2457A6" stroke-width="2" marker-end="url(#arr-model)"/>
+          <path d="M 375 305 L 425 305" fill="none" stroke="#2457A6" stroke-width="2" marker-end="url(#arr-model)"/>
+          <path d="M 375 485 L 425 485" fill="none" stroke="#2457A6" stroke-width="2" marker-end="url(#arr-model)"/>
+
+          <!-- 学习器方块 -->
+          <g transform="translate(430, 85)">
+            <rect x="0" y="0" width="135" height="80" rx="8" fill="#2457A6" fill-opacity="0.08" stroke="#2457A6" stroke-width="2"/>
+            <text x="67" y="36" fill="#2457A6" font-size="16" font-weight="700" text-anchor="middle">基学习器 h₁</text>
+            <text x="67" y="62" fill="#53667C" font-size="13" text-anchor="middle">高方差决策树</text>
+          </g>
+
+          <g transform="translate(430, 265)">
+            <rect x="0" y="0" width="135" height="80" rx="8" fill="#2457A6" fill-opacity="0.08" stroke="#2457A6" stroke-width="2"/>
+            <text x="67" y="36" fill="#2457A6" font-size="16" font-weight="700" text-anchor="middle">基学习器 h₂</text>
+            <text x="67" y="62" fill="#53667C" font-size="13" text-anchor="middle">高方差决策树</text>
+          </g>
+
+          <g transform="translate(430, 445)">
+            <rect x="0" y="0" width="135" height="80" rx="8" fill="#2457A6" fill-opacity="0.08" stroke="#2457A6" stroke-width="2"/>
+            <text x="67" y="36" fill="#2457A6" font-size="16" font-weight="700" text-anchor="middle">基学习器 h_B</text>
+            <text x="67" y="62" fill="#53667C" font-size="13" text-anchor="middle">高方差决策树</text>
+          </g>
+
+          <!-- 4. 汇入聚合中心：设计签名“多条 model 路径汇入一条加粗 aggregate 路径” -->
+          <path d="M 565 125 C 600 125, 600 290, 630 300" fill="none" stroke="#2457A6" stroke-width="2"/>
+          <path d="M 565 305 L 630 305" fill="none" stroke="#2457A6" stroke-width="2"/>
+          <path d="M 565 485 C 600 485, 600 320, 630 310" fill="none" stroke="#2457A6" stroke-width="2"/>
+
+          <!-- 聚合模块 -->
+          <g transform="translate(635, 245)">
+            <rect x="0" y="0" width="165" height="120" rx="8" fill="#0F766E" fill-opacity="0.08" stroke="#0F766E" stroke-width="3"/>
+            <text x="82" y="34" fill="#0F766E" font-size="18" font-weight="700" text-anchor="middle">聚合操作</text>
+            <text x="82" y="66" fill="#13243A" font-size="15" text-anchor="middle">投票或平均</text>
+            <text x="82" y="98" fill="#0F766E" font-size="13" font-weight="700" font-family="DIN Alternate" text-anchor="middle">H(x) = avg(h_b)</text>
+          </g>
+
+          <!-- 粗输出线 -->
+          <path d="M 717 365 L 717 435" fill="none" stroke="#0F766E" stroke-width="4" marker-end="url(#arr-agg)"/>
+          <g transform="translate(640, 445)">
+            <rect x="0" y="0" width="155" height="46" rx="8" fill="#0F766E" />
+            <text x="77" y="28" fill="#FFFFFF" font-size="15" font-weight="700" text-anchor="middle">集成稳健输出 H</text>
+          </g>
+        </svg>
+      </section>
+
+      <!-- 右侧：高方差对冲与方差降低对比 (精炼文字，紧扣核心) -->
+      <section class="compare-panel min0">
+        <!-- 上卡片：单个决策树（过拟合、高波动） -->
+        <div class="curve-card min0">
+          <div class="card-header">
+            <span class="card-title">单棵决策树拟合 (h_b)</span>
+            <span class="card-badge badge-high">高方差</span>
+          </div>
+          <div class="chart-container">
+            <svg id="chart-single" viewBox="0 0 540 220" preserveAspectRatio="none">
+              <!-- 真实目标函数曲线 (浅灰基准) -->
+              <path d="M 30 150 Q 150 40 270 120 T 510 90" fill="none" stroke="#A0AEC0" stroke-width="2" stroke-dasharray="4,4"/>
+              <!-- 若干单树拟合曲线（折线剧烈波动） -->
+              <path d="M 30 160 L 90 60 L 150 75 L 210 30 L 270 150 L 330 90 L 390 140 L 450 60 L 510 110" fill="none" stroke="#2457A6" stroke-width="1.5" stroke-opacity="0.35"/>
+              <path d="M 30 130 L 80 180 L 160 30 L 220 120 L 280 90 L 340 160 L 400 70 L 460 120 L 510 70" fill="none" stroke="#2457A6" stroke-width="1.5" stroke-opacity="0.35"/>
+              <path d="M 30 170 L 100 80 L 170 110 L 230 40 L 290 140 L 360 80 L 420 130 L 470 50 L 510 100" fill="none" stroke="#2457A6" stroke-width="1.5" stroke-opacity="0.35"/>
+              <!-- 突出显示单棵树 -->
+              <path d="M 30 140 L 95 45 L 145 90 L 215 20 L 265 160 L 340 70 L 405 150 L 455 45 L 510 85" fill="none" stroke="#2457A6" stroke-width="2.5"/>
+            </svg>
+          </div>
+          <div class="stat-row">
+            <span>各模型预测方差</span>
+            <span class="stat-val" style="color: #991B1B;">Var(h_b) = σ²</span>
+          </div>
+        </div>
+
+        <!-- 下卡片：Bagging 聚合后的平滑输出 -->
+        <div class="curve-card min0">
+          <div class="card-header">
+            <span class="card-title">Bagging 聚合输出 (H)</span>
+            <span class="card-badge badge-low">低方差</span>
+          </div>
+          <div class="chart-container">
+            <svg id="chart-ensemble" viewBox="0 0 540 220" preserveAspectRatio="none">
+              <!-- 真实目标函数曲线 (浅灰基准) -->
+              <path d="M 30 150 Q 150 40 270 120 T 510 90" fill="none" stroke="#A0AEC0" stroke-width="2" stroke-dasharray="4,4"/>
+              <!-- 聚合平滑曲线：逼近真实曲线，毛刺抵消 -->
+              <path d="M 30 148 Q 150 50 270 122 T 510 88" fill="none" stroke="#0F766E" stroke-width="4"/>
+              <!-- 对冲示意区域标注 -->
+              <circle cx="215" cy="70" r="28" fill="#0F766E" fill-opacity="0.08" stroke="#0F766E" stroke-width="1.5" stroke-dasharray="3,3"/>
+              <text x="252" y="74" fill="#0F766E" font-size="13" font-weight="700">扰动相互抵消</text>
+            </svg>
+          </div>
+          <div class="stat-row">
+            <span>集成后预测方差</span>
+            <span class="stat-val val-aggregate">Var(H) ≈ (1/B)·σ²</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    在上一节中，我们了解了如何通过 Bootstrap 重采样，从原始样本集生成一组彼此有差异的子数据集。这一节我们来看 Bagging 的全景运行机制。
+    Bagging 的全称是 Bootstrap Aggregating。它的逻辑非常直观：第一步，基于重采样并行训练多个高方差模型，比如不剪枝的深层决策树；第二步，将所有模型的预测结果进行聚合，分类问题用多数投票，回归问题用简单算术平均。
+    为什么平均能起效？看右侧的对比：单棵树对训练集里的特定噪点极其敏感，预测曲线剧烈震荡；而当我们将多个独立扰动的模型平均时，正向偏差与负向偏差会在求和中彼此对冲，最终得到的集成预测曲线变得平滑而稳健。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 8, total: 29 });
+  </script>
+</body>
+</html>

@@ -1,0 +1,392 @@
+<!doctype html>
+<!--
+  构图意图：
+  1. 主对象为右侧汇聚的基学习器预测流场（多条半透明冷蓝轨迹并行奔涌，最终在汇合轴线上收束为一条更深更稳的集成共识深蓝轴线）。
+  2. 画面左侧为极度克制的纯粹文字区，右侧为流场与共识枢纽，通过流线横贯画面形成从“多样性探索”到“集体共识”的视觉指向关系。
+  3. 导语与章节标注贴紧主标题左侧基线，形成严整的书卷版面，流线在接近文字保护区时自然衰减退避。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成学习：机器学习概论第八讲</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: "Lato", "Noto Sans SC", sans-serif;
+    }
+
+    #stage {
+      isolation: isolate;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    #stream-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* 左侧文字区：纯净、稳固 */
+    .title-group {
+      position: absolute;
+      z-index: 5;
+      left: var(--pad-x);
+      top: 280px;
+      width: 580px;
+      pointer-events: none;
+    }
+
+    .chapter-tag {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-sec);
+      font-weight: var(--weight-medium);
+      color: var(--model);
+      letter-spacing: 0.12em;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chapter-tag::before {
+      content: "";
+      width: 24px;
+      height: 2px;
+      background: var(--model);
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 64px;
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .title-sub {
+      display: block;
+      margin-top: 16px;
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-regular);
+      color: var(--muted);
+      line-height: 1.35;
+      letter-spacing: 0;
+    }
+
+    .concept-line {
+      margin-top: 40px;
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      max-width: 500px;
+    }
+
+    /* 右侧集成汇聚标注：移至右上方无干扰留白区 */
+    .aggregation-hud {
+      position: absolute;
+      z-index: 5;
+      right: var(--pad-x);
+      top: 180px;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: flex-end;
+    }
+
+    .hud-label {
+      font-size: var(--fs-body);
+      font-weight: var(--weight-medium);
+      color: var(--aggregate);
+      letter-spacing: 0.06em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .hud-label::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--focus);
+    }
+
+    .hud-stat {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+  </style>
+</head>
+<body data-page="01" data-total="26">
+  <main id="stage">
+    <canvas id="stream-canvas" class="cv-fill no-pan" aria-hidden="true"></canvas>
+
+    <section class="title-group">
+      <div class="chapter-tag">LECTURE 08</div>
+      <h1>集成学习<span class="title-sub">机器学习概论第八讲</span></h1>
+      <p class="concept-line">组合多个有差异的基学习器，汇聚出更低方差与更高精度的统一判断。</p>
+    </section>
+
+    <aside class="aggregation-hud">
+      <div class="hud-label">集成共识收束</div>
+      <div class="hud-stat">48 个基学习器预测轨迹</div>
+    </aside>
+  </main>
+
+  <aside class="notes" hidden>
+    各位同学好，欢迎来到《机器学习概论》第八讲：集成学习。
+    在前面的课程中，我们学习了决策树、支持向量机、神经网络等独立的单模型。但在实际应用和竞赛中，表现最稳健、威力最大的往往不是某一个单独的超级复杂模型，而是“集成学习”。
+    这一讲我们将深入剖析集成学习的核心机理：多样性与准确性的权衡、Bagging 降低方差、Boosting 减少偏差，以及 Stacking 学习如何组合。
+    大家可以看到画面右侧的这组轨迹：数十个彼此存在细微差异的基学习器，在各自探索后最终收束到一条强有力的深蓝共识路径上。这就是集成学习的本质。
+  </aside>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const W = 1600;
+      const H = 900;
+      const SEED = "ensemble-learning-lecture-08";
+      const CANVAS = document.getElementById("stream-canvas");
+      let ctx = null;
+
+      // 保护左侧文字区，避开标题
+      const TITLE_BOX = Object.freeze({ x: 30, y: 190, w: 620, h: 480 });
+
+      // 集成汇聚目标点（多学习器在此向中间聚合并向前延展）
+      const CONVERGE_X = 1380;
+      const CONVERGE_Y = 450;
+      const NUM_MODELS = 48;
+
+      let modelPaths = [];
+      let stopLoop = () => {};
+
+      function buildPaths() {
+        const rng = new Math.seedrandom(SEED);
+        const paths = [];
+
+        // 48 条基学习器轨迹：从右侧中后段/上方/下方分歧出发，最终汇聚并贯穿到右侧终点
+        for (let i = 0; i < NUM_MODELS; i++) {
+          const t = i / (NUM_MODELS - 1);
+          // 初始 y 跨度在 100 到 800 之间，呈现基学习器的多样性 (Diversity)
+          const startY = 120 + t * 660 + (rng() - 0.5) * 40;
+          const startX = 640 + (rng() - 0.5) * 80;
+
+          // 关键拐点：多样性探索期 -> 约束期 -> 聚合期
+          const cp1x = 880 + (rng() - 0.5) * 90;
+          const cp1y = startY + (rng() - 0.5) * 160;
+
+          const cp2x = 1140 + (rng() - 0.5) * 60;
+          // 逼向中心 Y
+          const cp2y = Deck.lerp(cp1y, CONVERGE_Y, 0.65) + (rng() - 0.5) * 50;
+
+          const endX = CONVERGE_X + 160;
+          const endY = CONVERGE_Y + (rng() - 0.5) * 6; // 在终点处极小分散
+
+          // 采样生成点阵
+          const pts = [];
+          const STEPS = 70;
+          for (let s = 0; s <= STEPS; s++) {
+            const u = s / STEPS;
+            // 三次贝塞尔曲线计算
+            const u1 = 1 - u;
+            const px = u1*u1*u1*startX + 3*u1*u1*u*cp1x + 3*u1*u*u*cp2x + u*u*u*endX;
+            const py = u1*u1*u1*startY + 3*u1*u1*u*cp1y + 3*u1*u*u*cp2y + u*u*u*endY;
+            pts.push({ x: px, y: py });
+          }
+
+          paths.push({
+            pts,
+            speed: 0.00035 + rng() * 0.00025,
+            offset: rng(),
+            alpha: 0.18 + rng() * 0.22,
+            width: 1.0 + rng() * 1.2
+          });
+        }
+
+        // 添加最终一条集成的共识强路径 (The Aggregate Consensus Path)
+        const consensusPts = [];
+        const STEPS = 80;
+        const cStartX = 620;
+        const cStartY = CONVERGE_Y;
+        const cCp1x = 980;
+        const cCp1y = CONVERGE_Y;
+        const cCp2x = 1200;
+        const cCp2y = CONVERGE_Y;
+        const cEndX = 1580;
+        const cEndY = CONVERGE_Y;
+
+        for (let s = 0; s <= STEPS; s++) {
+          const u = s / STEPS;
+          const u1 = 1 - u;
+          const px = u1*u1*u1*cStartX + 3*u1*u1*u*cCp1x + 3*u1*u*u*cCp2x + u*u*u*cEndX;
+          const py = u1*u1*u1*cStartY + 3*u1*u1*u*cCp1y + 3*u1*u*u*cCp2y + u*u*u*cEndY;
+          consensusPts.push({ x: px, y: py });
+        }
+
+        return { paths, consensusPts };
+      }
+
+      function isInsideTitleBox(x, y) {
+        return x >= TITLE_BOX.x && x <= TITLE_BOX.x + TITLE_BOX.w &&
+               y >= TITLE_BOX.y && y <= TITLE_BOX.y + TITLE_BOX.h;
+      }
+
+      function drawStaticBackground(targetCtx, data) {
+        const modelColor = Deck.rgb("model");
+        const aggregateColor = Deck.rgb("aggregate");
+        const lineMuted = Deck.rgb("line");
+
+        // 1. 基学习器细线（静态结构底线）
+        targetCtx.lineCap = "round";
+        targetCtx.lineJoin = "round";
+
+        for (const p of data.paths) {
+          targetCtx.beginPath();
+          let inPath = false;
+          for (const pt of p.pts) {
+            if (isInsideTitleBox(pt.x, pt.y)) {
+              inPath = false;
+              continue;
+            }
+            if (!inPath) {
+              targetCtx.moveTo(pt.x, pt.y);
+              inPath = true;
+            } else {
+              targetCtx.lineTo(pt.x, pt.y);
+            }
+          }
+          targetCtx.strokeStyle = `rgba(${modelColor.join(",")}, ${p.alpha * 0.75})`;
+          targetCtx.lineWidth = p.width;
+          targetCtx.stroke();
+        }
+
+        // 2. 汇聚结构线与中心轴骨架
+        targetCtx.beginPath();
+        targetCtx.setLineDash([4, 6]);
+        targetCtx.moveTo(600, CONVERGE_Y);
+        targetCtx.lineTo(CONVERGE_X - 10, CONVERGE_Y);
+        targetCtx.strokeStyle = `rgba(${lineMuted.join(",")}, 0.35)`;
+        targetCtx.lineWidth = 1;
+        targetCtx.stroke();
+        targetCtx.setLineDash([]);
+
+        // 3. 最终集成聚合主轴（粗实线，向右延伸穿过收束点）
+        targetCtx.beginPath();
+        targetCtx.moveTo(CONVERGE_X, CONVERGE_Y);
+        targetCtx.lineTo(1580, CONVERGE_Y);
+        targetCtx.strokeStyle = `rgba(${aggregateColor.join(",")}, 0.9)`;
+        targetCtx.lineWidth = 4;
+        targetCtx.stroke();
+
+        // 4. 收束焦点标记 (Focus Point: 焦橙点)
+        const focusColor = Deck.rgb("focus");
+        targetCtx.beginPath();
+        targetCtx.arc(CONVERGE_X, CONVERGE_Y, 4.5, 0, Math.PI * 2);
+        targetCtx.fillStyle = `rgb(${focusColor.join(",")})`;
+        targetCtx.fill();
+
+        // 弱外环
+        targetCtx.beginPath();
+        targetCtx.arc(CONVERGE_X, CONVERGE_Y, 12, 0, Math.PI * 2);
+        targetCtx.strokeStyle = `rgba(${focusColor.join(",")}, 0.35)`;
+        targetCtx.lineWidth = 1.2;
+        targetCtx.stroke();
+      }
+
+      function sampleBezierPoints(pts, t) {
+        const pos = Deck.clamp(t, 0, 1) * (pts.length - 1);
+        const idx = Math.floor(pos);
+        const rem = pos - idx;
+        const p1 = pts[idx];
+        const p2 = pts[Math.min(idx + 1, pts.length - 1)];
+        return {
+          x: Deck.lerp(p1.x, p2.x, rem),
+          y: Deck.lerp(p1.y, p2.y, rem)
+        };
+      }
+
+      function drawTracers(targetCtx, data, time) {
+        const modelColor = Deck.rgb("model");
+        const aggregateColor = Deck.rgb("aggregate");
+
+        // 基学习器沿路径运动的光点（微弱、有序、各自独立）
+        for (let i = 0; i < data.paths.length; i += 2) {
+          const p = data.paths[i];
+          const progress = (p.offset + time * p.speed) % 1;
+          const pt = sampleBezierPoints(p.pts, progress);
+
+          if (!isInsideTitleBox(pt.x, pt.y)) {
+            targetCtx.beginPath();
+            targetCtx.arc(pt.x, pt.y, 1.8, 0, Math.PI * 2);
+            targetCtx.fillStyle = `rgba(${modelColor.join(",")}, 0.75)`;
+            targetCtx.fill();
+          }
+        }
+
+        // 集成聚合轨迹上的主信号粒子
+        const aggProgress = (time * 0.00042) % 1;
+        const aggPt = sampleBezierPoints(data.consensusPts, aggProgress);
+        targetCtx.beginPath();
+        targetCtx.arc(aggPt.x, aggPt.y, 3.2, 0, Math.PI * 2);
+        targetCtx.fillStyle = `rgba(${aggregateColor.join(",")}, 0.95)`;
+        targetCtx.fill();
+      }
+
+      function initCover() {
+        ctx = Deck.fit(CANVAS);
+        if (!ctx) return;
+
+        const data = buildPaths();
+        const staticCv = document.createElement("canvas");
+        staticCv.width = W;
+        staticCv.height = H;
+        const sCtx = staticCv.getContext("2d");
+        drawStaticBackground(sCtx, data);
+
+        function renderFrame(time) {
+          ctx.clearRect(0, 0, W, H);
+          ctx.drawImage(staticCv, 0, 0, W, H);
+          drawTracers(ctx, data, time);
+        }
+
+        stopLoop();
+        stopLoop = Deck.loop(time => {
+          renderFrame(time);
+        }, { still: 1600 });
+      }
+
+      Deck.init({ index: 1, total: 26, keys: false });
+      initCover();
+      Deck.onResize(() => {
+        initCover();
+      });
+    })();
+  </script>
+</body>
+</html>

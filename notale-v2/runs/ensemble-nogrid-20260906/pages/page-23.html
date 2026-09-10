@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --pad-x: 56px;
+      --pad-y: 36px;
+    }
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      user-select: none;
+    }
+    .header-zone {
+      flex: none;
+      margin-bottom: 24px;
+    }
+    .title {
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 10px 0;
+    }
+    .subtitle {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 36px;
+      flex: 1;
+      min-height: 0;
+    }
+    .panel {
+      background: var(--paper);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 20px rgba(23, 42, 58, 0.05);
+      border: 1px solid rgba(83, 101, 117, 0.12);
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid rgba(83, 101, 117, 0.14);
+      padding-bottom: 14px;
+      margin-bottom: 18px;
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 4px;
+    }
+    .badge-bagging {
+      background: rgba(36, 95, 166, 0.15);
+      color: #174278;
+    }
+    .badge-boosting {
+      background: rgba(201, 79, 45, 0.15);
+      color: #8c2f15;
+    }
+    .mechanism-tag {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+    .diagram-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      margin-bottom: 18px;
+    }
+    .summary-card {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 14px 18px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      column-gap: 16px;
+      row-gap: 6px;
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+    }
+    .summary-label {
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .summary-val {
+      color: var(--text);
+      font-weight: 500;
+    }
+    .interactive-dock {
+      position: absolute;
+      top: 24px;
+      right: 28px;
+      display: flex;
+      gap: 8px;
+    }
+    .dock-btn {
+      background: var(--bg);
+      border: 1px solid rgba(83, 101, 117, 0.25);
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+    .dock-btn:hover, .dock-btn.active {
+      background: var(--text);
+      color: var(--bg);
+      border-color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="23" data-total="26">
+  <main id="stage">
+    <header class="header-zone">
+      <h1 class="title">Bagging 与 Boosting 的决策选择</h1>
+      <p class="subtitle">高方差模型通过独立采样平滑扰动，高偏差模型通过残差级联逐轮逼近</p>
+    </header>
+
+    <div class="comparison-grid">
+      <!-- Bagging Panel -->
+      <section class="panel min0">
+        <header class="panel-header">
+          <h2 class="panel-title">
+            Bagging
+            <span class="badge badge-bagging">稳定高方差</span>
+          </h2>
+          <span class="mechanism-tag">并行聚合 · 平滑扰动</span>
+        </header>
+        <div class="diagram-wrap min0">
+          <canvas id="cvBagging" class="cv-fill"></canvas>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">基模型要求</span>
+          <span class="summary-val">高方差、过拟合倾向（如深决策树）</span>
+          <span class="summary-label">误差改善点</span>
+          <span class="summary-val">方差降至 1/B + 相关项，几乎不改变偏差</span>
+        </div>
+      </section>
+
+      <!-- Boosting Panel -->
+      <section class="panel min0">
+        <header class="panel-header">
+          <h2 class="panel-title">
+            Boosting
+            <span class="badge badge-boosting">降低高偏差</span>
+          </h2>
+          <span class="mechanism-tag">序列纠错 · 逐步逼近</span>
+        </header>
+        <div class="diagram-wrap min0">
+          <canvas id="cvBoosting" class="cv-fill"></canvas>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">基模型要求</span>
+          <span class="summary-val">高偏差、弱学习器（如浅层决策桩）</span>
+          <span class="summary-label">误差改善点</span>
+          <span class="summary-val">加权拟合残差，系统性削减真实偏差</span>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <aside class="notes" hidden>
+    在模型选择阶段，我们常常在 Bagging 和 Boosting 之间做权衡。
+    左侧展示的是 Bagging 的核心机理：每个基学习器都是高方差的深层树，它们在样本重采样下各自出现剧烈的局部摆动；通过并行平均，剧烈波动的方差被抵消，拟合面变得平滑稳定，但原有的平均偏差几乎不减。
+    右侧展示的是 Boosting 的序列机理：基学习器是极简单的弱分类器，单个模型存在严重偏差；后续模型依次聚焦上一轮留下的残差，将残差逐步加和，最终组合出极低偏差的强拟合曲面。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const cvBag = document.getElementById("cvBagging");
+      const cvBoo = document.getElementById("cvBoosting");
+
+      const colText = Deck.token("--text") || "#172A3A";
+      const colMuted = Deck.token("--muted") || "#536575";
+      const colModel = Deck.token("--model") || "#245FA6";
+      const colAggr = Deck.token("--aggregate") || "#C94F2D";
+      const colDiv = Deck.token("--diversity") || "#28785E";
+      const fontNum = Deck.token("--font-num") || "sans-serif";
+      const fontSans = Deck.token("--font-sans") || "sans-serif";
+
+      // 目标真值函数
+      function targetFn(x) {
+        return 0.5 + 0.32 * Math.sin(x * Math.PI * 1.8) + 0.12 * Math.cos(x * Math.PI * 3.4);
+      }
+
+      // 生成固定点样本
+      const SAMPLE_N = 32;
+      const samples = [];
+      for (let i = 0; i < SAMPLE_N; i++) {
+        const x = (i + 0.5) / SAMPLE_N;
+        const noise = Math.sin(i * 991.1 + 13) * 0.08;
+        samples.push({ x, y: targetFn(x) + noise });
+      }
+
+      // Bagging 模拟：多个不同扰动的过拟合模型
+      const BAGGING_MODELS = 5;
+      const bagFns = [];
+      for (let m = 0; m < BAGGING_MODELS; m++) {
+        const phase = m * 1.25 + 0.4;
+        const freq = 3.6 + (m % 3) * 0.8;
+        bagFns.push(function (x) {
+          return targetFn(x) + 0.22 * Math.sin(x * Math.PI * freq + phase) * (0.8 + 0.4 * Math.cos(x * 4));
+        });
+      }
+
+      function bagEnsemble(x) {
+        let sum = 0;
+        for (let m = 0; m < BAGGING_MODELS; m++) {
+          sum += bagFns[m](x);
+        }
+        return sum / BAGGING_MODELS;
+      }
+
+      // Boosting 模拟：序列拟合残差，逐步逼近真实函数
+      const BOOSTING_STEPS = 4;
+      const booStages = [];
+      // Stage 0: 恒定均值或平缓粗桩
+      booStages.push(function (x) {
+        return 0.52;
+      });
+      // Stage 1: 捕捉主频
+      booStages.push(function (x) {
+        return 0.52 + 0.28 * Math.sin(x * Math.PI * 1.6);
+      });
+      // Stage 2: 补充副波峰
+      booStages.push(function (x) {
+        return 0.52 + 0.28 * Math.sin(x * Math.PI * 1.6) + 0.1 * Math.cos(x * Math.PI * 3.2);
+      });
+      // Stage 3: 逼近最终真值
+      booStages.push(function (x) {
+        return targetFn(x);
+      });
+
+      function drawCartesian(ctx, w, h) {
+        const pad = { left: 46, right: 30, top: 22, bottom: 36 };
+        const innerW = w - pad.left - pad.right;
+        const innerH = h - pad.top - pad.bottom;
+
+        // 坐标轴与背景网格
+        ctx.strokeStyle = "rgba(83, 101, 117, 0.15)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let yStep = 0; yStep <= 4; yStep++) {
+          const yPos = pad.top + (innerH * yStep) / 4;
+          ctx.moveTo(pad.left, yPos);
+          ctx.lineTo(w - pad.right, yPos);
+        }
+        for (let xStep = 0; xStep <= 4; xStep++) {
+          const xPos = pad.left + (innerW * xStep) / 4;
+          ctx.moveTo(xPos, pad.top);
+          ctx.lineTo(xPos, h - pad.bottom);
+        }
+        ctx.stroke();
+
+        // 轴线
+        ctx.strokeStyle = "rgba(83, 101, 117, 0.4)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, pad.top);
+        ctx.lineTo(pad.left, h - pad.bottom);
+        ctx.lineTo(w - pad.right, h - pad.bottom);
+        ctx.stroke();
+
+        // 刻度文本
+        ctx.fillStyle = colMuted;
+        ctx.font = `12px ${fontNum}`;
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillText("1.0", pad.left - 8, pad.top);
+        ctx.fillText("0.5", pad.left - 8, pad.top + innerH * 0.5);
+        ctx.fillText("0.0", pad.left - 8, h - pad.bottom);
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillText("0.0", pad.left, h - pad.bottom + 8);
+        ctx.fillText("0.5", pad.left + innerW * 0.5, h - pad.bottom + 8);
+        ctx.fillText("1.0", w - pad.right, h - pad.bottom + 8);
+
+        return { pad, innerW, innerH };
+      }
+
+      function toScreen(x, y, pad, innerW, innerH) {
+        return {
+          sx: pad.left + x * innerW,
+          sy: pad.top + (1 - y) * innerH
+        };
+      }
+
+      // 绘制 Bagging 图
+      function renderBagging() {
+        const ctx = Deck.fit(cvBag);
+        const w = cvBag.clientWidth;
+        const h = cvBag.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const { pad, innerW, innerH } = drawCartesian(ctx, w, h);
+
+        // 1. 绘制散点数据
+        ctx.fillStyle = "rgba(83, 101, 117, 0.5)";
+        for (const p of samples) {
+          const { sx, sy } = toScreen(p.x, p.y, pad, innerW, innerH);
+          ctx.beginPath();
+          ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 2. 绘制各个高方差单模型（浅蓝、多条波动）
+        ctx.lineWidth = 1.6;
+        for (let m = 0; m < BAGGING_MODELS; m++) {
+          ctx.strokeStyle = "rgba(36, 95, 166, 0.28)";
+          ctx.beginPath();
+          for (let step = 0; step <= 80; step++) {
+            const x = step / 80;
+            const y = bagFns[m](x);
+            const { sx, sy } = toScreen(x, y, pad, innerW, innerH);
+            if (step === 0) ctx.moveTo(sx, sy);
+            else ctx.lineTo(sx, sy);
+          }
+          ctx.stroke();
+        }
+
+        // 3. 绘制真实函数目标线（虚线）
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "rgba(83, 101, 117, 0.6)";
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        for (let step = 0; step <= 80; step++) {
+          const x = step / 80;
+          const y = targetFn(x);
+          const { sx, sy } = toScreen(x, y, pad, innerW, innerH);
+          if (step === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 4. 绘制 Bagging 聚合曲线（粗红/模型主色）
+        ctx.strokeStyle = colModel;
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        for (let step = 0; step <= 80; step++) {
+          const x = step / 80;
+          const y = bagEnsemble(x);
+          const { sx, sy } = toScreen(x, y, pad, innerW, innerH);
+          if (step === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        }
+        ctx.stroke();
+
+        // 图例与标注
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+
+        // 单模型图例
+        ctx.strokeStyle = "rgba(36, 95, 166, 0.5)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(pad.left + 16, pad.top + 16);
+        ctx.lineTo(pad.left + 46, pad.top + 16);
+        ctx.stroke();
+        ctx.fillStyle = colMuted;
+        ctx.font = `14px ${fontSans}`;
+        ctx.fillText("独立重采样单树（高方差）", pad.left + 54, pad.top + 16);
+
+        // 聚合曲线图例
+        ctx.strokeStyle = colModel;
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.moveTo(pad.left + 16, pad.top + 38);
+        ctx.lineTo(pad.left + 46, pad.top + 38);
+        ctx.stroke();
+        ctx.fillStyle = colText;
+        ctx.font = `bold 14px ${fontSans}`;
+        ctx.fillText("Bagging 平均（方差收敛）", pad.left + 54, pad.top + 38);
+
+        // 真实目标
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "rgba(83, 101, 117, 0.7)";
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(pad.left + 16, pad.top + 60);
+        ctx.lineTo(pad.left + 46, pad.top + 60);
+        ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = colMuted;
+        ctx.font = `14px ${fontSans}`;
+        ctx.fillText("真实目标分布", pad.left + 54, pad.top + 60);
+      }
+
+      // 绘制 Boosting 图
+      function renderBoosting() {
+        const ctx = Deck.fit(cvBoo);
+        const w = cvBoo.clientWidth;
+        const h = cvBoo.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const { pad, innerW, innerH } = drawCartesian(ctx, w, h);
+
+        // 1. 散点数据
+        ctx.fillStyle = "rgba(83, 101, 117, 0.5)";
+        for (const p of samples) {
+          const { sx, sy } = toScreen(p.x, p.y, pad, innerW, innerH);
+          ctx.beginPath();
+          ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 2. 真实目标函数虚线
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "rgba(83, 101, 117, 0.6)";
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        for (let step = 0; step <= 80; step++) {
+          const x = step / 80;
+          const y = targetFn(x);
+          const { sx, sy } = toScreen(x, y, pad, innerW, innerH);
+          if (step === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 3. 序列渐进曲线（展示 t=1, t=2, t=3, t=4 累加过程）
+        const styles = [
+          { stroke: "rgba(201, 79, 45, 0.3)", width: 1.8, label: "t=1 初始浅桩 (严重欠拟合)" },
+          { stroke: "rgba(201, 79, 45, 0.5)", width: 2.2, label: "t=2 修正主干残差" },
+          { stroke: "rgba(201, 79, 45, 0.75)", width: 2.6, label: "t=3 逼近局部拐点" },
+          { stroke: colAggr, width: 3.5, label: "t=4 最终集成 (偏差系统性消除)" }
+        ];
+
+        for (let t = 0; t < BOOSTING_STEPS; t++) {
+          ctx.strokeStyle = styles[t].stroke;
+          ctx.lineWidth = styles[t].width;
+          ctx.beginPath();
+          for (let step = 0; step <= 80; step++) {
+            const x = step / 80;
+            const y = booStages[t](x);
+            const { sx, sy } = toScreen(x, y, pad, innerW, innerH);
+            if (step === 0) ctx.moveTo(sx, sy);
+            else ctx.lineTo(sx, sy);
+          }
+          ctx.stroke();
+        }
+
+        // 图例
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+
+        ctx.strokeStyle = styles[0].stroke;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(pad.left + 16, pad.top + 16);
+        ctx.lineTo(pad.left + 46, pad.top + 16);
+        ctx.stroke();
+        ctx.fillStyle = colMuted;
+        ctx.font = `14px ${fontSans}`;
+        ctx.fillText("t=1 弱学习器（高偏差基底）", pad.left + 54, pad.top + 16);
+
+        ctx.strokeStyle = styles[1].stroke;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(pad.left + 16, pad.top + 38);
+        ctx.lineTo(pad.left + 46, pad.top + 38);
+        ctx.stroke();
+        ctx.fillStyle = colMuted;
+        ctx.font = `14px ${fontSans}`;
+        ctx.fillText("t=2..3 逐步吸收残差", pad.left + 54, pad.top + 38);
+
+        ctx.strokeStyle = colAggr;
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.moveTo(pad.left + 16, pad.top + 60);
+        ctx.lineTo(pad.left + 46, pad.top + 60);
+        ctx.stroke();
+        ctx.fillStyle = colText;
+        ctx.font = `bold 14px ${fontSans}`;
+        ctx.fillText("Boosting 集成（削减偏差）", pad.left + 54, pad.top + 60);
+      }
+
+      function drawAll() {
+        renderBagging();
+        renderBoosting();
+      }
+
+      Deck.init({ index: 23, total: 26 });
+      Deck.autofit(cvBag, drawAll);
+      Deck.autofit(cvBoo, drawAll);
+    })();
+  </script>
+</body>
+</html>

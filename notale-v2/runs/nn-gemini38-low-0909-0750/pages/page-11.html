@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>特征图维度与感受野演变：Stride、Padding 与池化下采样</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* Swiss Grid 布局系统与严谨实验室规范 */
+    #stage {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: auto 1fr auto;
+      padding: 32px 48px 24px 48px;
+      gap: 16px 36px;
+      box-sizing: border-box;
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1.5px solid var(--text);
+      padding-bottom: 12px;
+    }
+
+    .title-group {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+    }
+
+    .nt-title {
+      font-size: 34px;
+      font-weight: 800;
+      line-height: 1.15;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+
+    .title-tag {
+      font-family: "NTF-barlow-condensed", var(--font-mono);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--color-spatial);
+      letter-spacing: 0.05em;
+    }
+
+    .meta-eq {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
+
+    /* 左侧交互控制与测量面板 */
+    aside {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      border-right: 1px solid var(--border);
+      padding-right: 28px;
+    }
+
+    .layer-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .ctrl-label {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .seg-group {
+      display: flex;
+      border: 1.5px solid var(--text);
+      background: var(--bg-subtle);
+    }
+
+    .seg-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      border-right: 1px solid var(--text);
+      padding: 8px 4px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .seg-btn:last-child {
+      border-right: none;
+    }
+
+    .seg-btn[aria-pressed="true"] {
+      background: var(--text);
+      color: var(--bg);
+    }
+
+    .param-block {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #FFFFFF66;
+      border: 1px solid var(--border);
+      padding: 14px;
+    }
+
+    .param-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .param-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .param-val {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--color-signal);
+    }
+
+    .param-btns {
+      display: flex;
+      gap: 4px;
+    }
+
+    .opt-btn {
+      flex: 1;
+      border: 1px solid var(--border-strong);
+      background: var(--bg);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 0;
+      cursor: pointer;
+      font-family: var(--font-mono);
+    }
+
+    .opt-btn[aria-pressed="true"] {
+      background: var(--color-signal);
+      color: #fff;
+      border-color: var(--color-signal);
+    }
+
+    /* 实时度量卡 */
+    .metric-panel {
+      margin-top: auto;
+      border-top: 1.5px solid var(--text);
+      padding-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .metric-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .metric-name {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .metric-val {
+      font-family: var(--font-mono);
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--text);
+    }
+
+    .metric-val.highlight {
+      color: var(--color-error);
+    }
+
+    .metric-sub {
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--text-light);
+    }
+
+    /* 右侧主世界图表区 */
+    main.diagram-world {
+      display: grid;
+      grid-template-columns: 1fr 130px 1fr;
+      align-items: center;
+      gap: 16px;
+      position: relative;
+    }
+
+    .grid-view {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .view-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tag-chip {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      padding: 1px 6px;
+      border-radius: 2px;
+    }
+
+    .canvas-box {
+      width: 480px;
+      height: 480px;
+      background: #FFFFFF99;
+      border: 1px solid var(--border-strong);
+      position: relative;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+    }
+
+    /* 中间算子连接柱 */
+    .op-flow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      text-align: center;
+    }
+
+    .op-arrow-svg {
+      width: 80px;
+      height: 28px;
+    }
+
+    .op-badge {
+      background: var(--text);
+      color: var(--bg);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 2px;
+      letter-spacing: 0.05em;
+    }
+
+    .op-formula {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* 底部教学证据条 */
+    footer.status-bar {
+      grid-column: 1 / -1;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .evidence-summary {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .evidence-summary span {
+      font-family: var(--font-mono);
+      color: var(--color-error);
+      font-weight: 700;
+    }
+
+    .rf-indicator {
+      display: flex;
+      gap: 14px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .legend-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      margin-right: 4px;
+      vertical-align: -1px;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="18">
+  <div id="stage">
+    <!-- 顶部标题 -->
+    <header>
+      <div class="title-group">
+        <h1 class="nt-title">特征图维度与感受野演变</h1>
+        <span class="title-tag">CNN / SPATIAL RESOLUTION & RF</span>
+      </div>
+      <div class="meta-eq">H_out = ⌊(H_in - K + 2P)/S⌋ + 1</div>
+    </header>
+
+    <!-- 左侧控制面板 -->
+    <aside>
+      <div class="layer-selector">
+        <span class="ctrl-label">网络操作模式</span>
+        <div class="seg-group" role="radiogroup" aria-label="算子模式">
+          <button class="seg-btn" id="m-conv" aria-pressed="true">标准卷积</button>
+          <button class="seg-btn" id="m-pool" aria-pressed="false">2×2 池化</button>
+          <button class="seg-btn" id="m-stack" aria-pressed="false">2层堆叠</button>
+        </div>
+      </div>
+
+      <div class="param-block" id="conv-params">
+        <div class="param-row">
+          <div class="param-header">
+            <span>步幅 (Stride, S)</span>
+            <span class="param-val" id="val-s">1</span>
+          </div>
+          <div class="param-btns" role="group" aria-label="步幅选择">
+            <button class="opt-btn" data-param="stride" data-val="1" aria-pressed="true">S=1</button>
+            <button class="opt-btn" data-param="stride" data-val="2" aria-pressed="false">S=2</button>
+          </div>
+        </div>
+
+        <div class="param-row">
+          <div class="param-header">
+            <span>填充 (Padding, P)</span>
+            <span class="param-val" id="val-p">0 (Valid)</span>
+          </div>
+          <div class="param-btns" role="group" aria-label="填充选择">
+            <button class="opt-btn" data-param="pad" data-val="0" aria-pressed="true">P=0</button>
+            <button class="opt-btn" data-param="pad" data-val="1" aria-pressed="false">P=1 (Same)</button>
+          </div>
+        </div>
+
+        <div class="param-row">
+          <div class="param-header">
+            <span>卷积核尺寸 (Kernel, K)</span>
+            <span class="param-val" id="val-k">3×3</span>
+          </div>
+          <div class="param-btns" role="group" aria-label="卷积核选择">
+            <button class="opt-btn" data-param="kernel" data-val="3" aria-pressed="true">3×3</button>
+            <button class="opt-btn" data-param="kernel" data-val="5" aria-pressed="false">5×5</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="metric-panel">
+        <div class="metric-item">
+          <span class="metric-name">输出特征图尺寸</span>
+          <span class="metric-val" id="disp-out-dim">4 × 4</span>
+        </div>
+        <div class="metric-sub" id="disp-calc-step">(6 - 3 + 0) / 1 + 1 = 4</div>
+
+        <div class="metric-item" style="margin-top: 6px;">
+          <span class="metric-name">单个输出单元感受野 (RF)</span>
+          <span class="metric-val highlight" id="disp-rf">3 × 3</span>
+        </div>
+        <div class="metric-sub" id="disp-rf-desc">覆盖输入像素的 25% (9/36)</div>
+      </div>
+    </aside>
+
+    <!-- 右侧世界：输入图 (带感受野投影) 与 输出图 (带激活探针) -->
+    <main class="diagram-world">
+      <!-- 输入网格 -->
+      <div class="grid-view">
+        <div class="view-title">
+          <span>输入层 Input</span>
+          <span class="tag-chip" id="in-dim-chip">6 × 6</span>
+        </div>
+        <div class="canvas-box">
+          <canvas id="cv-in" class="cv-fill"></canvas>
+        </div>
+      </div>
+
+      <!-- 中间操作流 -->
+      <div class="op-flow">
+        <span class="op-badge" id="flow-badge">CONV 3×3</span>
+        <svg class="op-arrow-svg" viewBox="0 0 100 36">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#1B201E"/>
+            </marker>
+          </defs>
+          <line x1="10" y1="18" x2="84" y2="18" stroke="#1B201E" stroke-width="2.5" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+        </svg>
+        <span class="op-formula" id="flow-stride-text">S=1, P=0</span>
+        <span class="op-formula" style="color: var(--color-spatial); font-weight: 600;">权重共享局部映射</span>
+      </div>
+
+      <!-- 输出网格 -->
+      <div class="grid-view">
+        <div class="view-title">
+          <span>输出层 Output Feature Map</span>
+          <span class="tag-chip" id="out-dim-chip" style="color: var(--color-signal); font-weight:700;">4 × 4</span>
+        </div>
+        <div class="canvas-box">
+          <canvas id="cv-out" class="cv-fill"></canvas>
+        </div>
+      </div>
+    </main>
+
+    <!-- 底部状态与图例证据 -->
+    <footer class="status-bar">
+      <div class="evidence-summary" id="evidence-text">
+        移动光标悬停在输出单元上，可逆向追踪其对应的输入像素感受野。
+      </div>
+      <div class="rf-indicator">
+        <span><span class="legend-dot" style="background: rgba(196, 69, 34, 0.35); border: 1.5px solid var(--color-error);"></span>感受野 (RF)</span>
+        <span><span class="legend-dot" style="background: rgba(29, 92, 138, 0.7);"></span>选定输出单元</span>
+        <span><span class="legend-dot" style="background: #CCD2CE; border: 1px dashed #7E8985;"></span>填充 Padding</span>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页我们深入理解卷积神经网络的空间几何本质：特征图尺寸与感受野。
+    首先请看公式：输出尺寸由输入高宽、卷积核大小、填充以及步幅共同决定。
+    当我们把 Stride 设为 2，输出尺寸直接减半，但每个单元对应的感受野跳跃增大；
+    若采用池化下采样，感受野以乘法累积扩张——两层 3×3 卷积能达到 5×5 的有效感受野，
+    却只用了 2×9=18 个参数，比直接用 5×5 卷积（25个参数）更经济且非线性表达力更强。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 教学模型状态定义
+    const STATE = {
+      mode: 'conv', // 'conv' | 'pool' | 'stack'
+      inSize: 6,
+      kernel: 3,
+      stride: 1,
+      pad: 0,
+      selectedOut: { r: 1, c: 1 } // 默认高亮单元
+    };
+
+    const cvIn = document.getElementById('cv-in');
+    const cvOut = document.getElementById('cv-out');
+    let ctxIn, ctxOut;
+
+    // 计算衍生量
+    function derive() {
+      let k = STATE.kernel;
+      let s = STATE.stride;
+      let p = STATE.pad;
+      let inS = STATE.inSize;
+
+      if (STATE.mode === 'pool') {
+        k = 2;
+        s = 2;
+        p = 0;
+      } else if (STATE.mode === 'stack') {
+        // 两层 3x3 s=1 p=0 堆叠模拟
+        k = 3;
+        s = 1;
+        p = 0;
+      }
+
+      // H_out = floor((H_in - K + 2P)/S) + 1
+      const outS = Math.floor((inS - k + 2 * p) / s) + 1;
+
+      // 确保选定单元合法
+      if (STATE.selectedOut.r >= outS) STATE.selectedOut.r = Math.max(0, outS - 1);
+      if (STATE.selectedOut.c >= outS) STATE.selectedOut.c = Math.max(0, outS - 1);
+
+      // 计算有效感受野大小 (RF)
+      let rfSize = k;
+      let rfStride = s;
+      if (STATE.mode === 'stack') {
+        // RF_2 = RF_1 + (K_2 - 1) * S_1 = 3 + (3 - 1)*1 = 5
+        rfSize = 5;
+      }
+
+      // 计算当前选定输出在输入网格上的起始与结束坐标 (带 padding 考虑)
+      let rfStartR = STATE.selectedOut.r * s - p;
+      let rfStartC = STATE.selectedOut.c * s - p;
+      if (STATE.mode === 'stack') {
+        rfStartR = STATE.selectedOut.r * 1 - 0; // stack 假定从首层追溯
+        rfStartC = STATE.selectedOut.c * 1 - 0;
+      }
+
+      return { k, s, p, inS, outS, rfSize, rfStartR, rfStartC };
+    }
+
+    // 绘制输入层网格与感受野投射
+    function drawInput(d) {
+      const w = cvIn.width;
+      const h = cvIn.height;
+      ctxIn.clearRect(0, 0, w, h);
+
+      const pad = d.p;
+      const totalCells = d.inS + 2 * pad;
+      const margin = 20;
+      const gridSize = Math.min(w, h) - margin * 2;
+      const cellSize = gridSize / totalCells;
+      const startX = (w - gridSize) / 2;
+      const startY = (h - gridSize) / 2;
+
+      // 绘制底层网格 (包含 padding 区域)
+      for (let r = 0; r < totalCells; r++) {
+        for (let c = 0; c < totalCells; c++) {
+          const isPadCell = (r < pad || r >= pad + d.inS || c < pad || c >= pad + d.inS);
+          const x = startX + c * cellSize;
+          const y = startY + r * cellSize;
+
+          ctxIn.fillStyle = isPadCell ? '#CCD2CE44' : '#FFFFFF';
+          ctxIn.fillRect(x, y, cellSize, cellSize);
+
+          ctxIn.strokeStyle = isPadCell ? '#9CA8A3' : '#CCD2CE';
+          ctxIn.lineWidth = 1;
+          if (isPadCell) ctxIn.setLineDash([3, 3]);
+          else ctxIn.setLineDash([]);
+          ctxIn.strokeRect(x, y, cellSize, cellSize);
+          ctxIn.setLineDash([]);
+
+          // 绘制像素序号或零值
+          ctxIn.fillStyle = isPadCell ? '#7E8985' : '#1B201E';
+          ctxIn.font = '12px var(--font-mono)';
+          ctxIn.textAlign = 'center';
+          ctxIn.textBaseline = 'middle';
+          if (isPadCell) {
+            ctxIn.fillText('0', x + cellSize / 2, y + cellSize / 2);
+          } else {
+            const rowIdx = r - pad;
+            const colIdx = c - pad;
+            ctxIn.fillText(`${rowIdx},${colIdx}`, x + cellSize / 2, y + cellSize / 2);
+          }
+        }
+      }
+
+      // 绘制感受野 (RF) 覆盖的高亮框
+      // 计算感受野在含 pad 视图上的坐标
+      const rfR = d.rfStartR + pad;
+      const rfC = d.rfStartC + pad;
+      const rfSpan = d.rfSize;
+
+      const rfX = startX + rfC * cellSize;
+      const rfY = startY + rfR * cellSize;
+      const rfW = rfSpan * cellSize;
+      const rfH = rfSpan * cellSize;
+
+      ctxIn.fillStyle = 'rgba(196, 69, 34, 0.22)';
+      ctxIn.fillRect(rfX, rfY, rfW, rfH);
+
+      ctxIn.strokeStyle = '#C44522';
+      ctxIn.lineWidth = 2.5;
+      ctxIn.strokeRect(rfX, rfY, rfW, rfH);
+
+      // 中心加指示文本
+      ctxIn.fillStyle = '#C44522';
+      ctxIn.font = '700 12px var(--font-mono)';
+      ctxIn.textAlign = 'center';
+      ctxIn.fillText(`RF: ${d.rfSize}×${d.rfSize}`, rfX + rfW / 2, rfY - 7);
+    }
+
+    // 绘制输出层网格与选定探针
+    function drawOutput(d) {
+      const w = cvOut.width;
+      const h = cvOut.height;
+      ctxOut.clearRect(0, 0, w, h);
+
+      const outS = d.outS;
+      const margin = 28;
+      const gridSize = Math.min(w, h) - margin * 2;
+      const cellSize = gridSize / outS;
+      const startX = (w - gridSize) / 2;
+      const startY = (h - gridSize) / 2;
+
+      for (let r = 0; r < outS; r++) {
+        for (let c = 0; c < outS; c++) {
+          const x = startX + c * cellSize;
+          const y = startY + r * cellSize;
+          const isSelected = (r === STATE.selectedOut.r && c === STATE.selectedOut.c);
+
+          if (isSelected) {
+            ctxOut.fillStyle = 'rgba(29, 92, 138, 0.85)';
+            ctxOut.fillRect(x, y, cellSize, cellSize);
+            ctxOut.strokeStyle = '#1D5C8A';
+            ctxOut.lineWidth = 3;
+            ctxOut.strokeRect(x, y, cellSize, cellSize);
+          } else {
+            ctxOut.fillStyle = '#FFFFFFCC';
+            ctxOut.fillRect(x, y, cellSize, cellSize);
+            ctxOut.strokeStyle = '#CCD2CE';
+            ctxOut.lineWidth = 1.5;
+            ctxOut.strokeRect(x, y, cellSize, cellSize);
+          }
+
+          // 坐标文本
+          ctxOut.fillStyle = isSelected ? '#FFFFFF' : '#1B201E';
+          ctxOut.font = '700 13px var(--font-mono)';
+          ctxOut.textAlign = 'center';
+          ctxOut.textBaseline = 'middle';
+          ctxOut.fillText(`y[${r},${c}]`, x + cellSize / 2, y + cellSize / 2);
+        }
+      }
+
+      // 记录供鼠标命中的元数据
+      cvOut._gridMeta = { startX, startY, cellSize, outS };
+    }
+
+    // 更新文本与UI指示
+    function updateUI(d) {
+      document.getElementById('in-dim-chip').textContent = `${d.inS} × ${d.inS}`;
+      document.getElementById('out-dim-chip').textContent = `${d.outS} × ${d.outS}`;
+      document.getElementById('disp-out-dim').textContent = `${d.outS} × ${d.outS}`;
+
+      // 计算式展示
+      document.getElementById('disp-calc-step').textContent =
+        `⌊(${d.inS} - ${d.k} + 2×${d.p}) / ${d.s}⌋ + 1 = ${d.outS}`;
+
+      // 感受野度量
+      document.getElementById('disp-rf').textContent = `${d.rfSize} × ${d.rfSize}`;
+      const coverage = Math.min(100, Math.round((d.rfSize * d.rfSize) / (d.inS * d.inS) * 100));
+      document.getElementById('disp-rf-desc').textContent =
+        `覆盖 ${d.rfSize * d.rfSize}/${d.inS * d.inS} 像素 (${coverage}%)`;
+
+      // 中间连接算子文案
+      if (STATE.mode === 'pool') {
+        document.getElementById('flow-badge').textContent = 'MAX-POOL 2×2';
+        document.getElementById('flow-stride-text').textContent = 'S=2, P=0 (下采样)';
+        document.getElementById('conv-params').style.opacity = '0.4';
+        document.getElementById('conv-params').style.pointerEvents = 'none';
+      } else if (STATE.mode === 'stack') {
+        document.getElementById('flow-badge').textContent = '2× CONV (3×3)';
+        document.getElementById('flow-stride-text').textContent = '2层级联, 感受野=5×5';
+        document.getElementById('conv-params').style.opacity = '0.4';
+        document.getElementById('conv-params').style.pointerEvents = 'none';
+      } else {
+        document.getElementById('flow-badge').textContent = `CONV ${d.k}×${d.k}`;
+        document.getElementById('flow-stride-text').textContent = `S=${d.s}, P=${d.p}`;
+        document.getElementById('conv-params').style.opacity = '1';
+        document.getElementById('conv-params').style.pointerEvents = 'auto';
+      }
+
+      // 控制栏显式状态
+      document.getElementById('val-s').textContent = STATE.stride;
+      document.getElementById('val-p').textContent = STATE.pad === 0 ? '0 (Valid)' : '1 (Same)';
+      document.getElementById('val-k').textContent = `${STATE.kernel}×${STATE.kernel}`;
+
+      // 底部证据总结文案
+      const activeCell = `y[${STATE.selectedOut.r},${STATE.selectedOut.c}]`;
+      if (STATE.mode === 'stack') {
+        document.getElementById('evidence-text').innerHTML =
+          `堆叠优势：2个 3×3 卷积（18参数）实现与 5×5 卷积（25参数）相同的 <span>5×5 感受野</span>，且节省 28% 参数。`;
+      } else if (STATE.stride === 2) {
+        document.getElementById('evidence-text').innerHTML =
+          `步幅跨越：当前 <span>S=2</span> 使输出高宽直接下采样至 <span>${d.outS}×${d.outS}</span>，大幅降低后续计算负担。`;
+      } else {
+        document.getElementById('evidence-text').innerHTML =
+          `当前选定单元 <span>${activeCell}</span> 在输入层聚合了 <span>${d.rfSize}×${d.rfSize}</span> 局部区域，展现局部连接与平移等变性。`;
+      }
+    }
+
+    // 重新渲染主流水线
+    function render() {
+      const derived = derive();
+      drawInput(derived);
+      drawOutput(derived);
+      updateUI(derived);
+    }
+
+    // 初始化画布与交互事件绑定
+    function setup() {
+      ctxIn = Deck.fit(cvIn);
+      ctxOut = Deck.fit(cvOut);
+
+      // 模式切换
+      const modes = ['m-conv', 'm-pool', 'm-stack'];
+      modes.forEach(id => {
+        document.getElementById(id).addEventListener('click', e => {
+          modes.forEach(m => document.getElementById(m).setAttribute('aria-pressed', 'false'));
+          e.currentTarget.setAttribute('aria-pressed', 'true');
+          if (id === 'm-conv') STATE.mode = 'conv';
+          else if (id === 'm-pool') STATE.mode = 'pool';
+          else if (id === 'm-stack') STATE.mode = 'stack';
+          render();
+        });
+      });
+
+      // 卷积参数按钮组
+      document.querySelectorAll('.opt-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+          const param = btn.dataset.param;
+          const val = parseInt(btn.dataset.val, 10);
+          document.querySelectorAll(`.opt-btn[data-param="${param}"]`).forEach(b => b.setAttribute('aria-pressed', 'false'));
+          btn.setAttribute('aria-pressed', 'true');
+
+          if (param === 'stride') STATE.stride = val;
+          if (param === 'pad') STATE.pad = val;
+          if (param === 'kernel') STATE.kernel = val;
+          render();
+        });
+      });
+
+      // 输出画布上的点击与悬停交互探针 (基于 Deck.pt 解决缩放偏差)
+      const handleProbe = (e) => {
+        const pt = Deck.pt(cvOut, e);
+        const meta = cvOut._gridMeta;
+        if (!meta) return;
+
+        const c = Math.floor((pt.x - meta.startX) / meta.cellSize);
+        const r = Math.floor((pt.y - meta.startY) / meta.cellSize);
+
+        if (r >= 0 && r < meta.outS && c >= 0 && c < meta.outS) {
+          if (STATE.selectedOut.r !== r || STATE.selectedOut.c !== c) {
+            STATE.selectedOut.r = r;
+            STATE.selectedOut.c = c;
+            render();
+          }
+        }
+      };
+
+      cvOut.addEventListener('pointermove', handleProbe);
+      cvOut.addEventListener('pointerdown', handleProbe);
+
+      Deck.onResize(() => {
+        ctxIn = Deck.fit(cvIn);
+        ctxOut = Deck.fit(cvOut);
+        render();
+      });
+
+      render();
+    }
+
+    window.addEventListener('DOMContentLoaded', setup);
+  </script>
+</body>
+</html>

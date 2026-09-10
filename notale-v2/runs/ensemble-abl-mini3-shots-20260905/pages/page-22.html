@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      background: var(--bg);
+      user-select: none;
+    }
+
+    header {
+      flex: 0 0 auto;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--text);
+    }
+
+    .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .main-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      min-height: 0;
+    }
+
+    .scheme-card {
+      background: var(--surface);
+      border-radius: 12px;
+      border: 1px solid #D5E1E7;
+      box-shadow: 0 4px 16px rgba(18, 38, 52, 0.05);
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .scheme-card.flawed {
+      border-top: 4px solid #D9534F;
+    }
+
+    .scheme-card.valid {
+      border-top: 4px solid var(--answer);
+    }
+
+    .scheme-card header {
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-title-group {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .status-badge {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 100px;
+      letter-spacing: 0.02em;
+    }
+
+    .status-badge.flawed {
+      background: #FDF0EE;
+      color: #C34B22;
+      border: 1px solid #F6C8C0;
+    }
+
+    .status-badge.valid {
+      background: #EAF4EE;
+      color: var(--answer);
+      border: 1px solid #B8DFCA;
+    }
+
+    .card-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.4;
+      margin-bottom: 16px;
+    }
+
+    .stage-canvas-wrap {
+      flex: 1;
+      min-height: 270px;
+      position: relative;
+      background: #FAFCFD;
+      border-radius: 8px;
+      border: 1px dashed #D2DEE5;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    .stage-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .diagnostics-panel {
+      background: var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .diag-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+    }
+
+    .diag-label {
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .diag-val {
+      font-family: var(--font-num, monospace);
+      font-weight: 700;
+      font-size: var(--fs-label);
+    }
+
+    .diag-val.danger {
+      color: #C34B22;
+    }
+
+    .diag-val.good {
+      color: var(--answer);
+    }
+
+    .diag-verdict {
+      margin-top: 4px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(83, 106, 120, 0.15);
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    .interactive-dock {
+      flex: 0 0 auto;
+      margin-top: 16px;
+      background: var(--surface);
+      border-radius: 10px;
+      border: 1px solid #D5E1E7;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .dock-left {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .dock-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .fold-selector {
+      display: flex;
+      gap: 8px;
+    }
+
+    .fold-btn {
+      appearance: none;
+      background: var(--surface);
+      border: 1px solid #C4D3DC;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+
+    .fold-btn:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+
+    .fold-btn.active {
+      background: var(--model);
+      border-color: var(--model);
+      color: #FFFFFF;
+    }
+
+    .dock-right {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .dock-legend {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: var(--fs-tick);
+    }
+
+    .legend-box {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+
+    .legend-box.train { background: #27648F; }
+    .legend-box.holdout { background: #F39C12; }
+    .legend-box.meta-in { background: #2F7568; }
+    .legend-box.leaked { background: #E74C3C; }
+  </style>
+</head>
+<body data-page="22" data-total="27">
+  <div id="stage">
+    <header>
+      <h1>折外预测是关键：元学习器必须在基模型未见过的样本上训练</h1>
+      <p class="lead">如果直接用基模型在全训练集上的拟合预测作为元特征，基模型记忆样本噪声的能力会误导元学习器，导致严重的过拟合与数据泄漏。</p>
+    </header>
+
+    <div class="main-grid">
+      <!-- 错误做法：内联预测泄漏 -->
+      <section class="scheme-card flawed">
+        <header>
+          <div class="card-title-group">
+            <h2 class="card-title">错误做法：同一训练集拟合后直接预测</h2>
+            <span class="status-badge flawed">数据泄漏 (Data Leakage)</span>
+          </div>
+        </header>
+        <p class="card-desc">基模型在全量数据集 D 上训练，并在同一样本集 D 上生成预测 ŷ。元学习器以此作为输入训练。</p>
+
+        <div class="stage-canvas-wrap">
+          <svg class="stage-svg" id="svg-flawed" viewBox="0 0 680 280">
+            <!-- 原始数据矩形 -->
+            <g transform="translate(40, 30)">
+              <text x="0" y="-10" font-size="13" font-weight="700" fill="#536A78">原始训练集 D (含标签 y)</text>
+              <rect x="0" y="0" width="220" height="70" rx="6" fill="#E2EBF0" stroke="#BDD1DC" stroke-width="1.5" />
+              <text x="110" y="28" font-size="15" font-weight="700" text-anchor="middle" fill="#122634">基模型训练输入</text>
+              <text x="110" y="48" font-size="13" text-anchor="middle" fill="#536A78">样本 X[1...N], 真实 y[1...N]</text>
+            </g>
+
+            <!-- 箭头到基模型 -->
+            <path d="M 260 65 L 340 65" stroke="#27648F" stroke-width="2" marker-end="url(#arrow-model)" fill="none" />
+            <text x="300" y="55" font-size="13" text-anchor="middle" fill="#27648F" font-weight="700">拟合全集</text>
+
+            <!-- 基模型框 -->
+            <g transform="translate(350, 30)">
+              <rect x="0" y="0" width="120" height="70" rx="6" fill="#27648F" />
+              <text x="60" y="32" font-size="15" font-weight="700" text-anchor="middle" fill="#FFFFFF">基模型 f(x)</text>
+              <text x="60" y="50" font-size="13" text-anchor="middle" fill="#D2E4F0">决策树 / GBDT</text>
+            </g>
+
+            <!-- 拟合后的虚假预测流向回吐 -->
+            <path d="M 470 65 L 530 65 L 530 155 L 430 155" stroke="#C34B22" stroke-width="2.5" marker-end="url(#arrow-leak)" fill="none" />
+            <text x="560" y="115" font-size="13" font-weight="700" fill="#C34B22">原样本重测</text>
+
+            <!-- 元特征集 -->
+            <g transform="translate(200, 130)">
+              <rect x="0" y="0" width="220" height="55" rx="6" fill="#FDF0EE" stroke="#E74C3C" stroke-width="2" stroke-dasharray="4 2" />
+              <text x="110" y="24" font-size="13" font-weight="700" text-anchor="middle" fill="#C34B22">污染的元特征矩阵 Z</text>
+              <text x="110" y="42" font-size="13" text-anchor="middle" fill="#C34B22">ŷ_train 准确率虚高 (99.2%)</text>
+            </g>
+
+            <!-- 箭头向元学习器 -->
+            <path d="M 200 157 L 120 157 L 120 205" stroke="#C34B22" stroke-width="2" fill="none" marker-end="url(#arrow-leak)" />
+
+            <!-- 元学习器 -->
+            <g transform="translate(40, 210)">
+              <rect x="0" y="0" width="220" height="52" rx="6" fill="#FFFFFF" stroke="#C34B22" stroke-width="1.5" />
+              <text x="110" y="24" font-size="13" font-weight="700" text-anchor="middle" fill="#122634">元学习器 Meta-Learner</text>
+              <text x="110" y="42" font-size="13" text-anchor="middle" fill="#C34B22">全信基模型，丧失泛化调节力</text>
+            </g>
+
+            <!-- 诊断标注卡 -->
+            <g transform="translate(300, 210)">
+              <rect x="0" y="0" width="340" height="52" rx="6" fill="#FBF1EF" />
+              <text x="15" y="22" font-size="13" font-weight="700" fill="#C34B22">后果：过拟合与虚假置信</text>
+              <text x="15" y="40" font-size="13" fill="#536A78">基模型强记了训练样本，元学习器学到"盲从复杂模型"。</text>
+            </g>
+
+            <defs>
+              <marker id="arrow-model" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M 1 1 L 7 4 L 1 7 Z" fill="#27648F" />
+              </marker>
+              <marker id="arrow-leak" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M 1 1 L 7 4 L 1 7 Z" fill="#C34B22" />
+              </marker>
+            </defs>
+          </svg>
+        </div>
+
+        <div class="diagnostics-panel">
+          <div class="diag-row">
+            <span class="diag-label">训练集内拟合得分 (Train Score)</span>
+            <span class="diag-val danger">99.4% (严重虚高)</span>
+          </div>
+          <div class="diag-row">
+            <span class="diag-label">真实测试泛化得分 (Test Score)</span>
+            <span class="diag-val danger">76.8% (过拟合崩塌)</span>
+          </div>
+          <div class="diag-verdict">
+            基模型在已知样本上误差极小，元学习器只学到分配 100% 权重给记忆力最强的模型，面对全新测试样本时防御彻底瓦解。
+          </div>
+        </div>
+      </section>
+
+      <!-- 正确做法：折外预测 (OOF) -->
+      <section class="scheme-card valid">
+        <header>
+          <div class="card-title-group">
+            <h2 class="card-title">正确做法：K-Fold 折外预测 (OOF)</h2>
+            <span class="status-badge valid">无泄漏 (Clean & Valid)</span>
+          </div>
+        </header>
+        <p class="card-desc">数据均分为 K 折。基模型在 K-1 折上拟合，仅对未参与训练的保留折做预测，拼接成纯净元特征。</p>
+
+        <div class="stage-canvas-wrap">
+          <svg class="stage-svg" id="svg-valid" viewBox="0 0 680 280">
+            <!-- 动态渲染 K 折状态 -->
+            <g id="oof-diagram-group"></g>
+            <defs>
+              <marker id="arrow-valid" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M 1 1 L 7 4 L 1 7 Z" fill="#237052" />
+              </marker>
+              <marker id="arrow-oof-stream" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M 1 1 L 7 4 L 1 7 Z" fill="#2F7568" />
+              </marker>
+            </defs>
+          </svg>
+        </div>
+
+        <div class="diagnostics-panel">
+          <div class="diag-row">
+            <span class="diag-label">折外验证评估得分 (OOF CV Score)</span>
+            <span class="diag-val good">84.6% (诚实验证)</span>
+          </div>
+          <div class="diag-row">
+            <span class="diag-label">真实测试泛化得分 (Test Score)</span>
+            <span class="diag-val good">85.1% (泛化稳健)</span>
+          </div>
+          <div class="diag-verdict">
+            元学习器接触到的所有元输入，都来自基模型面对陌生样本的真实推理分布，从而学到平衡、互补的最优组合权重。
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 底部联动操作栏 -->
+    <div class="interactive-dock">
+      <div class="dock-left">
+        <span class="dock-title">观察 K-Fold 折外预测如何产生无泄漏数据：</span>
+        <div class="fold-selector" id="fold-selector">
+          <button class="fold-btn active" data-fold="0">折 1 作为保留验证集</button>
+          <button class="fold-btn" data-fold="1">折 2 作为保留验证集</button>
+          <button class="fold-btn" data-fold="2">折 3 作为保留验证集</button>
+          <button class="fold-btn" data-fold="3">折 4 作为保留验证集</button>
+          <button class="fold-btn" data-fold="4">折 5 作为保留验证集</button>
+        </div>
+      </div>
+      <div class="dock-right">
+        <div class="dock-legend">
+          <div class="legend-item"><span class="legend-box train"></span>用于基模型训练 (K-1 折)</div>
+          <div class="legend-item"><span class="legend-box holdout"></span>隔离保留折 (当前预测目标)</div>
+          <div class="legend-item"><span class="legend-box meta-in"></span>拼成的纯净元特征 (OOF)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const foldsCount = 5;
+      let activeFold = 0;
+      const foldBtns = document.querySelectorAll('.fold-btn');
+      const oofGroup = document.getElementById('oof-diagram-group');
+
+      function renderOOF(selected) {
+        oofGroup.innerHTML = '';
+
+        // 1. 绘制 5 折数据集条状图
+        const foldW = 58;
+        const foldGap = 6;
+        const startX = 30;
+        const startY = 32;
+
+        const headerText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        headerText.setAttribute("x", startX);
+        headerText.setAttribute("y", startY - 12);
+        headerText.setAttribute("font-size", "13");
+        headerText.setAttribute("font-weight", "700");
+        headerText.setAttribute("fill", "#536A78");
+        headerText.textContent = `第 ${selected + 1} 轮循环：保留第 ${selected + 1} 折`;
+        oofGroup.appendChild(headerText);
+
+        // 绘制 5 折容器
+        for (let i = 0; i < foldsCount; i++) {
+          const x = startX + i * (foldW + foldGap);
+          const isHoldout = (i === selected);
+
+          const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+          const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          rect.setAttribute("x", x);
+          rect.setAttribute("y", startY);
+          rect.setAttribute("width", foldW);
+          rect.setAttribute("height", 64);
+          rect.setAttribute("rx", "5");
+          rect.setAttribute("fill", isHoldout ? "#F39C12" : "#27648F");
+          rect.setAttribute("stroke", isHoldout ? "#D68910" : "#1A4968");
+          rect.setAttribute("stroke-width", "1.5");
+          g.appendChild(rect);
+
+          const t1 = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          t1.setAttribute("x", x + foldW / 2);
+          t1.setAttribute("y", startY + 28);
+          t1.setAttribute("font-size", "13");
+          t1.setAttribute("font-weight", "700");
+          t1.setAttribute("text-anchor", "middle");
+          t1.setAttribute("fill", "#FFFFFF");
+          t1.textContent = `Fold ${i + 1}`;
+          g.appendChild(t1);
+
+          const t2 = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          t2.setAttribute("x", x + foldW / 2);
+          t2.setAttribute("y", startY + 48);
+          t2.setAttribute("font-size", "13");
+          t2.setAttribute("text-anchor", "middle");
+          t2.setAttribute("fill", isHoldout ? "#FFF4E0" : "#D2E4F0");
+          t2.textContent = isHoldout ? "保留验证" : "拟合训练";
+          g.appendChild(t2);
+
+          oofGroup.appendChild(g);
+        }
+
+        // 2. 基模型拟合框
+        const modelX = 400;
+        const modelY = 32;
+
+        // 连线：训练折聚合指向基模型
+        const trainLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        trainLine.setAttribute("d", `M ${startX + foldsCount * (foldW + foldGap)} 50 L ${modelX} 50`);
+        trainLine.setAttribute("stroke", "#27648F");
+        trainLine.setAttribute("stroke-width", "2");
+        trainLine.setAttribute("fill", "none");
+        trainLine.setAttribute("marker-end", "url(#arrow-valid)");
+        oofGroup.appendChild(trainLine);
+
+        const modelBox = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        modelBox.innerHTML = `
+          <rect x="${modelX}" y="${modelY}" width="110" height="64" rx="6" fill="#27648F" />
+          <text x="${modelX + 55}" y="${modelY + 28}" font-size="15" font-weight="700" text-anchor="middle" fill="#FFFFFF">当前基模型</text>
+          <text x="${modelX + 55}" y="${modelY + 48}" font-size="13" text-anchor="middle" fill="#D2E4F0">在4折上拟合</text>
+        `;
+        oofGroup.appendChild(modelBox);
+
+        // 3. 预测流向：基模型给未见过的 Fold[selected] 打分
+        const holdoutCenterX = startX + selected * (foldW + foldGap) + foldW / 2;
+        const streamPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        // 从 model 下方绕回到对应的保留折下方
+        streamPath.setAttribute("d", `M ${modelX + 55} ${modelY + 64} L ${modelX + 55} 125 L ${holdoutCenterX} 125 L ${holdoutCenterX} 150`);
+        streamPath.setAttribute("stroke", "#F39C12");
+        streamPath.setAttribute("stroke-width", "2");
+        streamPath.setAttribute("fill", "none");
+        streamPath.setAttribute("marker-end", "url(#arrow-oof-stream)");
+        oofGroup.appendChild(streamPath);
+
+        const predictLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        predictLabel.setAttribute("x", (modelX + 55 + holdoutCenterX) / 2);
+        predictLabel.setAttribute("y", 120);
+        predictLabel.setAttribute("font-size", "13");
+        predictLabel.setAttribute("font-weight", "700");
+        predictLabel.setAttribute("text-anchor", "middle");
+        predictLabel.setAttribute("fill", "#B9770E");
+        predictLabel.textContent = "仅预测未参与拟合的保留折";
+        oofGroup.appendChild(predictLabel);
+
+        // 4. 下方拼成的 OOF 元特征矩阵条
+        const oofBarY = 160;
+        const oofBarH = 46;
+
+        const oofTitle = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        oofTitle.setAttribute("x", startX);
+        oofTitle.setAttribute("y", oofBarY - 10);
+        oofTitle.setAttribute("font-size", "13");
+        oofTitle.setAttribute("font-weight", "700");
+        oofTitle.setAttribute("fill", "#2F7568");
+        oofTitle.textContent = "累积拼成的元特征列 (Out-of-Fold Matrix)";
+        oofGroup.appendChild(oofTitle);
+
+        for (let j = 0; j < foldsCount; j++) {
+          const x = startX + j * (foldW + foldGap);
+          const isCurrentTarget = (j === selected);
+          const isDone = (j <= selected);
+
+          const oofBlock = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+          const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          rect.setAttribute("x", x);
+          rect.setAttribute("y", oofBarY);
+          rect.setAttribute("width", foldW);
+          rect.setAttribute("height", oofBarH);
+          rect.setAttribute("rx", "4");
+          rect.setAttribute("fill", isCurrentTarget ? "#E2EFEA" : (isDone ? "#D5E8E2" : "#F2F5F7"));
+          rect.setAttribute("stroke", isCurrentTarget ? "#2F7568" : (isDone ? "#82B7A8" : "#D2DEE5"));
+          rect.setAttribute("stroke-width", isCurrentTarget ? "2" : "1");
+          oofBlock.appendChild(rect);
+
+          const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          t.setAttribute("x", x + foldW / 2);
+          t.setAttribute("y", oofBarY + 28);
+          t.setAttribute("font-size", "13");
+          t.setAttribute("font-weight", "700");
+          t.setAttribute("text-anchor", "middle");
+          t.setAttribute("fill", isDone ? "#2F7568" : "#9AAEB9");
+          t.textContent = isDone ? `OOF ${j + 1}` : "待填入";
+          oofBlock.appendChild(t);
+
+          oofGroup.appendChild(oofBlock);
+        }
+
+        // 5. 拼成后的无缝流向：最终流向元学习器
+        const metaX = 420;
+        const metaY = 160;
+
+        const outLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        outLine.setAttribute("d", `M ${startX + foldsCount * (foldW + foldGap)} ${oofBarY + oofBarH / 2} L ${metaX} ${oofBarY + oofBarH / 2}`);
+        outLine.setAttribute("stroke", "#2F7568");
+        outLine.setAttribute("stroke-width", "2");
+        outLine.setAttribute("fill", "none");
+        outLine.setAttribute("marker-end", "url(#arrow-valid)");
+        oofGroup.appendChild(outLine);
+
+        const metaCard = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        metaCard.innerHTML = `
+          <rect x="${metaX}" y="${metaY}" width="220" height="${oofBarH}" rx="6" fill="#FFFFFF" stroke="#237052" stroke-width="1.5" />
+          <text x="${metaX + 110}" y="${metaY + 20}" font-size="13" font-weight="700" text-anchor="middle" fill="#122634">元学习器 Meta-Learner</text>
+          <text x="${metaX + 110}" y="${metaY + 36}" font-size="13" text-anchor="middle" fill="#237052">在纯净折外预测矩阵上学习组合</text>
+        `;
+        oofGroup.appendChild(metaCard);
+
+        // 底部提示说明
+        const noteText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        noteText.setAttribute("x", startX);
+        noteText.setAttribute("y", 242);
+        noteText.setAttribute("font-size", "13");
+        noteText.setAttribute("fill", "#536A78");
+        noteText.textContent = `关键原则：折外矩阵中的每一个点，对于生成它的基模型而言都是 100% 陌生的测试样本。`;
+        oofGroup.appendChild(noteText);
+      }
+
+      // 注册切换事件
+      foldBtns.forEach(btn => {
+        btn.addEventListener('click', function () {
+          foldBtns.forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          activeFold = parseInt(this.getAttribute('data-fold'), 10);
+          renderOOF(activeFold);
+        });
+      });
+
+      // 初始化
+      renderOOF(0);
+
+      // Deck 初始化
+      if (window.Deck) {
+        window.Deck.init({ index: 22, total: 27 });
+      }
+    })();
+  </script>
+</body>
+</html>

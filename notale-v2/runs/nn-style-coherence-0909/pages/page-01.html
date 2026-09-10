@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="zh" data-variant="opening">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage { position: fixed; isolation: isolate; overflow: hidden; }
+  #net { z-index: 1; }
+
+  .copy {
+    position: absolute;
+    z-index: 5;
+    left: 100px;
+    top: 168px;
+    width: 620px;
+    pointer-events: none;
+  }
+  .copy .nt-kicker { margin-bottom: 26px; }
+  .copy h1 {
+    margin: 0;
+    color: var(--text);
+    font-family: var(--font-title);
+    font-weight: 800;
+    font-size: 88px;
+    line-height: 1.04;
+    letter-spacing: -0.03em;
+  }
+  .copy h1 :lang(zh) { font-family: "NTF-noto-sans-sc", sans-serif; }
+  .copy .en {
+    margin-top: 22px;
+    color: var(--muted);
+    font-family: var(--font-title);
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .copy .path {
+    margin-top: 40px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  .copy .path .step { color: var(--muted); }
+  .copy .path .step[data-final="true"] { color: var(--accent); }
+  .copy .path .arrow { color: var(--line-strong); font-size: 14px; }
+
+  .foot {
+    position: absolute;
+    z-index: 5;
+    left: 100px;
+    bottom: 64px;
+    display: flex;
+    gap: 44px;
+  }
+  .foot .item {
+    border-left: 3px solid var(--stable);
+    padding-left: 14px;
+  }
+  .foot .item[data-tone="accent"] { border-left-color: var(--accent); }
+  .foot .item .n { color: var(--text); font-size: 15px; font-weight: 700; line-height: 1.3; }
+  .foot .item .d { margin-top: 3px; color: var(--muted); font-size: 13px; line-height: 1.3; }
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+  <canvas id="net" class="cv-fill" aria-hidden="true"></canvas>
+
+  <div class="copy">
+    <span class="nt-kicker">深度学习入门 · 第一讲</span>
+    <h1><span lang="zh">神经网络</span></h1>
+    <p class="en">Learnable Functions to CNN, RNN &amp; Attention</p>
+    <p class="path">
+      <span class="step">像素/词序</span>
+      <span class="arrow">›</span>
+      <span class="step">可学习的权重</span>
+      <span class="arrow">›</span>
+      <span class="step" data-final="true">预测与更新</span>
+    </p>
+  </div>
+
+  <div class="foot" role="note" aria-label="课程结构">
+    <div class="item" data-tone="stable">
+      <div class="n">MLP → CNN → RNN → 注意力</div>
+      <div class="d">结构如何回应数据形状</div>
+    </div>
+    <div class="item" data-tone="accent">
+      <div class="n">120 分钟</div>
+      <div class="d">从前向计算到参数更新</div>
+    </div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  "use strict";
+  const W = 1600, H = 900;
+  const SEED = 20240517;
+  const canvas = document.getElementById("net");
+
+  // Title exclusion field (logical coords) — quiet zone for the copy block.
+  const TITLE = { x: 60, y: 120, w: 700, h: 560 };
+
+  function seeded(seed) {
+    let s = seed >>> 0 || 1;
+    return () => {
+      s += 0x6D2B79F5;
+      let t = s;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function inTitle(x, y, pad) {
+    return x > TITLE.x - pad && x < TITLE.x + TITLE.w + pad &&
+           y > TITLE.y - pad && y < TITLE.y + TITLE.h + pad;
+  }
+
+  // ---- Build a deterministic layered graph: input pixels -> hidden -> hidden -> output,
+  // then a recurrent loop-back edge and an attention-style long skip, echoing
+  // MLP -> CNN(local receptive groups) -> RNN(recurrence) -> attention(direct long edges).
+  const LAYER_X = [1000, 1160, 1320, 1470];
+  const LAYER_N = [7, 6, 5, 3];
+
+  function buildModel() {
+    const rand = seeded(SEED);
+    const layers = LAYER_X.map((x, li) => {
+      const n = LAYER_N[li];
+      const topMargin = 130 + (7 - n) * 26;
+      const gap = (H - 2 * topMargin) / Math.max(1, n - 1 || 1);
+      const nodes = [];
+      for (let i = 0; i < n; i += 1) {
+        const y = n === 1 ? H / 2 : topMargin + gap * i;
+        nodes.push({ x, y, r: li === 3 ? 12 : 8.5, layer: li, idx: i, phase: rand() });
+      }
+      return nodes;
+    });
+
+    // Local receptive grouping for layer0->1 (CNN-like: each hidden connects to a
+    // contiguous window of inputs), then denser MLP-like connectivity 1->2, 2->3.
+    const edges = [];
+    const windows = [[0,1,2],[1,2,3],[2,3,4],[3,4,5],[4,5,6],[0,1],[5,6]];
+    layers[1].forEach((node, hi) => {
+      const win = windows[hi % windows.length];
+      win.forEach(si => {
+        if (layers[0][si]) {
+          edges.push({
+            a: layers[0][si], b: node,
+            w: 0.35 + rand() * 0.6, kind: "local"
+          });
+        }
+      });
+    });
+    layers[2].forEach(nb => {
+      layers[1].forEach(na => {
+        if (rand() < 0.72) edges.push({ a: na, b: nb, w: 0.25 + rand() * 0.65, kind: "dense" });
+      });
+    });
+    layers[3].forEach(nb => {
+      layers[2].forEach(na => {
+        if (rand() < 0.85) edges.push({ a: na, b: nb, w: 0.3 + rand() * 0.6, kind: "dense" });
+      });
+    });
+
+    // Recurrent self-loop on one hidden node in layer 2 (RNN-like state reuse).
+    const recNode = layers[2][Math.floor(layers[2].length / 2)];
+
+    // Attention-like long skip: direct edges from early input nodes straight to output,
+    // bypassing intermediate layers (content addressing rather than local relay).
+    const attn = [];
+    [1, 4, 6].forEach((si, k) => {
+      if (layers[0][si]) {
+        attn.push({ a: layers[0][si], b: layers[3][k % layers[3].length], w: 0.5 + rand() * 0.4 });
+      }
+    });
+
+    return { layers, edges, recNode, attn, rand };
+  }
+
+  const model = buildModel();
+
+  // Pulses travel forward through edges to show learned signal flow (a forward pass),
+  // deterministic per seed, looping smoothly.
+  function buildPulses() {
+    const rand = seeded(SEED + 7);
+    const pulses = [];
+    const pool = model.edges.filter(e => e.kind === "local").concat(
+      model.edges.filter(e => e.kind === "dense")
+    );
+    const count = 26;
+    for (let i = 0; i < count; i += 1) {
+      const edge = pool[Math.floor(rand() * pool.length)];
+      pulses.push({
+        edge,
+        offset: rand(),
+        speed: 0.00016 + rand() * 0.00012
+      });
+    }
+    return pulses;
+  }
+  const pulses = buildPulses();
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function drawEdge(ctx, e, colorStable, colorLine) {
+    const hidden = inTitle(e.a.x, e.a.y, 20) && inTitle(e.b.x, e.b.y, 20);
+    if (hidden) return;
+    ctx.beginPath();
+    ctx.moveTo(e.a.x, e.a.y);
+    ctx.lineTo(e.b.x, e.b.y);
+    const alpha = 0.14 + e.w * 0.42;
+    ctx.strokeStyle = e.kind === "local"
+      ? `rgba(${colorStable.join(",")},${alpha})`
+      : `rgba(${colorLine.join(",")},${alpha})`;
+    ctx.lineWidth = 0.8 + e.w * 2.2;
+    ctx.stroke();
+  }
+
+  function drawNode(ctx, n, paper, text, accent) {
+    if (inTitle(n.x, n.y, 26)) return;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgb(${paper.join(",")})`;
+    ctx.fill();
+    ctx.lineWidth = 2.25;
+    ctx.strokeStyle = `rgb(${text.join(",")})`;
+    ctx.stroke();
+  }
+
+  function drawRecurrentLoop(ctx, node, accent, t) {
+    if (inTitle(node.x, node.y, 40)) return;
+    const r = 22;
+    ctx.beginPath();
+    ctx.ellipse(node.x, node.y - r - 6, r * 0.72, r, 0, 0.15, Math.PI * 2 - 0.15);
+    ctx.strokeStyle = `rgba(${accent.join(",")},0.68)`;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // arrowhead
+    const ang = 0.15;
+    const ax = node.x + Math.cos(ang - Math.PI / 2) * r * 0.72;
+    const ay = (node.y - r - 6) + Math.sin(ang - Math.PI / 2) * r;
+    ctx.beginPath();
+    ctx.moveTo(ax - 5, ay - 2);
+    ctx.lineTo(ax + 3, ay + 4);
+    ctx.lineTo(ax - 2, ay + 7);
+    ctx.closePath();
+    ctx.fillStyle = `rgba(${accent.join(",")},0.68)`;
+    ctx.fill();
+  }
+
+  function drawAttn(ctx, e, accent) {
+    if (inTitle(e.a.x, e.a.y, 20) && inTitle(e.b.x, e.b.y, 20)) return;
+    const mx = (e.a.x + e.b.x) / 2;
+    const my = Math.min(e.a.y, e.b.y) - 46;
+    ctx.beginPath();
+    ctx.moveTo(e.a.x, e.a.y);
+    ctx.quadraticCurveTo(mx, my, e.b.x, e.b.y);
+    ctx.strokeStyle = `rgba(${accent.join(",")},${0.28 + e.w * 0.3})`;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+  }
+
+  function drawPulse(ctx, p, t, accentBright) {
+    const e = p.edge;
+    if (inTitle(e.a.x, e.a.y, 20) && inTitle(e.b.x, e.b.y, 20)) return;
+    const prog = (p.offset + t * p.speed) % 1;
+    const x = lerp(e.a.x, e.b.x, prog);
+    const y = lerp(e.a.y, e.b.y, prog);
+    if (inTitle(x, y, 4)) return;
+    const fade = Math.sin(prog * Math.PI);
+    ctx.beginPath();
+    ctx.arc(x, y, 2 + fade * 1.6, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${accentBright.join(",")},${0.35 + fade * 0.55})`;
+    ctx.fill();
+  }
+
+  function render(t) {
+    const ctx = canvas.__ctx;
+    if (!ctx) return;
+    ctx.clearRect(0, 0, W, H);
+
+    const stable = Deck.rgb("stable");
+    const lineStrong = Deck.rgb("line-strong");
+    const accent = Deck.rgb("accent");
+    const paper = Deck.rgb("paper");
+    const text = Deck.rgb("text");
+
+    // Static edges first (structure), then attention long-skips, then nodes, then loop + pulses (signal).
+    model.edges.forEach(e => drawEdge(ctx, e, stable, lineStrong));
+    model.attn.forEach(e => drawAttn(ctx, e, accent));
+    model.layers.forEach(layer => layer.forEach(n => drawNode(ctx, n, paper, text, accent)));
+    drawRecurrentLoop(ctx, model.recNode, accent, t);
+    pulses.forEach(p => drawPulse(ctx, p, t, accent));
+  }
+
+  function fitAndDraw() {
+    canvas.__ctx = Deck.fit(canvas);
+    render(0);
+  }
+
+  fitAndDraw();
+  Deck.onResize(fitAndDraw);
+  Deck.loop((t) => render(t), { still: 2400 });
+  Deck.init({ index: 1, total: 44 });
+})();
+</script>
+</body>
+</html>

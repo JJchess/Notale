@@ -1,0 +1,8 @@
+from pathlib import Path
+import json,shutil,re,hashlib,subprocess
+b=Path(__file__).resolve().parents[1];s=b/'sources/aztec-gods';d=b/'review/pantheon-index';d.mkdir(exist_ok=True);files=list((s/'static/assets/gods/svg').glob('*.svg'))+[s/'static/assets/gods/sprite/gods.sprite.png',s/'src/data/gods/tidy/nodes.json',s/'src/data/doc.json',s/'src/data/variables.json'];manifest=[]
+for p in files:
+ rel=Path(str(p.relative_to(s)).replace('static/','').replace('src/',''));out=d/rel;out.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,out);manifest.append({'path':str(rel),'source':str(p.relative_to(s)),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+src=(s/'src/components/pantheon/Gods.svelte').read_text();ids=re.findall(r'"([a-z_]+)"',src[src.index('const godIndices'):src.index('];')]);(d/'sprite-order.json').write_text(json.dumps(ids)+'\n');assert len(ids)==137
+(d/'SOURCE-NOTICE.md').write_text('Source: https://github.com/the-pudding/aztec-gods\nStory and illustrations: Gwendal Uguen. Code: Luc Guillemot.\nThe source commit has no LICENSE file. This candidate does not grant a new license. Original SVG files are reused unchanged; they are not substitute drawings.\n')
+(d/'assets.json').write_text(json.dumps({'repo':'https://github.com/the-pudding/aztec-gods','commit':subprocess.check_output(['git','-C',str(s),'rev-parse','HEAD'],text=True).strip(),'assets':manifest,'sprite_order_source':'src/components/pantheon/Gods.svelte','sprite_order_sha256':hashlib.sha256((d/'sprite-order.json').read_bytes()).hexdigest()},indent=2)+'\n');print(len(manifest))

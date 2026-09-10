@@ -2,32 +2,27 @@
   "use strict";
 
   const GRID_SIZE = 8;
-  const BOARD_SIZE = 512;
-  const CELL = BOARD_SIZE / GRID_SIZE;
+  const ART = 512;                 // 美术坐标系。石块/割草机的偏移都按 64px 格子写死，不要动它。
+  const CELL = ART / GRID_SIZE;
   const START = { row: 0, col: 0 };
-  const BLOCKED = new Set([
-    "0,7",
-    "1,0", "1,1", "1,2", "1,3", "1,7",
-    "2,0", "2,1",
-    "4,2",
-    "5,2", "5,3", "5,4",
-    "6,5",
-    "7,4", "7,5",
-  ]);
+  const ROCKS = [
+    [0,7],
+    [1,0], [1,1], [1,2], [1,3], [1,7],
+    [2,0], [2,1],
+    [4,2],
+    [5,2], [5,3], [5,4],
+    [6,5],
+    [7,4], [7,5],
+  ];
+  const BLOCKED = new Set(ROCKS.map(([row, col]) => `${row},${col}`));
   const OPEN_CELLS = GRID_SIZE * GRID_SIZE - BLOCKED.size;
+  const MIN_MOVES = OPEN_CELLS - 1;
   const DIRECTIONS = {
     ArrowUp: { row: -1, col: 0, facing: "up" },
     ArrowDown: { row: 1, col: 0, facing: "down" },
     ArrowLeft: { row: 0, col: -1, facing: "left" },
     ArrowRight: { row: 0, col: 1, facing: "right" },
   };
-  const BUTTON_DIRECTIONS = {
-    up: DIRECTIONS.ArrowUp,
-    down: DIRECTIONS.ArrowDown,
-    left: DIRECTIONS.ArrowLeft,
-    right: DIRECTIONS.ArrowRight,
-  };
-
   const OPTIMAL_PATH = [
     [0,0],[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[1,6],[1,5],[1,4],
     [2,4],[2,5],[2,6],[2,7],[3,7],[4,7],[5,7],[6,7],[7,7],[7,6],
@@ -45,28 +40,44 @@
   });
 
   const elements = {
+    stage: document.querySelector("#stage"),
     canvas: document.querySelector("#gameCanvas"),
     boardWrap: document.querySelector("#boardWrap"),
-    startLayer: document.querySelector("#startLayer"),
     startButton: document.querySelector("#startButton"),
-    skipButton: document.querySelector("#skipButton"),
+    skipButtons: document.querySelectorAll('[data-action="skip"]'),
+    introCanvas: document.querySelector("#introCanvas"),
+    boardStatus: document.querySelector("#boardStatus"),
+    repeatNote: document.querySelector("#repeatNote"),
     replayButton: document.querySelector("#replayButton"),
-    moveLabel: document.querySelector("#moveLabel"),
-    coverageLabel: document.querySelector("#coverageLabel"),
+    moveValue: document.querySelector("#moveValue"),
+    coverageValue: document.querySelector("#coverageValue"),
+    progressFill: document.querySelector("#progressFill"),
     instruction: document.querySelector("#instruction"),
-    results: document.querySelector("#results"),
     resultsTitle: document.querySelector("#results-title"),
+    efficiencyValue: document.querySelector("#efficiencyValue"),
     playerResultCanvas: document.querySelector("#playerResultCanvas"),
     optimalResultCanvas: document.querySelector("#optimalResultCanvas"),
-    canvasError: document.querySelector("#canvasError"),
     dpadButtons: document.querySelectorAll(".dpad button"),
   };
 
-  let ctx;
+  const SCENES = {
+    intro: { el: document.querySelector("#sceneIntro"), bits: ".intro-block > *" },
+    play: { el: document.querySelector("#scenePlay"), bits: ".play-side > *, .board-wrap" },
+    result: { el: document.querySelector("#sceneResult"), bits: ".result-side > *, .comparison figure" },
+  };
+
+  const D = Deck.reduced() ? 0 : 1;   // reduced-motion 下所有时长归零，但流程本身不变
+
   let state;
+  let scene = "intro";
+  let board = null;                  // Deck.autofit 句柄，进入幕 2 后才建得起来
+  let sceneTl = null;
+  let resultTween = null;
+  let resultFits = null;
+  let resultPath = OPTIMAL_PATH;     // 结果幕左图当前画的是哪条路线
+  let resultProgress = 0;
   let swipeStart = null;
-  let resultAnimationFrame = 0;
-  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let finishTimer = 0;
 
   function keyFor(row, col) {
     return `${row},${col}`;
@@ -74,7 +85,6 @@
 
   function resetState() {
     state = {
-      started: false,
       complete: false,
       player: { ...START },
       facing: "right",
@@ -88,12 +98,12 @@
     return value - Math.floor(value);
   }
 
-  function drawGrassCell(target, row, col, mowed, emptyBoard = false) {
+  function drawGrassCell(target, row, col, mowed) {
     const x = col * CELL;
     const y = row * CELL;
     const lightShift = ((row * 3 + col * 5) % 4) * 2;
     target.fillStyle = mowed
-      ? `rgb(${66 + lightShift}, ${143 + lightShift}, ${73 + lightShift})`
+      ? `rgb(${44 + lightShift}, ${104 + lightShift}, ${52 + lightShift})`
       : `rgb(${53 + lightShift}, ${151 + lightShift}, ${62 + lightShift})`;
     target.fillRect(x, y, CELL, CELL);
 
@@ -106,7 +116,7 @@
         ? (bright ? "rgba(116, 195, 104, .42)" : "rgba(28, 116, 51, .34)")
         : (bright ? "#60d85d" : "#228d42");
       target.fillRect(px, py + (mowed ? 2 : 4), 2, mowed ? 2 : 5);
-      if (!mowed && !emptyBoard) {
+      if (!mowed) {
         target.fillRect(px + 2, py + 2, 2, 4);
       }
     }
@@ -192,36 +202,186 @@
     target.restore();
   }
 
-  function drawBoard() {
-    if (!ctx) return;
-    ctx.clearRect(0, 0, BOARD_SIZE, BOARD_SIZE);
-
+  /* 开场预览和游玩中的棋盘是同一张图，只差「谁已经割了」和画不画割草机。
+     石块格一律按「不用割」画：亮的格子就等于还没割的格子，不用在石头之间找。 */
+  function drawLawn(target, mowed, withMower) {
+    target.clearRect(0, 0, ART, ART);
     for (let row = 0; row < GRID_SIZE; row += 1) {
       for (let col = 0; col < GRID_SIZE; col += 1) {
-        const mowed = state.started && state.visited.has(keyFor(row, col));
-        drawGrassCell(ctx, row, col, mowed, !state.started);
+        const key = keyFor(row, col);
+        drawGrassCell(target, row, col, mowed.has(key) || BLOCKED.has(key));
       }
     }
+    ROCKS.forEach(([row, col]) => drawRock(target, row, col));
+    if (withMower) drawMower(target, state.player, state.facing);
+  }
 
-    if (!state.started) return;
-    BLOCKED.forEach((key) => {
-      const [row, col] = key.split(",").map(Number);
-      drawRock(ctx, row, col);
-    });
-    drawMower(ctx, state.player, state.facing);
+  function drawResultBase(target) {
+    target.clearRect(0, 0, ART, ART);
+    target.fillStyle = "#181a19";
+    target.fillRect(0, 0, ART, ART);
+    target.strokeStyle = "#3a3e3b";
+    target.lineWidth = 1;
+    target.beginPath();
+    for (let i = 0; i <= GRID_SIZE; i += 1) {
+      const offset = i * CELL + 0.5;
+      target.moveTo(offset, 0);
+      target.lineTo(offset, ART);
+      target.moveTo(0, offset);
+      target.lineTo(ART, offset);
+    }
+    target.stroke();
+    ROCKS.forEach(([row, col]) => drawRock(target, row, col));
+  }
+
+  /* 一段路（两个相邻格之间的那一小截）被走了几次。结果图只把重复路段加深，
+     不把它冒充为全部低效移动的归因。无向：来回各一次算同一段走了两次。 */
+  function edgeKey(a, b) {
+    const one = keyFor(a.row, a.col);
+    const two = keyFor(b.row, b.col);
+    return one < two ? `${one}|${two}` : `${two}|${one}`;
+  }
+
+  function edgeCounts(path, upTo) {
+    const counts = new Map();
+    for (let i = 1; i <= upTo; i += 1) {
+      const key = edgeKey(path[i - 1], path[i]);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return counts;
+  }
+
+  function repeatedSteps(path) {
+    return path.length - 1 - edgeCounts(path, path.length - 1).size;
+  }
+
+  const center = (cell) => [cell.col * CELL + CELL / 2, cell.row * CELL + CELL / 2];
+
+  /* 逐段画，而不是一条 polyline。每段的颜色取决于它被走了几次。
+     计数只统计已经画出来的部分，于是动画里线走回头路时会当场变深。 */
+  function drawPath(target, path, ramp, progress) {
+    const finalIndex = Math.max(1, Math.floor((path.length - 1) * progress));
+    const counts = edgeCounts(path, finalIndex);
+    target.lineWidth = 12;
+    target.lineCap = "round";
+    target.lineJoin = "round";
+
+    for (let i = 1; i <= finalIndex; i += 1) {
+      const times = counts.get(edgeKey(path[i - 1], path[i]));
+      target.strokeStyle = ramp[Math.min(times, ramp.length) - 1];
+      target.beginPath();
+      target.moveTo(...center(path[i - 1]));
+      target.lineTo(...center(path[i]));
+      target.stroke();
+    }
+
+    target.fillStyle = ramp[0];
+    target.beginPath();
+    target.arc(...center(path[finalIndex]), 9, 0, Math.PI * 2);
+    target.fill();
+  }
+
+  /* canvas 一律走 Deck.autofit：它按 dpr×舞台缩放采样，缩放比变了自动重新 fit 并重绘。
+     绘制前把 ctx 缩到 512 的美术坐标，显示尺寸就完全交给 CSS。
+     注意 Deck.fit 读 offsetWidth。元素还 hidden 时量不到尺寸，所以这些句柄都是
+     进入对应幕、取消 hidden 之后才建。 */
+  function scaled(target, size) {
+    target.scale(size / ART, size / ART);
+    return target;
+  }
+
+  function ensureBoard() {
+    if (board) return;
+    board = Deck.autofit(elements.canvas, (target, w) => drawLawn(scaled(target, w), state.visited, true));
+  }
+
+  function ensureResultFits() {
+    if (resultFits) return;
+    const player = [Deck.token("player"), Deck.token("player-2"), Deck.token("player-3")];
+    const optimal = [Deck.token("optimal")];
+    resultFits = [
+      [elements.playerResultCanvas, () => resultPath, player],
+      [elements.optimalResultCanvas, () => OPTIMAL_PATH, optimal],
+    ].map(([canvas, path, ramp]) => Deck.autofit(canvas, (target, w) => {
+      drawResultBase(scaled(target, w));
+      drawPath(target, path(), ramp, resultProgress);
+    }));
+  }
+
+  function renderResultFrame(progress) {
+    resultProgress = progress;
+    resultFits.forEach((fit) => fit.redraw());
   }
 
   function updateMeta() {
-    elements.moveLabel.textContent = `第 ${state.path.length} 步`;
-    elements.coverageLabel.textContent = `已修剪 ${state.visited.size} / ${OPEN_CELLS} 格`;
+    const moves = state.path.length - 1;
+    elements.moveValue.textContent = moves;
+    elements.coverageValue.innerHTML =
+      `${OPEN_CELLS - state.visited.size}<span class="readout-unit"> 格</span>`;
+    elements.progressFill.style.width = `${(state.visited.size / OPEN_CELLS) * 100}%`;
+    elements.boardStatus.textContent =
+      `第 ${state.player.row + 1} 行第 ${state.player.col + 1} 列，`
+      + `还剩 ${OPEN_CELLS - state.visited.size} 格没割，已移动 ${moves} 步。`;
   }
 
+  /* --- 幕切换 ------------------------------------------------------------ */
+
+  /* 谁可见、谁带着动画残留，只由这一个函数说了算。
+
+     不这样写会出事：上一次换幕的收尾（把旧幕 hidden 掉、clearProps）是挂在 onComplete
+     上的，异步。用户在 0.5s 动画没播完时再点一下，新一次换幕刚把某一幕放出来，
+     上一次的收尾就跟着把它藏回去，实测会出现两幕叠在一起，或者整页全空。
+     所以每次进来先把三幕的动画全杀掉、属性全清掉，再重新摆一遍。 */
+  function setScene(name) {
+    if (name === scene) return;
+    const from = SCENES[scene].el;
+    const to = SCENES[name];
+    scene = name;
+    elements.stage.dataset.scene = name;
+
+    if (sceneTl) sceneTl.kill();
+    window.clearTimeout(finishTimer);
+    Object.keys(SCENES).forEach((key) => {
+      const s = SCENES[key];
+      const parts = [s.el, ...s.el.querySelectorAll(s.bits)];
+      gsap.killTweensOf(parts);
+      gsap.set(parts, { clearProps: "opacity,transform" });
+      s.el.hidden = s.el !== from && s.el !== to.el;
+    });
+
+    // 先可见，才量得到尺寸（Deck.fit 读 offsetWidth）；但同一帧就压到透明，
+    // 否则旧幕淡出的这 0.26s 里两幕会以全不透明叠在一起。
+    to.el.hidden = false;
+    gsap.set(to.el, { opacity: 0 });
+    if (name === "play") ensureBoard();
+    if (name === "result") ensureResultFits();
+
+    sceneTl = gsap.timeline()
+      .to(from, {
+        opacity: 0,
+        y: -16,
+        duration: 0.26 * D,
+        ease: "power2.in",
+        onComplete: () => {
+          from.hidden = true;
+          gsap.set(from, { clearProps: "opacity,transform" });
+        },
+      })
+      .to(to.el, { opacity: 1, duration: 0.3 * D }, ">")
+      .from(to.el.querySelectorAll(to.bits), {
+        y: 24,
+        opacity: 0,
+        duration: 0.5 * D,
+        stagger: 0.07 * D,
+        ease: "power3.out",
+        clearProps: "opacity,transform",
+      }, "<");
+  }
+
+  /* --- 流程 -------------------------------------------------------------- */
+
   function startGame() {
-    if (state.started) return;
-    state.started = true;
-    elements.startLayer.hidden = true;
-    elements.instruction.textContent = "使用方向键移动。碰到石块不会计步。";
-    drawBoard();
+    setScene("play");
     elements.canvas.focus({ preventScroll: true });
   }
 
@@ -232,7 +392,7 @@
   }
 
   function move(direction) {
-    if (!state.started || state.complete) return;
+    if (state.complete || scene !== "play") return;
     const nextRow = state.player.row + direction.row;
     const nextCol = state.player.col + direction.col;
     const outside = nextRow < 0 || nextCol < 0 || nextRow >= GRID_SIZE || nextCol >= GRID_SIZE;
@@ -246,153 +406,93 @@
     state.path.push({ ...state.player });
     state.visited.add(keyFor(nextRow, nextCol));
     updateMeta();
-    drawBoard();
+    board.redraw();
 
     if (state.visited.size === OPEN_CELLS) {
       state.complete = true;
       elements.instruction.textContent = "完成。正在计算你的路线。";
-      window.setTimeout(() => showResults(state.path), reduceMotion.matches ? 0 : 420);
+      finishTimer = window.setTimeout(() => showResults(state.path), 420 * D);
     }
-  }
-
-  function drawResultBase(target) {
-    target.clearRect(0, 0, BOARD_SIZE, BOARD_SIZE);
-    target.fillStyle = "#181a19";
-    target.fillRect(0, 0, BOARD_SIZE, BOARD_SIZE);
-    target.strokeStyle = "#3a3e3b";
-    target.lineWidth = 1;
-    for (let i = 0; i <= GRID_SIZE; i += 1) {
-      const offset = i * CELL + 0.5;
-      target.beginPath();
-      target.moveTo(offset, 0);
-      target.lineTo(offset, BOARD_SIZE);
-      target.stroke();
-      target.beginPath();
-      target.moveTo(0, offset);
-      target.lineTo(BOARD_SIZE, offset);
-      target.stroke();
-    }
-    BLOCKED.forEach((key) => {
-      const [row, col] = key.split(",").map(Number);
-      drawRock(target, row, col);
-    });
-  }
-
-  function drawPath(target, path, color, progress = 1) {
-    const finalIndex = Math.max(1, Math.floor((path.length - 1) * progress));
-    target.strokeStyle = color;
-    target.lineWidth = 12;
-    target.lineCap = "round";
-    target.lineJoin = "round";
-    target.beginPath();
-    target.moveTo(path[0].col * CELL + CELL / 2, path[0].row * CELL + CELL / 2);
-    for (let i = 1; i <= finalIndex; i += 1) {
-      target.lineTo(path[i].col * CELL + CELL / 2, path[i].row * CELL + CELL / 2);
-    }
-    target.stroke();
-
-    const end = path[finalIndex];
-    target.fillStyle = color;
-    target.beginPath();
-    target.arc(end.col * CELL + CELL / 2, end.row * CELL + CELL / 2, 9, 0, Math.PI * 2);
-    target.fill();
-  }
-
-  function renderResultFrame(playerPath, progress) {
-    const playerCtx = elements.playerResultCanvas.getContext("2d");
-    const optimalCtx = elements.optimalResultCanvas.getContext("2d");
-    drawResultBase(playerCtx);
-    drawResultBase(optimalCtx);
-    drawPath(playerCtx, playerPath, "#ef9a31", progress);
-    drawPath(optimalCtx, OPTIMAL_PATH, "#77dc78", progress);
-  }
-
-  function animateResults(playerPath) {
-    window.cancelAnimationFrame(resultAnimationFrame);
-    if (reduceMotion.matches) {
-      renderResultFrame(playerPath, 1);
-      return;
-    }
-
-    const start = performance.now();
-    const duration = 1250;
-    const frame = (now) => {
-      const raw = Math.min(1, (now - start) / duration);
-      const eased = 1 - Math.pow(1 - raw, 3);
-      renderResultFrame(playerPath, eased);
-      if (raw < 1) resultAnimationFrame = window.requestAnimationFrame(frame);
-    };
-    resultAnimationFrame = window.requestAnimationFrame(frame);
   }
 
   function showResults(playerPath) {
-    const efficiency = Math.round((OPEN_CELLS / playerPath.length) * 1000) / 10;
+    const moves = playerPath.length - 1;
+    const efficiency = Math.round((MIN_MOVES / moves) * 1000) / 10;
     elements.resultsTitle.innerHTML = [
       "去掉草地和石头，这其实是一条由相邻方格组成的路径。",
-      `你用了 <strong>${playerPath.length} 步</strong>，最短路线只需要 ${OPEN_CELLS} 步。`,
-      `你的效率是 <strong>${efficiency}%</strong>。`,
+      `你移动了 <strong>${moves} 步</strong>，最短路线只需要 ${MIN_MOVES} 步。`,
     ].join("");
-    elements.results.hidden = false;
-    animateResults(playerPath);
-    elements.results.scrollIntoView({ behavior: reduceMotion.matches ? "auto" : "smooth", block: "start" });
+    elements.efficiencyValue.textContent = `${efficiency}%`;
+    const repeats = repeatedSteps(playerPath);
+    elements.repeatNote.textContent = repeats
+      ? `　深色 = 同一路段被重复经过，共 ${repeats} 次`
+      : "　没有重复";
+
+    resultPath = playerPath;
+    resultProgress = 0;
+    setScene("result");
+
+    const p = { v: 0 };
+    if (resultTween) resultTween.kill();
+    resultTween = gsap.to(p, {
+      v: 1,
+      duration: 1.25 * D,
+      ease: "power3.out",
+      onUpdate: () => renderResultFrame(p.v),
+      onComplete: () => renderResultFrame(1),
+    });
   }
 
   function replay() {
-    window.cancelAnimationFrame(resultAnimationFrame);
     resetState();
-    elements.results.hidden = true;
-    elements.startLayer.hidden = false;
-    elements.instruction.textContent = "使用方向键移动。碰到石块不会计步。";
     updateMeta();
-    drawBoard();
-    elements.boardWrap.scrollIntoView({ behavior: reduceMotion.matches ? "auto" : "smooth", block: "center" });
-    elements.startButton.focus({ preventScroll: true });
+    elements.instruction.textContent = "用方向键移动。碰到石块不会计步。";
+    setScene("play");           // 顺带把棋盘建起来（如果还没建）
+    board.redraw();
+    elements.canvas.focus({ preventScroll: true });
   }
+
+  /* --- 输入 -------------------------------------------------------------- */
 
   function onKeyDown(event) {
-    if (!DIRECTIONS[event.key]) return;
-    if (state.started && !state.complete) event.preventDefault();
-    move(DIRECTIONS[event.key]);
+    const direction = DIRECTIONS[event.key];
+    if (!direction) return;
+    event.preventDefault();      // 定尺画布不该对方向键有任何滚动反应
+    move(direction);
   }
 
+  // 舞台整体被 scale 过，clientX 的差值不是逻辑 px。Deck.pt 换算回来，阈值才与缩放无关。
   function onPointerDown(event) {
-    swipeStart = { x: event.clientX, y: event.clientY };
+    swipeStart = Deck.pt(elements.canvas, event);
     elements.canvas.setPointerCapture?.(event.pointerId);
   }
 
   function onPointerUp(event) {
     if (!swipeStart) return;
-    const dx = event.clientX - swipeStart.x;
-    const dy = event.clientY - swipeStart.y;
+    const end = Deck.pt(elements.canvas, event);
+    const dx = end.x - swipeStart.x;
+    const dy = end.y - swipeStart.y;
     swipeStart = null;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 30) return;
     move(Math.abs(dx) > Math.abs(dy)
       ? (dx > 0 ? DIRECTIONS.ArrowRight : DIRECTIONS.ArrowLeft)
       : (dy > 0 ? DIRECTIONS.ArrowDown : DIRECTIONS.ArrowUp));
   }
 
   function init() {
-    try {
-      ctx = elements.canvas.getContext("2d");
-      if (!ctx) throw new Error("Canvas context unavailable");
-    } catch (error) {
-      elements.canvasError.hidden = false;
-      elements.startLayer.hidden = true;
-      console.error(error);
-      return;
-    }
-
     resetState();
     updateMeta();
-    drawBoard();
+    Deck.autofit(elements.introCanvas, (target, w) => drawLawn(scaled(target, w), new Set(), false));
     elements.startButton.addEventListener("click", startGame);
-    elements.skipButton.addEventListener("click", () => showResults(SAMPLE_PATH));
+    elements.skipButtons.forEach((button) => {
+      button.addEventListener("click", () => showResults(SAMPLE_PATH));
+    });
     elements.replayButton.addEventListener("click", replay);
     document.addEventListener("keydown", onKeyDown);
     elements.canvas.addEventListener("pointerdown", onPointerDown);
     elements.canvas.addEventListener("pointerup", onPointerUp);
     elements.dpadButtons.forEach((button) => {
-      button.addEventListener("click", () => move(BUTTON_DIRECTIONS[button.dataset.direction]));
+      button.addEventListener("click", () => move(DIRECTIONS[button.dataset.direction]));
     });
   }
 

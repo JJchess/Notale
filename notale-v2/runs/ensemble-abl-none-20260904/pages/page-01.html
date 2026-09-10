@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成学习：让一组模型共同作出更稳健的判断</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+      padding: 64px 76px 56px 76px;
+      background: var(--bg);
+    }
+
+    /* 生成式画布：背景流场与粒子汇聚系统 */
+    #gen-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* 右侧集成流场示意图与信息面板 */
+    .hero-main {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 60px;
+      align-items: center;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .hero-content {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .hero-title {
+      margin: 0;
+      font-size: 52px;
+      line-height: 1.18;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .hero-title span.accent {
+      color: var(--aggregate);
+    }
+
+    .hero-lead {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.55;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    /* 右侧集成机制图解板 */
+    .ensemble-diagram-panel {
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(83, 106, 120, 0.16);
+      border-radius: 14px;
+      padding: 24px 28px;
+      box-shadow: 0 8px 24px rgba(18, 38, 52, 0.05);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .panel-kicker {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--model);
+      letter-spacing: 0.04em;
+    }
+
+    .paradigm-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .paradigm-row {
+      display: grid;
+      grid-template-columns: 100px 1fr;
+      gap: 14px;
+      align-items: baseline;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(242, 246, 248, 0.7);
+    }
+
+    .paradigm-name {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .paradigm-name::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--model);
+    }
+
+    .paradigm-row.bagging .paradigm-name::before { background: var(--sample); }
+    .paradigm-row.boosting .paradigm-name::before { background: var(--aggregate); }
+    .paradigm-row.stacking .paradigm-name::before { background: var(--model); }
+
+    .paradigm-desc {
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 底部三条核心机理对比卡片：说明个体扰动到集成稳健 */
+    .hero-footer {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-top: auto;
+    }
+
+    .metric-card {
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(83, 106, 120, 0.16);
+      border-radius: 12px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(18, 38, 52, 0.04);
+    }
+
+    .metric-card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .metric-card-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .metric-card-dot.model { background: var(--model); }
+    .metric-card-dot.sample { background: var(--sample); }
+    .metric-card-dot.aggregate { background: var(--aggregate); }
+
+    .metric-card-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .metric-card-desc {
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 移除顶栏胶囊，保持干净大气的讲义封面 */
+    .hero-eyebrow {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+  </style>
+</head>
+<body data-page="01" data-total="27">
+  <div id="stage">
+    <canvas id="gen-canvas" class="cv-fill"></canvas>
+
+    <div class="hero-eyebrow">
+      机器学习概论 · 第八讲
+    </div>
+
+    <div class="hero-main min0">
+      <div class="hero-content min0">
+        <h1 class="hero-title">
+          集成学习：让一组模型<br>共同作出<span class="accent">更稳健的判断</span>
+        </h1>
+        <p class="hero-lead">
+          单个预测器受限于样本扰动、结构偏置与局部最优；集成学习构建多元基学习器，并通过平均、投票与元学习，将离散脆弱的个体决策汇聚为低方差、抗噪声的群体边界。
+        </p>
+      </div>
+
+      <div class="ensemble-diagram-panel min0">
+        <div class="panel-kicker">全讲核心技术路线与聚合范式</div>
+        <div class="paradigm-list">
+          <div class="paradigm-row bagging">
+            <div class="paradigm-name">Bagging</div>
+            <p class="paradigm-desc">自助抽样并行拟合，以多数表决或均值聚合抑制模型方差（随机森林）。</p>
+          </div>
+          <div class="paradigm-row boosting">
+            <div class="paradigm-name">Boosting</div>
+            <p class="paradigm-desc">前向串行拟合样本残差，持续校正前序分类误差以攻克偏差（GBDT/AdaBoost）。</p>
+          </div>
+          <div class="paradigm-row stacking">
+            <div class="paradigm-name">Stacking</div>
+            <p class="paradigm-desc">以折外交叉预测作为次级元特征，通过次级学习器探索最优决策组合。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero-footer min0">
+      <div class="metric-card min0">
+        <div class="metric-card-header">
+          <span class="metric-card-dot model"></span>
+          <span class="metric-card-title">基学习器多元化</span>
+        </div>
+        <p class="metric-card-desc">独立训练或顺序优化的弱模型，在不同特征空间与样本子集上各自形成特异性误差。</p>
+      </div>
+
+      <div class="metric-card min0">
+        <div class="metric-card-header">
+          <span class="metric-card-dot sample"></span>
+          <span class="metric-card-title">扰动与空间重采样</span>
+        </div>
+        <p class="metric-card-desc">Bootstrap 自助抽样、特征随机切分与残差迭代重权，切断错误之间的同向相关性。</p>
+      </div>
+
+      <div class="metric-card min0">
+        <div class="metric-card-header">
+          <span class="metric-card-dot aggregate"></span>
+          <span class="metric-card-title">群体聚合与方差收敛</span>
+        </div>
+        <p class="metric-card-desc">多数表决、加权求和与次级元分类器对冲不确定性，在统计边界上抵消个体方差。</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    /*
+      Generative System: 多源流场与聚合收敛仿真
+      概念：左侧与四周散布代表不同基学习器（Model / Sample）的扰动流线粒子；
+      随着演化向右侧聚焦引力中心（Aggregate Target）汇合，并在此结晶为稳健低方差的判定流束。
+    */
+    (function() {
+      Deck.init({ index: 1, total: 27 });
+
+      const canvas = document.getElementById('gen-canvas');
+      const ctx = Deck.fit(canvas);
+
+      const W = Deck.W;
+      const H = Deck.H;
+
+      // 确定性随机数
+      let seed = 20240901;
+      function rnd() {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+      }
+
+      // 色彩系统
+      const colModel = Deck.token('--model') || '#27648F';
+      const colSample = Deck.token('--sample') || '#2F7568';
+      const colAgg = Deck.token('--aggregate') || '#C34B22';
+
+      // 聚合引力中心（位于右侧上方）
+      const attractor = { x: 1260, y: 190, r: 160 };
+
+      // 标题排除区（防止线条干扰文字可读性）
+      const titleExclusion = {
+        x1: 40,
+        y1: 50,
+        x2: 780,
+        y2: 500
+      };
+
+      // 静态背景网格与收敛射线（只渲染一次保存在离屏 Canvas）
+      const bgCanvas = document.createElement('canvas');
+      bgCanvas.width = W;
+      bgCanvas.height = H;
+      const bgCtx = bgCanvas.getContext('2d');
+
+      function drawStaticBackdrop() {
+        // 微弱的坐标网格，暗示度量与特征空间
+        bgCtx.strokeStyle = 'rgba(83, 106, 120, 0.05)';
+        bgCtx.lineWidth = 1;
+        const step = 48;
+        for (let x = step; x < W; x += step) {
+          bgCtx.beginPath();
+          bgCtx.moveTo(x, 0);
+          bgCtx.lineTo(x, H);
+          bgCtx.stroke();
+        }
+        for (let y = step; y < H; y += step) {
+          bgCtx.beginPath();
+          bgCtx.moveTo(0, y);
+          bgCtx.lineTo(W, y);
+          bgCtx.stroke();
+        }
+
+        // 汇聚点引力圈
+        const rings = [30, 70, 120, 180, 250];
+        rings.forEach((r, idx) => {
+          bgCtx.beginPath();
+          bgCtx.arc(attractor.x, attractor.y, r, 0, Math.PI * 2);
+          bgCtx.strokeStyle = `rgba(195, 75, 34, ${0.12 - idx * 0.02})`;
+          bgCtx.setLineDash([4, 6]);
+          bgCtx.stroke();
+          bgCtx.setLineDash([]);
+        });
+
+        // 多个基模型的虚线发散源点（代表不同训练子集）
+        const sources = [
+          { x: 1020, y: 140, label: 'Tree 1' },
+          { x: 1420, y: 160, label: 'Tree 2' },
+          { x: 1480, y: 520, label: 'Tree 3' },
+          { x: 1040, y: 640, label: 'Tree M' }
+        ];
+
+        sources.forEach((src) => {
+          bgCtx.beginPath();
+          bgCtx.arc(src.x, src.y, 4, 0, Math.PI * 2);
+          bgCtx.fillStyle = colModel;
+          bgCtx.fill();
+
+          // 到聚合点的导引虚线
+          bgCtx.beginPath();
+          bgCtx.moveTo(src.x, src.y);
+          bgCtx.quadraticCurveTo(
+            (src.x + attractor.x) / 2 + (rnd() - 0.5) * 80,
+            (src.y + attractor.y) / 2 + (rnd() - 0.5) * 80,
+            attractor.x, attractor.y
+          );
+          bgCtx.strokeStyle = 'rgba(39, 100, 143, 0.16)';
+          bgCtx.setLineDash([3, 5]);
+          bgCtx.stroke();
+          bgCtx.setLineDash([]);
+        });
+      }
+
+      drawStaticBackdrop();
+
+      // 流动粒子群：从基学习器源头流向聚合判定带
+      const NUM_PARTICLES = 160;
+      const particles = [];
+
+      function createParticle(initial = false) {
+        // 大多分布在右侧区域与右上方/右下方，避开左侧标题核心文字
+        let x, y;
+        if (initial) {
+          x = 880 + rnd() * 680;
+          y = 80 + rnd() * 700;
+        } else {
+          // 在四周边缘生成
+          const edge = Math.floor(rnd() * 3);
+          if (edge === 0) { // 顶部右侧
+            x = 900 + rnd() * 660;
+            y = 30 + rnd() * 40;
+          } else if (edge === 1) { // 右侧边缘
+            x = 1540 + rnd() * 40;
+            y = 80 + rnd() * 600;
+          } else { // 底部右侧
+            x = 940 + rnd() * 620;
+            y = 660 + rnd() * 80;
+          }
+        }
+
+        const typeChoice = rnd();
+        const type = typeChoice < 0.45 ? 'model' : (typeChoice < 0.8 ? 'sample' : 'agg');
+        const color = type === 'model' ? colModel : (type === 'sample' ? colSample : colAgg);
+
+        return {
+          x,
+          y,
+          vx: (rnd() - 0.5) * 0.6,
+          vy: (rnd() - 0.5) * 0.6,
+          speed: 0.8 + rnd() * 1.4,
+          life: 80 + Math.floor(rnd() * 180),
+          maxLife: 260,
+          color,
+          size: 1.5 + rnd() * 2,
+          trail: []
+        };
+      }
+
+      for (let i = 0; i < NUM_PARTICLES; i++) {
+        particles.push(createParticle(true));
+      }
+
+      // 渲染主函数
+      function render(time) {
+        ctx.clearRect(0, 0, W, H);
+
+        // 绘制静态底图
+        ctx.drawImage(bgCanvas, 0, 0);
+
+        // 模拟粒子轨迹更新与绘制
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+
+          // 记录足迹
+          p.trail.push({ x: p.x, y: p.y });
+          if (p.trail.length > 8) p.trail.shift();
+
+          // 受聚合点引力场拉动
+          const dx = attractor.x - p.x;
+          const dy = attractor.y - p.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          // 距离越近引力越大，同时附带微弱漩涡切向速度
+          if (dist > 25) {
+            const f = 0.045 / (dist * 0.05 + 1);
+            p.vx += (dx / dist) * f * p.speed;
+            p.vy += (dy / dist) * f * p.speed;
+
+            // 逆时针切向力
+            const tx = -dy / dist;
+            const ty = dx / dist;
+            p.vx += tx * 0.02 * p.speed;
+            p.vy += ty * 0.02 * p.speed;
+          } else {
+            // 到达聚合核心，进入阻尼减速并准备消散重生
+            p.vx *= 0.88;
+            p.vy *= 0.88;
+            p.life -= 4;
+          }
+
+          // 空气阻尼
+          p.vx *= 0.97;
+          p.vy *= 0.97;
+
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life--;
+
+          // 标题安全区排斥：避免粒子闯入正文可读区
+          if (p.x < titleExclusion.x2 && p.x > titleExclusion.x1 &&
+              p.y < titleExclusion.y2 && p.y > titleExclusion.y1) {
+            p.vx += 0.15; // 轻轻向右推开
+          }
+
+          // 绘制轨迹拖尾
+          if (p.trail.length > 1) {
+            ctx.beginPath();
+            ctx.moveTo(p.trail[0].x, p.trail[0].y);
+            for (let t = 1; t < p.trail.length; t++) {
+              ctx.lineTo(p.trail[t].x, p.trail[t].y);
+            }
+            ctx.strokeStyle = p.color;
+            ctx.globalAlpha = Math.min(0.35, p.life / p.maxLife * 0.4);
+            ctx.lineWidth = p.size * 0.7;
+            ctx.stroke();
+          }
+
+          // 绘制粒子端点
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = Math.min(0.85, (p.life / p.maxLife) * 0.9);
+          ctx.fill();
+
+          // 生命耗尽则重置
+          if (p.life <= 0 || p.x > W + 40 || p.x < 0 || p.y > H + 40 || p.y < 0) {
+            particles[i] = createParticle(false);
+          }
+        }
+
+        // 绘制聚合中心核心亮核
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(attractor.x, attractor.y, 8, 0, Math.PI * 2);
+        ctx.fillStyle = colAgg;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(attractor.x, attractor.y, 18, 0, Math.PI * 2);
+        ctx.strokeStyle = colAgg;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.4;
+        ctx.stroke();
+
+        ctx.globalAlpha = 1.0;
+      }
+
+      // 自适应重绘与动力学循环
+      Deck.autofit(canvas, () => {
+        render(0);
+      });
+
+      if (!Deck.reduced()) {
+        Deck.loop((time) => {
+          render(time);
+        });
+      } else {
+        // reduced-motion 定格单帧
+        render(0);
+      }
+    })();
+  </script>
+</body>
+</html>

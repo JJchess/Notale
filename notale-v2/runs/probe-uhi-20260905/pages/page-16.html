@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>树冠与绿地的降温机制与约束</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    /* 顶部标题与导语 */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 14px;
+      flex-shrink: 0;
+    }
+    .header-main h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      margin: 0 0 6px 0;
+      letter-spacing: -0.01em;
+    }
+    .header-main p {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    /* 状态切换与参数指示器 */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .scenario-btn {
+      padding: 7px 15px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      border-radius: 4px;
+      border: 1px solid var(--surface-strong);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+    .scenario-btn:hover {
+      border-color: var(--cooling);
+    }
+    .scenario-btn[aria-pressed="true"] {
+      background: var(--cooling);
+      color: #fff;
+      border-color: var(--cooling);
+    }
+
+    /* 主内容两栏布局：左侧剖面机制与能流，右侧四大约束与量化读数 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.38fr 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：微气候物理截面示意图 */
+    .cross-section-panel {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel-top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--surface-strong);
+      background: var(--bg);
+      flex-shrink: 0;
+    }
+    .panel-top-bar .title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+    }
+    .diagram-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      width: 100%;
+    }
+    #tree-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧：约束矩阵与温度效应测量 */
+    .analysis-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    /* 量化温差读数条 */
+    .readout-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 14px 18px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .metric-col {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .metric-label {
+      font-size: var(--fs-tick);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .metric-value-row {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+    .metric-value {
+      font-family: var(--font-num);
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .metric-unit {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .metric-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.25;
+    }
+
+    /* 四大约束诊断卡 */
+    .constraints-box {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 14px 18px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+    .constraints-box h2 {
+      font-size: var(--fs-h2);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .constraint-list {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      flex: 1;
+      justify-content: space-between;
+    }
+    .c-item {
+      padding: 9px 12px;
+      border-radius: 4px;
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      transition: all var(--dur) var(--ease);
+    }
+    .c-item.alert {
+      border-color: #F0C4BA;
+      background: #FAF0EE;
+    }
+    .c-item.optimal {
+      border-color: #C2DFCA;
+      background: #EFF6F1;
+    }
+    .c-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+    }
+    .c-status {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      font-family: var(--font-num);
+    }
+    .c-desc {
+      font-size: var(--fs-label);
+      color: var(--text);
+      line-height: 1.35;
+      margin: 0;
+    }
+
+    /* 底部注记与结论提示 */
+    .bottom-summary {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 16px;
+      font-size: var(--fs-sec);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .summary-text {
+      color: var(--text);
+      line-height: 1.4;
+    }
+    .summary-text strong {
+      color: var(--cooling);
+    }
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: var(--fs-label);
+    }
+    .legend-tag {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sw-circle {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+  </style>
+</head>
+<body data-page="16" data-total="19">
+  <div id="stage">
+    <!-- 头部区域 -->
+    <header class="header">
+      <div class="header-main">
+        <h1>树冠与绿地降温：遮阴、蒸散与四类现实约束</h1>
+        <p>白天降温由遮蔽短波辐射主导，蒸散则将显热转化为潜热；但供水短缺、根际硬化或破碎配置会削弱降温效力。</p>
+      </div>
+      <div class="controls" aria-label="环境情境选择">
+        <span class="ctl" style="font-size: var(--fs-label); color: var(--text); font-weight: 600; margin-right: 4px;">工况情境:</span>
+        <button class="scenario-btn" id="btn-opt" aria-pressed="true" data-scenario="optimal">充分供水与充足根域</button>
+        <button class="scenario-btn" id="btn-dry" aria-pressed="false" data-scenario="drought">干旱热浪与水分胁迫</button>
+        <button class="scenario-btn" id="btn-con" aria-pressed="false" data-scenario="constrained">狭窄树池与高硬化配置</button>
+      </div>
+    </header>
+
+    <!-- 主展示区 -->
+    <div class="main-grid">
+      <!-- 左：微气候物理截面 -->
+      <section class="cross-section-panel min0" aria-label="街道树木能量截面">
+        <div class="panel-top-bar">
+          <div class="title" id="diagram-title" style="font-size:var(--fs-body); font-weight:700;">辐射与潜热收支剖面 (14:00 典型工况)</div>
+          <div class="legend-row">
+            <span class="legend-tag"><span class="sw-circle" style="background:var(--heat)"></span><span style="font-size:var(--fs-tick);color:var(--text);">短波入射/表面高温</span></span>
+            <span class="legend-tag"><span class="sw-circle" style="background:var(--cooling)"></span><span style="font-size:var(--fs-tick);color:var(--text);">潜热蒸散 / 遮阴降温</span></span>
+            <span class="legend-tag"><span class="sw-circle" style="background:var(--vegetation)"></span><span style="font-size:var(--fs-tick);color:var(--text);">根系吸水 / 冠层生物量</span></span>
+          </div>
+        </div>
+        <div class="diagram-wrap">
+          <svg id="tree-svg" viewBox="0 0 880 500" preserveAspectRatio="xMidYMid meet">
+            <defs>
+              <!-- 太阳辐射箭头标记 -->
+              <marker id="arrow-rad" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#C63F20"/>
+              </marker>
+              <!-- 潜热上升箭头标记 -->
+              <marker id="arrow-evap" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#176B82"/>
+              </marker>
+              <!-- 根系水流标记 -->
+              <marker id="arrow-root" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#39704A"/>
+              </marker>
+            </defs>
+
+            <!-- 天空背景与环境辐射层 -->
+            <rect x="0" y="0" width="880" height="360" fill="#E8EFF1" opacity="0.3"/>
+            
+            <!-- 太阳源头标注 -->
+            <circle cx="120" cy="48" r="26" fill="#F7D3A6" stroke="#C63F20" stroke-width="2"/>
+            <text x="160" y="48" font-size="15" fill="#17282E" font-weight="700">太阳直接与散射辐射</text>
+            <text x="160" y="68" font-size="13" fill="#17282E">下行短波通量 S↓ ≈ 820 W/m²</text>
+
+            <!-- 建筑物轮廓 (左建筑与右建筑，形成街道峡谷感) -->
+            <path d="M 0 120 L 70 120 L 70 360 L 0 360 Z" fill="#D5E0E3" stroke="#B0C2C7" stroke-width="1.5"/>
+            <text x="24" y="240" font-size="13" fill="#17282E" font-weight="600" writing-mode="vertical-rl">建筑外立面</text>
+
+            <path d="M 810 100 L 880 100 L 880 360 L 810 360 Z" fill="#D5E0E3" stroke="#B0C2C7" stroke-width="1.5"/>
+            <text x="844" y="230" font-size="13" fill="#17282E" font-weight="600" writing-mode="vertical-rl">商业建筑立面</text>
+
+            <!-- 地表土层与铺装基底 (y=360 为路面水平基准) -->
+            <!-- 沥青/水泥硬化路面 (露天段: 70~260, 620~810) -->
+            <rect x="70" y="360" width="190" height="14" fill="#758A90"/>
+            <rect x="620" y="360" width="190" height="14" fill="#758A90"/>
+            
+            <!-- 土壤地下剖面 (y=374 到 500) -->
+            <rect x="70" y="374" width="740" height="126" fill="#D0DBD8" stroke="#BAC8C5" stroke-width="1"/>
+            <text x="735" y="475" font-size="13" fill="#17282E" text-anchor="end">地下根际土壤层 (1.5 m 剖面)</text>
+
+            <!-- 树池范围 (默认宽透水带: 260~620，受限时会收缩) -->
+            <rect id="soil-pit" x="260" y="360" width="360" height="14" fill="#60766A"/>
+            <rect id="soil-volume" x="260" y="374" width="360" height="110" fill="#B3C8BA" opacity="0.45" stroke="#39704A" stroke-dasharray="3 3"/>
+            <text id="soil-vol-label" x="440" y="468" font-size="13" fill="#17282E" text-anchor="middle" font-weight="600">有效透水与根系拓展空间 (16 m³)</text>
+
+            <!-- 露天地表升温标注与直接照射短波箭头 -->
+            <g id="open-sun-rays">
+              <line x1="130" y1="80" x2="165" y2="345" stroke="#C63F20" stroke-width="2.5" marker-end="url(#arrow-rad)"/>
+              <line x1="150" y1="80" x2="215" y2="345" stroke="#C63F20" stroke-width="2.5" marker-end="url(#arrow-rad)"/>
+              <line x1="680" y1="80" x2="715" y2="345" stroke="#C63F20" stroke-width="2.5" stroke-dasharray="4 2" marker-end="url(#arrow-rad)"/>
+            </g>
+
+            <!-- 露天未遮阴沥青地面温度标牌 -->
+            <g transform="translate(130, 312)">
+              <rect x="0" y="0" width="120" height="40" rx="4" fill="#FDF3F1" stroke="#C63F20" stroke-width="1.5"/>
+              <text x="8" y="16" font-size="12" fill="#C63F20" font-weight="700">露天硬化表面</text>
+              <text id="txt-exposed-temp" x="8" y="32" font-size="13" fill="#C63F20" font-weight="700" font-family="Bahnschrift">地表温度 51.4 ℃</text>
+            </g>
+
+            <!-- 树体结构与投影区 -->
+            <!-- 树阴地面覆盖范围 -->
+            <ellipse id="shade-ground" cx="440" cy="365" rx="170" ry="8" fill="#176B82" opacity="0.32"/>
+            <text id="txt-shade-temp" x="440" y="354" font-size="13" fill="#176B82" font-weight="700" text-anchor="middle">树下地表 32.1 ℃ (遮阴降温 -19.3 ℃)</text>
+
+            <!-- 树干与主枝构架 -->
+            <path id="trunk" d="M 425 365 L 434 220 L 446 220 L 455 365 Z" fill="#6A5A4A"/>
+            <path d="M 436 240 Q 380 180 340 160" stroke="#6A5A4A" stroke-width="6" fill="none"/>
+            <path d="M 444 235 Q 490 180 540 160" stroke="#6A5A4A" stroke-width="6" fill="none"/>
+            <path d="M 440 215 L 440 150" stroke="#6A5A4A" stroke-width="5" fill="none"/>
+
+            <!-- 树冠群 (蓬松浓郁的阔叶冠层，支持状态动态变化) -->
+            <g id="canopy-group">
+              <circle id="c1" cx="370" cy="160" r="70" fill="#39704A" opacity="0.88"/>
+              <circle id="c2" cx="510" cy="160" r="70" fill="#39704A" opacity="0.88"/>
+              <circle id="c3" cx="440" cy="125" r="85" fill="#31613F" opacity="0.94"/>
+              <circle id="c4" cx="440" cy="170" r="75" fill="#39704A" opacity="0.9"/>
+            </g>
+
+            <!-- 根系网络与吸水通量 -->
+            <g id="root-network">
+              <!-- 主侧根 -->
+              <path id="root1" d="M 432 370 Q 370 410 310 425" stroke="#39704A" stroke-width="3.5" fill="none"/>
+              <path id="root2" d="M 448 370 Q 510 410 570 425" stroke="#39704A" stroke-width="3.5" fill="none"/>
+              <path id="root3" d="M 440 370 L 440 445" stroke="#39704A" stroke-width="3" fill="none"/>
+              <path id="root4" d="M 390 400 Q 340 440 330 460" stroke="#39704A" stroke-width="2" fill="none"/>
+              <path id="root5" d="M 480 400 Q 530 435 550 455" stroke="#39704A" stroke-width="2" fill="none"/>
+            </g>
+
+            <!-- 潜热蒸散箭头 (自冠层向空气中释放) -->
+            <g id="evap-fluxes">
+              <path d="M 410 110 Q 395 70 380 35" stroke="#176B82" stroke-width="2.5" fill="none" marker-end="url(#arrow-evap)"/>
+              <path d="M 440 95 Q 440 60 440 25" stroke="#176B82" stroke-width="3" fill="none" marker-end="url(#arrow-evap)"/>
+              <path d="M 470 110 Q 485 70 500 35" stroke="#176B82" stroke-width="2.5" fill="none" marker-end="url(#arrow-evap)"/>
+              <rect x="340" y="8" width="200" height="24" rx="3" fill="#F7FAFA" stroke="#176B82" stroke-width="1"/>
+              <text id="txt-evap-flux" x="440" y="24" font-size="13" fill="#176B82" font-weight="700" text-anchor="middle">蒸散潜热通量 LE: 285 W/m²</text>
+            </g>
+
+            <!-- 遮阴机制标示 -->
+            <g id="shade-tag" transform="translate(440, 248)">
+              <rect x="-105" y="-12" width="210" height="24" rx="3" fill="#F7FAFA" stroke="#50646B" stroke-width="1"/>
+              <text id="txt-shade-flux" x="0" y="4" font-size="13" fill="#17282E" text-anchor="middle" font-weight="600">叶面积指数 LAI = 4.2 · 透射率仅 11%</text>
+            </g>
+
+            <!-- 气温观测读数 (树冠下 1.5m 处空气温度 vs 街谷环境) -->
+            <g transform="translate(560, 275)">
+              <rect x="0" y="0" width="125" height="34" rx="4" fill="#F7FAFA" stroke="#176B82" stroke-width="1.2"/>
+              <text x="8" y="14" font-size="11" fill="#17282E" font-weight="600">局部气温 Ta (1.5m)</text>
+              <text id="txt-canopy-air-temp" x="8" y="28" font-size="13" fill="#176B82" font-weight="700" font-family="Bahnschrift">31.8 ℃ (降 1.9 ℃)</text>
+            </g>
+          </svg>
+        </div>
+      </section>
+
+      <!-- 右：量化指标与约束诊断卡 -->
+      <aside class="analysis-panel min0">
+        <!-- 实时物理测量卡 -->
+        <div class="readout-card">
+          <div class="metric-col">
+            <span class="metric-label">地表辐射降温 (遮阴)</span>
+            <div class="metric-value-row">
+              <span id="m-surf-delta" class="metric-value" style="color:var(--cooling)">-19.3</span>
+              <span class="metric-unit">℃</span>
+            </div>
+            <span id="m-surf-sub" class="metric-sub">地表短波辐射被截留 89%</span>
+          </div>
+          <div class="metric-col">
+            <span class="metric-label">环境气温降低 (蒸散)</span>
+            <div class="metric-value-row">
+              <span id="m-air-delta" class="metric-value" style="color:var(--cooling)">-1.9</span>
+              <span class="metric-unit">℃</span>
+            </div>
+            <span id="m-air-sub" class="metric-sub">潜热消耗环境显热</span>
+          </div>
+          <div class="metric-col">
+            <span class="metric-label">波文比 (β = H / LE)</span>
+            <div class="metric-value-row">
+              <span id="m-bowen" class="metric-value" style="color:var(--observed)">0.42</span>
+              <span class="metric-unit">无量纲</span>
+            </div>
+            <span id="m-bowen-sub" class="metric-sub">潜热占优势 (蒸散强)</span>
+          </div>
+        </div>
+
+        <!-- 4类现实约束矩阵 -->
+        <div class="constraints-box">
+          <h2>
+            <span>树木降温效力的四大现实约束</span>
+            <span class="tag" id="scenario-tag" data-kind="cooling" style="font-size: var(--fs-tick); padding: 2px 8px;">良性充沛状态</span>
+          </h2>
+          <div class="constraint-list">
+            <!-- 约束1：水分条件 -->
+            <div class="c-item optimal" id="card-water">
+              <div class="c-header">
+                <span class="c-title">1. 水分约束与气孔阻抗</span>
+                <span class="c-status" id="stat-water">土壤湿度 28% (充沛)</span>
+              </div>
+              <p class="c-desc" id="desc-water">根区水势良好，气孔导度高；蒸散持续将大量显热转化为水汽潜热。</p>
+            </div>
+
+            <!-- 约束2：树种特异性 -->
+            <div class="c-item optimal" id="card-species">
+              <div class="c-header">
+                <span class="c-title">2. 树种与叶性特征 (LAI / 蒸腾速率)</span>
+                <span class="c-status" id="stat-species">密冠宽阔叶 (高导度)</span>
+              </div>
+              <p class="c-desc" id="desc-species">宽阔叶层产生致密阴影 (截留85%+光照)，单株蒸腾量大，遮阴与降温协同优异。</p>
+            </div>
+
+            <!-- 约束3：地下空间与根系体积 -->
+            <div class="c-item optimal" id="card-space">
+              <div class="c-header">
+                <span class="c-title">3. 空间配置与立地条件</span>
+                <span class="c-status" id="stat-space">相连绿带 / 连续树池</span>
+              </div>
+              <p class="c-desc" id="desc-space">连续冠层阻隔热量沉降，且树冠连片形成冷岛外溢冷空气；根系拥有充足蓄水土体。</p>
+            </div>
+
+            <!-- 约束4：长期养护与维护成本 -->
+            <div class="c-item optimal" id="card-maint">
+              <div class="c-header">
+                <span class="c-title">4. 持续维护与生命力保障</span>
+                <span class="c-status" id="stat-maint">规范灌溉修剪</span>
+              </div>
+              <p class="c-desc" id="desc-maint">定点渗灌补充、透气铺装保护；无树冠早衰、落叶脱水或树池板结硬化。</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- 底部论断条 -->
+    <footer class="bottom-summary">
+      <div class="summary-text" id="summary-banner">
+        <strong>核心物理区别：</strong>遮阴直接阻断路面<strong>辐射净受热</strong>(地表骤降 15~25 ℃)；蒸散则消耗空气<strong>显热通量</strong>(局部气温微降 1~3 ℃)。一旦缺水或树池闭锁，蒸散几乎归零，仅剩有限的物理遮阴。
+      </div>
+      <div style="font-size: var(--fs-label); color: var(--muted); white-space: nowrap; margin-left: 18px;">
+        能量收支法则: Rn = H + LE + G
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      // 场景配置数据
+      const SCENARIOS = {
+        optimal: {
+          tagText: "充分供水与充足根域",
+          tagKind: "cooling",
+          surfDelta: "-19.3",
+          surfSub: "遮阴截留 89% 短波辐射",
+          airDelta: "-1.9",
+          airSub: "蒸散潜热持续吸收显热",
+          bowen: "0.42",
+          bowenSub: "LE 占优 (潜热通量 285 W/m²)",
+          exposedTemp: "地表温度 51.4 ℃",
+          shadeTemp: "树下地表 32.1 ℃ (遮阴降温 -19.3 ℃)",
+          evapFlux: "蒸散潜热通量 LE: 285 W/m²",
+          shadeFlux: "叶面积指数 LAI = 4.2 · 透射率仅 11%",
+          canopyAirTemp: "31.8 ℃ (降 1.9 ℃)",
+          soilVolLabel: "有效透水与根系拓展空间 (16 m³)",
+          // 4个约束状态
+          water: {
+            cls: "optimal",
+            status: "土壤湿度 28% (充沛)",
+            desc: "根区水势良好，气孔导度达 320 mmol/m²s；蒸散持续把大量地表热量转化为水汽潜热。"
+          },
+          species: {
+            cls: "optimal",
+            status: "密冠阔叶种 (高耐热耐旱)",
+            desc: "选用高 LAI (叶面积指数) 与大冠幅树种；冠下直接遮阴可削减 80% 以上路面辐射净受热。"
+          },
+          space: {
+            cls: "optimal",
+            status: "相连绿带 / 连续树池",
+            desc: "树冠郁闭成廊，减少边缘热卷吸；土壤根区未被硬化阻隔，蓄水保墒能力强。"
+          },
+          maint: {
+            cls: "optimal",
+            status: "规范灌溉与土壤维护",
+            desc: "树穴透气铺装、定期中耕与滴灌；树木无生理干旱枯梢，降温生命周期长达数十年。"
+          },
+          // 绘图视觉属性
+          canopyColor: "#39704A",
+          canopyScale: 1.0,
+          evapOpacity: 1.0,
+          soilPitWidth: 360,
+          soilPitX: 260,
+          rootColor: "#39704A",
+          summary: "<strong>核心物理区别：</strong>遮阴直接阻断路面<strong>辐射净受热</strong>(地表骤降 15~25 ℃)；蒸散则消耗空气<strong>显热通量</strong>(局部气温微降 1~3 ℃)。供水充足时二者形成最大协同降温。"
+        },
+        drought: {
+          tagText: "热浪干旱：气孔关闭与蒸散瘫痪",
+          tagKind: "heat",
+          surfDelta: "-12.8",
+          surfSub: "部分枯叶落叶，遮阴率降至 60%",
+          airDelta: "-0.3",
+          airSub: "气孔防御性关闭，蒸散骤降",
+          bowen: "2.85",
+          bowenSub: "H 占绝对主导 (显热加热空气)",
+          exposedTemp: "地表温度 58.2 ℃",
+          shadeTemp: "树下地表 45.4 ℃ (降温衰减为 -12.8 ℃)",
+          evapFlux: "蒸散潜热通量 LE: 仅 35 W/m² (萎缩88%)",
+          shadeFlux: "干旱叶片脱落 · LAI 衰减至 1.8 · 透射 38%",
+          canopyAirTemp: "35.2 ℃ (仅降 0.3 ℃)",
+          soilVolLabel: "土壤严重缺水 · 根系出现空蚀",
+          water: {
+            cls: "alert",
+            status: "土壤含水率 < 8% (极度干旱)",
+            desc: "土壤水分耗竭，树木为避免木质部空蚀被迫关闭气孔，蒸散冷却机制完全崩溃，显热比激增。"
+          },
+          species: {
+            cls: "alert",
+            status: "非耐旱树种 (叶片萎蔫焦灼)",
+            desc: "叶温反常升高 4~6 ℃，部分冠顶出现焦枯与提前落叶，遮阴阴影斑驳破损。"
+          },
+          space: {
+            cls: "alert",
+            status: "周边高温硬化地面热烘烤",
+            desc: "四周沥青路面释放强烈长波辐射对流加热树冠，环境水汽压差 (VPD) 突破气孔耐受极限。"
+          },
+          maint: {
+            cls: "alert",
+            status: "缺乏抗旱应急补灌",
+            desc: "城市未配套中水灌溉或深层滴灌设施，导致树木长期处于水热胁迫甚至面临枯死。"
+          },
+          canopyColor: "#8C7E3E",
+          canopyScale: 0.88,
+          evapOpacity: 0.15,
+          soilPitWidth: 360,
+          soilPitX: 260,
+          rootColor: "#826F4A",
+          summary: "<strong>干旱警示：</strong>当高温伴随土壤干旱时，<strong>蒸散作用几乎停摆</strong>(LE 从 285 降至 35 W/m²)。城市绿化若无灌溉维系，酷暑期将失去降温主力，仅存残破遮阴。"
+        },
+        constrained: {
+          tagText: "狭小树池：根域闭锁与孤立斑块",
+          tagKind: "uncertain",
+          surfDelta: "-8.4",
+          surfSub: "树冠发育不良，投影面积小",
+          airDelta: "-0.5",
+          airSub: "孤立树木极易被周围热空气卷吸穿透",
+          bowen: "1.45",
+          bowenSub: "显热占优 (局地冷岛极弱)",
+          exposedTemp: "地表温度 52.8 ℃",
+          shadeTemp: "树下地表 44.4 ℃ (局部降温仅 -8.4 ℃)",
+          evapFlux: "蒸散潜热通量 LE: 95 W/m² (蓄水受限)",
+          shadeFlux: "树冠受抑矮小 · LAI 2.1 · 冠径仅 2.5m",
+          canopyAirTemp: "33.5 ℃ (仅降 0.5 ℃)",
+          soilVolLabel: "受限树池土体仅 2.2 m³ (硬化挤压)",
+          water: {
+            cls: "alert",
+            status: "雨水无法渗入 (路面90%硬化)",
+            desc: "致密铺装阻断地表径流下渗，土壤高度板结缺氧，根系即使在雨后也难以吸收深层蓄水。"
+          },
+          species: {
+            cls: "optimal",
+            status: "深根系抗逆种 (受限于容器效应)",
+            desc: "原具优良降温潜力的树种由于根箱挤压，地上部生物量与冠层扩展受到严重物理抑制。"
+          },
+          space: {
+            cls: "alert",
+            status: "独立 1.2m 树池 · 斑块孤立破碎",
+            desc: "单株分散孤立栽植，无连续林冠；干热街谷乱流自由穿透树冠，微气候降温作用迅速被稀释。"
+          },
+          maint: {
+            cls: "alert",
+            status: "管线施工与树池板结",
+            desc: "地下管线切断侧根、铺装接缝压实。树冠逐年衰退，无法形成设计预期的有效阴凉尺度。"
+          },
+          canopyColor: "#557A5F",
+          canopyScale: 0.74,
+          evapOpacity: 0.4,
+          soilPitWidth: 140,
+          soilPitX: 370,
+          rootColor: "#696E60",
+          summary: "<strong>空间与配置约束：</strong>树木降温并非‘只要种树就见效’。<strong>地下根域体积若不足 10 m³</strong>，树冠将终生处于‘盆景化’受抑状态，高反射与硬化热量迅速吞噬孤立弱冷岛。"
+        }
+      };
+
+      // 获取各交互与数据绑定的 DOM 节点
+      const btnOpt = document.getElementById("btn-opt");
+      const btnDry = document.getElementById("btn-dry");
+      const btnCon = document.getElementById("btn-con");
+      const scenarioButtons = [btnOpt, btnDry, btnCon];
+
+      const scenarioTag = document.getElementById("scenario-tag");
+      const mSurfDelta = document.getElementById("m-surf-delta");
+      const mSurfSub = document.getElementById("m-surf-sub");
+      const mAirDelta = document.getElementById("m-air-delta");
+      const mAirSub = document.getElementById("m-air-sub");
+      const mBowen = document.getElementById("m-bowen");
+      const mBowenSub = document.getElementById("m-bowen-sub");
+
+      const txtExposedTemp = document.getElementById("txt-exposed-temp");
+      const txtShadeTemp = document.getElementById("txt-shade-temp");
+      const txtEvapFlux = document.getElementById("txt-evap-flux");
+      const txtShadeFlux = document.getElementById("txt-shade-flux");
+      const txtCanopyAirTemp = document.getElementById("txt-canopy-air-temp");
+      const summaryBanner = document.getElementById("summary-banner");
+
+      const soilPit = document.getElementById("soil-pit");
+      const soilVolume = document.getElementById("soil-volume");
+      const soilVolLabel = document.getElementById("soil-vol-label");
+      const shadeGround = document.getElementById("shade-ground");
+      const evapFluxes = document.getElementById("evap-fluxes");
+      const canopyGroup = document.getElementById("canopy-group");
+      const canopyCircles = canopyGroup.querySelectorAll("circle");
+      const rootNetwork = document.getElementById("root-network");
+
+      // 4 卡片节点
+      const cardWater = document.getElementById("card-water");
+      const statWater = document.getElementById("stat-water");
+      const descWater = document.getElementById("desc-water");
+
+      const cardSpecies = document.getElementById("card-species");
+      const statSpecies = document.getElementById("stat-species");
+      const descSpecies = document.getElementById("desc-species");
+
+      const cardSpace = document.getElementById("card-space");
+      const statSpace = document.getElementById("stat-space");
+      const descSpace = document.getElementById("desc-space");
+
+      const cardMaint = document.getElementById("card-maint");
+      const statMaint = document.getElementById("stat-maint");
+      const descMaint = document.getElementById("desc-maint");
+
+      function updateCard(el, statEl, descEl, data) {
+        el.className = "c-item " + data.cls;
+        statEl.textContent = data.status;
+        descEl.textContent = data.desc;
+      }
+
+      function applyScenario(key) {
+        const sc = SCENARIOS[key];
+        if (!sc) return;
+
+        // 更新按钮状态
+        scenarioButtons.forEach(btn => {
+          btn.setAttribute("aria-pressed", btn.dataset.scenario === key ? "true" : "false");
+        });
+
+        // 更新标签与读数
+        scenarioTag.textContent = sc.tagText;
+        scenarioTag.setAttribute("data-kind", sc.tagKind);
+
+        mSurfDelta.textContent = sc.surfDelta;
+        mSurfSub.textContent = sc.surfSub;
+        mAirDelta.textContent = sc.airDelta;
+        mAirSub.textContent = sc.airSub;
+        mBowen.textContent = sc.bowen;
+        mBowenSub.textContent = sc.bowenSub;
+
+        txtExposedTemp.textContent = sc.exposedTemp;
+        txtShadeTemp.textContent = sc.shadeTemp;
+        txtEvapFlux.textContent = sc.evapFlux;
+        txtShadeFlux.textContent = sc.shadeFlux;
+        txtCanopyAirTemp.textContent = sc.canopyAirTemp;
+        summaryBanner.innerHTML = sc.summary;
+        soilVolLabel.textContent = sc.soilVolLabel;
+
+        // 更新4大维度卡片
+        updateCard(cardWater, statWater, descWater, sc.water);
+        updateCard(cardSpecies, statSpecies, descSpecies, sc.species);
+        updateCard(cardSpace, statSpace, descSpace, sc.space);
+        updateCard(cardMaint, statMaint, descMaint, sc.maint);
+
+        // 更新 SVG 剖面图视觉表达
+        canopyCircles.forEach(c => {
+          c.setAttribute("fill", sc.canopyColor);
+        });
+        canopyGroup.style.transformOrigin = "440px 150px";
+        canopyGroup.style.transform = `scale(${sc.canopyScale})`;
+        canopyGroup.style.transition = "transform 0.4s ease, fill 0.4s ease";
+
+        evapFluxes.style.opacity = sc.evapOpacity;
+        evapFluxes.style.transition = "opacity 0.4s ease";
+
+        // 土壤与树池宽度
+        soilPit.setAttribute("x", sc.soilPitX);
+        soilPit.setAttribute("width", sc.soilPitWidth);
+        soilVolume.setAttribute("x", sc.soilPitX);
+        soilVolume.setAttribute("width", sc.soilPitWidth);
+
+        // 阴影面积缩放
+        if (key === "constrained") {
+          shadeGround.setAttribute("rx", "105");
+        } else if (key === "drought") {
+          shadeGround.setAttribute("rx", "140");
+        } else {
+          shadeGround.setAttribute("rx", "170");
+        }
+
+        // 根系颜色
+        const rootPaths = rootNetwork.querySelectorAll("path");
+        rootPaths.forEach(p => {
+          p.setAttribute("stroke", sc.rootColor);
+        });
+      }
+
+      // 绑定按钮点击事件
+      scenarioButtons.forEach(btn => {
+        btn.addEventListener("click", function() {
+          applyScenario(this.dataset.scenario);
+        });
+      });
+
+      // 初始化底盘配置
+      if (window.Deck) {
+        Deck.init({ index: 16, total: 19 });
+      }
+
+      // 初态渲染
+      applyScenario("optimal");
+    })();
+  </script>
+</body>
+</html>

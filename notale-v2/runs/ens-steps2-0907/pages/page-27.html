@@ -1,0 +1,250 @@
+<!doctype html>
+<!--
+构图意图：
+1. 主对象是 Stacking 的两层分层推断机制：原始样本、基模型阵列（初级学习器）、元特征向量与元学习器（次级学习器）。
+2. 对象之间的关系通过从左至右的蓝色预测路径与收束结构展现：多个异质基模型各自产出标量预测，拼接为新特征，最终由元学习器学出最优权重收束为最终结论。
+3. 说明文字与公式严格依附在对应层级下方与右侧关键收束处，保持信息就地闭环。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF1;
+      --text: #142630;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: var(--lh-copy);
+    }
+
+    .canvas-wrap {
+      position: relative;
+      width: 1488px;
+      height: 680px;
+    }
+
+    svg.diagram {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .node-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      fill: var(--text);
+    }
+
+    .node-sub {
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      fill: var(--muted);
+    }
+
+    .meta-val {
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      fill: var(--model);
+    }
+
+    .math-text {
+      font-family: "Times New Roman", var(--font-sans);
+      font-style: italic;
+    }
+
+    /* 步进动效与默认显示 */
+    [data-step] {
+      transition: opacity var(--motion-step) var(--ease-out);
+    }
+    body[data-step-current="0"] [data-step="1"],
+    body[data-step-current="0"] [data-step="2"],
+    body[data-step-current="1"] [data-step="2"] {
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body data-page="27" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>Stacking 两层结构：以预测为特征，元模型学习组合策略</h1>
+      <p class="lead">基学习器将原始特征映射为一阶预测，元学习器以此学习综合权重</p>
+    </header>
+
+    <div class="canvas-wrap">
+      <svg class="diagram" viewBox="0 0 1488 680">
+        <defs>
+          <!-- 箭头标记 -->
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--rule)" />
+          </marker>
+          <marker id="arrow-model" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--model)" />
+          </marker>
+          <marker id="arrow-strong" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--focus)" />
+          </marker>
+        </defs>
+
+        <!-- 阶段列标识与参考虚线 -->
+        <g stroke="var(--rule)" stroke-width="1" stroke-dasharray="4 6" opacity="0.35">
+          <line x1="280" y1="30" x2="280" y2="650" />
+          <line x1="720" y1="30" x2="720" y2="650" />
+          <line x1="1080" y1="30" x2="1080" y2="650" />
+        </g>
+
+        <!-- 列头说明 -->
+        <text x="110" y="55" text-anchor="middle" font-size="15" fill="var(--muted)">原始输入空间</text>
+        <text x="500" y="55" text-anchor="middle" font-size="15" fill="var(--muted)">第一层：初级异质基模型</text>
+        <text x="900" y="55" text-anchor="middle" font-size="15" fill="var(--muted)">中间态：元特征</text>
+        <text x="1290" y="55" text-anchor="middle" font-size="15" fill="var(--muted)">第二层：次级元学习器</text>
+
+        <!-- 原始样本节点 -->
+        <g id="input-node" transform="translate(40, 260)">
+          <rect x="0" y="0" width="160" height="120" rx="8" fill="none" stroke="var(--rule)" stroke-width="2" />
+          <text x="80" y="46" text-anchor="middle" font-family="var(--font-display)" font-size="19" fill="var(--text)">样本 x</text>
+          <text x="80" y="76" text-anchor="middle" font-family="Times New Roman" font-style="italic" font-size="16" fill="var(--muted)">[x₁, x₂, ..., x_d]</text>
+          <text x="80" y="100" text-anchor="middle" font-size="13" fill="var(--muted)">d 维原始特征</text>
+        </g>
+
+        <!-- 输入分发连线 -->
+        <g stroke="var(--rule)" stroke-width="2" fill="none" marker-end="url(#arrow)">
+          <path d="M 200 320 C 270 320, 290 150, 360 150" />
+          <path d="M 200 320 L 360 320" />
+          <path d="M 200 320 C 270 320, 290 490, 360 490" />
+        </g>
+
+        <!-- 第一层基模型群 (异质模型) -->
+        <!-- 模型 1: 随机森林 -->
+        <g id="model-1" transform="translate(365, 90)">
+          <rect x="0" y="0" width="250" height="120" rx="8" fill="none" stroke="var(--model)" stroke-width="2" />
+          <text x="24" y="44" class="node-title">基模型 h₁(x)</text>
+          <text x="24" y="74" class="node-sub">随机森林</text>
+          <text x="24" y="98" font-size="15" fill="var(--model)">输出：z₁</text>
+        </g>
+
+        <!-- 模型 2: 梯度提升树 -->
+        <g id="model-2" transform="translate(365, 260)">
+          <rect x="0" y="0" width="250" height="120" rx="8" fill="none" stroke="var(--model)" stroke-width="2" />
+          <text x="24" y="44" class="node-title">基模型 h₂(x)</text>
+          <text x="24" y="74" class="node-sub">梯度提升树</text>
+          <text x="24" y="98" font-size="15" fill="var(--model)">输出：z₂</text>
+        </g>
+
+        <!-- 模型 3: 支持向量机 -->
+        <g id="model-3" transform="translate(365, 430)">
+          <rect x="0" y="0" width="250" height="120" rx="8" fill="none" stroke="var(--model)" stroke-width="2" />
+          <text x="24" y="44" class="node-title">基模型 h₃(x)</text>
+          <text x="24" y="74" class="node-sub">支持向量机</text>
+          <text x="24" y="98" font-size="15" fill="var(--model)">输出：z₃</text>
+        </g>
+
+        <!-- STEP 1: 元特征的形成与汇聚 -->
+        <g data-step="1">
+          <!-- 基模型指向元特征向量的连线 -->
+          <g stroke="var(--model)" stroke-width="2" fill="none" marker-end="url(#arrow-model)">
+            <path d="M 615 150 C 690 150, 720 250, 780 250" />
+            <path d="M 615 320 L 780 320" />
+            <path d="M 615 490 C 690 490, 720 390, 780 390" />
+          </g>
+
+          <!-- 元特征向量容器 -->
+          <g transform="translate(785, 200)">
+            <rect x="0" y="0" width="220" height="240" rx="8" fill="none" stroke="var(--model)" stroke-width="2" />
+            <text x="110" y="38" text-anchor="middle" font-family="var(--font-display)" font-size="18" fill="var(--model)">元特征向量 z</text>
+            <line x1="20" y1="52" x2="200" y2="52" stroke="var(--rule)" stroke-width="1" />
+
+            <!-- 向量分量行 -->
+            <rect x="25" y="66" width="170" height="40" rx="4" fill="none" stroke="var(--rule)" stroke-width="1" />
+            <text x="40" y="91" class="meta-val">z₁ = h₁(x)</text>
+            <text x="145" y="91" font-size="13" fill="var(--muted)">0.88</text>
+
+            <rect x="25" y="118" width="170" height="40" rx="4" fill="none" stroke="var(--rule)" stroke-width="1" />
+            <text x="40" y="143" class="meta-val">z₂ = h₂(x)</text>
+            <text x="145" y="143" font-size="13" fill="var(--muted)">0.82</text>
+
+            <rect x="25" y="170" width="170" height="40" rx="4" fill="none" stroke="var(--rule)" stroke-width="1" />
+            <text x="40" y="195" class="meta-val">z₃ = h₃(x)</text>
+            <text x="145" y="195" font-size="13" fill="var(--muted)">0.65</text>
+
+            <text x="110" y="228" text-anchor="middle" font-size="13" fill="var(--muted)">d 维 → T 维</text>
+          </g>
+
+          <text x="895" y="475" text-anchor="middle" font-size="15" fill="var(--text)">空间重塑</text>
+          <text x="895" y="500" text-anchor="middle" font-size="13" fill="var(--muted)">预测置信度构成新坐标</text>
+        </g>
+
+        <!-- STEP 2: 元学习器学习并输出收束判断 -->
+        <g data-step="2">
+          <!-- 元特征指向元学习器连线 -->
+          <path d="M 1005 320 L 1150 320" stroke="var(--model)" stroke-width="3" fill="none" marker-end="url(#arrow-model)" />
+
+          <!-- 元学习器卡片 -->
+          <g transform="translate(1155, 235)">
+            <rect x="0" y="0" width="220" height="170" rx="8" fill="none" stroke="var(--focus)" stroke-width="2" />
+            <text x="24" y="42" font-family="var(--font-display)" font-size="19" fill="var(--focus)">次级元学习器 H</text>
+            <text x="24" y="72" font-size="15" fill="var(--muted)">简单线性模型</text>
+            <line x1="20" y1="88" x2="200" y2="88" stroke="var(--rule)" stroke-width="1" />
+            <text x="24" y="115" font-family="Times New Roman" font-size="16" fill="var(--text)">H(z) = σ(wᵀz + b)</text>
+            <text x="24" y="145" font-size="13" fill="var(--muted)">学习基模型权重分配</text>
+          </g>
+
+          <!-- 最终输出粗线收束 -->
+          <path d="M 1375 320 L 1450 320" stroke="var(--focus)" stroke-width="4" fill="none" marker-end="url(#arrow-strong)" />
+          <text x="1435" y="305" text-anchor="end" font-family="var(--font-display)" font-size="18" fill="var(--focus)">最终预测 ŷ</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    Stacking 的核心机制在于两层异质架构。
+    第一层由多个不同算法族的基模型组成，例如随机森林、梯度提升与 SVM。每个模型根据原始特征样本给出各自的独立预测。
+    第二步，我们将这组预测结果拼接成一个全新的向量，也就是元特征向量。这个过程把原本复杂的 d 维样本空间重塑为低维的置信度空间。
+    最后，第二层的次级元学习器接管这些元特征，自动训练出一组非平均的最优权重，判断在什么样的情况下应当更加信任哪个基学习器，从而得到集成预测。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 27, total: 32 });
+  </script>
+</body>
+</html>

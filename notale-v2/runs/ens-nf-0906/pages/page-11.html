@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 20px;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+    header h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      color: var(--text);
+      font-weight: 600;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 430px;
+      gap: 40px;
+      min-height: 0;
+      margin-bottom: 8px;
+    }
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .legend {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-bar {
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+    }
+    .bar-var { background: var(--model); }
+    .bar-bias { background: var(--rule); opacity: 0.55; }
+
+    .chart-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+    #chart-host {
+      width: 100%;
+      height: 100%;
+    }
+
+    aside {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding-left: 28px;
+      border-left: 1px solid var(--rule);
+      min-height: 0;
+    }
+    .formula-card {
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--rule);
+    }
+    .formula-title {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .formula-math {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--text);
+      margin-bottom: 8px;
+      line-height: var(--lh-tight);
+    }
+    .formula-math span.hi {
+      color: var(--focus);
+      font-weight: 600;
+    }
+    .formula-math span.mod {
+      color: var(--model);
+      font-weight: 600;
+    }
+    .takeaway {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 8px 0;
+      border-bottom: 1px dashed rgba(113, 130, 139, 0.4);
+    }
+    .stat-name {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .stat-val {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: 600;
+    }
+    .val-var { color: var(--model); }
+    .val-bias { color: var(--text); }
+    .core-claim {
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--text);
+      margin-top: 6px;
+    }
+    .core-claim strong {
+      color: var(--focus);
+      font-weight: 600;
+    }
+
+    .controls {
+      margin-top: auto;
+      display: flex;
+      gap: 12px;
+      padding-top: 14px;
+      padding-bottom: 6px;
+      border-top: 1px solid var(--rule);
+    }
+    .btn {
+      flex: 1;
+      height: 42px;
+      border: 1px solid var(--rule);
+      background: transparent;
+      color: var(--text);
+      font-size: var(--fs-sec);
+      font-family: var(--font-sans);
+      cursor: pointer;
+      font-weight: 600;
+      border-radius: 2px;
+      white-space: nowrap;
+      transition: all var(--motion-fast);
+    }
+    .btn.active {
+      border-color: var(--model);
+      background: var(--model);
+      color: #ffffff;
+    }
+    .btn:hover:not(.active) {
+      border-color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="11" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>Bagging 的偏差—方差视角：平均多个模型主要降低方差</h1>
+    </header>
+
+    <div class="layout min0">
+      <div class="chart-panel min0">
+        <div class="chart-header">
+          <div class="chart-title">模型数 m 增加时的误差分解</div>
+          <div class="legend">
+            <div class="legend-item"><span class="legend-bar bar-var"></span>方差 Var</div>
+            <div class="legend-item"><span class="legend-bar bar-bias"></span>偏差² Bias²</div>
+          </div>
+        </div>
+        <div class="chart-wrap min0">
+          <div id="chart-host"></div>
+        </div>
+      </div>
+
+      <aside class="min0">
+        <div>
+          <div class="formula-card">
+            <div class="formula-title">方差随基学习器数量 m 的理论收缩</div>
+            <div class="formula-math">
+              Var(<span class="mod">f̄</span>) = <span class="mod">ρ</span>·σ² + <span class="hi">1−ρ</span>/<span class="hi">m</span>·σ²
+            </div>
+            <div class="formula-title" style="margin-bottom:0;">若基模型相关系数 ρ &gt; 0，m 增大只消减独立扰动项。</div>
+          </div>
+
+          <div class="takeaway">
+            <div class="stat-row">
+              <span class="stat-name">单模型 (m = 1)</span>
+              <span class="stat-val">方差 0.40 ｜ 偏差² 0.12</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-name">集成后 (m = 25)</span>
+              <span class="stat-val"><span class="val-var">方差 0.13</span> ｜ <span class="val-bias">偏差² 0.12</span></span>
+            </div>
+            <div class="core-claim">
+              Bootstrap 产生相关模型，平均操作<strong>大幅压缩方差</strong>，但<strong>不改变平均偏差</strong>。
+            </div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button class="btn" id="btn-1" onclick="highlightM(1)">单模型 m=1</button>
+          <button class="btn" id="btn-5" onclick="highlightM(5)">较小集成 m=5</button>
+          <button class="btn active" id="btn-25" onclick="highlightM(25)">充分集成 m=25</button>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，前面我们看过了 Bagging 的完整流程，包括 Bootstrap 重采样和多模型的并行训练与聚合。
+    现在我们从统计学习理论的核心视角——偏差-方差分解，来看 Bagging 究竟为什么有效。
+    对于单个深度决策树，它具有高方差、低偏差的特征：在特定样本上拟合极好，但样本稍有变动，预测结果就会剧烈波动。
+    当我们用 Bagging 对 m 个基学习器取平均时，由于各学习器的训练集来自同一总体的重采样，基学习器之间存在相关系数 ρ。
+    根据方差公式，集成模型的方差由两部分构成：一部分是无法通过平均消除的共性方差 ρ·σ²，另一部分则是随着 m 增大而趋于零的独立波动项 (1-ρ)/m·σ²。
+    大家看左侧的堆叠柱状图：从 m=1 到 m=25，下方的偏差平方始终稳定在 0.12 左右，因为每个模型面对的期望分布并没有改变；
+    而上方的蓝色方差部分从 0.40 迅速骤降至 0.13，总泛化误差因此大幅缩减。
+    这就是 Bagging 最核心的数学本质：平均只能消除方差，无法降低偏差；因此 Bagging 的基学习器必须是强而方差大的模型，不能是高偏差的弱模型。
+  </aside>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 11, total: 32, keys: false });
+
+    var mValues = [1, 2, 3, 5, 8, 12, 16, 20, 25];
+    var sigma2 = 0.40;
+    var rho = 0.22;
+    var bias2 = 0.12;
+
+    var chartData = mValues.map(function(m) {
+      var v = rho * sigma2 + ((1 - rho) / m) * sigma2;
+      return {
+        m: m,
+        bias2: bias2,
+        variance: parseFloat(v.toFixed(3)),
+        total: parseFloat((bias2 + v).toFixed(3))
+      };
+    });
+
+    var host = document.getElementById('chart-host');
+    var chart = echarts.init(host, null, { renderer: 'svg' });
+
+    function getOption(activeM) {
+      var categories = chartData.map(function(d) { return 'm=' + d.m; });
+      var biasSeries = chartData.map(function(d) { return d.bias2; });
+      var varSeries = chartData.map(function(d) {
+        var isCurrent = (d.m === activeM);
+        return {
+          value: d.variance,
+          itemStyle: {
+            color: isCurrent ? '#B83D0B' : '#17628E',
+            borderRadius: [3, 3, 0, 0]
+          }
+        };
+      });
+
+      return {
+        animationDuration: 300,
+        grid: {
+          left: 48,
+          right: 145,
+          top: 36,
+          bottom: 45
+        },
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' },
+          formatter: function(params) {
+            var m = params[0].name;
+            var b = params[0].value;
+            var v = params[1].value;
+            var tot = (b + v).toFixed(3);
+            return m + '<br>总误差: ' + tot + '<br>方差: ' + v.toFixed(3) + '<br>偏差²: ' + b.toFixed(3);
+          }
+        },
+        xAxis: {
+          type: 'category',
+          data: categories,
+          axisLine: { lineStyle: { color: '#71828B', width: 2 } },
+          axisTick: { show: false },
+          axisLabel: {
+            color: function(val) {
+              return val === ('m=' + activeM) ? '#B83D0B' : '#142630';
+            },
+            fontWeight: function(val) {
+              return val === ('m=' + activeM) ? 'bold' : 'normal';
+            },
+            fontSize: 13,
+            margin: 12
+          }
+        },
+        yAxis: {
+          type: 'value',
+          min: 0,
+          max: 0.6,
+          interval: 0.1,
+          name: '泛化误差组成',
+          nameTextStyle: { color: '#50616B', fontSize: 13, align: 'left', padding: [0, 0, 8, -30] },
+          axisLine: { show: true, lineStyle: { color: '#71828B', width: 2 } },
+          splitLine: { lineStyle: { color: 'rgba(113, 130, 139, 0.2)', type: 'dashed' } },
+          axisLabel: { color: '#50616B', fontSize: 13 }
+        },
+        series: [
+          {
+            name: '偏差² Bias²',
+            type: 'bar',
+            stack: 'total',
+            data: biasSeries,
+            barWidth: '44%',
+            itemStyle: {
+              color: 'rgba(113, 130, 139, 0.5)'
+            }
+          },
+          {
+            name: '方差 Var',
+            type: 'bar',
+            stack: 'total',
+            data: varSeries,
+            barWidth: '44%',
+            markLine: {
+              silent: true,
+              symbol: 'none',
+              data: [
+                {
+                  yAxis: (rho * sigma2 + bias2),
+                  lineStyle: { color: '#B83D0B', type: 'dashed', width: 2 },
+                  label: {
+                    formatter: '极限下界 (ρ·σ² + Bias²)',
+                    position: 'end',
+                    color: '#B83D0B',
+                    fontSize: 13,
+                    fontWeight: 'bold',
+                    padding: [0, 0, 10, 0]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      };
+    }
+
+    chart.setOption(getOption(25));
+
+    window.addEventListener('resize', function() {
+      chart.resize();
+    });
+
+    window.highlightM = function(m) {
+      document.querySelectorAll('.btn').forEach(function(b) {
+        b.classList.remove('active');
+      });
+      var targetBtn = document.getElementById('btn-' + m);
+      if (targetBtn) targetBtn.classList.add('active');
+      chart.setOption(getOption(m));
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,334 @@
+<!doctype html>
+<!--
+  构图意图：
+  1. 主对象为右侧展开的“多基学习器决策分支与汇聚共识束”——从多重随机扰动的决策树分支（冷蓝轨迹）并行抽样生长，最终收束至粗重深蓝的集成预测。
+  2. 对象之间的关系通过“左侧沉稳标题区”与“右侧生成式决策森林收束场”对置展开，左虚右实，标题安全区排斥分支杂线，冷蓝个体轨迹在右方聚焦汇入深蓝共识锚点。
+  3. 说明文字以紧凑导语依附在主标题下方，配合右下角真实的集成聚合标注，点明“有放回采样 + 随机特征切分”形成平滑低方差决策的核心概念。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    #cover-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .title-group {
+      position: absolute;
+      left: 108px;
+      top: 340px;
+      width: 640px;
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .chapter-tag {
+      font-size: var(--fs-sec);
+      font-weight: var(--weight-medium);
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chapter-tag::before {
+      content: "";
+      display: inline-block;
+      width: 28px;
+      height: 2px;
+      background: var(--focus);
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    .lead-copy {
+      margin-top: 28px;
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      max-width: 520px;
+    }
+
+    .aggregate-tag {
+      position: absolute;
+      right: 108px;
+      bottom: 84px;
+      z-index: 5;
+      pointer-events: none;
+      text-align: right;
+    }
+
+    .aggregate-tag .metric {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-bold);
+      color: var(--aggregate);
+      letter-spacing: 0.04em;
+    }
+
+    .aggregate-tag .caption {
+      margin-top: 6px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body data-page="05" data-total="26">
+  <div id="stage">
+    <canvas id="cover-canvas" class="cv-fill"></canvas>
+
+    <div class="title-group">
+      <div class="chapter-tag">第二部分 并行集成</div>
+      <h1>Bagging 与随机森林</h1>
+      <p class="lead-copy">通过有放回样本重抽样与随机特征扰动，构造多棵低相关决策树，以并行聚合降低方差。</p>
+    </div>
+
+    <div class="aggregate-tag">
+      <div class="metric">Var(F) = ρσ² + (1-ρ)σ²/B</div>
+      <div class="caption">多学习器聚合降低方差</div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    这一讲我们进入并行集成学习的核心代表：Bagging 与随机森林。
+    前面我们看到，单一模型往往面临高方差、容易过拟合的困境。
+    Bagging 通过 Bootstrap 自助重采样构造多个互有差异的训练集，并行训练多棵树，并以投票或平均方式输出；
+    随机森林进一步在节点切分时引入随机特征子集，显著压低树之间的相关系数，从而把泛化方差降到更低。
+  </aside>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+  (() => {
+    "use strict";
+
+    const canvas = document.getElementById("cover-canvas");
+    const SEED = "bagging-forest-p05-seed";
+    const TITLE_BOX = { x: 90, y: 260, w: 660, h: 360 };
+    const AGG_BOX = { x: 1100, y: 760, w: 420, h: 100 };
+
+    let ctx = null;
+    let paths = [];
+    let tracerPath = null;
+    let stopLoop = () => {};
+
+    Deck.init({ index: 5, total: 26, keys: false });
+
+    function inExclusion(x, y) {
+      if (x >= TITLE_BOX.x && x <= TITLE_BOX.x + TITLE_BOX.w &&
+          y >= TITLE_BOX.y && y <= TITLE_BOX.y + TITLE_BOX.h) {
+        return true;
+      }
+      if (x >= AGG_BOX.x && x <= AGG_BOX.x + AGG_BOX.w &&
+          y >= AGG_BOX.y && y <= AGG_BOX.y + AGG_BOX.h) {
+        return true;
+      }
+      return false;
+    }
+
+    function buildModel() {
+      const rng = new Math.seedrandom(SEED);
+      paths = [];
+
+      // 模拟多棵决策树的分支预测轨迹：从右中上方及多路发射，穿过多重切分点，最终汇聚至 (1420, 470) 共识预测中心
+      const convergencePt = { x: 1420, y: 470 };
+      const numTrees = 38;
+
+      for (let i = 0; i < numTrees; i++) {
+        // 每棵树的初始生长位置（分布在右半区上部至中部）
+        const startX = 760 + rng() * 260;
+        const startY = 120 + rng() * 660;
+
+        // 如果落在标题区附近则向右推
+        const actualStartX = Math.max(startX, 820);
+
+        const pts = [{ x: actualStartX, y: startY }];
+        let curX = actualStartX;
+        let curY = startY;
+
+        // 步进段数，每段模拟一个特征决策切分（产生折线式折角或平滑趋向聚合点）
+        const steps = 6 + Math.floor(rng() * 4);
+        for (let s = 1; s <= steps; s++) {
+          const t = s / steps;
+          const targetX = Deck.lerp(actualStartX, convergencePt.x, t);
+          const targetY = Deck.lerp(startY, convergencePt.y, t);
+
+          // 决策树分歧扰动：前期扰动大（不同树分裂不同），末期收敛趋零（集成汇聚）
+          const divergeScale = (1 - t) * (rng() - 0.5) * 130;
+          curX = targetX + (rng() - 0.5) * 30;
+          curY = targetY + divergeScale;
+
+          pts.push({ x: curX, y: curY });
+        }
+
+        // 确保末端严格落在收束锚点
+        pts[pts.length - 1] = { x: convergencePt.x, y: convergencePt.y };
+
+        const pObj = {
+          points: pts,
+          alpha: 0.16 + rng() * 0.28,
+          width: 1.0 + rng() * 1.5,
+          color: Deck.token("--model") || "#2E5F78"
+        };
+        paths.push(pObj);
+
+        if (i === 12) {
+          tracerPath = pObj;
+        }
+      }
+
+      // 增加 3 条强代表性的加权主路径
+      for (let k = 0; k < 3; k++) {
+        const startY = 240 + k * 190;
+        const pts = [
+          { x: 860, y: startY },
+          { x: 1040, y: startY + (k - 1) * 60 },
+          { x: 1240, y: convergencePt.y + (k - 1) * 30 },
+          { x: convergencePt.x, y: convergencePt.y }
+        ];
+        paths.push({
+          points: pts,
+          alpha: 0.65,
+          width: 2.4,
+          color: Deck.token("--aggregate") || "#173E50"
+        });
+      }
+    }
+
+    function drawScene(time) {
+      if (!ctx) return;
+      ctx.clearRect(0, 0, Deck.W, Deck.H);
+
+      // 绘制各基学习器分支路径
+      for (const p of paths) {
+        ctx.beginPath();
+        ctx.strokeStyle = p.color;
+        ctx.globalAlpha = p.alpha;
+        ctx.lineWidth = p.width;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+
+        const pts = p.points;
+        ctx.moveTo(pts[0].x, pts[0].y);
+
+        for (let j = 1; j < pts.length; j++) {
+          // 二次贝塞尔曲线平滑，模拟轨迹连续汇聚
+          const prev = pts[j - 1];
+          const curr = pts[j];
+          const mx = (prev.x + curr.x) / 2;
+          const my = (prev.y + curr.y) / 2;
+          ctx.quadraticCurveTo(prev.x, prev.y, mx, my);
+        }
+        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+        ctx.stroke();
+
+        // 节点切分点（微小圆点）
+        ctx.fillStyle = p.color;
+        for (let j = 0; j < pts.length - 1; j++) {
+          if (!inExclusion(pts[j].x, pts[j].y)) {
+            ctx.beginPath();
+            ctx.arc(pts[j].x, pts[j].y, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      // 聚合最终共识预测点（高对比深蓝圆环与焦点脉冲点）
+      const aggX = 1420;
+      const aggY = 470;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = Deck.token("--aggregate") || "#173E50";
+      ctx.beginPath();
+      ctx.arc(aggX, aggY, 7.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 共识外圈
+      ctx.lineWidth = 2.0;
+      ctx.strokeStyle = Deck.token("--aggregate") || "#173E50";
+      ctx.beginPath();
+      ctx.arc(aggX, aggY, 15, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 焦点标记：当前讲解重点脉冲点（单点焦点色）
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = Deck.token("--focus") || "#C64B2E";
+      ctx.beginPath();
+      ctx.arc(aggX, aggY, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 巡航高亮粒子沿基学习器路径流动（显示并行向聚合汇流的过程）
+      if (tracerPath && time !== undefined) {
+        const pts = tracerPath.points;
+        const period = 6400;
+        const progress = (time % period) / period;
+        const totalSegs = pts.length - 1;
+        const currentSegFloat = progress * totalSegs;
+        const segIdx = Math.min(Math.floor(currentSegFloat), totalSegs - 1);
+        const segT = currentSegFloat - segIdx;
+
+        const pA = pts[segIdx];
+        const pB = pts[segIdx + 1];
+        const curPx = Deck.lerp(pA.x, pB.x, segT);
+        const curPy = Deck.lerp(pA.y, pB.y, segT);
+
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = Deck.token("--focus") || "#C64B2E";
+        ctx.beginPath();
+        ctx.arc(curPx, curPy, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.globalAlpha = 1.0;
+    }
+
+    function init() {
+      ctx = Deck.fit(canvas);
+      buildModel();
+      drawScene(3200);
+
+      stopLoop = Deck.loop(time => {
+        drawScene(time);
+      }, { still: 3200 });
+    }
+
+    Deck.onResize(() => {
+      ctx = Deck.fit(canvas);
+      drawScene(3200);
+    });
+
+    init();
+  })();
+  </script>
+</body>
+</html>

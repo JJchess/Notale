@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    #field-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+
+    /* 保证标题区排版：实验室白板干墨记号风格，不加卡片底色 */
+    .hero-panel {
+      position: absolute;
+      left: 110px;
+      top: 100px;
+      width: 620px;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .chapter-tag {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--structure);
+      margin-bottom: 22px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .chapter-tag::before {
+      content: "";
+      display: inline-block;
+      width: 18px;
+      height: 3px;
+      background: var(--structure);
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.22;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      margin-bottom: 24px;
+    }
+
+    .lead-thesis {
+      font-size: var(--fs-lead);
+      line-height: 1.55;
+      color: var(--muted);
+      margin-bottom: 34px;
+      max-width: 560px;
+    }
+
+    .lead-thesis strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .metrics-row {
+      display: flex;
+      gap: 48px;
+      border-top: 1px solid var(--rule);
+      padding-top: 24px;
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .metric-val {
+      font-size: var(--fs-h2);
+      font-weight: 800;
+      font-family: var(--font-mono, monospace);
+      color: var(--structure);
+    }
+
+    .metric-val.signal {
+      color: var(--signal);
+    }
+
+    .metric-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    /* 右下角的直观机制标注与提示 */
+    .canvas-hud {
+      position: absolute;
+      right: 90px;
+      bottom: 70px;
+      pointer-events: none;
+      text-align: right;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .canvas-hud .hud-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--structure);
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <canvas id="field-canvas" class="no-pan" aria-hidden="true"></canvas>
+
+    <div class="hero-panel">
+      <div class="chapter-tag">第 3 单元 · 卷积神经网络</div>
+      <h1>CNN：利用空间网格结构</h1>
+      <p class="lead-thesis">
+        图像邻域具有强烈的<strong>局部相关性</strong>与<strong>平移等变性</strong>。卷积核以共享权重滑过空间网格，用极少量参数提取结构化特征。
+      </p>
+      <div class="metrics-row">
+        <div class="metric-item">
+          <div class="metric-val">3 × 3</div>
+          <div class="metric-label">局部感受野窗口</div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-val signal">O(K²)</div>
+          <div class="metric-label">权重参数与输入尺寸解耦</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="canvas-hud">
+      <div class="hud-title">空间网格卷积采样与特征流</div>
+      <div>移动指针可重定卷积窗口焦点</div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    这一单元我们正式进入卷积神经网络。同学们先看左侧这组对比：如果面对一张普通的高分辨率图像，全连接网络需要给每一个像素连一条权重，不仅参数量会发生爆炸，而且完全丢弃了“相邻像素属于同一个物体局部”这一关键几何结构。
+    卷积网络正是抓住了图像数据的二维网格先验：首先是局部连接，一次只看一个很小的邻域；其次是权重共享，无论边缘出现在画面左上角还是右下角，同一个卷积核都能把它检测出来。这一章我们将从滑动窗口核对乘加运算开始，完整展开 CNN 的特征层级与计算之美。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+      if (!window.Deck) return;
+
+      Deck.init({ index: 12, total: 32 });
+
+      const canvas = document.getElementById("field-canvas");
+      let ctx = Deck.fit(canvas);
+      if (!ctx) return;
+
+      const W = 1600, H = 900;
+      // 结构色与强调色 token
+      const cBg = Deck.token("--bg") || "#F1F4F2";
+      const cRule = Deck.token("--rule") || "#BAC4BF";
+      const cStructure = Deck.token("--structure") || "#1C4436";
+      const cSignal = Deck.token("--signal") || "#D43811";
+      const cMuted = Deck.token("--muted") || "#5B6661";
+
+      // 标题区避让（左侧宽 700，高 600）
+      const TITLE_ZONE = { x: 0, y: 0, w: 760, h: 560 };
+
+      // 生成二维网格：输入空间网格与特征图
+      const GRID_COLS = 16;
+      const GRID_ROWS = 12;
+      const CELL_SIZE = 40;
+      const ORIGIN_X = 560;
+      const ORIGIN_Y = 150;
+
+      // 种子伪随机生成稳定的高斯或纹理图像特征
+      function pseudoRandom(seed) {
+        let s = seed % 2147483647;
+        if (s <= 0) s += 2147483646;
+        return () => {
+          s = (s * 16807) % 2147483647;
+          return (s - 1) / 2147483646;
+        };
+      }
+
+      const rng = pseudoRandom(42);
+      const gridValues = new Float32Array(GRID_COLS * GRID_ROWS);
+      for (let i = 0; i < gridValues.length; i++) {
+        gridValues[i] = rng();
+      }
+
+      // 卷积核：模拟水平/垂直边缘与斜向结构组合
+      const KERNEL = [
+        [-1, -1, -1],
+        [-1,  8, -1],
+        [-1, -1, -1]
+      ];
+
+      // 滑动卷积核当前逻辑坐标 (网格列与行)
+      let targetKx = 7;
+      let targetKy = 5;
+      let curKx = 7;
+      let curKy = 5;
+      let autoTime = 0;
+
+      function update(dt) {
+        if (!Deck.reduced()) {
+          autoTime += dt * 0.0012;
+          // 自主慢速走动规律，当用户未激活交互时沿轨道滑动
+          if (!userInteracting) {
+            targetKx = 7 + Math.floor(Math.sin(autoTime * 0.8) * 4);
+            targetKy = 5 + Math.floor(Math.cos(autoTime * 1.1) * 3);
+          }
+        }
+        // 缓动对齐
+        curKx += (targetKx - curKx) * 0.12;
+        curKy += (targetKy - curKy) * 0.12;
+      }
+
+      let userInteracting = false;
+      let idleTimer = null;
+
+      function setPointerTarget(pt) {
+        const gx = Math.round((pt.x - ORIGIN_X) / CELL_SIZE);
+        const gy = Math.round((pt.y - ORIGIN_Y) / CELL_SIZE);
+        if (gx >= 1 && gx <= GRID_COLS - 2 && gy >= 1 && gy <= GRID_ROWS - 2) {
+          targetKx = gx;
+          targetKy = gy;
+          userInteracting = true;
+          clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => {
+            userInteracting = false;
+          }, 3500);
+        }
+      }
+
+      canvas.addEventListener("pointerdown", (e) => {
+        const pt = Deck.pt(canvas, e);
+        setPointerTarget(pt);
+      });
+
+      canvas.addEventListener("pointermove", (e) => {
+        if (e.buttons > 0) {
+          const pt = Deck.pt(canvas, e);
+          setPointerTarget(pt);
+        }
+      });
+
+      function draw() {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, W, H);
+
+        // 1. 绘制底层基础空间网格（冷灰色线条）
+        ctx.save();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = Deck.rgba("--rule", 0.5);
+
+        for (let c = 0; c <= GRID_COLS; c++) {
+          const x = ORIGIN_X + c * CELL_SIZE;
+          ctx.beginPath();
+          ctx.moveTo(x, ORIGIN_Y);
+          ctx.lineTo(x, ORIGIN_Y + GRID_ROWS * CELL_SIZE);
+          ctx.stroke();
+        }
+        for (let r = 0; r <= GRID_ROWS; r++) {
+          const y = ORIGIN_Y + r * CELL_SIZE;
+          ctx.beginPath();
+          ctx.moveTo(ORIGIN_X, y);
+          ctx.lineTo(ORIGIN_X + GRID_COLS * CELL_SIZE, y);
+          ctx.stroke();
+        }
+
+        // 2. 绘制网格中的输入像素激活点（墨绿深浅表示像素强度）
+        for (let r = 0; r < GRID_ROWS; r++) {
+          for (let c = 0; c < GRID_COLS; c++) {
+            const px = ORIGIN_X + c * CELL_SIZE;
+            const py = ORIGIN_Y + r * CELL_SIZE;
+
+            // 避让左上角标题区
+            if (px < TITLE_ZONE.w && py < TITLE_ZONE.h) continue;
+
+            const val = gridValues[r * GRID_COLS + c];
+            if (val > 0.45) {
+              const alpha = (val - 0.45) * 0.65;
+              ctx.fillStyle = Deck.rgba("--structure", alpha);
+              const inset = 3;
+              ctx.fillRect(px + inset, py + inset, CELL_SIZE - inset * 2, CELL_SIZE - inset * 2);
+            }
+          }
+        }
+
+        // 3. 绘制正在进行卷积核滑动的 3x3 感受野 (朱红锐利核框)
+        const rx = ORIGIN_X + (curKx - 1) * CELL_SIZE;
+        const ry = ORIGIN_Y + (curKy - 1) * CELL_SIZE;
+        const kw = CELL_SIZE * 3;
+        const kh = CELL_SIZE * 3;
+
+        // 3x3 窗口底色半透高亮
+        ctx.fillStyle = Deck.rgba("--signal", 0.12);
+        ctx.fillRect(rx, ry, kw, kh);
+
+        // 3x3 窗口边框加粗
+        ctx.strokeStyle = cSignal;
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(rx, ry, kw, kh);
+
+        // 4. 卷积核权重与输入相乘的焦点指示：每个子格的局部连接记号
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const subX = ORIGIN_X + (curKx + dx) * CELL_SIZE;
+            const subY = ORIGIN_Y + (curKy + dy) * CELL_SIZE;
+            ctx.fillStyle = cSignal;
+            ctx.beginPath();
+            ctx.arc(subX + CELL_SIZE / 2, subY + CELL_SIZE / 2, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // 5. 投影映射：从 3x3 感受野汇聚到特征图单一点（右侧特征图网格）
+        const featGridOriginX = 1290;
+        const featGridOriginY = 210;
+        const featCellSize = 20;
+        const featCols = GRID_COLS - 2;
+        const featRows = GRID_ROWS - 2;
+
+        // 特征图目标单元格坐标
+        const targetFeatX = featGridOriginX + Math.round(curKx - 1) * featCellSize;
+        const targetFeatY = featGridOriginY + Math.round(curKy - 1) * featCellSize;
+
+        // 绘制特征图网格
+        ctx.save();
+        ctx.strokeStyle = Deck.rgba("--rule", 0.45);
+        ctx.lineWidth = 1;
+        for (let fc = 0; fc <= featCols; fc++) {
+          ctx.beginPath();
+          ctx.moveTo(featGridOriginX + fc * featCellSize, featGridOriginY);
+          ctx.lineTo(featGridOriginX + fc * featCellSize, featGridOriginY + featRows * featCellSize);
+          ctx.stroke();
+        }
+        for (let fr = 0; fr <= featRows; fr++) {
+          ctx.beginPath();
+          ctx.moveTo(featGridOriginX, featGridOriginY + fr * featCellSize);
+          ctx.lineTo(featGridOriginX + featCols * featCellSize, featGridOriginY + fr * featCellSize);
+          ctx.stroke();
+        }
+
+        // 绘制从 3x3 感受野到特征图单元格的四角投射虚线
+        ctx.strokeStyle = Deck.rgba("--signal", 0.55);
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([4, 4]);
+
+        ctx.beginPath();
+        ctx.moveTo(rx, ry);
+        ctx.lineTo(targetFeatX, targetFeatY);
+        ctx.moveTo(rx + kw, ry);
+        ctx.lineTo(targetFeatX + featCellSize, targetFeatY);
+        ctx.moveTo(rx + kw, ry + kh);
+        ctx.lineTo(targetFeatX + featCellSize, targetFeatY + featCellSize);
+        ctx.moveTo(rx, ry + kh);
+        ctx.lineTo(targetFeatX, targetFeatY + featCellSize);
+        ctx.stroke();
+        ctx.setLineDash([]); // 还原
+
+        // 绘制特征图单一点激活方块
+        ctx.fillStyle = cSignal;
+        ctx.fillRect(targetFeatX, targetFeatY, featCellSize, featCellSize);
+
+        // 局部文本标签：核权重与特征标定
+        ctx.font = "bold 13px var(--font-mono, monospace)";
+        ctx.fillStyle = cSignal;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "bottom";
+        ctx.fillText("Kernel 3×3", rx + 4, ry - 6);
+
+        ctx.fillStyle = cStructure;
+        ctx.textBaseline = "bottom";
+        ctx.fillText("Feature Map (14×10)", featGridOriginX, featGridOriginY - 8);
+
+        ctx.restore();
+      }
+
+      // 注册响应式尺寸自适应
+      const unbindResize = Deck.onResize(() => {
+        ctx = Deck.fit(canvas);
+        draw();
+      });
+
+      // 动画与静态循环驱动
+      const stopLoop = Deck.loop((_time, dt) => {
+        update(dt);
+        draw();
+      }, { still: 1200 });
+
+      window.addEventListener("pagehide", () => {
+        stopLoop();
+        unbindResize();
+      }, { once: true });
+
+      // 首屏立即渲染一帧
+      draw();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>随机森林的关键增量：特征子采样降低树间相关性</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    :root {
+      --bg: #E8EEF2;
+      --text: #142533;
+      --font-sans: "Noto Sans SC", system-ui, -apple-system, sans-serif;
+      --font-num: "DIN Alternate", Bahnschrift, "Noto Sans SC", sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow: hidden;
+      color: var(--text);
+    }
+
+    /* 顶部标题区 */
+    .header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+    }
+    .header p {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主内容两栏布局 */
+    .layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 20px;
+      min-height: 0;
+    }
+
+    /* 左侧：图表区 */
+    .chart-panel {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 20px 14px 20px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 2px 8px rgba(20, 37, 51, 0.04);
+      min-height: 0;
+    }
+    .chart-header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .chart-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .chart-legend {
+      display: flex;
+      gap: 18px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sw-line {
+      width: 18px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .sw-bagging { background: var(--learner); }
+    .sw-rf { background: var(--aggregate); }
+    .sw-bound {
+      width: 18px;
+      height: 0;
+      border-top: 2px dashed #8b99a6;
+    }
+
+    .chart-host {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    .chart-caption {
+      margin-top: 8px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      line-height: 1.6;
+      border-top: 1px solid var(--surface-strong);
+      padding-top: 8px;
+    }
+
+    /* 右侧：推演与控制区 */
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    /* 机制对比卡片 */
+    .mechanism-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .card-body {
+      font-size: var(--fs-body);
+      line-height: 1.5;
+      color: var(--text);
+    }
+
+    /* 误差分解公式展示 */
+    .formula-box {
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .formula-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      min-height: 38px;
+    }
+    .formula-sym {
+      font-weight: 600;
+      color: var(--text);
+    }
+    .formula-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 读数对比格 */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .metric-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-card.active-rf {
+      border-color: rgba(182, 59, 36, 0.4);
+      background: #FFF8F6;
+    }
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.1;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+    .metric-val.bagging-val { color: var(--learner); }
+    .metric-val.rf-val { color: var(--aggregate); }
+    .metric-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    /* 交互控制器 */
+    .control-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: auto;
+    }
+    .control-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+      font-weight: 600;
+    }
+    .control-slider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .control-slider input[type="range"] {
+      flex: 1;
+      accent-color: var(--aggregate);
+      cursor: pointer;
+    }
+    .control-cur-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--aggregate);
+      min-width: 50px;
+      text-align: right;
+    }
+    .control-btns {
+      display: flex;
+      gap: 8px;
+      overflow: hidden;
+    }
+    .btn-preset {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 6px 4px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 600;
+      transition: all var(--dur) var(--ease);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .katex-mathml {
+      display: none !important;
+    }
+    .katex-html {
+      display: inline-block;
+    }
+    .katex svg {
+      display: none;
+    }
+    .btn-preset:hover {
+      background: var(--surface-strong);
+    }
+    .btn-preset[aria-pressed="true"] {
+      background: var(--text);
+      color: #fff;
+      border-color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="11" data-total="27">
+  <div id="stage">
+    <!-- 顶栏标题 -->
+    <header class="header">
+      <h1>随机森林的关键增量：特征子采样降低树间相关性</h1>
+      <p>仅做样本抽样时，强特征仍会在各棵树的分裂顶层反复出现；随机限制候选特征集才能打破同质化。</p>
+    </header>
+
+    <!-- 主展示网格 -->
+    <main class="layout">
+      <!-- 左：ECharts 方差收敛曲线 -->
+      <section class="chart-panel" aria-label="树数量与集成方差关系曲线图">
+        <div class="chart-header">
+          <div class="chart-title-row">
+            <span class="chart-title">集成方差随树数量 <span class="math">M</span> 的衰减轨迹</span>
+          </div>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <span class="sw-line sw-bagging"></span>
+              <span>纯 Bagging (无特征子采样, <span class="math">\rho = 0.46</span>)</span>
+            </div>
+            <div class="legend-item">
+              <span class="sw-line sw-rf"></span>
+              <span id="rf-legend-label">随机森林 (<span class="math">m = 8</span>, <span class="math">\rho = 0.16</span>)</span>
+            </div>
+            <div class="legend-item">
+              <span class="sw-bound"></span>
+              <span>理论渐近下界 <span class="math">\rho \sigma^2</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div id="curve-chart" class="chart-host" role="img" aria-label="展示Bagging和不同子采样率下随机森林方差随树数量增加的曲线"></div>
+
+        <footer class="chart-caption">
+          <strong>方差渐近分解：</strong><span class="math">\mathrm{Var}(\bar{f}) = \rho \sigma^2 + \frac{1-\rho}{M}\sigma^2</span>。当 <span class="math">M \to \infty</span> 时，第二项趋向于 0，而第一项 <span class="math">\rho\sigma^2</span> 形成不可消除的方差平台。随机森林限制候选特征，核心是压缩树间相关系数 <span class="math">\rho</span>。
+        </footer>
+      </section>
+
+      <!-- 右：理论解释与动态量化 -->
+      <aside class="side-panel">
+        <!-- 核心机制论述 -->
+        <article class="mechanism-card">
+          <div class="card-title">
+            <span>为什么更多树救不了强相关？</span>
+          </div>
+          <div class="card-body">
+            若训练数据存在 1~2 个支配性强特征，Bootstrap 抽出的各棵树几乎都会在根节点选择它们进行分裂。结果是：<strong>虽然训练样本略有不同，但生成的树拓扑与预测高度趋同</strong>（相关系数 <span class="math">\rho</span> 偏高）。增加树数量只能消除各自独立的扰动，无法抵消共有的系统偏置。
+          </div>
+          <div class="formula-box">
+            <div class="formula-line">
+              <span class="formula-sym math">\rho \cdot \sigma^2</span>
+              <span class="formula-desc">树间相关性底噪（增加 M 无法消除）</span>
+            </div>
+            <div class="formula-line">
+              <span class="formula-sym math">\frac{1-\rho}{M} \cdot \sigma^2</span>
+              <span class="formula-desc">随树数量 M 增加而逐步消除的分量</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- 读数对比卡 -->
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <span class="metric-label">纯 Bagging 方差下界</span>
+            <div class="metric-val bagging-val">0.46 <span class="metric-sub math">\sigma^2</span></div>
+            <span class="metric-sub">树间相关系数 <span class="math">\rho = 0.46</span></span>
+          </div>
+          <div class="metric-card active-rf">
+            <span class="metric-label">随机森林当前方差下界</span>
+            <div class="metric-val rf-val" id="rf-floor-val">0.16 <span class="metric-sub math">\sigma^2</span></div>
+            <span class="metric-sub" id="rf-rho-sub">当前相关系数 <span class="math">\rho = 0.16</span></span>
+          </div>
+        </div>
+
+        <!-- 交互控件：调节每次分裂候选特征数 m -->
+        <section class="control-card">
+          <div class="control-header">
+            <span>每次分裂候选特征数 <span class="math">m</span> (总特征数 <span class="math">p = 64</span>)</span>
+            <span class="control-cur-val" id="m-readout"><span class="math">m = 8</span></span>
+          </div>
+          <div class="control-slider">
+            <input type="range" id="m-slider" min="1" max="64" value="8" step="1" aria-label="候选特征数量">
+          </div>
+          <div class="control-btns">
+            <button class="btn-preset" data-m="1">极度随机 (m=1)</button>
+            <button class="btn-preset" data-m="8" aria-pressed="true">经典推荐 (m=8)</button>
+            <button class="btn-preset" data-m="21">三分之一 (m=21)</button>
+            <button class="btn-preset" data-m="64">全特征 (m=64)</button>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <!-- 引入依赖库与基础底盘 -->
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 设定基础教学参数
+      // 假设单棵完全生长树的方差标准化为 sigma^2 = 1.0
+      // 总特征数 p = 64
+      // 当 m = p = 64 时，回归纯 Bagging，各树由于共享强势特征，相关系数 rho ~ 0.46
+      // 当 m = 1 时，极端随机化，相关系数降低到约 0.06，但单树方差略微上升(此处聚焦方差平台效应)
+      // 关系模型：rho(m) = 0.05 + 0.41 * (m / 64)^0.65
+      const P = 64;
+      const SIGMA2 = 1.0;
+      const RHO_BAGGING = 0.46;
+
+      function calcRho(m) {
+        if (m >= P) return RHO_BAGGING;
+        return 0.05 + (RHO_BAGGING - 0.05) * Math.pow(m / P, 0.65);
+      }
+
+      // 生成 M = 1..100 的树数量
+      const M_POINTS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60, 75, 90, 100];
+
+      function computeVarianceCurve(rho) {
+        return M_POINTS.map(M => {
+          const v = rho * SIGMA2 + ((1 - rho) / M) * SIGMA2;
+          return [M, parseFloat(v.toFixed(3))];
+        });
+      }
+
+      // 初始化 DOM 引用
+      const host = document.getElementById("curve-chart");
+      const slider = document.getElementById("m-slider");
+      const readout = document.getElementById("m-readout");
+      const rfLegendLabel = document.getElementById("rf-legend-label");
+      const rfFloorVal = document.getElementById("rf-floor-val");
+      const rfRhoSub = document.getElementById("rf-rho-sub");
+      const presetBtns = document.querySelectorAll(".btn-preset");
+
+      let chart = null;
+
+      // 初始化 ECharts
+      function initChart() {
+        if (!window.echarts) return;
+        chart = echarts.init(host, null, { renderer: "svg" });
+        updateChart(8);
+      }
+
+      // 渲染数学公式
+      function renderMath() {
+        if (!window.katex) return;
+        document.querySelectorAll(".math").forEach(el => {
+          const tex = el.dataset.tex || el.textContent;
+          el.dataset.tex = tex;
+          katex.render(tex, el, { throwOnError: false });
+        });
+      }
+
+      function updateChart(m) {
+        const rhoRF = calcRho(m);
+        const baggingCurve = computeVarianceCurve(RHO_BAGGING);
+        const rfCurve = computeVarianceCurve(rhoRF);
+
+        const baggingFloor = RHO_BAGGING * SIGMA2;
+        const rfFloor = rhoRF * SIGMA2;
+
+        const option = {
+          animationDuration: 250,
+          tooltip: {
+            trigger: "axis",
+            backgroundColor: "#142533",
+            borderColor: "#142533",
+            textStyle: { color: "#FFFFFF", fontSize: 13 },
+            formatter: function (params) {
+              const M = params[0].value[0];
+              let html = `<strong>树数量 M = ${M}</strong><br/>`;
+              params.forEach(p => {
+                if (p.seriesName) {
+                  html += `${p.marker} ${p.seriesName}: <strong>${p.value[1]} σ²</strong><br/>`;
+                }
+              });
+              return html;
+            }
+          },
+          grid: {
+            left: 55,
+            right: 25,
+            top: 25,
+            bottom: 45
+          },
+          xAxis: {
+            type: "value",
+            name: "树的数量 M",
+            nameLocation: "middle",
+            nameGap: 28,
+            min: 1,
+            max: 100,
+            axisLine: { lineStyle: { color: "#536777", width: 1.5 } },
+            axisLabel: { color: "#536777", fontSize: 13, fontStyle: "normal" },
+            splitLine: { show: true, lineStyle: { color: "#D7E1E8", type: "dashed" } }
+          },
+          yAxis: {
+            type: "value",
+            name: "集成总方差 (单位: σ²)",
+            nameTextStyle: { color: "#536777", fontSize: 13, padding: [0, 0, 8, 0] },
+            min: 0,
+            max: 1.05,
+            interval: 0.2,
+            axisLine: { lineStyle: { color: "#536777", width: 1.5 } },
+            axisLabel: { color: "#536777", fontSize: 13 },
+            splitLine: { show: true, lineStyle: { color: "#D7E1E8" } }
+          },
+          series: [
+            // 纯 Bagging 曲线
+            {
+              name: "纯 Bagging",
+              type: "line",
+              smooth: true,
+              showSymbol: false,
+              data: baggingCurve,
+              lineStyle: { width: 3, color: "#275D91" },
+              itemStyle: { color: "#275D91" },
+              markLine: {
+                symbol: "none",
+                silent: true,
+                data: [
+                  {
+                    yAxis: baggingFloor,
+                    lineStyle: { color: "#275D91", type: "dashed", width: 1.5, opacity: 0.75 },
+                    label: {
+                      formatter: `Bagging 渐近下界 ${baggingFloor.toFixed(2)}σ²`,
+                      position: "insideEndTop",
+                      color: "#275D91",
+                      fontSize: 12
+                    }
+                  }
+                ]
+              }
+            },
+            // 随机森林 曲线
+            {
+              name: `随机森林 (m=${m})`,
+              type: "line",
+              smooth: true,
+              showSymbol: false,
+              data: rfCurve,
+              lineStyle: { width: 3.5, color: "#B63B24" },
+              itemStyle: { color: "#B63B24" },
+              markLine: {
+                symbol: "none",
+                silent: true,
+                data: [
+                  {
+                    yAxis: rfFloor,
+                    lineStyle: { color: "#B63B24", type: "dashed", width: 2 },
+                    label: {
+                      formatter: `RF 渐近下界 ${rfFloor.toFixed(2)}σ² (降幅 ${Math.round((baggingFloor - rfFloor) / baggingFloor * 100)}%)`,
+                      position: "insideEndBottom",
+                      color: "#B63B24",
+                      fontSize: 12,
+                      fontWeight: "bold"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        };
+
+        chart.setOption(option, true);
+
+        // 同步文字与读数
+        readout.innerHTML = `<span class="math">m = ${m}</span>`;
+        rfLegendLabel.innerHTML = `随机森林 (<span class="math">m = ${m}</span>, <span class="math">\\rho = ${rhoRF.toFixed(2)}</span>)`;
+        rfFloorVal.innerHTML = `${rfFloor.toFixed(2)} <span class="metric-sub math">\\sigma^2</span>`;
+        rfRhoSub.innerHTML = `当前相关系数 <span class="math">\\rho = ${rhoRF.toFixed(2)}</span>`;
+        renderMath();
+      }
+
+      // 事件绑定
+      slider.addEventListener("input", function (e) {
+        const val = parseInt(e.target.value, 10);
+        updateChart(val);
+        presetBtns.forEach(btn => {
+          btn.setAttribute("aria-pressed", parseInt(btn.dataset.m, 10) === val ? "true" : "false");
+        });
+      });
+
+      presetBtns.forEach(btn => {
+        btn.addEventListener("click", function () {
+          const val = parseInt(this.dataset.m, 10);
+          slider.value = val;
+          presetBtns.forEach(b => b.setAttribute("aria-pressed", "false"));
+          this.setAttribute("aria-pressed", "true");
+          updateChart(val);
+        });
+      });
+
+      window.addEventListener("resize", function () {
+        if (chart) chart.resize();
+      });
+
+      // 初始化底盘
+      Deck.init({ keys: false });
+      renderMath();
+      initChart();
+    })();
+  </script>
+</body>
+</html>

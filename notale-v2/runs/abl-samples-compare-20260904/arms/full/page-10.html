@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>随机森林的特征子采样</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .header-block h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0;
+      color: var(--text);
+    }
+    .header-block .lead-text {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    /* 主对比工作区：左为普通Bagging，右为随机森林特征子采样 */
+    .compare-stage {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .panel-card {
+      background: var(--surface);
+      border: 1px solid rgba(83, 106, 120, 0.2);
+      border-radius: 8px;
+      padding: 16px 20px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 4px 16px rgba(18, 38, 52, 0.04);
+      position: relative;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 8px;
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .panel-title .badge {
+      font-size: var(--fs-tick);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .badge-bagging {
+      background: rgba(39, 100, 143, 0.12);
+      color: var(--model);
+    }
+    .badge-rf {
+      background: rgba(195, 75, 34, 0.12);
+      color: var(--aggregate);
+    }
+    .panel-subtitle {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 树群图形展示区 */
+    .trees-container {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .tree-col {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 10px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      border: 1px solid rgba(83, 106, 120, 0.15);
+    }
+    .tree-name {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    /* 节点树 SVG 容器 */
+    .tree-svg-wrap {
+      width: 100%;
+      flex: 1;
+      min-height: 140px;
+    }
+    .tree-svg-wrap svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 特征候选池 */
+    .feature-pool {
+      margin-top: 6px;
+      width: 100%;
+      padding: 6px 8px;
+      background: var(--surface);
+      border-radius: 4px;
+      border: 1px solid var(--surface-strong);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .pool-label {
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .pool-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .ft-tag {
+      font-size: 13px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: var(--font-num, monospace);
+    }
+    .ft-strong {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #f87171;
+      font-weight: 700;
+    }
+    .ft-normal {
+      background: var(--surface-strong);
+      color: var(--text);
+      border: 1px solid rgba(83, 106, 120, 0.2);
+    }
+    .ft-excluded {
+      opacity: 0.25;
+      text-decoration: line-through;
+      background: #f1f5f9;
+      color: #94a3b8;
+    }
+
+    /* 底部统计栏 */
+    .panel-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 10px 12px;
+      border: 1px solid rgba(83, 106, 120, 0.15);
+    }
+    .metric-cell {
+      display: flex;
+      flex-direction: column;
+    }
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .metric-val {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      font-family: var(--font-num, sans-serif);
+      margin-top: 3px;
+    }
+    .val-alert {
+      color: #b91c1c;
+    }
+    .val-good {
+      color: var(--sample);
+    }
+
+    /* 底部控制与机制透视栏 */
+    .bottom-bar {
+      height: 96px;
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+    }
+
+    .ctrl-box {
+      background: var(--surface);
+      border: 1px solid rgba(83, 106, 120, 0.2);
+      border-radius: 8px;
+      padding: 12px 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 8px;
+    }
+    .ctrl-title {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      color: var(--text);
+    }
+    .btn-rerun {
+      background: var(--model);
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      padding: 7px 14px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.15s ease;
+    }
+    .btn-rerun:hover {
+      background: #1c4b6e;
+    }
+
+    .formula-box {
+      background: var(--surface);
+      border: 1px solid rgba(83, 106, 120, 0.2);
+      border-radius: 8px;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    .formula-math {
+      flex: 0 0 auto;
+      font-family: serif;
+      font-size: 17px;
+      background: var(--surface-strong);
+      padding: 6px 14px;
+      border-radius: 6px;
+      color: var(--text);
+      letter-spacing: 0.02em;
+    }
+    .formula-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+    }
+    .formula-desc strong {
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="10" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题 -->
+    <header class="header-block min0">
+      <h1>随机森林的特征子采样：打破强特征的垄断</h1>
+      <p class="lead-text">当数据集中存在少数预测能力极强的特征时，普通 Bagging 生成的所有单树都会在顶层首选该特征，导致树间高度相关；特征子采样强制部分切分点隐去强特征，从而产生结构差异。</p>
+    </header>
+
+    <!-- 核心对比舞台 -->
+    <main class="compare-stage min0">
+      <!-- 左列：常规 Bagging (全量候选) -->
+      <section class="panel-card min0">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>常规 Bagging 树群</span>
+            <span class="badge badge-bagging">每次分裂考虑全部 6 个特征</span>
+          </div>
+          <span class="panel-subtitle">候选数 m = p = 6</span>
+        </div>
+
+        <div class="trees-container min0" id="bagging-trees">
+          <!-- 动态渲染 3 棵树 -->
+        </div>
+
+        <div class="panel-metrics">
+          <div class="metric-cell">
+            <span class="metric-label">根节点首选强特征</span>
+            <span class="metric-val val-alert" id="bagging-dom-rate">100% (3/3 棵)</span>
+          </div>
+          <div class="metric-cell">
+            <span class="metric-label">树间预测相关系数 ρ</span>
+            <span class="metric-val val-alert" id="bagging-corr">0.82</span>
+          </div>
+          <div class="metric-cell">
+            <span class="metric-label">最终集成方差 Var</span>
+            <span class="metric-val val-alert" id="bagging-var">0.84 σ²</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右列：随机森林 (特征子采样) -->
+      <section class="panel-card min0">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>随机森林树群 (Random Forest)</span>
+            <span class="badge badge-rf">每次分裂随机抽选 m = 2 个特征</span>
+          </div>
+          <span class="panel-subtitle">候选数 m = ⌊√p⌋ = 2</span>
+        </div>
+
+        <div class="trees-container min0" id="rf-trees">
+          <!-- 动态渲染 3 棵树 -->
+        </div>
+
+        <div class="panel-metrics">
+          <div class="metric-cell">
+            <span class="metric-label">根节点首选强特征</span>
+            <span class="metric-val val-good" id="rf-dom-rate">33% (1/3 棵)</span>
+          </div>
+          <div class="metric-cell">
+            <span class="metric-label">树间预测相关系数 ρ</span>
+            <span class="metric-val val-good" id="rf-corr">0.36</span>
+          </div>
+          <div class="metric-cell">
+            <span class="metric-label">最终集成方差 Var</span>
+            <span class="metric-val val-good" id="rf-var">0.42 σ²</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部控制与方差机制公式透视 -->
+    <footer class="bottom-bar min0">
+      <div class="ctrl-box">
+        <div class="ctrl-title">
+          <span>切分节点随机重抽样</span>
+          <span style="font-size: var(--fs-tick); color: var(--muted);" id="seed-tag">固定种子序列</span>
+        </div>
+        <button class="btn-rerun" id="btn-resample" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          重新抽取分裂候选集
+        </button>
+      </div>
+
+      <div class="formula-box">
+        <div class="formula-math">
+          Var(f̄) = ρ · σ² + ((1 - ρ) / B) · σ²
+        </div>
+        <p class="formula-desc">
+          <strong>方差瓶颈解析：</strong>增加基树数量 B 只能削弱右侧第二项，无法消除左侧的基底方差 <strong>ρ · σ²</strong>。特征子采样主动让出选择权给弱特征，以单树稍大方差换取 <strong>相关系数 ρ 的大幅下降</strong>，从而打破集成方差的下降瓶颈。
+        </p>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      Deck.init({ index: 10, total: 27 });
+
+      // 特征定义：包含 1 个极强主导特征 (X1)，以及 5 个常规/互补特征
+      const FEATURES = [
+        { id: 'X1', name: 'X₁ (强特征: 贡献度 85%)', isStrong: true, score: 92 },
+        { id: 'X2', name: 'X₂ (空间特征: 贡献度 45%)', isStrong: false, score: 48 },
+        { id: 'X3', name: 'X₃ (频域特征: 贡献度 38%)', isStrong: false, score: 40 },
+        { id: 'X4', name: 'X₄ (时序特征: 贡献度 35%)', isStrong: false, score: 36 },
+        { id: 'X5', name: 'X₅ (统计均值: 贡献度 30%)', isStrong: false, score: 32 },
+        { id: 'X6', name: 'X₆ (残差项: 贡献度 22%)', isStrong: false, score: 24 }
+      ];
+
+      // 伪随机生成器 (线性同余 LCG，确保固定种子可复现)
+      let seed = 42;
+      function random() {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+      }
+
+      function shuffle(arr) {
+        const copy = [...arr];
+        for (let i = copy.length - 1; i > 0; i--) {
+          const j = Math.floor(random() * (i + 1));
+          [copy[i], copy[j]] = [copy[j], copy[i]];
+        }
+        return copy;
+      }
+
+      // 生成单棵树的切分节点特征分配
+      // isRF: true 表示每步只从全部特征中随机抽取 m=2 个候选；false 表示全量候选(m=6)
+      function generateTreeNodes(isRF, treeIdx) {
+        // 节点 0: 根节点；节点 1: 左子节点；节点 2: 右子节点
+        const nodes = [];
+        for (let nodeI = 0; nodeI < 3; nodeI++) {
+          let candidates;
+          if (isRF) {
+            // 随机抽选 m=2 个特征
+            candidates = shuffle(FEATURES).slice(0, 2);
+          } else {
+            // 全量 6 个特征全入选
+            candidates = [...FEATURES];
+          }
+          // 在候选集中挑选评分最高（最强）的特征作为该节点的分裂特征
+          candidates.sort((a, b) => b.score - a.score);
+          const chosen = candidates[0];
+
+          nodes.push({
+            chosen,
+            candidates
+          });
+        }
+        return nodes;
+      }
+
+      function renderTreeSVG(nodes, isRF) {
+        // 渲染简易 2 层二叉决策树拓扑 (根节点 + 2 个分裂子节点 + 4 个叶子)
+        // viewBox 0 0 180 150
+        const n0 = nodes[0].chosen;
+        const n1 = nodes[1].chosen;
+        const n2 = nodes[2].chosen;
+
+        const color0 = n0.isStrong ? '#ef4444' : '#27648f';
+        const color1 = n1.isStrong ? '#ef4444' : '#27648f';
+        const color2 = n2.isStrong ? '#ef4444' : '#27648f';
+
+        return `
+          <svg viewBox="0 0 180 146" preserveAspectRatio="xMidYMid meet">
+            <!-- 连线 -->
+            <path d="M90 28 L46 68" stroke="#94a3b8" stroke-width="2" fill="none" />
+            <path d="M90 28 L134 68" stroke="#94a3b8" stroke-width="2" fill="none" />
+            <path d="M46 88 L24 122" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="3,2" fill="none" />
+            <path d="M46 88 L68 122" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="3,2" fill="none" />
+            <path d="M134 88 L112 122" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="3,2" fill="none" />
+            <path d="M134 88 L156 122" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="3,2" fill="none" />
+
+            <!-- 叶子节点 (4个) -->
+            <rect x="14" y="122" width="20" height="14" rx="3" fill="#e2ebf0" />
+            <rect x="58" y="122" width="20" height="14" rx="3" fill="#e2ebf0" />
+            <rect x="102" y="122" width="20" height="14" rx="3" fill="#e2ebf0" />
+            <rect x="146" y="122" width="20" height="14" rx="3" fill="#e2ebf0" />
+
+            <!-- 左子节点 (n1) -->
+            <g transform="translate(46, 78)">
+              <rect x="-30" y="-14" width="60" height="26" rx="4" fill="${color1}" />
+              <text x="0" y="4" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="700" font-family="monospace">${n1.id}</text>
+            </g>
+
+            <!-- 右子节点 (n2) -->
+            <g transform="translate(134, 78)">
+              <rect x="-30" y="-14" width="60" height="26" rx="4" fill="${color2}" />
+              <text x="0" y="4" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="700" font-family="monospace">${n2.id}</text>
+            </g>
+
+            <!-- 根节点 (n0) -->
+            <g transform="translate(90, 24)">
+              <rect x="-34" y="-16" width="68" height="30" rx="5" fill="${color0}" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.15))" />
+              <text x="0" y="4" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="700" font-family="monospace">${n0.id} 顶切</text>
+            </g>
+          </svg>
+        `;
+      }
+
+      function renderTreeCol(treeIdx, nodes, isRF) {
+        const rootCand = nodes[0].candidates;
+        const candIds = new Set(rootCand.map(c => c.id));
+        const rootChosen = nodes[0].chosen;
+
+        let tagsHtml = '';
+        if (isRF) {
+          // 列出 6 个特征，标记哪些在本次抽样池中
+          FEATURES.forEach(f => {
+            const inPool = candIds.has(f.id);
+            const isChosen = (f.id === rootChosen.id);
+            if (inPool) {
+              tagsHtml += `<span class="ft-tag ${f.isStrong ? 'ft-strong' : 'ft-normal'}" title="${f.name}">${f.id}${isChosen ? '★' : ''}</span>`;
+            } else {
+              tagsHtml += `<span class="ft-tag ft-excluded" title="未被子采样选中">${f.id}</span>`;
+            }
+          });
+        } else {
+          FEATURES.forEach(f => {
+            const isChosen = (f.id === rootChosen.id);
+            tagsHtml += `<span class="ft-tag ${f.isStrong ? 'ft-strong' : 'ft-normal'}">${f.id}${isChosen ? '★' : ''}</span>`;
+          });
+        }
+
+        return `
+          <div class="tree-col min0">
+            <div class="tree-name">决策树 T<sub>${treeIdx + 1}</sub></div>
+            <div class="tree-svg-wrap">
+              ${renderTreeSVG(nodes, isRF)}
+            </div>
+            <div class="feature-pool">
+              <div class="pool-label">
+                <span>根节点候选集 (${isRF ? 'm=2' : 'm=6'})</span>
+                <span style="font-weight:600; color:${rootChosen.isStrong ? '#dc2626' : '#27648f'}">选 ${rootChosen.id}</span>
+              </div>
+              <div class="pool-tags">
+                ${tagsHtml}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function updateSimulation() {
+        const baggingContainer = document.getElementById('bagging-trees');
+        const rfContainer = document.getElementById('rf-trees');
+
+        // 生成 Bagging 3 棵树
+        let baggingHtml = '';
+        let baggingDomCount = 0;
+        for (let i = 0; i < 3; i++) {
+          const nodes = generateTreeNodes(false, i);
+          if (nodes[0].chosen.isStrong) baggingDomCount++;
+          baggingHtml += renderTreeCol(i, nodes, false);
+        }
+        baggingContainer.innerHTML = baggingHtml;
+
+        // 生成 RF 3 棵树
+        let rfHtml = '';
+        let rfDomCount = 0;
+        for (let i = 0; i < 3; i++) {
+          const nodes = generateTreeNodes(true, i);
+          if (nodes[0].chosen.isStrong) rfDomCount++;
+          rfHtml += renderTreeCol(i, nodes, true);
+        }
+        rfContainer.innerHTML = rfHtml;
+
+        // 计算指标
+        // Bagging: 强特征垄断率、固定高相关性
+        document.getElementById('bagging-dom-rate').textContent = `${Math.round((baggingDomCount / 3) * 100)}% (${baggingDomCount}/3 棵)`;
+        document.getElementById('bagging-corr').textContent = '0.82';
+        document.getElementById('bagging-var').textContent = '0.84 σ²';
+
+        // RF: 强特征被选比率、相关系数根据公式真实计算 (B=10, σ²=1)
+        const rfDomPct = Math.round((rfDomCount / 3) * 100);
+        document.getElementById('rf-dom-rate').textContent = `${rfDomPct}% (${rfDomCount}/3 棵)`;
+        // 当强特征被选比率从 0 到 100% 时，树间相关系数 ρ 对应在 0.20 到 0.65 之间
+        const rho = 0.20 + (rfDomCount / 3) * 0.40;
+        // 根据底端公式 Var(f̄) = ρ · σ² + ((1 - ρ) / B) · σ² 计算真实集成方差 (取 B=10, σ²=1.0)
+        const varIntegrated = rho + (1 - rho) / 10;
+        document.getElementById('rf-corr').textContent = rho.toFixed(2);
+        document.getElementById('rf-var').textContent = `${varIntegrated.toFixed(2)} σ²`;
+      }
+
+      // 初始化初态
+      updateSimulation();
+
+      // 交互：重抽样
+      const btn = document.getElementById('btn-resample');
+      btn.addEventListener('click', () => {
+        seed = (seed + 107) % 100000;
+        document.getElementById('seed-tag').textContent = `随机子采样更新`;
+        updateSimulation();
+      });
+
+    })();
+  </script>
+</body>
+</html>

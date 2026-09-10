@@ -1,0 +1,894 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>相关错误如何削弱多数表决</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      color: var(--text);
+      background: var(--bg);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex: none;
+      border-bottom: var(--line) solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+    .title-group h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.15;
+    }
+    .title-group p {
+      margin: 4px 0 0 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .top-stats {
+      display: flex;
+      gap: 20px;
+      align-items: baseline;
+    }
+    .stat-pill {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+    .stat-pill .label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .stat-pill .val {
+      font-family: var(--font-num, sans-serif);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .val.ens-acc {
+      color: var(--aggregate);
+    }
+    .val.ind-acc {
+      color: var(--learner);
+    }
+
+    /* 主实验视窗：左侧参数与诊断，右侧样本矩阵与分布对比 */
+    .lab-grid {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧控制与核查面板 */
+    .control-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 18px;
+    }
+    .panel-section-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      color: var(--text);
+    }
+
+    .ctl-box {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px;
+      background: var(--bg);
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+    }
+    .ctl-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+    }
+    .ctl-header .ctl-name {
+      font-weight: 600;
+      color: var(--text);
+    }
+    .ctl-header .ctl-val {
+      font-family: var(--font-num, sans-serif);
+      font-weight: 700;
+      color: var(--focus);
+    }
+    .ctl-box input[type="range"] {
+      width: 100%;
+      margin: 4px 0;
+      accent-color: var(--focus);
+      cursor: pointer;
+    }
+    .range-marks {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    .preset-btns {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .preset-btn {
+      padding: 7px 0;
+      text-align: center;
+      background: var(--surface);
+      border: 1.5px solid var(--surface-strong);
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 600;
+      transition: all var(--dur) var(--ease);
+    }
+    .preset-btn:hover {
+      border-color: var(--focus);
+      color: var(--focus);
+    }
+    .preset-btn[aria-pressed="true"] {
+      background: var(--focus);
+      color: #fff;
+      border-color: var(--focus);
+    }
+
+    .theory-card {
+      margin-top: auto;
+      padding: 14px;
+      background: var(--bg);
+      border: 1.5px solid var(--surface-strong);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .theory-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--aggregate);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .theory-desc {
+      font-size: var(--fs-sec);
+      line-height: 1.42;
+      color: var(--text);
+      margin: 0;
+    }
+
+    /* 右侧画布与直方图视窗 */
+    .view-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+
+    .view-row-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .view-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+    }
+    .legend-bar {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-item .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+    .dot.learner-correct { background: #5a8cb8; }
+    .dot.learner-wrong { background: #d97868; }
+    .dot.ens-fail { background: var(--aggregate); }
+    .dot.ens-pass { background: var(--correct); }
+
+    /* 矩阵容器与 canvas */
+    .matrix-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      background: #ffffff;
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    #matrixCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 下方直方图与聚合结果比较区 */
+    .bottom-analysis {
+      height: 148px;
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 16px;
+      flex: none;
+    }
+    .dist-chart-box, .comparison-box {
+      background: var(--bg);
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+    }
+    .sub-head {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .dist-canvas-wrap {
+      flex: 1;
+      position: relative;
+    }
+    #distCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .comparison-content {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      flex: 1;
+    }
+    .comp-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+    }
+    .comp-label {
+      color: var(--text);
+    }
+    .comp-val {
+      font-family: var(--font-num, sans-serif);
+      font-weight: 700;
+      font-size: var(--fs-body);
+    }
+    .comp-bar-bg {
+      width: 120px;
+      height: 8px;
+      background: var(--surface-strong);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-left: 10px;
+    }
+    .comp-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width var(--dur) var(--ease);
+    }
+
+    /* 重新抽样与测试按钮 */
+    .sample-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .btn-rerun {
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      border-radius: 6px;
+      border: 1.5px solid var(--surface-strong);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all var(--dur) var(--ease);
+    }
+    .btn-rerun:hover {
+      border-color: var(--focus);
+      color: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="06" data-total="27">
+  <div id="stage">
+    <!-- 顶部状态栏 -->
+    <header class="top-bar min0">
+      <div class="title-group min0">
+        <h1>相关错误如何削弱多数表决</h1>
+        <p>基分类器单体准确率相同，错误发生的相关性越高，抱团犯错的概率越高，表决增益越趋于零。</p>
+      </div>
+      <div class="top-stats min0">
+        <div class="stat-pill">
+          <span class="label">基分类器平均准确率</span>
+          <span class="val ind-acc" id="indAccReadout">65.0%</span>
+        </div>
+        <div class="stat-pill">
+          <span class="label">21 个模型集成多数表决</span>
+          <span class="val ens-acc" id="ensAccReadout">88.2%</span>
+        </div>
+        <div class="stat-pill">
+          <span class="label">多数表决准确率增益</span>
+          <span class="val" id="gainReadout" style="color: var(--correct);">+23.2%</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 主交互工作区 -->
+    <main class="lab-grid min0">
+      <!-- 左侧控制区 -->
+      <section class="control-panel min0" aria-label="模拟参数控制">
+        <h2 class="panel-section-title">误差结构控制</h2>
+
+        <!-- 预设模式选择 -->
+        <div class="ctl-box">
+          <span class="ctl-name" style="font-size: var(--fs-label); font-weight:600;">快速预设典型情境</span>
+          <div class="preset-btns" role="group" aria-label="典型相关性情境">
+            <button type="button" class="preset-btn" id="presetIndep" data-rho="0.0" aria-pressed="false">独立 (ρ=0)</button>
+            <button type="button" class="preset-btn" id="presetMild" data-rho="0.25" aria-pressed="true">弱相关 (0.25)</button>
+            <button type="button" class="preset-btn" id="presetHigh" data-rho="0.75" aria-pressed="false">高相关 (0.75)</button>
+          </div>
+        </div>
+
+        <!-- 错误相关系数滑动条 -->
+        <div class="ctl-box">
+          <div class="ctl-header">
+            <span class="ctl-name">误差相关系数 ρ (共因子权重)</span>
+            <span class="ctl-val" id="rhoVal">0.25</span>
+          </div>
+          <input type="range" id="rhoSlider" min="0" max="0.9" step="0.05" value="0.25" aria-label="误差相关系数">
+          <div class="range-marks">
+            <span>0.0 (各自独立)</span>
+            <span>0.45 (常见瓶颈)</span>
+            <span>0.90 (高度同质)</span>
+          </div>
+        </div>
+
+        <!-- 基分类器数量滑动条 -->
+        <div class="ctl-box">
+          <div class="ctl-header">
+            <span class="ctl-name">基分类器数量 M (奇数表决)</span>
+            <span class="ctl-val" id="mVal">21 个</span>
+          </div>
+          <input type="range" id="mSlider" min="5" max="35" step="2" value="21" aria-label="基分类器数量">
+          <div class="range-marks">
+            <span>5 个</span>
+            <span>21 个</span>
+            <span>35 个</span>
+          </div>
+        </div>
+
+        <!-- 基分类器单体能力滑动条 -->
+        <div class="ctl-box">
+          <div class="ctl-header">
+            <span class="ctl-name">个体基准准确率 p</span>
+            <span class="ctl-val" id="pVal">65%</span>
+          </div>
+          <input type="range" id="pSlider" min="52" max="80" step="1" value="65" aria-label="基分类器单体准确率">
+          <div class="range-marks">
+            <span>52% (弱分类器)</span>
+            <span>65% (标准弱基)</span>
+            <span>80% (较强模型)</span>
+          </div>
+        </div>
+
+        <!-- 抽样控制 -->
+        <div class="sample-actions">
+          <button type="button" class="btn-rerun" id="resampleBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19"/></svg>
+            重新模拟 100 个验证样本
+          </button>
+        </div>
+
+        <!-- 原理提示说明 -->
+        <div class="theory-card min0">
+          <div class="theory-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <span>孔多塞陪审团定理的边界</span>
+          </div>
+          <p class="theory-desc" id="theoryText">
+            当个体误差完全独立时，多数表决将指数级压低错误率；但若基模型共享相同的特征偏见或数据盲区（ρ > 0），错误会“同频共振”，集成无法纠正集体认同的假象。
+          </p>
+        </div>
+      </section>
+
+      <!-- 右侧数据与图形展示 -->
+      <section class="view-panel min0" aria-label="100个测试样本上的预测矩阵与分布">
+        <div class="view-row-top min0">
+          <h2 class="view-title">验证样本预测矩阵 (100 样本 × 基分类器)</h2>
+          <div class="legend-bar min0">
+            <div class="legend-item"><span class="dot learner-correct"></span>个体预测正确</div>
+            <div class="legend-item"><span class="dot learner-wrong"></span>个体预测错误</div>
+            <div class="legend-item" style="margin-left:12px;"><span class="dot ens-pass"></span>表决过半正确</div>
+            <div class="legend-item"><span class="dot ens-fail"></span>表决过半错误 (集成失效)</div>
+          </div>
+        </div>
+
+        <!-- 预测结果栅格热力图 (HTML5 Canvas) -->
+        <div class="matrix-wrap min0">
+          <canvas id="matrixCanvas" class="cv-fill"></canvas>
+        </div>
+
+        <!-- 下方统计划分 -->
+        <div class="bottom-analysis min0">
+          <!-- 错误投票分布直方图 -->
+          <div class="dist-chart-box min0">
+            <div class="sub-head">
+              <span>样本中「错误模型数」频数分布</span>
+              <span id="failThresholdLabel">超过 11 个即集成错误</span>
+            </div>
+            <div class="dist-canvas-wrap min0">
+              <canvas id="distCanvas" class="cv-fill"></canvas>
+            </div>
+          </div>
+
+          <!-- 理论与实测指标对比 -->
+          <div class="comparison-box min0">
+            <div class="sub-head">
+              <span>集成效果关键指标</span>
+              <span id="ensVerdict">稳定性良好</span>
+            </div>
+            <div class="comparison-content min0">
+              <div class="comp-row">
+                <span class="comp-label">集体犯错样本数 (≥过半)</span>
+                <span style="display:flex; align-items:center;">
+                  <span class="comp-val" id="ensFailCount" style="color:var(--aggregate);">12 / 100</span>
+                  <div class="comp-bar-bg"><div class="comp-bar-fill" id="ensFailBar" style="background:var(--aggregate); width:12%;"></div></div>
+                </span>
+              </div>
+              <div class="comp-row">
+                <span class="comp-label">相关性致损失增益</span>
+                <span class="comp-val" id="gainLostVal" style="color:var(--muted);">-8.4%</span>
+              </div>
+              <div class="comp-row">
+                <span class="comp-label">错误方差膨胀系数</span>
+                <span class="comp-val" id="varFactorVal" style="color:var(--learner);">1.85×</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // -------------------------------------------------------------
+      // 常量与状态设计 (符合契约，带固定伪随机数生成器确保可复现)
+      // -------------------------------------------------------------
+      const NUM_SAMPLES = 100;
+      
+      // 线性同余随机发生器，用于生成固定种子随机数
+      let seed = 42;
+      function random() {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+      }
+      // Box-Muller 标准正态分布采样
+      function randn() {
+        let u = 0, v = 0;
+        while (u === 0) u = random();
+        while (v === 0) v = random();
+        return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+      }
+
+      // 核心交互状态
+      const state = {
+        rho: 0.25,        // 错误相关系数
+        M: 21,            // 基模型数量
+        p: 0.65,          // 基模型平均准确率 (错误率 q = 1 - p)
+        sampleSeed: 101,  // 样本模拟随机种子
+        // 衍生计算结果
+        predictions: [],  // [NUM_SAMPLES][M] 0=错, 1=对
+        errorCounts: [],  // [NUM_SAMPLES] 错误模型数
+        ensCorrect: [],   // [NUM_SAMPLES] 集成是否正确
+        ensAcc: 0,        // 集成准确率
+        avgIndAcc: 0,     // 模拟单体准确率
+        indepTheoAcc: 0,  // 独立理论准确率
+      };
+
+      // DOM 句柄
+      const ui = {
+        rhoSlider: document.getElementById("rhoSlider"),
+        rhoVal: document.getElementById("rhoVal"),
+        mSlider: document.getElementById("mSlider"),
+        mVal: document.getElementById("mVal"),
+        pSlider: document.getElementById("pSlider"),
+        pVal: document.getElementById("pVal"),
+        presetIndep: document.getElementById("presetIndep"),
+        presetMild: document.getElementById("presetMild"),
+        presetHigh: document.getElementById("presetHigh"),
+        resampleBtn: document.getElementById("resampleBtn"),
+        indAccReadout: document.getElementById("indAccReadout"),
+        ensAccReadout: document.getElementById("ensAccReadout"),
+        gainReadout: document.getElementById("gainReadout"),
+        theoryText: document.getElementById("theoryText"),
+        failThresholdLabel: document.getElementById("failThresholdLabel"),
+        ensVerdict: document.getElementById("ensVerdict"),
+        ensFailCount: document.getElementById("ensFailCount"),
+        ensFailBar: document.getElementById("ensFailBar"),
+        gainLostVal: document.getElementById("gainLostVal"),
+        varFactorVal: document.getElementById("varFactorVal"),
+        matrixCanvas: document.getElementById("matrixCanvas"),
+        distCanvas: document.getElementById("distCanvas")
+      };
+
+      // -------------------------------------------------------------
+      // 潜变量高斯阈值模型 (Gaussian Latent Factor Model) 产生真实相关错误
+      // 设定模型误差由两部分驱动：
+      //   Z_i = sqrt(rho) * S_common + sqrt(1 - rho) * E_ij
+      // 若 Z_i > 阈值 T，则该基学习器在样本 i 上犯错。
+      // 这样个体准确率保持为 p，且学习器间的误差相关性严格由 rho 调制。
+      // -------------------------------------------------------------
+      // 标准正态累积分布逆函数逼近 (Rational approximation)
+      function probit(p) {
+        if (p <= 0) return -5;
+        if (p >= 1) return 5;
+        // Abramowitz and Stegun 近似
+        const a1 = -39.69683028665376, a2 = 220.9460984245205, a3 = -275.9285104469687;
+        const a4 = 138.3577518672690, a5 = -30.66479806614716, a6 = 2.506628277459239;
+        const b1 = -54.47609879822406, b2 = 161.5858368580409, b3 = -155.6989798598866;
+        const b4 = 66.80131188771972, b5 = -13.28068155288572;
+        const c1 = -0.007784894002430293, c2 = -0.3223964580411365, c3 = -2.400758277161838;
+        const c4 = -2.549732539343734, c5 = 4.374664141464968, c6 = 2.938163982698783;
+        const d1 = 0.007784695709041462, d2 = 0.3224671290700398, d3 = 2.445134137142996, d4 = 3.754408661907416;
+        const q = p - 0.5;
+        if (Math.abs(q) <= 0.425) {
+          const r = 0.180625 - q * q;
+          return q * (((((a6 * r + a5) * r + a4) * r + a3) * r + a2) * r + a1) /
+                 (((((b5 * r + b4) * r + b3) * r + b2) * r + b1) * r + 1);
+        }
+        const r = q < 0 ? p : 1 - p;
+        const s = Math.log(-Math.log(r));
+        let x = c1 + s * (c2 + s * (c3 + s * (c4 + s * (c5 + s * c6))));
+        x = x / (1 + s * (d1 + s * (d2 + s * (d3 + s * d4))));
+        return q < 0 ? -x : x;
+      }
+
+      // 二项分布独立情况下的多数表决理论准确率
+      function calcIndependentEnsemble(M, p) {
+        const maj = Math.floor(M / 2) + 1;
+        let acc = 0;
+        // 组合数计算
+        function comb(n, k) {
+          if (k < 0 || k > n) return 0;
+          if (k === 0 || k === n) return 1;
+          let c = 1;
+          for (let i = 1; i <= k; i++) c = (c * (n - (k - i))) / i;
+          return c;
+        }
+        for (let k = maj; k <= M; k++) {
+          acc += comb(M, k) * Math.pow(p, k) * Math.pow(1 - p, M - k);
+        }
+        return acc;
+      }
+
+      function runSimulation() {
+        seed = state.sampleSeed;
+        const q = 1 - state.p; // 单体错误率
+        // 潜变量阈值：当潜变量 > threshold 时判定为“预测错误”
+        // P(Z > T) = q => P(Z <= T) = 1 - q = p => T = probit(p)
+        const threshold = probit(state.p);
+        const sqrtRho = Math.sqrt(state.rho);
+        const sqrtOneMinusRho = Math.sqrt(Math.max(0, 1 - state.rho));
+
+        const predictions = [];
+        const errorCounts = [];
+        const ensCorrect = [];
+        let totalCorrectVotes = 0;
+        let ensCorrectTotal = 0;
+        const majorityThreshold = Math.floor(state.M / 2) + 1;
+
+        for (let i = 0; i < NUM_SAMPLES; i++) {
+          // 每个样本的共有困难度/盲区共因子 S_common
+          const sCommon = randn();
+          const row = [];
+          let sampleErrors = 0;
+
+          for (let j = 0; j < state.M; j++) {
+            const eIndiv = randn();
+            const z = sqrtRho * sCommon + sqrtOneMinusRho * eIndiv;
+            // z > threshold 为错误(0)，否则为正确(1)
+            const isCorrect = z <= threshold ? 1 : 0;
+            row.push(isCorrect);
+            if (isCorrect) totalCorrectVotes++;
+            else sampleErrors++;
+          }
+          predictions.push(row);
+          errorCounts.push(sampleErrors);
+          const isEnsCorrect = (state.M - sampleErrors) >= majorityThreshold ? 1 : 0;
+          ensCorrect.push(isEnsCorrect);
+          if (isEnsCorrect) ensCorrectTotal++;
+        }
+
+        state.predictions = predictions;
+        state.errorCounts = errorCounts;
+        state.ensCorrect = ensCorrect;
+        state.ensAcc = ensCorrectTotal / NUM_SAMPLES;
+        state.avgIndAcc = totalCorrectVotes / (NUM_SAMPLES * state.M);
+        state.indepTheoAcc = calcIndependentEnsemble(state.M, state.p);
+      }
+
+      // -------------------------------------------------------------
+      // 绘图与界面更新
+      // -------------------------------------------------------------
+      let matrixCtx = null;
+      let distCtx = null;
+
+      function renderMatrix(ctx) {
+        const c = ctx || matrixCtx;
+        if (!c || !c.canvas) return;
+        const cv = c.canvas;
+        const w = cv.offsetWidth || cv.width || 800;
+        const h = cv.offsetHeight || cv.height || 360;
+        c.clearRect(0, 0, w, h);
+
+        const majThreshold = Math.floor(state.M / 2) + 1;
+        const rowH = h / NUM_SAMPLES;
+        // 左边为主矩阵，最右侧留出一列显示“最终集成裁决”
+        const ensColW = 38;
+        const matrixW = w - ensColW - 14;
+        const colW = matrixW / state.M;
+
+        // 绘制各基分类器在各样本上的点
+        for (let i = 0; i < NUM_SAMPLES; i++) {
+          const y = i * rowH;
+          const row = state.predictions[i];
+          const isFail = state.ensCorrect[i] === 0;
+
+          // 若集成在该样本失效，整行背景加淡淡警示底色
+          if (isFail) {
+            c.fillStyle = "rgba(182, 59, 36, 0.08)";
+            c.fillRect(0, y, matrixW, rowH);
+          }
+
+          for (let j = 0; j < state.M; j++) {
+            const x = j * colW;
+            const correct = row[j] === 1;
+            c.fillStyle = correct ? "#5a8cb8" : "#d97868";
+            // 留下 1px 细微网格间距
+            c.fillRect(x + 0.5, y + 0.5, Math.max(1, colW - 1), Math.max(1, rowH - 1));
+          }
+
+          // 最右侧一列：集成多数表决结果条
+          const ensX = matrixW + 12;
+          c.fillStyle = isFail ? "#B63B24" : "#2E6A45";
+          c.fillRect(ensX, y + 0.5, ensColW, Math.max(1, rowH - 1));
+        }
+
+        // 绘制表决列标题说明线
+        c.strokeStyle = "#D7E1E8";
+        c.lineWidth = 1.5;
+        c.beginPath();
+        c.moveTo(matrixW + 6, 0);
+        c.lineTo(matrixW + 6, h);
+        c.stroke();
+      }
+
+      function renderDist(ctx) {
+        const c = ctx || distCtx;
+        if (!c || !c.canvas) return;
+        const cv = c.canvas;
+        const w = cv.offsetWidth || cv.width || 400;
+        const h = cv.offsetHeight || cv.height || 120;
+        c.clearRect(0, 0, w, h);
+
+        const padLeft = 32;
+        const padRight = 14;
+        const padBottom = 24;
+        const padTop = 10;
+        const chartW = w - padLeft - padRight;
+        const chartH = h - padTop - padBottom;
+
+        // 统计错误模型数的频数分布 (0 到 M)
+        const hist = new Array(state.M + 1).fill(0);
+        for (let i = 0; i < NUM_SAMPLES; i++) {
+          hist[state.errorCounts[i]]++;
+        }
+        const maxFreq = Math.max(10, Math.max(...hist));
+
+        const barW = chartW / (state.M + 1);
+        const failThreshold = Math.floor(state.M / 2) + 1; // 错误数 >= failThreshold 时集成错误
+
+        // 背景阈值分界线
+        const threshX = padLeft + failThreshold * barW;
+        c.fillStyle = "rgba(182, 59, 36, 0.08)";
+        c.fillRect(threshX, padTop, chartW - (threshX - padLeft), chartH);
+
+        // 虚线分割线
+        c.strokeStyle = "#B63B24";
+        c.lineWidth = 1.5;
+        c.setLineDash([4, 4]);
+        c.beginPath();
+        c.moveTo(threshX, padTop);
+        c.lineTo(threshX, padTop + chartH);
+        c.stroke();
+        c.setLineDash([]);
+
+        // 绘制各柱子
+        for (let errCount = 0; errCount <= state.M; errCount++) {
+          const count = hist[errCount];
+          const bH = (count / maxFreq) * chartH;
+          const x = padLeft + errCount * barW + 1;
+          const y = padTop + chartH - bH;
+          const isFail = errCount >= failThreshold;
+
+          c.fillStyle = isFail ? "#B63B24" : "#275D91";
+          c.fillRect(x, y, Math.max(2, barW - 2), bH);
+
+          // 刻度标号 (隔若干显示，避免拥挤)
+          if (errCount === 0 || errCount === failThreshold || errCount === state.M || (state.M > 20 && errCount % 5 === 0)) {
+            c.fillStyle = isFail ? "#B63B24" : "#536777";
+            c.font = "11px sans-serif";
+            c.textAlign = "center";
+            c.fillText(errCount, x + barW / 2, h - 6);
+          }
+        }
+
+        // Y 轴基线
+        c.strokeStyle = "#D7E1E8";
+        c.lineWidth = 1;
+        c.beginPath();
+        c.moveTo(padLeft, padTop + chartH);
+        c.lineTo(w - padRight, padTop + chartH);
+        c.stroke();
+
+        // Y 轴刻度标注
+        c.fillStyle = "#536777";
+        c.font = "11px sans-serif";
+        c.textAlign = "right";
+        c.fillText("0", padLeft - 6, padTop + chartH);
+        c.fillText(maxFreq.toString(), padLeft - 6, padTop + 10);
+      }
+
+      function updateUI() {
+        const failThreshold = Math.floor(state.M / 2) + 1;
+        const gain = (state.ensAcc - state.avgIndAcc) * 100;
+        const gainTheoIndep = (state.indepTheoAcc - state.p) * 100;
+        const gainLost = Math.max(0, gainTheoIndep - gain);
+        // 方差膨胀因子 approx = 1 + (M - 1) * rho
+        const varInflation = 1 + (state.M - 1) * state.rho;
+
+        ui.rhoVal.textContent = state.rho.toFixed(2);
+        ui.mVal.textContent = state.M + " 个";
+        ui.pVal.textContent = Math.round(state.p * 100) + "%";
+
+        ui.indAccReadout.textContent = (state.avgIndAcc * 100).toFixed(1) + "%";
+        ui.ensAccReadout.textContent = (state.ensAcc * 100).toFixed(1) + "%";
+        ui.gainReadout.textContent = (gain >= 0 ? "+" : "") + gain.toFixed(1) + "%";
+        ui.gainReadout.style.color = gain >= 15 ? "var(--correct)" : (gain >= 5 ? "var(--focus)" : "var(--aggregate)");
+
+        ui.failThresholdLabel.textContent = `错误模型数 ≥ ${failThreshold} 则多数表决失效`;
+
+        const failCount = NUM_SAMPLES - Math.round(state.ensAcc * NUM_SAMPLES);
+        ui.ensFailCount.textContent = `${failCount} / 100`;
+        ui.ensFailBar.style.width = `${failCount}%`;
+        ui.gainLostVal.textContent = `-${gainLost.toFixed(1)}%`;
+        ui.varFactorVal.textContent = `${varInflation.toFixed(2)}×`;
+
+        // 动态诊断文案
+        if (state.rho === 0) {
+          ui.ensVerdict.textContent = "理想独立 (增益最大化)";
+          ui.theoryText.textContent = "各分类器各自独立犯错，错误呈二项分布对称收拢。绝大多数样本仅有极少数模型失误，表决几乎消除了所有随机偶发错误。";
+        } else if (state.rho <= 0.3) {
+          ui.ensVerdict.textContent = "轻度相关 (保留主要增益)";
+          ui.theoryText.textContent = "现实中通过特征子采样（如随机森林）可将相关性压低在此时。虽然部分困难样本引发多模型同时出错，但多数表决仍有显著提分收益。";
+        } else if (state.rho <= 0.6) {
+          ui.ensVerdict.textContent = "显著相关 (瓶颈凸显)";
+          ui.theoryText.textContent = "基模型开始出现“抱团犯错”。直方图中右侧错误尾部明显变厚，即便增加再多的模型数量（M），表决准确率也很难突破该瓶颈。";
+        } else {
+          ui.ensVerdict.textContent = "严重同质 (多数表决失效)";
+          ui.theoryText.textContent = "模型之间高度同质化，一旦出错便集体沦陷。多数表决退化为单个模型的复读机，不仅无法降方差，反而带来不必要的计算开销。";
+        }
+
+        // 预设按钮激活态
+        ui.presetIndep.setAttribute("aria-pressed", String(Math.abs(state.rho - 0.0) < 0.01));
+        ui.presetMild.setAttribute("aria-pressed", String(Math.abs(state.rho - 0.25) < 0.01));
+        ui.presetHigh.setAttribute("aria-pressed", String(Math.abs(state.rho - 0.75) < 0.01));
+
+        // 重新渲染 Canvas
+        if (matrixCtx) renderMatrix(matrixCtx);
+        if (distCtx) renderDist(distCtx);
+      }
+
+      function recalculate() {
+        runSimulation();
+        updateUI();
+      }
+
+      // -------------------------------------------------------------
+      // 事件监听与初始化
+      // -------------------------------------------------------------
+      ui.rhoSlider.addEventListener("input", e => {
+        state.rho = parseFloat(e.target.value);
+        recalculate();
+      });
+
+      ui.mSlider.addEventListener("input", e => {
+        state.M = parseInt(e.target.value, 10);
+        recalculate();
+      });
+
+      ui.pSlider.addEventListener("input", e => {
+        state.p = parseInt(e.target.value, 10) / 100;
+        recalculate();
+      });
+
+      // 预设场景切换
+      [ui.presetIndep, ui.presetMild, ui.presetHigh].forEach(btn => {
+        btn.addEventListener("click", () => {
+          const rho = parseFloat(btn.dataset.rho);
+          state.rho = rho;
+          ui.rhoSlider.value = rho;
+          recalculate();
+        });
+      });
+
+      // 重新抽样测试集
+      ui.resampleBtn.addEventListener("click", () => {
+        state.sampleSeed = Math.floor(Math.random() * 100000);
+        recalculate();
+      });
+
+      // Deck 引擎初始化与高分屏画布自适应
+      Deck.init({ index: 6, total: 27, keys: false });
+
+      // 启动初始计算与渲染
+      runSimulation();
+
+      matrixCtx = Deck.autofit(ui.matrixCanvas, renderMatrix);
+      distCtx = Deck.autofit(ui.distCanvas, renderDist);
+
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

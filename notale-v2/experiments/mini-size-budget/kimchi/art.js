@@ -1,0 +1,10 @@
+// Original p5 fields for the 1996 opening and taste chapters, sharing only duplicated setup.
+export function artwork(chapter,w,h,host){
+ const intro=chapter===1,reduced=matchMedia('(prefers-reduced-motion:reduce)').matches;
+ let stage=0,cellSize=60,ballX=20,ballY=h/2,xVel=rand(-40,40),yVel=rand(-40,40),mx=random(w),my=random(h),diagonal=Math.sqrt(w*w+h*h),counter=0,randomizer=rand(-20,20),loaded;
+ function random(max){return Math.floor(Math.random()*max)}function rand(min,max){return Math.floor(Math.random()*(max-min+1)+min)}
+ function velocity(position,target,previous){let d=target-position;return d?Math.sign(d)*Math.sqrt(Math.abs(d))*6:previous}
+ const sketch=p=>{let img;p.setup=()=>{p.createCanvas(w,h);p.background(0);p.noStroke();if(reduced)p.noLoop();img=p.loadImage('assets/kimchi/'+(intro?'bg-1.jpg':'kimchibg.png'),i=>{img=i;loaded=true;if(reduced)p.redraw(40)});if(!intro)p.frameRate(20)};
+ p.draw=()=>{if(!img||img.width<2)return;p.background(intro?[0,0,0,2]:[100,0,40,10]);for(let x=0;x<w/cellSize;x++){for(let y=0;y<h/cellSize;y++){let xCoord=x*cellSize/w*img.width,yCoord=y*cellSize/h*img.height,bx=ballX+Math.sin(intro?counter*4:counter/10)*(intro?40:200),by=ballY+(intro?Math.cos(counter*4)*40:0),a=xCoord-bx,b=yCoord-by,dist=Math.sqrt(a*a+b*b)/diagonal;if(yCoord>img.width)yCoord=img.width;let c=img.get(xCoord,yCoord);if(intro){cellSize=p.constrain(w/20+Math.round(dist*20),30,200);c[0]*=.7;c[1]*=.7;c[2]*=.7;c[3]=stage===0?0:8;p.fill(c);let r=dist*90*p.random(.5,1);p.ellipse(x*cellSize,y*cellSize,cellSize*1.2+r,cellSize*1.2+r)}else{cellSize=w/40+Math.round(dist*20);c[3]=10;p.fill(c);let x1=x*cellSize,y1=y*cellSize,r=dist*90*p.random(.5,1),r2=dist*90*p.random(.5,1),r3=dist*90*p.random(.5,1);p.quad(x1-r2,y1-r3,x1+cellSize-r2,y1-r3,x1+r*2,y1+cellSize,x1-r,y1+cellSize+r)}}}counter++;xVel=velocity(ballX,mx,xVel);yVel=velocity(ballY,my,yVel);ballX+=xVel;ballY+=yVel};};
+ const instance=new window.p5(sketch,host);return{next(n){stage=n;mx=random(w);my=random(h);xVel=rand(-90,90);yVel=rand(-90,90)},redraw(){if(reduced&&loaded)instance.redraw(40)},destroy(){instance.remove()}};
+}

@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      position: relative;
+    }
+
+    /* 顶部标题与论点 */
+    .header-zone {
+      margin-top: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .page-title {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .page-thesis {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-tight);
+    }
+
+    /* 交互切换器：分类任务与回归任务 */
+    .task-toggle {
+      margin-top: 14px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .toggle-btn {
+      background: #d8e2e7;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      padding: 6px 16px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast);
+    }
+    .toggle-btn[aria-pressed="true"] {
+      background: var(--model);
+      border-color: var(--model);
+      color: #fff;
+      font-weight: 500;
+    }
+
+    /* 三栏主体流程布局 */
+    .workflow-grid {
+      margin-top: 20px;
+      width: 100%;
+      height: 650px;
+      display: grid;
+      grid-template-columns: 320px 80px 380px 80px 480px;
+      align-items: center;
+    }
+
+    /* 阶段一：重采样 */
+    .col-resample {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      justify-content: space-between;
+      padding-bottom: 20px;
+      box-sizing: border-box;
+    }
+    .stage-label {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      color: var(--text);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .stage-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      margin: 0 0 16px 0;
+    }
+
+    .raw-data-card {
+      background: #dfe7ec;
+      border-top: 3px solid var(--model);
+      padding: 12px 14px;
+      margin-bottom: 20px;
+    }
+    .raw-data-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+    }
+    .sample-pill-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .sample-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-tick);
+      font-family: var(--font-display);
+      background: #c7d5de;
+      color: var(--text);
+      box-sizing: border-box;
+    }
+    .sample-dot.dup {
+      background: var(--model);
+      color: #fff;
+    }
+
+    .subsets-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .subset-row {
+      background: #f1f5f7;
+      border: 1px dashed var(--rule);
+      padding: 8px 12px;
+      border-radius: 3px;
+    }
+    .subset-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    /* 阶段二：并行训练独立基模型 */
+    .col-models {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      justify-content: space-between;
+      padding-bottom: 20px;
+      box-sizing: border-box;
+    }
+    .model-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      margin-top: 10px;
+    }
+    .model-card {
+      background: #ffffff;
+      border: 1px solid var(--rule);
+      border-top: 3px solid var(--model);
+      padding: 12px 16px;
+      border-radius: 4px;
+      box-shadow: 0 2px 6px rgba(20,38,48,0.04);
+      position: relative;
+    }
+    .model-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+    .model-name {
+      font-family: var(--font-display);
+      font-size: var(--fs-body);
+      color: var(--text);
+    }
+    .model-tag {
+      font-size: var(--fs-tick);
+      color: var(--model);
+      background: #e1edf3;
+      padding: 2px 6px;
+      border-radius: 2px;
+    }
+    .model-pred {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      background: #f7fafb;
+      padding: 6px 10px;
+      border-radius: 3px;
+    }
+    .pred-val {
+      font-family: var(--font-display);
+      font-size: var(--fs-lead);
+      color: var(--model);
+    }
+
+    /* 连接线与导向箭头区 */
+    .col-arrow {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .flow-svg {
+      width: 100%;
+      height: 520px;
+    }
+
+    /* 阶段三：聚合输出与决策 */
+    .col-aggregate {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      justify-content: space-between;
+      padding-bottom: 20px;
+      box-sizing: border-box;
+    }
+    .ensemble-panel {
+      background: #ffffff;
+      border: 2px solid var(--model);
+      padding: 24px;
+      border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(23,98,142,0.1);
+    }
+    .ensemble-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--model);
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .ensemble-rule {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: var(--lh-copy);
+      margin-bottom: 16px;
+      background: #edf5f9;
+      padding: 10px 14px;
+      border-radius: 4px;
+    }
+    .ensemble-tally {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .tally-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-body);
+    }
+    .tally-bar-bg {
+      flex: 1;
+      height: 12px;
+      background: #e0e7ec;
+      border-radius: 6px;
+      margin: 0 14px;
+      overflow: hidden;
+    }
+    .tally-bar-fill {
+      height: 100%;
+      background: var(--model);
+      border-radius: 6px;
+      transition: width var(--motion-step) var(--ease-out);
+    }
+    .ensemble-result-box {
+      border-top: 1px solid var(--rule);
+      padding-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .res-label {
+      font-size: var(--fs-body);
+      color: var(--text);
+    }
+    .res-val {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      color: var(--focus);
+      font-weight: 700;
+    }
+
+    .key-takeaway {
+      background: #dfe7ec;
+      padding: 14px 18px;
+      border-radius: 4px;
+      border-top: 3px solid var(--focus);
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--text);
+      margin-top: 16px;
+    }
+
+    /* 辅助徽章与标注 */
+    .parallel-tag {
+      display: inline-block;
+      font-size: var(--fs-tick);
+      color: #17628e;
+      background: #d4e5ee;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-weight: 500;
+      margin-left: 6px;
+    }
+  </style>
+</head>
+<body data-page="10" data-total="32">
+  <main id="stage">
+    <!-- 顶部标题 -->
+    <header class="header-zone">
+      <h1 class="page-title">Bagging 的完整流程</h1>
+      <p class="page-thesis">重采样构造差异 · 独立并行训练 · 最终多数表决或均值聚合</p>
+    </header>
+
+    <!-- 交互切换：任务类型 -->
+    <div class="task-toggle" role="radiogroup" aria-label="学习任务类型">
+      <button class="toggle-btn" id="btn-cls" aria-pressed="true" data-mode="cls">分类：多数表决</button>
+      <button class="toggle-btn" id="btn-reg" aria-pressed="false" data-mode="reg">回归：均值聚合</button>
+    </div>
+
+    <!-- 流程全景 -->
+    <div class="workflow-grid">
+      <!-- 步骤 1：Bootstrap 重采样 -->
+      <section class="col-resample">
+        <div>
+          <div class="stage-label">
+            <span>有放回重采样</span>
+          </div>
+          <p class="stage-desc">抽取 B 个等规模子集，允许样本重复。</p>
+        </div>
+
+        <div>
+          <div class="raw-data-card">
+            <div class="raw-data-title">
+              <span>原始训练集 D (N=5)</span>
+              <span style="color:var(--muted);font-weight:normal;">全量基准</span>
+            </div>
+            <div class="sample-pill-row">
+              <div class="sample-dot">1</div>
+              <div class="sample-dot">2</div>
+              <div class="sample-dot">3</div>
+              <div class="sample-dot">4</div>
+              <div class="sample-dot">5</div>
+            </div>
+          </div>
+
+          <div class="subsets-container">
+            <div class="subset-row">
+              <div class="subset-head"><span>子集 D₁</span><span>独立占比 ~63.2%</span></div>
+              <div class="sample-pill-row">
+                <div class="sample-dot dup">1</div>
+                <div class="sample-dot dup">1</div>
+                <div class="sample-dot">2</div>
+                <div class="sample-dot">4</div>
+                <div class="sample-dot">5</div>
+              </div>
+            </div>
+            <div class="subset-row">
+              <div class="subset-head"><span>子集 D₂</span><span>独立占比 ~63.2%</span></div>
+              <div class="sample-pill-row">
+                <div class="sample-dot">2</div>
+                <div class="sample-dot dup">3</div>
+                <div class="sample-dot dup">3</div>
+                <div class="sample-dot">4</div>
+                <div class="sample-dot">5</div>
+              </div>
+            </div>
+            <div class="subset-row">
+              <div class="subset-head"><span>子集 D₃</span><span>独立占比 ~63.2%</span></div>
+              <div class="sample-pill-row">
+                <div class="sample-dot dup">1</div>
+                <div class="sample-dot dup">2</div>
+                <div class="sample-dot dup">2</div>
+                <div class="sample-dot">3</div>
+                <div class="sample-dot">5</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:var(--fs-tick);color:var(--muted);">深色：重复样本</div>
+      </section>
+
+      <!-- 连接线：阶段 1 -> 阶段 2 -->
+      <div class="col-arrow">
+        <svg class="flow-svg" viewBox="0 0 100 520">
+          <defs>
+            <marker id="arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#17628E" />
+            </marker>
+          </defs>
+          <!-- 三条分流连接线 -->
+          <path d="M 10,130 C 50,130 50,90 90,90" fill="none" stroke="#17628E" stroke-width="2" marker-end="url(#arr)" />
+          <path d="M 10,260 C 50,260 50,260 90,260" fill="none" stroke="#17628E" stroke-width="2" marker-end="url(#arr)" />
+          <path d="M 10,390 C 50,390 50,430 90,430" fill="none" stroke="#17628E" stroke-width="2" marker-end="url(#arr)" />
+          <text x="40" y="240" fill="#50616B" font-size="13" text-anchor="middle">并行输入</text>
+        </svg>
+      </div>
+
+      <!-- 步骤 2：独立拟合基学习器 -->
+      <section class="col-models">
+        <div>
+          <div class="stage-label">
+            <span>独立并行训练</span>
+            <span class="parallel-tag">无依赖</span>
+          </div>
+          <p class="stage-desc">在各子集拟合同构基模型，无串行通信。</p>
+        </div>
+
+        <div class="model-cards">
+          <div class="model-card">
+            <div class="model-card-header">
+              <span class="model-name">基模型 1 · h₁(x)</span>
+              <span class="model-tag">决策树</span>
+            </div>
+            <div class="model-pred">
+              <span>预测：</span>
+              <span class="pred-val" id="pred-m1">+1 (正类)</span>
+            </div>
+          </div>
+
+          <div class="model-card">
+            <div class="model-card-header">
+              <span class="model-name">基模型 2 · h₂(x)</span>
+              <span class="model-tag">决策树</span>
+            </div>
+            <div class="model-pred">
+              <span>预测：</span>
+              <span class="pred-val" id="pred-m2">+1 (正类)</span>
+            </div>
+          </div>
+
+          <div class="model-card">
+            <div class="model-card-header">
+              <span class="model-name">基模型 3 · h₃(x)</span>
+              <span class="model-tag">决策树</span>
+            </div>
+            <div class="model-pred">
+              <span>预测：</span>
+              <span class="pred-val" id="pred-m3">-1 (负类)</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:var(--fs-tick);color:var(--muted);">单模型易波动，聚合显著平抑方差</div>
+      </section>
+
+      <!-- 连接线：阶段 2 -> 阶段 3（汇聚到一起） -->
+      <div class="col-arrow">
+        <svg class="flow-svg" viewBox="0 0 100 520">
+          <!-- 汇聚收束粗线：符合主题契约中“多条等重蓝线汇成一条粗线”的设计签名 -->
+          <path d="M 10,90 C 50,90 50,260 90,260" fill="none" stroke="#17628E" stroke-width="2" />
+          <path d="M 10,260 L 90,260" fill="none" stroke="#17628E" stroke-width="2" />
+          <path d="M 10,430 C 50,430 50,260 90,260" fill="none" stroke="#17628E" stroke-width="2" />
+          <!-- 汇聚点粗轴 -->
+          <circle cx="90" cy="260" r="5" fill="#17628E" />
+          <path d="M 90,260 L 100,260" fill="none" stroke="#17628E" stroke-width="4" marker-end="url(#arr)" />
+          <text x="40" y="235" fill="#50616B" font-size="13" text-anchor="middle">汇聚</text>
+        </svg>
+      </div>
+
+      <!-- 步骤 3：聚合输出 -->
+      <section class="col-aggregate">
+        <div>
+          <div class="stage-label">
+            <span>聚合得出决策</span>
+          </div>
+          <p class="stage-desc" id="agg-desc">汇集全部基模型预测，统计规则输出结果。</p>
+        </div>
+
+        <div class="ensemble-panel">
+          <div class="ensemble-title">
+            <span id="ensemble-mode-title">分类聚合：多数表决</span>
+          </div>
+          <div class="ensemble-rule" id="ensemble-formula">
+            H(x) = sign( ∑ hᵢ(x) )
+          </div>
+
+          <div class="ensemble-tally" id="tally-box">
+            <div class="tally-row">
+              <span style="width:70px;">类别 +1:</span>
+              <div class="tally-bar-bg"><div class="tally-bar-fill" id="bar-pos" style="width: 66.7%;"></div></div>
+              <span id="count-pos" style="width:50px;text-align:right;font-weight:bold;">2 票</span>
+            </div>
+            <div class="tally-row">
+              <span style="width:70px;">类别 -1:</span>
+              <div class="tally-bar-bg"><div class="tally-bar-fill" id="bar-neg" style="width: 33.3%;"></div></div>
+              <span id="count-neg" style="width:50px;text-align:right;font-weight:bold;">1 票</span>
+            </div>
+          </div>
+
+          <div class="ensemble-result-box">
+            <span class="res-label">集成决策 H(x)：</span>
+            <span class="res-val" id="final-decision">+1 (正类)</span>
+          </div>
+        </div>
+
+        <div class="key-takeaway" id="takeaway-text">
+          各基模型权重均等，多数表决消除个别模型的误判。
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <aside class="notes" hidden>
+    各位同学，这一页我们梳理 Bagging（Bootstrap Aggregating）的三个完整执行步骤。
+    第一步是有放回抽样。从同一个训练集 D 中，我们独立重复抽样 B 次，产生 B 个规模相同但样本略有差异的子集。每个子集包含大约 63.2% 的原始独立样本，其余为重复样本。
+    第二步是独立并行训练。我们用同一个学习算法，在每个子集上独立拟合一棵决策树。请注意，“并行”是 Bagging 最关键的工程优势：模型之间没有任何先后次序，完全可以分配给不同 GPU 或线程同时训练。
+    第三步是聚合预测。当新样本到来时，每个基模型给出独立预测。若为分类任务，采用相对多数投票；若为回归任务，采用算术平均。单棵树很容易对训练扰动过拟合，但通过集成聚合，方差被大幅抹平。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+      Deck.init({ index: 10, total: 32 });
+
+      const btnCls = document.getElementById('btn-cls');
+      const btnReg = document.getElementById('btn-reg');
+      
+      const predM1 = document.getElementById('pred-m1');
+      const predM2 = document.getElementById('pred-m2');
+      const predM3 = document.getElementById('pred-m3');
+
+      const aggDesc = document.getElementById('agg-desc');
+      const modeTitle = document.getElementById('ensemble-mode-title');
+      const formula = document.getElementById('ensemble-formula');
+      const tallyBox = document.getElementById('tally-box');
+      const finalDecision = document.getElementById('final-decision');
+      const takeaway = document.getElementById('takeaway-text');
+
+      function setMode(mode) {
+        if (mode === 'cls') {
+          btnCls.setAttribute('aria-pressed', 'true');
+          btnReg.setAttribute('aria-pressed', 'false');
+
+          predM1.textContent = '+1 (正类)';
+          predM2.textContent = '+1 (正类)';
+          predM3.textContent = '-1 (负类)';
+
+          modeTitle.textContent = '分类聚合：多数表决';
+          formula.textContent = 'H(x) = argmax_y ∑ I(hᵢ(x) == y)';
+          aggDesc.textContent = '各模型投出标签，票数最多者胜出。';
+
+          tallyBox.innerHTML = `
+            <div class="tally-row">
+              <span style="width:70px;">类别 +1:</span>
+              <div class="tally-bar-bg"><div class="tally-bar-fill" style="width: 66.7%;"></div></div>
+              <span style="width:50px;text-align:right;font-weight:bold;">2 票</span>
+            </div>
+            <div class="tally-row">
+              <span style="width:70px;">类别 -1:</span>
+              <div class="tally-bar-bg"><div class="tally-bar-fill" style="width: 33.3%;"></div></div>
+              <span style="width:50px;text-align:right;font-weight:bold;">1 票</span>
+            </div>
+          `;
+
+          finalDecision.textContent = '+1 (正类)';
+          takeaway.textContent = '各基模型权重均等，多数表决消除个别模型的误判。';
+        } else {
+          btnCls.setAttribute('aria-pressed', 'false');
+          btnReg.setAttribute('aria-pressed', 'true');
+
+          predM1.textContent = '4.20';
+          predM2.textContent = '4.80';
+          predM3.textContent = '3.60';
+
+          modeTitle.textContent = '回归聚合：算术平均';
+          formula.textContent = 'H(x) = (1 / B) ∑ hᵢ(x)';
+          aggDesc.textContent = '计算基模型输出的算术均值，抹平波动。';
+
+          tallyBox.innerHTML = `
+            <div class="tally-row">
+              <span style="width:90px;">模型 1: 4.20</span>
+              <div class="tally-bar-bg"><div class="tally-bar-fill" style="width: 70%;"></div></div>
+            </div>
+            <div class="tally-row">
+              <span style="width:90px;">模型 2: 4.80</span>
+              <div class="tally-bar-bg"><div class="tally-bar-fill" style="width: 80%;"></div></div>
+            </div>
+            <div class="tally-row">
+              <span style="width:90px;">模型 3: 3.60</span>
+              <div class="tally-bar-bg"><div class="tally-bar-fill" style="width: 60%;"></div></div>
+            </div>
+          `;
+
+          finalDecision.textContent = '4.20';
+          takeaway.textContent = '算术均值抵消局部样本扰动，直接降低预测方差。';
+        }
+      }
+
+      btnCls.addEventListener('click', () => setMode('cls'));
+      btnReg.addEventListener('click', () => setMode('reg'));
+    })();
+  </script>
+</body>
+</html>

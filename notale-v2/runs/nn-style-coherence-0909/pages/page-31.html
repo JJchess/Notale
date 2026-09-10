@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ overflow:hidden; }
+
+  .layout{
+    position:absolute; inset:0;
+    padding:56px 72px 48px;
+    display:grid;
+    grid-template-rows:auto auto 1fr;
+    row-gap:22px;
+  }
+
+  header{ display:flex; flex-direction:column; gap:10px; }
+  header .nt-lead{ color:var(--muted); }
+
+  .setup{
+    display:flex;
+    align-items:baseline;
+    gap:36px;
+    padding-bottom:16px;
+    border-bottom:1px solid var(--line);
+  }
+  .setup .nt-equation{ font-size:26px; }
+  .setup .nt-note{ flex:1; padding-top:0; }
+
+  .body-grid{
+    display:grid;
+    grid-template-columns:1.5fr 1fr;
+    column-gap:48px;
+    min-height:0;
+  }
+  .body-grid > *{ min-height:0; }
+
+  .chart-col{ display:flex; flex-direction:column; min-height:0; }
+  .chart-col figure{ margin:0; flex:1; min-height:0; position:relative; }
+  .chart-col svg{ width:100%; height:100%; display:block; overflow:visible; }
+  .chart-caption{ margin-top:10px; display:flex; justify-content:space-between; gap:24px; }
+
+  .axis-label{ fill:var(--muted); font-family:var(--font-mono); font-size:13px; }
+  .axis-title{ fill:var(--muted); font-family:var(--font-sans); font-size:14px; font-weight:600; }
+
+  .track-label{ font-family:var(--font-mono); font-weight:700; font-size:16px; }
+  .track-label[data-tone="vanish"]{ fill:var(--stable); }
+  .track-label[data-tone="explode"]{ fill:var(--accent); }
+
+  .value-tag{
+    font-family:var(--font-mono); font-size:13px; font-weight:600;
+    text-anchor:middle;
+  }
+  .value-tag[data-tone="vanish"]{ fill:var(--stable); }
+  .value-tag[data-tone="explode"]{ fill:var(--accent); }
+
+  .chain-col{
+    display:flex; flex-direction:column; gap:22px;
+    padding-left:8px; border-left:1px solid var(--line);
+  }
+  .chain-block{ display:flex; flex-direction:column; gap:8px; }
+  .chain-head{
+    display:flex; align-items:center; gap:10px;
+  }
+  .chain-dot{ width:12px; height:12px; flex:0 0 auto; }
+  .chain-dot[data-tone="vanish"]{ background:var(--stable); }
+  .chain-dot[data-tone="explode"]{ background:var(--accent); }
+  .chain-title{ font-size:var(--fs-label); font-weight:700; color:var(--text); }
+
+  .chain-equation{
+    font-family:var(--font-mono);
+    font-size:17px;
+    line-height:1.65;
+    font-variant-numeric:tabular-nums;
+    color:var(--text);
+    word-break:break-all;
+  }
+  .chain-equation[data-tone="vanish"] strong{ color:var(--stable); }
+  .chain-equation[data-tone="explode"] strong{ color:var(--accent); }
+  .chain-equation strong{ font-weight:800; }
+
+  .chain-note{ font-size:var(--fs-label); color:var(--muted); line-height:1.5; }
+
+  .rule-line{ margin:2px 0 0; }
+
+  .closing{
+    display:flex; align-items:flex-start; gap:16px;
+    margin-top:auto;
+    padding-top:16px;
+  }
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+  <div class="layout">
+
+    <header>
+      <span class="nt-kicker">RNN · 跨时间梯度</span>
+      <h1 class="nt-title">梯度连乘导致消失或爆炸</h1>
+      <p class="nt-lead">上一页把展开图当成深网络求梯度：同一个梯度要经过 t 个时间步的因子连乘才能传回最早的隐藏状态。因子略小于 1 时乘积迅速逼近 0；因子略大于 1 时乘积迅速失控。</p>
+    </header>
+
+    <div class="setup">
+      <p class="nt-equation">∂L/∂h₀ = ∂L/∂h₆ · <strong data-current="true">∏</strong><sub>t=1…6</sub> (∂h<sub>t</sub>/∂h<sub>t−1</sub>)</p>
+      <p class="nt-note">六个时间步、六个几乎相同的因子相乘。下方用两个教学简化数值：因子恒为 0.5（&lt;1）与恒为 1.5（&gt;1），对照连乘的两种命运。真实训练中因子每步不同、并非常数，但连乘的指数式趋势相同。</p>
+    </div>
+
+    <div class="body-grid">
+
+      <div class="chart-col">
+        <figure>
+          <svg id="chart" viewBox="0 0 900 560" role="img" aria-label="梯度连乘随回传步数变化的对数尺度折线图">
+          </svg>
+        </figure>
+        <div class="chart-caption">
+          <span class="nt-label">纵轴对数尺度：每格相差 10 倍，才能同时看清趋近于 0 与迅速变大的两条轨迹</span>
+          <span class="nt-label">横轴：t = 0（最近时间步）→ t = 6（回传到最早时间步）</span>
+        </div>
+      </div>
+
+      <div class="chain-col">
+        <div class="chain-block">
+          <div class="chain-head">
+            <span class="chain-dot" data-tone="vanish"></span>
+            <span class="chain-title">因子 0.5：梯度消失</span>
+          </div>
+          <p class="chain-equation" data-tone="vanish">0.5 → 0.25 → 0.125 → 0.0625 → 0.03125 → 0.0156 → <strong>0.0078</strong></p>
+          <p class="chain-note">六次连乘后只剩初始梯度的 0.78%。最早时间步几乎收不到任何更新信号——不是没有误差，是误差在传递途中被逐步磨平。</p>
+        </div>
+
+        <hr class="nt-rule rule-line">
+
+        <div class="chain-block">
+          <div class="chain-head">
+            <span class="chain-dot" data-tone="explode"></span>
+            <span class="chain-title">因子 1.5：梯度爆炸</span>
+          </div>
+          <p class="chain-equation" data-tone="explode">1.5 → 2.25 → 3.375 → 5.06 → 7.59 → 11.39 → <strong>17.09</strong></p>
+          <p class="chain-note">六次连乘后放大到初始梯度的 17 倍以上。参数更新的步子被这个放大系数撑大，训练容易在这一步之后突然震荡或发散。</p>
+        </div>
+
+        <hr class="nt-rule rule-line">
+
+        <p class="nt-note">两条链共享同一个结构：结果 = 因子<sup>t</sup>。因子是否偏离 1，决定连乘是收缩还是放大；序列越长，t 越大，偏离的后果被指数级放大。</p>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---- canonical data：教学简化数值，恒定因子 0.5 与 1.5，六步连乘 ----
+  var STEPS = 6;
+  var FACTORS = { vanish: 0.5, explode: 1.5 };
+  function chain(factor){
+    var arr = [1];
+    for (var t = 1; t <= STEPS; t++) arr.push(arr[t - 1] * factor);
+    return arr;
+  }
+  var series = {
+    vanish: chain(FACTORS.vanish),
+    explode: chain(FACTORS.explode)
+  };
+
+  // ---- geometry ----
+  var svg = document.getElementById("chart");
+  var W = 900, H = 560;
+  var padL = 78, padR = 40, padT = 26, padB = 56;
+  var plotW = W - padL - padR, plotH = H - padT - padB;
+
+  // log scale: y in [1e-3, 1e2] mapped across plotH ; use log10
+  var yMin = -3, yMax = 1.3; // log10 bounds, covers 0.0078 down and 17.09 up with margin
+  function xOf(t){ return padL + (t / STEPS) * plotW; }
+  function yOf(v){
+    var lg = Math.log10(v);
+    var amount = (lg - yMin) / (yMax - yMin);
+    return padT + plotH - amount * plotH;
+  }
+
+  function ns(tag){ return document.createElementNS("http://www.w3.org/2000/svg", tag); }
+
+  function build(){
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    // grid lines: horizontal at powers of ten
+    var powers = [-3,-2,-1,0,1];
+    powers.forEach(function(p){
+      var y = yOf(Math.pow(10, p));
+      var line = ns("line");
+      line.setAttribute("class", "nt-grid-line");
+      line.setAttribute("x1", padL); line.setAttribute("x2", W - padR);
+      line.setAttribute("y1", y); line.setAttribute("y2", y);
+      svg.appendChild(line);
+
+      var label = ns("text");
+      label.setAttribute("class", "axis-label");
+      label.setAttribute("x", padL - 12);
+      label.setAttribute("y", y + 4);
+      label.setAttribute("text-anchor", "end");
+      var val = Math.pow(10, p);
+      label.textContent = val >= 1 ? val.toFixed(0) : val.toFixed(3);
+      svg.appendChild(label);
+    });
+
+    // shared start point label (both chains begin at gradient ratio = 1)
+    var startX = xOf(0), startY = yOf(1);
+    var startLabel = ns("text");
+    startLabel.setAttribute("class", "value-tag");
+    startLabel.setAttribute("x", startX + 6);
+    startLabel.setAttribute("y", startY - 14);
+    startLabel.setAttribute("text-anchor", "start");
+    startLabel.style.fill = "var(--text)";
+    startLabel.textContent = "t=0：两条链共同起点 1.00";
+    svg.appendChild(startLabel);
+
+    // baseline at y=1 (initial gradient, unaffected)
+    var refY = yOf(1);
+    var refLine = ns("line");
+    refLine.setAttribute("x1", padL); refLine.setAttribute("x2", W - padR);
+    refLine.setAttribute("y1", refY); refLine.setAttribute("y2", refY);
+    refLine.setAttribute("stroke", "var(--line-strong)");
+    refLine.setAttribute("stroke-width", "1.5");
+    refLine.setAttribute("stroke-dasharray", "3 5");
+    refLine.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.appendChild(refLine);
+    var refLabel = ns("text");
+    refLabel.setAttribute("class", "axis-label");
+    refLabel.setAttribute("x", W - padR);
+    refLabel.setAttribute("y", refY - 8);
+    refLabel.setAttribute("text-anchor", "end");
+    refLabel.textContent = "初始梯度 = 1（未经连乘）";
+    svg.appendChild(refLabel);
+
+    // x axis ticks
+    for (var t = 0; t <= STEPS; t++) {
+      var x = xOf(t);
+      var tick = ns("line");
+      tick.setAttribute("x1", x); tick.setAttribute("x2", x);
+      tick.setAttribute("y1", H - padB); tick.setAttribute("y2", H - padB + 8);
+      tick.setAttribute("stroke", "var(--line-strong)");
+      tick.setAttribute("stroke-width", "1.5");
+      tick.setAttribute("vector-effect", "non-scaling-stroke");
+      svg.appendChild(tick);
+
+      var tl = ns("text");
+      tl.setAttribute("class", "axis-label");
+      tl.setAttribute("x", x);
+      tl.setAttribute("y", H - padB + 26);
+      tl.setAttribute("text-anchor", "middle");
+      tl.textContent = "t=" + t;
+      svg.appendChild(tl);
+    }
+
+    var xAxisTitle = ns("text");
+    xAxisTitle.setAttribute("class", "axis-title");
+    xAxisTitle.setAttribute("x", padL + plotW / 2);
+    xAxisTitle.setAttribute("y", H - 8);
+    xAxisTitle.setAttribute("text-anchor", "middle");
+    xAxisTitle.textContent = "回传步数（从输出往回到早期时间步）";
+    svg.appendChild(xAxisTitle);
+
+    // draw both series
+    [
+      { key: "vanish", tone: "vanish" },
+      { key: "explode", tone: "explode" }
+    ].forEach(function(item){
+      var pts = series[item.key];
+      var d = "";
+      pts.forEach(function(v, t){
+        var x = xOf(t), y = yOf(v);
+        d += (t === 0 ? "M" : "L") + x.toFixed(2) + "," + y.toFixed(2) + " ";
+      });
+      var path = ns("path");
+      path.setAttribute("class", "nt-data-line");
+      path.setAttribute("d", d.trim());
+      if (item.tone === "explode") {
+        path.style.stroke = "var(--accent)";
+      } else {
+        path.style.stroke = "var(--stable)";
+      }
+      svg.appendChild(path);
+
+      pts.forEach(function(v, t){
+        var x = xOf(t), y = yOf(v);
+        var dot = ns("circle");
+        dot.setAttribute("class", "nt-data-point");
+        dot.setAttribute("cx", x); dot.setAttribute("cy", y);
+        dot.setAttribute("r", "var(--point-radius)");
+        dot.style.stroke = item.tone === "explode" ? "var(--accent)" : "var(--stable)";
+        svg.appendChild(dot);
+
+        // value tag at last point only (shared start point labelled once, separately)
+        if (t === STEPS) {
+          var tag = ns("text");
+          tag.setAttribute("class", "value-tag");
+          tag.setAttribute("data-tone", item.tone);
+          tag.setAttribute("x", x);
+          tag.setAttribute("y", item.tone === "explode" ? y - 16 : y + 22);
+          tag.textContent = v.toFixed(v < 1 ? 4 : 2);
+          svg.appendChild(tag);
+        }
+      });
+
+      // series end label
+      var endT = STEPS, endX = xOf(endT), endY = yOf(pts[endT]);
+      var lbl = ns("text");
+      lbl.setAttribute("class", "track-label");
+      lbl.setAttribute("data-tone", item.tone);
+      lbl.setAttribute("x", Math.min(endX + 14, W - padR - 4));
+      lbl.setAttribute("y", endY + 5);
+      lbl.textContent = item.tone === "explode" ? "因子 1.5" : "因子 0.5";
+      svg.appendChild(lbl);
+    });
+  }
+
+  build();
+  Deck.onResize(build);
+})();
+</script>
+</body>
+</html>

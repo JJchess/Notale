@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Boosting：把弱学习器串成强学习器</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F4F7FB;
+      --surface: #E8EEF5;
+      --text: #13243A;
+      --muted: #53667C;
+      --model: #2457A6;
+      --aggregate: #0F766E;
+      --focus: #C94B00;
+      --font-sans: "Noto Sans CJK SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC", system-ui, sans-serif;
+      --font-numeric: "DIN Alternate", "Noto Sans CJK SC", sans-serif;
+      --settle: cubic-bezier(.2, .75, .25, 1);
+    }
+
+      --fs-h1: 34px;
+      --fs-h2: 22px;
+      --fs-lead: 19px;
+      --fs-body: 18px;
+      --fs-sec: 16px;
+      --fs-label: 15px;
+      --fs-tick: 13px;
+      --radius: 8px;
+      --line: 2px;
+      --settle: cubic-bezier(.2, .75, .25, 1);
+    }
+
+    #stage {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      color: var(--text);
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    .cover-header {
+      position: relative;
+      z-index: 10;
+      margin-top: 20px;
+    }
+
+    .cover-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: 1.25;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.01em;
+      margin: 0;
+    }
+
+    .cover-title strong {
+      color: var(--model);
+      font-weight: 800;
+    }
+
+    /* 主画卷容器：占据版面核心空间，大比例展现核心机制 */
+    .visual-stage {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      margin-top: 36px;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: var(--line) solid rgba(83, 102, 124, 0.18);
+      overflow: hidden;
+    }
+
+    .visual-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 底部三条清晰的脉络说明，字数克制在预算内 */
+    .sequence-cards {
+      display: flex;
+      gap: 24px;
+      margin-top: 28px;
+      margin-bottom: 12px;
+      position: relative;
+      z-index: 10;
+    }
+
+    .card {
+      flex: 1;
+      background: var(--surface);
+      border: var(--line) solid rgba(83, 102, 124, 0.22);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      box-sizing: border-box;
+    }
+
+    .card.final {
+      border: 3px solid var(--aggregate);
+      background: #E6F3F1;
+    }
+
+    .card-title {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .card.final .card-title {
+      color: var(--aggregate);
+    }
+
+    .card-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* SVG 动画 */
+    .flow-line {
+      stroke-dasharray: 600;
+      stroke-dashoffset: 600;
+    }
+    .node-elem {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    .entering .flow-line {
+      stroke-dashoffset: 0;
+      transition: stroke-dashoffset 1.2s var(--settle);
+    }
+    .entering .node-elem {
+      opacity: 1;
+      transform: none;
+      transition: opacity 0.6s var(--settle), transform 0.6s var(--settle);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .flow-line { stroke-dashoffset: 0 !important; }
+      .node-elem { opacity: 1 !important; transform: none !important; }
+    }
+  </style>
+</head>
+<body data-page="14" data-total="29">
+  <div id="stage">
+    <!-- 顶栏标题区：无多余标签，直陈核心论断 -->
+    <header class="cover-header">
+      <h1 class="cover-title">Boosting：把弱学习器<strong>串成强学习器</strong></h1>
+    </header>
+
+    <!-- 主视觉画布：1488 × 480 完整版心，凸显串行残差迭代与加权聚合 -->
+    <div class="visual-stage min0">
+      <svg class="visual-svg" viewBox="0 0 1488 476" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arr-m" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2457A6"/>
+          </marker>
+          <marker id="arr-f" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#C94B00"/>
+          </marker>
+          <marker id="arr-agg" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#0F766E"/>
+          </marker>
+        </defs>
+
+        <!-- 弱模型 1: 桩分类器 h₁(x) -->
+        <g class="node-elem" style="transform: translate(60px, 110px);">
+          <rect width="250" height="230" rx="8" fill="#F4F7FB" stroke="#2457A6" stroke-width="2"/>
+          <text x="24" y="42" fill="#13243A" font-size="18" font-family="var(--font-sans)" font-weight="700">基学习器 h₁(x)</text>
+          <text x="24" y="68" fill="#53667C" font-size="13" font-family="var(--font-numeric)">单一切分线 产生错分样本</text>
+          
+          <!-- 简单决策桩边界 -->
+          <line x1="24" y1="165" x2="226" y2="165" stroke="#53667C" stroke-width="2" stroke-dasharray="6 4"/>
+          <!-- 正确点 -->
+          <circle cx="70" cy="125" r="7" fill="#2457A6"/>
+          <circle cx="120" cy="130" r="7" fill="#2457A6"/>
+          <circle cx="60" cy="200" r="7" fill="#53667C"/>
+          <circle cx="150" cy="195" r="7" fill="#53667C"/>
+          <!-- 错分样本（焦点橙，加醒目圆环） -->
+          <circle cx="185" cy="128" r="11" fill="#C94B00"/>
+          <circle cx="185" cy="128" r="16" stroke="#C94B00" stroke-width="1.5" stroke-dasharray="3 3"/>
+        </g>
+
+        <!-- 反馈与串行连接 1 -> 2 -->
+        <path d="M 310 225 L 420 225" stroke="#2457A6" stroke-width="2" marker-end="url(#arr-m)"/>
+        <path d="M 245 110 C 275 45, 420 45, 450 110" stroke="#C94B00" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arr-f)" fill="none"/>
+        <text x="348" y="52" fill="#C94B00" font-size="13" font-family="var(--font-sans)" font-weight="700" text-anchor="middle">重加权：放大误分类点</text>
+
+        <!-- 弱模型 2: 补偿分类器 h₂(x) -->
+        <g class="node-elem" style="transform: translate(430px, 110px);">
+          <rect width="250" height="230" rx="8" fill="#F4F7FB" stroke="#2457A6" stroke-width="2"/>
+          <text x="24" y="42" fill="#13243A" font-size="18" font-family="var(--font-sans)" font-weight="700">基学习器 h₂(x)</text>
+          <text x="24" y="68" fill="#53667C" font-size="13" font-family="var(--font-numeric)">强行校正上轮错误</text>
+
+          <!-- 纵向边界纠正点 -->
+          <line x1="140" y1="95" x2="140" y2="215" stroke="#53667C" stroke-width="2" stroke-dasharray="6 4"/>
+          <circle cx="70" cy="135" r="7" fill="#2457A6"/>
+          <!-- 该错分点被成功划入正确侧 -->
+          <circle cx="95" cy="180" r="9" fill="#2457A6"/>
+          <!-- 新的残留错误 -->
+          <circle cx="190" cy="130" r="11" fill="#C94B00"/>
+          <circle cx="190" cy="130" r="16" stroke="#C94B00" stroke-width="1.5" stroke-dasharray="3 3"/>
+          <circle cx="205" cy="185" r="7" fill="#53667C"/>
+        </g>
+
+        <!-- 反馈与串行连接 2 -> 3 -->
+        <path d="M 680 225 L 790 225" stroke="#2457A6" stroke-width="2" marker-end="url(#arr-m)"/>
+        <path d="M 615 110 C 645 45, 790 45, 820 110" stroke="#C94B00" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arr-f)" fill="none"/>
+        <text x="718" y="52" fill="#C94B00" font-size="13" font-family="var(--font-sans)" font-weight="700" text-anchor="middle">拟合当前未解残差</text>
+
+        <!-- 弱模型 3: 进一步细化 h₃(x) -->
+        <g class="node-elem" style="transform: translate(800px, 110px);">
+          <rect width="250" height="230" rx="8" fill="#F4F7FB" stroke="#2457A6" stroke-width="2"/>
+          <text x="24" y="42" fill="#13243A" font-size="18" font-family="var(--font-sans)" font-weight="700">基学习器 h₃(x)</text>
+          <text x="24" y="68" fill="#53667C" font-size="13" font-family="var(--font-numeric)">倾斜分割消除残差</text>
+
+          <line x1="35" y1="210" x2="215" y2="100" stroke="#53667C" stroke-width="2" stroke-dasharray="6 4"/>
+          <circle cx="75" cy="140" r="7" fill="#2457A6"/>
+          <circle cx="125" cy="175" r="7" fill="#2457A6"/>
+          <circle cx="170" cy="170" r="7" fill="#53667C"/>
+          <circle cx="195" cy="135" r="7" fill="#53667C"/>
+        </g>
+
+        <!-- 主题签名：多条等宽 --model 蓝线汇入加粗 --aggregate 绿线 -->
+        <path d="M 185 340 C 185 435, 1060 435, 1115 260" stroke="#2457A6" stroke-width="2" stroke-dasharray="6 4" fill="none" opacity="0.65"/>
+        <path d="M 555 340 C 555 410, 1075 410, 1115 240" stroke="#2457A6" stroke-width="2" stroke-dasharray="6 4" fill="none" opacity="0.65"/>
+        <path d="M 925 340 C 925 385, 1090 385, 1115 220" stroke="#2457A6" stroke-width="2" stroke-dasharray="6 4" fill="none" opacity="0.65"/>
+
+        <!-- 聚合粗线引导 -->
+        <path d="M 1050 225 L 1120 225" stroke="#2457A6" stroke-width="2" fill="none"/>
+
+        <!-- 最终强学习器 H(x) -->
+        <g class="node-elem" style="transform: translate(1130px, 85px);">
+          <rect width="295" height="280" rx="8" fill="#E6F3F1" stroke="#0F766E" stroke-width="3"/>
+          <text x="24" y="44" fill="#0F766E" font-size="22" font-family="var(--font-sans)" font-weight="800">强学习器 H(x)</text>
+          <text x="24" y="74" fill="#53667C" font-size="15" font-family="var(--font-numeric)">加权线性组合 ∑ αₜ · hₜ(x)</text>
+
+          <!-- 组合生成的平滑非线性精准边界 -->
+          <path d="M 28 200 Q 110 130, 160 210 T 268 165" stroke="#0F766E" stroke-width="4" fill="none"/>
+          <circle cx="65" cy="155" r="7" fill="#2457A6"/>
+          <circle cx="115" cy="165" r="7" fill="#2457A6"/>
+          <circle cx="150" cy="140" r="7" fill="#2457A6"/>
+          <circle cx="215" cy="130" r="7" fill="#2457A6"/>
+          <circle cx="85" cy="225" r="7" fill="#53667C"/>
+          <circle cx="180" cy="235" r="7" fill="#53667C"/>
+          <circle cx="245" cy="215" r="7" fill="#53667C"/>
+        </g>
+
+        <!-- 强模型输出粗箭头（主题签名：4px --aggregate） -->
+        <path d="M 1425 225 L 1475 225" stroke="#0F766E" stroke-width="4" marker-end="url(#arr-agg)"/>
+      </svg>
+    </div>
+
+    <!-- 底部三栏结构：提纲挈领说明核心脉络 -->
+    <footer class="sequence-cards">
+      <div class="card">
+        <div class="card-title">序贯训练</div>
+        <div class="card-desc">后一个基学习器必须依赖前序模型的预测残差。</div>
+      </div>
+      <div class="card">
+        <div class="card-title">自适应补偿</div>
+        <div class="card-desc">错分样本提高权重，后续轮次沿梯度拟合误差。</div>
+      </div>
+      <div class="card final">
+        <div class="card-title">加权集成</div>
+        <div class="card-desc">根据各弱模型准确度赋予权重，合成为强学习器。</div>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    欢迎来到第三单元：Boosting。上一章我们学习了 Bagging 和随机森林，它们的核心思想是“并行独立抽样、投票降低方差”。而从这一页开始，我们要进入完全相反也极其强大的思想路径——Boosting。
+    Boosting 不再让各个模型独立做题，而是让模型“排成一列、顺序补位”：第一个模型先做预测，发现做错了一部分；第二个模型就集中精力去攻克第一个模型做错的样本；第三个模型再接着攻克前两个模型都没解决的残差。通过这样一轮一轮的动态补偿与加权组合，哪怕每一个基模型只是比随机猜测略好的弱学习器，最终也能串联组合出一个极其精准的强学习器。接下来我们将深入剖析 AdaBoost 与梯度提升树的核心算法机制。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      Deck.init({ index: 14, total: 29 });
+      const stage = document.getElementById('stage');
+      stage.classList.add('entering');
+    })();
+  </script>
+</body>
+</html>

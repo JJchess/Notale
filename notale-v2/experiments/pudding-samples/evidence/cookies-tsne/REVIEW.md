@@ -1,0 +1,1 @@
+Research only, 2026-09-07. Full repository cloned to sources/cookies-tsne. This is an Oreo embedding prototype, not the source of the 2018 cookie article. No original visual review completed; no candidate created.

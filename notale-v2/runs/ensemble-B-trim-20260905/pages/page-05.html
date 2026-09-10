@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      background: var(--bg);
+      box-sizing: border-box;
+    }
+
+    /* 页面头部 */
+    .page-head {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      margin: 0;
+      line-height: 1.2;
+    }
+    .page-desc {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    /* 主网格布局：左右两栏 */
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 430px;
+      gap: 24px;
+    }
+
+    /* 左侧图表区 */
+    .chart-panel {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--surface-strong);
+      padding: 18px 24px 16px 24px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 10px;
+    }
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+    .chart-legend {
+      display: flex;
+      gap: 18px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-line {
+      width: 22px;
+      height: 3px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+
+    .chart-container {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      width: 100%;
+    }
+    #echart-host {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-foot-note {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+
+    /* 右侧推导与结论面板 */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .formula-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--surface-strong);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .card-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .formula-box {
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px 14px;
+      text-align: center;
+      font-size: 20px;
+      font-family: var(--font-sans);
+      color: var(--aggregate);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .formula-explain {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    /* 实时探查与对比卡片 */
+    .inspect-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--surface-strong);
+      padding: 18px 20px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .inspect-header {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    .ctl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .ctl-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+    .ctl-val {
+      font-family: var(--font-num, monospace);
+      font-weight: 700;
+      color: var(--learner);
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      background: var(--surface-strong);
+      border-radius: 3px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--learner);
+      cursor: pointer;
+      border: 2px solid var(--surface);
+    }
+
+    /* 状态与读数对比 */
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 12px 0;
+    }
+    .metric-cell {
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .metric-lbl {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .metric-num {
+      font-size: 22px;
+      font-family: var(--font-num, monospace);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .metric-cell.accent .metric-num {
+      color: var(--aggregate);
+    }
+
+    .conclusion-callout {
+      background: var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .conclusion-callout strong {
+      color: var(--aggregate);
+    }
+
+    /* 预设场景按钮 */
+    .preset-btns {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .preset-btn {
+      flex: 1;
+      padding: 7px 0;
+      border: 1px solid var(--surface-strong);
+      background: var(--surface);
+      color: var(--muted);
+      border-radius: 6px;
+      font-size: var(--fs-tick);
+      cursor: pointer;
+      font-weight: 600;
+      transition: all var(--dur) var(--ease);
+    }
+    .preset-btn:hover {
+      border-color: var(--learner);
+      color: var(--text);
+    }
+    .preset-btn[aria-pressed="true"] {
+      background: var(--learner);
+      color: #fff;
+      border-color: var(--learner);
+    }
+  </style>
+</head>
+<body data-page="05" data-total="27">
+  <div id="stage">
+    <!-- 头部说明 -->
+    <header class="page-head">
+      <h1 class="page-title">多样性是集成收益的来源：基学习器数量与误差相关性共同决定方差下降幅度</h1>
+      <p class="page-desc">单个模型方差为 <span class="math-inline" data-tex="\sigma^2">\sigma^2</span> 时，简单平均集成的方差不等于简单的 <span class="math-inline" data-tex="\sigma^2 / M">\sigma^2 / M</span>；模型间的相关性直接设定了集成的方差下界。</p>
+    </header>
+
+    <!-- 主体分析网格 -->
+    <div class="main-grid min0">
+      <!-- 左栏：定量曲线图 -->
+      <section class="chart-panel min0">
+        <div class="chart-head">
+          <h2 class="chart-title">集成分成与方差随基学习器数量 <span class="math-inline" data-tex="M">M</span> 的衰减曲线</h2>
+          <div class="chart-legend">
+            <span class="legend-item"><span class="legend-line" style="background:#275D91;"></span>实际集成方差 <span class="math-inline" data-tex="\text{Var}(\bar{f})">\text{Var}(\bar{f})</span></span>
+            <span class="legend-item"><span class="legend-line" style="background:#B63B24; border-top:2px dashed #B63B24; height:0;"></span>理论下界 <span class="math-inline" data-tex="\rho\sigma^2">\rho\sigma^2</span></span>
+            <span class="legend-item"><span class="legend-line" style="background:#536777; opacity:0.4;"></span>完全独立基准 (<span class="math-inline" data-tex="\rho=0">\rho=0</span>)</span>
+          </div>
+        </div>
+        
+        <div class="chart-container min0">
+          <div id="echart-host"></div>
+        </div>
+
+        <div class="chart-foot-note">
+          设单模型基准方差 <span class="math-inline" data-tex="\sigma^2 = 1.0">\sigma^2 = 1.0</span>。当基学习器间存在正相关（<span class="math-inline" data-tex="\rho > 0">\rho > 0</span>）时，增加模型数量 <span class="math-inline" data-tex="M">M</span> 只能消除不相关的特异误差部分，无法突破由相关系数决定的平台下界。
+        </div>
+      </section>
+
+      <!-- 右栏：数学机制与互动控制 -->
+      <aside class="sidebar min0">
+        <!-- 理论公式解析 -->
+        <div class="formula-card">
+          <h2 class="card-title">经典方差分解公式</h2>
+          <div class="formula-box" id="main-formula"></div>
+          <p class="formula-explain">
+            第一项 <span class="math-inline" data-tex="\rho\sigma^2">\rho\sigma^2</span> 是<strong>共同相关误差</strong>，与学习器数量 <span class="math-inline" data-tex="M">M</span> 无关；第二项 <span class="math-inline" data-tex="\frac{1-\rho}{M}\sigma^2">\frac{1-\rho}{M}\sigma^2</span> 是<strong>独立特异误差</strong>，随 <span class="math-inline" data-tex="M \to \infty">M \to \infty</span> 收敛于 0。
+          </p>
+        </div>
+
+        <!-- 互动探查控制面板 -->
+        <div class="inspect-card">
+          <div>
+            <div class="inspect-header">实时调整误差相关性 <span class="math-inline" data-tex="\rho">\rho</span></div>
+            
+            <div class="ctl-group">
+              <div class="ctl-row">
+                <span>相关系数 <span class="math-inline" data-tex="\rho">\rho</span></span>
+                <span class="ctl-val" id="rho-val">0.30</span>
+              </div>
+              <input type="range" id="rho-range" min="0" max="0.9" step="0.05" value="0.30" aria-label="相关系数调节">
+            </div>
+
+            <div class="ctl-group">
+              <div class="ctl-row">
+                <span>观察基学习器数 <span class="math-inline" data-tex="M">M</span></span>
+                <span class="ctl-val" id="m-val">25</span>
+              </div>
+              <input type="range" id="m-range" min="1" max="50" step="1" value="25" aria-label="学习器数量调节">
+            </div>
+
+            <div class="preset-btns">
+              <button class="preset-btn" id="btn-indep" data-rho="0.00" aria-pressed="false">完全独立 (ρ=0)</button>
+              <button class="preset-btn" id="btn-typical" data-rho="0.30" aria-pressed="true">典型多样性 (ρ=0.3)</button>
+              <button class="preset-btn" id="btn-high" data-rho="0.75" aria-pressed="false">高度趋同 (ρ=0.75)</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="metric-grid">
+              <div class="metric-cell">
+                <div class="metric-lbl">当前点集成方差</div>
+                <div class="metric-num" id="stat-var">0.328</div>
+              </div>
+              <div class="metric-cell accent">
+                <div class="metric-lbl">极限平台下界 (M→∞)</div>
+                <div class="metric-num" id="stat-floor">0.300</div>
+              </div>
+            </div>
+
+            <div class="conclusion-callout" id="callout-text">
+              在当前相关性下，集成能消除 <strong>67.2%</strong> 的单模型方差；若想进一步降低方差，堆砌更多同类模型几乎无效，必须通过抽样、扰动特征等手段<strong>降低 <span class="math-inline" data-tex="\rho">\rho</span></strong>。
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      var rhoRange = document.getElementById("rho-range");
+      var mRange = document.getElementById("m-range");
+      var rhoVal = document.getElementById("rho-val");
+      var mVal = document.getElementById("m-val");
+      var statVar = document.getElementById("stat-var");
+      var statFloor = document.getElementById("stat-floor");
+      var calloutText = document.getElementById("callout-text");
+      var host = document.getElementById("echart-host");
+
+      var currentRho = 0.30;
+      var currentM = 25;
+      var SIGMA_SQ = 1.0;
+
+      // 渲染数学公式
+      function renderMath() {
+        if (!window.katex) return;
+        var formulaBox = document.getElementById('main-formula');
+        if (formulaBox) {
+          katex.render('\\text{Var}(\\bar{f}) = \\rho\\sigma^2 + \\frac{1 - \\rho}{M}\\sigma^2', formulaBox, { displayMode: true, throwOnError: false });
+        }
+        document.querySelectorAll('.math-inline').forEach(function(el) {
+          var tex = el.getAttribute('data-tex');
+          if (tex) {
+            katex.render(tex, el, { displayMode: false, throwOnError: false });
+          }
+        });
+      }
+      renderMath();
+
+      var chart = null;
+
+      function calcVar(m, rho) {
+        return rho * SIGMA_SQ + ((1 - rho) / m) * SIGMA_SQ;
+      }
+
+      function generateData(rho) {
+        var points = [];
+        for (var m = 1; m <= 50; m++) {
+          points.push([m, parseFloat(calcVar(m, rho).toFixed(4))]);
+        }
+        return points;
+      }
+
+      function generateIdealData() {
+        var points = [];
+        for (var m = 1; m <= 50; m++) {
+          points.push([m, parseFloat(calcVar(m, 0.0).toFixed(4))]);
+        }
+        return points;
+      }
+
+      var idealData = generateIdealData();
+
+      function getOption(rho, mTarget) {
+        var currentData = generateData(rho);
+        var floorVal = parseFloat((rho * SIGMA_SQ).toFixed(3));
+        var targetVar = parseFloat(calcVar(mTarget, rho).toFixed(3));
+
+        return {
+          animation: false,
+          grid: {
+            left: 54,
+            right: 36,
+            top: 32,
+            bottom: 40
+          },
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'cross', lineStyle: { color: '#536777', type: 'dashed' } },
+            formatter: function(params) {
+              var m = params[0].value[0];
+              var v = params[0].value[1];
+              return '学习器数量 M = ' + m + '<br/>集成方差: <b>' + v + '</b>';
+            }
+          },
+          xAxis: {
+            type: 'value',
+            min: 1,
+            max: 50,
+            interval: 5,
+            name: '基学习器数 M',
+            nameLocation: 'middle',
+            nameGap: 26,
+            nameTextStyle: { color: '#536777', fontSize: 13 },
+            axisLabel: { color: '#536777', fontSize: 13 },
+            axisLine: { lineStyle: { color: '#D7E1E8' } },
+            splitLine: { lineStyle: { color: '#E8EEF2', type: 'dashed' } }
+          },
+          yAxis: {
+            type: 'value',
+            min: 0,
+            max: 1.05,
+            interval: 0.2,
+            name: '方差 Var',
+            nameTextStyle: { color: '#536777', fontSize: 13 },
+            axisLabel: { color: '#536777', fontSize: 13 },
+            axisLine: { lineStyle: { color: '#D7E1E8' } },
+            splitLine: { lineStyle: { color: '#E8EEF2', type: 'dashed' } }
+          },
+          series: [
+            {
+              name: '完全独立基准 (ρ=0)',
+              type: 'line',
+              data: idealData,
+              smooth: true,
+              showSymbol: false,
+              lineStyle: { color: '#536777', width: 1.5, type: 'dotted' }
+            },
+            {
+              name: '理论下界 ρσ²',
+              type: 'line',
+              data: [[1, floorVal], [50, floorVal]],
+              lineStyle: { color: '#B63B24', width: 2, type: 'dashed' },
+              symbol: 'none'
+            },
+            {
+              name: '实际集成方差',
+              type: 'line',
+              data: currentData,
+              smooth: true,
+              showSymbol: false,
+              lineStyle: { color: '#275D91', width: 3.5 },
+              markPoint: {
+                symbol: 'circle',
+                symbolSize: 10,
+                itemStyle: { color: '#275D91', borderColor: '#ffffff', borderWidth: 2 },
+                data: [
+                  { coord: [mTarget, targetVar], name: '当前点' }
+                ],
+                label: {
+                  show: true,
+                  formatter: 'M=' + mTarget + ', Var=' + targetVar,
+                  position: 'top',
+                  color: '#142533',
+                  fontSize: 12,
+                  fontWeight: 'bold',
+                  backgroundColor: '#F7FAFC',
+                  borderColor: '#D7E1E8',
+                  borderWidth: 1,
+                  padding: [4, 6],
+                  borderRadius: 4
+                }
+              }
+            }
+          ]
+        };
+      }
+
+      function updateUI() {
+        var rho = currentRho;
+        var m = currentM;
+        var currentV = calcVar(m, rho);
+        var floorV = rho * SIGMA_SQ;
+        var reduction = ((1.0 - currentV) * 100).toFixed(1);
+
+        rhoVal.textContent = rho.toFixed(2);
+        mVal.textContent = m;
+        statVar.textContent = currentV.toFixed(3);
+        statFloor.textContent = floorV.toFixed(3);
+
+        if (rho === 0) {
+          calloutText.innerHTML = '基学习器完全独立（<span class="math-inline" data-tex="\\rho=0">\\rho=0</span>），集成方差随 <span class="math-inline" data-tex="M">M</span> 趋于 0，方差消除达 <strong>' + reduction + '%</strong>。但在现实中完全独立的模型几乎不存在。';
+        } else if (rho >= 0.7) {
+          calloutText.innerHTML = '基学习器高度趋同（<span class="math-inline" data-tex="\\rho=' + rho.toFixed(2) + '">\\rho=' + rho.toFixed(2) + '</span>），下界高达 <strong>' + floorV.toFixed(3) + '</strong>。哪怕增加到数百个模型，也无法继续消除方差，<strong>缺乏多样性导致集成失效</strong>。';
+        } else {
+          calloutText.innerHTML = '在当前相关性下，当前点消除 <strong>' + reduction + '%</strong> 方差；由于存在平台下界 <strong>' + floorV.toFixed(3) + '</strong>，后续增加学习器收益迅速递减，必须通过降低相关性 <span class="math-inline" data-tex="\\rho">\\rho</span> 取得突破。';
+        }
+        renderMath();
+
+        if (chart) {
+          chart.setOption(getOption(rho, m), { notMerge: true });
+        }
+      }
+
+      try {
+        chart = echarts.init(host, null, { renderer: 'svg' });
+        chart.setOption(getOption(currentRho, currentM));
+        window.addEventListener('resize', function() {
+          if (chart) chart.resize();
+        });
+      } catch (e) {
+        console.error(e);
+      }
+
+      // 监听滑动输入
+      rhoRange.addEventListener('input', function(e) {
+        currentRho = parseFloat(e.target.value);
+        // 清除预设激活态
+        document.querySelectorAll('.preset-btn').forEach(function(b){ b.setAttribute('aria-pressed', 'false'); });
+        updateUI();
+      });
+
+      mRange.addEventListener('input', function(e) {
+        currentM = parseInt(e.target.value, 10);
+        updateUI();
+      });
+
+      // 监听预设按钮
+      document.querySelectorAll('.preset-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          document.querySelectorAll('.preset-btn').forEach(function(b){ b.setAttribute('aria-pressed', 'false'); });
+          btn.setAttribute('aria-pressed', 'true');
+          var targetRho = parseFloat(btn.dataset.rho);
+          currentRho = targetRho;
+          rhoRange.value = targetRho;
+          updateUI();
+        });
+      });
+
+      Deck.init({ index: 5, total: 27, keys: false });
+      window.__NOTALE_READY__ = true;
+    })();
+  </script>
+</body>
+</html>

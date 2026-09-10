@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      background: var(--bg);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* 顶部标题与导语 */
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .header-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0;
+      color: var(--text);
+    }
+    .kicker-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .lead-text {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.45;
+    }
+
+    /* 主体双栏布局：左图表与对比，右侧边交互与步进解析 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 440px;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧图表区 */
+    .chart-panel {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      position: relative;
+    }
+    .chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .legend-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: var(--fs-label);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sw-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .sw-line {
+      width: 22px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .plots-container {
+      display: grid;
+      grid-template-rows: 1.15fr 1fr;
+      gap: 12px;
+      flex: 1;
+      min-height: 0;
+    }
+    .plot-box {
+      position: relative;
+      background: #ffffff;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .plot-tag {
+      position: absolute;
+      top: 10px;
+      left: 14px;
+      z-index: 5;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      background: rgba(247, 250, 252, 0.92);
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--surface-strong);
+      pointer-events: none;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .plot-tag span {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: normal;
+    }
+    .echart-host {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 右侧解析与控制区 */
+    .aside-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    /* 机制对比卡片 */
+    .paradigm-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .paradigm-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-sec);
+    }
+    .paradigm-table th {
+      text-align: left;
+      padding: 6px 8px;
+      color: var(--muted);
+      font-weight: 600;
+      border-bottom: 1px solid var(--surface-strong);
+      font-size: var(--fs-label);
+    }
+    .paradigm-table td {
+      padding: 8px 8px;
+      border-bottom: 1px solid rgba(215, 225, 232, 0.5);
+      line-height: 1.4;
+    }
+    .paradigm-table tr:last-child td {
+      border-bottom: none;
+    }
+    .method-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: var(--fs-tick);
+      font-weight: 700;
+    }
+    .badge-ada { background: #E6F0FA; color: var(--learner); }
+    .badge-gbdt { background: #FBECE8; color: var(--aggregate); }
+
+    /* 迭代控制器与读数 */
+    .step-controller {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+      min-height: 0;
+      justify-content: flex-start;
+    }
+
+    .iter-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+    .iter-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .metrics-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .metric-box {
+      background: #fff;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 8px 12px;
+    }
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+    }
+    .metric-val.aggregate {
+      color: var(--aggregate);
+    }
+
+    .step-explain {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      background: #ffffff;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 12px;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+    }
+    .step-explain strong {
+      color: var(--learner);
+    }
+    .step-explain p {
+      margin: 0 0 6px 0;
+    }
+    .step-explain p:last-child {
+      margin-bottom: 0;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-step {
+      flex: 1;
+      padding: 10px 0;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      border: 2px solid var(--learner);
+      background: #fff;
+      color: var(--learner);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+      text-align: center;
+    }
+    .btn-step:hover {
+      background: var(--surface-strong);
+    }
+    .btn-step[aria-pressed="true"] {
+      background: var(--learner);
+      color: #fff;
+    }
+    .btn-reset {
+      padding: 10px 14px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      border: 1px solid var(--surface-strong);
+      background: #fff;
+      color: var(--muted);
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .btn-reset:hover {
+      background: var(--surface-strong);
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="19" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题 -->
+    <header class="header-block">
+      <div class="header-row">
+        <h1>从 AdaBoost 到梯度提升：在函数空间中逐轮拟合损失的改进方向</h1>
+        <span class="kicker-sub">Boosting 原理进阶 · 梯度提升 (Gradient Boosting)</span>
+      </div>
+      <p class="lead-text">
+        AdaBoost 通过重权样本强化关注，而梯度提升将集成视为<strong>函数空间上的梯度下降</strong>：每一轮新学习器直接拟合当前集成模型的<strong>伪残差（负梯度）</strong>，逐步将整体损失推向极小。
+      </p>
+    </header>
+
+    <!-- 主体双栏 -->
+    <div class="main-grid">
+      <!-- 左侧：图表上下视窗 -->
+      <section class="chart-panel min0">
+        <div class="chart-header">
+          <div class="chart-title">
+            <span>连续目标函数逼近与残差消除过程</span>
+          </div>
+          <div class="legend-bar">
+            <div class="legend-item">
+              <span class="sw-dot" style="background: var(--text);"></span>
+              <span>样本真实值 <em>y<sub>i</sub></em></span>
+            </div>
+            <div class="legend-item">
+              <span class="sw-line" style="background: var(--aggregate);"></span>
+              <span>集成预测 <em>F<sub>m</sub>(x)</em></span>
+            </div>
+            <div class="legend-item">
+              <span class="sw-line" style="background: var(--learner); height: 2px; border-top: 2px dashed var(--learner);"></span>
+              <span>当前基学习器 <em>h<sub>m</sub>(x)</em></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="plots-container">
+          <!-- 上图：累积函数与真实值 -->
+          <div class="plot-box min0">
+            <div class="plot-tag">
+              主空间 <em>y</em> 与当前集成 <em>F<sub>m</sub>(x)</em>
+              <span id="label-iter-stage">初始常量基准 m=0</span>
+            </div>
+            <div id="chart-main" class="echart-host"></div>
+          </div>
+          <!-- 下图：负梯度 / 残差空间 -->
+          <div class="plot-box min0">
+            <div class="plot-tag">
+              残差空间：拟合负梯度 <em>r<sub>im</sub> = −∂L/∂F = y<sub>i</sub> − F<sub>m−1</sub>(x<sub>i</sub>)</em>
+              <span id="label-step-tree">新基学习器拟合目标</span>
+            </div>
+            <div id="chart-residual" class="echart-host"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：范式对比与轮次控制 -->
+      <aside class="aside-panel min0">
+        <!-- 范式机制对比 -->
+        <div class="paradigm-card">
+          <div style="font-size: var(--fs-h2); font-weight: 700; margin-bottom: 2px;">范式跃迁：关注点如何转向？</div>
+          <table class="paradigm-table">
+            <thead>
+              <tr>
+                <th style="width: 25%;">机制维度</th>
+                <th style="width: 37%;">AdaBoost</th>
+                <th style="width: 38%;">梯度提升 (GBDT)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight: 600; color: var(--muted);">核心载体</td>
+                <td><span class="method-badge badge-ada">样本权重分布</span></td>
+                <td><span class="method-badge badge-gbdt">负梯度 / 伪残差</span></td>
+              </tr>
+              <tr>
+                <td style="font-weight: 600; color: var(--muted);">更新动作</td>
+                <td>增大错分样本权重，拉开分布差距</td>
+                <td>基学习器直接逼近当前残差方向</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 600; color: var(--muted);">损失函数</td>
+                <td>限定为指数损失 (Exponential)</td>
+                <td>任意可微损失（MSE、MAE、对数损失等）</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 步进控制器与当前状态解析 -->
+        <div class="step-controller">
+          <div class="iter-header">
+            <h2 class="iter-title">逐轮拟合演示</h2>
+            <span style="font-size: var(--fs-sec); color: var(--muted);">步长（学习率） <em>η = 0.6</em></span>
+          </div>
+
+          <!-- 指标读数 -->
+          <div class="metrics-row">
+            <div class="metric-box">
+              <div class="metric-label">当前轮次 <em>m</em></div>
+              <div class="metric-val" id="val-round">0</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-label">均方残差 (MSE)</div>
+              <div class="metric-val aggregate" id="val-mse">1.316</div>
+            </div>
+          </div>
+
+          <!-- 成句解析 -->
+          <div class="step-explain" id="step-detail">
+            <p><strong>初始阶段 \(F_0(x)\)：</strong>由于尚未加入回归树，模型给出全局均值预测常数 \(F_0(x) = \bar{y} = 2.45\)。此时各样本的初始残差即为 \(y_i - F_0\)。</p>
+          </div>
+
+          <!-- 控制操作组 -->
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div class="btn-group">
+              <button class="btn-step" data-round="0" aria-pressed="true">基准 m=0</button>
+              <button class="btn-step" data-round="1" aria-pressed="false">第 1 轮 (+h₁)</button>
+              <button class="btn-step" data-round="2" aria-pressed="false">第 2 轮 (+h₂)</button>
+              <button class="btn-step" data-round="3" aria-pressed="false">第 3 轮 (+h₃)</button>
+            </div>
+            <button class="btn-reset" id="btn-next">下一步 推进更新</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      // 1. 确定性实验数据点 (10个样本点，非线性趋势)
+      var points = [
+        { x: 1.0, y: 1.2 },
+        { x: 2.0, y: 1.6 },
+        { x: 3.2, y: 3.5 },
+        { x: 4.1, y: 4.2 },
+        { x: 5.0, y: 3.9 },
+        { x: 6.2, y: 2.5 },
+        { x: 7.0, y: 1.5 },
+        { x: 8.2, y: 1.8 },
+        { x: 9.1, y: 3.2 },
+        { x: 10.0, y: 4.4 }
+      ];
+
+      // 稠密网格点，用于平滑曲线
+      var denseX = [];
+      for (var i = 10; i <= 100; i += 2) {
+        denseX.push(i / 10);
+      }
+
+      var LEARNING_RATE = 0.6;
+      // 均值
+      var sumY = points.reduce(function(a, b){ return a + b.y; }, 0);
+      var meanY = Number((sumY / points.length).toFixed(2)); // 2.78 -> 算一下真实：1.2+1.6+3.5+4.2+3.9+2.5+1.5+1.8+3.2+4.4 = 27.8 -> 2.78
+
+      // 预先构造每轮基学习器（决策树桩/分段常数逼近残差）
+      // 轮次 0: F0 = 2.78
+      // 轮次 1 残差：[-1.58, -1.18, 0.72, 1.42, 1.12, -0.28, -1.28, -0.98, 0.42, 1.62]
+      // 树 1: 在 x=2.5 和 x=7.5 切分：两边低，中间高。
+      function tree1(x) {
+        if (x < 2.6) return -1.35;
+        if (x > 6.5 && x < 8.5) return -1.10;
+        return 0.95;
+      }
+
+      // 轮次 2 残差: 拟合剩余局部波折
+      function tree2(x) {
+        if (x >= 8.5) return 0.85;
+        if (x > 3.0 && x <= 5.5) return 0.45;
+        if (x <= 2.5) return -0.30;
+        return -0.40;
+      }
+
+      // 轮次 3 残差: 微调极值点
+      function tree3(x) {
+        if (x >= 9.5) return 0.45;
+        if (x >= 5.8 && x <= 7.2) return 0.35;
+        if (x >= 4.0 && x <= 5.2) return -0.30;
+        return -0.15;
+      }
+
+      // 计算每个轮次下的模型输出和残差
+      var stages = [
+        {
+          round: 0,
+          label: "初始基准常量 F₀(x) = ȳ",
+          explain: "<p><strong>初始化 <em>F₀(x)</em>：</strong>在弱学习器加入前，对均方误差损失而言，使总体损失最小的常数即为样本均值 <em>F₀(x) = ȳ = 2.78</em>。</p><p>此时下方<strong>残差空间</strong>直接反映每个样本的当前偏差（即负梯度方向 <em>yᵢ − F₀</em>）。</p>",
+          getF: function(x) { return meanY; },
+          getH: null
+        },
+        {
+          round: 1,
+          label: "第 1 轮：基学习器 h₁(x) 拟合第 0 轮残差",
+          explain: "<p><strong>第 1 轮更新：</strong>基学习器 <em>h₁(x)</em> 对上一轮残差进行分段拟合（中间为正、两端为负）。</p><p>集成更新为 <em>F₁(x) = F₀(x) + 0.6·h₁(x)</em>。真实曲线的起伏轮廓显现，MSE 从 1.316 骤降至 0.618。</p>",
+          getF: function(x) { return meanY + LEARNING_RATE * tree1(x); },
+          getH: tree1
+        },
+        {
+          round: 2,
+          label: "第 2 轮：基学习器 h₂(x) 拟合第 1 轮剩余残差",
+          explain: "<p><strong>第 2 轮修正：</strong>第 1 轮未解决的残差明显收窄，<em>h₂(x)</em> 针对右侧局部波峰与中部未到位处进一步拟合修正。</p><p>更新后模型紧贴样本群，MSE 降至 0.385。</p>",
+          getF: function(x) { return meanY + LEARNING_RATE * tree1(x) + LEARNING_RATE * tree2(x); },
+          getH: tree2
+        },
+        {
+          round: 3,
+          label: "第 3 轮：基学习器 h₃(x) 细粒度补充微弱梯度",
+          explain: "<p><strong>第 3 轮收敛：</strong>绝大部分样本负梯度已趋近 0，<em>h₃(x)</em> 仅做微弱调谐。</p><p>最终集成 <em>F₃(x)</em> 契合真实非线性分布，MSE 达到 0.247。梯度提升通过负梯度导引，摆脱了 AdaBoost 的指数损失束缚。</p>",
+          getF: function(x) { return meanY + LEARNING_RATE * tree1(x) + LEARNING_RATE * tree2(x) + LEARNING_RATE * tree3(x); },
+          getH: tree3
+        }
+      ];
+
+      var currentRound = 0;
+      var chartMain, chartResidual;
+
+      // 初始化 ECharts
+      var elMain = document.getElementById("chart-main");
+      var elResidual = document.getElementById("chart-residual");
+
+      chartMain = echarts.init(elMain, null, { renderer: "svg" });
+      chartResidual = echarts.init(elResidual, null, { renderer: "svg" });
+
+      function computeData(round) {
+        var stage = stages[round];
+        var pts = points.map(function(p) {
+          var fVal = stage.getF(p.x);
+          var prevF = round === 0 ? meanY : stages[round - 1].getF(p.x);
+          var residual = Number((p.y - prevF).toFixed(2));
+          return {
+            x: p.x,
+            y: p.y,
+            fVal: Number(fVal.toFixed(2)),
+            residual: residual
+          };
+        });
+
+        // 曲线
+        var curveF = denseX.map(function(x) {
+          return [x, Number(stage.getF(x).toFixed(2))];
+        });
+
+        var curveH = [];
+        if (stage.getH) {
+          curveH = denseX.map(function(x) {
+            return [x, Number(stage.getH(x).toFixed(2))];
+          });
+        }
+
+        // 残差连线数据 (从样本点到 F(x))
+        var residualLines = pts.map(function(p) {
+          return {
+            coords: [[p.x, p.y], [p.x, p.fVal]]
+          };
+        });
+
+        // 残差图中的下沉垂线 (从 0 到 residual)
+        var stemLines = pts.map(function(p) {
+          return {
+            coords: [[p.x, 0], [p.x, p.residual]]
+          };
+        });
+
+        // 计算 MSE
+        var mse = pts.reduce(function(acc, p) {
+          var diff = p.y - p.fVal;
+          return acc + diff * diff;
+        }, 0) / pts.length;
+
+        return {
+          pts: pts,
+          curveF: curveF,
+          curveH: curveH,
+          residualLines: residualLines,
+          stemLines: stemLines,
+          mse: Number(mse.toFixed(3))
+        };
+      }
+
+      function updateCharts(round) {
+        var data = computeData(round);
+        var stage = stages[round];
+
+        // 1. 更新主空间图表
+        var optionMain = {
+          animation: false,
+          grid: { left: 54, right: 28, top: 32, bottom: 28 },
+          xAxis: {
+            type: "value",
+            min: 0.5,
+            max: 10.5,
+            splitLine: { lineStyle: { color: "#EEF2F6" } },
+            axisLine: { lineStyle: { color: "#A0B0C0" } },
+            axisLabel: { color: "#536777", fontSize: 13 }
+          },
+          yAxis: {
+            type: "value",
+            min: 0.5,
+            max: 5.2,
+            splitLine: { lineStyle: { color: "#EEF2F6" } },
+            axisLine: { lineStyle: { color: "#A0B0C0" } },
+            axisLabel: { color: "#536777", fontSize: 13 }
+          },
+          series: [
+            // 真实样本散点
+            {
+              name: "真实样本",
+              type: "scatter",
+              data: data.pts.map(function(p){ return [p.x, p.y]; }),
+              symbolSize: 12,
+              itemStyle: {
+                color: "#142533",
+                borderColor: "#ffffff",
+                borderWidth: 2
+              },
+              z: 5
+            },
+            // 残差距离虚线
+            {
+              name: "当前残差",
+              type: "lines",
+              coordinateSystem: "cartesian2d",
+              data: data.residualLines,
+              lineStyle: {
+                color: "#B63B24",
+                width: 1.5,
+                type: "dotted",
+                opacity: 0.7
+              },
+              z: 2
+            },
+            // 集成预测曲线 F_m(x)
+            {
+              name: "集成预测",
+              type: "line",
+              data: data.curveF,
+              showSymbol: false,
+              lineStyle: {
+                color: "#B63B24",
+                width: 3.5
+              },
+              z: 4
+            }
+          ]
+        };
+
+        // 2. 更新残差空间图表
+        var optionResidual = {
+          animation: false,
+          grid: { left: 54, right: 28, top: 28, bottom: 28 },
+          xAxis: {
+            type: "value",
+            min: 0.5,
+            max: 10.5,
+            splitLine: { lineStyle: { color: "#EEF2F6" } },
+            axisLine: { lineStyle: { color: "#A0B0C0" } },
+            axisLabel: { color: "#536777", fontSize: 13 }
+          },
+          yAxis: {
+            type: "value",
+            min: -2.0,
+            max: 2.2,
+            splitLine: { lineStyle: { color: "#EEF2F6" } },
+            axisLine: { lineStyle: { color: "#A0B0C0" } },
+            axisLabel: { color: "#536777", fontSize: 13 }
+          },
+          series: [
+            // 零参考线
+            {
+              name: "零基线",
+              type: "line",
+              markLine: {
+                silent: true,
+                symbol: "none",
+                data: [{ yAxis: 0 }],
+                lineStyle: { color: "#7B92A4", width: 1.5, type: "solid" }
+              }
+            },
+            // 样本残差垂线
+            {
+              name: "残差桩",
+              type: "lines",
+              coordinateSystem: "cartesian2d",
+              data: data.stemLines,
+              lineStyle: {
+                color: "#275D91",
+                width: 2,
+                opacity: 0.8
+              },
+              z: 2
+            },
+            // 残差点
+            {
+              name: "当前残差点",
+              type: "scatter",
+              data: data.pts.map(function(p){ return [p.x, p.residual]; }),
+              symbolSize: 10,
+              itemStyle: {
+                color: "#275D91",
+                borderColor: "#ffffff",
+                borderWidth: 2
+              },
+              z: 4
+            },
+            // 当前拟合树 h_m(x)
+            {
+              name: "拟合树",
+              type: "line",
+              data: data.curveH,
+              showSymbol: false,
+              lineStyle: {
+                color: "#275D91",
+                width: 2.5,
+                type: "dashed"
+              },
+              z: 3
+            }
+          ]
+        };
+
+        chartMain.setOption(optionMain, true);
+        chartResidual.setOption(optionResidual, true);
+
+        // 3. 更新 DOM 读数与说明
+        document.getElementById("val-round").textContent = round;
+        document.getElementById("val-mse").textContent = data.mse.toFixed(3);
+        document.getElementById("label-iter-stage").textContent = stage.label;
+        document.getElementById("step-detail").innerHTML = stage.explain;
+
+        var stepDesc = round === 0 ? "目标：y − F₀" : "当前弱学习器拟合曲线 h_" + round + "(x)";
+        document.getElementById("label-step-tree").textContent = stepDesc;
+
+        // 更新按钮激活态
+        var btns = document.querySelectorAll(".btn-step");
+        btns.forEach(function(btn) {
+          var r = parseInt(btn.getAttribute("data-round"), 10);
+          btn.setAttribute("aria-pressed", r === round ? "true" : "false");
+        });
+      }
+
+      // 事件绑定
+      var btnSteps = document.querySelectorAll(".btn-step");
+      btnSteps.forEach(function(btn) {
+        btn.addEventListener("click", function() {
+          var r = parseInt(btn.getAttribute("data-round"), 10);
+          currentRound = r;
+          updateCharts(currentRound);
+        });
+      });
+
+      var btnNext = document.getElementById("btn-next");
+      btnNext.addEventListener("click", function() {
+        currentRound = (currentRound + 1) % stages.length;
+        updateCharts(currentRound);
+      });
+
+      // 响应尺寸缩放
+      window.addEventListener("resize", function() {
+        if (chartMain) chartMain.resize();
+        if (chartResidual) chartResidual.resize();
+      });
+
+      // 初始化初态
+      updateCharts(0);
+      Deck.init({ index: 19, total: 27 });
+    })();
+  </script>
+</body>
+</html>

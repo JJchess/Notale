@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>馆藏实物打制特征检定</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      box-sizing: border-box;
+    }
+
+    /* 顶部紧凑栏 */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 12px;
+      margin-bottom: 18px;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      font-weight: 600;
+      color: var(--text);
+      line-height: var(--lh-tight);
+      margin: 0;
+    }
+    .specimen-toggle {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .spec-btn {
+      background: transparent;
+      border: 1px solid var(--rule);
+      padding: 6px 14px;
+      font-size: var(--fs-sec);
+      font-family: var(--font-sans);
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all var(--motion-fast) var(--ease-out);
+    }
+    .spec-btn:hover {
+      border-color: var(--model);
+      color: var(--text);
+    }
+    .spec-btn.active {
+      background: var(--model);
+      border-color: var(--model);
+      color: #fff;
+      font-weight: 500;
+    }
+
+    /* 主工作台：左标本交互区，右检定诊断控制板 */
+    .workbench {
+      display: grid;
+      grid-template-columns: 860px 1fr;
+      gap: 36px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 标本视界与光学探针 */
+    .specimen-view {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+    .photo-stage {
+      position: relative;
+      width: 780px;
+      height: 680px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .photo-stage img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      filter: contrast(1.08) brightness(0.96);
+      pointer-events: none;
+    }
+    .photo-overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    /* 探针热区与指示环 */
+    .probe-point {
+      position: absolute;
+      width: 44px;
+      height: 44px;
+      margin-left: -22px;
+      margin-top: -22px;
+      border-radius: 50%;
+      cursor: pointer;
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      outline: none;
+    }
+    .probe-point::before {
+      content: "";
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid var(--model);
+      transition: all var(--motion-fast) var(--ease-out);
+    }
+    .probe-point::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 1.5px dashed var(--model);
+      opacity: 0.6;
+      animation: probe-pulse 3s infinite linear;
+    }
+    .probe-point.active::before {
+      background: var(--focus);
+      border-color: #fff;
+      transform: scale(1.3);
+    }
+    .probe-point.active::after {
+      border-color: var(--focus);
+      border-style: solid;
+      animation: none;
+      opacity: 1;
+      transform: scale(1.15);
+    }
+    .probe-point.identified::before {
+      background: var(--model);
+      border-color: #fff;
+    }
+    .probe-point.identified::after {
+      border: 2px solid var(--model);
+      animation: none;
+      opacity: 0.9;
+    }
+    .probe-point .pin-tag {
+      position: absolute;
+      top: -20px;
+      background: rgba(20, 38, 48, 0.9);
+      color: #fff;
+      font-size: var(--fs-tick);
+      padding: 1px 6px;
+      border-radius: 2px;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    @keyframes probe-pulse {
+      0% { transform: rotate(0deg) scale(0.95); }
+      50% { transform: rotate(180deg) scale(1.1); }
+      100% { transform: rotate(360deg) scale(0.95); }
+    }
+
+    /* 右侧检定与微痕诊断面板 */
+    .diagnostic-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 8px 0;
+    }
+    .probe-status-head {
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 14px;
+    }
+    .probe-coord {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .probe-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* 特征判定表决区 */
+    .diagnostic-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .question-prompt {
+      font-size: var(--fs-lead);
+      color: var(--text);
+      line-height: var(--lh-copy);
+    }
+    .evidence-readout {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: var(--lh-copy);
+      padding: 10px 0;
+      border-bottom: 1px solid var(--rule);
+    }
+    .hypothesis-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .hypo-btn {
+      background: #fff;
+      border: 1px solid var(--rule);
+      padding: 12px 16px;
+      text-align: left;
+      font-size: var(--fs-body);
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all var(--motion-fast) var(--ease-out);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .hypo-btn:hover {
+      border-color: var(--model);
+    }
+    .hypo-btn.correct {
+      border-color: var(--model);
+      background: rgba(23, 98, 142, 0.08);
+      font-weight: 500;
+    }
+    .hypo-btn.wrong {
+      border-color: var(--focus);
+      background: rgba(184, 61, 11, 0.06);
+      color: var(--focus);
+    }
+    .hypo-btn .badge {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    /* 结论印证与底部进度 */
+    .diagnostic-footer {
+      border-top: 1px solid var(--rule);
+      padding-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .score-summary {
+      font-size: var(--fs-sec);
+      color: var(--text);
+    }
+    .score-summary b {
+      color: var(--model);
+      font-size: var(--fs-h2);
+    }
+    .reset-btn {
+      background: transparent;
+      border: 1px solid var(--rule);
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    .reset-btn:hover {
+      border-color: var(--text);
+      color: var(--text);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .probe-point::after {
+        animation: none !important;
+      }
+    }
+  </style>
+</head>
+<body data-page="05" data-total="5">
+  <div id="stage">
+    <header class="top-bar">
+      <h1>馆藏阿舍利手斧打制特征检定</h1>
+      <div class="specimen-toggle" role="tablist" aria-label="馆藏实物选择">
+        <button class="spec-btn active" id="btn-spec1" role="tab" aria-selected="true" data-spec="0">大都会标本 DP-19547</button>
+        <button class="spec-btn" id="btn-spec2" role="tab" aria-selected="false" data-spec="1">大都会标本 06.322</button>
+      </div>
+    </header>
+
+    <main class="workbench">
+      <!-- 标本探查区 -->
+      <section class="specimen-view" aria-label="高精度实物照相检测标本">
+        <div class="photo-stage" id="photo-stage">
+          <img id="specimen-img" src="assets/img/planner-657eb9f08f3a/00_met.jpg" alt="馆藏阿舍利双面打制手斧正面实物" title="The Metropolitan Museum of Art (CC0)">
+          <svg class="photo-overlay" id="overlay-svg" viewBox="0 0 780 680" aria-hidden="true">
+            <line id="guide-line" x1="0" y1="0" x2="0" y2="0" stroke="var(--model)" stroke-width="2" stroke-dasharray="4 4" opacity="0"></line>
+          </svg>
+          <div id="probe-container"></div>
+        </div>
+      </section>
+
+      <!-- 诊断与表决分析板 -->
+      <section class="diagnostic-panel" aria-live="polite">
+        <div class="probe-status-head">
+          <div class="probe-coord" id="probe-coord">探针定位：特征点 A（侧缘中段）</div>
+          <div class="probe-title" id="probe-title">周缘交互修疤与双向剥片</div>
+        </div>
+
+        <div class="diagnostic-body">
+          <div class="question-prompt" id="diagnostic-desc">
+            观察打制台面与鳞状疤痕走向，判断该解剖位点代表的工艺特征：
+          </div>
+
+          <div class="evidence-readout" id="evidence-text">
+            微痕读数：双向对称打击剥片，疤痕交汇形成连续波状刃线。
+          </div>
+
+          <div class="hypothesis-group" id="hypo-list" role="radiogroup" aria-label="诊断选项">
+            <!-- 动态填充选项 -->
+          </div>
+        </div>
+
+        <footer class="diagnostic-footer">
+          <div class="score-summary" id="progress-summary">
+            已检定特征：<b>0</b> / 3
+          </div>
+          <button class="reset-btn" id="btn-reset">重置检定</button>
+        </footer>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看工作台。我们接入了大都会艺术博物馆馆藏的两件阿舍利手斧实物高清图像。
+    请点击标本上的闪烁探针，分别检定三个关键位点：
+    第一，边缘交互剥片疤——确认两面交替打击形成的波状刃线；
+    第二，底部保留的未打制砾石皮壳——这是典型阿舍利手斧保留掌心握持舒适度的解剖依据；
+    第三，尖端收束区的精细微修与微痕——验证穿刺与精细切割功能。
+    选择你的工艺判断，系统会实时反馈打击机理与微痕证据。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      const DATA = [
+        {
+          id: 0,
+          name: "DP-19547-002",
+          src: "assets/img/planner-657eb9f08f3a/00_met.jpg",
+          probes: [
+            {
+              id: "p1",
+              tag: "A 侧缘",
+              x: 275,
+              y: 360,
+              title: "侧缘中段：交互剥片疤痕",
+              prompt: "观察侧向边界打制痕迹，该区域体现了何种石器剥片技术？",
+              evidence: "两侧向心打剥，剥片疤痕重叠，形成连续波状交错刃线。",
+              options: [
+                { text: "两面交替打击的连续刃缘", correct: true, feedback: "两面交替打击形成闭合刃线。" },
+                { text: "单向砸击的单面陡刃", correct: false, feedback: "单向砸击见于早期砍砸器。" },
+                { text: "水流撞击的随机破损", correct: false, feedback: "具规则打击泡，属人工打制。" }
+              ]
+            },
+            {
+              id: "p2",
+              tag: "B 底部",
+              x: 390,
+              y: 535,
+              title: "手斧根部：保留砾石皮壳",
+              prompt: "根部保留有圆钝且未剥片的原始外皮，这一结构的设计目的为何？",
+              evidence: "粗糙皮壳未打碎，保留天然鹅卵石平滑曲面，厚度达 4.2cm。",
+              options: [
+                { text: "便于手掌稳定握持与缓冲", correct: true, feedback: "厚重平滑皮壳利于掌心施力。" },
+                { text: "技术粗糙导致的原料废弃", correct: false, feedback: "其余部位修理极规整，系有意保留。" },
+                { text: "用于捆绑木柄的深凹开槽", correct: false, feedback: "底部呈钝圆凸面，为单手握持。" }
+              ]
+            },
+            {
+              id: "p3",
+              tag: "C 尖端",
+              x: 435,
+              y: 190,
+              title: "远端锋尖：二次精细修疤",
+              prompt: "观察尖部两翼打制疤痕的形态与尺寸，推断其加工工序：",
+              evidence: "浅平鳞片状微疤，边缘密集排列，修疤长度均小于 8mm。",
+              options: [
+                { text: "软锤二次压修的锋利锐尖", correct: true, feedback: "细小鳞状疤痕修出锐角穿刺尖端。" },
+                { text: "硬锤直接重击的初级剥片", correct: false, feedback: "硬锤打制会留深坑，难控微薄修疤。" },
+                { text: "研磨抛光成型的刃部光泽", correct: false, feedback: "旧石器早期尚未出现磨制工艺。" }
+              ]
+            }
+          ]
+        },
+        {
+          id: 1,
+          name: "06.322.136",
+          src: "assets/img/planner-657eb9f08f3a/02_met.jpg",
+          probes: [
+            {
+              id: "p1",
+              tag: "A 侧缘",
+              x: 310,
+              y: 350,
+              title: "侧向刃脊：S形交互刃线",
+              prompt: "沿斧身侧向边缘观察，其刃线空间展布具有什么形态？",
+              evidence: "刃线呈轻微扭曲的波浪 S 形走势，双向交互修理节律明确。",
+              options: [
+                { text: "两面交互剥片的立体扭曲刃", correct: true, feedback: "交替下锤形成侧视 S 形刃线。" },
+                { text: "具独立深齿的伐木锯刃", correct: false, feedback: "剥片平直过渡，非深齿锯状器。" }
+              ]
+            },
+            {
+              id: "p2",
+              tag: "B 掌心区",
+              x: 390,
+              y: 470,
+              title: "中部隆脊：双面立体对称中轴",
+              prompt: "手斧中轴纵向凸起脊线的作用与打制机制是什么？",
+              evidence: "两侧向心剥片于中央交汇，构成最大厚度纵向承力脊。",
+              options: [
+                { text: "增强抗弯折刚度的立体中轴", correct: true, feedback: "隆脊形成坚固菱形承力截面。" },
+                { text: "石核未经打制的多余凸起", correct: false, feedback: "脊线两侧对称修疤系精确打剥。" }
+              ]
+            },
+            {
+              id: "p3",
+              tag: "C 尖端刃口",
+              x: 420,
+              y: 195,
+              title: "前端刃部：微痕与使用崩缺",
+              prompt: "刃口边缘可见极细微剥落与微痕擦痕，指示了何种用途？",
+              evidence: "细小平行擦痕与微型贝壳状崩缺，集中在刃缘单侧。",
+              options: [
+                { text: "肉食分割与解剖的屠宰微痕", correct: true, feedback: "微痕证实用于切肉与刮皮解剖。" },
+                { text: "开凿岩石矿坑的重击崩裂", correct: false, feedback: "凿石将致大块崩塌而非微细擦痕。" }
+              ]
+            }
+          ]
+        }
+      ];
+
+      let state = {
+        specIndex: 0,
+        activeProbeIndex: 0,
+        answered: {} // { "specIndex-probeIndex": { selected: optIndex, isCorrect: bool } }
+      };
+
+      const photoStage = document.getElementById("photo-stage");
+      const specimenImg = document.getElementById("specimen-img");
+      const probeContainer = document.getElementById("probe-container");
+      const probeCoord = document.getElementById("probe-coord");
+      const probeTitle = document.getElementById("probe-title");
+      const diagnosticDesc = document.getElementById("diagnostic-desc");
+      const evidenceText = document.getElementById("evidence-text");
+      const hypoList = document.getElementById("hypo-list");
+      const progressSummary = document.getElementById("progress-summary");
+      const btnSpec1 = document.getElementById("btn-spec1");
+      const btnSpec2 = document.getElementById("btn-spec2");
+      const btnReset = document.getElementById("btn-reset");
+
+      function getAnswerKey(sIdx, pIdx) {
+        return `${sIdx}-${pIdx}`;
+      }
+
+      function switchSpecimen(idx) {
+        if (state.specIndex === idx) return;
+        state.specIndex = idx;
+        state.activeProbeIndex = 0;
+        specimenImg.src = DATA[idx].src;
+        btnSpec1.classList.toggle("active", idx === 0);
+        btnSpec1.setAttribute("aria-selected", idx === 0);
+        btnSpec2.classList.toggle("active", idx === 1);
+        btnSpec2.setAttribute("aria-selected", idx === 1);
+        renderProbes();
+        renderDiagnostics();
+      }
+
+      function renderProbes() {
+        probeContainer.innerHTML = "";
+        const spec = DATA[state.specIndex];
+        spec.probes.forEach((probe, pIdx) => {
+          const key = getAnswerKey(state.specIndex, pIdx);
+          const answer = state.answered[key];
+          const div = document.createElement("button");
+          div.className = "probe-point" + 
+            (pIdx === state.activeProbeIndex ? " active" : "") +
+            (answer && answer.isCorrect ? " identified" : "");
+          div.style.left = probe.x + "px";
+          div.style.top = probe.y + "px";
+          div.setAttribute("aria-label", probe.tag + ": " + probe.title);
+          div.innerHTML = `<span class="pin-tag">${probe.tag}</span>`;
+          div.addEventListener("click", () => {
+            state.activeProbeIndex = pIdx;
+            renderProbes();
+            renderDiagnostics();
+          });
+          probeContainer.appendChild(div);
+        });
+      }
+
+      function renderDiagnostics() {
+        const spec = DATA[state.specIndex];
+        const probe = spec.probes[state.activeProbeIndex];
+        const key = getAnswerKey(state.specIndex, state.activeProbeIndex);
+        const currentAnswer = state.answered[key];
+
+        probeCoord.textContent = `探针定位：${probe.tag}`;
+        probeTitle.textContent = probe.title;
+        diagnosticDesc.textContent = probe.prompt;
+        evidenceText.textContent = `【实物特征】${probe.evidence}`;
+
+        hypoList.innerHTML = "";
+        probe.options.forEach((opt, oIdx) => {
+          const btn = document.createElement("button");
+          btn.className = "hypo-btn";
+          if (currentAnswer) {
+            if (opt.correct) {
+              btn.classList.add("correct");
+            } else if (currentAnswer.selected === oIdx) {
+              btn.classList.add("wrong");
+            }
+          }
+          btn.innerHTML = `
+            <span>${opt.text}</span>
+            <span class="badge">${currentAnswer && opt.correct ? "✓ 证据吻合" : (currentAnswer && currentAnswer.selected === oIdx ? "✕ 与微痕相左" : "验证")}</span>
+          `;
+          btn.addEventListener("click", () => {
+            state.answered[key] = {
+              selected: oIdx,
+              isCorrect: opt.correct
+            };
+            evidenceText.textContent = `【检定结论】${opt.feedback}`;
+            renderProbes();
+            renderDiagnostics();
+            updateProgress();
+          });
+          hypoList.appendChild(btn);
+        });
+
+        updateProgress();
+      }
+
+      function updateProgress() {
+        const spec = DATA[state.specIndex];
+        let correctCount = 0;
+        spec.probes.forEach((_, pIdx) => {
+          const ans = state.answered[getAnswerKey(state.specIndex, pIdx)];
+          if (ans && ans.isCorrect) correctCount++;
+        });
+        progressSummary.innerHTML = `本标本已检定：<b>${correctCount}</b> / ${spec.probes.length}`;
+      }
+
+      btnSpec1.addEventListener("click", () => switchSpecimen(0));
+      btnSpec2.addEventListener("click", () => switchSpecimen(1));
+      btnReset.addEventListener("click", () => {
+        state.answered = {};
+        renderProbes();
+        renderDiagnostics();
+      });
+
+      renderProbes();
+      renderDiagnostics();
+      Deck.init({ index: 5, total: 5, keys: false });
+    })();
+  </script>
+</body>
+</html>

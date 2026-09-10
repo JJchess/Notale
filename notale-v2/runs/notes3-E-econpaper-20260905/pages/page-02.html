@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 52px 64px 44px;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    header {
+      margin-bottom: 24px;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      font-weight: 700;
+      line-height: 1.15;
+      margin: 0 0 10px;
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    /* 主证据区：四节点链条 + 展开验证视窗 */
+    .main-area {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* 横向四步链条 */
+    .chain-track {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      position: relative;
+    }
+
+    .chain-node {
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      cursor: pointer;
+      transition: border-color var(--fast) var(--ease), transform var(--fast) var(--ease), background var(--fast) var(--ease);
+      position: relative;
+      text-align: left;
+    }
+    .chain-node:hover {
+      border-color: var(--observed);
+    }
+    .chain-node.active {
+      border-color: var(--observed);
+      background: var(--selected);
+      transform: translateY(-2px);
+    }
+    .chain-node.active::after {
+      content: "";
+      position: absolute;
+      bottom: -9px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-top: 8px solid var(--observed);
+    }
+
+    .node-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .node-tag {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-num);
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+    .node-status {
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: var(--r-sm);
+      background: var(--soft);
+      color: var(--muted);
+    }
+    .chain-node.active .node-status {
+      background: var(--observed);
+      color: #fff;
+    }
+
+    .node-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+    .node-question {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.35;
+    }
+
+    /* 验证视窗 */
+    .inspect-panel {
+      flex: 1;
+      min-height: 0;
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 24px 28px;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 28px;
+      align-items: stretch;
+    }
+
+    .inspect-meta {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-right: 1px solid var(--soft);
+      padding-right: 24px;
+    }
+    .inspect-meta h2 {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      margin: 0 0 10px;
+      color: var(--text);
+    }
+    .inspect-rule {
+      font-size: var(--fs-body);
+      line-height: 1.45;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+    /* 侧边条违规修正：去掉 border-left 3px 粗条，改用整圈细边框或底色 */
+    .inspect-checkpoint {
+      background: var(--bg);
+      border-radius: var(--r-sm);
+      padding: 14px 16px;
+      border: 1px solid var(--soft);
+    }
+    .checkpoint-title {
+      font-size: var(--fs-tick);
+      color: var(--observed);
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .checkpoint-desc {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    /* 右侧实证图解区 */
+    .inspect-canvas-wrap {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+    }
+    .diagram-svg {
+      width: 100%;
+      height: 100%;
+      max-height: 380px;
+    }
+
+    /* 底部条与按键导航 */
+    .bottom-bar {
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .btn-group {
+      display: flex;
+      gap: 10px;
+    }
+    .ctrl-btn {
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-sm);
+      color: var(--text);
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-family: inherit;
+      cursor: pointer;
+      transition: background var(--fast), border-color var(--fast);
+    }
+    .ctrl-btn:hover:not(:disabled) {
+      border-color: var(--observed);
+    }
+    .ctrl-btn:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+  </style>
+</head>
+<body data-page="02" data-total="24">
+  <div id="stage">
+    <header>
+      <h1>把因果主张还原为证据链</h1>
+      <p class="lead">读论文不是记结论，而是核验因果链各环的排他性支撑与断裂风险</p>
+    </header>
+
+    <main class="main-area">
+      <!-- 4 环因果证据链条 -->
+      <nav class="chain-track" aria-label="证据链环节">
+        <button class="chain-node active" data-step="0" type="button">
+          <div class="node-header">
+            <span class="node-tag">环节 1</span>
+            <span class="node-status">起点</span>
+          </div>
+          <h2 class="node-title">因果提问</h2>
+          <p class="node-question">处理变量对结果的影响？</p>
+        </button>
+
+        <button class="chain-node" data-step="1" type="button">
+          <div class="node-header">
+            <span class="node-tag">环节 2</span>
+            <span class="node-status">反事实</span>
+          </div>
+          <h2 class="node-title">识别策略</h2>
+          <p class="node-question">对照组能否代表未受处理走势？</p>
+        </button>
+
+        <button class="chain-node" data-step="2" type="button">
+          <div class="node-header">
+            <span class="node-tag">环节 3</span>
+            <span class="node-status">点估计</span>
+          </div>
+          <h2 class="node-title">统计估计</h2>
+          <p class="node-question">回归模型与聚类标误是否严谨？</p>
+        </button>
+
+        <button class="chain-node" data-step="3" type="button">
+          <div class="node-header">
+            <span class="node-tag">环节 4</span>
+            <span class="node-status">抗扰动</span>
+          </div>
+          <h2 class="node-title">稳健核验</h2>
+          <p class="node-question">结论能否经受安慰剂检验？</p>
+        </button>
+      </nav>
+
+      <!-- 交互验证视窗 -->
+      <section class="inspect-panel">
+        <div class="inspect-meta">
+          <div>
+            <h2 id="metaTitle">因果提问：剥离单纯相关</h2>
+            <p id="metaRule" class="inspect-rule">界定处理 D 与结果 Y，排查混杂与反向因果威胁。</p>
+          </div>
+          <div class="inspect-checkpoint">
+            <div class="checkpoint-title">阅读核验焦点</div>
+            <p id="checkpointDesc" class="checkpoint-desc">混杂 U 是否同时驱动处理与产出？</p>
+          </div>
+        </div>
+
+        <div class="inspect-canvas-wrap">
+          <svg class="diagram-svg" id="chainSvg" viewBox="0 0 940 380"></svg>
+        </div>
+      </section>
+    </main>
+
+    <footer class="bottom-bar">
+      <span>点击各环节或使用方向键查看核验标准</span>
+      <div class="btn-group">
+        <button class="ctrl-btn" id="prevBtn" type="button" disabled>上一步</button>
+        <button class="ctrl-btn" id="nextBtn" type="button">下一步</button>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    读实证论文的第一步，是把作者在摘要和导论中提出的因果主张拆解开来。
+    很多读者容易直接跳到结论表格看显著性星号，但这往往会落入“把相关当因果”的陷阱。
+    真正严谨的阅读应当建立在一条闭合的证据链上：从明确的因果提问与内生性识别，到对照组的选择，再到估计模型与稳健性检验。
+    只要其中任何一环断裂，最终的因果推断就无法成立。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const STEPS = [
+        {
+          title: "因果提问：剥离单纯相关",
+          rule: "界定处理 D 与结果 Y，排查混杂与反向因果威胁。",
+          checkpoint: "混杂 U 是否同时驱动处理与产出？",
+          render: renderQuestionStep
+        },
+        {
+          title: "识别策略：构建可信反事实",
+          rule: "借外生冲击阻断混杂路径，恢复可比性。",
+          checkpoint: "处理组与对照组是否满足平行趋势？",
+          render: renderStrategyStep
+        },
+        {
+          title: "统计估计：量化因果效应",
+          rule: "设定计量方程，汇报系数与聚类标误。",
+          checkpoint: "标准误聚类层级是否匹配实施层级？",
+          render: renderEstimationStep
+        },
+        {
+          title: "稳健核验：排除替代性假说",
+          rule: "通过安慰剂与样本检验确认效应稳固。",
+          checkpoint: "虚构政策时间后显著效应是否消失？",
+          render: renderRobustnessStep
+        }
+      ];
+
+      let currentStep = 0;
+      const svg = document.getElementById("chainSvg");
+      const metaTitle = document.getElementById("metaTitle");
+      const metaRule = document.getElementById("metaRule");
+      const checkpointDesc = document.getElementById("checkpointDesc");
+      const nodes = document.querySelectorAll(".chain-node");
+      const prevBtn = document.getElementById("prevBtn");
+      const nextBtn = document.getElementById("nextBtn");
+
+      // 颜色变量
+      const C_TEXT = "#17272D";
+      const C_MUTED = "#52666E";
+      const C_OBSERVED = "#245A74";
+      const C_CAUSE = "#B13F2A";
+      const C_SUPPORTED = "#2D694C";
+      const C_BG = "#F2F6F7";
+
+      function update(step) {
+        currentStep = step;
+        nodes.forEach((n, idx) => {
+          n.classList.toggle("active", idx === step);
+        });
+
+        const data = STEPS[step];
+        metaTitle.textContent = data.title;
+        metaRule.textContent = data.rule;
+        checkpointDesc.textContent = data.checkpoint;
+
+        prevBtn.disabled = (step === 0);
+        nextBtn.disabled = (step === STEPS.length - 1);
+
+        data.render();
+      }
+
+      function createSvgEl(tag, attrs) {
+        const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+        for (const [k, v] of Object.entries(attrs)) {
+          el.setAttribute(k, v);
+        }
+        return el;
+      }
+
+      function clearSvg() {
+        while (svg.firstChild) {
+          svg.removeChild(svg.firstChild);
+        }
+      }
+
+      // Step 1: 因果提问（混杂因素DAG）
+      function renderQuestionStep() {
+        clearSvg();
+        // 绘制混杂三元图
+        // U 混杂因素 -> D 处理变量 -> Y 结果变量, U -> Y
+        const defs = createSvgEl("defs", {});
+        const marker = createSvgEl("marker", {
+          id: "arrow-cause",
+          viewBox: "0 0 10 10",
+          refX: "6",
+          refY: "5",
+          markerWidth: "6",
+          markerHeight: "6",
+          orient: "auto-start-reverse"
+        });
+        const path = createSvgEl("path", { d: "M 0 1 L 9 5 L 0 9 z", fill: C_CAUSE });
+        marker.appendChild(path);
+
+        const markerObs = createSvgEl("marker", {
+          id: "arrow-obs",
+          viewBox: "0 0 10 10",
+          refX: "6",
+          refY: "5",
+          markerWidth: "6",
+          markerHeight: "6",
+          orient: "auto-start-reverse"
+        });
+        const pathObs = createSvgEl("path", { d: "M 0 1 L 9 5 L 0 9 z", fill: C_OBSERVED });
+        markerObs.appendChild(pathObs);
+        defs.appendChild(marker);
+        defs.appendChild(markerObs);
+        svg.appendChild(defs);
+
+        // 背景引导虚线框
+        const bgBox = createSvgEl("rect", {
+          x: "80", y: "40", width: "780", height: "300",
+          rx: "12", fill: "#FAFDFD", stroke: "#E3ECEF", "stroke-width": "1"
+        });
+        svg.appendChild(bgBox);
+
+        // 连线：U -> D
+        const lineUD = createSvgEl("path", {
+          d: "M 440 105 L 290 230",
+          stroke: C_CAUSE, "stroke-width": "2.5", "stroke-dasharray": "5 4",
+          "marker-end": "url(#arrow-cause)", fill: "none"
+        });
+        // 连线：U -> Y
+        const lineUY = createSvgEl("path", {
+          d: "M 500 105 L 650 230",
+          stroke: C_CAUSE, "stroke-width": "2.5", "stroke-dasharray": "5 4",
+          "marker-end": "url(#arrow-cause)", fill: "none"
+        });
+        // 连线：D -> Y (因果目标)
+        const lineDY = createSvgEl("path", {
+          d: "M 320 250 L 620 250",
+          stroke: C_OBSERVED, "stroke-width": "3.5",
+          "marker-end": "url(#arrow-obs)", fill: "none"
+        });
+
+        svg.appendChild(lineUD);
+        svg.appendChild(lineUY);
+        svg.appendChild(lineDY);
+
+        // 标签：真实因果效应 vs 后门混杂
+        const txtDY = createSvgEl("text", {
+          x: "470", y: "240", "text-anchor": "middle",
+          fill: C_OBSERVED, "font-size": "16", "font-weight": "bold"
+        });
+        txtDY.textContent = "因果效应 β";
+        svg.appendChild(txtDY);
+
+        const txtConf = createSvgEl("text", {
+          x: "470", y: "175", "text-anchor": "middle",
+          fill: C_CAUSE, "font-size": "15"
+        });
+        txtConf.textContent = "后门伪相关路径";
+        svg.appendChild(txtConf);
+
+        // 绘制三个节点 (U, D, Y)
+        drawNode(470, 90, "混杂因素 U", "遗漏不可观测变量", C_CAUSE);
+        drawNode(260, 250, "处理变量 D", "试点政策冲击", C_TEXT);
+        drawNode(680, 250, "结果变量 Y", "产出绩效", C_TEXT);
+      }
+
+      // Step 2: 识别策略（双重差分平行趋势）
+      function renderStrategyStep() {
+        clearSvg();
+        // 坐标系 + 双重差分趋势图
+        const g = createSvgEl("g", { transform: "translate(100, 30)" });
+
+        // 坐标轴
+        const axisX = createSvgEl("line", { x1: "80", y1: "280", x2: "700", y2: "280", stroke: "#CFDCE1", "stroke-width": "1.5" });
+        const axisY = createSvgEl("line", { x1: "80", y1: "40", x2: "80", y2: "280", stroke: "#CFDCE1", "stroke-width": "1.5" });
+        g.appendChild(axisX);
+        g.appendChild(axisY);
+
+        // 政策发生分界线
+        const policyLine = createSvgEl("line", {
+          x1: "360", y1: "40", x2: "360", y2: "280",
+          stroke: C_CAUSE, "stroke-width": "2", "stroke-dasharray": "6 4"
+        });
+        g.appendChild(policyLine);
+
+        const policyTxt = createSvgEl("text", {
+          x: "360", y: "30", "text-anchor": "middle",
+          fill: C_CAUSE, "font-size": "15", "font-weight": "bold"
+        });
+        policyTxt.textContent = "政策冲击点";
+        g.appendChild(policyTxt);
+
+        // 对照组线 (实测)
+        const ctrlPath = createSvgEl("path", {
+          d: "M 140 220 L 360 180 L 640 130",
+          stroke: C_MUTED, "stroke-width": "3", fill: "none"
+        });
+        g.appendChild(ctrlPath);
+
+        // 处理组反事实线 (虚线平行)
+        const cfPath = createSvgEl("path", {
+          d: "M 360 140 L 640 90",
+          stroke: C_CAUSE, "stroke-width": "2.5", "stroke-dasharray": "5 5", fill: "none"
+        });
+        g.appendChild(cfPath);
+
+        // 处理组实际观测线 (跃升)
+        const treatPath = createSvgEl("path", {
+          d: "M 140 180 L 360 140 L 640 45",
+          stroke: C_OBSERVED, "stroke-width": "3.5", fill: "none"
+        });
+        g.appendChild(treatPath);
+
+        // 差分净效应标注
+        const diffLine = createSvgEl("line", {
+          x1: "640", y1: "45", x2: "640", y2: "90",
+          stroke: C_SUPPORTED, "stroke-width": "3"
+        });
+        g.appendChild(diffLine);
+
+        const diffTxt = createSvgEl("text", {
+          x: "655", y: "72", "text-anchor": "start",
+          fill: C_SUPPORTED, "font-size": "15", "font-weight": "bold"
+        });
+        diffTxt.textContent = "净因果效应 (DID)";
+        g.appendChild(diffTxt);
+
+        // 图例文本
+        addText(g, 140, 205, "处理组趋势", C_OBSERVED);
+        addText(g, 140, 245, "对照组趋势", C_MUTED);
+        addText(g, 550, 115, "反事实走势", C_CAUSE);
+
+        svg.appendChild(g);
+      }
+
+      // Step 3: 统计估计（回归估计与标准误）
+      function renderEstimationStep() {
+        clearSvg();
+        const g = createSvgEl("g", { transform: "translate(80, 40)" });
+
+        // 计量方程框
+        const eqCard = createSvgEl("rect", {
+          x: "40", y: "15", width: "700", height: "65",
+          rx: "8", fill: "#FFFFFF", stroke: "#CFDCE1", "stroke-width": "1"
+        });
+        g.appendChild(eqCard);
+
+        const eqTxt = createSvgEl("text", {
+          x: "390", y: "55", "text-anchor": "middle",
+          fill: C_TEXT, "font-size": "19", "font-family": "var(--font-num), serif"
+        });
+        eqTxt.textContent = "Y_it = α + β · (Treat_i × Post_t) + X'_it γ + μ_i + λ_t + ε_it";
+        g.appendChild(eqTxt);
+
+        // 估计系数置信区间图
+        const axis = createSvgEl("line", { x1: "100", y1: "210", x2: "680", y2: "210", stroke: "#CFDCE1", "stroke-width": "1.5" });
+        const zeroLine = createSvgEl("line", { x1: "300", y1: "110", x2: "300", y2: "270", stroke: C_CAUSE, "stroke-width": "1.5", "stroke-dasharray": "4 4" });
+        g.appendChild(axis);
+        g.appendChild(zeroLine);
+
+        addText(g, 300, 290, "0 效应参考线", C_MUTED, "middle");
+
+        // 估计点与误差棒
+        // β = 0.28, CI: [0.16, 0.40]
+        const ciLine = createSvgEl("line", {
+          x1: "420", y1: "190", x2: "580", y2: "190",
+          stroke: C_OBSERVED, "stroke-width": "3.5"
+        });
+        const ciLeft = createSvgEl("line", { x1: "420", y1: "180", x2: "420", y2: "200", stroke: C_OBSERVED, "stroke-width": "3.5" });
+        const ciRight = createSvgEl("line", { x1: "580", y1: "180", x2: "580", y2: "200", stroke: C_OBSERVED, "stroke-width": "3.5" });
+        const point = createSvgEl("circle", { cx: "500", cy: "190", r: "6", fill: C_OBSERVED });
+
+        g.appendChild(ciLine);
+        g.appendChild(ciLeft);
+        g.appendChild(ciRight);
+        g.appendChild(point);
+
+        const betaTxt = createSvgEl("text", {
+          x: "500", y: "165", "text-anchor": "middle",
+          fill: C_OBSERVED, "font-size": "16", "font-weight": "bold"
+        });
+        betaTxt.textContent = "β̂ = 0.285*** (0.052)";
+        g.appendChild(betaTxt);
+
+        const seNote = createSvgEl("text", {
+          x: "500", y: "240", "text-anchor": "middle",
+          fill: C_MUTED, "font-size": "15"
+        });
+        seNote.textContent = "95% 置信区间异于 0，标误按城市聚类";
+        g.appendChild(seNote);
+
+        svg.appendChild(g);
+      }
+
+      // Step 4: 稳健核验（多维度敏感性矩阵）
+      function renderRobustnessStep() {
+        clearSvg();
+        const g = createSvgEl("g", { transform: "translate(60, 30)" });
+
+        const tests = [
+          { name: "动态平行趋势", desc: "事前各期系数不显著", pass: true },
+          { name: "安慰剂错位", desc: "虚构实施期系数趋近于 0", pass: true },
+          { name: "剔除极端样本", desc: "基准因果效应大小保持稳定", pass: true },
+          { name: "控制同期试点", desc: "排他性假说未被推翻", pass: true }
+        ];
+
+        tests.forEach((t, i) => {
+          const yPos = 20 + i * 72;
+          const rect = createSvgEl("rect", {
+            x: "40", y: yPos, width: "740", height: "58",
+            rx: "8", fill: "#FFFFFF", stroke: "#CFDCE1", "stroke-width": "1"
+          });
+          g.appendChild(rect);
+
+          // 状态徽章
+          const badge = createSvgEl("rect", {
+            x: "56", y: yPos + 14, width: "68", height: "30",
+            rx: "4", fill: "#E8F4EC"
+          });
+          const badgeTxt = createSvgEl("text", {
+            x: "90", y: yPos + 34, "text-anchor": "middle",
+            fill: C_SUPPORTED, "font-size": "13", "font-weight": "bold"
+          });
+          badgeTxt.textContent = "PASS";
+          g.appendChild(badge);
+          g.appendChild(badgeTxt);
+
+          // 测试名
+          const nameTxt = createSvgEl("text", {
+            x: "140", y: yPos + 35,
+            fill: C_TEXT, "font-size": "16", "font-weight": "bold"
+          });
+          nameTxt.textContent = t.name;
+          g.appendChild(nameTxt);
+
+          // 描述
+          const descTxt = createSvgEl("text", {
+            x: "380", y: yPos + 35,
+            fill: C_MUTED, "font-size": "15"
+          });
+          descTxt.textContent = t.desc;
+          g.appendChild(descTxt);
+        });
+
+        svg.appendChild(g);
+      }
+
+      function drawNode(cx, cy, label, subtext, strokeColor) {
+        const g = createSvgEl("g", {});
+        const rect = createSvgEl("rect", {
+          x: cx - 90, y: cy - 35, width: "180", height: "70",
+          rx: "8", fill: "#FFFFFF", stroke: strokeColor, "stroke-width": "2"
+        });
+        const txt1 = createSvgEl("text", {
+          x: cx, y: cy - 6, "text-anchor": "middle",
+          fill: C_TEXT, "font-size": "16", "font-weight": "bold"
+        });
+        txt1.textContent = label;
+
+        const txt2 = createSvgEl("text", {
+          x: cx, y: cy + 18, "text-anchor": "middle",
+          fill: C_MUTED, "font-size": "13"
+        });
+        txt2.textContent = subtext;
+
+        g.appendChild(rect);
+        g.appendChild(txt1);
+        g.appendChild(txt2);
+        svg.appendChild(g);
+      }
+
+      function addText(parent, x, y, text, color, anchor) {
+        const t = createSvgEl("text", {
+          x: x, y: y, fill: color, "font-size": "15", "text-anchor": anchor || "start"
+        });
+        t.textContent = text;
+        parent.appendChild(t);
+      }
+
+      // 事件绑定
+      nodes.forEach((node) => {
+        node.addEventListener("click", () => {
+          const step = parseInt(node.getAttribute("data-step"), 10);
+          update(step);
+        });
+      });
+
+      prevBtn.addEventListener("click", () => {
+        if (currentStep > 0) update(currentStep - 1);
+      });
+
+      nextBtn.addEventListener("click", () => {
+        if (currentStep < STEPS.length - 1) update(currentStep + 1);
+      });
+
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+          if (currentStep < STEPS.length - 1) update(currentStep + 1);
+        } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+          if (currentStep > 0) update(currentStep - 1);
+        }
+      });
+
+      // 初始化
+      update(0);
+      Deck.init({ index: 2, total: 24, keys: false });
+    })();
+  </script>
+</body>
+</html>

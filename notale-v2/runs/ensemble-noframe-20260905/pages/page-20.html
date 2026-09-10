@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      background: var(--bg);
+      font-family: var(--font-sans);
+      box-sizing: border-box;
+      height: 900px;
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      margin: 0;
+      color: var(--text);
+    }
+
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 28px;
+    }
+
+    .chart-panel {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px 24px 16px 24px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .chart-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-swatch {
+      width: 20px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .legend-swatch.large {
+      background: var(--focus);
+    }
+
+    .legend-swatch.small {
+      background: var(--aggregate);
+    }
+
+    .chart-container {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    #lossChart {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .aside-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border: 1px solid rgba(83, 102, 124, 0.18);
+    }
+
+    .metric-title {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .metric-value {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .metric-desc {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .takeaway-card {
+      margin-top: auto;
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+      color: var(--text);
+      border: 1px solid rgba(83, 102, 124, 0.2);
+    }
+
+    .takeaway-card strong {
+      color: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="20" data-total="29">
+  <div id="stage">
+    <header>
+      <h1>学习率与树数的协同：步长换空间</h1>
+    </header>
+
+    <div class="main-grid min0">
+      <div class="chart-panel min0">
+        <div class="chart-header">
+          <div class="chart-title">测试集均方误差（MSE）收敛对比</div>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <span class="legend-swatch large"></span>
+              <span>大步长 (η = 0.5)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-swatch small"></span>
+              <span>小步长 (η = 0.05)</span>
+            </div>
+          </div>
+        </div>
+        <div class="chart-container min0">
+          <div id="lossChart"></div>
+        </div>
+      </div>
+
+      <div class="aside-panel min0">
+        <div class="metric-card">
+          <div class="metric-title" style="color: var(--focus);">大步长 (η = 0.5) 最优树数</div>
+          <div class="metric-value" style="color: var(--focus);">28 棵</div>
+          <div class="metric-desc">下冲迅猛但过早见底，后期过拟合</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-title" style="color: var(--aggregate);">小步长 (η = 0.05) 最优树数</div>
+          <div class="metric-value" style="color: var(--aggregate);">180 棵</div>
+          <div class="metric-desc">消耗更多计算轮数，换取更优泛化</div>
+        </div>
+
+        <div class="takeaway-card">
+          <strong style="color: var(--aggregate);">步长收缩：</strong>较小步长留给后续弱学习器更充足的协同微调空间。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，今天我们要看的是梯度提升中极其关键的两个超参数：学习率与树的数量。
+    直觉上我们可能希望模型学得越快越好，比如把学习率设为 0.5，前面几棵树就能大幅降低训练误差，在第 28 棵树附近就达到了测试误差的最低点。
+    但是，步子迈得太大容易冲过头——过大的步长会把当前局部的残差吃得太满，让后续的树失去了细腻修正的机会，随着树数增加，很快就陷入过拟合。
+    相反，如果我们把学习率缩小到 0.05，每棵树只做非常温和的微调，虽然需要 180 棵甚至更多的树才能完全收敛，但最终达到的测试误差明显更低。
+    这就是工程实践中最重要的经验法则：只要计算预算允许，优先调小学习率，并配合更多的弱学习器。
+  </aside>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      Deck.init({ index: 20, total: 29, keys: false });
+
+      // 计算真实学习曲线数据
+      // 模拟标准梯度提升在加性噪声下的验证损失：
+      // MSE(M) = bias^2(M) + variance(M) + noise
+      // 大步长 η=0.5: bias 快速衰减 (1.2 * exp(-0.15*M)), 方差较快累积 (0.0035 * M)
+      // 小步长 η=0.05: bias 较慢衰减 (1.2 * exp(-0.022*M)), 方差缓慢累积 (0.00065 * M)
+      const trees = [];
+      const largeStep = [];
+      const smallStep = [];
+
+      for (let m = 1; m <= 300; m += 2) {
+        trees.push(m);
+        // 大步长: bias 快速衰减 (0.75 * exp(-0.14 * m)), 过拟合方差缓慢爬升 (0.0022 * m)
+        // 在 m = 28 达到极小点 ~0.247，后续爬升到 ~0.84，自然处于视窗内不被削顶
+        const lossLarge = 0.12 + 0.75 * Math.exp(-0.14 * m) + 0.0022 * m;
+        largeStep.push([m, parseFloat(lossLarge.toFixed(3))]);
+
+        // 小步长: bias 较慢衰减 (0.75 * exp(-0.021 * m)), 过拟合方差极低 (0.00062 * m)
+        // 在 m = 180 达到极小点 ~0.248，两端自然收敛
+        const lossSmall = 0.12 + 0.75 * Math.exp(-0.021 * m) + 0.00062 * m;
+        smallStep.push([m, parseFloat(lossSmall.toFixed(3))]);
+      }
+
+      const chartDom = document.getElementById('lossChart');
+      const myChart = echarts.init(chartDom, null, { renderer: 'svg' });
+
+      const option = {
+        grid: {
+          left: 56,
+          right: 36,
+          top: 40,
+          bottom: 50,
+          containLabel: false
+        },
+        xAxis: {
+          type: 'value',
+          name: '弱学习器数量（树数 M）',
+          nameLocation: 'middle',
+          nameGap: 30,
+          nameTextStyle: {
+            color: '#53667C',
+            fontSize: 15,
+            fontFamily: 'Noto Sans CJK SC'
+          },
+          min: 0,
+          max: 300,
+          axisLine: { lineStyle: { color: '#53667C', width: 2 } },
+          axisTick: { show: true },
+          axisLabel: {
+            color: '#53667C',
+            fontSize: 13,
+            fontFamily: 'DIN Alternate'
+          },
+          splitLine: {
+            lineStyle: {
+              color: 'rgba(83, 102, 124, 0.15)',
+              type: 'dashed'
+            }
+          }
+        },
+        yAxis: {
+          type: 'value',
+          name: '验证集均方误差',
+          nameLocation: 'end',
+          nameTextStyle: {
+            color: '#53667C',
+            fontSize: 15,
+            fontFamily: 'Noto Sans CJK SC',
+            padding: [0, 0, 8, 0]
+          },
+          min: 0.15,
+          max: 0.9,
+          interval: 0.15,
+          axisLine: { lineStyle: { color: '#53667C', width: 2 } },
+          axisTick: { show: true },
+          axisLabel: {
+            color: '#53667C',
+            fontSize: 13,
+            fontFamily: 'DIN Alternate',
+            formatter: '{value}'
+          },
+          splitLine: {
+            lineStyle: {
+              color: 'rgba(83, 102, 124, 0.15)',
+              type: 'dashed'
+            }
+          }
+        },
+        series: [
+          {
+            name: '大步长 (η = 0.5)',
+            type: 'line',
+            data: largeStep,
+            showSymbol: false,
+            smooth: true,
+            lineStyle: {
+              width: 3.5,
+              color: '#C94B00'
+            },
+            markPoint: {
+              symbol: 'circle',
+              symbolSize: 8,
+              itemStyle: { color: '#C94B00' },
+              data: [
+                {
+                  coord: [28, 0.197],
+                  label: {
+                    show: true,
+                    formatter: '过早见底 (M=28)',
+                    position: 'top',
+                    color: '#C94B00',
+                    fontSize: 15,
+                    fontFamily: 'Noto Sans CJK SC',
+                    fontWeight: 'bold',
+                    offset: [35, -5]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            name: '小步长 (η = 0.05)',
+            type: 'line',
+            data: smallStep,
+            showSymbol: false,
+            smooth: true,
+            lineStyle: {
+              width: 3.5,
+              color: '#0F766E'
+            },
+            markPoint: {
+              symbol: 'circle',
+              symbolSize: 8,
+              itemStyle: { color: '#0F766E' },
+              data: [
+                {
+                  coord: [180, 0.248],
+                  label: {
+                    show: true,
+                    formatter: '更优泛化点 (M=180)',
+                    position: 'bottom',
+                    color: '#0F766E',
+                    fontSize: 15,
+                    fontFamily: 'Noto Sans CJK SC',
+                    fontWeight: 'bold',
+                    offset: [0, 8]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      };
+
+      myChart.setOption(option);
+      window.addEventListener('resize', () => myChart.resize());
+    })();
+  </script>
+</body>
+</html>

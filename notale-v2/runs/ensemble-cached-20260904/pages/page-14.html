@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Boosting 的序列结构</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "SFMono-Regular", Consolas, Menlo, monospace;
+    }
+
+    #stage {
+      padding: 20px var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      color: var(--text);
+      background: var(--bg);
+      font-family: var(--font-sans);
+      box-sizing: border-box;
+      user-select: none;
+      height: 900px;
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    .header-block {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid rgba(83, 106, 120, 0.2);
+      padding-bottom: 10px;
+    }
+    .header-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .header-title-group h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.15;
+    }
+    .header-title-group .sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主内容两栏 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧流水线工作区 */
+    .pipeline-container {
+      background: var(--surface);
+      border-radius: 12px;
+      border: 1px solid rgba(83, 106, 120, 0.18);
+      box-shadow: 0 4px 18px rgba(18, 38, 52, 0.04);
+      display: flex;
+      flex-direction: column;
+      padding: 20px 24px;
+      gap: 16px;
+    }
+
+    .pipeline-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .stage-indicator {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .step-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      background: var(--surface-strong);
+      color: var(--model);
+    }
+    .step-pill.aggregate {
+      background: #faece6;
+      color: var(--aggregate);
+    }
+
+    /* 序列阶段流转卡片 */
+    .stages-track {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr) 280px;
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    .stage-card {
+      background: #F8FAFC;
+      border: 2px solid rgba(83, 106, 120, 0.15);
+      border-radius: 10px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+      transition: border-color var(--duration) var(--ease), background var(--duration) var(--ease);
+      cursor: pointer;
+    }
+    .stage-card:hover {
+      border-color: rgba(39, 100, 143, 0.4);
+    }
+    .stage-card.active {
+      background: #FFFFFF;
+      border-color: var(--model);
+      box-shadow: 0 4px 14px rgba(39, 100, 143, 0.12);
+    }
+    .stage-card.final.active {
+      border-color: var(--aggregate);
+      box-shadow: 0 4px 14px rgba(195, 75, 34, 0.12);
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid rgba(83, 106, 120, 0.12);
+      padding-bottom: 6px;
+    }
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .card-tag {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .card-task {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.4;
+      min-height: 40px;
+    }
+    .card-metrics {
+      display: flex;
+      justify-content: space-between;
+      background: var(--surface-strong);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: var(--fs-label);
+    }
+    .card-metrics .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .card-metrics .metric-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .card-metrics .metric-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .card-metrics .metric-val.err {
+      color: var(--aggregate);
+    }
+
+    /* 下方直观证据图 (样本平面与决策面演进) */
+    .visual-board {
+      flex: 1;
+      min-height: 0;
+      background: #FAFCFD;
+      border: 1px solid rgba(83, 106, 120, 0.15);
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+    }
+    .board-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      border-bottom: 1px dashed rgba(83, 106, 120, 0.15);
+      padding-bottom: 6px;
+    }
+    .board-header .legend-group {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: var(--fs-label);
+    }
+    .dot-pos {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--sample);
+    }
+    .dot-neg {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      background: var(--model);
+    }
+    .dot-err {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid var(--aggregate);
+      box-sizing: border-box;
+    }
+
+    .canvas-container {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    /* 控制条 */
+    .timeline-ctrl {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 8px 12px;
+      background: #F4F7F9;
+      border-radius: 8px;
+      border: 1px solid rgba(83, 106, 120, 0.15);
+    }
+    .play-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid rgba(39, 100, 143, 0.3);
+      background: var(--surface);
+      color: var(--model);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background var(--duration);
+    }
+    .play-btn:hover {
+      background: var(--surface-strong);
+    }
+    .stepper {
+      display: flex;
+      gap: 6px;
+      flex: 1;
+    }
+    .stepper-btn {
+      flex: 1;
+      padding: 8px;
+      background: var(--surface);
+      border: 1px solid rgba(83, 106, 120, 0.2);
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--duration);
+    }
+    .stepper-btn:hover {
+      color: var(--text);
+      border-color: var(--model);
+    }
+    .stepper-btn.active {
+      background: var(--model);
+      color: #FFFFFF;
+      border-color: var(--model);
+    }
+    .stepper-btn.final.active {
+      background: var(--aggregate);
+      border-color: var(--aggregate);
+    }
+
+    /* 右侧对比与机制解析面板 */
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .panel-card {
+      background: var(--surface);
+      border-radius: 12px;
+      border: 1px solid rgba(83, 106, 120, 0.18);
+      padding: 14px 16px;
+      box-shadow: 0 4px 18px rgba(18, 38, 52, 0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .panel-card h2 {
+      margin: 0;
+      font-size: 19px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-card p {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+    .panel-card p strong {
+      color: var(--text);
+    }
+
+    .contrast-box {
+      border: 1px solid rgba(83, 106, 120, 0.16);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #FAFCFD;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .contrast-row {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .contrast-label {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .contrast-label.bagging {
+      color: var(--model);
+    }
+    .contrast-label.boosting {
+      color: var(--aggregate);
+    }
+    .contrast-val {
+      font-size: 13.5px;
+      color: var(--text);
+      line-height: 1.35;
+    }
+
+    .status-summary {
+      background: #F2F6F8;
+      border-left: 3px solid var(--model);
+      padding: 8px 10px;
+      border-radius: 0 6px 6px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .status-summary.final {
+      border-left-color: var(--aggregate);
+      background: #FAF1ED;
+    }
+    .status-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .status-desc {
+      font-size: 13.5px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body data-page="14" data-total="27">
+  <div id="stage">
+    <!-- 顶栏标题 -->
+    <header class="header-block">
+      <div class="header-title-group">
+        <h1>Boosting 的序列结构：按顺序纠正未解错误</h1>
+        <p class="sub">与 Bagging 的并行独立训练不同，Boosting 的每个基学习器都在前序模型遗留的误差上展开学习</p>
+      </div>
+      <div class="step-pill" id="globalPill">
+        序列阶段：第 1 轮基分类器
+      </div>
+    </header>
+
+    <!-- 主展示区 -->
+    <div class="main-grid min0">
+      <!-- 左侧流水线工作区 -->
+      <div class="pipeline-container min0">
+        <div class="pipeline-topbar">
+          <span style="font-size: var(--fs-h2); font-weight:700; color:var(--text)">基学习器串行传递链路</span>
+          <span style="font-size: var(--fs-label); color:var(--muted)">点击卡片或使用下方控制器逐步推进</span>
+        </div>
+
+        <!-- 4阶段卡片 -->
+        <div class="stages-track">
+          <!-- 阶段1 -->
+          <div class="stage-card active" id="card-0" data-step="0">
+            <div class="card-head">
+              <span class="card-title">学习器 1 (h₁)</span>
+              <span class="card-tag">t = 1</span>
+            </div>
+            <div class="card-task">在初始等权样本上找一条基准切分线。</div>
+            <div class="card-metrics">
+              <div class="metric-item">
+                <span class="metric-label">错误样本</span>
+                <span class="metric-val err">2 / 10</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">模型权重 α₁</span>
+                <span class="metric-val">0.42</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 阶段2 -->
+          <div class="stage-card" id="card-1" data-step="1">
+            <div class="card-head">
+              <span class="card-title">学习器 2 (h₂)</span>
+              <span class="card-tag">t = 2</span>
+            </div>
+            <div class="card-task">聚焦 h₁ 判定错误的 3 个样本，调整边界。</div>
+            <div class="card-metrics">
+              <div class="metric-item">
+                <span class="metric-label">遗留错误</span>
+                <span class="metric-val err">2 / 10</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">模型权重 α₂</span>
+                <span class="metric-val">0.65</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 阶段3 -->
+          <div class="stage-card" id="card-2" data-step="2">
+            <div class="card-head">
+              <span class="card-title">学习器 3 (h₃)</span>
+              <span class="card-tag">t = 3</span>
+            </div>
+            <div class="card-task">专门修正前两轮叠加后仍判错的难分样本。</div>
+            <div class="card-metrics">
+              <div class="metric-item">
+                <span class="metric-label">剩余错误</span>
+                <span class="metric-val err">1 / 10</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">模型权重 α₃</span>
+                <span class="metric-val">0.92</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 最终集成 -->
+          <div class="stage-card final" id="card-3" data-step="3">
+            <div class="card-head">
+              <span class="card-title" style="color:var(--aggregate)">最终集成 H(x)</span>
+              <span class="card-tag">sign(∑αₜhₜ)</span>
+            </div>
+            <div class="card-task">加权组合 3 个弱学习器，错误被全数纠正。</div>
+            <div class="card-metrics">
+              <div class="metric-item">
+                <span class="metric-label">集成错误</span>
+                <span class="metric-val" style="color:var(--answer)">0 / 10</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">分类状态</span>
+                <span class="metric-val" style="color:var(--answer)">完全收敛</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 样本与边界几何可视化板 -->
+        <div class="visual-board min0">
+          <div class="board-header">
+            <span id="boardSubTitle" style="font-weight:600; color:var(--text)">样本平面：第 1 轮初态（所有样本等权重，红色圆圈标注判定错误）</span>
+            <div class="legend-group">
+              <div class="legend-item"><div class="dot-pos"></div><span>正类别 (+1)</span></div>
+              <div class="legend-item"><div class="dot-neg"></div><span>负类别 (-1)</span></div>
+              <div class="legend-item"><div class="dot-err"></div><span>当前误判样本</span></div>
+            </div>
+          </div>
+          <div class="canvas-container min0">
+            <canvas id="pipelineCanvas" class="cv-fill"></canvas>
+          </div>
+        </div>
+
+        <!-- 步进控制器 -->
+        <div class="timeline-ctrl">
+          <button class="play-btn" id="playToggle" title="自动循环演示">▶</button>
+          <div class="stepper">
+            <button class="stepper-btn active" data-step="0">第 1 轮：基线分类 (h₁)</button>
+            <button class="stepper-btn" data-step="1">第 2 轮：主攻未解误差 (h₂)</button>
+            <button class="stepper-btn" data-step="2">第 3 轮：修补残余样本 (h₃)</button>
+            <button class="stepper-btn final" data-step="3">最终结果：加权集成 H(x)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧解析面板 -->
+      <aside class="side-panel min0">
+        <!-- 序列本质卡片 -->
+        <div class="panel-card">
+          <h2>序列依赖的机制</h2>
+          <p id="mechanismText">
+            在第 1 轮中，<strong>弱分类器 h₁</strong> 寻找单一切分面。由于模型容量有限（单树桩），右侧上方 3 个正类样本被错判。
+          </p>
+          <div class="status-summary" id="statusSummaryBox">
+            <div class="status-title" id="statusBoxTitle">传递给下一步的信息</div>
+            <div class="status-desc" id="statusBoxDesc">被 h₁ 判错的 3 个样本获得更高权重/残差关注，促使 h₂ 专门为其寻找决策面。</div>
+          </div>
+        </div>
+
+        <!-- 与并行模式对比 -->
+        <div class="panel-card">
+          <h2>与 Bagging 的根本差异</h2>
+          <div class="contrast-box">
+            <div class="contrast-row">
+              <span class="contrast-label bagging">Bagging（并行独立）</span>
+              <span class="contrast-val">各基学习器在独立 Bootstrap 子集上并行训练，互不知晓对方的失误，通过简单平均降低方差。</span>
+            </div>
+            <div class="contrast-row" style="margin-top:6px;">
+              <span class="contrast-label boosting">Boosting（串行依赖）</span>
+              <span class="contrast-val">基学习器严格按次序生成，后一个模型专门针对前序集成尚未处理好的样本或残差继续学习，大幅降低偏差。</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 核心公式示意 -->
+        <div class="panel-card" style="flex:1;">
+          <h2>累加更新模型</h2>
+          <p>加法模型迭代定义：</p>
+          <div style="font-family:var(--font-num); font-size:14px; background:var(--surface-strong); padding:8px 10px; border-radius:6px; color:var(--text); line-height:1.4;">
+            F<sub>t</sub>(x) = F<sub>t-1</sub>(x) + α<sub>t</sub> · h<sub>t</sub>(x)
+          </div>
+          <p style="font-size:13px; color:var(--muted); margin-top:2px;">
+            每一轮学习器 h<sub>t</sub> 在前一步累加预测 F<sub>t-1</sub> 的盲区上继续前进。
+          </p>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      'use strict';
+
+      Deck.init({ index: 14, total: 27, keys: false });
+
+      // 10个确定性的二维教学样本
+      // x: [0, 1], y: [0, 1], label: +1 (绿圆) 或 -1 (蓝方)
+      const SAMPLES = [
+        { id: 1, x: 0.18, y: 0.78, label:  1, name: 'S₁' },
+        { id: 2, x: 0.22, y: 0.45, label:  1, name: 'S₂' },
+        { id: 3, x: 0.35, y: 0.65, label:  1, name: 'S₃' },
+        { id: 4, x: 0.42, y: 0.28, label:  1, name: 'S₄' },
+        { id: 5, x: 0.55, y: 0.42, label: -1, name: 'S₅' },
+        { id: 6, x: 0.62, y: 0.18, label: -1, name: 'S₆' },
+        { id: 7, x: 0.72, y: 0.82, label:  1, name: 'S₇' }, // 难点样本 1
+        { id: 8, x: 0.82, y: 0.75, label:  1, name: 'S₈' }, // 难点样本 2
+        { id: 9, x: 0.78, y: 0.45, label: -1, name: 'S₉' },
+        { id: 10, x: 0.88, y: 0.22, label: -1, name: 'S₁₀' }
+      ];
+
+      // 4个步骤的教学状态定义
+      const STEPS = [
+        {
+          step: 0,
+          pill: '序列阶段：第 1 轮弱分类器 h₁(x)',
+          boardTitle: '样本平面：第 1 轮基准分类（所有样本等权，垂直切分 x=0.48，S₇、S₈ 被错判）',
+          mechanismText: '第 1 轮<strong>弱分类器 h₁</strong> 寻找单一切分面（x = 0.48）：左侧判定为 +1，右侧判定为 -1。此时位于右上方区域的 2 个正类样本（S₇, S₈）被判为 -1，成为重点未解误差。',
+          statusTitle: '传递给第 2 轮的关键信息',
+          statusDesc: '未解的右上角正类样本被放大权重（标记圈出），牵引第 2 轮模型调整切分方向。',
+          evalFn: (pt) => pt.x < 0.48 ? 1 : -1,
+          weights: [1, 1, 1, 1, 1, 1, 2.5, 2.5, 1, 1],
+          activeCut: { type: 'vert', pos: 0.48, leftVal: +1, rightVal: -1, label: 'h₁ 边界: x = 0.48' }
+        },
+        {
+          step: 1,
+          pill: '序列阶段：第 2 轮弱分类器 h₂(x)',
+          boardTitle: '样本平面：第 2 轮针对性切分（专注上轮误判样本，水平切分 y=0.58，救回上方正类）',
+          mechanismText: '第 2 轮<strong>弱分类器 h₂</strong> 被前序传来的高权重正类牵引，采用水平切分面（y = 0.58）将上方判定为 +1。此时 S₇, S₈ 被纠正，但由于横切全局，左下正类样本（如 S₂）在 h₂ 单独视角下暂时归属相反。',
+          statusTitle: '传递给第 3 轮的关键信息',
+          statusDesc: '虽然 S₇, S₈ 得到救回，但各单模型的局部覆盖仍有盲区，继续交由 h₃ 联合细化补足。',
+          evalFn: (pt) => pt.y > 0.58 ? 1 : -1,
+          weights: [1, 1.8, 1, 1, 1, 1, 1, 1, 1, 1],
+          activeCut: { type: 'horiz', pos: 0.58, topVal: +1, bottomVal: -1, label: 'h₂ 边界: y = 0.58' }
+        },
+        {
+          step: 2,
+          pill: '序列阶段：第 3 轮弱分类器 h₃(x)',
+          boardTitle: '样本平面：第 3 轮修补残差（针对右侧密集负类区进一步施加切分限制）',
+          mechanismText: '第 3 轮<strong>弱分类器 h₃</strong> 在前两轮累积集成的残差边缘展开，在 x = 0.70 处再次施加约束，精细压制右下侧密集负类，补足最后一块判断盲区。',
+          statusTitle: '准备进入最终加权汇聚',
+          statusDesc: '三位弱分类器各自承担了不同维度的纠偏职责，即将按各自准确率权重 α₁、α₂、α₃ 线性叠加。',
+          evalFn: (pt) => (pt.x > 0.68 && pt.y < 0.6) ? -1 : 1,
+          weights: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          activeCut: { type: 'vert', pos: 0.70, leftVal: +1, rightVal: -1, label: 'h₃ 边界: x = 0.70' }
+        },
+        {
+          step: 3,
+          pill: '最终加权集成：H(x) = sign(0.42·h₁ + 0.65·h₂ + 0.92·h₃)',
+          boardTitle: '样本平面：最终强分类器非线性决策域（加权叠加后形成拐角包络，10个样本全部正确分类）',
+          mechanismText: '通过将三个单层简单分类器<strong>按投票权加权相加</strong>：H(x) = sign(0.42·h₁ + 0.65·h₂ + 0.92·h₃)。原本简单的直线决策面复合成了非线性的 L 型包络边界，所有 10 个样本全部被正确判别。',
+          statusTitle: '序列纠错达成完整闭环',
+          statusDesc: '无需训练复杂的单体深层大模型，串行纠偏让数个低方差弱学习器组合出了低偏差的强判决边界。',
+          evalFn: (pt) => {
+            const h1 = pt.x < 0.48 ? 1 : -1;
+            const h2 = pt.y > 0.58 ? 1 : -1;
+            const h3 = (pt.x > 0.68 && pt.y < 0.6) ? -1 : 1;
+            return (0.42 * h1 + 0.65 * h2 + 0.92 * h3) >= 0 ? 1 : -1;
+          },
+          weights: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          activeCut: null
+        }
+      ];
+
+      let currentStep = 0;
+      let playTimer = null;
+
+      // DOM 元素
+      const globalPill = document.getElementById('globalPill');
+      const boardSubTitle = document.getElementById('boardSubTitle');
+      const mechanismText = document.getElementById('mechanismText');
+      const statusSummaryBox = document.getElementById('statusSummaryBox');
+      const statusBoxTitle = document.getElementById('statusBoxTitle');
+      const statusBoxDesc = document.getElementById('statusBoxDesc');
+      const playBtn = document.getElementById('playToggle');
+      const stageCards = [0, 1, 2, 3].map(i => document.getElementById('card-' + i));
+      const stepperBtns = document.querySelectorAll('.stepper-btn');
+
+      const cv = document.getElementById('pipelineCanvas');
+
+      function updateUI(step) {
+        currentStep = step;
+        const info = STEPS[step];
+
+        // 顶栏与说明文字
+        globalPill.textContent = info.pill;
+        if (step === 3) {
+          globalPill.classList.add('aggregate');
+        } else {
+          globalPill.classList.remove('aggregate');
+        }
+
+        boardSubTitle.textContent = info.boardTitle;
+        mechanismText.innerHTML = info.mechanismText;
+        statusBoxTitle.textContent = info.statusTitle;
+        statusBoxDesc.textContent = info.statusDesc;
+
+        if (step === 3) {
+          statusSummaryBox.classList.add('final');
+        } else {
+          statusSummaryBox.classList.remove('final');
+        }
+
+        // 卡片高亮
+        stageCards.forEach((c, idx) => {
+          if (idx === step) {
+            c.classList.add('active');
+          } else {
+            c.classList.remove('active');
+          }
+        });
+
+        // 按钮高亮
+        stepperBtns.forEach((b, idx) => {
+          if (idx === step) {
+            b.classList.add('active');
+          } else {
+            b.classList.remove('active');
+          }
+        });
+
+        draw();
+      }
+
+      function draw() {
+        const ctx = Deck.fit(cv);
+        const w = cv.parentElement.clientWidth;
+        const h = cv.parentElement.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const margin = { top: 30, right: 40, bottom: 40, left: 50 };
+        const pw = w - margin.left - margin.right;
+        const ph = h - margin.top - margin.bottom;
+
+        const info = STEPS[currentStep];
+
+        // 坐标换算函数
+        const toX = (nx) => margin.left + nx * pw;
+        const toY = (ny) => margin.top + (1 - ny) * ph; // 上方为 1
+
+        // 1. 绘制网格与背景区域染色（若为 step 3 则显示组合区域，否则显示当前单模型边界）
+        const res = 60;
+        const dx = pw / res;
+        const dy = ph / res;
+
+        for (let ix = 0; ix < res; ix++) {
+          for (let iy = 0; iy < res; iy++) {
+            const nx = (ix + 0.5) / res;
+            const ny = 1 - (iy + 0.5) / res;
+            const pred = info.evalFn({ x: nx, y: ny });
+            ctx.fillStyle = pred === 1 ? 'rgba(47, 117, 104, 0.07)' : 'rgba(39, 100, 143, 0.07)';
+            ctx.fillRect(margin.left + ix * dx, margin.top + iy * dy, dx + 0.5, dy + 0.5);
+          }
+        }
+
+        // 绘制坐标外框与刻度
+        ctx.strokeStyle = 'rgba(83, 106, 120, 0.25)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(margin.left, margin.top, pw, ph);
+
+        // 坐标轴标签
+        ctx.fillStyle = '#536A78';
+        ctx.font = '13px ' + Deck.token('--font-sans');
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText('特征 x₁', margin.left + pw / 2, margin.top + ph + 12);
+
+        ctx.save();
+        ctx.translate(margin.left - 24, margin.top + ph / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText('特征 x₂', 0, 0);
+        ctx.restore();
+
+        // 2. 绘制决策边界线
+        if (currentStep < 3 && info.activeCut) {
+          ctx.save();
+          ctx.strokeStyle = '#C34B22';
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash([6, 5]);
+
+          if (info.activeCut.type === 'vert') {
+            const bx = toX(info.activeCut.pos);
+            ctx.beginPath();
+            ctx.moveTo(bx, margin.top);
+            ctx.lineTo(bx, margin.top + ph);
+            ctx.stroke();
+
+            // 标注
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#C34B22';
+            ctx.font = '13px ' + Deck.token('--font-sans');
+            ctx.textAlign = 'left';
+            ctx.fillText(info.activeCut.label, bx + 8, margin.top + 20);
+          } else if (info.activeCut.type === 'horiz') {
+            const by = toY(info.activeCut.pos);
+            ctx.beginPath();
+            ctx.moveTo(margin.left, by);
+            ctx.lineTo(margin.left + pw, by);
+            ctx.stroke();
+
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#C34B22';
+            ctx.font = '13px ' + Deck.token('--font-sans');
+            ctx.textAlign = 'left';
+            ctx.fillText(info.activeCut.label, margin.left + 16, by - 12);
+          }
+          ctx.restore();
+        } else if (currentStep === 3) {
+          // 绘制最终非线性综合分界轮廓简线
+          ctx.save();
+          ctx.strokeStyle = '#C34B22';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          // 在 0.48, 0.58 复合折线
+          const px1 = toX(0.48);
+          const py1 = toY(0);
+          const pyMid = toY(0.58);
+          const pxRight = toX(1);
+
+          ctx.moveTo(px1, py1);
+          ctx.lineTo(px1, pyMid);
+          ctx.lineTo(pxRight, pyMid);
+          ctx.stroke();
+
+          ctx.fillStyle = '#C34B22';
+          ctx.font = 'bold 14px ' + Deck.token('--font-sans');
+          ctx.textAlign = 'right';
+          ctx.fillText('加权组合复合决策面 H(x) = 0', pxRight - 16, pyMid - 10);
+          ctx.restore();
+        }
+
+        // 3. 绘制样本点
+        SAMPLES.forEach((sample, i) => {
+          const sx = toX(sample.x);
+          const sy = toY(sample.y);
+          const pred = info.evalFn(sample);
+          const isError = pred !== sample.label;
+          const weight = info.weights[i];
+
+          // 半径按权重稍微缩放以体现“焦点样本”
+          const r = 7 * Math.sqrt(weight);
+
+          // 误判标记环
+          if (isError) {
+            ctx.save();
+            ctx.strokeStyle = '#C34B22';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(sx, sy, r + 5, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // 标注“误”
+            ctx.fillStyle = '#C34B22';
+            ctx.font = 'bold 12px ' + Deck.token('--font-sans');
+            ctx.textAlign = 'left';
+            ctx.fillText('误', sx + r + 8, sy + 4);
+            ctx.restore();
+          }
+
+          // 画样本实体
+          ctx.save();
+          if (sample.label === 1) {
+            // 正类：深绿圆
+            ctx.fillStyle = '#2F7568';
+            ctx.beginPath();
+            ctx.arc(sx, sy, r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          } else {
+            // 负类：海军蓝方块
+            ctx.fillStyle = '#27648F';
+            ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(sx - r, sy - r, r * 2, r * 2);
+          }
+
+          // 样本名
+          ctx.fillStyle = '#122634';
+          ctx.font = '12px ' + Deck.token('--font-sans');
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(sample.name, sx, sy - r - 3);
+          ctx.restore();
+        });
+      }
+
+      // 事件监听
+      stageCards.forEach((c) => {
+        c.addEventListener('click', () => {
+          stopPlay();
+          updateUI(parseInt(c.dataset.step, 10));
+        });
+      });
+
+      stepperBtns.forEach((b) => {
+        b.addEventListener('click', () => {
+          stopPlay();
+          updateUI(parseInt(b.dataset.step, 10));
+        });
+      });
+
+      function stopPlay() {
+        if (playTimer) {
+          clearInterval(playTimer);
+          playTimer = null;
+          playBtn.textContent = '▶';
+        }
+      }
+
+      playBtn.addEventListener('click', () => {
+        if (playTimer) {
+          stopPlay();
+        } else {
+          playBtn.textContent = '❚❚';
+          playTimer = setInterval(() => {
+            const next = (currentStep + 1) % 4;
+            updateUI(next);
+          }, 2200);
+        }
+      });
+
+      Deck.autofit(cv, draw);
+      updateUI(0);
+    })();
+  </script>
+</body>
+</html>

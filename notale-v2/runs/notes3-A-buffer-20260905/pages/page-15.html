@@ -1,0 +1,1150 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>滴定过程的多维联动证据</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F7F8;
+      --paper: #FFFFFF;
+      --text: #142B33;
+      --muted: #526970;
+      --focus: #C45A00;
+      --acid: #B43F2B;
+      --base: #23629A;
+      --buffer: #08746E;
+      --selected: #DCECEF;
+      --correct: #356A3A;
+      --incorrect: #8A5100;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: Bahnschrift, "DIN Alternate", "Segoe UI", sans-serif;
+      --fs-h1: 32px;
+      --fs-h2: 20px;
+      --fs-lead: 18px;
+      --fs-body: 17px;
+      --fs-sec: 15px;
+      --fs-label: 14px;
+      --fs-tick: 13px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      display: flex;
+      flex-direction: column;
+      padding: 34px 56px 30px;
+      gap: 16px;
+      user-select: none;
+    }
+
+    /* 顶部标题区 */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid rgba(82, 105, 112, 0.25);
+      padding-bottom: 12px;
+      flex-shrink: 0;
+    }
+    .top-bar h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+    .top-bar p {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .system-badge {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .system-badge strong {
+      color: var(--text);
+      font-family: var(--font-num);
+      font-weight: 600;
+    }
+
+    /* 主交互区布局：左侧主曲线(含标定点与准星)，右侧平衡读数、物种丰度与模型推演 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 820px 1fr;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：曲线主舞台 */
+    .stage-card {
+      background: var(--paper);
+      border: 1px solid rgba(82, 105, 112, 0.25);
+      border-radius: 4px;
+      padding: 16px 20px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 4px 16px rgba(20, 43, 51, 0.04);
+    }
+
+    .curve-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .curve-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .curve-legend {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .sw-legend {
+      display: inline-block;
+      width: 14px;
+      height: 3px;
+      border-radius: 2px;
+      vertical-align: middle;
+      margin-right: 5px;
+    }
+
+    .chart-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      background: #FAFDFD;
+      border: 1px solid rgba(82, 105, 112, 0.15);
+      border-radius: 3px;
+      overflow: hidden;
+      cursor: crosshair;
+    }
+    #titrationChart {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 控制条与特征点快速跳转 */
+    .scrub-bar {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #F4F8F8;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+      border-radius: 3px;
+      padding: 9px 12px;
+    }
+    .scrub-controls {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .scrub-label {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .scrub-slider {
+      flex: 1;
+      accent-color: var(--focus);
+      cursor: pointer;
+      height: 6px;
+    }
+    .scrub-readout {
+      font-family: var(--font-num);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      min-width: 90px;
+      text-align: right;
+    }
+    .scrub-readout span {
+      font-size: var(--fs-sec);
+      font-weight: normal;
+      color: var(--muted);
+    }
+
+    .anchor-chips {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 6px;
+      width: 100%;
+    }
+    .anchor-chip-btn {
+      padding: 6px 2px;
+      font-size: var(--fs-tick);
+      border: 1px solid rgba(82, 105, 112, 0.3);
+      border-radius: 3px;
+      background: var(--paper);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: var(--font-sans);
+      text-align: center;
+      line-height: 1.25;
+    }
+    .anchor-chip-btn:hover {
+      border-color: var(--focus);
+      color: var(--focus);
+    }
+    .anchor-chip-btn.active {
+      background: var(--text);
+      color: var(--paper);
+      border-color: var(--text);
+      font-weight: 600;
+    }
+
+    /* 右侧：证据与模型联动面板 */
+    .evidence-column {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    /* 读数仪表板 */
+    .metric-panel {
+      background: var(--paper);
+      border: 1px solid rgba(82, 105, 112, 0.25);
+      border-radius: 4px;
+      padding: 14px 18px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      box-shadow: 0 4px 16px rgba(20, 43, 51, 0.04);
+    }
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .metric-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: 32px;
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text);
+    }
+    .metric-val.ph-val {
+      color: var(--focus);
+    }
+    .metric-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+
+    /* 溶液微观平衡组成条 */
+    .species-panel {
+      background: var(--paper);
+      border: 1px solid rgba(82, 105, 112, 0.25);
+      border-radius: 4px;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 4px 16px rgba(20, 43, 51, 0.04);
+    }
+    .species-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .species-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .species-note {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .species-stacked-bar {
+      height: 22px;
+      border-radius: 3px;
+      display: flex;
+      overflow: hidden;
+      background: #E8ECEE;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+    }
+    .bar-seg {
+      height: 100%;
+      transition: width 0.1s ease;
+      position: relative;
+    }
+    .bar-seg.ha { background: var(--acid); }
+    .bar-seg.a { background: var(--buffer); }
+    .bar-seg.oh { background: var(--base); }
+
+    .species-legend {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      font-size: var(--fs-label);
+      margin-top: 2px;
+    }
+    .species-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 3px;
+      background: #F5F8F8;
+    }
+    .species-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .species-data {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+    .species-name {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .species-conc {
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: var(--fs-sec);
+      color: var(--text);
+    }
+
+    /* 核心推演：控制模型与机理解构 */
+    .model-panel {
+      flex: 1;
+      min-height: 0;
+      background: var(--paper);
+      border: 1px solid rgba(82, 105, 112, 0.25);
+      border-radius: 4px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 4px 16px rgba(20, 43, 51, 0.04);
+    }
+    .model-badge-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .stage-tag {
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-size: var(--fs-label);
+      font-weight: 700;
+      background: #EAF3F4;
+      color: var(--buffer);
+      border: 1px solid rgba(8, 116, 110, 0.3);
+    }
+    .stage-tag.acid-phase { background: #FCEDEB; color: var(--acid); border-color: rgba(180, 63, 43, 0.3); }
+    .stage-tag.buffer-phase { background: #E7F3F1; color: var(--buffer); border-color: rgba(8, 116, 110, 0.3); }
+    .stage-tag.ep-phase { background: #FFF4E5; color: var(--focus); border-color: rgba(196, 90, 0, 0.3); }
+    .stage-tag.excess-phase { background: #EBF2F8; color: var(--base); border-color: rgba(35, 98, 154, 0.3); }
+
+    .model-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .formula-box {
+      background: #FAF8F5;
+      border: 1px solid rgba(196, 90, 0, 0.25);
+      padding: 10px 14px;
+      border-radius: 3px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .formula-eq {
+      font-family: var(--font-num), serif;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.01em;
+    }
+    .formula-calc {
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      color: var(--focus);
+    }
+
+    .mechanism-text {
+      font-size: var(--fs-sec);
+      line-height: 1.55;
+      color: var(--text);
+      min-height: 68px;
+    }
+    .mechanism-text strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+    .mechanism-text .highlight {
+      color: var(--buffer);
+      font-weight: 600;
+    }
+
+    /* 诊断问答区：交互式检验 */
+    .quiz-strip {
+      background: #F4F8F8;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+      border-radius: 3px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: auto;
+    }
+    .quiz-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .quiz-prompt {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .quiz-fb {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .quiz-opts {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      width: 100%;
+    }
+    .quiz-opt-btn {
+      padding: 8px 10px;
+      font-size: var(--fs-label);
+      border: 1px solid rgba(82, 105, 112, 0.3);
+      border-radius: 3px;
+      background: var(--paper);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+      line-height: 1.35;
+      white-space: normal;
+    }
+    .quiz-opt-btn:hover {
+      border-color: var(--focus);
+    }
+    .quiz-opt-btn.correct {
+      background: #E8F4E8;
+      border-color: var(--correct);
+      color: var(--correct);
+      font-weight: 700;
+    }
+    .quiz-opt-btn.incorrect {
+      background: #FBEFE8;
+      border-color: var(--incorrect);
+      color: var(--incorrect);
+    }
+    .quiz-fb {
+      font-size: var(--fs-tick);
+      min-width: 140px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body data-page="15" data-total="17">
+  <div id="stage">
+    <!-- 顶部状态栏 -->
+    <header class="top-bar">
+      <div>
+        <h1>滴定全过程联动模型：体积、物种分布与主控平衡</h1>
+        <p>连续拖动滴定管体积刻度，观察溶液中各化学物种浓度消长如何决定该处的 pH 控制模型</p>
+      </div>
+      <div class="system-badge">
+        <span>被测物：<strong>20.00 mL 0.100 mol/L CH₃COOH</strong> (pKa = 4.75)</span>
+        <span>滴定剂：<strong>0.100 mol/L NaOH</strong></span>
+      </div>
+    </header>
+
+    <!-- 主布局网格 -->
+    <main class="main-grid min0">
+      <!-- 左列：交互滴定曲线图 -->
+      <section class="stage-card min0">
+        <div class="curve-header">
+          <div class="curve-title">
+            <span>滴定曲线与准星定位</span>
+          </div>
+          <div class="curve-legend">
+            <span><span class="sw-legend" style="background: var(--acid);"></span>起始</span>
+            <span><span class="sw-legend" style="background: var(--buffer);"></span>缓冲窗口 [3.75, 5.75]</span>
+            <span><span class="sw-legend" style="background: var(--focus);"></span>当量点 (20 mL)</span>
+            <span><span class="sw-legend" style="background: var(--base);"></span>碱过量</span>
+          </div>
+        </div>
+
+        <div class="chart-container" id="chartBox">
+          <canvas id="titrationChart" class="cv-fill"></canvas>
+        </div>
+
+        <div class="scrub-bar">
+          <div class="scrub-controls">
+            <label for="volSlider" class="scrub-label">滴加 NaOH 体积 V<sub>b</sub></label>
+            <input type="range" id="volSlider" class="scrub-slider" min="0" max="40" step="0.1" value="10.0">
+            <div class="scrub-readout"><span id="readoutVol">10.00</span> <span>mL</span></div>
+          </div>
+          <div class="anchor-chips">
+            <button type="button" class="anchor-chip-btn" data-vol="0.0">起点<br>0.0 mL</button>
+            <button type="button" class="anchor-chip-btn active" data-vol="10.0">半当量点<br>10.0 mL</button>
+            <button type="button" class="anchor-chip-btn" data-vol="19.8">突跃前夕<br>19.8 mL</button>
+            <button type="button" class="anchor-chip-btn" data-vol="20.0">当量点<br>20.0 mL</button>
+            <button type="button" class="anchor-chip-btn" data-vol="20.2">突跃终点<br>20.2 mL</button>
+            <button type="button" class="anchor-chip-btn" data-vol="30.0">碱过量<br>30.0 mL</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右列：定量平衡、物种分布与当前控制模型 -->
+      <section class="evidence-column min0">
+        <!-- 核心数值面板 -->
+        <div class="metric-panel">
+          <div class="metric-item">
+            <span class="metric-label">溶液实时 pH</span>
+            <div class="metric-val ph-val" id="metricPh">4.75</div>
+            <div class="metric-sub" id="metricDelta">缓冲容量极值处</div>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">滴定分数 a (V/V<sub>eq</sub>)</span>
+            <div class="metric-val" id="metricFraction">0.500</div>
+            <div class="metric-sub" id="metricVolTotal">总体积 30.00 mL</div>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">共轭比 [A⁻] / [HA]</span>
+            <div class="metric-val" id="metricRatio">1.00</div>
+            <div class="metric-sub" id="metricLogRatio">lg([A⁻]/[HA]) = 0.00</div>
+          </div>
+        </div>
+
+        <!-- 溶液主要粒子物种浓度比例与堆叠指示 -->
+        <div class="species-panel">
+          <div class="species-header">
+            <span class="species-title">溶液主要溶质物种丰度分布</span>
+            <span class="species-note">基于严格酸碱质子与物料守恒计算</span>
+          </div>
+          <div class="species-stacked-bar">
+            <div class="bar-seg ha" id="barHa" style="width: 50%;"></div>
+            <div class="bar-seg a" id="barA" style="width: 50%;"></div>
+            <div class="bar-seg oh" id="barOh" style="width: 0%;"></div>
+          </div>
+          <div class="species-legend">
+            <div class="species-legend-item">
+              <span class="species-dot" style="background: var(--acid);"></span>
+              <div class="species-data">
+                <span class="species-name">弱酸分子 [CH₃COOH]</span>
+                <span class="species-conc" id="concHa">0.0333 M</span>
+              </div>
+            </div>
+            <div class="species-legend-item">
+              <span class="species-dot" style="background: var(--buffer);"></span>
+              <div class="species-data">
+                <span class="species-name">共轭碱根 [CH₃COO⁻]</span>
+                <span class="species-conc" id="concA">0.0333 M</span>
+              </div>
+            </div>
+            <div class="species-legend-item">
+              <span class="species-dot" style="background: var(--base);"></span>
+              <div class="species-data">
+                <span class="species-name">游离 [OH⁻] 或 [H₃O⁺]</span>
+                <span class="species-conc" id="concIon">1.78×10⁻⁵ M</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 当前主导化学模型与机理解构 -->
+        <div class="model-panel min0">
+          <div class="model-badge-row">
+            <span class="stage-tag buffer-phase" id="modelStageTag">缓冲控制区</span>
+            <span class="model-title" id="modelName">Henderson-Hasselbalch 缓冲模型</span>
+          </div>
+
+          <div class="formula-box">
+            <div class="formula-eq" id="modelFormula">pH = pKa + lg([A⁻] / [HA])</div>
+            <div class="formula-calc" id="modelCalc">pH = 4.75 + lg(0.0333 / 0.0333) = 4.75</div>
+          </div>
+
+          <div class="mechanism-text" id="mechanismText">
+            在半当量点处，已滴加的 NaOH 恰好将一半的弱酸中和为共轭碱 CH₃COO⁻，此时弱酸与共轭碱浓度严格相等。根据缓冲方程，对数项归零，体系 pH 严格等于弱酸的 pKa。此状态下溶液对外加酸或碱的抗干扰阻尼最强，曲线斜率极小。
+          </div>
+
+          <!-- 即时检验微交互 -->
+          <div class="quiz-strip">
+            <div class="quiz-header">
+              <span class="quiz-prompt" id="quizPrompt">问题：若在此状态再滴入 0.2 mL 强酸，pH 主要靠谁维持稳定？</span>
+              <div class="quiz-fb" id="quizFb">点击选项测试理解</div>
+            </div>
+            <div class="quiz-opts" id="quizOpts">
+              <button type="button" class="quiz-opt-btn" data-ans="A">大量存在的 CH₃COO⁻</button>
+              <button type="button" class="quiz-opt-btn" data-ans="B">水分子自身解离</button>
+              <button type="button" class="quiz-opt-btn" data-ans="C">未反应的 Na⁺ 离子</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 体系基本参数：0.100 M 弱酸 20.00 mL，0.100 M NaOH
+      const V_A0 = 20.00; // mL
+      const C_A0 = 0.100; // mol/L
+      const C_B0 = 0.100; // mol/L
+      const PKA = 4.75;
+      const KA = Math.pow(10, -PKA);
+      const KW = 1.0e-14;
+      const V_EQ = 20.00; // mL
+
+      // 预计算滴定曲线高精度网格（0.0 到 40.0 mL）
+      const SAMPLES = [];
+      const TOTAL_STEPS = 400;
+      for (let i = 0; i <= TOTAL_STEPS; i++) {
+        const v = (i / TOTAL_STEPS) * 40.0;
+        const res = solveEquilibrium(v);
+        SAMPLES.push({ v, ph: res.ph });
+      }
+
+      // 状态
+      let currentV = 10.0;
+      let chartCanvas = document.getElementById("titrationChart");
+      let cvBox = document.getElementById("chartBox");
+      let slider = document.getElementById("volSlider");
+      let readoutVol = document.getElementById("readoutVol");
+
+      // DOM 元素引用
+      const metricPh = document.getElementById("metricPh");
+      const metricDelta = document.getElementById("metricDelta");
+      const metricFraction = document.getElementById("metricFraction");
+      const metricVolTotal = document.getElementById("metricVolTotal");
+      const metricRatio = document.getElementById("metricRatio");
+      const metricLogRatio = document.getElementById("metricLogRatio");
+
+      const barHa = document.getElementById("barHa");
+      const barA = document.getElementById("barA");
+      const barOh = document.getElementById("barOh");
+      const concHa = document.getElementById("concHa");
+      const concA = document.getElementById("concA");
+      const concIon = document.getElementById("concIon");
+
+      const modelStageTag = document.getElementById("modelStageTag");
+      const modelName = document.getElementById("modelName");
+      const modelFormula = document.getElementById("modelFormula");
+      const modelCalc = document.getElementById("modelCalc");
+      const mechanismText = document.getElementById("mechanismText");
+
+      const quizPrompt = document.getElementById("quizPrompt");
+      const quizOpts = document.getElementById("quizOpts");
+      const quizFb = document.getElementById("quizFb");
+
+      // 严密化学平衡计算
+      function solveEquilibrium(v_b) {
+        const v_total = V_A0 + v_b; // mL
+        const v_total_L = v_total / 1000;
+        const n_ha_init = (V_A0 / 1000) * C_A0; // 0.0020 mol
+        const n_b_add = (v_b / 1000) * C_B0;
+
+        let ph, [ha, a, h, oh] = [0, 0, 0, 0];
+        let stageType = "";
+
+        if (v_b <= 0.0001) {
+          // 起点：弱酸单纯一元电离：[H+] ≈ sqrt(Ka * c)
+          stageType = "start";
+          const c_ha = n_ha_init / v_total_L;
+          h = (-KA + Math.sqrt(KA * KA + 4 * KA * c_ha)) / 2;
+          ph = -Math.log10(h);
+          ha = c_ha - h;
+          a = h;
+          oh = KW / h;
+        } else if (v_b < 19.98) {
+          // 缓冲共存区：中和产物生成 A-，剩余 HA
+          stageType = (v_b >= 9.8 && v_b <= 10.2) ? "half" : "buffer";
+          const n_ha_rem = n_ha_init - n_b_add;
+          const n_a_gen = n_b_add;
+          // [H+] = Ka * [HA]/[A-]
+          h = KA * (n_ha_rem / n_a_gen);
+          ph = -Math.log10(h);
+          ha = n_ha_rem / v_total_L;
+          a = n_a_gen / v_total_L;
+          oh = KW / h;
+        } else if (v_b <= 20.02) {
+          // 当量点：全部转化为 CH3COONa，共轭碱微弱水解：A- + H2O <=> HA + OH-
+          stageType = "equivalence";
+          const c_salt = n_ha_init / v_total_L;
+          const kb = KW / KA;
+          oh = (-kb + Math.sqrt(kb * kb + 4 * kb * c_salt)) / 2;
+          const poh = -Math.log10(oh);
+          ph = 14.0 - poh;
+          h = KW / oh;
+          ha = oh; // 水解生成等量 HA
+          a = c_salt - oh;
+        } else {
+          // 强碱过量区：主要由过量的 OH- 决定 pH
+          stageType = "excess";
+          const n_excess_oh = n_b_add - n_ha_init;
+          oh = n_excess_oh / v_total_L;
+          const poh = -Math.log10(oh);
+          ph = 14.0 - poh;
+          h = KW / oh;
+          a = n_ha_init / v_total_L; // 所有酸均中和为盐
+          ha = (KA > 0) ? (h * a / KA) : 0; // 微乎其微
+        }
+
+        return { ph, ha, a, h, oh, v_b, v_total, stageType };
+      }
+
+      // 阶段与知识模型信息
+      function getStageInfo(res) {
+        const a_fraction = res.v_b / V_EQ;
+        const ratio = res.ha > 1e-7 ? (res.a / res.ha) : 9999;
+        
+        let tagClass = "buffer-phase";
+        let tagText = "缓冲控制区";
+        let title = "Henderson-Hasselbalch 缓冲模型";
+        let formula = "pH = pKa + lg([A⁻] / [HA])";
+        let calc = `pH = 4.75 + lg(${res.a.toFixed(3)} / ${res.ha.toFixed(3)}) = ${res.ph.toFixed(2)}`;
+        let mech = "在此区域内，大量未反应的弱酸分子与新生成的共轭碱根共存。外加少量强酸由 A⁻ 吸收，外加少量强碱由 HA 中和，溶液具备显著抵抗 pH 变化的能力。";
+        let deltaText = "缓冲容量活跃";
+
+        let qPrompt = "问题：此时向溶液滴入 1 滴 HCl，主要消耗哪种物种？";
+        let qOptions = [
+          { text: "CH₃COO⁻ (共轭碱)", correct: true },
+          { text: "CH₃COOH (弱酸)", correct: false },
+          { text: "Na⁺ 阳离子", correct: false }
+        ];
+
+        if (res.v_b <= 0.05) {
+          tagClass = "acid-phase";
+          tagText = "起始弱酸电离";
+          title = "一元弱酸近似电离模型";
+          formula = "[H⁺] ≈ √(Ka · c(HA)) ； pH = -lg[H⁺]";
+          calc = `[H⁺] ≈ √(1.78×10⁻⁵ × 0.100) = ${(res.h * 1000).toFixed(2)}×10⁻³ M → pH = ${res.ph.toFixed(2)}`;
+          mech = "未滴入滴定剂时，仅有 CH₃COOH 分子在水中极其微弱地自发电离。溶液中未解离分子占 98.7% 以上，pH 取决于弱酸自身浓度与解离平衡常数 Ka。";
+          deltaText = "起始单组分弱电离";
+          qPrompt = "思考：为什么 0.1 M 醋酸 pH 是 2.88 而不是 1.00？";
+          qOptions = [
+            { text: "醋酸仅部分电离，并非强酸", correct: true },
+            { text: "醋酸被空气稀释了", correct: false },
+            { text: "溶剂水抑制了质子生成", correct: false }
+          ];
+        } else if (res.v_b >= 9.7 && res.v_b <= 10.3) {
+          tagClass = "buffer-phase";
+          tagText = "半当量点 (缓冲极值)";
+          title = "缓冲中点对称平衡模型";
+          formula = "pH = pKa (此时 [A⁻] = [HA])";
+          calc = `pH = 4.75 + lg(1.00) = 4.75；共轭比严格等于 1`;
+          mech = "在此点，加入的 NaOH 恰好消耗一半醋酸，导致弱酸与共轭碱物质的量严格相等。对数项等于 0，体系 pH = pKa。此时缓冲容量 β 达到全过程峰值，曲线切线最为平缓。";
+          deltaText = "缓冲阻尼极值点 (β 最大)";
+          qPrompt = "判断：半当量点处为何曲线斜率最为平坦？";
+          qOptions = [
+            { text: "两组分等量，抗酸抗碱阻尼最大", correct: true },
+            { text: "溶液中没有自由离子", correct: false },
+            { text: "反应停止了", correct: false }
+          ];
+        } else if (res.v_b >= 19.85 && res.v_b <= 20.15) {
+          tagClass = "ep-phase";
+          tagText = "化学计量当量点";
+          title = "强碱弱酸盐水解模型";
+          formula = "A⁻ + H₂O ⇌ HA + OH⁻ ； [OH⁻] ≈ √(Kb · c)";
+          calc = `[OH⁻] ≈ √(5.62×10⁻¹⁰ × 0.050) = ${(res.oh * 1e6).toFixed(2)}×10⁻⁶ M → pH = ${res.ph.toFixed(2)}`;
+          mech = "滴入的 NaOH 与弱酸等化学计量完全中和，溶质转变为醋酸钠。由于醋酸根是弱酸共轭碱，夺取水分子中的质子发生轻微水解释放 OH⁻，因此当量点显弱碱性 (pH ≈ 8.72) 而非中性 7.00。";
+          deltaText = "突跃中心，共轭碱水解显碱性";
+          qPrompt = "核心考察：醋酸滴定当量点 pH 为何大于 7.00？";
+          qOptions = [
+            { text: "强碱弱酸盐中弱酸根微弱水解", correct: true },
+            { text: "滴加的 NaOH 意外过量", correct: false },
+            { text: "指示剂消耗了氢离子", correct: false }
+          ];
+        } else if (res.v_b > 20.15) {
+          tagClass = "excess-phase";
+          tagText = "强碱过量控制区";
+          title = "外加过量强碱主导模型";
+          formula = "[OH⁻] ≈ (n(NaOH)过量) / V总 ； pH = 14 - pOH";
+          calc = `[OH⁻] = ${((res.v_b - 20) * 0.1 / res.v_total).toFixed(4)} M → pH = ${res.ph.toFixed(2)}`;
+          mech = "弱酸已全被反应完全，微量多滴入的 NaOH 属于强电解质，完全电离出的 OH⁻ 浓度在数量级上迅速彻底压制了醋酸根水解产生的影响，溶液 pH 由过量强碱的稀释直接决定。";
+          deltaText = "游离强碱过量控制";
+          qPrompt = "分析：过量滴加 NaOH 时，醋酸根的水解会怎样？";
+          qOptions = [
+            { text: "被大量 OH⁻ 同离子效应抑制", correct: true },
+            { text: "水解程度剧烈加深", correct: false },
+            { text: "转化生成沉淀", correct: false }
+          ];
+        }
+
+        return { tagClass, tagText, title, formula, calc, mech, deltaText, qPrompt, qOptions, a_fraction, ratio };
+      }
+
+      // 渲染所有面板
+      function updateAll(vb) {
+        currentV = vb;
+        slider.value = vb.toFixed(1);
+        readoutVol.textContent = vb.toFixed(2);
+
+        const res = solveEquilibrium(vb);
+        const info = getStageInfo(res);
+
+        // 读数面板
+        metricPh.textContent = res.ph.toFixed(2);
+        metricDelta.textContent = info.deltaText;
+        metricFraction.textContent = info.a_fraction.toFixed(3);
+        metricVolTotal.textContent = `总体积 ${res.v_total.toFixed(2)} mL`;
+
+        if (info.ratio > 999) {
+          metricRatio.textContent = "—";
+          metricLogRatio.textContent = "起始仅含弱酸分子";
+        } else if (info.ratio < 0.001) {
+          metricRatio.textContent = "< 0.001";
+          metricLogRatio.textContent = "弱酸分子极度稀少";
+        } else {
+          metricRatio.textContent = info.ratio.toFixed(2);
+          const lgR = Math.log10(info.ratio);
+          metricLogRatio.textContent = `lg([A⁻]/[HA]) = ${lgR >= 0 ? "+" : ""}${lgR.toFixed(2)}`;
+        }
+
+        // 物种分布堆叠条与具体浓度
+        const totalSpecies = res.ha + res.a + (res.v_b > 20 ? res.oh : 0);
+        let pctHa = (res.ha / totalSpecies) * 100;
+        let pctA = (res.a / totalSpecies) * 100;
+        let pctOh = totalSpecies > 0 && res.v_b > 20 ? (res.oh / totalSpecies) * 100 : 0;
+
+        barHa.style.width = `${pctHa.toFixed(1)}%`;
+        barA.style.width = `${pctA.toFixed(1)}%`;
+        barOh.style.width = `${pctOh.toFixed(1)}%`;
+
+        concHa.textContent = res.ha >= 0.001 ? `${res.ha.toFixed(4)} M` : `${(res.ha * 1000).toFixed(2)} mM`;
+        concA.textContent = res.a >= 0.001 ? `${res.a.toFixed(4)} M` : `${(res.a * 1000).toFixed(2)} mM`;
+        if (res.v_b <= 20) {
+          concIon.textContent = `[H⁺]=${res.h >= 1e-4 ? (res.h * 1000).toFixed(3) + ' mM' : (res.h * 1e5).toFixed(2) + '×10⁻⁵ M'}`;
+        } else {
+          concIon.textContent = `[OH⁻]=${(res.oh * 1000).toFixed(2)} mM`;
+        }
+
+        // 理论模型面板
+        modelStageTag.className = `stage-tag ${info.tagClass}`;
+        modelStageTag.textContent = info.tagText;
+        modelName.textContent = info.title;
+        modelFormula.textContent = info.formula;
+        modelCalc.textContent = info.calc;
+        mechanismText.innerHTML = info.mech;
+
+        // 问答微交互更新
+        quizPrompt.textContent = info.qPrompt;
+        quizFb.textContent = "点击选项测试理解";
+        quizFb.style.color = "var(--muted)";
+        quizOpts.innerHTML = "";
+        info.qOptions.forEach(opt => {
+          const btn = document.createElement("button");
+          btn.className = "quiz-opt-btn";
+          btn.textContent = opt.text;
+          btn.addEventListener("click", () => {
+            Array.from(quizOpts.children).forEach(c => c.className = "quiz-opt-btn");
+            if (opt.correct) {
+              btn.classList.add("correct");
+              quizFb.textContent = "判定正确：切中核心化学事实";
+              quizFb.style.color = "var(--correct)";
+            } else {
+              btn.classList.add("incorrect");
+              quizFb.textContent = "思考偏差：核对主导物种浓度";
+              quizFb.style.color = "var(--incorrect)";
+            }
+          });
+          quizOpts.appendChild(btn);
+        });
+
+        // 快速跳转芯片高亮同步
+        document.querySelectorAll(".anchor-chip-btn").forEach(btn => {
+          const targetV = parseFloat(btn.dataset.vol);
+          if (Math.abs(targetV - vb) < 0.05) {
+            btn.classList.add("active");
+          } else {
+            btn.classList.remove("active");
+          }
+        });
+
+        // 重绘 Canvas 滴定曲线与准星
+        drawChart();
+      }
+
+      // Canvas 绘制滴定曲线与坐标系
+      function drawChart() {
+        const cv = chartCanvas;
+        const ctx = Deck.fit(cv);
+        const w = cvBox.clientWidth;
+        const h = cvBox.clientHeight;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 绘图区域边距
+        const padL = 54;
+        const padR = 24;
+        const padT = 24;
+        const padB = 42;
+        const plotW = w - padL - padR;
+        const plotH = h - padT - padB;
+
+        // 坐标投影函数
+        const xToPx = v => padL + (v / 40.0) * plotW;
+        const yToPx = ph => padT + ((14.0 - ph) / 14.0) * plotH;
+
+        // 1. 绘制缓冲有效窗口背景带 (pH 3.75 ~ 5.75，对应 pKa ± 1)
+        const yBufTop = yToPx(PKA + 1);
+        const yBufBtm = yToPx(PKA - 1);
+        ctx.fillStyle = "rgba(8, 116, 110, 0.08)";
+        ctx.fillRect(padL, yBufTop, plotW, yBufBtm - yBufTop);
+
+        // 标注缓冲带标签
+        ctx.fillStyle = "rgba(8, 116, 110, 0.6)";
+        ctx.font = "12px Bahnschrift, 'Noto Sans SC', sans-serif";
+        ctx.fillText("有效缓冲区间 pH = pKa ± 1 (3.75 ~ 5.75)", padL + 12, yBufTop + 16);
+
+        // 2. 网格与坐标轴
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(82, 105, 112, 0.12)";
+        ctx.fillStyle = "var(--muted)";
+        ctx.font = "13px Bahnschrift, sans-serif";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+
+        // Y 轴刻度 (pH 0, 2, 4, 6, 7, 8, 10, 12, 14)
+        for (let ph = 0; ph <= 14; ph += 2) {
+          const y = yToPx(ph);
+          ctx.beginPath();
+          ctx.moveTo(padL, y);
+          ctx.lineTo(padL + plotW, y);
+          ctx.stroke();
+          ctx.fillText(ph.toString(), padL - 8, y);
+        }
+        // pH 7 特殊中性辅线
+        const y7 = yToPx(7);
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "rgba(82, 105, 112, 0.35)";
+        ctx.beginPath();
+        ctx.moveTo(padL, y7);
+        ctx.lineTo(padL + plotW, y7);
+        ctx.stroke();
+        ctx.restore();
+        ctx.fillText("7 (中性)", padL - 8, y7);
+
+        // X 轴刻度 (V 0, 10, 20, 30, 40 mL)
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        for (let v = 0; v <= 40; v += 10) {
+          const x = xToPx(v);
+          ctx.beginPath();
+          ctx.moveTo(x, padT);
+          ctx.lineTo(x, padT + plotH);
+          ctx.stroke();
+          ctx.fillText(v.toFixed(0), x, padT + plotH + 8);
+        }
+
+        // X 轴中和关键竖直参考线 (V = 10 mL 和 20 mL)
+        ctx.save();
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = "rgba(8, 116, 110, 0.4)";
+        const xHalf = xToPx(10);
+        ctx.beginPath();
+        ctx.moveTo(xHalf, padT);
+        ctx.lineTo(xHalf, padT + plotH);
+        ctx.stroke();
+
+        ctx.strokeStyle = "rgba(196, 90, 0, 0.4)";
+        const xEq = xToPx(20);
+        ctx.beginPath();
+        ctx.moveTo(xEq, padT);
+        ctx.lineTo(xEq, padT + plotH);
+        ctx.stroke();
+        ctx.restore();
+
+        // 轴名称说明
+        ctx.fillStyle = "var(--text)";
+        ctx.font = "14px 'Noto Sans SC', sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText("pH", padL - 34, padT - 14);
+        ctx.textAlign = "right";
+        ctx.fillText("滴加 NaOH 体积 V_b / mL", padL + plotW, padT + plotH + 26);
+
+        // 3. 绘制滴定完整曲线
+        ctx.save();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#142B33";
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        SAMPLES.forEach((pt, idx) => {
+          const px = xToPx(pt.v);
+          const py = yToPx(pt.ph);
+          if (idx === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+        ctx.restore();
+
+        // 4. 特征点标记圆环 (起点、半当量点、当量点)
+        const pts = [
+          { v: 0, ph: SAMPLES[0].ph, col: "var(--acid)", label: "起点 (2.88)" },
+          { v: 10, ph: PKA, col: "var(--buffer)", label: "半当量点 (4.75)" },
+          { v: 20, ph: 8.72, col: "var(--focus)", label: "当量点 (8.72)" }
+        ];
+        pts.forEach(p => {
+          const px = xToPx(p.v);
+          const py = yToPx(p.ph);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.strokeStyle = p.col;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(px, py, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        });
+
+        // 5. 当前选定点的高亮与十字准星
+        const curRes = solveEquilibrium(currentV);
+        const curX = xToPx(currentV);
+        const curY = yToPx(curRes.ph);
+
+        ctx.save();
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = "rgba(196, 90, 0, 0.7)";
+        ctx.lineWidth = 1.5;
+
+        // 准星横线
+        ctx.beginPath();
+        ctx.moveTo(padL, curY);
+        ctx.lineTo(curX, curY);
+        ctx.stroke();
+
+        // 准星竖线
+        ctx.beginPath();
+        ctx.moveTo(curX, curY);
+        ctx.lineTo(curX, padT + plotH);
+        ctx.stroke();
+        ctx.restore();
+
+        // 当前点外部脉冲高亮环与中心点
+        ctx.fillStyle = "rgba(196, 90, 0, 0.25)";
+        ctx.beginPath();
+        ctx.arc(curX, curY, 11, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "var(--focus)";
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(curX, curY, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // 当前点浮动读数气泡
+        const bubbleText = `V = ${currentV.toFixed(1)} mL, pH = ${curRes.ph.toFixed(2)}`;
+        ctx.font = "bold 13px Bahnschrift, sans-serif";
+        const txtW = ctx.measureText(bubbleText).width;
+        let bx = curX + 10;
+        let by = curY - 24;
+        if (bx + txtW + 16 > padL + plotW) bx = curX - txtW - 20;
+        if (by < padT + 4) by = curY + 12;
+
+        ctx.fillStyle = "rgba(20, 43, 51, 0.92)";
+        Deck.rr(ctx, bx, by, txtW + 16, 22, 3);
+        ctx.fill();
+
+        ctx.fillStyle = "#FFFFFF";
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "left";
+        ctx.fillText(bubbleText, bx + 8, by + 11);
+      }
+
+      // 交互事件监听
+      slider.addEventListener("input", (e) => {
+        updateAll(parseFloat(e.target.value));
+      });
+
+      document.querySelectorAll(".anchor-chip-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const v = parseFloat(btn.dataset.vol);
+          updateAll(v);
+        });
+      });
+
+      // Canvas 直接拖拽/点击定位
+      let isDragging = false;
+      function handlePointerChart(e) {
+        const pt = Deck.pt(chartCanvas, e);
+        const padL = 54;
+        const padR = 24;
+        const plotW = cvBox.clientWidth - padL - padR;
+        let relX = pt.x - padL;
+        relX = Math.max(0, Math.min(plotW, relX));
+        const targetV = (relX / plotW) * 40.0;
+        updateAll(Math.round(targetV * 10) / 10);
+      }
+
+      chartCanvas.addEventListener("pointerdown", (e) => {
+        isDragging = true;
+        chartCanvas.setPointerCapture(e.pointerId);
+        handlePointerChart(e);
+      });
+      chartCanvas.addEventListener("pointermove", (e) => {
+        if (isDragging) handlePointerChart(e);
+      });
+      chartCanvas.addEventListener("pointerup", (e) => {
+        if (isDragging) {
+          isDragging = false;
+          try { chartCanvas.releasePointerCapture(e.pointerId); } catch(err){}
+        }
+      });
+      chartCanvas.addEventListener("pointercancel", (e) => {
+        isDragging = false;
+      });
+
+      // 视窗缩放响应
+      Deck.onResize(() => {
+        drawChart();
+      });
+
+      // 初始化
+      updateAll(10.0);
+      Deck.init({ index: 15, total: 17, keys: false });
+    })();
+  </script>
+</body>
+</html>

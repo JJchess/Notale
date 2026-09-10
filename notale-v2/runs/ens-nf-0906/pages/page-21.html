@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    :root {
+      --bg: #E8EEF1;
+      --text: #142630;
+      --muted: #50616B;
+      --model: #17628E;
+      --focus: #B83D0B;
+      --rule: #71828B;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans CJK SC", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: var(--lh-copy);
+    }
+
+    .flow-wrap {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 24px;
+      margin-top: 8px;
+      height: 520px;
+      position: relative;
+    }
+
+    .step-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+    }
+
+    .step-card:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 140px;
+      right: -13px;
+      width: 2px;
+      height: 240px;
+      background: var(--rule);
+      opacity: 0.25;
+    }
+
+    .step-header {
+      border-bottom: 2px solid var(--rule);
+      padding-bottom: 12px;
+    }
+
+    .step-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      font-weight: 600;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .step-title span.tag {
+      font-size: var(--fs-label);
+      color: var(--model);
+      font-family: var(--font-sans);
+      font-weight: normal;
+    }
+
+    .step-formula {
+      margin: 20px 0 10px 0;
+      font-size: 20px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+    }
+
+    .step-vis {
+      height: 230px;
+      position: relative;
+    }
+
+    .step-vis svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .step-summary {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      min-height: 48px;
+      margin-top: 4px;
+    }
+
+    /* 底部收束条：加权投票形成最终集成模型 */
+    .aggregation-strip {
+      height: 124px;
+      border-top: 2px solid var(--rule);
+      padding-top: 16px;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      align-items: center;
+      gap: 40px;
+    }
+
+    .strip-label h2 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      line-height: var(--lh-tight);
+      margin: 0;
+      color: var(--model);
+    }
+
+    .strip-label p {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 6px 0 0 0;
+    }
+
+    .strip-calc {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+    }
+
+    .final-formula {
+      font-size: 24px;
+    }
+
+    .signature-svg {
+      width: 480px;
+      height: 70px;
+    }
+
+    /* 矢量图内样式 */
+    .axis-line { stroke: var(--rule); stroke-width: 1.5px; }
+    .plot-curve { stroke: var(--model); stroke-width: var(--stroke); fill: none; }
+    .focus-curve { stroke: var(--focus); stroke-width: var(--stroke); fill: none; }
+    .plot-label { font-size: 13px; fill: var(--muted); font-family: var(--font-sans); }
+    .tick-label { font-size: var(--fs-tick); fill: var(--muted); font-family: var(--font-sans); }
+  </style>
+</head>
+<body data-page="21" data-total="32">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>AdaBoost 的核心闭环：误分放大、优胜多权与符号聚合</h1>
+        <div class="lead">每一轮用误差率决定基分类器发言权，用纠错结果推升误分样本权重</div>
+      </div>
+    </header>
+
+    <div class="flow-wrap">
+      <!-- 步骤 1: 误差率与模型权重 -->
+      <section class="step-card min0">
+        <div class="step-header">
+          <div class="step-title">弱分类器权重<span class="tag">判别能力定话语权</span></div>
+          <div class="step-formula" id="eq-alpha"></div>
+        </div>
+        <div class="step-vis">
+          <svg viewBox="0 0 440 240">
+            <!-- 坐标系 -->
+            <line x1="50" y1="190" x2="410" y2="190" class="axis-line" />
+            <line x1="50" y1="190" x2="50" y2="20" class="axis-line" />
+            <text x="410" y="210" text-anchor="end" class="plot-label">加权误差率 ε_m</text>
+            <text x="40" y="24" text-anchor="end" class="plot-label">模型权重 α_m</text>
+            <!-- 刻度与辅助线 -->
+            <line x1="50" y1="110" x2="410" y2="110" stroke="var(--rule)" stroke-dasharray="3 3" opacity="0.4" />
+            <text x="42" y="114" text-anchor="end" class="tick-label">0</text>
+            <text x="42" y="180" text-anchor="end" class="tick-label">&lt;0</text>
+            <!-- 准确的双曲函数平滑曲线 (y = 110 - alpha*55) -->
+            <path d="M 75 32 C 100 56, 170 90, 250 110 C 310 126, 350 142, 380 160" class="plot-curve" />
+            <!-- 标注 ε=0.5 零权点 -->
+            <circle cx="250" cy="110" r="4" fill="var(--model)" />
+            <line x1="250" y1="190" x2="250" y2="25" stroke="var(--rule)" stroke-dasharray="3 3" opacity="0.4" />
+            <text x="250" y="178" text-anchor="middle" class="tick-label">ε = 0.5</text>
+            <text x="92" y="206" text-anchor="middle" class="tick-label">0.1</text>
+            <!-- 标注 ε=0.1 高权点 -->
+            <circle cx="92" cy="48" r="5" fill="var(--focus)" />
+            <text x="106" y="44" class="plot-label" fill="var(--focus)" font-weight="600">ε_m 越小，α_m 越显著</text>
+          </svg>
+        </div>
+        <div class="step-summary">
+          分类器误差率低于 0.5 获得正发言权；误差率越低，在集成最终表决中的权重大幅递增。
+        </div>
+      </section>
+
+      <!-- 步骤 2: 样本权重自适应更新 -->
+      <section class="step-card min0">
+        <div class="step-header">
+          <div class="step-title">样本分布调谐<span class="tag">下一轮聚焦难点</span></div>
+          <div class="step-formula" id="eq-weight"></div>
+        </div>
+        <div class="step-vis">
+          <svg viewBox="0 0 440 240">
+            <!-- 图解两个分类：分对与分错 -->
+            <!-- 左侧：分对样本缩小 -->
+            <g transform="translate(40, 20)">
+              <rect x="0" y="0" width="160" height="180" fill="none" stroke="var(--rule)" stroke-width="1" stroke-dasharray="2 2" opacity="0.3" rx="4" />
+              <text x="80" y="30" text-anchor="middle" class="plot-label" font-weight="600">分类正确 (y·G = 1)</text>
+              <circle cx="80" cy="85" r="28" fill="none" stroke="var(--model)" stroke-width="2" />
+              <text x="80" y="90" text-anchor="middle" fill="var(--model)" font-size="14">w_i 缩小</text>
+              <text x="80" y="145" text-anchor="middle" class="tick-label" fill="var(--muted)">× exp(-α_m)</text>
+            </g>
+            <!-- 中间传递符号 -->
+            <path d="M 210 110 L 230 110" stroke="var(--rule)" stroke-width="2" />
+            <!-- 右侧：分错样本放大 (重点强调) -->
+            <g transform="translate(240, 20)">
+              <rect x="0" y="0" width="160" height="180" fill="none" stroke="var(--focus)" stroke-width="1.5" rx="4" />
+              <text x="80" y="30" text-anchor="middle" class="plot-label" fill="var(--focus)" font-weight="600">分类错误 (y·G = -1)</text>
+              <circle cx="80" cy="85" r="42" fill="none" stroke="var(--focus)" stroke-width="3" />
+              <text x="80" y="90" text-anchor="middle" fill="var(--focus)" font-size="16" font-weight="600">w_i 放大</text>
+              <text x="80" y="152" text-anchor="middle" class="tick-label" fill="var(--focus)" font-weight="600">× exp(+α_m)</text>
+            </g>
+          </svg>
+        </div>
+        <div class="step-summary">
+          分错样本按预测强度成倍提升权重，迫使后续基分类器将训练资源向难分区域倾斜。
+        </div>
+      </section>
+
+      <!-- 步骤 3: 归一化与代际传递 -->
+      <section class="step-card min0">
+        <div class="step-header">
+          <div class="step-title">规范化因子<span class="tag">维持全概率分布</span></div>
+          <div class="step-formula" id="eq-norm"></div>
+        </div>
+        <div class="step-vis">
+          <svg viewBox="0 0 440 240">
+            <!-- 示意 5 个样本权重的分布比例演进 -->
+            <text x="40" y="30" class="plot-label">轮次 m 样本权值占比</text>
+            <rect x="40" y="45" width="60" height="24" fill="var(--model)" opacity="0.5" />
+            <rect x="105" y="45" width="60" height="24" fill="var(--model)" opacity="0.5" />
+            <rect x="170" y="45" width="60" height="24" fill="var(--focus)" />
+            <rect x="235" y="45" width="60" height="24" fill="var(--model)" opacity="0.5" />
+            <rect x="300" y="45" width="60" height="24" fill="var(--focus)" />
+            <text x="375" y="62" class="tick-label">均等初态</text>
+
+            <!-- 箭头下移 -->
+            <path d="M 200 85 L 200 115" stroke="var(--rule)" stroke-width="1.5" marker-end="url(#arrow)" />
+
+            <text x="40" y="145" class="plot-label">第 m+1 轮分布 (经 Z_m 归一)</text>
+            <rect x="40" y="160" width="30" height="24" fill="var(--model)" opacity="0.3" />
+            <rect x="74" y="160" width="30" height="24" fill="var(--model)" opacity="0.3" />
+            <rect x="108" y="160" width="130" height="24" fill="var(--focus)" />
+            <rect x="242" y="160" width="30" height="24" fill="var(--model)" opacity="0.3" />
+            <rect x="276" y="160" width="114" height="24" fill="var(--focus)" />
+            <text x="400" y="177" class="tick-label">聚焦难点</text>
+          </svg>
+        </div>
+        <div class="step-summary">
+          Z_m 保证全体样本权重和恒为 1，将更新后的绝对数值重新折算为可采样的概率测度。
+        </div>
+      </section>
+    </div>
+
+    <!-- 底部收束：多条弱基学习器汇聚为强集成模型 -->
+    <div class="aggregation-strip">
+      <div class="strip-label">
+        <h2>加权线性组合与最终表决</h2>
+        <p>基分类器按权重汇聚形成强分类器</p>
+      </div>
+      <div class="strip-calc">
+        <div class="final-formula" id="eq-final"></div>
+        <svg class="signature-svg" viewBox="0 0 460 70">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--model)" />
+            </marker>
+          </defs>
+          <!-- 3 条细线汇聚为 1 条 4px 粗线 -->
+          <line x1="38" y1="15" x2="160" y2="35" stroke="var(--model)" stroke-width="2" />
+          <text x="0" y="19" class="tick-label" fill="var(--model)">α₁G₁</text>
+          <line x1="38" y1="35" x2="160" y2="35" stroke="var(--model)" stroke-width="2" />
+          <text x="0" y="39" class="tick-label" fill="var(--model)">α₂G₂</text>
+          <line x1="38" y1="55" x2="160" y2="35" stroke="var(--model)" stroke-width="2" />
+          <text x="0" y="59" class="tick-label" fill="var(--model)">α_mG_m</text>
+
+          <!-- 汇聚点 -->
+          <circle cx="160" cy="35" r="4" fill="var(--model)" />
+
+          <!-- 粗线导出到最终决策 -->
+          <line x1="160" y1="35" x2="310" y2="35" stroke="var(--model)" stroke-width="4" marker-end="url(#arrow)" />
+          <text x="235" y="25" text-anchor="middle" class="plot-label" font-weight="600">加权线性表决</text>
+          
+          <rect x="320" y="15" width="120" height="40" rx="4" fill="none" stroke="var(--model)" stroke-width="2" />
+          <text x="380" y="40" text-anchor="middle" class="plot-label" fill="var(--model)" font-weight="600">强分类器 G(x)</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页我们剖析 AdaBoost 的三大数学推导环节：
+    首先，基分类器的误差率直接决定其在终选时的发言权。当误差率低于 0.5 时，分类器获得正向权重 alpha，误差率越低，权重增长越迅猛。
+    其次是样本分布的自适应迭代。对于当前分类器预测错误的样本，权重乘以大于 1 的指数因子放大；预测正确的样本则被压缩。这就强迫下一轮学习器把焦点对准前序模型的死角。
+    最后，通过归一化常数 Z_m 保持权重之和为 1，并在累加各轮基分类器后，以符号函数 sign 完成加权多数表决。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      Deck.init({ index: 21, total: 32 });
+
+      // 渲染公式
+      katex.render(
+        "\\alpha_m = \\frac{1}{2} \\ln \\left(\\frac{1 - \\epsilon_m}{\\epsilon_m}\\right)",
+        document.getElementById("eq-alpha"),
+        { throwOnError: false, displayMode: false }
+      );
+
+      katex.render(
+        "w_{m+1, i} = \\frac{w_{m, i}}{Z_m} \\exp\\left(-\\alpha_m y_i G_m(x_i)\\right)",
+        document.getElementById("eq-weight"),
+        { throwOnError: false, displayMode: false }
+      );
+
+      katex.render(
+        "Z_m = \\sum_{i=1}^N w_{m, i} \\exp\\left(-\\alpha_m y_i G_m(x_i)\\right)",
+        document.getElementById("eq-norm"),
+        { throwOnError: false, displayMode: false }
+      );
+
+      katex.render(
+        "G(x) = \\operatorname{sign}\\left( \\sum_{m=1}^M \\alpha_m G_m(x) \\right)",
+        document.getElementById("eq-final"),
+        { throwOnError: false, displayMode: false }
+      );
+    });
+  </script>
+</body>
+</html>

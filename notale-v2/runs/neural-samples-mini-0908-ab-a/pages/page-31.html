@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 44px 60px 48px;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      box-sizing: border-box;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 2-column layout */
+    .workspace {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 48px;
+      flex: 1;
+      margin-top: 20px;
+      margin-bottom: 8px;
+      min-height: 0;
+    }
+
+    /* Left: Task selection & properties */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+    .task-nav {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .task-btn {
+      background: none;
+      border: 1px solid var(--rule);
+      padding: 10px 0;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      text-align: center;
+    }
+    .task-btn:hover {
+      color: var(--text);
+      border-color: var(--text);
+    }
+    .task-btn.active {
+      background: var(--structure);
+      border-color: var(--structure);
+      color: #FFF;
+    }
+
+    .spec-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .spec-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 8px;
+    }
+    .spec-label {
+      color: var(--muted);
+      font-size: var(--fs-sec);
+    }
+    .spec-val {
+      font-weight: 700;
+      font-family: monospace;
+      font-size: var(--fs-body);
+      color: var(--text);
+    }
+    .spec-prior {
+      font-size: var(--fs-body);
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    /* Candidate Model selector */
+    .model-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--rule);
+    }
+    .model-label {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .model-options {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .model-btn {
+      background: none;
+      border: 1px solid var(--rule);
+      padding: 12px 0;
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+    }
+    .model-btn:hover {
+      border-color: var(--text);
+    }
+    .model-btn.active {
+      border: 2px solid var(--structure);
+      color: var(--structure);
+    }
+    .model-btn.active.mismatch-active {
+      border: 2px solid var(--signal);
+      color: var(--signal);
+    }
+
+    .model-rec {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .model-rec strong {
+      color: var(--structure);
+      font-size: var(--fs-lead);
+    }
+
+    /* Right: Model diagnostic canvas & trade-off inspection */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      border-left: 1px solid var(--rule);
+      padding-left: 48px;
+    }
+
+    .verdict-header {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+    }
+    .verdict-tag {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--structure);
+    }
+    .verdict-tag.mismatch {
+      color: var(--signal);
+    }
+    .verdict-desc {
+      font-size: var(--fs-lead);
+      line-height: 1.4;
+      color: var(--text);
+    }
+
+    /* Structural Diagram Canvas */
+    .diagram-wrap {
+      position: relative;
+      height: 350px;
+      border: 1px solid var(--rule);
+    }
+    #structCanvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Metrics & Trade-offs comparison grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+    .metric-box {
+      border-top: 1px solid var(--rule);
+      padding-top: 10px;
+    }
+    .metric-title {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .metric-val {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .metric-val.alert {
+      color: var(--signal);
+    }
+    .metric-note {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>架构适配：依数据结构选模型起点</h1>
+      <p class="lead">归纳偏置须与物理结构相容</p>
+    </header>
+
+    <div class="workspace min0">
+      <!-- Left Column: Task Choice & Data Spec -->
+      <div class="left-col min0">
+        <div class="task-nav" role="tablist">
+          <button class="task-btn active" data-task="0">图像</button>
+          <button class="task-btn" data-task="1">情感</button>
+          <button class="task-btn" data-task="2">时序</button>
+          <button class="task-btn" data-task="3">表格</button>
+        </div>
+
+        <div class="spec-group">
+          <div class="spec-row">
+            <span class="spec-label">输入张量</span>
+            <span class="spec-val" id="specDim">3 × 224 × 224</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-label">结构先验</span>
+            <span class="spec-val" id="specStructure">2D 平移等变与网格</span>
+          </div>
+          <div class="spec-prior" id="specPrior">
+            像素具局部邻域相关与平移对称性。
+          </div>
+        </div>
+
+        <div class="model-selector">
+          <div class="model-label">选择拟测试架构：</div>
+          <div class="model-options">
+            <button class="model-btn active" data-model="CNN">CNN</button>
+            <button class="model-btn" data-model="RNN">RNN</button>
+            <button class="model-btn" data-model="Attn">注意力</button>
+            <button class="model-btn" data-model="MLP">MLP</button>
+          </div>
+          <div class="model-rec">
+            <span>基准推荐：</span>
+            <strong id="idealModel">CNN</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Verification & Evidence Canvas -->
+      <div class="right-col min0">
+        <div class="verdict-header">
+          <span class="verdict-tag" id="verdictTag">最优匹配</span>
+          <span class="verdict-desc" id="verdictDesc">权重共享与局部感受野完全吻合网格平移不变性。</span>
+        </div>
+
+        <div class="diagram-wrap">
+          <canvas id="structCanvas" class="cv-fill"></canvas>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-box">
+            <div class="metric-title">参数复杂度</div>
+            <div class="metric-val" id="mParam">低 · 权重共享</div>
+            <div class="metric-note" id="nParam">核参数固定，与输入分辨率解耦</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-title">长程计算模式</div>
+            <div class="metric-val" id="mComp">层级感受野</div>
+            <div class="metric-note" id="nComp">逐层滑窗聚合，支持高度并行</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-title">代价与风险</div>
+            <div class="metric-val" id="mRisk">大视野依赖深层</div>
+            <div class="metric-note" id="nRisk">全局交互需依赖更深网络或下采样</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页让学生站在全局架构选择的高度：面对具体的实际任务，我们到底应该如何选择第一版基线？
+    核心原则只有一条：数据的物理结构和对称性，必须与网络的归纳偏置对齐。
+    如果是图像分类，像素有二维网格和局部平移对称性，CNN的滑动卷积和权重共享是最天然的起点；如果强行用MLP展平，参数量瞬间暴增且丢失局部结构；如果用RNN则串行低效。
+    对于变长文本情感分析，词序具有单向时序依赖，RNN/LSTM或自注意力能自然处理变长，自注意力还能并行并直接打通长程依赖。
+    对于传感器多通道时序，轻量因果卷积或RNN是常见基准。
+    而对于表格数据，各列物理含义不同且不存在连续邻域，MLP或树模型反而是坚实的起点，盲目套用卷积只会引入虚假邻域偏置。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    const TASKS = [
+      {
+        id: "image",
+        name: "图像分类",
+        dim: "3 × 224 × 224",
+        structure: "2D 平移等变与网格",
+        prior: "像素具局部邻域相关与平移对称性。",
+        ideal: "CNN"
+      },
+      {
+        id: "sentiment",
+        name: "情感判断",
+        dim: "L × D (变长序列)",
+        structure: "离散符号序列与词序",
+        prior: "语义由词序和长程上下文决定。",
+        ideal: "Attn"
+      },
+      {
+        id: "sensor",
+        name: "传感器时序",
+        dim: "T × C (连续多变量)",
+        structure: "单向因果流与周期",
+        prior: "时间流单向不可逆，波形具因果性。",
+        ideal: "RNN"
+      },
+      {
+        id: "tabular",
+        name: "表格分类",
+        dim: "N × D (异构特征列)",
+        structure: "独立特征与无序分布",
+        prior: "各列物理量纲独立，无空间邻域。",
+        ideal: "MLP"
+      }
+    ];
+
+    const MATRIX = {
+      image: {
+        CNN: {
+          tag: "最优匹配",
+          status: "matched",
+          desc: "权重共享与局部感受野完全吻合网格平移不变性。",
+          param: "低 · 权重共享",
+          nParam: "核大小固定，与输入分辨率解耦",
+          comp: "层级感受野",
+          nComp: "逐层滑窗聚合，支持高度并行",
+          risk: "大视野依赖深层",
+          nRisk: "全局交互依赖深层网络或下采样",
+          drawType: "cnn_grid"
+        },
+        RNN: {
+          tag: "架构错配",
+          status: "mismatch",
+          desc: "将网格展成单向序列递推，计算极慢且破坏各向同性。",
+          param: "中等 · 循环单元",
+          nParam: "跨 50,000 像素点逐个递推",
+          comp: "严重串行瓶颈",
+          nComp: "无法发挥显卡并发吞吐优势",
+          risk: "长程梯度湮灭",
+          nRisk: "远端像素因时步过长失去关联",
+          drawType: "rnn_linear"
+        },
+        Attn: {
+          tag: "可行但需大数据",
+          status: "matched",
+          desc: "补丁化虽可全局建模，但小样本缺少空间归纳偏置。",
+          param: "较高 · 全局投射",
+          nParam: "多头自注意力参数量大",
+          comp: "二次方复杂度",
+          nComp: "所有空间 Patch 两两做点积",
+          risk: "缺少局部偏置",
+          nRisk: "无强先验，极度依赖海量预训练",
+          drawType: "attn_all"
+        },
+        MLP: {
+          tag: "参数爆炸与过拟合",
+          status: "mismatch",
+          desc: "展平为长向量摧毁平移等变，微小位移即视作全新输入。",
+          param: "参数爆炸",
+          nParam: "首层权重即达数千万参数",
+          comp: "巨量稠密乘加",
+          nComp: "丢失平移等变与网格对称性",
+          risk: "泛化彻底失败",
+          nRisk: "死记硬背样本，测试误差居高不下",
+          drawType: "mlp_dense"
+        }
+      },
+      sentiment: {
+        CNN: {
+          tag: "轻量基线",
+          status: "matched",
+          desc: "1D 卷积核快速捕获短语搭配，但跨长句依赖偏弱。",
+          param: "极少 · 1D 卷积核",
+          nParam: "窗口核固定，显存占用极小",
+          comp: "全序列并行",
+          nComp: "推理吞吐极高，无需等待前文",
+          risk: "长距上下文截断",
+          nRisk: "难跨越数十词捕获远距修饰与转折",
+          drawType: "cnn_grid"
+        },
+        RNN: {
+          tag: "经典时序基线",
+          status: "matched",
+          desc: "LSTM/GRU 沿词序递推累积语义，天然适应变长序列。",
+          param: "适中 · 门控状态",
+          nParam: "跨时步复用状态转移权重矩阵",
+          comp: "逐词时步串行",
+          nComp: "计算耗时随句长线性增长",
+          risk: "信息瓶颈与遗忘",
+          nRisk: "固定维隐向量对长句存在压缩上限",
+          drawType: "rnn_linear"
+        },
+        Attn: {
+          tag: "最优解法",
+          status: "matched",
+          desc: "自注意力直接计算任意词对关联，精准捕获跨句修饰与转折。",
+          param: "适度至较高",
+          nParam: "Q/K/V 矩阵映射结构规范",
+          comp: "高度并行计算",
+          nComp: "整句词元矩阵同时相乘，吞吐高",
+          risk: "需显式位置编码",
+          nRisk: "自注意力具置换不变性，须注入位置",
+          drawType: "attn_all"
+        },
+        MLP: {
+          tag: "词序完全丢失",
+          status: "mismatch",
+          desc: "抹杀先后次序，‘不很好’与‘好很不’无法区分。",
+          param: "绑定词表与定长",
+          nParam: "巨大输入层导致稀疏过拟合",
+          comp: "单次前向乘加",
+          nComp: "无法动态处理长短不一的文段",
+          risk: "否定逆转失效",
+          nRisk: "缺乏时序语法敏感度，误判率极高",
+          drawType: "mlp_dense"
+        }
+      },
+      sensor: {
+        CNN: {
+          tag: "强力局部基线",
+          status: "matched",
+          desc: "膨胀 1D 卷积能以多尺度感受野高效捕获高频振荡波形。",
+          param: "低 · 膨胀卷积核",
+          nParam: "时域滤波核参数量极少",
+          comp: "完全并行前向",
+          nComp: "训练速度明显超越循环网络",
+          risk: "需严格因果截断",
+          nRisk: "须用单侧因果填充防止未来泄漏",
+          drawType: "cnn_grid"
+        },
+        RNN: {
+          tag: "标准流式起点",
+          status: "matched",
+          desc: "单向递推契合设备物理演化，极低延迟支持边缘流式推理。",
+          param: "低 · 隐状态复用",
+          nParam: "在线推理仅需缓存单个隐向量",
+          comp: "逐点在线流式",
+          nComp: "采样点到来即触发单步更新",
+          risk: "超长采样训练慢",
+          nRisk: "展开步数过多时反向梯度回传受阻",
+          drawType: "rnn_linear"
+        },
+        Attn: {
+          tag: "显存开销过大",
+          status: "mismatch",
+          desc: "高频采样常达上万步，全局自注意力造成显存枯竭。",
+          param: "大 · 全局投影",
+          nParam: "需复杂的稀疏化或局部窗设计",
+          comp: "平方级内存占用",
+          nComp: "面对几千点高频采样矩阵急剧膨胀",
+          risk: "噪声虚假关联",
+          nRisk: "物理惯性可能被微弱远端噪声干扰",
+          drawType: "attn_all"
+        },
+        MLP: {
+          tag: "破坏时间连续性",
+          status: "mismatch",
+          desc: "展平固定窗口，对时间平移或采样率变动极其脆弱。",
+          param: "高 · 绑定固定窗口",
+          nParam: "窗口扩大导致输入权重线性暴增",
+          comp: "无内部状态演化",
+          nComp: "时间稍微偏移即引发预测失真",
+          risk: "无时移外推能力",
+          nRisk: "输入窗口缺乏时间连续因果约束",
+          drawType: "mlp_dense"
+        }
+      },
+      tabular: {
+        CNN: {
+          tag: "强加虚假网格先验",
+          status: "mismatch",
+          desc: "将表格列随意排布滑窗，各列无几何连续性，卷积毫无依据。",
+          param: "中等 · 假网格核",
+          nParam: "在虚假局部邻域上提取伪特征",
+          comp: "无效滑窗运算",
+          nComp: "把‘年龄’和‘邮编’连续卷积无意义",
+          risk: "特征排列极敏感",
+          nRisk: "调换两列次序即破坏所有卷积输出",
+          drawType: "cnn_grid"
+        },
+        RNN: {
+          tag: "强加虚假时序因果",
+          status: "mismatch",
+          desc: "表格属性并无前后发生时间流，递推传递引入无意义偏见。",
+          param: "无谓引入循环状态",
+          nParam: "给静态特征赋予虚假时步依赖",
+          comp: "多余串行计算",
+          nComp: "单行记录被迫展开多次循环运算",
+          risk: "前后特征权重失衡",
+          nRisk: "靠前列特征极易被后序递推稀释",
+          drawType: "rnn_linear"
+        },
+        Attn: {
+          tag: "候选但易过拟合",
+          status: "matched",
+          desc: "可建模列间交互，但在中小样本表格上常逊于 MLP 或决策树。",
+          param: "较高 · 列间投影",
+          nParam: "每列需单独映射高维嵌入向量",
+          comp: "二次方特征点积",
+          nComp: "宽表计算代价随列数增加而上升",
+          risk: "小数据下易过拟合",
+          nRisk: "缺少归纳偏置，难拟合离散阈值规律",
+          drawType: "attn_all"
+        },
+        MLP: {
+          tag: "经典基线首选",
+          status: "matched",
+          desc: "全连接层不对特征做任何空间或时序预设，自由学习异构非线性交叉。",
+          param: "结构紧凑直接",
+          nParam: "针对无序多属性的最简非线性映射",
+          comp: "高速向量乘法",
+          nComp: "结构简洁清晰，前向收敛极快",
+          risk: "高度依赖预处理",
+          nRisk: "对类别编码和数值归一化极为敏感",
+          drawType: "mlp_dense"
+        }
+      }
+    };
+
+    let curTaskIdx = 0;
+    let curModel = "CNN";
+
+    const elSpecDim = document.getElementById("specDim");
+    const elSpecStructure = document.getElementById("specStructure");
+    const elSpecPrior = document.getElementById("specPrior");
+    const elIdealModel = document.getElementById("idealModel");
+
+    const elVerdictTag = document.getElementById("verdictTag");
+    const elVerdictDesc = document.getElementById("verdictDesc");
+
+    const elMParam = document.getElementById("mParam");
+    const elNParam = document.getElementById("nParam");
+    const elMComp = document.getElementById("mComp");
+    const elNComp = document.getElementById("nComp");
+    const elMRisk = document.getElementById("mRisk");
+    const elNRisk = document.getElementById("nRisk");
+
+    const cv = document.getElementById("structCanvas");
+
+    function renderTaskInfo() {
+      const task = TASKS[curTaskIdx];
+      elSpecDim.textContent = task.dim;
+      elSpecStructure.textContent = task.structure;
+      elSpecPrior.textContent = task.prior;
+      elIdealModel.textContent = task.ideal;
+
+      document.querySelectorAll(".task-btn").forEach((btn, idx) => {
+        btn.classList.toggle("active", idx === curTaskIdx);
+      });
+    }
+
+    function renderEvaluation() {
+      const task = TASKS[curTaskIdx];
+      const res = MATRIX[task.id][curModel];
+      const isMismatch = res.status === "mismatch";
+
+      document.querySelectorAll(".model-btn").forEach(btn => {
+        const m = btn.dataset.model;
+        const isActive = (m === curModel);
+        btn.classList.toggle("active", isActive);
+        btn.classList.toggle("mismatch-active", isActive && isMismatch);
+      });
+
+      elVerdictTag.textContent = res.tag;
+      elVerdictTag.className = `verdict-tag ${isMismatch ? 'mismatch' : ''}`;
+      elVerdictDesc.textContent = res.desc;
+
+      elMParam.textContent = res.param;
+      elMParam.classList.toggle("alert", isMismatch);
+      elNParam.textContent = res.nParam;
+
+      elMComp.textContent = res.comp;
+      elMComp.classList.toggle("alert", isMismatch);
+      elNComp.textContent = res.nComp;
+
+      elMRisk.textContent = res.risk;
+      elMRisk.classList.toggle("alert", isMismatch);
+      elNRisk.textContent = res.nRisk;
+
+      drawCanvas();
+    }
+
+    function drawCanvas() {
+      const ctx = Deck.fit(cv);
+      const w = cv.parentElement.clientWidth;
+      const h = cv.parentElement.clientHeight;
+      ctx.clearRect(0, 0, w, h);
+
+      const task = TASKS[curTaskIdx];
+      const res = MATRIX[task.id][curModel];
+      const isMismatch = (res.status === "mismatch");
+
+      const themeCol = isMismatch ? Deck.token("--signal") : Deck.token("--structure");
+      const mutedCol = Deck.token("--muted");
+      const ruleCol = Deck.token("--rule");
+
+      ctx.fillStyle = mutedCol;
+      ctx.font = "15px monospace";
+      ctx.fillText(`结构拟合通路: ${task.name} ➔ ${curModel}`, 28, 36);
+
+      if (res.drawType === "cnn_grid") {
+        const startX = 100;
+        const startY = 80;
+        const cellSize = 26;
+        const gridW = 7;
+        const gridH = 7;
+
+        ctx.strokeStyle = ruleCol;
+        ctx.lineWidth = 1;
+        for (let r = 0; r < gridH; r++) {
+          for (let c = 0; c < gridW; c++) {
+            ctx.strokeRect(startX + c * cellSize, startY + r * cellSize, cellSize, cellSize);
+          }
+        }
+        ctx.fillStyle = mutedCol;
+        ctx.font = "14px var(--font-sans)";
+        ctx.fillText("输入特征网格", startX, startY + gridH * cellSize + 28);
+
+        // 3x3 kernel region
+        ctx.fillStyle = isMismatch ? "rgba(212, 56, 17, 0.15)" : "rgba(28, 68, 54, 0.15)";
+        ctx.fillRect(startX + cellSize * 2, startY + cellSize * 2, cellSize * 3, cellSize * 3);
+        ctx.strokeStyle = themeCol;
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(startX + cellSize * 2, startY + cellSize * 2, cellSize * 3, cellSize * 3);
+
+        const outX = 540;
+        const outY = startY + 60;
+        ctx.beginPath();
+        ctx.moveTo(startX + cellSize * 5 + 14, startY + cellSize * 3.5);
+        ctx.lineTo(outX - 35, outY + 32);
+        ctx.strokeStyle = themeCol;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = themeCol;
+        ctx.fillRect(outX, outY, 64, 64);
+        ctx.fillStyle = "#FFF";
+        ctx.font = "15px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("Feature", outX + 32, outY + 38);
+        ctx.textAlign = "left";
+
+        ctx.fillStyle = mutedCol;
+        ctx.font = "14px var(--font-sans)";
+        ctx.fillText("共享核滑窗输出", outX - 16, outY + 96);
+
+        if (isMismatch) {
+          ctx.strokeStyle = Deck.token("--signal");
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.moveTo(startX + 20, startY + 20);
+          ctx.lineTo(startX + gridW * cellSize - 20, startY + gridH * cellSize - 20);
+          ctx.moveTo(startX + gridW * cellSize - 20, startY + 20);
+          ctx.lineTo(startX + 20, startY + gridH * cellSize - 20);
+          ctx.stroke();
+        }
+
+      } else if (res.drawType === "rnn_linear") {
+        const steps = 5;
+        const startX = 80;
+        const centerY = 175;
+        const gap = 110;
+
+        for (let i = 0; i < steps; i++) {
+          const x = startX + i * gap;
+
+          // x_t
+          ctx.strokeStyle = ruleCol;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(x, centerY + 78, 16, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = mutedCol;
+          ctx.font = "14px monospace";
+          ctx.fillText(`x_${i + 1}`, x - 10, centerY + 83);
+
+          // h_t
+          ctx.strokeStyle = themeCol;
+          ctx.lineWidth = 2.5;
+          ctx.fillStyle = isMismatch ? "rgba(212, 56, 17, 0.1)" : "rgba(28, 68, 54, 0.1)";
+          ctx.beginPath();
+          ctx.arc(x, centerY, 22, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = themeCol;
+          ctx.font = "15px monospace";
+          ctx.fillText(`h_${i + 1}`, x - 13, centerY + 5);
+
+          // x_t -> h_t
+          ctx.beginPath();
+          ctx.moveTo(x, centerY + 62);
+          ctx.lineTo(x, centerY + 22);
+          ctx.strokeStyle = ruleCol;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // recurrence arrow
+          if (i < steps - 1) {
+            ctx.beginPath();
+            ctx.moveTo(x + 22, centerY);
+            ctx.lineTo(x + gap - 22, centerY);
+            ctx.strokeStyle = isMismatch ? Deck.token("--signal") : themeCol;
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+            // Arrow head
+            ctx.beginPath();
+            ctx.moveTo(x + gap - 30, centerY - 5);
+            ctx.lineTo(x + gap - 22, centerY);
+            ctx.lineTo(x + gap - 30, centerY + 5);
+            ctx.stroke();
+          }
+        }
+
+        ctx.fillStyle = mutedCol;
+        ctx.font = "14px var(--font-sans)";
+        ctx.fillText("单向时间轴隐状态递推链", startX, centerY - 50);
+
+      } else if (res.drawType === "attn_all") {
+        const nodes = ["Token 1", "Token 2", "Token 3", "Token 4"];
+        const num = nodes.length;
+        const cx = 350;
+        const cy = 195;
+        const r = 110;
+
+        const coords = [];
+        for (let i = 0; i < num; i++) {
+          const ang = (i * 2 * Math.PI) / num - Math.PI / 2;
+          coords.push({
+            x: cx + r * Math.cos(ang),
+            y: cy + r * Math.sin(ang),
+            name: nodes[i]
+          });
+        }
+
+        for (let i = 0; i < num; i++) {
+          for (let j = i + 1; j < num; j++) {
+            ctx.strokeStyle = isMismatch ? "rgba(212, 56, 17, 0.4)" : "rgba(28, 68, 54, 0.35)";
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(coords[i].x, coords[i].y);
+            ctx.lineTo(coords[j].x, coords[j].y);
+            ctx.stroke();
+          }
+        }
+
+        coords.forEach((pt) => {
+          ctx.fillStyle = "#FFF";
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 25, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = themeCol;
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+
+          ctx.fillStyle = themeCol;
+          ctx.font = "14px monospace";
+          ctx.fillText(pt.name, pt.x - 24, pt.y + 5);
+        });
+
+        ctx.fillStyle = mutedCol;
+        ctx.font = "14px var(--font-sans)";
+        ctx.fillText("全域全对全软寻址：Q × Kᵀ / √d 点积权重", 80, 50);
+
+      } else if (res.drawType === "mlp_dense") {
+        const inNodes = 5;
+        const outNodes = 4;
+        const inX = 140;
+        const outX = 520;
+        const topY = 70;
+        const gapY = 46;
+
+        for (let i = 0; i < inNodes; i++) {
+          const y1 = topY + i * gapY;
+          for (let j = 0; j < outNodes; j++) {
+            const y2 = topY + j * (gapY * 1.25);
+            ctx.strokeStyle = isMismatch ? "rgba(212, 56, 17, 0.25)" : "rgba(28, 68, 54, 0.25)";
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(inX, y1);
+            ctx.lineTo(outX, y2);
+            ctx.stroke();
+          }
+        }
+
+        for (let i = 0; i < inNodes; i++) {
+          const y = topY + i * gapY;
+          ctx.fillStyle = "#FFF";
+          ctx.beginPath();
+          ctx.arc(inX, y, 10, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = ruleCol;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+
+        for (let j = 0; j < outNodes; j++) {
+          const y = topY + j * (gapY * 1.25);
+          ctx.fillStyle = themeCol;
+          ctx.beginPath();
+          ctx.arc(outX, y, 12, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.fillStyle = mutedCol;
+        ctx.font = "14px var(--font-sans)";
+        ctx.fillText("无拓扑预设的稠密线性映射与激活", 80, 42);
+        ctx.fillText("输入特征向量 x", inX - 44, topY + inNodes * gapY + 16);
+        ctx.fillText("稠密全隐层 h", outX - 36, topY + inNodes * gapY + 16);
+      }
+    }
+
+    document.querySelectorAll(".task-btn").forEach((btn, idx) => {
+      btn.addEventListener("click", () => {
+        curTaskIdx = idx;
+        renderTaskInfo();
+        renderEvaluation();
+      });
+    });
+
+    document.querySelectorAll(".model-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        curModel = btn.dataset.model;
+        renderEvaluation();
+      });
+    });
+
+    window.addEventListener("resize", () => {
+      drawCanvas();
+    });
+
+    renderTaskInfo();
+    renderEvaluation();
+  </script>
+</body>
+</html>

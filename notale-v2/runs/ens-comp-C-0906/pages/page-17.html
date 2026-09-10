@@ -1,0 +1,503 @@
+<!doctype html>
+<!--
+构图意图：
+1. 主对象是 AdaBoost 最终强分类器的线性加权决策结构：公式 H(x)=sign(∑ α_m h_m(x)) 与各个弱分类器按权重柱状累加的可视化对齐。
+2. 对象之间的关系表现为三个具体弱分类器的离散决策投票：基学习器 h_m 及其离散投票值（+1 或 -1）乘以各自的可信度权重 α_m，汇流叠加成总和 ∑ α_m h_m(x)，最终以 sign() 判定集成结果。
+3. 说明文字与数值贴合在各个弱分类器条带、权重累加标尺及最终符号判定节点上，直接呈现“错误率越低，话语权越大”的加权共识。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans SC", sans-serif;
+      --font-numeric: "Lato", "Noto Sans SC", sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: 44px 56px;
+      box-sizing: border-box;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 34px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      line-height: 1.18;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .formula-badge {
+      font-size: 22px;
+      color: var(--aggregate);
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+
+    /* 主工作台布局：左右两栏，左侧为加权汇聚图解，右侧为样本决策检验 */
+    .workbench {
+      display: grid;
+      grid-template-columns: 860px 540px;
+      gap: 56px;
+      margin-top: 36px;
+      align-items: start;
+    }
+
+    /* 左侧：弱学习器加权投票几何流水线 */
+    .pipeline {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .pipeline-title {
+      font-size: 16px;
+      color: var(--muted);
+      font-weight: 500;
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 8px;
+    }
+
+    .learners-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .learner-row {
+      display: grid;
+      grid-template-columns: 140px 180px 1fr 100px;
+      align-items: center;
+      gap: 16px;
+      font-size: 16px;
+    }
+
+    .learner-name {
+      font-family: var(--font-display);
+      font-weight: 700;
+      color: var(--model);
+      font-size: 18px;
+    }
+
+    .learner-err {
+      font-family: var(--font-numeric);
+      font-size: 16px;
+      color: var(--muted);
+    }
+
+    .weight-track {
+      position: relative;
+      height: 28px;
+      background: rgba(116, 129, 124, 0.2);
+      border-radius: 2px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+    }
+
+    .weight-bar {
+      height: 100%;
+      background: var(--model);
+      transition: width 0.3s ease;
+    }
+
+    .weight-val {
+      font-family: var(--font-numeric);
+      font-weight: 700;
+      color: var(--aggregate);
+      font-size: 18px;
+      text-align: right;
+    }
+
+    /* 汇聚汇总与符号判决层 */
+    .aggregation-rail {
+      margin-top: 12px;
+      padding-top: 20px;
+      border-top: 2px dashed var(--line);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .rail-sum {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 18px;
+    }
+
+    .sum-formula {
+      font-weight: 700;
+      color: var(--aggregate);
+      font-size: 20px;
+    }
+
+    .decision-outcome {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 16px 0;
+      border-top: 2px solid var(--aggregate);
+    }
+
+    .decision-label {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    .decision-val {
+      font-size: 24px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    /* 右侧：单样本判决检验器 */
+    .inspector {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding-left: 32px;
+      border-left: 1px solid var(--line);
+    }
+
+    .inspector-header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .inspector-title {
+      font-size: 22px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .inspector-desc {
+      font-size: 16px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .tab-btn {
+      padding: 8px 18px;
+      font-size: 16px;
+      font-family: var(--font-sans);
+      font-weight: 500;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all 0.16s ease;
+    }
+
+    .tab-btn.active {
+      background: var(--aggregate);
+      color: #FFF;
+      border-color: var(--aggregate);
+    }
+
+    .calc-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 16px;
+      margin-top: 10px;
+    }
+
+    .calc-table th {
+      text-align: left;
+      font-size: 15px;
+      color: var(--muted);
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+      font-weight: 500;
+    }
+
+    .calc-table td {
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(116, 129, 124, 0.25);
+      font-family: var(--font-numeric);
+    }
+
+    .vote-pill {
+      display: inline-block;
+      padding: 2px 10px;
+      font-weight: 700;
+      border-radius: 2px;
+      font-size: 16px;
+    }
+
+    .vote-pos {
+      color: #166534;
+      background: rgba(34, 197, 94, 0.15);
+    }
+
+    .vote-neg {
+      color: var(--focus);
+      background: rgba(198, 75, 46, 0.15);
+    }
+
+    .calc-sum-row {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 2px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .sum-score {
+      font-family: var(--font-numeric);
+      font-size: 26px;
+      font-weight: 700;
+    }
+
+    .sum-score.pos { color: #166534; }
+    .sum-score.neg { color: var(--focus); }
+
+    .conclusion-note {
+      font-size: 16px;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body data-page="17" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>AdaBoost 的最终决策：加权多数表决</h1>
+      <div class="formula-badge" id="formula-badge"></div>
+    </header>
+
+    <div class="workbench">
+      <!-- 左侧：模型话语权与聚合机制 -->
+      <section class="pipeline">
+        <div class="pipeline-title">
+          <span>基学习器及其错误率</span>
+          <span>话语权权重 α_m = 0.5 ln((1-e_m)/e_m)</span>
+        </div>
+
+        <div class="learners-list">
+          <div class="learner-row">
+            <div class="learner-name">学习器 h₁(x)</div>
+            <div class="learner-err">错误率 e₁ = 0.10</div>
+            <div class="weight-track">
+              <div class="weight-bar" style="width: 76.5%;"></div>
+            </div>
+            <div class="weight-val">α₁ = 1.10</div>
+          </div>
+
+          <div class="learner-row">
+            <div class="learner-name">学习器 h₂(x)</div>
+            <div class="learner-err">错误率 e₂ = 0.25</div>
+            <div class="weight-track">
+              <div class="weight-bar" style="width: 38.3%;"></div>
+            </div>
+            <div class="weight-val">α₂ = 0.55</div>
+          </div>
+
+          <div class="learner-row">
+            <div class="learner-name">学习器 h₃(x)</div>
+            <div class="learner-err">错误率 e₃ = 0.35</div>
+            <div class="weight-track">
+              <div class="weight-bar" style="width: 21.6%;"></div>
+            </div>
+            <div class="weight-val">α₃ = 0.31</div>
+          </div>
+        </div>
+
+        <div class="aggregation-rail">
+          <div class="rail-sum">
+            <span class="sum-formula">线性加权集成：f(x) = ∑ α_m · h_m(x)</span>
+            <span style="font-size: 16px; color: var(--muted);">由正负符号决定最终类别</span>
+          </div>
+
+          <div class="decision-outcome">
+            <span class="decision-label">最终判决强分类器：</span>
+            <span class="decision-val" id="decision-eq"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：交互式样本表决演算 -->
+      <aside class="inspector">
+        <div class="inspector-header">
+          <div class="inspector-title">样本判决演示：克服等权投票陷阱</div>
+          <div class="inspector-desc">弱分类器意见分歧时，按可信度而非单纯票数决定走向。</div>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab-btn active" id="btn-sample-a" role="tab">样本 A（低误差胜出）</button>
+          <button class="tab-btn" id="btn-sample-b" role="tab">样本 B（少数抗衡多数）</button>
+        </div>
+
+        <table class="calc-table">
+          <thead>
+            <tr>
+              <th>基学习器</th>
+              <th>预测投票 h_m(x)</th>
+              <th>权重 α_m</th>
+              <th style="text-align: right;">加权票值</th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <!-- 动态更新 -->
+          </tbody>
+        </table>
+
+        <div class="calc-sum-row">
+          <div>
+            <div style="font-size: 15px; color: var(--muted);">加权得分和 f(x)</div>
+            <div class="sum-score" id="sum-score">+0.24</div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 15px; color: var(--muted);">最终预测 H(x)</div>
+            <div class="sum-score" id="final-pred">+1</div>
+          </div>
+        </div>
+
+        <div class="conclusion-note" id="conclusion-note">
+          样本 A 中，h₂ 和 h₃ 均投 -1，但因表现最优的 h₁ 投 +1 且权重高达 1.10，最终裁决仍为正类。
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    在 AdaBoost 中，弱分类器不是简单地少数服从多数，而是按可信度加权表决。
+    错误率越低的模型，其话语权权重 alpha 越大；错误率高的模型权重被显著压制。
+    看右侧样本 A 的例子：虽然有两台基分类器投出了负票，但唯一投正票的 h1 凭借低错误率拥有超过半数的权重，
+    加权总和仍为正，最终集成预测仍然正确分类。这正是 AdaBoost 形成强分类器的关键所在。
+  </aside>
+
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      Deck.init({ index: 17, total: 26, keys: false });
+
+      // 渲染 KateX
+      const formulaBadge = document.getElementById('formula-badge');
+      const decisionEq = document.getElementById('decision-eq');
+      
+      katex.render('H(x) = \\mathrm{sign}\\left(\\sum_{m=1}^M \\alpha_m h_m(x)\\right)', formulaBadge, {
+        throwOnError: false
+      });
+      katex.render('H(x) = \\mathrm{sign}\\left(1.10\\, h_1 + 0.55\\, h_2 + 0.31\\, h_3\\right)', decisionEq, {
+        throwOnError: false
+      });
+
+      // 样本数据
+      const samples = {
+        a: {
+          votes: [1, -1, -1],
+          note: "h₂ 与 h₃ 投负，但低误差学习器 h₁ 话语权更高，总和为正，最终判定为正类。"
+        },
+        b: {
+          votes: [-1, 1, 1],
+          note: "h₁ 投负，弱学习器 h₂ 与 h₃ 虽联手投正，其权重和仍不敌 h₁，最终判定为负类。"
+        }
+      };
+
+      const alphas = [1.10, 0.55, 0.31];
+      const btnA = document.getElementById('btn-sample-a');
+      const btnB = document.getElementById('btn-sample-b');
+      const tbody = document.getElementById('table-body');
+      const sumScore = document.getElementById('sum-score');
+      const finalPred = document.getElementById('final-pred');
+      const noteEl = document.getElementById('conclusion-note');
+
+      function renderSample(key) {
+        const item = samples[key];
+        btnA.classList.toggle('active', key === 'a');
+        btnB.classList.toggle('active', key === 'b');
+
+        let sum = 0;
+        let rowsHtml = '';
+        for (let i = 0; i < 3; i++) {
+          const vote = item.votes[i];
+          const alpha = alphas[i];
+          const contrib = vote * alpha;
+          sum += contrib;
+
+          const voteClass = vote > 0 ? 'vote-pos' : 'vote-neg';
+          const voteText = vote > 0 ? '+1' : '−1';
+          const contribText = contrib > 0 ? `+${contrib.toFixed(2)}` : `${contrib.toFixed(2)}`;
+
+          rowsHtml += `
+            <tr>
+              <td>学习器 h${i+1}</td>
+              <td><span class="vote-pill ${voteClass}">${voteText}</span></td>
+              <td>${alpha.toFixed(2)}</td>
+              <td style="text-align: right; font-weight: 700;">${contribText}</td>
+            </tr>
+          `;
+        }
+
+        tbody.innerHTML = rowsHtml;
+        const sumFormatted = sum >= 0 ? `+${sum.toFixed(2)}` : sum.toFixed(2);
+        sumScore.textContent = sumFormatted;
+        sumScore.className = `sum-score ${sum >= 0 ? 'pos' : 'neg'}`;
+
+        const pred = sum >= 0 ? '+1' : '−1';
+        finalPred.textContent = pred;
+        finalPred.className = `sum-score ${sum >= 0 ? 'pos' : 'neg'}`;
+
+        noteEl.textContent = item.note;
+      }
+
+      btnA.addEventListener('click', () => renderSample('a'));
+      btnB.addEventListener('click', () => renderSample('b'));
+
+      renderSample('a');
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,431 @@
+<!--
+  Composition Intent:
+  1. 主对象是一组自底向上生长、彼此略有差异且在顶部汇聚收敛的生成式随机决策树森林（冷蓝个体分支群收束为深蓝聚合主轴）。
+  2. 对象关系通过并行分枝到统一顶峰的几何汇聚结构呈现，左侧与上方留出安静负空间安放章节标题与导引判断。
+  3. 说明文字以极简层级直接附着于主标题下方，与树状分流/收束的视觉流向形成平衡。
+-->
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      overflow: hidden;
+      background: var(--bg);
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      isolation: isolate;
+    }
+
+    #cover-canvas {
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .header-group {
+      position: absolute;
+      top: 112px;
+      left: 104px;
+      z-index: 5;
+      max-width: 680px;
+      pointer-events: none;
+    }
+
+    .chapter-tag {
+      font-family: var(--font-display);
+      font-size: var(--fs-sec);
+      font-weight: var(--weight-medium);
+      letter-spacing: 0.16em;
+      color: var(--muted);
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chapter-tag::after {
+      content: "";
+      display: inline-block;
+      width: 48px;
+      height: 1.5px;
+      background: var(--line);
+    }
+
+    .title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      letter-spacing: -0.02em;
+      color: var(--text);
+      margin: 0 0 20px 0;
+    }
+
+    .lead-copy {
+      font-family: var(--font-sans);
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      margin: 0;
+      max-width: 540px;
+    }
+
+    .focus-stat {
+      color: var(--focus);
+      font-weight: var(--weight-medium);
+    }
+
+    .legend-panel {
+      position: absolute;
+      bottom: 64px;
+      left: 104px;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      gap: 36px;
+      font-family: var(--font-sans);
+      font-size: var(--fs-sec);
+      color: var(--text);
+      pointer-events: none;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .dot-tree {
+      background: var(--model);
+    }
+
+    .dot-agg {
+      background: var(--aggregate);
+      box-shadow: 0 0 0 2px rgba(23, 62, 80, 0.2);
+    }
+
+    .dot-focus {
+      background: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="05" data-total="26">
+  <div id="stage">
+    <canvas id="cover-canvas" class="cv-fill no-pan" aria-hidden="true"></canvas>
+
+    <header class="header-group">
+      <div class="chapter-tag">第二部分 · 并行集成</div>
+      <h1 class="title">Bagging 与随机森林</h1>
+      <p class="lead-copy">通过有放回样本重抽样与随机特征子空间，构建多样性基树并聚合降方差。</p>
+    </header>
+
+    <footer class="legend-panel">
+      <div class="legend-item">
+        <span class="legend-dot dot-tree"></span>
+        <span>独立决策基树</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot dot-agg"></span>
+        <span>投票/均值集成输出</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot dot-focus"></span>
+        <span>特征扰动分裂点</span>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    这一章我们进入集成学习中极为经典的并行流派：Bagging 与随机森林。
+    通过自助法在训练集中制造扰动，并在节点分裂时限制候选特征，多棵深层决策树之间得以降低相关性。
+    最终依靠平均或多数表决，抹平单棵树的高方差，得到既稳定又具泛化力的强模型。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      Deck.init({ index: 5, total: 26, keys: false });
+
+      const canvas = document.getElementById("cover-canvas");
+      const ctx = Deck.fit(canvas);
+      if (!ctx) return;
+
+      const W = 1600;
+      const H = 900;
+      const SEED = 20240905;
+
+      function seededRandom(seed) {
+        let s = seed >>> 0;
+        return () => {
+          s = (s + 0x6d2b79f5) >>> 0;
+          let n = s;
+          n = Math.imul(n ^ (n >>> 15), n | 1);
+          n ^= n + Math.imul(n ^ (n >>> 7), n | 61);
+          return ((n ^ (n >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      // 生成确定性决策树群结构
+      const rng = seededRandom(SEED);
+      const NUM_TREES = 7;
+      const trees = [];
+
+      // 树分布在画面的右侧偏中区域 (x: 820 ~ 1480, y 从 840 生长到 140)
+      const startXRange = [830, 1450];
+      const startY = 820;
+      const apex = { x: 1220, y: 150 };
+
+      for (let i = 0; i < NUM_TREES; i++) {
+        const rootX = startXRange[0] + (startXRange[1] - startXRange[0]) * (i / (NUM_TREES - 1)) + (rng() - 0.5) * 40;
+        const nodes = [];
+        const branches = [];
+        
+        // 分层生长：4 层
+        // 层 0: root
+        nodes.push({ id: 0, x: rootX, y: startY, level: 0 });
+
+        let currentLevel = [0];
+        let idCounter = 1;
+
+        for (let lvl = 1; lvl <= 4; lvl++) {
+          const nextLevel = [];
+          const lvlY = startY - lvl * 135 + (rng() - 0.5) * 20;
+
+          for (const parentId of currentLevel) {
+            const parent = nodes[parentId];
+            // 2 个分支
+            const spread = (160 / Math.pow(1.35, lvl));
+            for (let b = 0; b < 2; b++) {
+              const sign = b === 0 ? -1 : 1;
+              const targetX = parent.x + sign * (spread + (rng() - 0.5) * 24);
+              const node = {
+                id: idCounter++,
+                x: targetX,
+                y: lvlY,
+                level: lvl,
+                isFocus: lvl === 2 && b === 1 && (i === 2 || i === 4)
+              };
+              nodes.push(node);
+              branches.push({ from: parent, to: node, isFocus: node.isFocus });
+              nextLevel.push(node.id);
+            }
+          }
+          currentLevel = nextLevel;
+        }
+
+        // 叶节点向汇聚通道 (Consensus Trunk) 发出聚合光缆
+        const leaves = currentLevel.map(id => nodes[id]);
+        trees.push({
+          rootX,
+          nodes,
+          branches,
+          leaves,
+          colorAlpha: 0.18 + (i % 3) * 0.08
+        });
+      }
+
+      // 静态背景层：网格与结构导轨
+      const staticCanvas = document.createElement("canvas");
+      staticCanvas.width = W;
+      staticCanvas.height = H;
+      const sctx = staticCanvas.getContext("2d");
+
+      function buildStaticBackground() {
+        sctx.fillStyle = Deck.token("--bg");
+        sctx.fillRect(0, 0, W, H);
+
+        // 柔和的工程网格与对齐线
+        const gridColor = "rgba(116, 129, 124, 0.12)";
+        sctx.strokeStyle = gridColor;
+        sctx.lineWidth = 1;
+
+        for (let x = 100; x < W; x += 120) {
+          sctx.beginPath();
+          sctx.moveTo(x, 40);
+          sctx.lineTo(x, H - 40);
+          sctx.stroke();
+        }
+
+        for (let y = 80; y < H; y += 120) {
+          sctx.beginPath();
+          sctx.moveTo(80, y);
+          sctx.lineTo(W - 80, y);
+          sctx.stroke();
+        }
+
+        // 画每个树的基学习器骨干枝丫
+        const modelRgb = Deck.rgb("model");
+        const lineRgb = Deck.rgb("line");
+        const focusRgb = Deck.rgb("focus");
+
+        for (const tree of trees) {
+          // 树枝
+          for (const br of tree.branches) {
+            sctx.beginPath();
+            sctx.moveTo(br.from.x, br.from.y);
+            // 贝塞尔曲线过渡
+            const midY = (br.from.y + br.to.y) / 2;
+            sctx.bezierCurveTo(br.from.x, midY, br.to.x, midY, br.to.x, br.to.y);
+            sctx.strokeStyle = br.isFocus 
+              ? `rgba(${focusRgb.join(",")}, 0.85)`
+              : `rgba(${modelRgb.join(",")}, ${tree.colorAlpha})`;
+            sctx.lineWidth = br.isFocus ? 2.5 : Math.max(1, 4 - br.to.level * 0.7);
+            sctx.stroke();
+          }
+
+          // 叶子向收束顶点的微弱汇合束
+          for (const leaf of tree.leaves) {
+            sctx.beginPath();
+            sctx.moveTo(leaf.x, leaf.y);
+            sctx.bezierCurveTo(leaf.x, leaf.y - 80, apex.x, leaf.y - 120, apex.x, apex.y);
+            sctx.strokeStyle = `rgba(${modelRgb.join(",")}, 0.05)`;
+            sctx.lineWidth = 0.75;
+            sctx.stroke();
+          }
+
+          // 树节点
+          for (const nd of tree.nodes) {
+            sctx.beginPath();
+            const r = nd.isFocus ? 5 : Math.max(2, 4.5 - nd.level * 0.6);
+            sctx.arc(nd.x, nd.y, r, 0, Math.PI * 2);
+            if (nd.isFocus) {
+              sctx.fillStyle = `rgb(${focusRgb.join(",")})`;
+            } else {
+              sctx.fillStyle = `rgba(${modelRgb.join(",")}, ${Math.min(1, tree.colorAlpha + 0.3)})`;
+            }
+            sctx.fill();
+          }
+        }
+
+        // 最终聚合柱与共识收束点 (Apex Core)
+        const aggRgb = Deck.rgb("aggregate");
+        sctx.beginPath();
+        sctx.arc(apex.x, apex.y, 14, 0, Math.PI * 2);
+        sctx.fillStyle = `rgb(${aggRgb.join(",")})`;
+        sctx.fill();
+
+        sctx.beginPath();
+        sctx.arc(apex.x, apex.y, 24, 0, Math.PI * 2);
+        sctx.strokeStyle = `rgba(${aggRgb.join(",")}, 0.35)`;
+        sctx.lineWidth = 2;
+        sctx.stroke();
+
+        // 向上延伸的主共识矢量
+        sctx.beginPath();
+        sctx.moveTo(apex.x, apex.y);
+        sctx.lineTo(apex.x, 70);
+        sctx.strokeStyle = `rgb(${aggRgb.join(",")})`;
+        sctx.lineWidth = 4;
+        sctx.stroke();
+
+        // 矢量箭头刻度
+        sctx.beginPath();
+        sctx.moveTo(apex.x - 7, 85);
+        sctx.lineTo(apex.x, 68);
+        sctx.lineTo(apex.x + 7, 85);
+        sctx.strokeStyle = `rgb(${aggRgb.join(",")})`;
+        sctx.lineWidth = 3.5;
+        sctx.stroke();
+      }
+
+      buildStaticBackground();
+
+      // 动态脉冲与粒子：从树基沿枝蔓向叶片上行，并在 Apex 处共振
+      const particles = [];
+      const P_COUNT = 32;
+      for (let i = 0; i < P_COUNT; i++) {
+        const treeIdx = Math.floor(rng() * trees.length);
+        particles.push({
+          treeIdx,
+          progress: rng(),
+          speed: 0.0025 + rng() * 0.003,
+          size: 2.2 + rng() * 1.8
+        });
+      }
+
+      function drawFrame(time) {
+        ctx.clearRect(0, 0, W, H);
+        ctx.drawImage(staticCanvas, 0, 0, W, H);
+
+        if (Deck.reduced()) return;
+
+        // 绘制动态流动的基学习器信号
+        const aggRgb = Deck.rgb("aggregate");
+        const focusRgb = Deck.rgb("focus");
+        const modelRgb = Deck.rgb("model");
+
+        for (const p of particles) {
+          p.progress += p.speed;
+          if (p.progress > 1) {
+            p.progress = 0;
+            p.treeIdx = Math.floor(Math.random() * trees.length);
+          }
+
+          const tree = trees[p.treeIdx];
+          // 将 progress (0~1) 映射为沿层级向上
+          const lvlProgress = p.progress * 4;
+          const currentLvl = Math.min(3, Math.floor(lvlProgress));
+          const subT = lvlProgress - currentLvl;
+
+          // 选取该层某条枝干
+          const branchCandidates = tree.branches.filter(b => b.from.level === currentLvl);
+          if (branchCandidates.length > 0) {
+            const br = branchCandidates[0];
+            const midY = (br.from.y + br.to.y) / 2;
+            
+            // 贝塞尔采样
+            const t = subT;
+            const cx1 = br.from.x, cy1 = midY;
+            const cx2 = br.to.x, cy2 = midY;
+            const px = Math.pow(1 - t, 3) * br.from.x + 3 * Math.pow(1 - t, 2) * t * cx1 + 3 * (1 - t) * t * t * cx2 + Math.pow(t, 3) * br.to.x;
+            const py = Math.pow(1 - t, 3) * br.from.y + 3 * Math.pow(1 - t, 2) * t * cy1 + 3 * (1 - t) * t * t * cy2 + Math.pow(t, 3) * br.to.y;
+
+            ctx.beginPath();
+            ctx.arc(px, py, p.size, 0, Math.PI * 2);
+            ctx.fillStyle = br.isFocus ? `rgba(${focusRgb.join(",")}, 0.9)` : `rgba(${modelRgb.join(",")}, 0.8)`;
+            ctx.fill();
+          }
+        }
+
+        // Apex 处缓慢呼吸的光环
+        const pulse = Math.sin(time * 0.0025) * 6;
+        ctx.beginPath();
+        ctx.arc(apex.x, apex.y, 28 + pulse, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${aggRgb.join(",")}, ${0.25 + pulse * 0.02})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      const stopLoop = Deck.loop(time => {
+        drawFrame(time);
+      }, { still: 1600 });
+
+      Deck.onResize(() => {
+        const c = Deck.fit(canvas);
+        if (c) drawFrame(1600);
+      });
+    })();
+  </script>
+</body>
+</html>

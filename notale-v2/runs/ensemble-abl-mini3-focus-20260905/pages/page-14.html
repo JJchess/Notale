@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Boosting 的序列结构：后一个弱学习器针对当前集成尚未处理好的部分继续学习</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      gap: 16px;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    header.deck-hd {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .title-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .subtitle {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主舞台区：并列三轮接力 */
+    .sequence-board {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      align-items: stretch;
+      position: relative;
+    }
+
+    .round-card {
+      background: var(--surface);
+      border: 1px solid #D3E0E8;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 18px 14px;
+      position: relative;
+      box-sizing: border-box;
+      box-shadow: 0 2px 8px rgba(18, 38, 52, 0.04);
+      transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+    }
+
+    .round-card.active-focus {
+      border-color: var(--model);
+      box-shadow: 0 4px 16px rgba(39, 100, 143, 0.12);
+    }
+
+    .round-header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #E6EEF2;
+    }
+
+    .round-header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .round-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .round-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface-strong);
+      color: var(--model);
+      font-weight: 700;
+      font-size: var(--fs-label);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: var(--font-num);
+    }
+
+    .round-name {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .round-metric {
+      font-size: var(--fs-sec);
+      font-family: var(--font-num);
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      white-space: nowrap;
+    }
+
+    .round-metric .err-pill {
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    .round-canvas-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      background: #FAFCFD;
+      border: 1px solid #E6EEF2;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .round-canvas-wrap canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .round-caption {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .round-caption .core-task {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.35;
+    }
+
+    .round-caption .detail {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 轮间接力连接线指示 */
+    .handoff-arrow {
+      position: absolute;
+      top: 48%;
+      width: 28px;
+      height: 28px;
+      z-index: 15;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--aggregate);
+      font-weight: bold;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+    }
+    .arrow-1-2 { left: calc(33.333% + 1px); }
+    .arrow-2-3 { left: calc(66.666% + 3px); }
+
+    /* 底部收束与控制器 */
+    .bottom-bar {
+      flex-shrink: 0;
+      background: var(--surface);
+      border: 1px solid #D3E0E8;
+      border-radius: 8px;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .principle-summary {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex: 1;
+    }
+
+    .ensemble-tag {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--aggregate);
+      background: rgba(195, 75, 34, 0.08);
+      border: 1px solid rgba(195, 75, 34, 0.25);
+      border-radius: 4px;
+      padding: 4px 10px;
+      white-space: nowrap;
+    }
+
+    .principle-text {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    .controls-cluster {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-right: 12px;
+      padding-right: 16px;
+      border-right: 1px solid #D3E0E8;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot-sample-pos {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--sample);
+      border: 1.5px solid #1E5046;
+    }
+
+    .dot-sample-neg {
+      width: 9px;
+      height: 9px;
+      background: #7B8D99;
+      transform: rotate(45deg);
+      border: 1.5px solid #445866;
+    }
+
+    .boundary-line-sample {
+      width: 16px;
+      height: 3px;
+      background: var(--model);
+      border-radius: 1px;
+    }
+
+    .error-halo-sample {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px dashed var(--aggregate);
+      background: rgba(195, 75, 34, 0.15);
+    }
+
+    .btn-step {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 6px 14px;
+      border: 1px solid #B0C4D0;
+      background: var(--surface);
+      color: var(--text);
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease);
+    }
+
+    .btn-step:hover {
+      background: var(--surface-strong);
+      border-color: var(--model);
+    }
+
+    .btn-step.active {
+      background: var(--model);
+      color: #FFF;
+      border-color: var(--model);
+    }
+  </style>
+</head>
+<body data-page="14" data-total="27">
+  <div id="stage">
+    <header class="deck-hd">
+      <div class="title-row">
+        <h1>Boosting 的序列结构：后继学习器针对当前错误继续学习</h1>
+      </div>
+      <p class="subtitle">与 Bagging 的独立并行抽样不同，Boosting 是串行的接力过程：每一轮弱分类器全力拟合前一轮集成的“未解难题”。</p>
+    </header>
+
+    <div class="sequence-board" id="sequenceBoard">
+      <!-- 轮次 1 -->
+      <section class="round-card" id="card-r1" data-round="0">
+        <div class="round-header">
+          <div class="round-header-top">
+            <div class="round-title-group">
+              <span class="round-badge">Round 1</span>
+              <h2 class="round-name">第 1 个弱学习器 h₁</h2>
+            </div>
+          </div>
+          <div class="round-metric">
+            <span>初始均等权重 (各 0.10)</span>
+            <span class="err-pill">3 个误分样本</span>
+          </div>
+        </div>
+        <div class="round-canvas-wrap">
+          <canvas id="cv-r1" class="cv-fill"></canvas>
+        </div>
+        <div class="round-caption">
+          <div class="core-task">初态均等划分：h₁ 选定垂直切分线</div>
+          <div class="detail">右上方 3 个正类样本落在负类区域被误判。未解难题被打包移交给下一轮。</div>
+        </div>
+      </section>
+
+      <!-- 接力箭头 1 -> 2 -->
+      <div class="handoff-arrow arrow-1-2" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <circle cx="14" cy="14" r="13" fill="#FFFFFF" stroke="#C34B22" stroke-width="2"/>
+          <path d="M10 14H18M18 14L14 10M18 14L14 18" stroke="#C34B22" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- 轮次 2 -->
+      <section class="round-card" id="card-r2" data-round="1">
+        <div class="round-header">
+          <div class="round-header-top">
+            <div class="round-title-group">
+              <span class="round-badge">Round 2</span>
+              <h2 class="round-name">第 2 个弱学习器 h₂</h2>
+            </div>
+          </div>
+          <div class="round-metric">
+            <span>遗留错误权重升至 0.22</span>
+            <span class="err-pill">2 个局部误分</span>
+          </div>
+        </div>
+        <div class="round-canvas-wrap">
+          <canvas id="cv-r2" class="cv-fill"></canvas>
+        </div>
+        <div class="round-caption">
+          <div class="core-task">定点攻坚：h₂ 给出水平切分线纠正错误</div>
+          <div class="detail">前轮被误分的 3 个样本权重显著加大，迫使 h₂ 必须优先切出它们。</div>
+        </div>
+      </section>
+
+      <!-- 接力箭头 2 -> 3 -->
+      <div class="handoff-arrow arrow-2-3" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <circle cx="14" cy="14" r="13" fill="#FFFFFF" stroke="#C34B22" stroke-width="2"/>
+          <path d="M10 14H18M18 14L14 10M18 14L14 18" stroke="#C34B22" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- 轮次 3 -->
+      <section class="round-card" id="card-r3" data-round="2">
+        <div class="round-header">
+          <div class="round-header-top">
+            <div class="round-title-group">
+              <span class="round-badge">Round 3</span>
+              <h2 class="round-name">加权强分类器 H₃</h2>
+            </div>
+          </div>
+          <div class="round-metric">
+            <span>加权累加 sign(∑αₜhₜ)</span>
+            <span class="err-pill" style="color: var(--answer);">0 误分类 (完全可分)</span>
+          </div>
+        </div>
+        <div class="round-canvas-wrap">
+          <canvas id="cv-r3" class="cv-fill"></canvas>
+        </div>
+        <div class="round-caption">
+          <div class="core-task">组合收束：阶梯状复合决策面</div>
+          <div class="detail">每个弱学习器只负责解决前序模型的局部盲区，加权线性组合达成精准判断。</div>
+        </div>
+      </section>
+    </div>
+
+    <footer class="bottom-bar">
+      <div class="principle-summary">
+        <span class="ensemble-tag">序列依赖机制</span>
+        <p class="principle-text" id="summaryText">
+          <strong>串行链式纠错：</strong>不同于 Bagging 各树各顾各的方差压缩，Boosting 是模型间的接力协作。后序学习器的训练分布完全由前序模型的<strong>残余错误</strong>所决定。
+        </p>
+      </div>
+
+      <div class="controls-cluster">
+        <div class="legend-row">
+          <div class="legend-item">
+            <span class="dot-sample-pos"></span>
+            <span>正类 (+1)</span>
+          </div>
+          <div class="legend-item">
+            <span class="dot-sample-neg"></span>
+            <span>负类 (-1)</span>
+          </div>
+          <div class="legend-item">
+            <span class="error-halo-sample"></span>
+            <span>重点纠错样本</span>
+          </div>
+          <div class="legend-item">
+            <span class="boundary-line-sample"></span>
+            <span>决策边界</span>
+          </div>
+        </div>
+
+        <div class="btns" style="display: flex; gap: 8px;">
+          <button type="button" class="btn-step active" id="btn-all">全景接力对比</button>
+          <button type="button" class="btn-step" id="btn-focus-r1">聚焦 h₁ 错题</button>
+          <button type="button" class="btn-step" id="btn-focus-r2">聚焦 h₂ 纠错</button>
+          <button type="button" class="btn-step" id="btn-focus-r3">聚焦 H 强集成</button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 10 个固定样本点 (x: 0..10, y: 0..10)
+      // 正类 (+1) 与 负类 (-1)
+      const DATA_POINTS = [
+        { id: 1, x: 1.5, y: 7.2, label: 1 },
+        { id: 2, x: 2.2, y: 3.5, label: 1 },
+        { id: 3, x: 3.8, y: 8.5, label: 1 },
+        { id: 4, x: 6.8, y: 7.5, label: 1 }, // R1 误分样本 A
+        { id: 5, x: 7.8, y: 8.8, label: 1 }, // R1 误分样本 B
+        { id: 6, x: 8.5, y: 6.5, label: 1 }, // R1 误分样本 C
+        { id: 7, x: 4.8, y: 2.2, label: -1 },
+        { id: 8, x: 6.5, y: 3.8, label: -1 },
+        { id: 9, x: 8.2, y: 2.0, label: -1 },
+        { id: 10, x: 3.0, y: 1.5, label: -1 }
+      ];
+
+      // 每轮各点的权重与预测状态
+      // R1: 均匀权重 0.1。h1 是 x = 4.2 竖直分类线 (x < 4.2 为正，x >= 4.2 为负)
+      //     则点 4, 5, 6 (x > 4.2 且 label=1) 被误判为负类！
+      // R2: 点 4, 5, 6 权重剧增至 0.22，其余点降低至 0.05。
+      //     h2 采用水平线 y = 5.2 (y > 5.2 为正，y <= 5.2 为负)
+      //     成功挽救 4, 5, 6，但点 1, 2, 3 也落在上面；同时可能造成局部小误判(点 10, 7)
+      // R3: 集成加权判决 H = 0.42*h1 + 0.65*h2 + 0.55*h3
+      //     形成 L 型 / 阶梯状分界线，所有 10 个点全部准确分类！
+      const ROUND_CONFIGS = [
+        {
+          roundIndex: 1,
+          cvId: "cv-r1",
+          weights: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+          errors: [4, 5, 6], // 被误分点的 ID
+          boundaryType: "vertical",
+          boundaryVal: 4.5,
+          boundaryDir: -1, // x < 4.5 -> +1, x >= 4.5 -> -1
+          hName: "h₁ (垂直切分 x=4.5)",
+          colorAgg: "#27648F"
+        },
+        {
+          roundIndex: 2,
+          cvId: "cv-r2",
+          // 4, 5, 6 权重明显放大（放大到约 2.5 倍），其余变小
+          weights: [0.05, 0.05, 0.05, 0.22, 0.22, 0.22, 0.06, 0.06, 0.06, 0.06],
+          errors: [7, 8], // 局部轻微妥协的负点或者新切分误分
+          boundaryType: "horizontal",
+          boundaryVal: 4.8,
+          boundaryDir: 1, // y > 4.8 -> +1, y <= 4.8 -> -1
+          hName: "h₂ (水平切分 y=4.8)",
+          colorAgg: "#27648F"
+        },
+        {
+          roundIndex: 3,
+          cvId: "cv-r3",
+          weights: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+          errors: [], // 强分类器无错
+          boundaryType: "ensemble_step",
+          hName: "H₃ = sign(α₁h₁ + α₂h₂ + α₃h₃)",
+          colorAgg: "#C34B22"
+        }
+      ];
+
+      // 视口绘图辅助
+      function drawRound(ctx, cfg, width, height, isHighlighted) {
+        ctx.clearRect(0, 0, width, height);
+
+        const padX = 40;
+        const padY = 32;
+        const plotW = width - padX * 2;
+        const plotH = height - padY * 2;
+
+        const mapX = x => padX + (x / 10) * plotW;
+        const mapY = y => padY + ((10 - y) / 10) * plotH;
+
+        // 1. 底层决策区域着色 (透明着色)
+        if (cfg.boundaryType === "vertical") {
+          const splitX = mapX(cfg.boundaryVal);
+          // 左侧正类区
+          ctx.fillStyle = "rgba(47, 117, 104, 0.08)";
+          ctx.fillRect(padX, padY, splitX - padX, plotH);
+          // 右侧负类区
+          ctx.fillStyle = "rgba(18, 38, 52, 0.03)";
+          ctx.fillRect(splitX, padY, plotW - (splitX - padX), plotH);
+
+          // 决策线
+          ctx.beginPath();
+          ctx.moveTo(splitX, padY);
+          ctx.lineTo(splitX, padY + plotH);
+          ctx.strokeStyle = "#27648F";
+          ctx.lineWidth = 3;
+          ctx.stroke();
+
+          // 决策方向标签
+          ctx.font = "600 13px 'Noto Sans SC', sans-serif";
+          ctx.fillStyle = "#27648F";
+          ctx.fillText("h₁ 判定为 +1", padX + 8, padY + 16);
+          ctx.fillStyle = "#536A78";
+          ctx.fillText("h₁ 判定为 -1", splitX + 8, padY + 16);
+
+        } else if (cfg.boundaryType === "horizontal") {
+          const splitY = mapY(cfg.boundaryVal);
+          // 上侧正类区
+          ctx.fillStyle = "rgba(47, 117, 104, 0.08)";
+          ctx.fillRect(padX, padY, plotW, splitY - padY);
+          // 下侧负类区
+          ctx.fillStyle = "rgba(18, 38, 52, 0.03)";
+          ctx.fillRect(padX, splitY, plotW, plotH - (splitY - padY));
+
+          // 决策线
+          ctx.beginPath();
+          ctx.moveTo(padX, splitY);
+          ctx.lineTo(padX + plotW, splitY);
+          ctx.strokeStyle = "#27648F";
+          ctx.lineWidth = 3;
+          ctx.stroke();
+
+          // 决策方向标签
+          ctx.font = "600 13px 'Noto Sans SC', sans-serif";
+          ctx.fillStyle = "#27648F";
+          ctx.fillText("h₂ 判定为 +1 (纠正上方区域)", padX + 8, splitY - 10);
+          ctx.fillStyle = "#536A78";
+          ctx.fillText("h₂ 判定为 -1", padX + 8, splitY + 20);
+
+        } else if (cfg.boundaryType === "ensemble_step") {
+          // 阶梯状综合边界：在右上方与左侧包络形成多边形正类区
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(padX, padY);
+          ctx.lineTo(padX + plotW, padY);
+          ctx.lineTo(padX + plotW, mapY(5.2));
+          ctx.lineTo(mapX(4.5), mapY(5.2));
+          ctx.lineTo(mapX(4.5), padY + plotH);
+          ctx.lineTo(padX, padY + plotH);
+          ctx.closePath();
+          ctx.fillStyle = "rgba(47, 117, 104, 0.12)";
+          ctx.fill();
+
+          // 负类区
+          ctx.fillStyle = "rgba(18, 38, 52, 0.04)";
+          ctx.beginPath();
+          ctx.moveTo(mapX(4.5), mapY(5.2));
+          ctx.lineTo(padX + plotW, mapY(5.2));
+          ctx.lineTo(padX + plotW, padY + plotH);
+          ctx.lineTo(mapX(4.5), padY + plotH);
+          ctx.closePath();
+          ctx.fill();
+
+          // 绘制阶梯决策分界线
+          ctx.beginPath();
+          ctx.moveTo(padX + plotW, mapY(5.2));
+          ctx.lineTo(mapX(4.5), mapY(5.2));
+          ctx.lineTo(mapX(4.5), padY + plotH);
+          ctx.strokeStyle = "#C34B22";
+          ctx.lineWidth = 4;
+          ctx.lineCap = "round";
+          ctx.stroke();
+          ctx.restore();
+
+          // 强分类器标签
+          ctx.font = "700 14px 'Noto Sans SC', sans-serif";
+          ctx.fillStyle = "#C34B22";
+          ctx.fillText("加权集成综合决策面 H₃", padX + 12, padY + 22);
+        }
+
+        // 2. 坐标网格微线与边框
+        ctx.strokeStyle = "#E2EBF0";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(padX, padY, plotW, plotH);
+
+        // 3. 绘制 10 个数据点
+        DATA_POINTS.forEach((pt, i) => {
+          const px = mapX(pt.x);
+          const py = mapY(pt.y);
+          const w = cfg.weights[i];
+          const isErr = cfg.errors.includes(pt.id);
+
+          // 基础半径根据权重缩放：权重越大点越大
+          const baseRadius = 6 + (w - 0.05) * 60; // 0.05 -> 6, 0.22 -> 16.2
+          const radius = Math.max(5, Math.min(18, baseRadius));
+
+          // 错误样本的高亮光晕或重点标注圈
+          if (isErr) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(px, py, radius + 7, 0, Math.PI * 2);
+            ctx.strokeStyle = "#C34B22";
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([4, 3]);
+            ctx.stroke();
+            ctx.fillStyle = "rgba(195, 75, 34, 0.15)";
+            ctx.fill();
+            ctx.restore();
+
+            // 标注“遗留未解”提示
+            ctx.font = "700 12px 'Noto Sans SC', sans-serif";
+            ctx.fillStyle = "#C34B22";
+            ctx.fillText("未解", px + radius + 5, py - 4);
+          } else if (cfg.roundIndex === 2 && [4, 5, 6].includes(pt.id)) {
+            // 在第 2 轮中，被放大的点标注“权重显著加大”
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(px, py, radius + 4, 0, Math.PI * 2);
+            ctx.strokeStyle = "#2F7568";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+            ctx.font = "600 11px 'Noto Sans SC', sans-serif";
+            ctx.fillStyle = "#2F7568";
+            ctx.fillText("加权↑", px + radius + 4, py - 4);
+          }
+
+          // 绘制样本图形（正类为圆形，负类为菱形）
+          if (pt.label === 1) {
+            ctx.beginPath();
+            ctx.arc(px, py, radius, 0, Math.PI * 2);
+            ctx.fillStyle = "#2F7568";
+            ctx.fill();
+            ctx.strokeStyle = "#17433B";
+            ctx.lineWidth = 1.8;
+            ctx.stroke();
+
+            // 内部画 '+' 符号
+            ctx.beginPath();
+            ctx.strokeStyle = "#FFFFFF";
+            ctx.lineWidth = 2;
+            const crossR = Math.max(3, radius * 0.55);
+            ctx.moveTo(px - crossR, py);
+            ctx.lineTo(px + crossR, py);
+            ctx.moveTo(px, py - crossR);
+            ctx.lineTo(px, py + crossR);
+            ctx.stroke();
+          } else {
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.rotate(Math.PI / 4);
+            const side = radius * 1.5;
+            ctx.fillStyle = "#6B808E";
+            ctx.fillRect(-side / 2, -side / 2, side, side);
+            ctx.strokeStyle = "#384752";
+            ctx.lineWidth = 1.8;
+            ctx.strokeRect(-side / 2, -side / 2, side, side);
+
+            // 内部画 '-' 符号
+            ctx.rotate(-Math.PI / 4);
+            ctx.beginPath();
+            ctx.strokeStyle = "#FFFFFF";
+            ctx.lineWidth = 2;
+            const barW = Math.max(3, radius * 0.55);
+            ctx.moveTo(-barW, 0);
+            ctx.lineTo(barW, 0);
+            ctx.stroke();
+            ctx.restore();
+          }
+        });
+
+        // 4. 突出外边框
+        if (isHighlighted) {
+          ctx.strokeStyle = "rgba(39, 100, 143, 0.4)";
+          ctx.lineWidth = 3;
+          ctx.strokeRect(2, 2, width - 4, height - 4);
+        }
+      }
+
+      // 初始化并绑定三个 Canvas
+      const canvases = [];
+      ROUND_CONFIGS.forEach((cfg, idx) => {
+        const cv = document.getElementById(cfg.cvId);
+        const card = document.getElementById(`card-r${idx + 1}`);
+        let autofitHandle = Deck.autofit(cv, (ctx, w, h) => {
+          const isHigh = card.classList.contains("active-focus");
+          drawRound(ctx, cfg, w, h, isHigh);
+        });
+        canvases.push({ cv, cfg, card, autofitHandle });
+      });
+
+      // 交互逻辑：按步骤聚焦与说明更新
+      const btnAll = document.getElementById("btn-all");
+      const btnR1 = document.getElementById("btn-focus-r1");
+      const btnR2 = document.getElementById("btn-focus-r2");
+      const btnR3 = document.getElementById("btn-focus-r3");
+      const btns = [btnAll, btnR1, btnR2, btnR3];
+
+      const summaryText = document.getElementById("summaryText");
+
+      const STEP_DESCRIPTIONS = [
+        "<strong>串行链式纠错：</strong>不同于 Bagging 各树各顾各的方差压缩，Boosting 是模型间的接力协作。后序学习器的训练分布完全由前序模型的<strong>残余错误</strong>所决定。",
+        "<strong>第 1 步：暴露难题。</strong>弱学习器 h₁ 结构非常简单（单个切分点），无法兼顾右上方复杂的正类样本。这 3 个未解样本被赋予更高的关注度，作为“错题本”移交给下一轮。",
+        "<strong>第 2 步：定点攻坚。</strong>由于前轮 3 个错题的权重急剧上升，弱学习器 h₂ 必须放弃垂直切分，转而采用水平决策面全力覆盖它们。错误驱动着学习器的朝向与重点。",
+        "<strong>第 3 步：集成汇聚。</strong>没有单个弱分类器能单独胜任，但通过按各自准确表现加权组合（H₃ = α₁h₁ + α₂h₂ + α₃h₃），多个极简决策边界拼合出了完美的阶梯复合分界线。"
+      ];
+
+      function setStep(stepIndex) {
+        btns.forEach((b, i) => b.classList.toggle("active", i === stepIndex));
+
+        canvases.forEach((item, i) => {
+          if (stepIndex === 0) {
+            item.card.classList.remove("active-focus");
+          } else {
+            item.card.classList.toggle("active-focus", i === stepIndex - 1);
+          }
+          // 重新绘制各画布以更新高亮边框
+          const ctx = item.cv.getContext("2d");
+          const rect = item.cv.getBoundingClientRect();
+          drawRound(ctx, item.cfg, rect.width, rect.height, item.card.classList.contains("active-focus"));
+        });
+
+        summaryText.innerHTML = STEP_DESCRIPTIONS[stepIndex];
+      }
+
+      btnAll.addEventListener("click", () => setStep(0));
+      btnR1.addEventListener("click", () => setStep(1));
+      btnR2.addEventListener("click", () => setStep(2));
+      btnR3.addEventListener("click", () => setStep(3));
+
+      // 键盘快捷支持
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "1") setStep(1);
+        else if (e.key === "2") setStep(2);
+        else if (e.key === "3") setStep(3);
+        else if (e.key === "0" || e.key === "Escape") setStep(0);
+      });
+
+      Deck.init({ index: 14, total: 27 });
+    })();
+  </script>
+</body>
+</html>

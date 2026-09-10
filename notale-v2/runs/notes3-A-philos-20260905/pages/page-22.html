@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Stacking 的二层结构</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      background: var(--bg);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* 顶部标题与导语 */
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .header-block h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text);
+    }
+    .header-block p {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主舞台：左侧二层流向与空间边界图，右侧动态样本判别与权重解析 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 仪器面板 */
+    .panel-box {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 4px 14px rgba(20, 37, 51, 0.04);
+      position: relative;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* 左侧两层结构与空间示意 */
+    .stack-flow-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    /* 层级连线流示意 */
+    .flow-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .model-card {
+      background: #fff;
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+      position: relative;
+    }
+    .model-card:hover, .model-card.active {
+      border-color: var(--learner);
+      box-shadow: 0 2px 8px rgba(39, 93, 145, 0.15);
+    }
+    .model-card.meta-card {
+      border-color: var(--aggregate);
+      background: rgba(182, 59, 36, 0.03);
+    }
+    .model-card.meta-card.active {
+      border-color: var(--aggregate);
+      box-shadow: 0 2px 10px rgba(182, 59, 36, 0.2);
+    }
+
+    .model-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .model-name {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .model-tag {
+      font-size: var(--fs-tick);
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+    .model-bias {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* 空间边界对比视窗 */
+    .space-view {
+      flex: 1;
+      min-height: 260px;
+      background: #ffffff;
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      position: relative;
+      display: flex;
+      overflow: hidden;
+    }
+
+    .canvas-wrap {
+      flex: 1;
+      position: relative;
+      height: 100%;
+    }
+
+    /* 右侧解析面板 */
+    .compare-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+    }
+
+    .sample-probe {
+      background: #ffffff;
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .probe-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .probe-title {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .probe-coord {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      color: var(--muted);
+    }
+
+    .pred-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .pred-row {
+      display: grid;
+      grid-template-columns: 100px 1fr 60px;
+      align-items: center;
+      gap: 10px;
+      font-size: var(--fs-sec);
+    }
+    .pred-name {
+      color: var(--muted);
+    }
+    .bar-track {
+      height: 12px;
+      background: var(--surface-strong);
+      border-radius: 6px;
+      overflow: hidden;
+      position: relative;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 6px;
+      transition: width var(--dur) var(--ease);
+    }
+    .bar-fill.m1 { background: var(--learner); }
+    .bar-fill.m2 { background: #457B9D; }
+    .bar-fill.m3 { background: #1D3557; }
+    .bar-fill.avg { background: var(--muted); }
+    .bar-fill.stack { background: var(--aggregate); }
+    .pred-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .contrast-box {
+      background: #fff;
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+    .contrast-item {
+      display: flex;
+      gap: 10px;
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+    }
+    .contrast-badge {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      height: fit-content;
+      white-space: nowrap;
+    }
+    .contrast-badge.avg-bad {
+      background: rgba(83, 103, 119, 0.15);
+      color: var(--muted);
+    }
+    .contrast-badge.stack-good {
+      background: rgba(182, 59, 36, 0.12);
+      color: var(--aggregate);
+    }
+
+    /* 底部交互控制 */
+    .controls-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--surface-strong);
+      border-radius: 8px;
+      font-size: var(--fs-label);
+    }
+    .preset-btns {
+      display: flex;
+      gap: 8px;
+    }
+    .preset-btn {
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      transition: all var(--dur) var(--ease);
+    }
+    .preset-btn:hover {
+      background: #ffffff;
+    }
+    .preset-btn.active {
+      background: var(--focus);
+      color: #ffffff;
+    }
+
+    /* 悬浮样本探针指示器 */
+    .canvas-hint {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      background: rgba(255,255,255,0.88);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      pointer-events: none;
+      border: 1px solid var(--surface-strong);
+    }
+
+    /* 架构连接导线层 */
+    .wire-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body data-page="22" data-total="27">
+  <div id="stage">
+    <div class="header-block">
+      <h1>Stacking 的二层结构：元学习器学习互补边界</h1>
+      <p>初级模型各自存在假设局限与盲区；第二层元学习器以初级预测为输入特征，学习「谁在何种输入区域更可信」，而非固定加权或简单投票。</p>
+    </div>
+
+    <div class="main-grid">
+      <!-- 左侧：模型拓扑 + 特征空间决策边界对比 -->
+      <div class="panel-box min0">
+        <div class="panel-title">
+          <span>二层堆叠拓扑与决策空间</span>
+          <span style="font-size: var(--fs-label); color: var(--muted); font-weight: normal;">点击模型可单独观察其决策面</span>
+        </div>
+
+        <div class="stack-flow-container min0">
+          <!-- 初级学习器卡片 -->
+          <div>
+            <div style="font-size: var(--fs-label); color: var(--muted); margin-bottom: 6px; font-weight: 600;">初级学习器 (Level 0 Models) · 产生元特征 (Meta-Features)</div>
+            <div class="flow-row">
+              <div class="model-card" id="card-m1" data-mid="m1">
+                <div class="model-header">
+                  <span class="model-name">M1: 逻辑回归</span>
+                  <span class="model-tag">线性超平面</span>
+                </div>
+                <div class="model-bias">全局平滑；对弯曲复杂边界存在高偏差，但极难过拟合。</div>
+              </div>
+
+              <div class="model-card" id="card-m2" data-mid="m2">
+                <div class="model-header">
+                  <span class="model-name">M2: 浅层决策树</span>
+                  <span class="model-tag">正交轴切分</span>
+                </div>
+                <div class="model-bias">对轴对齐特征敏感；呈台阶状阶梯，拐角处易有死角。</div>
+              </div>
+
+              <div class="model-card" id="card-m3" data-mid="m3">
+                <div class="model-header">
+                  <span class="model-name">M3: RBF-SVM</span>
+                  <span class="model-tag">局部核邻域</span>
+                </div>
+                <div class="model-bias">善于捕捉孤立紧凑群簇；但在稀疏延展区易过度收缩。</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 决策边界空间对比画布 -->
+          <div class="space-view min0">
+            <div class="canvas-wrap">
+              <canvas id="boundaryCanvas" class="cv-fill"></canvas>
+              <div class="canvas-hint" id="canvasHint">在空间中移动鼠标可探测局部预测</div>
+            </div>
+          </div>
+
+          <!-- 次级元学习器卡片 -->
+          <div>
+            <div style="font-size: var(--fs-label); color: var(--muted); margin-bottom: 6px; font-weight: 600;">次级学习器 (Level 1 Meta-Learner) · 融合初级预测</div>
+            <div class="flow-row" style="grid-template-columns: 1fr 1fr;">
+              <div class="model-card" id="card-avg" data-mid="avg">
+                <div class="model-header">
+                  <span class="model-name">对照：固定等权平均 (Voting / Blending)</span>
+                  <span class="model-tag">固定规则</span>
+                </div>
+                <div class="model-bias">P = (M1 + M2 + M3)/3。错误被等权带入，无法感知区域优劣。</div>
+              </div>
+
+              <div class="model-card meta-card active" id="card-meta" data-mid="meta">
+                <div class="model-header">
+                  <span class="model-name" style="color: var(--aggregate);">元学习器 (Meta-Learner, 如 Logistic)</span>
+                  <span class="model-tag" style="background: rgba(182,59,36,0.15); color: var(--aggregate);">互补拟合</span>
+                </div>
+                <div class="model-bias">输入是 (p1, p2, p3)，自动发现 M3 擅长内圈而 M1 擅长全局，自适应组合。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：指定区域样本探针与对比解析 -->
+      <div class="panel-box min0">
+        <div class="panel-title">
+          <span>元预测探针与机制对比</span>
+        </div>
+
+        <div class="compare-section">
+          <!-- 实时样本探测器 -->
+          <div class="sample-probe">
+            <div class="probe-header">
+              <span class="probe-title" id="probeZoneName">典型核心密集区 (RBF核机优势明显)</span>
+              <span class="probe-coord" id="probeCoord">坐标: (0.50, 0.50)</span>
+            </div>
+
+            <div class="pred-bars">
+              <div class="pred-row">
+                <span class="pred-name">M1 逻辑回归</span>
+                <div class="bar-track"><div class="bar-fill m1" id="bar-m1" style="width: 35%;"></div></div>
+                <span class="pred-val" id="val-m1">0.35</span>
+              </div>
+              <div class="pred-row">
+                <span class="pred-name">M2 决策树</span>
+                <div class="bar-track"><div class="bar-fill m2" id="bar-m2" style="width: 80%;"></div></div>
+                <span class="pred-val" id="val-m2">0.80</span>
+              </div>
+              <div class="pred-row">
+                <span class="pred-name">M3 SVM核机</span>
+                <div class="bar-track"><div class="bar-fill m3" id="bar-m3" style="width: 92%;"></div></div>
+                <span class="pred-val" id="val-m3">0.92</span>
+              </div>
+              <div style="height: 1px; background: var(--surface-strong); margin: 2px 0;"></div>
+              <div class="pred-row">
+                <span class="pred-name">简单平均</span>
+                <div class="bar-track"><div class="bar-fill avg" id="bar-avg" style="width: 69%;"></div></div>
+                <span class="pred-val" id="val-avg">0.69</span>
+              </div>
+              <div class="pred-row">
+                <span class="pred-name" style="font-weight: 700; color: var(--aggregate);">Stacking 元输出</span>
+                <div class="bar-track"><div class="bar-fill stack" id="bar-meta" style="width: 95%;"></div></div>
+                <span class="pred-val" id="val-meta" style="color: var(--aggregate);">0.95</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 预设探针点快速切换 -->
+          <div class="controls-bar">
+            <span>预置探测点：</span>
+            <div class="preset-btns">
+              <button class="preset-btn active" data-pt="0">核心紧凑区</button>
+              <button class="preset-btn" data-pt="1">树切分死角</button>
+              <button class="preset-btn" data-pt="2">外围稀疏区</button>
+            </div>
+          </div>
+
+          <!-- 对比机制解析说明 -->
+          <div class="contrast-box">
+            <div style="font-weight: 700; color: var(--text); margin-bottom: 2px;">为什么非线性互补优于固定平均？</div>
+            
+            <div class="contrast-item">
+              <span class="contrast-badge avg-bad">固定平均</span>
+              <div id="descAvg">当 M1 线性模型因欠拟合在复杂边界给出低置信度（如 0.43）时，简单均值必然被拖累（(0.43+0.45+1.00)/3 ≈ 0.63），导致判别置信度被稀释。</div>
+            </div>
+
+            <div class="contrast-item">
+              <span class="contrast-badge stack-good">Stacking</span>
+              <div id="descMeta">元学习器自适应组合：当 M3（核机）报告极高置信度且 M2 形成支持时，识别此处为非线性核心流形，大幅降低 M1 权重，输出高达 0.98 的强判定。</div>
+            </div>
+
+            <div class="contrast-item" style="border-top: 1px dashed var(--surface-strong); padding-top: 6px;">
+              <div style="font-size: var(--fs-label); color: var(--muted);">
+                <strong>下一核心问题：</strong>若元学习器直接在初级模型训练集上学习，初级模型会因“死记训练集”给出虚假完美预测，导致第二层彻底失效——必须依赖下页讲到的 <strong>Out-of-fold (折外预测)</strong> 机制。
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      Deck.init({ index: 22, total: 27 });
+
+      // 画布与探针数据
+      const cv = document.getElementById("boundaryCanvas");
+      let ctx = null;
+      // 初始状态保持一致：默认激活元学习器卡片
+      let curMode = "meta"; // "m1", "m2", "m3", "avg", "meta"
+      let probePt = { x: 0.5, y: 0.5 };
+
+      // 预设点
+      const presets = [
+        { name: "典型核心密集区", x: 0.52, y: 0.50, desc: "RBF核机极具优势，线性模型明显低估" },
+        { name: "决策树轴切分盲区", x: 0.72, y: 0.40, desc: "树模型阶梯切分出现假阳性，SVM与回归将其纠偏" },
+        { name: "外围平缓稀疏区", x: 0.20, y: 0.85, desc: "线性回归全局单调性更稳健，SVM核过紧收缩" }
+      ];
+
+      // 模型数学构造 (输入规范化为 0~1 的二维平面)
+      // 真实真值场：一个双环非线性月牙结构
+      function getModelPreds(x, y) {
+        // x in [0, 1], y in [0, 1], 映射到 [-2, 2]
+        const nx = (x - 0.5) * 4;
+        const ny = (y - 0.5) * 4;
+
+        // M1: 逻辑回归 (线性，倾斜分界面)
+        const z1 = 1.6 * nx + 1.2 * ny - 0.3;
+        const p1 = 1 / (1 + Math.exp(-z1));
+
+        // M2: 决策树 (正交轴阶梯切分模拟)
+        let p2 = 0.1;
+        if (nx > -0.8 && nx < 1.4) {
+          if (ny > -1.2 && ny < 1.2) {
+            p2 = (nx > 0.3 || ny > 0.1) ? 0.88 : 0.45;
+          } else {
+            p2 = 0.25;
+          }
+        } else if (nx >= 1.4 && ny > 0) {
+          p2 = 0.78;
+        }
+
+        // M3: RBF-SVM (非线性环形/核密度)
+        const d1 = Math.hypot(nx - 0.3, ny - 0.2);
+        const d2 = Math.hypot(nx + 0.8, ny + 0.6);
+        const p3 = Math.max(0, Math.min(1, Math.exp(-d1*d1*0.6) * 1.05 + Math.exp(-d2*d2*0.9) * 0.75 - 0.15));
+
+        // 对照：简单平均
+        const pAvg = (p1 + p2 + p3) / 3;
+
+        // Stacking: 元模型逻辑组合 (学习互补性，加权感知)
+        // 当 p3 很高时给予 p3 极大权重；当在边缘区域时结合 p1 平滑
+        const metaZ = 2.8 * p3 + 1.4 * p2 + 0.6 * p1 - 1.8;
+        const pMeta = 1 / (1 + Math.exp(-metaZ * 2.2));
+
+        return { m1: p1, m2: p2, m3: p3, avg: pAvg, meta: pMeta };
+      }
+
+      // 离屏渲染决策场以保证性能与平滑
+      let offCv = document.createElement("canvas");
+      let offCtx = offCv.getContext("2d");
+      const gridW = 90;
+      const gridH = 60;
+      offCv.width = gridW;
+      offCv.height = gridH;
+
+      function renderOffscreen(mode) {
+        const imgData = offCtx.createImageData(gridW, gridH);
+        const data = imgData.data;
+
+        for (let j = 0; j < gridH; j++) {
+          const y = j / (gridH - 1);
+          for (let i = 0; i < gridW; i++) {
+            const x = i / (gridW - 1);
+            const preds = getModelPreds(x, y);
+            const val = preds[mode] !== undefined ? preds[mode] : preds.meta;
+
+            const idx = (j * gridW + i) * 4;
+            // 依据值插值颜色：冷色调背景 (0) 到 强分类色 (1)
+            // 0: #E8EEF2 (232, 238, 242)
+            // 1: 如果是 meta 则为 #B63B24，否则为 #275D91
+            const rTarget = (mode === "meta") ? 182 : 39;
+            const gTarget = (mode === "meta") ? 59 : 93;
+            const bTarget = (mode === "meta") ? 36 : 145;
+
+            data[idx] = Math.round(232 + (rTarget - 232) * val);
+            data[idx+1] = Math.round(238 + (gTarget - 238) * val);
+            data[idx+2] = Math.round(242 + (bTarget - 242) * val);
+            data[idx+3] = 220;
+          }
+        }
+        offCtx.putImageData(imgData, 0, 0);
+      }
+
+      // 样本真实数据点散布
+      const groundPoints = [
+        {x: 0.52, y: 0.48, label: 1}, {x: 0.56, y: 0.52, label: 1}, {x: 0.48, y: 0.55, label: 1},
+        {x: 0.60, y: 0.42, label: 1}, {x: 0.65, y: 0.50, label: 1}, {x: 0.40, y: 0.45, label: 1},
+        {x: 0.35, y: 0.38, label: 1}, {x: 0.72, y: 0.38, label: 0}, {x: 0.78, y: 0.32, label: 0},
+        {x: 0.25, y: 0.20, label: 0}, {x: 0.20, y: 0.30, label: 0}, {x: 0.18, y: 0.65, label: 0},
+        {x: 0.28, y: 0.80, label: 0}, {x: 0.35, y: 0.85, label: 0}, {x: 0.75, y: 0.75, label: 0},
+        {x: 0.82, y: 0.60, label: 0}, {x: 0.85, y: 0.70, label: 0}, {x: 0.45, y: 0.78, label: 0}
+      ];
+
+      function draw() {
+        if (!ctx) return;
+        const w = cv.clientWidth;
+        const h = cv.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        // 绘制决策场背景
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(offCv, 0, 0, w, h);
+
+        // 绘制等高分界线 (0.5 决策边界)
+        ctx.strokeStyle = (curMode === "meta") ? "rgba(182, 59, 36, 0.9)" : "rgba(39, 93, 145, 0.9)";
+        ctx.lineWidth = 2.5;
+
+        // 绘制真实样本点
+        groundPoints.forEach(pt => {
+          const px = pt.x * w;
+          const py = pt.y * h;
+          ctx.beginPath();
+          ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+          if (pt.label === 1) {
+            ctx.fillStyle = "#B63B24";
+            ctx.strokeStyle = "#FFFFFF";
+            ctx.lineWidth = 1.5;
+          } else {
+            ctx.fillStyle = "#536777";
+            ctx.strokeStyle = "#FFFFFF";
+            ctx.lineWidth = 1.5;
+          }
+          ctx.fill();
+          ctx.stroke();
+        });
+
+        // 绘制当前探针指示圈
+        const probePx = probePt.x * w;
+        const probePy = probePt.y * h;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(probePx, probePy, 14, 0, Math.PI * 2);
+        ctx.strokeStyle = "#142533";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(probePx, probePy, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#006B72";
+        ctx.fill();
+
+        // 十字准星
+        ctx.beginPath();
+        ctx.moveTo(probePx - 20, probePy);
+        ctx.lineTo(probePx + 20, probePy);
+        ctx.moveTo(probePx, probePy - 20);
+        ctx.lineTo(probePx, probePy + 20);
+        ctx.strokeStyle = "rgba(20, 37, 51, 0.35)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([]);
+        ctx.stroke();
+        ctx.restore();
+
+        // 绘制模式指示浮标
+        ctx.save();
+        ctx.font = "bold 13px system-ui";
+        ctx.fillStyle = "#142533";
+        const modeLabels = {
+          m1: "当前观察：M1 线性超平面",
+          m2: "当前观察：M2 决策树轴切分",
+          m3: "当前观察：M3 SVM核邻域",
+          avg: "当前观察：简单等权平均",
+          meta: "当前观察：Stacking 元学习器自适应边界"
+        };
+        ctx.fillText(modeLabels[curMode] || "", 14, 24);
+        ctx.restore();
+      }
+
+      function updateProbeUI() {
+        const preds = getModelPreds(probePt.x, probePt.y);
+
+        document.getElementById("probeCoord").textContent = `坐标: (${probePt.x.toFixed(2)}, ${probePt.y.toFixed(2)})`;
+        
+        document.getElementById("bar-m1").style.width = `${(preds.m1 * 100).toFixed(0)}%`;
+        document.getElementById("val-m1").textContent = preds.m1.toFixed(2);
+
+        document.getElementById("bar-m2").style.width = `${(preds.m2 * 100).toFixed(0)}%`;
+        document.getElementById("val-m2").textContent = preds.m2.toFixed(2);
+
+        document.getElementById("bar-m3").style.width = `${(preds.m3 * 100).toFixed(0)}%`;
+        document.getElementById("val-m3").textContent = preds.m3.toFixed(2);
+
+        document.getElementById("bar-avg").style.width = `${(preds.avg * 100).toFixed(0)}%`;
+        document.getElementById("val-avg").textContent = preds.avg.toFixed(2);
+
+        document.getElementById("bar-meta").style.width = `${(preds.meta * 100).toFixed(0)}%`;
+        document.getElementById("val-meta").textContent = preds.meta.toFixed(2);
+
+        const avgValStr = preds.avg.toFixed(2);
+        const metaValStr = preds.meta.toFixed(2);
+        const m1Str = preds.m1.toFixed(2);
+        const m2Str = preds.m2.toFixed(2);
+        const m3Str = preds.m3.toFixed(2);
+
+        const descAvgEl = document.getElementById("descAvg");
+        const descMetaEl = document.getElementById("descMeta");
+        if (descAvgEl) {
+          descAvgEl.textContent = `简单等权平均：(${m1Str} + ${m2Str} + ${m3Str}) / 3 = ${avgValStr}。初级模型中若有任一假设偏差（欠拟合或假阳性），均会被无差别带入均值。`;
+        }
+        if (descMetaEl) {
+          descMetaEl.textContent = `元学习器输出：以 (${m1Str}, ${m2Str}, ${m3Str}) 为输入，学习得到当前区域的最佳互补权重，输出判别概率 ${metaValStr}，有效隔离了局限模型的污染。`;
+        }
+      }
+
+      // 初始化画布与交互
+      ctx = Deck.fit(cv);
+      renderOffscreen(curMode);
+      draw();
+      updateProbeUI();
+
+      Deck.onResize(() => {
+        ctx = Deck.fit(cv);
+        draw();
+      });
+
+      // 探针鼠标滑动监听
+      cv.addEventListener("pointermove", (e) => {
+        const pt = Deck.pt(cv, e);
+        const rect = cv.getBoundingClientRect();
+        // 映射到 0~1
+        probePt.x = Deck.clamp(pt.x / cv.clientWidth, 0.02, 0.98);
+        probePt.y = Deck.clamp(pt.y / cv.clientHeight, 0.02, 0.98);
+        document.getElementById("probeZoneName").textContent = "用户指针实时探测点";
+        // 清除预设按钮激活
+        presetBtns.forEach(b => b.classList.remove("active"));
+        draw();
+        updateProbeUI();
+      });
+
+      // 卡片点击切换视图
+      const cards = document.querySelectorAll(".model-card");
+      cards.forEach(card => {
+        card.addEventListener("click", () => {
+          cards.forEach(c => c.classList.remove("active"));
+          card.classList.add("active");
+          curMode = card.getAttribute("data-mid");
+          renderOffscreen(curMode);
+          draw();
+        });
+      });
+
+      // 预设点切换
+      const presetBtns = document.querySelectorAll(".preset-btn");
+      presetBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          presetBtns.forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+          const idx = parseInt(btn.getAttribute("data-pt"), 10);
+          const p = presets[idx];
+          probePt = { x: p.x, y: p.y };
+          document.getElementById("probeZoneName").textContent = p.name + " (" + p.desc + ")";
+          draw();
+          updateProbeUI();
+        });
+      });
+
+    })();
+  </script>
+</body>
+</html>

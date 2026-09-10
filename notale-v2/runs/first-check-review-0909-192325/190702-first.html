@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>观察欠拟合、适度拟合与过拟合</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 页面基础与瑞士风格紧凑布局 */
+    #stage {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      grid-template-rows: auto 1fr auto;
+      column-gap: 40px;
+      row-gap: 20px;
+      padding: 44px 56px 40px 56px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    .header-area {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1.5px solid var(--text);
+      padding-bottom: 14px;
+    }
+
+    .title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .nt-title {
+      font-size: var(--fs-h1);
+      margin: 0;
+      line-height: 1.1;
+      letter-spacing: -0.01em;
+    }
+
+    .nt-lead {
+      font-size: var(--fs-lead);
+      color: var(--text-muted);
+      margin: 0;
+    }
+
+    .header-tag {
+      font-family: var(--font-mono);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--text-sub);
+      text-transform: uppercase;
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+    }
+
+    /* 左侧控制与定量指标面板 */
+    .left-panel {
+      grid-column: 1 / 2;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* 预设栏（瑞士风格等分按键） */
+    .presets-box {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .presets-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border: 1.5px solid var(--text);
+      background: var(--bg);
+    }
+
+    .preset-btn {
+      font-family: var(--font-sans);
+      font-size: 15px;
+      font-weight: 700;
+      padding: 10px 4px;
+      background: transparent;
+      color: var(--text);
+      border: none;
+      border-right: 1.5px solid var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+
+    .preset-btn:last-child {
+      border-right: none;
+    }
+
+    .preset-btn:hover {
+      background: rgba(22, 32, 27, 0.08);
+    }
+
+    .preset-btn[aria-pressed="true"] {
+      background: var(--text);
+      color: var(--bg);
+    }
+
+    /* 参数滑动组 */
+    .controls-card {
+      border: 1px solid var(--border);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .ctrl-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .ctrl-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .ctrl-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .ctrl-val {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .ctrl-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      background: var(--border);
+      outline: none;
+      margin: 4px 0;
+    }
+
+    .ctrl-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      background: var(--text);
+      cursor: pointer;
+    }
+
+    .ctrl-slider::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      background: var(--text);
+      cursor: pointer;
+      border: none;
+    }
+
+    .noise-toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 4px;
+      border-top: 1px dashed var(--border);
+    }
+
+    .noise-toggle-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    /* 训练度量看板（高辨识度） */
+    .metrics-card {
+      border: 1px solid var(--border);
+      padding: 14px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .metric-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .metric-head {
+      font-size: 13px;
+      color: var(--text-sub);
+      font-weight: 600;
+    }
+
+    .metric-num {
+      font-family: var(--font-mono);
+      font-size: 26px;
+      font-weight: 800;
+      line-height: 1.1;
+      color: var(--text);
+    }
+
+    .metric-num.highlight-gap {
+      color: var(--class-b);
+    }
+
+    /* 实时诊断结论行 */
+    .diagnosis-box {
+      border-left: 3.5px solid var(--text);
+      padding: 10px 14px;
+      background: rgba(22, 32, 27, 0.05);
+      font-size: 14px;
+      line-height: 1.45;
+      color: var(--text);
+      min-height: 48px;
+    }
+
+    /* 右侧主世界图解区 */
+    .right-world {
+      grid-column: 2 / 3;
+      display: flex;
+      gap: 24px;
+      min-height: 0;
+      align-items: stretch;
+    }
+
+    /* 决策平面视窗 */
+    .plane-container {
+      flex: 1.4;
+      position: relative;
+      border: 1.5px solid var(--text);
+      background: #FFFFFF;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .plane-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(218, 225, 220, 0.4);
+      z-index: 2;
+    }
+
+    .plane-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 14px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-dot-a {
+      width: 9px;
+      height: 9px;
+      background: var(--class-a);
+      border-radius: 50%;
+    }
+
+    .legend-dot-b {
+      width: 9px;
+      height: 9px;
+      background: var(--class-b);
+      border-radius: 50%;
+    }
+
+    .legend-line {
+      width: 16px;
+      height: 2.5px;
+      background: var(--text);
+    }
+
+    .plane-body {
+      flex: 1;
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    #boundaryCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #scatterSvg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      pointer-events: none;
+    }
+
+    /* 损失与泛化曲线视窗 */
+    .curve-container {
+      flex: 1;
+      border: 1.5px solid var(--text);
+      background: #FFFFFF;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .curve-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(218, 225, 220, 0.4);
+    }
+
+    .curve-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    .curve-legend {
+      display: flex;
+      gap: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .c-train { color: var(--text); }
+    .c-val { color: var(--class-b); }
+
+    .curve-body {
+      flex: 1;
+      position: relative;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+
+    #lossChart {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 底部操作与步进条 */
+    .footer-bar {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .footer-meta {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .footer-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .action-btn {
+      font-family: var(--font-sans);
+      font-size: 14px;
+      font-weight: 700;
+      padding: 8px 18px;
+      background: var(--bg);
+      color: var(--text);
+      border: 1.5px solid var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .action-btn:hover {
+      background: var(--text);
+      color: var(--bg);
+    }
+
+    .action-btn:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="19">
+  <div id="stage">
+    <!-- 顶部标题 -->
+    <header class="header-area">
+      <div class="title-group">
+        <h1 class="nt-title">欠拟合、适度拟合与过拟合形态</h1>
+        <p class="nt-lead">调节模型神经元容量与训练轮数，对比判别边界与泛化差距</p>
+      </div>
+      <div class="header-tag">双月二分类实测验证</div>
+    </header>
+
+    <!-- 左侧参数与度量看板 -->
+    <aside class="left-panel">
+      <!-- 三种典型状态预设 -->
+      <div class="presets-box">
+        <span class="nt-label">典型拟合模式快速切换</span>
+        <div class="presets-row" role="group" aria-label="典型拟合状态">
+          <button class="preset-btn" id="btnPresetUnder" aria-pressed="false">欠拟合</button>
+          <button class="preset-btn" id="btnPresetGood" aria-pressed="true">适度拟合</button>
+          <button class="preset-btn" id="btnPresetOver" aria-pressed="false">过拟合</button>
+        </div>
+      </div>
+
+      <!-- 参数微调 -->
+      <div class="controls-card">
+        <div class="ctrl-row">
+          <div class="ctrl-label-row">
+            <span class="ctrl-name">隐藏神经元（网络容量）</span>
+            <span class="ctrl-val" id="valHidden">8 个</span>
+          </div>
+          <input type="range" class="ctrl-slider" id="sliderHidden" min="1" max="32" value="8" step="1">
+        </div>
+
+        <div class="ctrl-row">
+          <div class="ctrl-label-row">
+            <span class="ctrl-name">训练步数（迭代次数）</span>
+            <span class="ctrl-val" id="valEpochs">200 步</span>
+          </div>
+          <input type="range" class="ctrl-slider" id="sliderEpochs" min="20" max="1500" value="200" step="20">
+        </div>
+
+        <div class="noise-toggle-row">
+          <span class="noise-toggle-label">数据集噪声水平</span>
+          <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; cursor:pointer;">
+            <input type="checkbox" id="chkNoise" checked style="accent-color:var(--text); cursor:pointer;">
+            <span>包含离群噪声点</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 实时双集度量看板 -->
+      <div class="metrics-card">
+        <span class="nt-label">实测准确率与泛化表现</span>
+        <div class="metrics-grid">
+          <div class="metric-cell">
+            <span class="metric-head">训练集准确率</span>
+            <span class="metric-num" id="metricTrainAcc">98%</span>
+          </div>
+          <div class="metric-cell">
+            <span class="metric-head">验证集准确率</span>
+            <span class="metric-num" id="metricValAcc">96%</span>
+          </div>
+          <div class="metric-cell">
+            <span class="metric-head">训练损失</span>
+            <span class="metric-num" id="metricTrainLoss">0.08</span>
+          </div>
+          <div class="metric-cell">
+            <span class="metric-head">验证损失</span>
+            <span class="metric-num" id="metricValLoss">0.12</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 诊断结论框 -->
+      <div class="diagnosis-box" id="diagBox" aria-live="polite">
+        适度拟合：决策边界平滑顺应双月分布，训练集与验证集泛化差距小。
+      </div>
+    </aside>
+
+    <!-- 右侧双世界图解区 -->
+    <main class="right-world">
+      <!-- 决策边界与样本分布 -->
+      <section class="plane-container" aria-label="特征空间决策边界">
+        <div class="plane-header">
+          <span class="plane-title">输入空间分类决策面与测试样本</span>
+          <div class="legend-row">
+            <div class="legend-item"><span class="legend-dot-a"></span><span>类别 A</span></div>
+            <div class="legend-item"><span class="legend-dot-b"></span><span>类别 B</span></div>
+            <div class="legend-item"><span class="legend-line"></span><span>判别边界 (p=0.5)</span></div>
+          </div>
+        </div>
+        <div class="plane-body" id="planeWrapper">
+          <canvas id="boundaryCanvas" width="480" height="420"></canvas>
+          <svg id="scatterSvg" viewBox="0 0 480 420"></svg>
+        </div>
+      </section>
+
+      <!-- 训练与验证损失历程 -->
+      <section class="curve-container" aria-label="训练与验证损失曲线">
+        <div class="curve-header">
+          <span class="curve-title">损失轨迹与泛化裂口</span>
+          <div class="curve-legend">
+            <span class="c-train">— 训练损失</span>
+            <span class="c-val">— 验证损失</span>
+          </div>
+        </div>
+        <div class="curve-body">
+          <svg id="lossChart" viewBox="0 0 340 380"></svg>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部状态条与步进 -->
+    <footer class="footer-bar">
+      <div class="footer-meta">
+        提示：拖动滑块可实时演算多层感知机在双月集上的实际收敛结果与边界拓扑。
+      </div>
+      <div class="footer-actions">
+        <button class="action-btn" id="btnTrainStep">追加训练 50 步</button>
+        <button class="action-btn" id="btnReset">重置初始参数</button>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学请看大屏幕。在训练多层感知机时，模型结构容量和训练迭代轮数是决定分类器表现的两个核心杠杆。
+    左侧我们提供了三种典型的工程状态：
+    第一种是欠拟合，当神经元容量仅有 1 到 2 个时，网络退化为简单的近似线性分割，双月数据上的两类样本被硬生生一刀切开，训练和验证准确率都非常低下；
+    第二种是适度拟合，隐藏层拥有 8 个神经元，经过两百次优化后，黑色判别边界形成了一条舒展自然的非线性隔离带，训练集与验证集的损失与准确率非常接近，具备优秀泛化能力；
+    第三种是典型的过拟合，我们把网络扩充到 24 或 32 个神经元并长时间迭代，你可以清晰地观察到边界开始向噪声孤点蔓延，甚至扭曲出环岛式的细碎闭合区域。右侧的损失曲线中，训练损失逼近于零，但验证损失却在后期剧烈抬升，形成了显著的“泛化裂口”。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/mlp.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      // 1. 确定性随机数与带噪声双月数据集生成
+      function makeDeterministicMoons(n, noise, seed) {
+        let s = (seed >>> 0) || 12345;
+        function rnd() {
+          s ^= s << 13; s >>>= 0;
+          s ^= s >> 17;
+          s ^= s << 5; s >>>= 0;
+          return s / 4294967296;
+        }
+        function normal() {
+          let u = rnd(), v = rnd();
+          return Math.sqrt(-2.0 * Math.log(u || 1e-9)) * Math.cos(2.0 * Math.PI * v);
+        }
+
+        const pts = [];
+        const nHalf = Math.floor(n / 2);
+        // Moon 1 (类 A: 上弦月)
+        for (let i = 0; i < nHalf; i++) {
+          let theta = Math.PI * (i / (nHalf - 1));
+          let x = Math.cos(theta) + normal() * noise;
+          let y = Math.sin(theta) + normal() * noise;
+          pts.push({ x: [x, y], t: 0 });
+        }
+        // Moon 2 (类 B: 下弦错位月)
+        for (let i = 0; i < nHalf; i++) {
+          let theta = Math.PI * (i / (nHalf - 1));
+          let x = 1.0 - Math.cos(theta) + normal() * noise;
+          let y = 0.5 - Math.sin(theta) - 0.5 + normal() * noise;
+          pts.push({ x: [x, y], t: 1 });
+        }
+        return pts;
+      }
+
+      // 训练集 100 点，验证集 60 点
+      let trainData = makeDeterministicMoons(100, 0.22, 42);
+      let valData = makeDeterministicMoons(60, 0.22, 888);
+
+      // 2. 交互状态
+      const state = {
+        hidden: 8,
+        epochs: 200,
+        noise: true,
+        preset: 'good', // 'under' | 'good' | 'over' | 'custom'
+        net: null,
+        lossHistory: [] // [{step, trainLoss, valLoss}]
+      };
+
+      // DOM 句柄
+      const sliderHidden = document.getElementById('sliderHidden');
+      const valHidden = document.getElementById('valHidden');
+      const sliderEpochs = document.getElementById('sliderEpochs');
+      const valEpochs = document.getElementById('valEpochs');
+      const chkNoise = document.getElementById('chkNoise');
+
+      const btnPresetUnder = document.getElementById('btnPresetUnder');
+      const btnPresetGood = document.getElementById('btnPresetGood');
+      const btnPresetOver = document.getElementById('btnPresetOver');
+
+      const metricTrainAcc = document.getElementById('metricTrainAcc');
+      const metricValAcc = document.getElementById('metricValAcc');
+      const metricTrainLoss = document.getElementById('metricTrainLoss');
+      const metricValLoss = document.getElementById('metricValLoss');
+      const diagBox = document.getElementById('diagBox');
+
+      const boundaryCanvas = document.getElementById('boundaryCanvas');
+      const scatterSvg = document.getElementById('scatterSvg');
+      const lossChart = document.getElementById('lossChart');
+
+      const btnTrainStep = document.getElementById('btnTrainStep');
+      const btnReset = document.getElementById('btnReset');
+
+      // 3. 训练与模型驱动
+      function rebuildModelAndTrain() {
+        const noiseLevel = state.noise ? 0.22 : 0.08;
+        trainData = makeDeterministicMoons(100, noiseLevel, 42);
+        valData = makeDeterministicMoons(60, noiseLevel, 888);
+
+        // 创建 MLP 实例：[2, hidden, 1] 或 [2, hidden, hidden, 1]（容量极高时加深）
+        const sizes = state.hidden >= 24 ? [2, state.hidden, state.hidden, 1] : [2, state.hidden, 1];
+        const lr = state.hidden >= 24 ? 0.35 : (state.hidden <= 2 ? 0.15 : 0.25);
+        state.net = MLP.create({
+          sizes: sizes,
+          act: 'tanh',
+          lr: lr,
+          seed: 101
+        });
+
+        state.lossHistory = [];
+        const recordInterval = Math.max(1, Math.floor(state.epochs / 30));
+
+        // 记录初始点
+        let eval0 = state.net.evaluate(trainData);
+        let evalVal0 = state.net.evaluate(valData);
+        state.lossHistory.push({ step: 0, trainLoss: eval0.loss, valLoss: evalVal0.loss });
+
+        // 训练迭代循环
+        for (let i = 1; i <= state.epochs; i++) {
+          state.net.step(trainData, 16);
+          if (i % recordInterval === 0 || i === state.epochs) {
+            let tr = state.net.evaluate(trainData);
+            let vl = state.net.evaluate(valData);
+            state.lossHistory.push({ step: i, trainLoss: tr.loss, valLoss: vl.loss });
+          }
+        }
+
+        renderAll();
+      }
+
+      // 4. 渲染界面与图形证据
+      function renderAll() {
+        // 更新滑块显示
+        valHidden.textContent = state.hidden + ' 个';
+        sliderHidden.value = state.hidden;
+        valEpochs.textContent = state.epochs + ' 步';
+        sliderEpochs.value = state.epochs;
+        chkNoise.checked = state.noise;
+
+        // 预设高亮
+        btnPresetUnder.setAttribute('aria-pressed', state.preset === 'under');
+        btnPresetGood.setAttribute('aria-pressed', state.preset === 'good');
+        btnPresetOver.setAttribute('aria-pressed', state.preset === 'over');
+
+        // 计算当前度量
+        const trEval = state.net.evaluate(trainData);
+        const vlEval = state.net.evaluate(valData);
+
+        const trAccPct = Math.round(trEval.acc * 100);
+        const vlAccPct = Math.round(vlEval.acc * 100);
+        const gap = trAccPct - vlAccPct;
+
+        metricTrainAcc.textContent = trAccPct + '%';
+        metricValAcc.textContent = vlAccPct + '%';
+        metricTrainLoss.textContent = trEval.loss.toFixed(2);
+        metricValLoss.textContent = vlEval.loss.toFixed(2);
+
+        if (gap >= 12) {
+          metricValAcc.classList.add('highlight-gap');
+        } else {
+          metricValAcc.classList.remove('highlight-gap');
+        }
+
+        // 诊断文本
+        if (state.hidden <= 2) {
+          diagBox.textContent = '欠拟合状态：模型容量极低，决策边界近似直线，无法拟合双月弯曲分布。两集准确率均偏低。';
+        } else if (state.hidden >= 20 && state.epochs >= 400) {
+          diagBox.textContent = '过拟合状态：参数过度冗余，决策边界严重扭曲并包围离群噪声点。训练集损失极低，但验证损失显著上扬。';
+        } else {
+          diagBox.textContent = '适度拟合：决策边界平滑顺应双月分布，训练集与验证集泛化差距小，保持良好的未知样本泛化力。';
+        }
+
+        renderDecisionBoundary();
+        renderLossChart();
+      }
+
+      // 5. 绘制决策平面（热力底色 + 0.5 决策边界等值线 + 样本点）
+      function renderDecisionBoundary() {
+        const ctx = boundaryCanvas.getContext('2d');
+        const W = boundaryCanvas.width;
+        const H = boundaryCanvas.height;
+        ctx.clearRect(0, 0, W, H);
+
+        // 坐标映射范围：x ∈ [-1.6, 2.6], y ∈ [-1.3, 1.6]
+        const xMin = -1.6, xMax = 2.6;
+        const yMin = -1.3, yMax = 1.6;
+
+        function toPx(x, y) {
+          return {
+            px: ((x - xMin) / (xMax - xMin)) * W,
+            py: H - ((y - yMin) / (yMax - yMin)) * H
+          };
+        }
+
+        // 网格采样预测概率
+        const gw = 64, gh = 56;
+        const grid = new Float32Array(gw * gh);
+        for (let j = 0; j < gh; j++) {
+          let y = yMin + (j / (gh - 1)) * (yMax - yMin);
+          for (let i = 0; i < gw; i++) {
+            let x = xMin + (i / (gw - 1)) * (xMax - xMin);
+            grid[j * gw + i] = state.net.predict([x, y]);
+          }
+        }
+
+        // 绘制连续微透明背景激活色彩（区分两类预测概率）
+        const imgData = ctx.createImageData(gw, gh);
+        for (let k = 0; k < gw * gh; k++) {
+          const p = grid[k];
+          const idx = k * 4;
+          if (p < 0.5) {
+            // 类 A (钴蓝)
+            const alpha = Math.min(0.25, (0.5 - p) * 0.45);
+            imgData.data[idx] = 49;
+            imgData.data[idx + 1] = 88;
+            imgData.data[idx + 2] = 212;
+            imgData.data[idx + 3] = Math.round(alpha * 255);
+          } else {
+            // 类 B (陶土橘红)
+            const alpha = Math.min(0.25, (p - 0.5) * 0.45);
+            imgData.data[idx] = 224;
+            imgData.data[idx + 1] = 79;
+            imgData.data[idx + 2] = 46;
+            imgData.data[idx + 3] = Math.round(alpha * 255);
+          }
+        }
+
+        // 临时绘制放大到画布
+        const tempCv = document.createElement('canvas');
+        tempCv.width = gw;
+        tempCv.height = gh;
+        tempCv.getContext('2d').putImageData(imgData, 0, 0);
+
+        ctx.save();
+        ctx.translate(0, H);
+        ctx.scale(1, -1);
+        ctx.drawImage(tempCv, 0, 0, W, H);
+        ctx.restore();
+
+        // 用 Marching Squares 抽取 p = 0.5 决策边界并描边
+        ctx.beginPath();
+        ctx.lineWidth = 3.0;
+        ctx.strokeStyle = '#16201B';
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+
+        const dx = W / (gw - 1);
+        const dy = H / (gh - 1);
+
+        for (let j = 0; j < gh - 1; j++) {
+          for (let i = 0; i < gw - 1; i++) {
+            const v0 = grid[j * gw + i] - 0.5;
+            const v1 = grid[j * gw + (i + 1)] - 0.5;
+            const v2 = grid[(j + 1) * gw + (i + 1)] - 0.5;
+            const v3 = grid[(j + 1) * gw + i] - 0.5;
+
+            let cellType = 0;
+            if (v0 > 0) cellType |= 1;
+            if (v1 > 0) cellType |= 2;
+            if (v2 > 0) cellType |= 4;
+            if (v3 > 0) cellType |= 8;
+
+            if (cellType === 0 || cellType === 15) continue;
+
+            const x0 = i * dx;
+            const x1 = (i + 1) * dx;
+            const y0 = H - j * dy;
+            const y1 = H - (j + 1) * dy;
+
+            // 插值边接触点
+            function interp(va, vb, posA, posB) {
+              return posA + (0 - va) * (posB - posA) / (vb - va || 1e-6);
+            }
+
+            const bottom = { x: interp(v0, v1, x0, x1), y: y0 };
+            const right  = { x: x1, y: interp(v1, v2, y0, y1) };
+            const top    = { x: interp(v3, v2, x0, x1), y: y1 };
+            const left   = { x: x0, y: interp(v0, v3, y0, y1) };
+
+            function line(p1, p2) {
+              ctx.moveTo(p1.x, p1.y);
+              ctx.lineTo(p2.x, p2.y);
+            }
+
+            switch (cellType) {
+              case 1: case 14: line(left, bottom); break;
+              case 2: case 13: line(bottom, right); break;
+              case 3: case 12: line(left, right); break;
+              case 4: case 11: line(top, right); break;
+              case 5: line(left, top); line(bottom, right); break;
+              case 6: case 9:  line(bottom, top); break;
+              case 7: case 8:  line(left, top); break;
+              case 10: line(left, bottom); line(top, right); break;
+            }
+          }
+        }
+        ctx.stroke();
+
+        // 绘制样本散点 (SVG 高清呈现)
+        let svgHtml = '';
+        // 训练集样本（实心小圆）
+        for (let pt of trainData) {
+          const { px, py } = toPx(pt.x[0], pt.x[1]);
+          const fill = pt.t === 0 ? 'var(--class-a)' : 'var(--class-b)';
+          svgHtml += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="4" fill="${fill}" stroke="#16201B" stroke-width="1.2" opacity="0.9" />`;
+        }
+        // 验证集样本（空心小圆圈）
+        for (let pt of valData) {
+          const { px, py } = toPx(pt.x[0], pt.x[1]);
+          const stroke = pt.t === 0 ? 'var(--class-a)' : 'var(--class-b)';
+          svgHtml += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3" fill="none" stroke="${stroke}" stroke-width="1.8" />`;
+        }
+        scatterSvg.innerHTML = svgHtml;
+      }
+
+      // 6. 绘制损失历程与泛化裂口图表 (纯 SVG 精准排版)
+      function renderLossChart() {
+        const W = 340, H = 380;
+        const padLeft = 46, padRight = 24, padTop = 30, padBottom = 46;
+        const chartW = W - padLeft - padRight;
+        const chartH = H - padTop - padBottom;
+
+        // 最大 step 与最大 loss
+        const maxStep = state.epochs;
+        let maxLoss = 1.0;
+        for (let p of state.lossHistory) {
+          if (p.trainLoss > maxLoss) maxLoss = p.trainLoss;
+          if (p.valLoss > maxLoss) maxLoss = p.valLoss;
+        }
+        maxLoss = Math.min(2.5, Math.ceil(maxLoss * 1.25 * 10) / 10);
+
+        function mapX(step) {
+          return padLeft + (step / (maxStep || 1)) * chartW;
+        }
+
+        function mapY(loss) {
+          const clamped = Math.max(0, Math.min(maxLoss, loss));
+          return padTop + chartH - (clamped / maxLoss) * chartH;
+        }
+
+        let svgContent = '';
+
+        // 坐标网格与刻度
+        const yTicks = [0, maxLoss * 0.5, maxLoss];
+        for (let yt of yTicks) {
+          const yPos = mapY(yt);
+          svgContent += `
+            <line x1="${padLeft}" y1="${yPos.toFixed(1)}" x2="${padLeft + chartW}" y2="${yPos.toFixed(1)}" stroke="var(--border-light)" stroke-dasharray="2 4" />
+            <text x="${padLeft - 8}" y="${(yPos + 4).toFixed(1)}" font-family="var(--font-mono)" font-size="11" fill="var(--text-sub)" text-anchor="end">${yt.toFixed(1)}</text>
+          `;
+        }
+
+        const xTicks = [0, Math.round(maxStep * 0.5), maxStep];
+        for (let xt of xTicks) {
+          const xPos = mapX(xt);
+          svgContent += `
+            <line x1="${xPos.toFixed(1)}" y1="${padTop + chartH}" x2="${xPos.toFixed(1)}" y2="${padTop}" stroke="var(--border-light)" stroke-dasharray="2 4" />
+            <text x="${xPos.toFixed(1)}" y="${padTop + chartH + 18}" font-family="var(--font-mono)" font-size="11" fill="var(--text-sub)" text-anchor="middle">${xt}</text>
+          `;
+        }
+
+        // 坐标轴
+        svgContent += `
+          <line x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${padTop + chartH}" stroke="var(--border)" stroke-width="1.2" />
+          <line x1="${padLeft}" y1="${padTop + chartH}" x2="${padLeft + chartW}" y2="${padTop + chartH}" stroke="var(--border)" stroke-width="1.2" />
+          <text x="${padLeft}" y="${padTop - 12}" font-family="var(--font-mono)" font-size="11" fill="var(--text-sub)">损失 (Cross-Entropy)</text>
+          <text x="${padLeft + chartW}" y="${padTop + chartH + 34}" font-family="var(--font-mono)" font-size="11" fill="var(--text-sub)" text-anchor="end">迭代步数</text>
+        `;
+
+        // 曲线路径生成
+        if (state.lossHistory.length > 1) {
+          let dTrain = '';
+          let dVal = '';
+          for (let i = 0; i < state.lossHistory.length; i++) {
+            const p = state.lossHistory[i];
+            const px = mapX(p.step).toFixed(1);
+            const pyTr = mapY(p.trainLoss).toFixed(1);
+            const pyVl = mapY(p.valLoss).toFixed(1);
+            if (i === 0) {
+              dTrain += `M ${px} ${pyTr}`;
+              dVal += `M ${px} ${pyVl}`;
+            } else {
+              dTrain += ` L ${px} ${pyTr}`;
+              dVal += ` L ${px} ${pyVl}`;
+            }
+          }
+
+          // 绘制验证集上扬的危险高亮区（若出现过拟合泛化差距）
+          const lastPoint = state.lossHistory[state.lossHistory.length - 1];
+          if (lastPoint.valLoss - lastPoint.trainLoss > 0.18) {
+            const lastX = mapX(lastPoint.step);
+            const lastYTr = mapY(lastPoint.trainLoss);
+            const lastYVl = mapY(lastPoint.valLoss);
+            svgContent += `
+              <line x1="${lastX.toFixed(1)}" y1="${lastYTr.toFixed(1)}" x2="${lastX.toFixed(1)}" y2="${lastYVl.toFixed(1)}" stroke="var(--class-b)" stroke-width="2" stroke-dasharray="3 3" />
+              <text x="${(lastX - 10).toFixed(1)}" y="${((lastYTr + lastYVl) / 2 + 4).toFixed(1)}" font-family="var(--font-mono)" font-size="11" font-weight="700" fill="var(--class-b)" text-anchor="end">泛化裂口</text>
+            `;
+          }
+
+          svgContent += `
+            <path d="${dTrain}" fill="none" stroke="var(--text)" stroke-width="2.5" />
+            <path d="${dVal}" fill="none" stroke="var(--class-b)" stroke-width="2.5" />
+          `;
+        }
+
+        lossChart.innerHTML = svgContent;
+      }
+
+      // 7. 事件绑定
+      sliderHidden.addEventListener('input', function (e) {
+        state.hidden = parseInt(e.target.value, 10);
+        state.preset = 'custom';
+        rebuildModelAndTrain();
+      });
+
+      sliderEpochs.addEventListener('input', function (e) {
+        state.epochs = parseInt(e.target.value, 10);
+        state.preset = 'custom';
+        rebuildModelAndTrain();
+      });
+
+      chkNoise.addEventListener('change', function (e) {
+        state.noise = e.target.checked;
+        rebuildModelAndTrain();
+      });
+
+      btnPresetUnder.addEventListener('click', function () {
+        state.hidden = 2;
+        state.epochs = 40;
+        state.preset = 'under';
+        rebuildModelAndTrain();
+      });
+
+      btnPresetGood.addEventListener('click', function () {
+        state.hidden = 8;
+        state.epochs = 200;
+        state.preset = 'good';
+        rebuildModelAndTrain();
+      });
+
+      btnPresetOver.addEventListener('click', function () {
+        state.hidden = 28;
+        state.epochs = 1200;
+        state.preset = 'over';
+        rebuildModelAndTrain();
+      });
+
+      btnTrainStep.addEventListener('click', function () {
+        state.epochs += 50;
+        // 追加训练 50 mini-batches
+        for (let i = 0; i < 50; i++) {
+          state.net.step(trainData, 16);
+        }
+        let tr = state.net.evaluate(trainData);
+        let vl = state.net.evaluate(valData);
+        state.lossHistory.push({ step: state.epochs, trainLoss: tr.loss, valLoss: vl.loss });
+        renderAll();
+      });
+
+      btnReset.addEventListener('click', function () {
+        state.hidden = 8;
+        state.epochs = 200;
+        state.noise = true;
+        state.preset = 'good';
+        rebuildModelAndTrain();
+      });
+
+      // 初始化底盘
+      if (window.Deck) {
+        Deck.init({ index: 17, total: 19 });
+      }
+
+      // 首次构建与运行
+      rebuildModelAndTrain();
+    })();
+  </script>
+</body>
+</html>

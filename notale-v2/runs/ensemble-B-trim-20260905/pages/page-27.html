@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF2;
+      --text: #142533;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    #generative-canvas {
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* 顶部导航与状态提示 */
+    .header-bar {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+    }
+
+    .topic-tag {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--learner);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .lecture-meta {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-feature-settings: "tnum";
+    }
+
+    /* 主标题排版区：左中右结构保护 */
+    .hero-wrap {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      max-width: 960px;
+      margin-top: 24px;
+    }
+
+    .hero-title {
+      font-size: var(--fs-h1);
+      font-weight: 750;
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .hero-title em {
+      font-style: normal;
+      color: var(--aggregate);
+    }
+
+    .hero-subtitle {
+      font-size: var(--fs-lead);
+      line-height: 1.55;
+      color: var(--muted);
+      margin: 0;
+      max-width: 860px;
+    }
+
+    /* 核心主张对比标牌 */
+    .thesis-row {
+      position: relative;
+      z-index: 10;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-top: 18px;
+    }
+
+    .thesis-card {
+      background: rgba(247, 250, 252, 0.92);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      box-shadow: 0 4px 14px rgba(20, 37, 51, 0.04);
+    }
+
+    .thesis-card.active {
+      border: 2px solid var(--aggregate);
+      background: #FFFFFF;
+    }
+
+    .thesis-card .label {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .thesis-card.passive .label {
+      color: var(--muted);
+    }
+
+    .thesis-card.active .label {
+      color: var(--aggregate);
+    }
+
+    .thesis-card.neutral .label {
+      color: var(--learner);
+    }
+
+    .thesis-card .statement {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+    }
+
+    /* 底部收束结构图解标签带 */
+    .footer-bar {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      width: 100%;
+      border-top: 1px solid rgba(83, 103, 119, 0.25);
+      padding-top: 14px;
+    }
+
+    .framework-pills {
+      display: flex;
+      gap: 16px;
+    }
+
+    .pill-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid rgba(83, 103, 119, 0.2);
+      border-radius: 6px;
+      padding: 6px 12px;
+    }
+
+    .pill-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .pill-dot.bagging { background: var(--learner); }
+    .pill-dot.boosting { background: #E07A5F; }
+    .pill-dot.stacking { background: #3D405B; }
+    .pill-dot.consensus { background: var(--aggregate); }
+
+    .interactive-hint {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+  </style>
+</head>
+<body data-page="27" data-total="27">
+  <main id="stage" aria-labelledby="cover-title">
+    <canvas id="generative-canvas" class="cv-fill" aria-hidden="true"></canvas>
+
+    <div class="header-bar">
+      <span class="topic-tag">机器学习概论 · 第八讲收束</span>
+      <span class="lecture-meta">Lecture 08 Summary · Ensemble Learning</span>
+    </div>
+
+    <div class="hero-wrap">
+      <h1 id="cover-title" class="hero-title">
+        本讲收束：集成不是模型数量竞赛，<br>而是对<em>误差结构的设计</em>
+      </h1>
+      <p class="hero-subtitle">
+        单一模型的盲区是局部的、高方差或高偏差的；集成学习的本质，是用重采样、残差递进与元学习协议，重塑学习器之间的相关性与误差流向，以结构化抵消换取泛化极限。
+      </p>
+
+      <div class="thesis-row">
+        <div class="thesis-card passive">
+          <div class="label">数量竞赛的误区</div>
+          <p class="statement">单纯增加参数与模型数量，边际增益迅速递减，且无法规避同质假设共享的系统性偏差。</p>
+        </div>
+        <div class="thesis-card neutral">
+          <div class="label">三类范式的正交互补</div>
+          <p class="statement">Bagging 用样本扰动压制方差，Boosting 用残差权重削平偏差，Stacking 用元模型异构融合。</p>
+        </div>
+        <div class="thesis-card active">
+          <div class="label">误差结构的设计</div>
+          <p class="statement">集成不是加法运算，而是通过约束学习器间的相关性矩阵，使未预见样本上的期望损失实现向心塌缩。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <div class="framework-pills">
+        <div class="pill-item"><span class="pill-dot bagging"></span>Bagging：自助抽样解耦扰动</div>
+        <div class="pill-item"><span class="pill-dot boosting"></span>Boosting：梯度重权定向追残</div>
+        <div class="pill-item"><span class="pill-dot stacking"></span>Stacking：元学习器跨域仲裁</div>
+        <div class="pill-item"><span class="pill-dot consensus"></span>共识线：方差平抑与极小化全局风险</div>
+      </div>
+      <div class="interactive-hint">按 R 键重构误差场向量生成</div>
+    </div>
+  </main>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const WIDTH = 1600;
+      const HEIGHT = 900;
+      const SEED = "ensemble-synthesis-27";
+      const REPRESENTATIVE_TIME = 4600;
+
+      const canvas = document.querySelector("#generative-canvas");
+      const stage = document.querySelector("#stage");
+      const motionPreference = matchMedia("(prefers-reduced-motion: reduce)");
+      const listeners = new AbortController();
+
+      let ctx;
+      let model;
+      let currentTime = 0;
+      let stopLoop = () => {};
+      let removeResize = () => {};
+
+      Deck.init({ title: "本讲收束：集成不是模型数量竞赛，而是对误差结构的设计", keys: false });
+
+      // 保护标题区域：文字核心区 (左上到左中) 不被杂乱线条干扰
+      // title zone: x 0..980, y 0..620
+      function isProtected(x, y) {
+        return x < 980 && y < 630;
+      }
+
+      // 生成式数学体系：模拟 N 个基学习器的误差扰动轨道与最终的收敛主干
+      function buildModel() {
+        const rng = new Math.seedrandom(SEED);
+        const learners = [];
+        const learnerCount = 42;
+
+        // 真实目标函数曲线（稳定流线基准）
+        function trueTarget(x) {
+          const normX = (x - 700) / 900;
+          return 460 + Math.sin(normX * 3.8) * 110 + Math.cos(normX * 1.7) * 45;
+        }
+
+        // 每个基学习器有其偏差 Bias、方差 Variance 谱系与波动频率
+        for (let i = 0; i < learnerCount; i++) {
+          const bias = (rng() - 0.48) * 110;
+          const freq = 2.2 + rng() * 4.5;
+          const phase = rng() * Math.PI * 2;
+          const amp = 35 + rng() * 85;
+          const weight = 0.5 + rng() * 0.9;
+          // 类型划分: 0: Bagging(learner), 1: Boosting(orange), 2: Stacking(muted)
+          const type = i % 3;
+
+          const points = [];
+          for (let x = 700; x <= 1580; x += 16) {
+            const progress = (x - 700) / 880; // 0 to 1
+            // 随着向右推移，集成结构开始产生平抑约束（方差逐渐收束或向均值靠敛）
+            const decay = Math.pow(1 - progress * 0.76, 1.25);
+            const noise = Math.sin(x * 0.012 * freq + phase) * amp * decay;
+            const y = trueTarget(x) + bias * (1 - progress * 0.55) + noise;
+            points.push({ x, y });
+          }
+
+          learners.push({
+            points,
+            type,
+            width: 0.8 + rng() * 1.2,
+            alpha: 0.22 + rng() * 0.32,
+            phaseOffset: rng() * 10
+          });
+        }
+
+        // 集成后的大师决策线（Consensus Curve）: 方差极小、逼近真实目标
+        const consensusPoints = [];
+        for (let x = 720; x <= 1580; x += 12) {
+          const y = trueTarget(x);
+          consensusPoints.push({ x, y });
+        }
+
+        // 误差场向心矢量粒子 (Vector field streamlines)
+        const streamlines = [];
+        for (let j = 0; j < 36; j++) {
+          const startX = 860 + rng() * 680;
+          const startY = 80 + rng() * 760;
+          streamlines.push({
+            x: startX,
+            y: startY,
+            speed: 0.7 + rng() * 1.4,
+            length: 40 + rng() * 70,
+            seedVal: rng() * 100
+          });
+        }
+
+        return { learners, consensusPoints, streamlines, trueTarget };
+      }
+
+      function drawBackgroundField(targetCtx) {
+        // 极淡背景坐标网格与误差几何标线
+        targetCtx.save();
+        targetCtx.strokeStyle = "rgba(83, 103, 119, 0.06)";
+        targetCtx.lineWidth = 1;
+
+        // 垂直网格
+        for (let x = 850; x < WIDTH; x += 90) {
+          targetCtx.beginPath();
+          targetCtx.moveTo(x, 40);
+          targetCtx.lineTo(x, HEIGHT - 50);
+          targetCtx.stroke();
+        }
+
+        // 水平标线
+        for (let y = 100; y < HEIGHT - 60; y += 80) {
+          targetCtx.beginPath();
+          targetCtx.moveTo(820, y);
+          targetCtx.lineTo(WIDTH - 40, y);
+          targetCtx.stroke();
+        }
+
+        // 收敛漏斗包络区（外围方差边界）
+        targetCtx.beginPath();
+        for (let x = 780; x <= 1580; x += 20) {
+          const normX = (x - 700) / 900;
+          const cy = 460 + Math.sin(normX * 3.8) * 110 + Math.cos(normX * 1.7) * 45;
+          const spread = 180 * Math.pow(1 - (x - 780) / 820 * 0.75, 1.2);
+          if (x === 780) targetCtx.moveTo(x, cy - spread);
+          else targetCtx.lineTo(x, cy - spread);
+        }
+        for (let x = 1580; x >= 780; x -= 20) {
+          const normX = (x - 700) / 900;
+          const cy = 460 + Math.sin(normX * 3.8) * 110 + Math.cos(normX * 1.7) * 45;
+          const spread = 180 * Math.pow(1 - (x - 780) / 820 * 0.75, 1.2);
+          targetCtx.lineTo(x, cy + spread);
+        }
+        targetCtx.closePath();
+        targetCtx.fillStyle = "rgba(39, 93, 145, 0.035)";
+        targetCtx.fill();
+        targetCtx.strokeStyle = "rgba(39, 93, 145, 0.15)";
+        targetCtx.setLineDash([4, 6]);
+        targetCtx.stroke();
+        targetCtx.setLineDash([]);
+        targetCtx.restore();
+      }
+
+      function render(time) {
+        if (!ctx || !model) return;
+        currentTime = time;
+
+        ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+        // 1. 背景几何场
+        drawBackgroundField(ctx);
+
+        // 2. 弱基学习器发散拟合曲线
+        const learnerColor = Deck.rgb("learner") || [39, 93, 145];
+        const boostColor = [224, 122, 95];
+        const stackColor = [61, 64, 91];
+
+        model.learners.forEach((l, idx) => {
+          let c = learnerColor;
+          if (l.type === 1) c = boostColor;
+          else if (l.type === 2) c = stackColor;
+
+          ctx.beginPath();
+          let started = false;
+          const timeShift = Math.sin(time * 0.0015 + l.phaseOffset) * 4;
+
+          for (const pt of l.points) {
+            const curY = pt.y + timeShift;
+            if (isProtected(pt.x, curY)) {
+              started = false;
+              continue;
+            }
+            if (!started) {
+              ctx.moveTo(pt.x, curY);
+              started = true;
+            } else {
+              ctx.lineTo(pt.x, curY);
+            }
+          }
+          ctx.strokeStyle = `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${l.alpha})`;
+          ctx.lineWidth = l.width;
+          ctx.stroke();
+        });
+
+        // 3. 动态流向粒子（体现向中心集成的拉力场）
+        ctx.save();
+        model.streamlines.forEach((s) => {
+          const cy = model.trueTarget(s.x);
+          const dy = cy - s.y;
+          // 向中心线加速趋近
+          const t = ((time * 0.001 * s.speed + s.seedVal) % 100) / 100;
+          const px = s.x + Math.sin(t * Math.PI * 2) * 15;
+          const py = s.y + dy * Math.pow(t, 1.5);
+
+          if (!isProtected(px, py) && px < 1560) {
+            ctx.fillStyle = "rgba(182, 59, 36, 0.4)";
+            ctx.beginPath();
+            ctx.arc(px, py, 1.8, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        });
+        ctx.restore();
+
+        // 4. 集成共识主干线 (Consensus Master Line)
+        ctx.save();
+        ctx.beginPath();
+        let cStarted = false;
+        for (const pt of model.consensusPoints) {
+          if (isProtected(pt.x, pt.y)) {
+            cStarted = false;
+            continue;
+          }
+          if (!cStarted) {
+            ctx.moveTo(pt.x, pt.y);
+            cStarted = true;
+          } else {
+            ctx.lineTo(pt.x, pt.y);
+          }
+        }
+        // 外层柔和辉光
+        ctx.strokeStyle = "rgba(182, 59, 36, 0.22)";
+        ctx.lineWidth = 7;
+        ctx.lineCap = "round";
+        ctx.stroke();
+
+        // 核心实线
+        const agg = Deck.rgb("aggregate") || [182, 59, 36];
+        ctx.strokeStyle = `rgba(${agg[0]}, ${agg[1]}, ${agg[2]}, 0.95)`;
+        ctx.lineWidth = 3.2;
+        ctx.stroke();
+
+        // 收敛终点端标示
+        const lastPt = model.consensusPoints[model.consensusPoints.length - 1];
+        ctx.fillStyle = `rgb(${agg[0]}, ${agg[1]}, ${agg[2]})`;
+        ctx.beginPath();
+        ctx.arc(lastPt.x, lastPt.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = "bold 13px 'Noto Sans SC', sans-serif";
+        ctx.fillStyle = `rgb(${agg[0]}, ${agg[1]}, ${agg[2]})`;
+        ctx.textAlign = "right";
+        ctx.fillText("F*(x) 极小化期望损失共识解", lastPt.x - 14, lastPt.y - 12);
+        ctx.restore();
+      }
+
+      function rebuild() {
+        ctx = Deck.fit(canvas);
+        model = buildModel();
+        render(currentTime);
+      }
+
+      function startMotion() {
+        stopLoop();
+        stopLoop = Deck.loop((t) => {
+          render(t);
+        }, { still: REPRESENTATIVE_TIME });
+      }
+
+      function reset() {
+        stopLoop();
+        currentTime = 0;
+        rebuild();
+        startMotion();
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "r" || e.key === "R") reset();
+      }, { signal: listeners.signal });
+
+      motionPreference.addEventListener("change", reset, { signal: listeners.signal });
+      window.addEventListener("pagehide", () => {
+        stopLoop();
+        removeResize();
+        listeners.abort();
+      }, { signal: listeners.signal, once: true });
+
+      removeResize = Deck.onResize(() => {
+        rebuild();
+      });
+
+      rebuild();
+      startMotion();
+    })();
+  </script>
+</body>
+</html>

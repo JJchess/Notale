@@ -1,0 +1,873 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>光强与质子动力势验证 ATP 产率</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+      padding: 40px 56px 44px;
+      color: var(--text);
+      font-family: var(--font-sans);
+      background: var(--bg);
+      user-select: none;
+    }
+
+    /* 顶部标题区 */
+    header.hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      line-height: 1.15;
+    }
+    .hero-metric {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      font-family: var(--font-mono);
+    }
+    .hero-metric .k {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-family: var(--font-sans);
+    }
+    .hero-metric .v {
+      font-size: 34px;
+      font-weight: 700;
+      color: var(--energy-bond);
+    }
+    .hero-metric .u {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    /* 主实验舞台：左右两分 */
+    .lab-grid {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 56px;
+      align-items: stretch;
+      height: 600px;
+    }
+
+    /* 左侧：微观囊泡生物膜与质子通量可视化 */
+    .membrane-world {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-width: 0;
+    }
+    .world-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 8px;
+    }
+    .world-header .tag {
+      color: var(--action-green);
+      font-family: var(--font-mono);
+      font-size: var(--fs-tick);
+    }
+    .canvas-wrap {
+      position: relative;
+      width: 100%;
+      height: 540px;
+      overflow: hidden;
+    }
+    canvas#stageCv {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 右侧：测量仪表、产率曲线与交互操控 */
+    .telemetry-deck {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-width: 0;
+      border-left: 1px solid var(--rule);
+      padding-left: 48px;
+    }
+
+    /* 实时示波图表 */
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      height: 250px;
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .panel-tag {
+      font-size: var(--fs-tick);
+      font-family: var(--font-mono);
+      color: var(--muted);
+    }
+    .chart-wrap {
+      position: relative;
+      flex: 1;
+      width: 100%;
+    }
+
+    /* 参数滑块与操控区 */
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--rule);
+    }
+    .ctrl-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ctrl-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .ctrl-val {
+      font-family: var(--font-mono);
+      font-size: var(--fs-sec);
+      color: var(--text);
+      font-weight: 700;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      background: var(--rule);
+      border-radius: 3px;
+      outline: none;
+      margin: 6px 0;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--focus);
+      cursor: pointer;
+      box-shadow: 0 0 0 3px rgba(242, 185, 59, 0.2);
+      transition: transform var(--dur-state);
+    }
+    input[type="range"]:focus-visible::-webkit-slider-thumb {
+      outline: 2px solid var(--text);
+      outline-offset: 2px;
+    }
+    #lightRange::-webkit-slider-thumb {
+      background: var(--action-green);
+      box-shadow: 0 0 0 3px rgba(82, 183, 102, 0.25);
+    }
+
+    /* 快捷解联剂开关与重置 */
+    .action-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-top: 6px;
+    }
+    .btn-toggle {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      padding: 10px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: border-color var(--dur-state), background var(--dur-state);
+    }
+    .btn-toggle:hover {
+      border-color: var(--muted);
+    }
+    .btn-toggle[aria-pressed="true"] {
+      border-color: var(--energy-bond);
+      background: rgba(224, 104, 58, 0.12);
+      color: var(--energy-bond);
+      font-weight: 700;
+    }
+    .btn-reset {
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--muted);
+      padding: 10px 16px;
+      border-radius: 4px;
+      font-size: var(--fs-label);
+      cursor: pointer;
+    }
+    .btn-reset:hover {
+      color: var(--text);
+      border-color: var(--muted);
+    }
+
+    /* 结论推导底栏 */
+    .status-summary {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      border-top: 1px solid var(--rule);
+      padding-top: 14px;
+    }
+    .status-summary strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+    .badge-pmf {
+      font-family: var(--font-mono);
+      color: var(--carbon-fix);
+    }
+  </style>
+</head>
+<body data-page="09" data-total="16">
+  <div id="stage">
+    <header class="hero">
+      <div>
+        <h1>调节光强与跨膜质子势：ATP 产率动力学</h1>
+      </div>
+      <div class="hero-metric" aria-live="polite">
+        <span class="k">ATP 产率</span>
+        <span class="v" id="atpRateVal">18.4</span>
+        <span class="u">μmol·mg⁻¹·h⁻¹</span>
+      </div>
+    </header>
+
+    <div class="lab-grid">
+      <!-- 左侧：类囊体膜与质子势显微示意 -->
+      <section class="membrane-world" aria-label="类囊体膜微观流动">
+        <div class="world-header">
+          <span>类囊体膜剖面 · 光系统 II 泵氢与 ATP 合成酶回流</span>
+          <span class="tag">腔内 pH: <strong id="lumenPhVal" style="color:var(--focus)">5.30</strong> ｜ 基质 pH: 8.0</span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="stageCv" class="cv-fill"></canvas>
+        </div>
+      </section>
+
+      <!-- 右侧：响应曲线与参数注入 -->
+      <section class="telemetry-deck" aria-label="测量与实验控制">
+        <div class="chart-panel">
+          <div class="panel-head">
+            <span class="panel-title">ATP 产率与质子动力势</span>
+            <span class="panel-tag">ΔpH 阈值</span>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="chartCv" class="cv-fill"></canvas>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="ctrl-row">
+            <div class="ctrl-labels">
+              <label for="lightRange">光照强度 (PPFD)</label>
+              <span class="ctrl-val"><span id="lightNum">450</span> <span style="font-size:var(--fs-tick);color:var(--muted)">μmol·m⁻²·s⁻¹</span></span>
+            </div>
+            <input id="lightRange" type="range" min="0" max="1200" step="10" value="450">
+          </div>
+
+          <div class="ctrl-row">
+            <div class="ctrl-labels">
+              <label for="permRange">膜质子泄漏</label>
+              <span class="ctrl-val"><span id="permNum">1.0</span>×</span>
+            </div>
+            <input id="permRange" type="range" min="1.0" max="8.0" step="0.2" value="1.0">
+          </div>
+
+          <div class="action-row">
+            <button id="uncouplerBtn" class="btn-toggle" aria-pressed="false">
+              加入解联剂 FCCP
+            </button>
+            <button id="resetBtn" class="btn-reset">重置初始</button>
+          </div>
+        </div>
+
+        <div class="status-summary">
+          <span>质子势：<strong class="badge-pmf" id="pmfVal">160 mV</strong>（阈值 105 mV）</span>
+          <span id="rateSummary" style="color:var(--action-green)">泵氢与合酶偶联</span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看这个动态实验。光反应的核心矛盾是：光系统把光能转为电荷移动，将质子逆浓度泵入类囊体腔，建立化学渗透势 ΔpH。
+    请尝试拖动光强滑块：当光强从零提升时，腔内迅速酸化（pH 从 8 降至 5 左右），质子动力势突破 105 mV 的合酶激活门槛，ATP 产率随之陡峭上升并在饱和区趋缓。
+    现在我们点击“加入解联剂 FCCP”或调大质子泄漏：尽管光强仍很高、水光解和电子传递照常运转，质子势却被短路泄漏耗散，ATP 产率瞬间归零。这直接验证了米切尔化学渗透假说——驱动磷酸化的不是光子本身，而是跨膜质子电化学势梯度。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      Deck.init({ index: 9, total: 16 });
+
+      // authoritative canonical state
+      const state = {
+        light: 450,       // 0 - 1200
+        leakFactor: 1.0,  // 1.0 - 8.0
+        uncoupled: false, // uncoupler toggle
+        // derived dynamic state
+        deltaPh: 2.70,
+        pmf: 160,         // mV
+        atpRate: 18.4,    // umol/mg/h
+        hLumenCount: 48,
+        hStromaCount: 22,
+        synthaseSpeed: 1.0
+      };
+
+      // Particle simulation system
+      const STAGE_W = 880;
+      const STAGE_H = 540;
+      const MEMBRANE_Y = 270;
+      const MEMBRANE_THICK = 50;
+
+      // H+ particles
+      const particles = [];
+      const MAX_PARTICLES = 130;
+
+      for (let i = 0; i < MAX_PARTICLES; i++) {
+        const inLumen = i < 85;
+        particles.push({
+          x: Math.random() * STAGE_W,
+          y: inLumen ? MEMBRANE_Y + MEMBRANE_THICK + 15 + Math.random() * (STAGE_H - MEMBRANE_Y - MEMBRANE_THICK - 30)
+                     : 30 + Math.random() * (MEMBRANE_Y - 45),
+          vx: (Math.random() - 0.5) * 1.5,
+          vy: (Math.random() - 0.5) * 1.5,
+          inLumen: inLumen,
+          mode: 'wander' // wander | pumped | flowing
+        });
+      }
+
+      // Synthase rotor angle
+      let rotorAngle = 0;
+      let lastTime = performance.now();
+
+      // DOM Elements
+      const atpRateVal = document.getElementById('atpRateVal');
+      const lumenPhVal = document.getElementById('lumenPhVal');
+      const lightRange = document.getElementById('lightRange');
+      const lightNum = document.getElementById('lightNum');
+      const permRange = document.getElementById('permRange');
+      const permNum = document.getElementById('permNum');
+      const uncouplerBtn = document.getElementById('uncouplerBtn');
+      const resetBtn = document.getElementById('resetBtn');
+      const pmfVal = document.getElementById('pmfVal');
+      const rateSummary = document.getElementById('rateSummary');
+
+      // Model computation
+      function recompute() {
+        // Pump rate as hyperbolic function of light
+        const maxPump = 26.0;
+        const kmLight = 220;
+        const pumpRate = (state.light * maxPump) / (state.light + kmLight);
+
+        // Leak conductance
+        let totalLeak = state.leakFactor;
+        if (state.uncoupled) {
+          totalLeak += 24.0; // massive short-circuit
+        }
+
+        // Steady-state ΔpH calculation (calibrated to plant chloroplasts: ΔpH ~ 2.0-3.2 under normal light, basal pH stroma ~8.0)
+        // Pump balances leak + synthase consumption
+        const deltaPhMax = 3.3;
+        const eqDeltaPh = (pumpRate / (pumpRate + totalLeak * 2.8)) * deltaPhMax;
+        state.deltaPh = Math.max(0.1, eqDeltaPh);
+
+        // pmf in mV: ~ 60 mV * ΔpH + ΔPsi (chloroplast thylakoids have high ΔpH and small steady-state ΔPsi ~ 15-25mV)
+        const deltaPsi = state.uncoupled ? 5 : (15 + state.deltaPh * 4.5);
+        state.pmf = Math.round(state.deltaPh * 59.2 + deltaPsi);
+
+        // ATP synthase rate: sigmoidal threshold relation around pmf = 105 mV
+        const threshold = 105;
+        if (state.pmf < threshold) {
+          state.atpRate = Math.max(0, (state.pmf / threshold) * 1.2);
+        } else {
+          // Michaelis-Menten-like saturation
+          const over = state.pmf - threshold;
+          const maxRate = 24.5;
+          const kOver = 40;
+          state.atpRate = 1.2 + (over * (maxRate - 1.2)) / (over + kOver);
+        }
+
+        // Synthase rotor angular speed
+        state.synthaseSpeed = Math.min(3.5, state.atpRate / 7.0);
+
+        // Update Text DOM
+        atpRateVal.textContent = state.atpRate.toFixed(1);
+        lumenPhVal.textContent = (8.0 - state.deltaPh).toFixed(2);
+        lightNum.textContent = state.light;
+        permNum.textContent = state.leakFactor.toFixed(1);
+        pmfVal.textContent = state.pmf + ' mV';
+
+        if (state.uncoupled) {
+          rateSummary.textContent = '解联态：质子势崩溃，合酶停转';
+          rateSummary.style.color = 'var(--energy-bond)';
+        } else if (state.pmf < threshold) {
+          rateSummary.textContent = '质子势低于阈值 (105 mV)，磷酸化关闭';
+          rateSummary.style.color = 'var(--focus)';
+        } else if (state.light > 800) {
+          rateSummary.textContent = '光饱和：质子势饱满，产率达上限';
+          rateSummary.style.color = 'var(--action-green)';
+        } else {
+          rateSummary.textContent = '泵氢与合酶偶联运转';
+          rateSummary.style.color = 'var(--action-green)';
+        }
+      }
+
+      // Canvases
+      const stageCv = document.getElementById('stageCv');
+      const ctx = Deck.fit(stageCv);
+
+      const chartCv = document.getElementById('chartCv');
+      const chartCtx = Deck.fit(chartCv);
+
+      // Draw Simulation World
+      function drawWorld(dt) {
+        ctx.clearRect(0, 0, STAGE_W, STAGE_H);
+
+        // Background Compartment tags
+        ctx.fillStyle = '#111B13'; // Stroma (top)
+        ctx.fillRect(0, 0, STAGE_W, MEMBRANE_Y);
+        ctx.fillStyle = '#080E09'; // Lumen (bottom, acidic dark green)
+        ctx.fillRect(0, MEMBRANE_Y + MEMBRANE_THICK, STAGE_W, STAGE_H - (MEMBRANE_Y + MEMBRANE_THICK));
+
+        // Compartment Labels
+        ctx.font = '15px ' + Deck.token('--font-sans');
+        ctx.fillStyle = Deck.token('--text');
+        ctx.textAlign = 'left';
+        ctx.fillText('基质 Stroma (pH 8.0)', 24, 34);
+        ctx.fillText('类囊体腔 Lumen (高 H⁺ 浓度)', 24, STAGE_H - 20);
+
+        // Membrane Lipid Bilayer (dual rules + stipples)
+        ctx.fillStyle = '#17241A';
+        ctx.fillRect(0, MEMBRANE_Y, STAGE_W, MEMBRANE_THICK);
+
+        ctx.strokeStyle = Deck.token('--rule');
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, MEMBRANE_Y);
+        ctx.lineTo(STAGE_W, MEMBRANE_Y);
+        ctx.moveTo(0, MEMBRANE_Y + MEMBRANE_THICK);
+        ctx.lineTo(STAGE_W, MEMBRANE_Y + MEMBRANE_THICK);
+        ctx.stroke();
+
+        // 1. Protein Complex: Photosystem II & Cytochrome b6f (Pumper) at x = 240
+        const pumpX = 240;
+        ctx.fillStyle = '#203926';
+        ctx.strokeStyle = Deck.token('--action-green');
+        ctx.lineWidth = 2;
+        // complex body
+        ctx.beginPath();
+        ctx.roundRect(pumpX - 55, MEMBRANE_Y - 14, 110, MEMBRANE_THICK + 28, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        // Label on Pump
+        ctx.font = 'bold 13px ' + Deck.token('--font-sans');
+        ctx.fillStyle = Deck.token('--text');
+        ctx.textAlign = 'center';
+        ctx.fillText('PS II / Cyt b₆f', pumpX, MEMBRANE_Y + 16);
+        ctx.font = '11px ' + Deck.token('--font-mono');
+        ctx.fillStyle = Deck.token('--action-green');
+        ctx.fillText('H⁺ 泵送通道', pumpX, MEMBRANE_Y + 34);
+
+        // Light excitation ray into PSII
+        if (state.light > 0) {
+          const beamAlpha = Math.min(1, 0.2 + state.light / 1000);
+          ctx.strokeStyle = 'rgba(82, 183, 102, ' + beamAlpha + ')';
+          ctx.lineWidth = Math.min(6, 1.5 + state.light / 250);
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(pumpX, 0);
+          ctx.lineTo(pumpX, MEMBRANE_Y - 14);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          // photon impact dot
+          ctx.fillStyle = Deck.token('--focus');
+          ctx.beginPath();
+          ctx.arc(pumpX, MEMBRANE_Y - 14, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 2. Protein Complex: ATP Synthase (CF₀-CF₁) at x = 620
+        const synX = 620;
+        // CF0 channel in membrane
+        ctx.fillStyle = '#2B3125';
+        ctx.strokeStyle = Deck.token('--focus');
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(synX - 40, MEMBRANE_Y - 6, 80, MEMBRANE_THICK + 16, 6);
+        ctx.fill();
+        ctx.stroke();
+
+        // Stalk to CF1 head in stroma
+        ctx.fillStyle = '#22281D';
+        ctx.fillRect(synX - 12, MEMBRANE_Y - 45, 24, 40);
+
+        // CF1 catalytic knob
+        const knobY = MEMBRANE_Y - 80;
+        ctx.save();
+        ctx.translate(synX, knobY);
+        rotorAngle += state.synthaseSpeed * dt * 4;
+        ctx.rotate(rotorAngle);
+
+        ctx.fillStyle = '#1D2A1F';
+        ctx.strokeStyle = Deck.token('--energy-bond');
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, 36, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // 3 catalytic beta subunits markers
+        for (let a = 0; a < 3; a++) {
+          const ang = (a * 2 * Math.PI) / 3;
+          ctx.fillStyle = Deck.token('--energy-bond');
+          ctx.beginPath();
+          ctx.arc(Math.cos(ang) * 22, Math.sin(ang) * 22, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+
+        // ATP generation badge when active
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 13px ' + Deck.token('--font-mono');
+        if (state.atpRate > 2.0) {
+          ctx.fillStyle = Deck.token('--energy-bond');
+          ctx.fillText('ADP + Pi → ATP', synX + 85, knobY + 4);
+        } else {
+          ctx.fillStyle = Deck.token('--muted');
+          ctx.fillText('合酶停滞', synX + 75, knobY + 4);
+        }
+
+        // 3. Uncoupler Pore or Leaks (if high leak or uncoupled)
+        if (state.uncoupled || state.leakFactor > 2.5) {
+          const leakX = 430;
+          ctx.strokeStyle = state.uncoupled ? Deck.token('--energy-bond') : Deck.token('--muted');
+          ctx.lineWidth = state.uncoupled ? 3 : 1.5;
+          ctx.setLineDash([3, 3]);
+          ctx.strokeRect(leakX - 18, MEMBRANE_Y, 36, MEMBRANE_THICK);
+          ctx.setLineDash([]);
+          ctx.font = '11px ' + Deck.token('--font-mono');
+          ctx.fillStyle = state.uncoupled ? Deck.token('--energy-bond') : Deck.token('--muted');
+          ctx.fillText(state.uncoupled ? 'FCCP 短路通道' : '质子漏隙', leakX, MEMBRANE_Y + 28);
+        }
+
+        // H+ Particles Movement & Dynamics
+        // Density targets
+        const targetLumenRatio = state.deltaPh / 3.4; // 0.1 to ~0.9
+        const targetLumenCount = Math.round(20 + targetLumenRatio * (MAX_PARTICLES - 35));
+
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+
+          // Rebalance compartment if count drifted
+          if (i < targetLumenCount && !p.inLumen && Math.random() < 0.05) {
+            // move down to lumen via pump
+            p.x = pumpX + (Math.random() - 0.5) * 20;
+            p.y = MEMBRANE_Y + MEMBRANE_THICK + 10;
+            p.inLumen = true;
+          } else if (i >= targetLumenCount && p.inLumen && Math.random() < 0.05) {
+            // move to stroma via synthase or leak
+            p.x = 100 + Math.random() * (STAGE_W - 200);
+            p.y = 60 + Math.random() * (MEMBRANE_Y - 120);
+            p.inLumen = false;
+          }
+
+          // Move
+          p.x += p.vx;
+          p.y += p.vy;
+
+          // Horizontal bounds
+          if (p.x < 15) { p.x = 15; p.vx *= -1; }
+          if (p.x > STAGE_W - 15) { p.x = STAGE_W - 15; p.vx *= -1; }
+
+          // Membrane vertical bounce
+          if (p.inLumen) {
+            if (p.y < MEMBRANE_Y + MEMBRANE_THICK + 6) {
+              p.y = MEMBRANE_Y + MEMBRANE_THICK + 6;
+              p.vy = Math.abs(p.vy);
+            }
+            if (p.y > STAGE_H - 12) {
+              p.y = STAGE_H - 12;
+              p.vy = -Math.abs(p.vy);
+            }
+          } else {
+            // Keep particles away from CF1 knob area so they don't pile up on it
+            if (p.y > MEMBRANE_Y - 6) {
+              p.y = MEMBRANE_Y - 6;
+              p.vy = -Math.abs(p.vy);
+            }
+            if (p.y < 42) {
+              p.y = 42;
+              p.vy = Math.abs(p.vy);
+            }
+          }
+
+          // Draw H+ dot
+          ctx.fillStyle = p.inLumen ? Deck.token('--focus') : Deck.token('--muted');
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Draw Flow Flux Arrows
+        // 1) Pump influx (Stroma -> Lumen)
+        if (state.light > 50) {
+          ctx.strokeStyle = Deck.token('--action-green');
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(pumpX, MEMBRANE_Y - 22);
+          ctx.lineTo(pumpX, MEMBRANE_Y + MEMBRANE_THICK + 22);
+          ctx.stroke();
+          // arrowhead
+          ctx.fillStyle = Deck.token('--action-green');
+          ctx.beginPath();
+          ctx.moveTo(pumpX - 5, MEMBRANE_Y + MEMBRANE_THICK + 16);
+          ctx.lineTo(pumpX + 5, MEMBRANE_Y + MEMBRANE_THICK + 16);
+          ctx.lineTo(pumpX, MEMBRANE_Y + MEMBRANE_THICK + 26);
+          ctx.fill();
+        }
+
+        // 2) Synthase efflux (Lumen -> Stroma)
+        if (state.atpRate > 1.5) {
+          ctx.strokeStyle = Deck.token('--energy-bond');
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(synX, MEMBRANE_Y + MEMBRANE_THICK + 22);
+          ctx.lineTo(synX, MEMBRANE_Y - 22);
+          ctx.stroke();
+          // arrowhead
+          ctx.fillStyle = Deck.token('--energy-bond');
+          ctx.beginPath();
+          ctx.moveTo(synX - 5, MEMBRANE_Y - 16);
+          ctx.lineTo(synX + 5, MEMBRANE_Y - 16);
+          ctx.lineTo(synX, MEMBRANE_Y - 26);
+          ctx.fill();
+        }
+
+        // 3) Leak efflux
+        if (state.uncoupled) {
+          ctx.strokeStyle = Deck.token('--energy-bond');
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(430, MEMBRANE_Y + MEMBRANE_THICK + 16);
+          ctx.lineTo(430, MEMBRANE_Y - 16);
+          ctx.stroke();
+        }
+      }
+
+      // Draw Telemetry Chart (ATP Rate vs pmf)
+      function drawChart() {
+        const w = chartCv.offsetWidth;
+        const h = chartCv.offsetHeight;
+        chartCtx.clearRect(0, 0, w, h);
+
+        const padLeft = 46;
+        const padBottom = 34;
+        const padRight = 20;
+        const padTop = 16;
+        const plotW = w - padLeft - padRight;
+        const plotH = h - padTop - padBottom;
+
+        // Axis Ranges:
+        // X: pmf (0 to 220 mV)
+        // Y: ATP rate (0 to 28 μmol/mg/h)
+        const xMin = 0, xMax = 220;
+        const yMin = 0, yMax = 28;
+
+        function toPxX(val) {
+          return padLeft + ((val - xMin) / (xMax - xMin)) * plotW;
+        }
+        function toPxY(val) {
+          return padTop + plotH - ((val - yMin) / (yMax - yMin)) * plotH;
+        }
+
+        // Grid lines & Axis ticks
+        chartCtx.strokeStyle = Deck.token('--rule');
+        chartCtx.lineWidth = 1;
+
+        // X ticks: 0, 50, 100, 150, 200
+        chartCtx.font = '12px ' + Deck.token('--font-mono');
+        chartCtx.fillStyle = Deck.token('--muted');
+        chartCtx.textAlign = 'center';
+
+        [0, 50, 100, 150, 200].forEach(tx => {
+          const px = toPxX(tx);
+          chartCtx.beginPath();
+          chartCtx.moveTo(px, padTop);
+          chartCtx.lineTo(px, padTop + plotH);
+          chartCtx.stroke();
+          chartCtx.fillText(tx, px, padTop + plotH + 18);
+        });
+        chartCtx.fillText('质子势 pmf (mV)', padLeft + plotW / 2, padTop + plotH + 32);
+
+        // Y ticks: 0, 10, 20
+        chartCtx.textAlign = 'right';
+        [0, 10, 20].forEach(ty => {
+          const py = toPxY(ty);
+          chartCtx.beginPath();
+          chartCtx.moveTo(padLeft, py);
+          chartCtx.lineTo(padLeft + plotW, py);
+          chartCtx.stroke();
+          chartCtx.fillText(ty, padLeft - 8, py + 4);
+        });
+
+        // Threshold Zone Marker at 105 mV
+        const threshPx = toPxX(105);
+        chartCtx.fillStyle = 'rgba(242, 185, 59, 0.08)';
+        chartCtx.fillRect(padLeft, padTop, threshPx - padLeft, plotH);
+
+        chartCtx.strokeStyle = 'rgba(242, 185, 59, 0.45)';
+        chartCtx.setLineDash([4, 4]);
+        chartCtx.beginPath();
+        chartCtx.moveTo(threshPx, padTop);
+        chartCtx.lineTo(threshPx, padTop + plotH);
+        chartCtx.stroke();
+        chartCtx.setLineDash([]);
+
+        chartCtx.font = '11px ' + Deck.token('--font-sans');
+        chartCtx.fillStyle = Deck.token('--focus');
+        chartCtx.textAlign = 'left';
+        chartCtx.fillText('激活门槛 105mV', threshPx + 6, padTop + 14);
+
+        // Theoretical characteristic response curve
+        chartCtx.strokeStyle = Deck.token('--muted');
+        chartCtx.lineWidth = 2;
+        chartCtx.beginPath();
+
+        const stepCount = 50;
+        for (let i = 0; i <= stepCount; i++) {
+          const curPmf = (i / stepCount) * xMax;
+          let r = 0;
+          if (curPmf < 105) {
+            r = (curPmf / 105) * 1.2;
+          } else {
+            const over = curPmf - 105;
+            r = 1.2 + (over * 23.3) / (over + 40);
+          }
+          const cx = toPxX(curPmf);
+          const cy = toPxY(r);
+          if (i === 0) chartCtx.moveTo(cx, cy);
+          else chartCtx.lineTo(cx, cy);
+        }
+        chartCtx.stroke();
+
+        // Operating point dot
+        const opX = toPxX(state.pmf);
+        const opY = toPxY(state.atpRate);
+
+        // Crosshairs
+        chartCtx.strokeStyle = 'rgba(224, 104, 58, 0.4)';
+        chartCtx.setLineDash([2, 2]);
+        chartCtx.beginPath();
+        chartCtx.moveTo(padLeft, opY);
+        chartCtx.lineTo(opX, opY);
+        chartCtx.lineTo(opX, padTop + plotH);
+        chartCtx.stroke();
+        chartCtx.setLineDash([]);
+
+        // Highlight Current Point
+        chartCtx.fillStyle = Deck.token('--energy-bond');
+        chartCtx.beginPath();
+        chartCtx.arc(opX, opY, 6, 0, Math.PI * 2);
+        chartCtx.fill();
+        chartCtx.strokeStyle = '#FFFFFF';
+        chartCtx.lineWidth = 2;
+        chartCtx.stroke();
+      }
+
+      // Event Listeners
+      lightRange.addEventListener('input', function (e) {
+        state.light = Number(e.target.value);
+        recompute();
+      });
+
+      permRange.addEventListener('input', function (e) {
+        state.leakFactor = Number(e.target.value);
+        recompute();
+      });
+
+      uncouplerBtn.addEventListener('click', function () {
+        state.uncoupled = !state.uncoupled;
+        uncouplerBtn.setAttribute('aria-pressed', state.uncoupled ? 'true' : 'false');
+        if (state.uncoupled) {
+          uncouplerBtn.textContent = '清除解联剂';
+        } else {
+          uncouplerBtn.textContent = '加入解联剂 FCCP';
+        }
+        recompute();
+      });
+
+      resetBtn.addEventListener('click', function () {
+        state.light = 450;
+        state.leakFactor = 1.0;
+        state.uncoupled = false;
+        lightRange.value = 450;
+        permRange.value = 1.0;
+        uncouplerBtn.setAttribute('aria-pressed', 'false');
+        uncouplerBtn.textContent = '加入解联剂 FCCP';
+        recompute();
+      });
+
+      // Animation Loop
+      function tick(now) {
+        const dt = Math.min((now - lastTime) / 1000, 0.05);
+        lastTime = now;
+
+        drawWorld(dt);
+        drawChart();
+
+        requestAnimationFrame(tick);
+      }
+
+      // Handle Resize
+      Deck.onResize(function () {
+        Deck.fit(stageCv);
+        Deck.fit(chartCv);
+        drawWorld(0);
+        drawChart();
+      });
+
+      // Initial compute & start
+      recompute();
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>

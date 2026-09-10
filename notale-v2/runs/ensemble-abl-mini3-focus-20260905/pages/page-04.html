@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>分类投票与回归平均</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: 32px 56px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* 顶栏说明 */
+    .page-header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .page-header h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .page-header .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    .evidence-stage {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 280px 1fr 1fr 1fr;
+      gap: 20px;
+      align-items: stretch;
+    }
+
+    /* 左侧统一输入源卡片 */
+    .source-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .source-panel h2 {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+    .source-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+    }
+    .source-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-top: 4px;
+    }
+    .source-item {
+      background: #F8FAFB;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .source-name {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--model);
+    }
+    .source-raw {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-num, inherit);
+    }
+
+    /* 聚合卡片容器 */
+    .rule-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+    }
+
+    /* 卡片头部 */
+    .card-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+    .rule-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+    .rule-type-tag {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--model);
+      background: #E8F1F6;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    /* 信息流说明 */
+    .info-carrier {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+      margin: 0;
+    }
+    .info-carrier strong {
+      color: var(--text);
+    }
+
+    /* 成员输出列表 */
+    .members-stream {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .member-row {
+      background: #F8FAFB;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .member-tag {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--model);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .member-tag::before {
+      content: "";
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--model);
+    }
+
+    /* 硬投票数值项 */
+    .vote-label {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      padding: 3px 12px;
+      border-radius: 4px;
+      min-width: 58px;
+      text-align: center;
+    }
+    .vote-a {
+      background: #EAF3EC;
+      color: var(--sample);
+      border: 1px solid #C4DFCE;
+    }
+    .vote-b {
+      background: #FBEFEA;
+      color: var(--aggregate);
+      border: 1px solid #F5D3C5;
+    }
+
+    /* 软投票条状与刻度 */
+    .prob-bar-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 250px;
+    }
+    .prob-track {
+      flex: 1;
+      height: 16px;
+      background: #E2EBF0;
+      border-radius: 3px;
+      overflow: hidden;
+      display: flex;
+    }
+    .prob-fill-a {
+      background: var(--sample);
+      height: 100%;
+    }
+    .prob-fill-b {
+      background: var(--aggregate);
+      height: 100%;
+    }
+    .prob-nums {
+      font-family: var(--font-num, inherit);
+      font-size: var(--fs-tick);
+      color: var(--text);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      width: 96px;
+      text-align: right;
+    }
+
+    /* 数值平均数轴显示 */
+    .reg-value-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .reg-num {
+      font-family: var(--font-num, inherit);
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      min-width: 48px;
+      text-align: right;
+    }
+    .reg-axis-preview {
+      width: 170px;
+      height: 14px;
+      background: #E2EBF0;
+      border-radius: 7px;
+      position: relative;
+    }
+    .reg-dot {
+      position: absolute;
+      top: 2px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--model);
+      transform: translateX(-50%);
+    }
+
+    /* 汇聚接合线与动向指示 */
+    .reduction-arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      padding: 4px 0;
+    }
+    .reduction-arrow svg {
+      width: 18px;
+      height: 18px;
+      fill: var(--muted);
+    }
+
+    /* 聚合结果面板 */
+    .aggregate-result {
+      background: #F8FAFB;
+      border: 1.5px solid var(--aggregate);
+      border-radius: 6px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .agg-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .agg-label {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--aggregate);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .agg-math {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-family: var(--font-num, inherit);
+    }
+    .agg-verdict {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .verdict-main {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--text);
+      font-family: var(--font-num, inherit);
+      line-height: 1.2;
+    }
+    .verdict-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    /* 底部特征总结栏 */
+    .takeaway-strip {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 12px 20px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+    .takeaway-item {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--muted);
+    }
+    .takeaway-item strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body data-page="04" data-total="27">
+  <div id="stage">
+    <header class="page-header min0">
+      <h1>分类投票与回归平均：三种聚合规则依赖的信息差异</h1>
+      <p class="lead">同一组基学习器的输出，因传递给聚合器的信息颗粒度不同，决定了集成能调动的判断依据与运算方式。</p>
+    </header>
+
+    <main class="evidence-stage min0">
+      <!-- 统一的成员输入源 -->
+      <section class="source-panel min0">
+        <h2>同一组成员预测</h2>
+        <p class="source-desc">给定同一个待预测测试样本 x，集成系统的 3 个基学习器产出原始推断状态：</p>
+        <div class="source-list">
+          <div class="source-item">
+            <span class="source-name">基学习器 1 (树模型 A)</span>
+            <span class="source-raw">置信度: P(A)=0.55, P(B)=0.45</span>
+            <span class="source-raw">对应回归估值: ŷ₁ = 45.0</span>
+          </div>
+          <div class="source-item">
+            <span class="source-name">基学习器 2 (树模型 B)</span>
+            <span class="source-raw">置信度: P(A)=0.52, P(B)=0.48</span>
+            <span class="source-raw">对应回归估值: ŷ₂ = 52.0</span>
+          </div>
+          <div class="source-item">
+            <span class="source-name">基学习器 3 (树模型 C)</span>
+            <span class="source-raw">置信度: P(A)=0.10, P(B)=0.90</span>
+            <span class="source-raw">对应回归估值: ŷ₃ = 41.0</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 规则一：硬投票 -->
+      <section class="rule-card min0">
+        <div class="card-head">
+          <h2 class="rule-title">硬投票 (Hard Voting)</h2>
+          <span class="rule-type-tag">分类任务</span>
+        </div>
+        <p class="info-carrier"><strong>提取信息：</strong>仅保留各成员离散类别（argmax），抛弃置信度大小。</p>
+        
+        <div class="members-stream">
+          <div class="member-row">
+            <span class="member-tag">成员 1 (0.55 &gt; 0.45)</span>
+            <span class="vote-label vote-a">类别 A</span>
+          </div>
+          <div class="member-row">
+            <span class="member-tag">成员 2 (0.52 &gt; 0.48)</span>
+            <span class="vote-label vote-a">类别 A</span>
+          </div>
+          <div class="member-row">
+            <span class="member-tag">成员 3 (0.90 &gt; 0.10)</span>
+            <span class="vote-label vote-b">类别 B</span>
+          </div>
+        </div>
+
+        <div class="reduction-arrow">
+          <svg viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" transform="rotate(90 12 12)"/></svg>
+          <span>按票数计数：argmax Σ I(hᵢ(x)=c)</span>
+        </div>
+
+        <div class="aggregate-result">
+          <div class="agg-head">
+            <span class="agg-label">最终判决</span>
+            <span class="agg-math">A: 2 票 vs B: 1 票</span>
+          </div>
+          <div class="agg-verdict">
+            <span class="verdict-main" style="color: var(--sample);">判定类别 A</span>
+            <span class="verdict-sub">多数票获胜</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 规则二：软投票 -->
+      <section class="rule-card min0">
+        <div class="card-head">
+          <h2 class="rule-title">软投票 (Soft Voting)</h2>
+          <span class="rule-type-tag">分类任务</span>
+        </div>
+        <p class="info-carrier"><strong>提取信息：</strong>保留各成员连续后验概率，对属于各类的概率求平均。</p>
+        
+        <div class="members-stream">
+          <div class="member-row">
+            <span class="member-tag">成员 1 概率分布</span>
+            <div class="prob-bar-container" style="width: 170px;">
+              <div class="prob-track">
+                <div class="prob-fill-a" style="width: 55%;"></div>
+                <div class="prob-fill-b" style="width: 45%;"></div>
+              </div>
+              <span class="prob-nums" style="width: 82px;">0.55 / 0.45</span>
+            </div>
+          </div>
+          <div class="member-row">
+            <span class="member-tag">成员 2 概率分布</span>
+            <div class="prob-bar-container" style="width: 170px;">
+              <div class="prob-track">
+                <div class="prob-fill-a" style="width: 52%;"></div>
+                <div class="prob-fill-b" style="width: 48%;"></div>
+              </div>
+              <span class="prob-nums" style="width: 82px;">0.52 / 0.48</span>
+            </div>
+          </div>
+          <div class="member-row">
+            <span class="member-tag">成员 3 概率分布</span>
+            <div class="prob-bar-container" style="width: 170px;">
+              <div class="prob-track">
+                <div class="prob-fill-a" style="width: 10%;"></div>
+                <div class="prob-fill-b" style="width: 90%;"></div>
+              </div>
+              <span class="prob-nums" style="width: 82px;">0.10 / 0.90</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="reduction-arrow">
+          <svg viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" transform="rotate(90 12 12)"/></svg>
+          <span>按均值概率：argmax Σ Pᵢ(y=c|x)</span>
+        </div>
+
+        <div class="aggregate-result">
+          <div class="agg-head">
+            <span class="agg-label">最终判决</span>
+            <span class="agg-math">P̄(A)=0.39 vs P̄(B)=0.61</span>
+          </div>
+          <div class="agg-verdict">
+            <span class="verdict-main" style="color: var(--aggregate);">判定类别 B</span>
+            <span class="verdict-sub">高置信度反转</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 规则三：数值平均 -->
+      <section class="rule-card min0">
+        <div class="card-head">
+          <h2 class="rule-title">数值平均 (Averaging)</h2>
+          <span class="rule-type-tag">回归任务</span>
+        </div>
+        <p class="info-carrier"><strong>提取信息：</strong>保留连续实数输出，计算代数均值抵消个别随机波动。</p>
+        
+        <div class="members-stream">
+          <div class="member-row">
+            <span class="member-tag">成员 1 连续预测</span>
+            <div class="reg-value-box">
+              <div class="reg-axis-preview" style="width: 110px;">
+                <div class="reg-dot" style="left: 45%;"></div>
+              </div>
+              <span class="reg-num">45.0</span>
+            </div>
+          </div>
+          <div class="member-row">
+            <span class="member-tag">成员 2 连续预测</span>
+            <div class="reg-value-box">
+              <div class="reg-axis-preview" style="width: 110px;">
+                <div class="reg-dot" style="left: 52%;"></div>
+              </div>
+              <span class="reg-num">52.0</span>
+            </div>
+          </div>
+          <div class="member-row">
+            <span class="member-tag">成员 3 连续预测</span>
+            <div class="reg-value-box">
+              <div class="reg-axis-preview" style="width: 110px;">
+                <div class="reg-dot" style="left: 41%;"></div>
+              </div>
+              <span class="reg-num">41.0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="reduction-arrow">
+          <svg viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" transform="rotate(90 12 12)"/></svg>
+          <span>算术平均：H(x) = 1/T Σ hᵢ(x)</span>
+        </div>
+
+        <div class="aggregate-result">
+          <div class="agg-head">
+            <span class="agg-label">最终预测</span>
+            <span class="agg-math">(45.0 + 52.0 + 41.0) / 3</span>
+          </div>
+          <div class="agg-verdict">
+            <span class="verdict-main" style="color: var(--text);">46.0</span>
+            <span class="verdict-sub">平滑极值方差</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部核心对比 -->
+    <footer class="takeaway-strip min0">
+      <div class="takeaway-item">
+        <strong>硬投票 (Hard Voting)：</strong>不关心每个模型对该结果有多确信，仅需比较票数绝对多寡；鲁棒但不利用置信度。
+      </div>
+      <div class="takeaway-item">
+        <strong>软投票 (Soft Voting)：</strong>要求基学习器校准良好；极端自信的成员能够压过两个勉强过半的微弱多数。
+      </div>
+      <div class="takeaway-item">
+        <strong>数值平均 (Simple Averaging)：</strong>用于连续数值输出；当各模型误差互不相关时，方差随成员数量增加呈比例下降。
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 4, total: 27 });
+  </script>
+</body>
+</html>

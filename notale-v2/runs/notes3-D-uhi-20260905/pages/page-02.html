@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>城市热岛不是“城市总比郊区热”</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      margin: 0;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    #stage {
+      width: var(--stage-w);
+      height: var(--stage-h);
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: var(--bg);
+      position: relative;
+    }
+
+    /* 顶部标题区 */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+      flex-shrink: 0;
+    }
+    .header-main {
+      max-width: 980px;
+    }
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 6px 0;
+      letter-spacing: -0.02em;
+    }
+    .page-desc {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.45;
+    }
+    .formula-badge {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      padding: 10px 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 3px;
+    }
+    .formula-math {
+      font-family: var(--font-num);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--heat);
+    }
+    .formula-caption {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    /* 主内容分栏 */
+    .main-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 400px;
+      gap: 24px;
+      min-height: 0;
+    }
+
+    /* 左侧图表卡区 */
+    .chart-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px 14px 20px;
+      position: relative;
+    }
+    .chart-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .view-toggles {
+      display: flex;
+      gap: 8px;
+    }
+    .view-btn {
+      background: var(--surface-strong);
+      border: 1px solid transparent;
+      color: var(--muted);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+      font-family: inherit;
+    }
+    .view-btn:hover {
+      color: var(--text);
+      border-color: var(--muted);
+    }
+    .view-btn[aria-pressed="true"] {
+      background: var(--focus);
+      color: #fff;
+      border-color: var(--focus);
+    }
+    .chart-legend {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-line {
+      width: 20px;
+      height: 3px;
+      display: inline-block;
+    }
+    .legend-line.surf {
+      background: var(--heat);
+    }
+    .legend-line.canopy {
+      background: var(--cooling);
+      border-top: 1px dashed var(--cooling);
+    }
+    .legend-line.zero {
+      background: var(--muted);
+      height: 1px;
+    }
+
+    .chart-wrapper {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      width: 100%;
+    }
+    #chart-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 底部图注与实测读数 */
+    .chart-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding-top: 10px;
+      border-top: 1px solid var(--surface-strong);
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* 右侧解析面板 */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .metric-summary {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      padding: 16px 18px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .metric-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .metric-value-row {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .metric-val.heat { color: var(--heat); }
+    .metric-val.cool { color: var(--cooling); }
+    .metric-val.neutral { color: var(--text); }
+    .metric-unit {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+    .metric-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .compare-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      padding: 18px 20px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-body {
+      font-size: var(--fs-sec);
+      line-height: 1.55;
+      color: var(--text);
+      margin: 0;
+    }
+    .bullet-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .bullet-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+    }
+    .bullet-mark {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--focus);
+      margin-top: 8px;
+      flex-shrink: 0;
+    }
+    .bullet-item strong {
+      color: var(--text);
+    }
+
+    .caution-box {
+      background: var(--surface-strong);
+      padding: 12px 14px;
+      border: 1px solid var(--muted);
+      border-radius: 2px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      line-height: 1.45;
+    }
+
+    /* SVG 内部图表样式 */
+    .axis-line {
+      stroke: var(--surface-strong);
+      stroke-width: 1.5;
+    }
+    .grid-line {
+      stroke: var(--surface-strong);
+      stroke-dasharray: 4 4;
+      stroke-width: 1;
+    }
+    .zero-axis {
+      stroke: var(--muted);
+      stroke-width: 1.5;
+    }
+    .tick-text {
+      font-family: var(--font-num);
+      font-size: var(--fs-tick);
+      fill: var(--muted);
+    }
+    .area-surf {
+      fill: var(--heat);
+      fill-opacity: 0.14;
+    }
+    .area-canopy {
+      fill: var(--cooling);
+      fill-opacity: 0.12;
+    }
+    .curve-surf {
+      stroke: var(--heat);
+      stroke-width: 3.5;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .curve-canopy {
+      stroke: var(--cooling);
+      stroke-width: 3.5;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 6 3;
+    }
+    .night-shade {
+      fill: #17282e;
+      fill-opacity: 0.05;
+    }
+    .annotation-box {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      padding: 6px 10px;
+      border-radius: 2px;
+      font-size: var(--fs-tick);
+      color: var(--text);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .chart-crosshair {
+      stroke: var(--focus);
+      stroke-width: 1.5;
+      stroke-dasharray: 3 3;
+    }
+  </style>
+</head>
+<body data-page="02" data-total="19">
+  <div id="stage">
+    <!-- 顶部标题与定义公式 -->
+    <header class="page-header">
+      <div class="header-main">
+        <h1 class="page-title">城市热岛不是“城市总比郊区热”</h1>
+        <p class="page-desc">热岛强度定义为城市与参照区的瞬时温差（ΔT = T_urban − T_rural）。观测对象与观测时段不同，热岛强度的正负与峰值完全不同。</p>
+      </div>
+      <div class="formula-badge">
+        <div class="formula-math">ΔT<sub>U-R</sub> = T<sub>urban</sub> − T<sub>rural</sub></div>
+        <div class="formula-caption">热岛强度计量基准</div>
+      </div>
+    </header>
+
+    <!-- 主展示区 -->
+    <main class="main-layout min0">
+      <!-- 左栏：24小时日变化双层证据图 -->
+      <section class="chart-panel min0">
+        <div class="chart-toolbar">
+          <div class="view-toggles" role="tablist" aria-label="比较时段与参照区基线">
+            <button class="view-btn" id="btn-both" aria-pressed="true" role="tab">全日昼夜双线对比</button>
+            <button class="view-btn" id="btn-noon" aria-pressed="false" role="tab">正午（地表强、冠层弱）</button>
+            <button class="view-btn" id="btn-night" aria-pressed="false" role="tab">夜间（冠层峰值、地表收敛）</button>
+            <button class="view-btn" id="btn-oasis" aria-pressed="false" role="tab">干旱绿洲基准（出现冷岛）</button>
+          </div>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <span class="legend-line surf"></span>
+              <span>地表温差 (ΔT<sub>surface</sub>)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line canopy"></span>
+              <span>气温温差 (ΔT<sub>canopy</sub>)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line zero"></span>
+              <span>0℃ 基线（城乡等温）</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-wrapper" id="plot-container">
+          <svg id="chart-svg" viewBox="0 0 980 470" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="surf-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#C63F20" stop-opacity="0.25"/>
+                <stop offset="100%" stop-color="#C63F20" stop-opacity="0.02"/>
+              </linearGradient>
+              <linearGradient id="cool-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#176B82" stop-opacity="0.22"/>
+                <stop offset="100%" stop-color="#176B82" stop-opacity="0.02"/>
+              </linearGradient>
+            </defs>
+
+            <!-- 昼夜背景带 -->
+            <rect x="60" y="24" width="190" height="380" class="night-shade" />
+            <text x="155" y="44" text-anchor="middle" class="tick-text" fill="#50646B" font-size="13px">夜间辐射降温</text>
+
+            <rect x="250" y="24" width="456" height="380" fill="#FFF9F5" fill-opacity="0.4" />
+            <text x="478" y="44" text-anchor="middle" class="tick-text" fill="#C63F20" font-size="13px">日照太阳辐射加热区</text>
+
+            <rect x="706" y="24" width="224" height="380" class="night-shade" />
+            <text x="818" y="44" text-anchor="middle" class="tick-text" fill="#50646B" font-size="13px">日落后热释放</text>
+
+            <!-- Y轴参考网格线与刻度 -->
+            <g id="grid-y">
+              <!-- Y: +12, +8, +4, 0, -4 -->
+              <line x1="60" y1="56" x2="930" y2="56" class="grid-line" />
+              <text x="48" y="60" text-anchor="end" class="tick-text">+12℃</text>
+
+              <line x1="60" y1="124" x2="930" y2="124" class="grid-line" />
+              <text x="48" y="128" text-anchor="end" class="tick-text">+8℃</text>
+
+              <line x1="60" y1="192" x2="930" y2="192" class="grid-line" />
+              <text x="48" y="196" text-anchor="end" class="tick-text">+4℃</text>
+
+              <line x1="60" y1="260" x2="930" y2="260" class="zero-axis" />
+              <text x="48" y="264" text-anchor="end" class="tick-text" font-weight="bold">0℃</text>
+
+              <line x1="60" y1="328" x2="930" y2="328" class="grid-line" />
+              <text x="48" y="332" text-anchor="end" class="tick-text">-4℃</text>
+
+              <line x1="60" y1="396" x2="930" y2="396" class="grid-line" />
+              <text x="48" y="400" text-anchor="end" class="tick-text">-8℃</text>
+            </g>
+
+            <!-- X轴时间刻度线 -->
+            <g id="grid-x">
+              <line x1="60" y1="404" x2="930" y2="404" class="axis-line" />
+              <!-- 00:00 -->
+              <text x="60" y="424" text-anchor="middle" class="tick-text">00:00</text>
+              <!-- 03:00 -->
+              <text x="168" y="424" text-anchor="middle" class="tick-text">03:00</text>
+              <!-- 06:00 日出 -->
+              <text x="277" y="424" text-anchor="middle" class="tick-text">06:00 日出</text>
+              <line x1="277" y1="404" x2="277" y2="410" class="axis-line" />
+              <!-- 09:00 -->
+              <text x="386" y="424" text-anchor="middle" class="tick-text">09:00</text>
+              <!-- 12:00 -->
+              <text x="495" y="424" text-anchor="middle" class="tick-text">12:00</text>
+              <!-- 15:00 -->
+              <text x="603" y="424" text-anchor="middle" class="tick-text">15:00</text>
+              <!-- 18:00 日落 -->
+              <text x="712" y="424" text-anchor="middle" class="tick-text">18:00 日落</text>
+              <line x1="712" y1="404" x2="712" y2="410" class="axis-line" />
+              <!-- 21:00 -->
+              <text x="821" y="424" text-anchor="middle" class="tick-text">21:00</text>
+              <!-- 24:00 -->
+              <text x="930" y="424" text-anchor="middle" class="tick-text">24:00</text>
+            </g>
+
+            <!-- 动态曲线填充与线条 -->
+            <path id="path-surf-fill" class="area-surf" d="" />
+            <path id="path-canopy-fill" class="area-canopy" d="" />
+
+            <path id="path-surf" class="curve-surf" d="" />
+            <path id="path-canopy" class="curve-canopy" d="" />
+
+            <!-- 游标与高亮锚点 -->
+            <g id="focus-markers" pointer-events="none"></g>
+          </svg>
+        </div>
+
+        <div class="chart-footer">
+          <div>横轴为典型晴朗夏日 24 小时进程；数据归一化自标准温带湿润/半湿润区典型城市野外观测站与遥感反演集。</div>
+          <div><strong style="color:var(--text)">ΔT > 0</strong>：城市偏热（热岛）｜<strong style="color:var(--cooling)">ΔT &lt; 0</strong>：城市偏凉（冷岛）</div>
+        </div>
+      </section>
+
+      <!-- 右栏：机制解析与对照事实 -->
+      <aside class="sidebar min0">
+        <!-- 读数面板 -->
+        <div class="metric-summary">
+          <div class="metric-block">
+            <span class="metric-label" id="lbl-max-surf">地表日最大温差</span>
+            <div class="metric-value-row">
+              <span class="metric-val heat" id="val-max-surf">+10.5</span>
+              <span class="metric-unit">℃</span>
+            </div>
+            <span class="metric-sub" id="sub-max-surf">出现于 13:30 (正午太阳强辐射)</span>
+          </div>
+
+          <div class="metric-block">
+            <span class="metric-label" id="lbl-max-canopy">气温日最大温差</span>
+            <div class="metric-value-row">
+              <span class="metric-val cool" id="val-max-canopy">+4.2</span>
+              <span class="metric-unit">℃</span>
+            </div>
+            <span class="metric-sub" id="sub-max-canopy">出现于 22:30 (夜间长波辐射差)</span>
+          </div>
+        </div>
+
+        <!-- 详细解释卡片 -->
+        <div class="compare-card min0">
+          <h2 class="card-title" id="card-heading">
+            <span>观测对象错位：地表与气温并非同频</span>
+          </h2>
+          <p class="card-body" id="card-summary">
+            常见误区是把卫星红外测到的“地表温度”与百叶箱测到的“空气温度”混为一谈。两者受热机制与峰值时间截然不同。
+          </p>
+
+          <ul class="bullet-list" id="card-bullets">
+            <li class="bullet-item">
+              <span class="bullet-mark"></span>
+              <div><strong>地表热岛 (SUHI)：</strong>受日照和下垫面反照率主导，正午沥青与屋顶迅速升温，温差在午后达极大值（可达 8~12℃）。</div>
+            </li>
+            <li class="bullet-item">
+              <span class="bullet-mark"></span>
+              <div><strong>冠层热岛 (CUHI)：</strong>受建筑蓄热与人为排热主导，日间城市风力扰动使气温差异较小，日落后郊区迅速冷却而市区持续放热，温差在深夜达极大值（约 3~5℃）。</div>
+            </li>
+            <li class="bullet-item">
+              <span class="bullet-mark"></span>
+              <div><strong>参照区基准影响：</strong>若参照区为干旱荒漠，正午郊区裸土无蒸散降温，城市人工绿化反可形成日间“城市冷岛”（ΔT &lt; 0）。</div>
+            </li>
+          </ul>
+
+          <div class="caution-box" id="card-caution">
+            <strong>核心判断：</strong>评价热岛治理成效或比较城市间热岛时，不声明“观测对象（地表/气温）”和“时段（正午/深夜）”的温差数字没有可比性。
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    本页我们要打破公众对城市热岛最常见的思维定势：“城市总归比郊区热”。
+    在科学上，城市热岛并不是一个绝对温度值，而是一个相对温差：热岛强度 ΔT 等于城区温度减去参照郊区温度。
+    通过这幅 24 小时全日变化曲线，我们要让学生看清两个关键机制：
+    第一，地表温度与空气温度完全错峰。正午时分，地表热岛达到极大值，温差可超 10 度；但此时百叶箱空气温差往往只有 1 到 2 度。
+    第二，真正的空气冠层热岛峰值是在夜间日落之后才出现的。因为郊区植被土壤开阔，夜间长波辐射冷却极快；而城市狭窄街道受天空视角限制，加之混凝土墙体巨大储热释放，温度下降缓慢，城乡温差因此在深夜被彻底拉大。
+    最后切换到绿洲模式，在干旱半干旱区，郊外是戈壁荒漠，城区反而有浇灌绿地，正午城市甚至比郊区更凉爽，出现日间冷岛现象。这就是为什么研究热岛必须精确界定对象、时区与参照基准。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      // 24小时时序数据集 (0点到24点，间隔1小时)
+      // 字段：hour, surf_std (常规地表ΔT), canopy_std (常规气温ΔT), surf_oasis (干旱荒漠对照区地表ΔT), canopy_oasis (干旱荒漠对照气温ΔT)
+      var DATA = [
+        { h: 0,  surf: 2.1,  canopy: 3.8, surf_o: 0.8,  canopy_o: 1.5 },
+        { h: 1,  surf: 1.8,  canopy: 3.9, surf_o: 0.5,  canopy_o: 1.6 },
+        { h: 2,  surf: 1.5,  canopy: 4.1, surf_o: 0.3,  canopy_o: 1.8 },
+        { h: 3,  surf: 1.2,  canopy: 4.2, surf_o: 0.1,  canopy_o: 1.8 },
+        { h: 4,  surf: 1.0,  canopy: 4.0, surf_o: 0.0,  canopy_o: 1.7 },
+        { h: 5,  surf: 0.8,  canopy: 3.7, surf_o: -0.2, canopy_o: 1.4 },
+        { h: 6,  surf: 1.2,  canopy: 2.8, surf_o: -0.8, canopy_o: 0.8 },
+        { h: 7,  surf: 2.8,  canopy: 2.1, surf_o: -1.8, canopy_o: 0.2 },
+        { h: 8,  surf: 5.2,  canopy: 1.8, surf_o: -3.2, canopy_o: -0.5 },
+        { h: 9,  surf: 7.4,  canopy: 1.7, surf_o: -4.5, canopy_o: -1.1 },
+        { h: 10, surf: 9.1,  canopy: 1.9, surf_o: -5.6, canopy_o: -1.6 },
+        { h: 11, surf: 10.2, canopy: 2.2, surf_o: -6.2, canopy_o: -2.0 },
+        { h: 12, surf: 10.5, canopy: 2.5, surf_o: -6.5, canopy_o: -2.2 },
+        { h: 13, surf: 10.4, canopy: 2.8, surf_o: -6.3, canopy_o: -2.1 },
+        { h: 14, surf: 9.8,  canopy: 3.1, surf_o: -5.7, canopy_o: -1.8 },
+        { h: 15, surf: 8.6,  canopy: 3.3, surf_o: -4.8, canopy_o: -1.4 },
+        { h: 16, surf: 6.9,  canopy: 3.4, surf_o: -3.5, canopy_o: -0.8 },
+        { h: 17, surf: 4.8,  canopy: 3.3, surf_o: -1.8, canopy_o: -0.1 },
+        { h: 18, surf: 3.2,  canopy: 3.2, surf_o: -0.5, canopy_o: 0.5 },
+        { h: 19, surf: 2.8,  canopy: 3.4, surf_o: 0.2,  canopy_o: 0.9 },
+        { h: 20, surf: 2.6,  canopy: 3.7, surf_o: 0.6,  canopy_o: 1.2 },
+        { h: 21, surf: 2.5,  canopy: 4.0, surf_o: 0.8,  canopy_o: 1.4 },
+        { h: 22, surf: 2.4,  canopy: 4.2, surf_o: 0.9,  canopy_o: 1.6 },
+        { h: 23, surf: 2.3,  canopy: 4.0, surf_o: 0.9,  canopy_o: 1.6 },
+        { h: 24, surf: 2.1,  canopy: 3.8, surf_o: 0.8,  canopy_o: 1.5 }
+      ];
+
+      // 坐标映射
+      var X_MIN = 60, X_MAX = 930;
+      var Y_ZERO = 260; // 0度位置
+      var Y_SCALE = 17; // 1度对应 17px (4度 = 68px)
+
+      function getX(hour) {
+        return X_MIN + (hour / 24) * (X_MAX - X_MIN);
+      }
+      function getY(val) {
+        return Y_ZERO - val * Y_SCALE;
+      }
+
+      function buildPath(data, key) {
+        var pts = data.map(function(d) {
+          return [getX(d.h), getY(d[key])];
+        });
+        var d = "M " + pts[0][0].toFixed(1) + " " + pts[0][1].toFixed(1);
+        for (var i = 1; i < pts.length; i++) {
+          var p0 = pts[i - 1];
+          var p1 = pts[i];
+          var mx = (p0[0] + p1[0]) / 2;
+          d += " C " + mx.toFixed(1) + " " + p0[1].toFixed(1) + ", " +
+               mx.toFixed(1) + " " + p1[1].toFixed(1) + ", " +
+               p1[0].toFixed(1) + " " + p1[1].toFixed(1);
+        }
+        return d;
+      }
+
+      function buildArea(data, key) {
+        var curveD = buildPath(data, key);
+        var lastX = getX(24);
+        var firstX = getX(0);
+        return curveD + " L " + lastX.toFixed(1) + " " + Y_ZERO + " L " + firstX.toFixed(1) + " " + Y_ZERO + " Z";
+      }
+
+      var currentMode = "both"; // both, noon, night, oasis
+
+      var pathSurf = document.getElementById("path-surf");
+      var pathCanopy = document.getElementById("path-canopy");
+      var fillSurf = document.getElementById("path-surf-fill");
+      var fillCanopy = document.getElementById("path-canopy-fill");
+      var markersG = document.getElementById("focus-markers");
+
+      var valMaxSurf = document.getElementById("val-max-surf");
+      var valMaxCanopy = document.getElementById("val-max-canopy");
+      var subMaxSurf = document.getElementById("sub-max-surf");
+      var subMaxCanopy = document.getElementById("sub-max-canopy");
+
+      var cardHeading = document.getElementById("card-heading");
+      var cardSummary = document.getElementById("card-summary");
+      var cardBullets = document.getElementById("card-bullets");
+      var cardCaution = document.getElementById("card-caution");
+
+      var btns = {
+        both: document.getElementById("btn-both"),
+        noon: document.getElementById("btn-noon"),
+        night: document.getElementById("btn-night"),
+        oasis: document.getElementById("btn-oasis")
+      };
+
+      function updateMarkers(mode) {
+        markersG.innerHTML = "";
+        var isOasis = (mode === "oasis");
+        var surfKey = isOasis ? "surf_o" : "surf";
+        var canKey = isOasis ? "canopy_o" : "canopy";
+
+        if (mode === "both") {
+          // 标记正午峰值与夜间峰值
+          var xNoon = getX(12), yNoonSurf = getY(DATA[12][surfKey]);
+          var xNight = getX(22), yNightCan = getY(DATA[22][canKey]);
+
+          markersG.innerHTML = [
+            '<line x1="' + xNoon + '" y1="40" x2="' + xNoon + '" y2="404" class="chart-crosshair" stroke="#C63F20" />',
+            '<circle cx="' + xNoon + '" cy="' + yNoonSurf + '" r="6" fill="#C63F20" stroke="#FFF" stroke-width="2"/>',
+            '<rect x="' + (xNoon - 65) + '" y="' + (yNoonSurf - 36) + '" width="130" height="26" fill="#FFF" stroke="#C63F20" rx="3"/>',
+            '<text x="' + xNoon + '" y="' + (yNoonSurf - 19) + '" text-anchor="middle" font-size="13px" font-weight="bold" fill="#C63F20">正午地表极值 +10.5℃</text>',
+
+            '<line x1="' + xNight + '" y1="40" x2="' + xNight + '" y2="404" class="chart-crosshair" stroke="#176B82" />',
+            '<circle cx="' + xNight + '" cy="' + yNightCan + '" r="6" fill="#176B82" stroke="#FFF" stroke-width="2"/>',
+            '<rect x="' + (xNight - 65) + '" y="' + (yNightCan - 36) + '" width="130" height="26" fill="#FFF" stroke="#176B82" rx="3"/>',
+            '<text x="' + xNight + '" y="' + (yNightCan - 19) + '" text-anchor="middle" font-size="13px" font-weight="bold" fill="#176B82">深夜气温极值 +4.2℃</text>'
+          ].join("");
+        } else if (mode === "noon") {
+          var x12 = getX(12), y12S = getY(DATA[12].surf), y12C = getY(DATA[12].canopy);
+          markersG.innerHTML = [
+            '<rect x="' + (getX(10)) + '" y="40" width="' + (getX(15) - getX(10)) + '" height="364" fill="#C63F20" fill-opacity="0.08" />',
+            '<line x1="' + x12 + '" y1="40" x2="' + x12 + '" y2="404" class="chart-crosshair" stroke="#C63F20" />',
+            '<circle cx="' + x12 + '" cy="' + y12S + '" r="7" fill="#C63F20" stroke="#FFF" stroke-width="2"/>',
+            '<circle cx="' + x12 + '" cy="' + y12C + '" r="7" fill="#176B82" stroke="#FFF" stroke-width="2"/>',
+            '<rect x="' + (x12 + 12) + '" y="' + (y12S - 14) + '" width="154" height="42" fill="#FFF" stroke="#C63F20" rx="3"/>',
+            '<text x="' + (x12 + 20) + '" y="' + (y12S + 4) + '" font-size="13px" font-weight="bold" fill="#C63F20">地表极强 (+10.5℃)</text>',
+            '<text x="' + (x12 + 20) + '" y="' + (y12S + 20) + '" font-size="13px" fill="#50646B">气温仅微弱上升 (+2.5℃)</text>'
+          ].join("");
+        } else if (mode === "night") {
+          var x22 = getX(22), y22S = getY(DATA[22].surf), y22C = getY(DATA[22].canopy);
+          markersG.innerHTML = [
+            '<rect x="' + (getX(19)) + '" y="40" width="' + (getX(24) - getX(19)) + '" height="364" fill="#176B82" fill-opacity="0.08" />',
+            '<line x1="' + x22 + '" y1="40" x2="' + x22 + '" y2="404" class="chart-crosshair" stroke="#176B82" />',
+            '<circle cx="' + x22 + '" cy="' + y22C + '" r="7" fill="#176B82" stroke="#FFF" stroke-width="2"/>',
+            '<circle cx="' + x22 + '" cy="' + y22S + '" r="7" fill="#C63F20" stroke="#FFF" stroke-width="2"/>',
+            '<rect x="' + (x22 - 170) + '" y="' + (y22C - 14) + '" width="154" height="42" fill="#FFF" stroke="#176B82" rx="3"/>',
+            '<text x="' + (x22 - 162) + '" y="' + (y22C + 4) + '" font-size="13px" font-weight="bold" fill="#176B82">冠层气温达峰 (+4.2℃)</text>',
+            '<text x="' + (x22 - 162) + '" y="' + (y22C + 20) + '" font-size="13px" fill="#50646B">下垫面降温趋同 (+2.4℃)</text>'
+          ].join("");
+        } else if (mode === "oasis") {
+          var x12o = getX(12), y12So = getY(DATA[12].surf_o);
+          markersG.innerHTML = [
+            '<line x1="' + x12o + '" y1="40" x2="' + x12o + '" y2="404" class="chart-crosshair" stroke="#176B82" />',
+            '<circle cx="' + x12o + '" cy="' + y12So + '" r="7" fill="#176B82" stroke="#FFF" stroke-width="2"/>',
+            '<rect x="' + (x12o + 14) + '" y="' + (y12So - 16) + '" width="170" height="46" fill="#FFF" stroke="#176B82" rx="3"/>',
+            '<text x="' + (x12o + 22) + '" y="' + (y12So + 4) + '" font-size="13px" font-weight="bold" fill="#176B82">强日间城市冷岛 (−6.5℃)</text>',
+            '<text x="' + (x12o + 22) + '" y="' + (y12So + 22) + '" font-size="13px" fill="#50646B">郊野干旱裸土升温远超城区</text>'
+          ].join("");
+        }
+      }
+
+      function updateView(mode) {
+        currentMode = mode;
+        for (var k in btns) {
+          btns[k].setAttribute("aria-pressed", k === mode ? "true" : "false");
+        }
+
+        var isOasis = (mode === "oasis");
+        var sKey = isOasis ? "surf_o" : "surf";
+        var cKey = isOasis ? "canopy_o" : "canopy";
+
+        pathSurf.setAttribute("d", buildPath(DATA, sKey));
+        pathCanopy.setAttribute("d", buildPath(DATA, cKey));
+        fillSurf.setAttribute("d", buildArea(DATA, sKey));
+        fillCanopy.setAttribute("d", buildArea(DATA, cKey));
+
+        updateMarkers(mode);
+
+        if (mode === "both") {
+          valMaxSurf.textContent = "+10.5";
+          valMaxSurf.className = "metric-val heat";
+          subMaxSurf.textContent = "出现于 12:00–13:30 (正午太阳强辐射)";
+          valMaxCanopy.textContent = "+4.2";
+          valMaxCanopy.className = "metric-val cool";
+          subMaxCanopy.textContent = "出现于 21:00–23:00 (夜间辐射差)";
+
+          cardHeading.innerHTML = "<span>观测对象错位：地表与气温并非同频</span>";
+          cardSummary.textContent = "常见误区是把卫星红外测到的“地表温度”与百叶箱测到的“空气温度”混为一谈。两者受热机制与峰值时间截然不同。";
+          cardBullets.innerHTML = [
+            '<li class="bullet-item"><span class="bullet-mark"></span><div><strong>地表热岛 (SUHI)：</strong>由下垫面直接吸收太阳辐射决定，正午人工地表吸热快、蒸发弱，温差迅速拉大至 10℃ 以上。</div></li>',
+            '<li class="bullet-item"><span class="bullet-mark"></span><div><strong>冠层气温热岛 (CUHI)：</strong>受近地层湍流混合与长波辐射释放控制，白天对流混合使城乡气温差很小；夜间郊区辐射降温迅速，城区建筑持续放热，温差反而达到全天峰值。</div></li>',
+            '<li class="bullet-item"><span class="bullet-mark"></span><div><strong>时相倒错：</strong>地表温差“昼大夜小”，气温温差“夜大昼小”，二者峰值时段相差近 10 小时。</div></li>'
+          ].join("");
+          cardCaution.innerHTML = "<strong>核心判断：</strong>学术文献或新闻通报热岛强度时，必须注明是「地表」还是「气温」，是「正午」还是「深夜」，否则数值无法对齐比较。";
+
+        } else if (mode === "noon") {
+          valMaxSurf.textContent = "+10.5";
+          valMaxSurf.className = "metric-val heat";
+          subMaxSurf.textContent = "正午地表温差达到顶峰 (太阳短波加热)";
+          valMaxCanopy.textContent = "+2.5";
+          valMaxCanopy.className = "metric-val neutral";
+          subMaxCanopy.textContent = "正午近地层湍流强烈，气温差受压制";
+
+          cardHeading.innerHTML = "<span>正午时段：地表极热，但空气温差有限</span>";
+          cardSummary.textContent = "正午是公众最容易“感受炎热”的时段，也是卫星热红外反演图最红的时刻。但地表与气温的传导存在显著物理屏障。";
+          cardBullets.innerHTML = [
+            '<li class="bullet-item"><span class="bullet-mark"></span><div><strong>下垫面热惯量与反照率：</strong>沥青、水泥等深色人工下垫面反照率低，表面温度可飙升至 50~60℃，远超有植被覆盖的郊区地表。</div></li>',
+            '<li class="bullet-item"><span class="bullet-mark"></span><div><strong>不稳定对流层稀释：</strong>正午强烈的垂直热对流与风场将近地层热量迅速向上输送，城乡空气不断混合，使 2 米高度百叶箱气温温差仅 1~2.5℃。</div></li>',
+            '<li class="bullet-item"><span class="bullet-mark"></span><div><strong>感知错觉来源：</strong>行人在正午感受到的“灼热”主要来自强烈地面长波辐射与直射阳光，而非百叶箱环境气温。</div></li>'
+          ].join("");
+          cardCaution.innerHTML = "<strong>机制关键：</strong>地表温差极大不等于空气温差极大。正午时分地表能量向空气的显热通量极高，但空气湍流耗散同样极快。";
+
+        } else if (mode === "night") {
+          valMaxSurf.textContent = "+2.4";
+          valMaxSurf.className = "metric-val neutral";
+          subMaxSurf.textContent = "夜间地表均降温，城乡地表温差趋同收窄";
+          valMaxCanopy.textContent = "+4.2";
+          valMaxCanopy.className = "metric-val cool";
+          subMaxCanopy.textContent = "深夜 22:30 前后达到全天气温热岛峰值";
+
+          cardHeading.innerHTML = "<span>夜间时段：气温热岛峰值显现的真正主场</span>";
+          cardSummary.textContent = "气象学上严格界定的“城市热岛”，强度最大的时刻往往出现在日落后数小时至清晨日出前，而非烈日当空的正午。";
+          cardBullets.innerHTML = [
+            '<li class="bullet-item"><span class="bullet-mark"></span><div><strong>天空视角因子 (SVF) 阻滞：</strong>城市街谷两侧高楼林立，开阔度低，向天顶发射的长波辐射被建筑立面互相拦截重吸收，降温极慢。</div></li>',
+            '<li class="bullet-item"><span class="bullet-mark"></span><div><strong>郊区强逆温与辐射降温：</strong>郊野平坦开阔，地表迅速向宇宙空间净辐射散热，近地层空气迅速冷却形成近地逆温层。</div></li>',
+            '<li class="bullet-item"><span class="bullet-mark"></span><div><strong>人工储热源源释放：</strong>混凝土和砖石在白天吸收储存的海量热量（储热通量 ΔQs），在夜间持续向街道释放，维持夜间高气温。</div></li>'
+          ].join("");
+          cardCaution.innerHTML = "<strong>生态与健康危害：</strong>夜间气温热岛阻碍人体生理降温与恢复，使热浪期间夜间死亡率与心脑血管发病率显著攀升。";
+
+        } else if (mode === "oasis") {
+          valMaxSurf.textContent = "−6.5";
+          valMaxSurf.className = "metric-val cool";
+          subMaxSurf.textContent = "正午地表呈现强“冷岛”（城市显著低于荒漠）";
+          valMaxCanopy.textContent = "−2.2";
+          valMaxCanopy.className = "metric-val cool";
+          subMaxCanopy.textContent = "正午空气温差为负，城市比郊区更凉";
+
+          cardHeading.innerHTML = "<span>参照区反转：干旱荒漠基准下的“城市冷岛”</span>";
+          cardSummary.textContent = "热岛强度不仅取决于城市本身，还严格取决于“参照区（Rural）是什么”。基准不同，热岛符号甚至完全反转。";
+          cardBullets.innerHTML = [
+            '<li class="bullet-item"><span class="bullet-mark"></span><div><strong>干旱区特例（如乌鲁木齐、凤凰城）：</strong>郊外背景为干旱戈壁或裸露荒漠，热容量小、毫无水分蒸腾，正午地表温度极高（超 65℃）。</div></li>',
+            '<li class="bullet-item"><span class="bullet-mark"></span><div><strong>城市人工湿润与绿化：</strong>城市内部因人工灌溉、行道树遮阴与人工水体，蒸发潜热散热显著强于外围死寂的荒漠。</div></li>',
+            '<li class="bullet-item"><span class="bullet-mark"></span><div><strong>负热岛（冷岛）现象：</strong>正午城市地表温度反而比郊区荒漠低 5~8℃，空气温度低 1~3℃，形成鲜明的“城市冷岛效应”（Urban Cool Island）。</div></li>'
+          ].join("");
+          cardCaution.innerHTML = "<strong>定义界限：</strong>没有普遍绝对的“热岛常数”。热岛强度永远是「城市环境」与「周边自然背景」二者能量平衡交互的差值。";
+        }
+      }
+
+      btns.both.addEventListener("click", function() { updateView("both"); });
+      btns.noon.addEventListener("click", function() { updateView("noon"); });
+      btns.night.addEventListener("click", function() { updateView("night"); });
+      btns.oasis.addEventListener("click", function() { updateView("oasis"); });
+
+      // 初始化初态
+      updateView("both");
+
+      Deck.init({ index: 2, total: 19 });
+    })();
+  </script>
+</body>
+</html>

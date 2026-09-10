@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成学习：让一组模型共同作出更稳健的判断</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: var(--stage-w);
+      height: var(--stage-h);
+      margin: 0 auto;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      contain: layout paint;
+    }
+
+    #field {
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    /* Typographic hierarchy for cover */
+    .cover-content {
+      position: absolute;
+      z-index: 5;
+      left: 72px;
+      top: 104px;
+      width: 620px;
+      pointer-events: auto;
+    }
+
+    .topic-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      margin-bottom: 22px;
+    }
+
+    .topic-badge::before {
+      content: "";
+      width: 14px;
+      height: 2px;
+      background: var(--aggregate);
+    }
+
+    h1.title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.22;
+      color: var(--text);
+      letter-spacing: -0.01em;
+      margin: 0 0 24px 0;
+    }
+
+    .lead-copy {
+      font-size: var(--fs-lead);
+      line-height: 1.55;
+      color: var(--muted);
+      margin: 0 0 36px 0;
+      max-width: 560px;
+    }
+
+    /* Concept legend panel */
+    .legend-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(83, 106, 120, 0.2);
+      border-radius: 6px;
+      padding: 20px 24px;
+      width: 480px;
+      box-shadow: 0 8px 24px rgba(18, 38, 52, 0.04);
+    }
+
+    .legend-panel .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .line-swatch {
+      width: 38px;
+      height: 2px;
+      flex-shrink: 0;
+    }
+
+    .line-swatch.base-models {
+      height: 2px;
+      background: var(--model);
+      opacity: 0.55;
+      border-top: 1px dashed var(--model);
+    }
+
+    .line-swatch.ensemble-res {
+      height: 3.5px;
+      background: var(--aggregate);
+      border-radius: 2px;
+    }
+
+    .legend-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .legend-title {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .legend-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* Metric callout / footnote */
+    .meta-metrics {
+      position: absolute;
+      bottom: 48px;
+      left: 72px;
+      z-index: 5;
+      display: flex;
+      align-items: baseline;
+      gap: 40px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(83, 106, 120, 0.18);
+      width: 540px;
+    }
+
+    .metric-col {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .metric-col .val {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      font-family: var(--font-num);
+    }
+
+    .metric-col .lbl {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* Feature space frame and labels */
+    .space-card {
+      position: absolute;
+      top: 36px;
+      right: 48px;
+      bottom: 48px;
+      left: 680px;
+      border: 1px solid rgba(83, 106, 120, 0.25);
+      border-radius: 8px;
+      background: transparent;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .space-header {
+      position: absolute;
+      top: 14px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      z-index: 4;
+    }
+
+    .space-tag {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .space-classes {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .class-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+
+    .class-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .class-dot.a {
+      background: var(--model);
+      border: 1.5px solid #FFFFFF;
+      box-shadow: 0 0 0 1px var(--model);
+    }
+    .class-dot.b {
+      background: var(--sample);
+      border: 1.5px solid #FFFFFF;
+      box-shadow: 0 0 0 1px var(--sample);
+    }
+
+    .axis-label-x {
+      position: absolute;
+      bottom: 12px;
+      right: 20px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      z-index: 4;
+    }
+
+    .axis-label-y {
+      position: absolute;
+      top: 48px;
+      left: 20px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      z-index: 4;
+    }
+  </style>
+</head>
+<body data-page="01" data-total="27">
+  <main id="stage">
+    <canvas id="field" class="cv-fill" aria-hidden="true"></canvas>
+
+    <div class="space-card" aria-hidden="true">
+      <div class="space-header">
+        <span class="space-tag">二维特征空间决策域映射 (X₁, X₂)</span>
+        <div class="space-classes">
+          <span class="class-pill"><span class="class-dot a"></span>类别 -1 样本</span>
+          <span class="class-pill"><span class="class-dot b"></span>类别 +1 样本</span>
+        </div>
+      </div>
+      <div class="axis-label-y">特征 X₂ (连续属性) ↑</div>
+      <div class="axis-label-x">特征 X₁ (连续属性) →</div>
+    </div>
+
+    <section class="cover-content" aria-labelledby="page-title">
+      <div class="topic-badge">机器学习概论 · 第八讲</div>
+      <h1 id="page-title" class="title">集成学习：<br>让一组模型共同作出<br>更稳健的判断</h1>
+      <p class="lead-copy">
+        单个基分类器容易因样本扰动产生过拟合或偏置。集成方法通过训练多个各具差异的模型并进行协同表决，将个体的不确定性相互抵消，从而重塑出鲁棒的决策边界。
+      </p>
+
+      <div class="legend-panel">
+        <div class="legend-item">
+          <div class="line-swatch base-models"></div>
+          <div class="legend-text">
+            <span class="legend-title">基学习器边界（h₁ ~ h₇）</span>
+            <span class="legend-desc">各成员由于数据子集或算法随机性存在显著差异与局部过拟合</span>
+          </div>
+        </div>
+        <div class="legend-item">
+          <div class="line-swatch ensemble-res"></div>
+          <div class="legend-text">
+            <span class="legend-title">集成聚合边界（H = Aggregate）</span>
+            <span class="legend-desc">投票或平均后消除高频抖动，平滑逼近真实的潜在类别分界</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="meta-metrics">
+      <div class="metric-col">
+        <span class="val">7 个基模型</span>
+        <span class="lbl">各异假设子空间</span>
+      </div>
+      <div class="metric-col">
+        <span class="val">方差显著抑制</span>
+        <span class="lbl">集成决策稳定性增益</span>
+      </div>
+    </div>
+  </main>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const W = 1600;
+      const H = 900;
+      const SEED = "ensemble-cover-2026";
+      const canvas = document.getElementById("field");
+
+      // Reserved title area for safety
+      const TITLE_ZONE = { x: 0, y: 0, w: 660, h: 620 };
+
+      let ctx;
+      let model;
+      let disposed = false;
+      let stopLoop = () => {};
+      let removeResize = () => {};
+
+      Deck.init({ title: "集成学习：让一组模型共同作出更稳健的判断", keys: true });
+
+      function distance(x1, y1, x2, y2) {
+        return Math.hypot(x2 - x1, y2 - y1);
+      }
+
+      function insideTitle(x, y) {
+        return x >= TITLE_ZONE.x && x <= TITLE_ZONE.w && y >= TITLE_ZONE.y && y <= TITLE_ZONE.h;
+      }
+
+      // True underlying boundary function: smooth S-curve dividing two feature clusters
+      function trueBoundary(y) {
+        // Feature space centered in right 2/3 of screen (x around 1140)
+        const centerY = H * 0.5;
+        const normY = (y - centerY) / (H * 0.42);
+        // Clean sigmoid-like curve
+        const curveX = 1140 + Math.sin(normY * 1.5) * 110 + Math.cos(normY * 0.8) * 40;
+        return curveX;
+      }
+
+      // Generate ensemble members with diverse variations (individual biases, local tree chops)
+      function buildModel() {
+        const rng = new Math.seedrandom(SEED);
+
+        // 1. Fixed scatter points of data classes in 2D space
+        const points = [];
+        const numPoints = 170;
+        for (let i = 0; i < numPoints; i++) {
+          const py = 76 + rng() * (H - 150);
+          const bx = trueBoundary(py);
+          const isRight = rng() > 0.5;
+          const dist = 30 + rng() * 340;
+          const px = isRight ? bx + dist : bx - dist;
+
+          // Clamp within the space card bounds: x in [710, 1520]
+          if (px >= 716 && px <= 1520 && py >= 70 && py <= H - 76) {
+            points.push({
+              x: px,
+              y: py,
+              cls: isRight ? 1 : -1,
+              r: 3.5 + rng() * 2.2
+            });
+          }
+        }
+
+        // 2. Base learners (7 diverse classifiers with varying high-frequency noise & local offsets)
+        const learners = [];
+        const numLearners = 7;
+        for (let k = 0; k < numLearners; k++) {
+          const phase = k * 1.37 + rng() * 0.5;
+          const amp1 = 35 + rng() * 65;
+          const freq1 = 2.5 + rng() * 2.2;
+          const amp2 = 20 + rng() * 35;
+          const freq2 = 5.0 + rng() * 4.0;
+          const biasShift = (rng() - 0.5) * 45;
+
+          const path = [];
+          for (let y = 60; y <= H - 60; y += 8) {
+            const normY = (y - H * 0.5) / (H * 0.5);
+            const base = trueBoundary(y);
+            const noise = Math.sin(normY * freq1 + phase) * amp1 + Math.cos(normY * freq2 - phase * 0.7) * amp2;
+            path.push({
+              x: base + biasShift + noise,
+              y: y
+            });
+          }
+          learners.push({
+            id: k + 1,
+            path: path,
+            color: Deck.token("--model"),
+            dash: k % 2 === 0 ? [5, 5] : []
+          });
+        }
+
+        // 3. Ensemble consensus boundary (mean of all base learners at each y)
+        const ensemblePath = [];
+        const steps = learners[0].path.length;
+        for (let s = 0; s < steps; s++) {
+          let sumX = 0;
+          const y = learners[0].path[s].y;
+          for (let k = 0; k < numLearners; k++) {
+            sumX += learners[k].path[s].x;
+          }
+          ensemblePath.push({
+            x: sumX / numLearners,
+            y: y
+          });
+        }
+
+        return { points, learners, ensemblePath };
+      }
+
+      function draw(time = 0) {
+        if (!ctx || !model) return;
+
+        ctx.clearRect(0, 0, W, H);
+
+        // Space frame boundary clip
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(680, 36, 1600 - 48 - 680, 900 - 48 - 36);
+        ctx.clip();
+        ctx.strokeStyle = "rgba(83, 106, 120, 0.08)";
+        ctx.lineWidth = 1;
+        const gridStep = 56;
+        for (let x = 680 + gridStep; x < W - 48; x += gridStep) {
+          ctx.beginPath();
+          ctx.moveTo(x, 36);
+          ctx.lineTo(x, H - 48);
+          ctx.stroke();
+        }
+        for (let y = 36 + gridStep; y < H - 48; y += gridStep) {
+          ctx.beginPath();
+          ctx.moveTo(680, y);
+          ctx.lineTo(W - 48, y);
+          ctx.stroke();
+        }
+
+        // 1. Draw individual classifier boundary curves (diverse, fluctuating)
+        model.learners.forEach((learner, idx) => {
+          ctx.save();
+          ctx.beginPath();
+          let started = false;
+          // Slight oscillation over time to suggest dynamic exploration
+          const tOffset = Math.sin(time * 0.0012 + idx * 0.9) * 8;
+          learner.path.forEach((pt) => {
+            const px = pt.x + tOffset;
+            const py = pt.y;
+            if (!started) {
+              ctx.moveTo(px, py);
+              started = true;
+            } else {
+              ctx.lineTo(px, py);
+            }
+          });
+          ctx.strokeStyle = Deck.rgba("model", 0.65);
+          ctx.lineWidth = 1.8;
+          if (learner.dash.length) {
+            ctx.setLineDash(learner.dash);
+          }
+          ctx.stroke();
+          ctx.restore();
+        });
+
+        // 2. Draw ensemble consensus boundary (stable, prominent, highlighted)
+        ctx.save();
+        // Glow/shadow line
+        ctx.beginPath();
+        let first = true;
+        model.ensemblePath.forEach((pt) => {
+          if (first) {
+            ctx.moveTo(pt.x, pt.y);
+            first = false;
+          } else {
+            ctx.lineTo(pt.x, pt.y);
+          }
+        });
+        ctx.strokeStyle = Deck.rgba("aggregate", 0.22);
+        ctx.lineWidth = 14;
+        ctx.lineCap = "round";
+        ctx.stroke();
+
+        // Sharp main ensemble curve
+        ctx.beginPath();
+        first = true;
+        model.ensemblePath.forEach((pt) => {
+          if (first) {
+            ctx.moveTo(pt.x, pt.y);
+            first = false;
+          } else {
+            ctx.lineTo(pt.x, pt.y);
+          }
+        });
+        ctx.strokeStyle = Deck.token("--aggregate");
+        ctx.lineWidth = 4.2;
+        ctx.stroke();
+
+        // Region label markers alongside the consensus curve
+        ctx.fillStyle = Deck.token("--aggregate");
+        ctx.font = "700 15px 'Noto Sans SC', sans-serif";
+        const markPoint = model.ensemblePath[Math.floor(model.ensemblePath.length * 0.26)];
+        ctx.fillText("集成分界面 H(x)", markPoint.x + 20, markPoint.y + 5);
+
+        ctx.restore();
+
+        // 3. Draw scatter sample points representing Class A and Class B
+        model.points.forEach((p) => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          if (p.cls === 1) {
+            ctx.fillStyle = Deck.token("--sample");
+            ctx.fill();
+            ctx.strokeStyle = "#FFFFFF";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          } else {
+            ctx.fillStyle = Deck.token("--model");
+            ctx.fill();
+            ctx.strokeStyle = "#FFFFFF";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+        });
+
+        // Clean boundary finish without canvas duplicate text
+        ctx.restore();
+      }
+
+      function rebuild() {
+        ctx = Deck.fit(canvas);
+        model = buildModel();
+        draw(0);
+      }
+
+      function queueResize() {
+        rebuild();
+      }
+
+      removeResize = Deck.onResize(queueResize);
+      rebuild();
+
+      stopLoop = Deck.loop((time) => {
+        draw(time);
+      }, { still: 1200 });
+
+      window.addEventListener("pagehide", () => {
+        disposed = true;
+        stopLoop();
+        removeResize();
+      }, { once: true });
+    })();
+  </script>
+</body>
+</html>

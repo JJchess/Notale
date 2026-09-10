@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    header {
+      position: absolute;
+      top: var(--pad-y);
+      left: var(--pad-x);
+      right: var(--pad-x);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 600;
+    }
+
+    .question {
+      font-family: var(--font-display);
+      font-size: var(--fs-lead);
+      color: var(--focus);
+      font-weight: 600;
+    }
+
+    .field {
+      position: absolute;
+      top: 90px;
+      left: var(--pad-x);
+      width: 1488px;
+      height: 670px;
+    }
+
+    .cv-fill {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .footer-bar {
+      position: absolute;
+      bottom: 30px;
+      left: var(--pad-x);
+      right: var(--pad-x);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: var(--stroke) solid var(--rule);
+      padding-top: 14px;
+    }
+
+    .verdict {
+      font-size: var(--fs-body);
+      line-height: var(--lh-tight);
+      color: var(--text);
+    }
+
+    .verdict strong {
+      color: var(--model);
+      font-weight: 700;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      appearance: none;
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      padding: 6px 16px;
+      cursor: pointer;
+      transition: all var(--motion-fast) var(--ease-out);
+    }
+
+    .btn:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+
+    .btn[aria-pressed="true"] {
+      border-color: var(--focus);
+      color: var(--focus);
+      font-weight: 600;
+      background: rgba(184, 61, 11, 0.08);
+    }
+  </style>
+</head>
+<body data-page="14" data-total="18">
+  <div id="stage">
+    <header>
+      <h1>列传之首与道德天问</h1>
+      <span class="question">“倘所谓天道，是邪非邪？”</span>
+    </header>
+
+    <div class="field">
+      <canvas id="cv" class="cv-fill"></canvas>
+    </div>
+
+    <footer class="footer-bar">
+      <div class="verdict" id="verdict-text">
+        <strong>列传之旨：</strong>不虚美，不隐恶。天道难凭，史笔乃立万世公道。
+      </div>
+      <div class="controls" id="btn-group">
+        <button class="btn" data-mode="all" aria-pressed="true">全景比照</button>
+        <button class="btn" data-mode="contrast">善恶殊途</button>
+        <button class="btn" data-mode="verdict">史笔定评</button>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，今天我们进入《史记》七十列传的第一篇——《伯夷列传》。
+    大家往往认为列传应当以战功赫赫的将相开篇，但司马迁却偏偏将伯夷、叔齐放在首位。
+    伯夷叔齐积仁洁行，却饿死首阳山；颜渊好学独笃，却不幸早夭、糟糠不厌。
+    反观大盗跖日杀不辜、暴戾恣睢，却以寿终。
+    于是司马迁在此发出了振聋发聩的历史天问：“倘所谓天道，是邪非邪？”
+    天道若不可信赖，人类的道德价值与青史美名靠什么存续？
+    正是在这里，司马迁确立了史家的神圣使命：当天命无常、公道沦丧之时，正是史官之笔为善者传名、为历史铸造永恒审判之日。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const canvas = document.getElementById("cv");
+      const verdictEl = document.getElementById("verdict-text");
+      const buttons = document.querySelectorAll(".btn");
+
+      let currentMode = "all"; // 'all', 'contrast', 'verdict'
+
+      const righteous = [
+        {
+          name: "伯夷·叔齐",
+          role: "首阳饿莩",
+          deed: "积仁洁行，义不食周粟",
+          fate: "饿死首阳山",
+          pos: [290, 160]
+        },
+        {
+          name: "颜渊",
+          role: "孔门首贤",
+          deed: "笃志好学，箪食瓢饮",
+          fate: "早夭短折，糟糠不厌",
+          pos: [290, 310]
+        },
+        {
+          name: "屈原·贾谊",
+          role: "孤忠直臣",
+          deed: "忧国思君，怀才抱德",
+          fate: "放逐沉江，失意郁殁",
+          pos: [290, 460]
+        }
+      ];
+
+      const wicked = [
+        {
+          name: "盗跖",
+          role: "暴虐巨寇",
+          deed: "日杀不辜，肝人之肉",
+          fate: "竟以寿终其命",
+          pos: [1198, 220]
+        },
+        {
+          name: "操暴巧伪者",
+          role: "浊世豪强",
+          deed: "专犯忌讳，兼并豪横",
+          fate: "累世荣显，终享富贵",
+          pos: [1198, 410]
+        }
+      ];
+
+      const centerHub = [744, 310];
+
+      function render(ctx) {
+        const w = 1488;
+        const h = 670;
+        ctx.clearRect(0, 0, w, h);
+
+        const textCol = Deck.token("--text") || "#142630";
+        const mutedCol = Deck.token("--muted") || "#50616B";
+        const modelCol = Deck.token("--model") || "#17628E";
+        const focusCol = Deck.token("--focus") || "#B83D0B";
+        const ruleCol = Deck.token("--rule") || "#71828B";
+
+        // 1. 中轴虚线：天平与天命秩序崩解
+        ctx.save();
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = ruleCol;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(w / 2, 35);
+        ctx.lineTo(w / 2, h - 50);
+        ctx.stroke();
+        ctx.restore();
+
+        // 顶部两极标头
+        ctx.font = "600 18px 'Noto Sans CJK SC', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillStyle = modelCol;
+        ctx.fillText("善行·积仁·怀德", 350, 42);
+
+        ctx.fillStyle = focusCol;
+        ctx.fillText("暴戾·聚敛·肆欲", 1138, 42);
+
+        // 2. 绘制汇聚曲线
+        // 善者连线
+        righteous.forEach(item => {
+          ctx.beginPath();
+          ctx.moveTo(item.pos[0] + 180, item.pos[1]);
+          ctx.bezierCurveTo(
+            item.pos[0] + 320, item.pos[1],
+            centerHub[0] - 170, centerHub[1],
+            centerHub[0] - 88, centerHub[1]
+          );
+          ctx.strokeStyle = currentMode === "verdict" ? "rgba(23, 98, 142, 0.3)" : "rgba(23, 98, 142, 0.85)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        });
+
+        // 恶者连线
+        wicked.forEach(item => {
+          ctx.beginPath();
+          ctx.moveTo(item.pos[0] - 180, item.pos[1]);
+          ctx.bezierCurveTo(
+            item.pos[0] - 320, item.pos[1],
+            centerHub[0] + 170, centerHub[1],
+            centerHub[0] + 88, centerHub[1]
+          );
+          ctx.strokeStyle = currentMode === "verdict" ? "rgba(184, 61, 11, 0.3)" : (currentMode === "contrast" ? "rgba(184, 61, 11, 0.95)" : "rgba(184, 61, 11, 0.85)");
+          ctx.lineWidth = currentMode === "contrast" ? 3 : 2;
+          ctx.stroke();
+        });
+
+        // 3. 绘制左侧善者节点
+        righteous.forEach(item => {
+          drawRighteousNode(ctx, item, modelCol, focusCol, textCol, mutedCol);
+        });
+
+        // 4. 绘制右侧恶者节点
+        wicked.forEach(item => {
+          drawWickedNode(ctx, item, focusCol, modelCol, textCol, mutedCol);
+        });
+
+        // 5. 核心：天道断裂之问与史笔抉择
+        drawCenterHub(ctx, centerHub, modelCol, focusCol, textCol, mutedCol, ruleCol);
+      }
+
+      function drawRighteousNode(ctx, item, accentCol, contrastCol, textCol, mutedCol) {
+        const [x, y] = item.pos;
+
+        ctx.save();
+        // 标尺标线
+        ctx.fillStyle = accentCol;
+        ctx.fillRect(x + 170, y - 24, 4, 48);
+
+        // 人物名
+        ctx.font = "600 20px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = textCol;
+        ctx.textAlign = "right";
+        ctx.fillText(item.name, x + 150, y - 10);
+
+        // 身份
+        ctx.font = "14px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = mutedCol;
+        const nameW = ctx.measureText(item.name).width;
+        ctx.fillText("〔" + item.role + "〕", x + 150 - nameW - 16, y - 10);
+
+        // 事迹
+        ctx.font = "15px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = mutedCol;
+        ctx.fillText(item.deed, x + 150, y + 14);
+
+        // 结局（与德行倒错，用焦色警示）
+        ctx.font = "600 16px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = contrastCol;
+        ctx.fillText("下场：" + item.fate, x + 150, y + 36);
+
+        ctx.restore();
+      }
+
+      function drawWickedNode(ctx, item, accentCol, contrastCol, textCol, mutedCol) {
+        const [x, y] = item.pos;
+
+        ctx.save();
+        // 标尺标线
+        ctx.fillStyle = accentCol;
+        ctx.fillRect(x - 174, y - 24, 4, 48);
+
+        // 人物名
+        ctx.font = "600 20px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = textCol;
+        ctx.textAlign = "left";
+        ctx.fillText(item.name, x - 150, y - 10);
+
+        // 身份
+        ctx.font = "14px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = mutedCol;
+        const nameW = ctx.measureText(item.name).width;
+        ctx.fillText("〔" + item.role + "〕", x - 150 + nameW + 12, y - 10);
+
+        // 事迹
+        ctx.font = "15px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = mutedCol;
+        ctx.fillText(item.deed, x - 150, y + 14);
+
+        // 结局（暴虐而寿终，荒诞之实）
+        ctx.font = "600 16px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = contrastCol;
+        ctx.fillText("下场：" + item.fate, x - 150, y + 36);
+
+        ctx.restore();
+      }
+
+      function drawCenterHub(ctx, [cx, cy], modelCol, focusCol, textCol, mutedCol, ruleCol) {
+        ctx.save();
+
+        // 居中核心圆环
+        ctx.beginPath();
+        ctx.arc(cx, cy, 84, 0, Math.PI * 2);
+        ctx.fillStyle = "#E8EEF1";
+        ctx.fill();
+        ctx.strokeStyle = currentMode === "verdict" ? modelCol : focusCol;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        ctx.font = "700 22px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = focusCol;
+        ctx.fillText("天道何在？", cx, cy - 24);
+
+        ctx.font = "15px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = textCol;
+        ctx.fillText("“天之报施善人，其何如哉”", cx, cy + 4);
+
+        ctx.font = "13px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = mutedCol;
+        ctx.fillText("善恶报应沦为虚妄", cx, cy + 28);
+
+        // 向下贯穿的收束之线（主题签名：粗线条收束直指结论）
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + 84);
+        ctx.lineTo(cx, cy + 210);
+        ctx.strokeStyle = modelCol;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // 箭头指引
+        ctx.beginPath();
+        ctx.moveTo(cx - 9, cy + 200);
+        ctx.lineTo(cx, cy + 214);
+        ctx.lineTo(cx + 9, cy + 200);
+        ctx.strokeStyle = modelCol;
+        ctx.lineWidth = 3;
+        ctx.lineJoin = "round";
+        ctx.stroke();
+
+        // 史笔落脚结论
+        ctx.font = "700 18px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = modelCol;
+        ctx.fillText("史笔之功：立传以存青史公道", cx, cy + 242);
+
+        ctx.font = "14px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = mutedCol;
+        ctx.fillText("“伯夷叔齐虽贤，得夫子而名益彰”", cx, cy + 266);
+
+        ctx.restore();
+      }
+
+      function updateMode(mode) {
+        currentMode = mode;
+        buttons.forEach(b => {
+          b.setAttribute("aria-pressed", b.dataset.mode === mode ? "true" : "false");
+        });
+
+        if (mode === "all") {
+          verdictEl.innerHTML = "<strong>列传之旨：</strong>不虚美，不隐恶。天道难凭，史笔乃立万世公道。";
+        } else if (mode === "contrast") {
+          verdictEl.innerHTML = "<strong>善恶倒错：</strong>积仁洁行者馁死早夭，大盗暴虐反享天年。天命因果全面崩解。";
+        } else if (mode === "verdict") {
+          verdictEl.innerHTML = "<strong>史家意志：</strong>司马迁借天问明心志——天道虽惑，唯实录史传可让孤忠高洁者永存万世。";
+        }
+
+        render(canvas.getContext("2d"));
+      }
+
+      buttons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          updateMode(btn.dataset.mode);
+        });
+      });
+
+      Deck.autofit(canvas, render);
+      Deck.init({ index: 14, total: 18 });
+    })();
+  </script>
+</body>
+</html>

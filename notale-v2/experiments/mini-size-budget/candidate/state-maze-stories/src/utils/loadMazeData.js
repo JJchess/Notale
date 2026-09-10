@@ -1,0 +1,1 @@
+import{csv as s}from"d3";import{mazeData as l}from"$stores/misc.js";import{get as e}from"svelte/store";const n=async a=>{if(e(l)[a])return e(l)[a];let o=await s(`assets/data/${a}.csv`);return o=o.map(t=>({row:+t.row,col:+t.col,solutionIndex:t.solutionIndex?+t.solutionIndex:null,walls:t.walls.split("|").map(r=>r==="t")})),l.update(t=>({...t,[a]:o})),o};export default n;

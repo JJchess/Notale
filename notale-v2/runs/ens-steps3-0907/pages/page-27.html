@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <!--
+    构图意图：
+    1. 主对象是 Stacking 的层级信息流：原始样本 x 先经由多个异质基模型输出预测值，预测值作为新特征向量输入元学习器输出最终判断。
+    2. 对象关系通过清晰的自左向右/层级汇聚管线展现：原始特征矩阵 -> 第一层异质基学习器（SVM、随机森林、梯度提升树） -> 元特征矩阵 -> 第二层元学习器（逻辑回归） -> 最终预测。
+    3. 说明文字与数值直接依附在两个层级的转换节点与特征矩阵列上，突出“预测值变成下一层的输入特征”。
+  -->
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      font-family: var(--font-sans);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+      position: relative;
+    }
+
+    /* 标题区域 */
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      color: var(--text);
+      font-weight: 600;
+    }
+    .subtitle {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主架构 SVG 视口 */
+    .pipeline-view {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 20px 0 10px;
+    }
+    .pipeline-view svg {
+      width: 100%;
+      height: 480px;
+      overflow: visible;
+    }
+
+    /* 底部收束结论条 */
+    .summary-strip {
+      border-top: 1px solid var(--rule);
+      padding-top: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+    }
+    .summary-col {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .summary-head {
+      font-size: var(--fs-body);
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .summary-head .dot {
+      width: 10px;
+      height: 10px;
+      background: var(--model);
+    }
+    .summary-head .dot.focus {
+      background: var(--focus);
+    }
+    .summary-text {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+      line-height: var(--lh-copy);
+    }
+  </style>
+</head>
+<body data-page="27" data-total="32">
+  <div id="stage">
+    <!-- 顶部标题与核心论点 -->
+    <header>
+      <h1>Stacking 两层结构：基模型生成预测特征，元学习器学习组合</h1>
+      <p class="subtitle">摆脱固定投票与等权平均，让第二层模型从数据中学习最佳权衡</p>
+    </header>
+
+    <!-- 主视觉：SVG 统一两层流图，连线汇聚明确 -->
+    <div class="pipeline-view">
+      <svg viewBox="0 0 1488 480" fill="none">
+        <defs>
+          <marker id="arr-model" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#17628E"/>
+          </marker>
+          <marker id="arr-focus" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#B83D0B"/>
+          </marker>
+        </defs>
+
+        <!-- 阶段列标题线 -->
+        <!-- 列1：原始样本 -->
+        <text x="40" y="38" font-size="15" fill="#50616B" font-family="Noto Sans CJK SC, sans-serif">输入</text>
+        <text x="40" y="68" font-size="22" font-weight="600" fill="#142630" font-family="Noto Sans CJK SC, sans-serif">原始样本 x</text>
+        <line x1="40" y1="84" x2="200" y2="84" stroke="#71828B" stroke-width="2"/>
+
+        <!-- 原始特征节点 -->
+        <rect x="40" y="190" width="160" height="96" fill="none" stroke="#71828B" stroke-width="2"/>
+        <text x="120" y="232" font-size="18" font-weight="600" fill="#142630" text-anchor="middle">x ∈ ℝᵈ</text>
+        <text x="120" y="260" font-size="15" fill="#50616B" text-anchor="middle">d 维物理特征</text>
+
+        <!-- 从 x 连向 3 个基模型的蓝色分流线（第0步即展现，确立第一层数据输入机制） -->
+        <path d="M 200 238 C 260 238, 270 145, 330 145" stroke="#17628E" stroke-width="2" marker-end="url(#arr-model)"/>
+        <path d="M 200 238 L 330 238" stroke="#17628E" stroke-width="2" marker-end="url(#arr-model)"/>
+        <path d="M 200 238 C 260 238, 270 331, 330 331" stroke="#17628E" stroke-width="2" marker-end="url(#arr-model)"/>
+
+        <!-- 列2：初级层 Level-0 -->
+        <text x="340" y="38" font-size="15" fill="#50616B" font-family="Noto Sans CJK SC, sans-serif">初级层 LEVEL-0</text>
+        <text x="340" y="68" font-size="22" font-weight="600" fill="#142630" font-family="Noto Sans CJK SC, sans-serif">异质基模型</text>
+        <line x1="340" y1="84" x2="590" y2="84" stroke="#71828B" stroke-width="2"/>
+
+        <!-- 基模型 1：SVM -->
+        <rect x="340" y="105" width="250" height="80" fill="none" stroke="#17628E" stroke-width="2"/>
+        <text x="360" y="140" font-size="18" font-weight="600" fill="#142630">支持向量机 h₁</text>
+        <text x="360" y="165" font-size="15" fill="#50616B">最大间隔超平面</text>
+        <text x="565" y="152" font-size="16" font-family="monospace" font-weight="600" fill="#17628E" text-anchor="end">z₁=h₁(x)</text>
+
+        <!-- 基模型 2：随机森林 -->
+        <rect x="340" y="198" width="250" height="80" fill="none" stroke="#17628E" stroke-width="2"/>
+        <text x="360" y="233" font-size="18" font-weight="600" fill="#142630">随机森林 h₂</text>
+        <text x="360" y="258" font-size="15" fill="#50616B">多棵解耦决策树</text>
+        <text x="565" y="245" font-size="16" font-family="monospace" font-weight="600" fill="#17628E" text-anchor="end">z₂=h₂(x)</text>
+
+        <!-- 基模型 3：GBDT -->
+        <rect x="340" y="291" width="250" height="80" fill="none" stroke="#17628E" stroke-width="2"/>
+        <text x="360" y="326" font-size="18" font-weight="600" fill="#142630">梯度提升树 h₃</text>
+        <text x="360" y="351" font-size="15" fill="#50616B">残差迭代逼近</text>
+        <text x="565" y="338" font-size="16" font-family="monospace" font-weight="600" fill="#17628E" text-anchor="end">z₃=h₃(x)</text>
+
+        <!-- 从 3 个基模型连向元特征向量的蓝色汇聚线（第1步显现） -->
+        <g data-step="1">
+          <path d="M 590 145 C 650 145, 660 215, 715 215" stroke="#17628E" stroke-width="2" marker-end="url(#arr-model)"/>
+          <path d="M 590 238 L 715 238" stroke="#17628E" stroke-width="2" marker-end="url(#arr-model)"/>
+          <path d="M 590 331 C 650 331, 660 261, 715 261" stroke="#17628E" stroke-width="2" marker-end="url(#arr-model)"/>
+        </g>
+
+        <!-- 列3：特征转换（第1步显现） -->
+        <g data-step="1">
+          <text x="730" y="38" font-size="15" fill="#50616B" font-family="Noto Sans CJK SC, sans-serif">特征转换</text>
+          <text x="730" y="68" font-size="22" font-weight="600" fill="#142630" font-family="Noto Sans CJK SC, sans-serif">元特征 z</text>
+          <line x1="730" y1="84" x2="950" y2="84" stroke="#71828B" stroke-width="2"/>
+
+          <!-- 元特征向量节点 -->
+          <rect x="730" y="178" width="220" height="120" fill="none" stroke="#17628E" stroke-width="2"/>
+          <text x="750" y="220" font-size="18" font-weight="600" fill="#142630">z = [z₁, z₂, z₃]</text>
+          <text x="750" y="260" font-size="15" fill="#17628E" font-weight="600">预测输出转为新特征</text>
+        </g>
+
+        <!-- 从元特征连向元学习器的橙色线（第2步显现） -->
+        <g data-step="2">
+          <path d="M 950 238 L 1025 238" stroke="#B83D0B" stroke-width="4" marker-end="url(#arr-focus)"/>
+
+          <!-- 列4：次级层 Level-1 -->
+          <text x="1040" y="38" font-size="15" fill="#B83D0B" font-weight="600" font-family="Noto Sans CJK SC, sans-serif">次级层 LEVEL-1</text>
+          <text x="1040" y="68" font-size="22" font-weight="600" fill="#142630" font-family="Noto Sans CJK SC, sans-serif">元学习器</text>
+          <line x1="1040" y1="84" x2="1270" y2="84" stroke="#B83D0B" stroke-width="2"/>
+
+          <!-- 元学习器卡片 -->
+          <rect x="1040" y="170" width="230" height="136" fill="none" stroke="#B83D0B" stroke-width="4"/>
+          <text x="1060" y="210" font-size="19" font-weight="600" fill="#142630">逻辑回归 / 线性模型</text>
+          <text x="1060" y="242" font-size="16" font-family="monospace" font-weight="600" fill="#B83D0B">ŷ = σ(wᵀz + b)</text>
+          <text x="1060" y="274" font-size="15" fill="#50616B">训练最优组合权重 w</text>
+
+          <!-- 从元学习器连向输出的粗线 -->
+          <path d="M 1270 238 L 1335 238" stroke="#17628E" stroke-width="4" marker-end="url(#arr-model)"/>
+
+          <!-- 列5：输出 -->
+          <text x="1350" y="38" font-size="15" fill="#50616B" font-family="Noto Sans CJK SC, sans-serif">最终输出</text>
+          <text x="1350" y="68" font-size="22" font-weight="600" fill="#142630" font-family="Noto Sans CJK SC, sans-serif">集成判断</text>
+          <line x1="1350" y1="84" x2="1460" y2="84" stroke="#71828B" stroke-width="2"/>
+
+          <!-- 输出卡片 -->
+          <rect x="1350" y="190" width="110" height="96" fill="none" stroke="#17628E" stroke-width="2"/>
+          <text x="1405" y="235" font-size="22" font-weight="600" fill="#17628E" text-anchor="middle" font-family="monospace">ŷ</text>
+          <text x="1405" y="265" font-size="15" fill="#50616B" text-anchor="middle">集成预测</text>
+        </g>
+      </svg>
+    </div>
+
+    <!-- 底部收束：两层分工对比 -->
+    <div class="summary-strip">
+      <div class="summary-col">
+        <div class="summary-head">
+          <span class="dot"></span>
+          <span>初级层：保留机制差异</span>
+        </div>
+        <p class="summary-text">
+          异质基模型从原始输入生成预测，将样本映射为概率表征向量。
+        </p>
+      </div>
+      <div class="summary-col" data-step="2">
+        <div class="summary-head">
+          <span class="dot focus"></span>
+          <span>次级层：数据驱动组合</span>
+        </div>
+        <p class="summary-text">
+          元学习器以真值监督训练权重，替代固定表决，兼防高阶过拟合。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，今天我们进入 Stacking 堆叠法的核心结构讲解。
+    回顾前面的 Bagging 和 Boosting，它们通常基于同质弱学习器，通过投票或加权求和来组合。
+    而 Stacking 最大的突破在于两点：第一，它可以组合异质基模型，比如将 SVM、随机森林和 GBDT 放在一起；
+    第二，它不用人为设定的多数表决，而是把第一层所有基模型的预测输出当成新的输入特征，再训练一个元学习器来决定如何融合。
+    请注意，元学习器通常选用简单的线性模型或逻辑回归，因为第一层特征本身已经具有极高抽象度，简单元模型能有效防止过拟合。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 27, total: 32 });
+  </script>
+</body>
+</html>

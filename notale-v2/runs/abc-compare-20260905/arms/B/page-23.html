@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Out-of-fold 预测防止信息泄漏</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF2;
+      --text: #142533;
+      --muted: #536777;
+      --surface: #F7FAFC;
+      --surface-strong: #D7E1E8;
+      --learner: #275D91;
+      --aggregate: #B63B24;
+      --correct: #2E6A45;
+      --focus: #006B72;
+      --fold-hold: #D96B27;
+      --fold-train: #275D91;
+      --leak-warn: #9B2C2C;
+      --fs-sec: 16px;
+      --fs-label: 15px;
+      --fs-tick: 13px;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+    }
+
+    /* 顶栏标题区 */
+    .header-block {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-shrink: 0;
+      border-bottom: 2px solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+    .header-titles h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+      margin: 0 0 6px 0;
+    }
+    .header-titles p {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.35;
+    }
+    .kpi-badge {
+      background: var(--surface);
+      border: 2px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 6px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .kpi-badge .label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .kpi-badge .val {
+      font-family: var(--font-num);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    /* 主舞台双栏 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧核心流程展示 */
+    .stage-card {
+      background: var(--surface);
+      border: 2px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+    .section-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+      gap: 12px;
+      flex-wrap: nowrap;
+    }
+    .section-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+    }
+    .section-title .badge {
+      font-size: var(--fs-label);
+      padding: 2px 8px;
+      background: var(--surface-strong);
+      border-radius: 6px;
+      color: var(--learner);
+      font-weight: 600;
+    }
+
+    /* 交互切换按纽 */
+    .fold-nav {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .fold-btn {
+      background: var(--surface-strong);
+      border: 2px solid transparent;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+    .fold-btn:hover {
+      border-color: var(--focus);
+    }
+    .fold-btn[aria-pressed="true"] {
+      background: var(--learner);
+      color: #FFF;
+      border-color: var(--learner);
+    }
+
+    /* SVG 核心图示区 */
+    .svg-container {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      background: #F0F4F8;
+      border-radius: 8px;
+      border: 1px solid #D1DCE5;
+      overflow: hidden;
+    }
+    .svg-container svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧对比与机制解构栏 */
+    .aside-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .contrast-panel {
+      background: var(--surface);
+      border: 2px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .contrast-panel.warning {
+      border-color: #E2B7B7;
+      background: #FCF5F5;
+    }
+    .panel-head {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .panel-head.bad {
+      color: var(--leak-warn);
+    }
+    .panel-head.good {
+      color: var(--correct);
+    }
+    .contrast-desc {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+    }
+    .metric-comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      background: rgba(255,255,255,0.7);
+      border: 1px solid rgba(0,0,0,0.06);
+      border-radius: 8px;
+      padding: 8px 12px;
+    }
+    .metric-item .sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .metric-item .val {
+      font-family: var(--font-num);
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .metric-item .val.bad {
+      color: var(--leak-warn);
+    }
+    .metric-item .val.good {
+      color: var(--correct);
+    }
+
+    /* 底部收束结论条 */
+    .takeaway-bar {
+      background: var(--surface);
+      border-left: 6px solid var(--aggregate);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      padding: 10px 18px;
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    }
+    .takeaway-bar b {
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body data-page="23" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题 -->
+    <header class="header-block">
+      <div class="header-titles">
+        <h1>Out-of-fold 预测防止信息泄漏</h1>
+        <p>元学习器只能接收基模型在未见样本上的预测，严格模拟生产环境下的未知泛化能力</p>
+      </div>
+      <div class="kpi-badge">
+        <span class="label">K 折划分验证</span>
+        <span class="val">K = 5 折</span>
+      </div>
+    </header>
+
+    <!-- 主展示网格 -->
+    <main class="main-grid">
+      <!-- 左：折叠流动交互图 -->
+      <section class="stage-card min0">
+        <div class="section-title-row">
+          <div class="section-title">
+            <span>OOF 交叉构造流程</span>
+            <span class="badge" id="currFoldLabel">当前观察：第 1 折验证</span>
+          </div>
+          <div class="fold-nav" role="tablist" aria-label="选择观察折">
+            <button class="fold-btn" aria-pressed="true" data-fold="1">第 1 折</button>
+            <button class="fold-btn" aria-pressed="false" data-fold="2">第 2 折</button>
+            <button class="fold-btn" aria-pressed="false" data-fold="3">第 3 折</button>
+            <button class="fold-btn" aria-pressed="false" data-fold="4">第 4 折</button>
+            <button class="fold-btn" aria-pressed="false" data-fold="5">第 5 折</button>
+            <button class="fold-btn" aria-pressed="false" data-fold="all" style="margin-left:6px; background:var(--aggregate); color:#FFF;">合成全量</button>
+          </div>
+        </div>
+
+        <div class="svg-container min0">
+          <svg id="flowSvg" viewBox="0 0 1000 480" preserveAspectRatio="xMidYMid meet">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#536777" />
+              </marker>
+              <marker id="arrow-act" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#B63B24" />
+              </marker>
+              <pattern id="diagonalHatch" width="10" height="10" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="10" stroke="#B63B24" stroke-width="2" stroke-opacity="0.3"/>
+              </pattern>
+            </defs>
+
+            <!-- 顶部分层标签 -->
+            <g id="layerLabels">
+              <text x="40" y="32" font-size="15" font-weight="700" fill="#142533">【阶段 1】训练数据 5 折划分</text>
+              <text x="40" y="166" font-size="15" font-weight="700" fill="#142533">【阶段 2】基学习器组（M₁, M₂, M₃）在训练折拟合</text>
+              <text x="40" y="312" font-size="15" font-weight="700" fill="#142533">【阶段 3】留出折 Out-of-fold 预测生成元特征</text>
+              <text x="40" y="445" font-size="15" font-weight="700" fill="#B63B24">【阶段 4】无缝拼装为元学习器训练集 S_meta (N 样本 × M 特征)</text>
+            </g>
+
+            <!-- 阶段 1：原始数据 5 块 -->
+            <g id="rawFolds" transform="translate(40, 50)">
+              <!-- 5个方块 -->
+              <g class="fold-box" data-idx="1" transform="translate(0,0)">
+                <rect width="170" height="65" rx="8" fill="#D7E1E8" stroke="#536777" stroke-width="2" />
+                <text x="85" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="#142533">Fold 1 (20%)</text>
+                <text x="85" y="50" text-anchor="middle" font-size="13" fill="#536777" class="fold-role-txt">验证留出</text>
+              </g>
+              <g class="fold-box" data-idx="2" transform="translate(186,0)">
+                <rect width="170" height="65" rx="8" fill="#275D91" stroke="#275D91" stroke-width="2" />
+                <text x="85" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="#FFF">Fold 2 (20%)</text>
+                <text x="85" y="50" text-anchor="middle" font-size="13" fill="#FFF" opacity="0.9" class="fold-role-txt">参与训练</text>
+              </g>
+              <g class="fold-box" data-idx="3" transform="translate(372,0)">
+                <rect width="170" height="65" rx="8" fill="#275D91" stroke="#275D91" stroke-width="2" />
+                <text x="85" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="#FFF">Fold 3 (20%)</text>
+                <text x="85" y="50" text-anchor="middle" font-size="13" fill="#FFF" opacity="0.9" class="fold-role-txt">参与训练</text>
+              </g>
+              <g class="fold-box" data-idx="4" transform="translate(558,0)">
+                <rect width="170" height="65" rx="8" fill="#275D91" stroke="#275D91" stroke-width="2" />
+                <text x="85" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="#FFF">Fold 4 (20%)</text>
+                <text x="85" y="50" text-anchor="middle" font-size="13" fill="#FFF" opacity="0.9" class="fold-role-txt">参与训练</text>
+              </g>
+              <g class="fold-box" data-idx="5" transform="translate(744,0)">
+                <rect width="170" height="65" rx="8" fill="#275D91" stroke="#275D91" stroke-width="2" />
+                <text x="85" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="#FFF">Fold 5 (20%)</text>
+                <text x="85" y="50" text-anchor="middle" font-size="13" fill="#FFF" opacity="0.9" class="fold-role-txt">参与训练</text>
+              </g>
+            </g>
+
+            <!-- 连接折到基模型训练的连线 -->
+            <g id="trainConnectors" stroke="#275D91" stroke-width="2" stroke-dasharray="4 3" opacity="0.7">
+              <path id="pathTrain" d="M 550 118 L 550 185" marker-end="url(#arrow)" />
+            </g>
+
+            <!-- 阶段 2：当前折下的 3 个基学习器卡片 -->
+            <g id="baseModels" transform="translate(320, 185)">
+              <rect x="0" y="0" width="370" height="74" rx="10" fill="#F7FAFC" stroke="#275D91" stroke-width="2"/>
+              <text x="185" y="24" text-anchor="middle" font-size="15" font-weight="700" fill="#275D91">第 k 轮基模型实例 (在其余 4 折训练)</text>
+              <!-- 3个模型子芯片 -->
+              <g transform="translate(18, 36)">
+                <rect width="98" height="26" rx="5" fill="#E8EEF2" stroke="#B0C4D4"/>
+                <text x="49" y="18" text-anchor="middle" font-size="13" font-weight="600" fill="#142533">M₁: GBDT</text>
+              </g>
+              <g transform="translate(136, 36)">
+                <rect width="98" height="26" rx="5" fill="#E8EEF2" stroke="#B0C4D4"/>
+                <text x="49" y="18" text-anchor="middle" font-size="13" font-weight="600" fill="#142533">M₂: SVM</text>
+              </g>
+              <g transform="translate(254, 36)">
+                <rect width="98" height="26" rx="5" fill="#E8EEF2" stroke="#B0C4D4"/>
+                <text x="49" y="18" text-anchor="middle" font-size="13" font-weight="600" fill="#142533">M₃: 神经网络</text>
+              </g>
+            </g>
+
+            <!-- 预测流动箭头：从基模型流向留出预测条 -->
+            <path id="flowToOof" d="M 505 260 L 125 328" fill="none" stroke="#B63B24" stroke-width="2.5" marker-end="url(#arrow-act)"/>
+            <g id="flowLabelGroup">
+              <rect id="flowLabelBg" x="220" y="270" width="168" height="22" rx="4" fill="#F0F4F8" fill-opacity="0.9" stroke="#B63B24" stroke-width="1"/>
+              <text id="predFlowLabel" x="304" y="285" text-anchor="middle" font-size="13" font-weight="700" fill="#B63B24">仅对未见 Fold 1 预测</text>
+            </g>
+
+            <!-- 阶段 3：OOF 特征收集条 (5 段拼装区) -->
+            <g id="metaMatrix" transform="translate(40, 328)">
+              <!-- 底板槽位 -->
+              <rect x="0" y="0" width="914" height="68" rx="8" fill="#E8EEF2" stroke="#536777" stroke-width="1.5" stroke-dasharray="4 2"/>
+              
+              <!-- 5个装配槽 -->
+              <g class="meta-slot" data-slot="1" transform="translate(0,0)">
+                <rect width="170" height="68" rx="7" fill="#B63B24" stroke="#B63B24" stroke-width="2"/>
+                <text x="85" y="28" text-anchor="middle" font-size="14" font-weight="700" fill="#FFF">ŷ_oof [1]</text>
+                <text x="85" y="48" text-anchor="middle" font-size="12" fill="#FFF" opacity="0.9">真纯净无泄漏</text>
+              </g>
+              <g class="meta-slot" data-slot="2" transform="translate(186,0)">
+                <rect width="170" height="68" rx="7" fill="#FFF" stroke="#D1DCE5" stroke-width="1.5"/>
+                <text x="85" y="28" text-anchor="middle" font-size="14" font-weight="600" fill="#536777">ŷ_oof [2]</text>
+                <text x="85" y="48" text-anchor="middle" font-size="12" fill="#536777">待第 2 轮生成</text>
+              </g>
+              <g class="meta-slot" data-slot="3" transform="translate(372,0)">
+                <rect width="170" height="68" rx="7" fill="#FFF" stroke="#D1DCE5" stroke-width="1.5"/>
+                <text x="85" y="28" text-anchor="middle" font-size="14" font-weight="600" fill="#536777">ŷ_oof [3]</text>
+                <text x="85" y="48" text-anchor="middle" font-size="12" fill="#536777">待第 3 轮生成</text>
+              </g>
+              <g class="meta-slot" data-slot="4" transform="translate(558,0)">
+                <rect width="170" height="68" rx="7" fill="#FFF" stroke="#D1DCE5" stroke-width="1.5"/>
+                <text x="85" y="28" text-anchor="middle" font-size="14" font-weight="600" fill="#536777">ŷ_oof [4]</text>
+                <text x="85" y="48" text-anchor="middle" font-size="12" fill="#536777">待第 4 轮生成</text>
+              </g>
+              <g class="meta-slot" data-slot="5" transform="translate(744,0)">
+                <rect width="170" height="68" rx="7" fill="#FFF" stroke="#D1DCE5" stroke-width="1.5"/>
+                <text x="85" y="28" text-anchor="middle" font-size="14" font-weight="600" fill="#536777">ŷ_oof [5]</text>
+                <text x="85" y="48" text-anchor="middle" font-size="12" fill="#536777">待第 5 轮生成</text>
+              </g>
+            </g>
+
+            <!-- 说明角标与锁闭徽章 -->
+            <g transform="translate(40, 452)">
+              <circle cx="8" cy="8" r="7" fill="#2E6A45" />
+              <path d="M 5 8 L 7 10 L 11 6" fill="none" stroke="#FFF" stroke-width="2" />
+              <text x="24" y="13" font-size="14" font-weight="600" fill="#2E6A45">整行无缝拼接：每个样本只作为 Out-of-fold 出现 1 次，训练集与元特征尺度严格对齐 (N × 3)</text>
+            </g>
+          </svg>
+        </div>
+      </section>
+
+      <!-- 右：信息泄漏机理与危害对比 -->
+      <aside class="aside-col min0">
+        <!-- 错误做法：直接使用原训练集预测 -->
+        <div class="contrast-panel warning">
+          <div class="panel-head bad">
+            <span>朴素做法（直接训练集内预测）</span>
+          </div>
+          <p class="contrast-desc">
+            若基模型用全量训练集拟合后直接输出预测给元学习器，复杂模型（如树深很高的 GBDT）会直接“记住”标签。
+          </p>
+          <div class="metric-comparison">
+            <div class="metric-item">
+              <div class="sub">基模型自身内训 MSE</div>
+              <div class="val bad">0.008（虚高完美）</div>
+            </div>
+            <div class="metric-item">
+              <div class="sub">线上测试集 MSE</div>
+              <div class="val bad">0.342（断崖崩塌）</div>
+            </div>
+          </div>
+          <p class="contrast-desc" style="font-size:var(--fs-label); color:#782424; margin:0;">
+            <b>后遗症：</b>元学习器误以为该基模型“绝对正确”，赋予其压倒性权重，彻底丧失对泛化误差与异常值的容错能力。
+          </p>
+        </div>
+
+        <!-- 正确做法：OOF 交叉验证特征构造 -->
+        <div class="contrast-panel" style="border-color:#B7D8C4; background:#F4FAF6;">
+          <div class="panel-head good">
+            <span>OOF 预测（严格样本隔离）</span>
+          </div>
+          <p class="contrast-desc">
+            元学习器接触到的每一条输入特征，都是基模型在<b>完全未见过的样本</b>上犯错与权衡后的真实推断。
+          </p>
+          <div class="metric-comparison">
+            <div class="metric-item">
+              <div class="sub">OOF 模拟泛化 MSE</div>
+              <div class="val good">0.146（反映实情）</div>
+            </div>
+            <div class="metric-item">
+              <div class="sub">线上测试集 MSE</div>
+              <div class="val good">0.141（高度稳定）</div>
+            </div>
+          </div>
+          <p class="contrast-desc" style="font-size:var(--fs-label); color:#235235; margin:0;">
+            <b>核心收益：</b>元学习器学习到的是基模型在真实分布中的<b>置信度与互补规律</b>，而非过拟合记忆。
+          </p>
+        </div>
+      </aside>
+    </main>
+
+    <!-- 底部收束结论 -->
+    <footer class="takeaway-bar">
+      <b>核心准则：</b>
+      <span>训练阶段绝不给元学习器任何包含“已知答案”的基预测——“看不见训练样本”是元模型学会纠偏与加权的前提。</span>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      Deck.init({ index: 23, total: 27 });
+
+      const foldButtons = document.querySelectorAll('.fold-btn');
+      const currFoldLabel = document.getElementById('currFoldLabel');
+      const flowSvg = document.getElementById('flowSvg');
+      const flowToOof = document.getElementById('flowToOof');
+      const predFlowLabel = document.getElementById('predFlowLabel');
+
+      const foldData = {
+        1: { targetX: 125, label: "第 1 折验证", desc: "仅对未见 Fold 1 预测" },
+        2: { targetX: 311, label: "第 2 折验证", desc: "仅对未见 Fold 2 预测" },
+        3: { targetX: 497, label: "第 3 折验证", desc: "仅对未见 Fold 3 预测" },
+        4: { targetX: 683, label: "第 4 折验证", desc: "仅对未见 Fold 4 预测" },
+        5: { targetX: 869, label: "第 5 折验证", desc: "仅对未见 Fold 5 预测" }
+      };
+
+      function updateFoldState(foldId) {
+        foldButtons.forEach(btn => {
+          btn.setAttribute('aria-pressed', btn.getAttribute('data-fold') === String(foldId));
+        });
+
+        const rawBoxes = document.querySelectorAll('.fold-box');
+        const metaSlots = document.querySelectorAll('.meta-slot');
+
+        if (foldId === 'all') {
+          currFoldLabel.textContent = "全量合成：5 折全部生成完毕，输入元学习器";
+          flowToOof.style.display = 'none';
+          document.getElementById('flowLabelGroup').style.display = 'none';
+
+          rawBoxes.forEach(box => {
+            const rect = box.querySelector('rect');
+            const roleTxt = box.querySelector('.fold-role-txt');
+            const mainTxt = box.querySelectorAll('text')[0];
+            rect.setAttribute('fill', '#D7E1E8');
+            rect.setAttribute('stroke', '#536777');
+            mainTxt.setAttribute('fill', '#142533');
+            roleTxt.setAttribute('fill', '#536777');
+            roleTxt.textContent = "已完成折";
+          });
+
+          metaSlots.forEach(slot => {
+            const rect = slot.querySelector('rect');
+            const txts = slot.querySelectorAll('text');
+            rect.setAttribute('fill', '#2E6A45');
+            rect.setAttribute('stroke', '#2E6A45');
+            txts[0].setAttribute('fill', '#FFF');
+            txts[1].setAttribute('fill', '#FFF');
+            txts[1].textContent = "OOF 特征已就绪";
+          });
+          return;
+        }
+
+        const foldNum = parseInt(foldId, 10);
+        currFoldLabel.textContent = `当前观察：第 ${foldNum} 折验证`;
+        flowToOof.style.display = 'block';
+        document.getElementById('flowLabelGroup').style.display = 'block';
+
+        const info = foldData[foldNum];
+        // 更新连接箭头起点/终点
+        flowToOof.setAttribute('d', `M 505 260 L ${info.targetX} 328`);
+        const midX = (505 + info.targetX) / 2;
+        const lblBg = document.getElementById('flowLabelBg');
+        lblBg.setAttribute('x', midX - 84);
+        predFlowLabel.setAttribute('x', midX);
+        predFlowLabel.textContent = info.desc;
+
+        // 原始5折颜色切换
+        rawBoxes.forEach(box => {
+          const idx = parseInt(box.getAttribute('data-idx'), 10);
+          const rect = box.querySelector('rect');
+          const roleTxt = box.querySelector('.fold-role-txt');
+          const mainTxt = box.querySelectorAll('text')[0];
+
+          if (idx === foldNum) {
+            // 当前验证留出折
+            rect.setAttribute('fill', '#D7E1E8');
+            rect.setAttribute('stroke', '#B63B24');
+            rect.setAttribute('stroke-width', '2.5');
+            mainTxt.setAttribute('fill', '#B63B24');
+            roleTxt.setAttribute('fill', '#B63B24');
+            roleTxt.textContent = "★ 留出验证 (未参与)";
+          } else {
+            // 训练折
+            rect.setAttribute('fill', '#275D91');
+            rect.setAttribute('stroke', '#275D91');
+            rect.setAttribute('stroke-width', '2');
+            mainTxt.setAttribute('fill', '#FFF');
+            roleTxt.setAttribute('fill', '#FFF');
+            roleTxt.textContent = "参与拟合训练";
+          }
+        });
+
+        // 底部元特征拼接卡槽
+        metaSlots.forEach(slot => {
+          const sIdx = parseInt(slot.getAttribute('data-slot'), 10);
+          const rect = slot.querySelector('rect');
+          const txts = slot.querySelectorAll('text');
+
+          if (sIdx === foldNum) {
+            rect.setAttribute('fill', '#B63B24');
+            rect.setAttribute('stroke', '#B63B24');
+            txts[0].setAttribute('fill', '#FFF');
+            txts[1].setAttribute('fill', '#FFF');
+            txts[1].textContent = "当前轮生成中...";
+          } else if (sIdx < foldNum) {
+            rect.setAttribute('fill', '#2E6A45');
+            rect.setAttribute('stroke', '#2E6A45');
+            txts[0].setAttribute('fill', '#FFF');
+            txts[1].setAttribute('fill', '#FFF');
+            txts[1].textContent = "已保留";
+          } else {
+            rect.setAttribute('fill', '#FFF');
+            rect.setAttribute('stroke', '#D1DCE5');
+            txts[0].setAttribute('fill', '#536777');
+            txts[1].setAttribute('fill', '#536777');
+            txts[1].textContent = `待第 ${sIdx} 轮生成`;
+          }
+        });
+      }
+
+      foldButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const fold = btn.getAttribute('data-fold');
+          updateFoldState(fold);
+        });
+      });
+
+      // 默认初始为第 1 折
+      updateFoldState(1);
+    })();
+  </script>
+</body>
+</html>

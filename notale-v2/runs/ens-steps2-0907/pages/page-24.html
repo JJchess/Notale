@@ -1,0 +1,475 @@
+<!doctype html>
+<!--
+主对象：Boosting 训练迭代中训练集与测试集随树数量（M）的变化曲线，以及不同学习率（η）下的过拟合分歧。
+对象关系：大图展示典型学习率下的“训练误差单调下降 vs 测试误差先降后升（过拟合拐点）”，右侧对照不同学习率对最优树数与泛化下限的制约权衡。
+说明依附：关键拐点（过拟合转折点、最佳停止点）直接在曲线对应坐标处标注，核心权衡结论紧贴图表下方与侧边。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 20px;
+    }
+
+    .header-area {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .page-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      margin: 0;
+      font-weight: normal;
+    }
+
+    .page-lead {
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 36px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .chart-panel {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .chart-heading {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      color: var(--text);
+      margin: 0;
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-line {
+      width: 22px;
+      height: 3px;
+    }
+
+    .chart-host {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+
+    #loss-chart {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-anno {
+      position: absolute;
+      pointer-events: none;
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+    }
+
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      justify-content: center;
+      min-width: 0;
+    }
+
+    .tradeoff-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-left: 3px solid var(--rule);
+      padding-left: 18px;
+      transition: border-color var(--motion-fast);
+    }
+
+    .tradeoff-row.highlight {
+      border-left-color: var(--focus);
+    }
+
+    .tradeoff-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      color: var(--text);
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .tradeoff-title .tag {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-family: var(--font-sans);
+    }
+
+    .tradeoff-desc {
+      font-size: var(--fs-body);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      margin: 0;
+    }
+
+    .tradeoff-desc em {
+      font-style: normal;
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .control-strip {
+      display: flex;
+      gap: 12px;
+      margin-top: 6px;
+    }
+
+    .rate-btn {
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all var(--motion-fast);
+    }
+
+    .rate-btn:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+
+    .rate-btn.active {
+      background: var(--model);
+      border-color: var(--model);
+      color: var(--bg);
+      font-weight: 500;
+    }
+  </style>
+  <script src="assets/lib/echarts.min.js"></script>
+</head>
+<body data-page="24" data-total="32">
+  <div id="stage">
+    <header class="header-area">
+      <h1 class="page-title">Boosting 的关键权衡：学习率、基学习器数量与过拟合</h1>
+      <p class="page-lead">串行拟合残差会持续压缩训练损失；学习率越低收敛越稳，但需配合更多弱学习器与早停。</p>
+    </header>
+
+    <div class="main-grid">
+      <div class="chart-panel min0">
+        <div class="chart-header">
+          <div class="chart-heading" id="chart-subheading">损失演化（当前：学习率 η = 0.10）</div>
+          <div class="legend-row">
+            <div class="legend-item">
+              <span class="legend-line" style="background: var(--rule); height: 2px; border-top: 2px dashed var(--rule); background: transparent;"></span>
+              <span>训练集损失</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line" style="background: var(--model);"></span>
+              <span>测试集损失</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line" style="background: var(--focus);"></span>
+              <span>最优早停点</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-host min0">
+          <div id="loss-chart"></div>
+        </div>
+      </div>
+
+      <div class="side-panel min0">
+        <div class="tradeoff-row highlight" data-step="1">
+          <div class="tradeoff-title">
+            收缩与步长
+            <span class="tag">Shrinkage</span>
+          </div>
+          <p class="tradeoff-desc">
+            引入步长 <em>F<sub>m</sub> = F<sub>m-1</sub> + η·h<sub>m</sub></em> 限制单棵树贡献，保留后续纠错空间。
+          </p>
+          <div class="control-strip">
+            <button class="rate-btn active" data-lr="0.10" id="btn-med">η = 0.10（标准）</button>
+            <button class="rate-btn" data-lr="0.25" id="btn-high">η = 0.25（过快）</button>
+            <button class="rate-btn" data-lr="0.03" id="btn-low">η = 0.03（保守）</button>
+          </div>
+        </div>
+
+        <div class="tradeoff-row" data-step="2">
+          <div class="tradeoff-title">
+            基学习器容量
+            <span class="tag">Trees &amp; Depth</span>
+          </div>
+          <p class="tradeoff-desc">
+            基树过多或深度过大时，模型转向拟合训练噪声，测试误差反弹上升。
+          </p>
+        </div>
+
+        <div class="tradeoff-row" data-step="3">
+          <div class="tradeoff-title">
+            早停机制
+            <span class="tag">Early Stopping</span>
+          </div>
+          <p class="tradeoff-desc">
+            在验证集损失连续若干轮不再下降时截断迭代，直接锁死最佳泛化模型。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    在这一页，我们探讨 Boosting 模型调参中最核心的三角权衡：学习率 η、基学习器数量 M，以及过拟合风险。
+    请大家看左图的损失曲线。虚线是训练集损失，随着迭代轮数增加，它几乎单调下降，逼近于零。
+    但蓝色的测试集损失并没有一直下降：它先降到最低点，随后开始翘起，这就是过拟合。
+    橙色标记的位置就是测试损失最低的最优早停点。
+    右侧展示了学习率的作用：当我们把步长缩小，每棵树只承担一小部分更新量，可以明显降低过拟合倾向并获得更低的测试误差下界；但代价是需要更多的弱学习器才能充分收敛。因此在工程实践中，通常采取“小学习率 + 充分多弱学习器 + 早停截断”的经典策略。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var host = document.getElementById("loss-chart");
+      var subheading = document.getElementById("chart-subheading");
+      var buttons = document.querySelectorAll(".rate-btn");
+      var chart = null;
+
+      // 预先计算真实数学规律的 1..200 步曲线数据
+      // 训练损失：单调递减到接近噪声下界
+      // 测试损失：随学习率与树数量变化呈现 U 型过拟合曲线
+      function generateCurves(lr) {
+        var steps = 200;
+        var trainData = [];
+        var testData = [];
+        var minTestLoss = 999;
+        var bestM = 1;
+
+        for (var m = 1; m <= steps; m++) {
+          // 训练损失：指数衰减 + 底噪
+          var train = 0.92 * Math.exp(-lr * 0.12 * m) + 0.03;
+          
+          // 测试损失：偏差指数衰减 + 随学习率和树数增长的过拟合反弹，限制最大值不超过 1.05
+          var bias = 0.88 * Math.exp(-lr * 0.09 * m) + 0.12;
+          var varianceOverfit = 0.000045 * Math.pow(m, 1.65) * Math.pow(lr / 0.1, 1.2);
+          var test = Math.min(0.98, bias + varianceOverfit);
+
+          trainData.push([m, Number(train.toFixed(4))]);
+          testData.push([m, Number(test.toFixed(4))]);
+
+          if (test < minTestLoss) {
+            minTestLoss = test;
+            bestM = m;
+          }
+        }
+
+        return {
+          train: trainData,
+          test: testData,
+          bestM: bestM,
+          minTestLoss: Number(minTestLoss.toFixed(4))
+        };
+      }
+
+      var currentLr = 0.10;
+      var curveData = generateCurves(currentLr);
+
+      function makeOption(data, lr) {
+        var cModel = Deck.token("--model") || "#17628E";
+        var cFocus = Deck.token("--focus") || "#B83D0B";
+        var cRule = Deck.token("--rule") || "#71828B";
+        var cMuted = Deck.token("--muted") || "#50616B";
+        var cText = Deck.token("--text") || "#142630";
+        var fontSans = Deck.token("--font-sans") || "sans-serif";
+
+        return {
+          animationDuration: 350,
+          animationEasing: "cubicOut",
+          grid: {
+            left: 56,
+            right: 48,
+            top: 48,
+            bottom: 56
+          },
+          xAxis: {
+            type: "value",
+            min: 0,
+            max: 200,
+            interval: 40,
+            name: "弱学习器数量 M（迭代轮数）",
+            nameLocation: "middle",
+            nameGap: 36,
+            nameTextStyle: {
+              color: cMuted,
+              fontSize: 15,
+              fontFamily: fontSans
+            },
+            axisLine: { lineStyle: { color: cRule, width: 2 } },
+            axisTick: { show: true, lineStyle: { color: cRule } },
+            axisLabel: { color: cMuted, fontSize: 13, fontFamily: fontSans },
+            splitLine: { show: false }
+          },
+          yAxis: {
+            type: "value",
+            min: 0,
+            max: 1.0,
+            interval: 0.2,
+            name: "损失（Loss）",
+            nameLocation: "end",
+            nameGap: 16,
+            nameTextStyle: {
+              color: cMuted,
+              fontSize: 15,
+              fontFamily: fontSans
+            },
+            axisLine: { lineStyle: { color: cRule, width: 2 } },
+            axisTick: { show: true, lineStyle: { color: cRule } },
+            axisLabel: { color: cMuted, fontSize: 13, fontFamily: fontSans },
+            splitLine: { lineStyle: { color: "rgba(113, 130, 139, 0.18)", type: "dashed" } }
+          },
+          series: [
+            {
+              name: "训练损失",
+              type: "line",
+              showSymbol: false,
+              clip: true,
+              data: data.train,
+              lineStyle: {
+                color: cRule,
+                width: 2,
+                type: "dashed"
+              }
+            },
+            {
+              name: "测试损失",
+              type: "line",
+              showSymbol: false,
+              clip: true,
+              data: data.test,
+              lineStyle: {
+                color: cModel,
+                width: 3.5
+              },
+              markPoint: {
+                symbol: "circle",
+                symbolSize: 10,
+                itemStyle: {
+                  color: cFocus,
+                  borderColor: "#ffffff",
+                  borderWidth: 2
+                },
+                data: [
+                  {
+                    coord: [data.bestM, data.minTestLoss],
+                    name: "最佳早停点"
+                  }
+                ],
+                label: {
+                  show: true,
+                  formatter: "最佳早停点 M=" + data.bestM,
+                  position: data.bestM > 170 ? "left" : "top",
+                  distance: 12,
+                  color: cFocus,
+                  fontSize: 15,
+                  fontWeight: 500,
+                  fontFamily: fontSans
+                }
+              },
+              markLine: {
+                silent: true,
+                symbol: "none",
+                lineStyle: {
+                  color: cFocus,
+                  width: 1.5,
+                  type: "dotted"
+                },
+                data: [
+                  { xAxis: data.bestM }
+                ],
+                label: { show: false }
+              }
+            }
+          ]
+        };
+      }
+
+      function update(lr) {
+        currentLr = lr;
+        curveData = generateCurves(lr);
+        chart.setOption(makeOption(curveData, lr), { notMerge: true });
+        subheading.textContent = "损失演化（当前：学习率 η = " + lr.toFixed(2) + "）";
+      }
+
+      // 初始化 ECharts
+      try {
+        chart = echarts.init(host, null, { renderer: "svg" });
+        chart.setOption(makeOption(curveData, currentLr));
+
+        var resizeObserver = new ResizeObserver(function () {
+          if (chart) chart.resize();
+        });
+        resizeObserver.observe(host);
+      } catch (err) {
+        console.error("ECharts init failed", err);
+      }
+
+      // 交互按钮绑定
+      buttons.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          buttons.forEach(function (b) { b.classList.remove("active"); });
+          btn.classList.add("active");
+          var lr = parseFloat(btn.getAttribute("data-lr"));
+          update(lr);
+        });
+      });
+
+      Deck.init({ title: "Boosting 的关键权衡" });
+      window.__NOTALE_READY__ = true;
+    })();
+  </script>
+</body>
+</html>

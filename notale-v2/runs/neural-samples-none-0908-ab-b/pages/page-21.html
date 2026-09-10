@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 32px 48px;
+      color: var(--text);
+      box-sizing: border-box;
+      font-family: var(--font-sans, system-ui, sans-serif);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    /* 顶部标题行 */
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 2px solid var(--rule);
+      padding-bottom: 12px;
+    }
+    .header-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--structure);
+      letter-spacing: -0.5px;
+      margin: 0;
+    }
+    .header-formula {
+      font-size: var(--fs-lead);
+      color: var(--structure);
+      font-family: var(--font-mono, monospace);
+      margin: 0;
+      font-weight: 600;
+    }
+
+    /* 主工作台：无外包大卡片，依靠间距、基线与标尺组织结构 */
+    .workspace {
+      display: grid;
+      grid-template-columns: 930px 530px;
+      gap: 44px;
+      flex: 1;
+      margin-top: 18px;
+      min-height: 0;
+    }
+
+    /* 左栏：控制与展开图 */
+    .seq-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .control-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .sentence-tabs {
+      display: flex;
+      gap: 12px;
+    }
+    .sentence-btn {
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      font-size: var(--fs-sec);
+      padding: 6px 16px;
+      cursor: pointer;
+      font-weight: 600;
+      border-radius: 2px;
+      transition: all 0.15s ease;
+    }
+    .sentence-btn.active {
+      background: var(--structure);
+      color: #fff;
+      border-color: var(--structure);
+    }
+    .step-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .action-btn {
+      background: #fff;
+      border: 1px solid var(--rule);
+      color: var(--structure);
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      padding: 6px 16px;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all 0.15s ease;
+    }
+    .action-btn:hover:not(:disabled) {
+      border-color: var(--structure);
+    }
+    .action-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      border-color: var(--rule);
+      color: var(--muted);
+    }
+    .action-btn.primary {
+      background: var(--signal);
+      border-color: var(--signal);
+      color: #fff;
+    }
+    .action-btn.primary:hover:not(:disabled) {
+      background: #b52e0c;
+    }
+
+    /* SVG 展开图容器：保持白板通透 */
+    .unfolded-svg-box {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      min-height: 480px;
+    }
+
+    /* 右栏：隐状态空间剖析与读出头 */
+    .inspect-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding-left: 20px;
+      border-left: 1px solid var(--rule);
+    }
+    .section-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-size: var(--fs-h2);
+      color: var(--structure);
+      font-weight: 700;
+      margin: 0;
+    }
+    .step-indicator {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--signal);
+      letter-spacing: 0.5px;
+    }
+
+    /* 4 维隐状态数值棒图 */
+    .state-bars-group {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .dim-row {
+      display: grid;
+      grid-template-columns: 60px 1fr 64px;
+      align-items: center;
+      gap: 12px;
+      font-size: var(--fs-label);
+    }
+    .dim-tag {
+      font-family: var(--font-mono, monospace);
+      font-weight: 700;
+      color: var(--structure);
+      font-size: var(--fs-label);
+    }
+    .bar-bg {
+      height: 22px;
+      background: #e2e7e4;
+      position: relative;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      position: absolute;
+      top: 0;
+      transition: width 0.2s ease-out, left 0.2s ease-out;
+    }
+    .val-text {
+      text-align: right;
+      font-family: var(--font-mono, monospace);
+      font-weight: 700;
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+
+    /* 输出层与分类预测条 */
+    .readout-box {
+      border-top: 1px solid var(--rule);
+      padding-top: 20px;
+    }
+    .readout-meter {
+      height: 26px;
+      background: #e2e7e4;
+      border-radius: 2px;
+      position: relative;
+      display: flex;
+      overflow: hidden;
+      margin: 10px 0 6px 0;
+    }
+    .meter-pos {
+      background: var(--structure);
+      height: 100%;
+      transition: width 0.2s ease-out;
+    }
+    .meter-neg {
+      background: var(--signal);
+      height: 100%;
+      transition: width 0.2s ease-out;
+    }
+    .score-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+    }
+
+    /* 机制判断陈述区 */
+    .finding-alert {
+      padding: 12px 14px;
+      font-size: var(--fs-body);
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .finding-alert.alert-turn {
+      border-left-color: var(--signal);
+      background: rgba(212, 56, 17, 0.06);
+    }
+
+    /* 底部底栏说明 */
+    .footer-bar {
+      border-top: 1px solid var(--rule);
+      padding-top: 12px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <!-- 顶部 -->
+    <div class="header-row">
+      <h1 class="header-title">逐词推进：同一组参数压缩序列信息</h1>
+      <div class="header-formula">h[t] = tanh(W_hh · h[t-1] + W_xh · x[t] + b)</div>
+    </div>
+
+    <!-- 主工作区 -->
+    <div class="workspace">
+      <!-- 左栏：展开递推图与句式控制器 -->
+      <div class="seq-panel min0">
+        <div class="control-row">
+          <div class="sentence-tabs" id="sentence-tabs">
+            <button class="sentence-btn active" data-sid="0">句 A：画面精美但剧情混乱</button>
+            <button class="sentence-btn" data-sid="1">句 B：虽然开局平淡但反转极佳</button>
+          </div>
+          <div class="step-actions">
+            <button class="action-btn" id="btn-prev" disabled>步退</button>
+            <button class="action-btn primary" id="btn-next">推进下个词</button>
+            <button class="action-btn" id="btn-reset">重置</button>
+          </div>
+        </div>
+
+        <div class="unfolded-svg-box">
+          <svg id="rnn-svg" width="100%" height="100%" viewBox="0 0 930 480"></svg>
+        </div>
+      </div>
+
+      <!-- 右栏：隐藏状态向量与读出因果 -->
+      <div class="inspect-panel min0">
+        <div>
+          <div class="section-title-row">
+            <h2 class="section-title">当前隐状态 h[t] (4维向量)</h2>
+            <span class="step-indicator" id="step-badge">步 0 / 5</span>
+          </div>
+
+          <div class="state-bars-group" id="bars-container">
+            <!-- 由 JS 渲染 4 个隐藏维度的数值棒图 -->
+          </div>
+        </div>
+
+        <!-- 读出头分类器计算 -->
+        <div class="readout-box">
+          <div style="display:flex; justify-content:space-between; align-items:baseline;">
+            <span style="font-size:var(--fs-sec); font-weight:700; color:var(--text);">情感预测 y[t] = σ(W_hy · h[t])</span>
+            <span id="pred-tag" style="font-size:var(--fs-sec); font-weight:700; color:var(--structure); font-family:var(--font-mono, monospace);">好评率 50%</span>
+          </div>
+
+          <div class="readout-meter">
+            <div class="meter-pos" id="meter-pos" style="width: 50%;"></div>
+            <div class="meter-neg" id="meter-neg" style="width: 50%;"></div>
+          </div>
+          <div class="score-labels">
+            <span style="color:var(--structure)">正面 (好评)</span>
+            <span style="color:var(--signal)">负面 (差评)</span>
+          </div>
+        </div>
+
+        <!-- 实时因果解释卡 -->
+        <div class="finding-alert" id="insight-box">
+          初始状态 h[0] = 0。点击“推进下个词”，观察共享矩阵如何融合新输入与前序历史。
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部状态与参数共享线索 -->
+    <div class="footer-bar">
+      <span>权重共享：每一步时间递推使用完全相同的 W_hh 与 W_xh 矩阵</span>
+      <span>定长瓶颈：所有前序序列历史被强制压缩在 4 维定长向量中</span>
+    </div>
+  </div>
+
+  <!-- 演讲者批注 -->
+  <aside class="notes" hidden>
+    同学们请看屏幕。很多初学者以为 RNN 每次都产生一个全新网络，其实不是：每一步使用的 W_hh 和 W_xh 都是同一组共享权重。
+    我们选第一句“画面精美但剧情混乱”。前两步“画面”、“精美”读入时，正面维度的数值迅速拉高，输出判定为好评；
+    但是一旦推进到“但”转折词，再到“剧情”、“混乱”，上一时刻的隐状态被强制重写，最终完全反转为差评。
+    这就是 RNN 的核心机制：单一隐状态必须一边保留历史、一边接受新词冲击。当序列变长，前面的词很容易被后来的矩阵乘法完全冲淡，这就是信息瓶颈与遗忘的根源。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 句库数据：包括词列表与教学严谨且符合正向递推机制的数值
+    // h_t = tanh(W_hh * h_{t-1} + W_xh * x_t + b)
+    // 隐状态 4 维：[正面特征, 负面特征, 转折抑制, 客体主题]
+    const CORPUS = [
+      {
+        id: 0,
+        words: ["画面", "精美", "但", "剧情", "混乱"],
+        states: [
+          [0.00, 0.00, 0.00, 0.00],        // t=0 (初始全零)
+          [0.25, -0.05, 0.05, 0.65],       // 画面
+          [0.82, -0.70, -0.10, 0.50],      // 精美
+          [0.15, 0.20, 0.85, 0.10],        // 但
+          [0.05, 0.40, 0.50, 0.75],        // 剧情
+          [-0.88, 0.85, 0.25, 0.60]        // 混乱
+        ],
+        probs: [50, 68, 92, 45, 32, 8],
+        notes: [
+          "初始状态 h[0] = 0，网络未接收任何语义信息。",
+          "输入【画面】：激活客体维度（dim 4），建立视觉叙事上下文。",
+          "输入【精美】：正向维度（dim 1）大幅拉升至 +0.82，好评率达 92%。",
+          "输入【但】：转折特征激活，前序正向记忆被抑制并迅速衰减。",
+          "输入【剧情】：主题切换至叙事结构，好评率持续下滑至 32%。",
+          "输入【混乱】：负向维度（dim 2）冲至 +0.85，最终判定差评（好评仅 8%）。"
+        ]
+      },
+      {
+        id: 1,
+        words: ["虽然", "开局", "平淡", "但", "反转", "极佳"],
+        states: [
+          [0.00, 0.00, 0.00, 0.00],
+          [-0.10, 0.15, 0.70, 0.05],
+          [-0.05, 0.10, 0.50, 0.40],
+          [-0.45, 0.40, 0.30, 0.35],
+          [-0.10, 0.15, 0.85, 0.20],
+          [0.45, -0.20, 0.40, 0.70],
+          [0.91, -0.82, -0.20, 0.55]
+        ],
+        probs: [50, 42, 45, 28, 48, 76, 96],
+        notes: [
+          "初始状态 h[0] = 0，网络未接收词输入。",
+          "输入【虽然】：预示让步从句，系统准备压制随后的负面倾向。",
+          "输入【开局】：引入时间序客体，暂未表现出明显情感偏向。",
+          "输入【平淡】：轻度负面特征沉淀，好评率降至 28%。",
+          "输入【但】：承接让步转折，反转特征大幅抬升，抑制先前的评价。",
+          "输入【反转】：正面评价开始发力，好评率反弹至 76%。",
+          "输入【极佳】：正面维度（dim 1）跃升至 +0.91，最终判定极大好评（96%）。"
+        ]
+      }
+    ];
+
+    let currentSentenceIdx = 0;
+    let currentStep = 0;
+
+    const DIM_NAMES = [
+      "dim 1",
+      "dim 2",
+      "dim 3",
+      "dim 4"
+    ];
+
+    // DOM 元素引用
+    const svgEl = document.getElementById("rnn-svg");
+    const barsContainer = document.getElementById("bars-container");
+    const stepBadge = document.getElementById("step-badge");
+    const predTag = document.getElementById("pred-tag");
+    const meterPos = document.getElementById("meter-pos");
+    const meterNeg = document.getElementById("meter-neg");
+    const insightBox = document.getElementById("insight-box");
+    const btnPrev = document.getElementById("btn-prev");
+    const btnNext = document.getElementById("btn-next");
+    const btnReset = document.getElementById("btn-reset");
+    const sentenceTabs = document.getElementById("sentence-tabs");
+
+    function renderBars(h) {
+      barsContainer.innerHTML = "";
+      h.forEach((val, i) => {
+        const row = document.createElement("div");
+        row.className = "dim-row";
+
+        const label = document.createElement("div");
+        label.className = "dim-tag";
+        label.innerText = DIM_NAMES[i];
+
+        const bg = document.createElement("div");
+        bg.className = "bar-bg";
+
+        const fill = document.createElement("div");
+        fill.className = "bar-fill";
+        const pct = Math.abs(val) * 50;
+        if (val >= 0) {
+          fill.style.left = "50%";
+          fill.style.width = pct + "%";
+          fill.style.background = (i === 1 ? "var(--signal)" : "var(--structure)");
+        } else {
+          fill.style.left = (50 - pct) + "%";
+          fill.style.width = pct + "%";
+          fill.style.background = (i === 0 ? "var(--signal)" : "var(--muted)");
+        }
+
+        // 中间零刻度线
+        const zeroLine = document.createElement("div");
+        zeroLine.style.position = "absolute";
+        zeroLine.style.left = "50%";
+        zeroLine.style.top = "0";
+        zeroLine.style.bottom = "0";
+        zeroLine.style.width = "1px";
+        zeroLine.style.background = "var(--rule)";
+        bg.appendChild(zeroLine);
+        bg.appendChild(fill);
+
+        const valText = document.createElement("div");
+        valText.className = "val-text";
+        valText.innerText = (val >= 0 ? "+" : "") + val.toFixed(2);
+        valText.style.color = Math.abs(val) > 0.4 ? "var(--text)" : "var(--muted)";
+
+        row.appendChild(label);
+        row.appendChild(bg);
+        row.appendChild(valText);
+        barsContainer.appendChild(row);
+      });
+    }
+
+    function drawSVG() {
+      const curData = CORPUS[currentSentenceIdx];
+      const words = curData.words;
+      const totalWords = words.length;
+
+      svgEl.innerHTML = "";
+
+      const startX = 80;
+      const stepWidth = Math.min(145, (910 - startX - 40) / totalWords);
+      const hY = 240;   // 隐藏单元 Y
+      const xY = 380;   // 词输入 Y
+      const yY = 80;    // 输出预测 Y
+
+      const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+      defs.innerHTML = `
+        <marker id="arrow-green" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#1C4436" />
+        </marker>
+        <marker id="arrow-red" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#D43811" />
+        </marker>
+        <marker id="arrow-gray" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#BAC4BF" />
+        </marker>
+      `;
+      svgEl.appendChild(defs);
+
+      for (let t = 1; t <= totalWords; t++) {
+        const cx = startX + (t - 1) * stepWidth + 45;
+        const prevCx = cx - stepWidth;
+        const isPassed = t < currentStep;
+        const isCurrent = t === currentStep;
+        const isFuture = t > currentStep;
+
+        const mainColor = isCurrent ? "var(--signal)" : (isPassed ? "var(--structure)" : "var(--rule)");
+        const strokeW = isCurrent ? "3" : "1.5";
+
+        // 1. 水平递推箭头 h[t-1] -> h[t]
+        if (t === 1) {
+          const lineH0 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          lineH0.setAttribute("d", `M ${cx - 70} ${hY} L ${cx - 32} ${hY}`);
+          lineH0.setAttribute("stroke", isCurrent ? "var(--signal)" : (isPassed ? "var(--structure)" : "var(--rule)"));
+          lineH0.setAttribute("stroke-width", isCurrent ? "2.5" : "1.5");
+          lineH0.setAttribute("marker-end", isCurrent ? "url(#arrow-red)" : (isPassed ? "url(#arrow-green)" : "url(#arrow-gray)"));
+          svgEl.appendChild(lineH0);
+
+          const h0Text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          h0Text.setAttribute("x", cx - 76);
+          h0Text.setAttribute("y", hY + 5);
+          h0Text.setAttribute("text-anchor", "end");
+          h0Text.setAttribute("font-size", "15px");
+          h0Text.setAttribute("font-family", "var(--font-mono, monospace)");
+          h0Text.setAttribute("fill", "var(--muted)");
+          h0Text.textContent = "h₀=0";
+          svgEl.appendChild(h0Text);
+        } else {
+          const lineH = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          lineH.setAttribute("d", `M ${prevCx + 32} ${hY} L ${cx - 32} ${hY}`);
+          lineH.setAttribute("stroke", isCurrent ? "var(--signal)" : (isPassed ? "var(--structure)" : "var(--rule)"));
+          lineH.setAttribute("stroke-width", isCurrent ? "2.5" : "1.5");
+          lineH.setAttribute("marker-end", isCurrent ? "url(#arrow-red)" : (isPassed ? "url(#arrow-green)" : "url(#arrow-gray)"));
+          svgEl.appendChild(lineH);
+
+          const wLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          wLabel.setAttribute("x", (prevCx + cx) / 2);
+          wLabel.setAttribute("y", hY - 10);
+          wLabel.setAttribute("text-anchor", "middle");
+          wLabel.setAttribute("font-size", "13px");
+          wLabel.setAttribute("font-family", "var(--font-mono, monospace)");
+          wLabel.setAttribute("fill", isCurrent ? "var(--signal)" : "var(--muted)");
+          wLabel.textContent = "W_hh";
+          svgEl.appendChild(wLabel);
+        }
+
+        // 2. 纵向输入箭头 x[t] -> h[t]
+        const lineX = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        lineX.setAttribute("d", `M ${cx} ${xY - 26} L ${cx} ${hY + 32}`);
+        lineX.setAttribute("stroke", isCurrent ? "var(--signal)" : (isPassed ? "var(--structure)" : "var(--rule)"));
+        lineX.setAttribute("stroke-width", isCurrent ? "2.5" : "1.5");
+        lineX.setAttribute("marker-end", isCurrent ? "url(#arrow-red)" : (isPassed ? "url(#arrow-green)" : "url(#arrow-gray)"));
+        svgEl.appendChild(lineX);
+
+        const xhLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        xhLabel.setAttribute("x", cx + 8);
+        xhLabel.setAttribute("y", (xY + hY) / 2);
+        xhLabel.setAttribute("text-anchor", "start");
+        xhLabel.setAttribute("font-size", "13px");
+        xhLabel.setAttribute("font-family", "var(--font-mono, monospace)");
+        xhLabel.setAttribute("fill", isCurrent ? "var(--signal)" : "var(--muted)");
+        xhLabel.textContent = "W_xh";
+        svgEl.appendChild(xhLabel);
+
+        // 3. 纵向输出箭头 h[t] -> y[t]
+        if (!isFuture) {
+          const lineY = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          lineY.setAttribute("d", `M ${cx} ${hY - 32} L ${cx} ${yY + 24}`);
+          lineY.setAttribute("stroke", isCurrent ? "var(--signal)" : "var(--structure)");
+          lineY.setAttribute("stroke-width", isCurrent ? "2" : "1.5");
+          lineY.setAttribute("stroke-dasharray", isCurrent ? "none" : "4,4");
+          lineY.setAttribute("marker-end", isCurrent ? "url(#arrow-red)" : "url(#arrow-green)");
+          svgEl.appendChild(lineY);
+
+          const probVal = curData.probs[t];
+          const yLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          yLabel.setAttribute("x", cx);
+          yLabel.setAttribute("y", yY - 6);
+          yLabel.setAttribute("text-anchor", "middle");
+          yLabel.setAttribute("font-size", "15px");
+          yLabel.setAttribute("font-weight", "700");
+          yLabel.setAttribute("fill", isCurrent ? "var(--signal)" : "var(--structure)");
+          yLabel.textContent = `${probVal}%好评`;
+          svgEl.appendChild(yLabel);
+        }
+
+        // 4. 输入词框
+        const wordG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        const wordRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        wordRect.setAttribute("x", cx - 38);
+        wordRect.setAttribute("y", xY - 24);
+        wordRect.setAttribute("width", 76);
+        wordRect.setAttribute("height", 38);
+        wordRect.setAttribute("rx", "3");
+        wordRect.setAttribute("fill", isCurrent ? "var(--signal)" : (isPassed ? "var(--structure)" : "#fff"));
+        wordRect.setAttribute("stroke", isCurrent ? "var(--signal)" : (isPassed ? "var(--structure)" : "var(--rule)"));
+        wordRect.setAttribute("stroke-width", "1.5");
+        wordG.appendChild(wordRect);
+
+        const wordText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        wordText.setAttribute("x", cx);
+        wordText.setAttribute("y", xY + 1);
+        wordText.setAttribute("text-anchor", "middle");
+        wordText.setAttribute("font-size", "16px");
+        wordText.setAttribute("font-weight", "700");
+        wordText.setAttribute("fill", (isCurrent || isPassed) ? "#fff" : "var(--muted)");
+        wordText.textContent = words[t - 1];
+        wordG.appendChild(wordText);
+
+        const tText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        tText.setAttribute("x", cx);
+        tText.setAttribute("y", xY + 34);
+        tText.setAttribute("text-anchor", "middle");
+        tText.setAttribute("font-size", "13px");
+        tText.setAttribute("font-family", "var(--font-mono, monospace)");
+        tText.setAttribute("fill", "var(--muted)");
+        tText.textContent = `x[${t}]`;
+        wordG.appendChild(tText);
+
+        svgEl.appendChild(wordG);
+
+        // 5. 循环隐藏核心
+        const cellG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        const cellCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        cellCircle.setAttribute("cx", cx);
+        cellCircle.setAttribute("cy", hY);
+        cellCircle.setAttribute("r", 30);
+        cellCircle.setAttribute("fill", isCurrent ? "rgba(212, 56, 17, 0.08)" : (isPassed ? "rgba(28, 68, 54, 0.06)" : "#fff"));
+        cellCircle.setAttribute("stroke", mainColor);
+        cellCircle.setAttribute("stroke-width", strokeW);
+        cellG.appendChild(cellCircle);
+
+        const cellText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        cellText.setAttribute("x", cx);
+        cellText.setAttribute("y", hY + 6);
+        cellText.setAttribute("text-anchor", "middle");
+        cellText.setAttribute("font-size", "16px");
+        cellText.setAttribute("font-weight", "700");
+        cellText.setAttribute("font-family", "var(--font-mono, monospace)");
+        cellText.setAttribute("fill", isCurrent ? "var(--signal)" : (isPassed ? "var(--structure)" : "var(--muted)"));
+        cellText.textContent = `h[${t}]`;
+        cellG.appendChild(cellText);
+
+        svgEl.appendChild(cellG);
+      }
+    }
+
+    function updateView() {
+      const curData = CORPUS[currentSentenceIdx];
+      const maxStep = curData.words.length;
+
+      btnPrev.disabled = (currentStep === 0);
+      btnNext.disabled = (currentStep === maxStep);
+      stepBadge.innerText = `步 ${currentStep} / ${maxStep}`;
+
+      const curState = curData.states[currentStep];
+      const curProb = curData.probs[currentStep];
+
+      renderBars(curState);
+      predTag.innerText = `好评率 ${curProb}%`;
+      predTag.style.color = curProb >= 50 ? "var(--structure)" : "var(--signal)";
+      meterPos.style.width = `${curProb}%`;
+      meterNeg.style.width = `${100 - curProb}%`;
+
+      insightBox.innerText = curData.notes[currentStep];
+      insightBox.className = "finding-alert";
+
+      drawSVG();
+    }
+
+    // 交互绑定
+    btnNext.addEventListener("click", () => {
+      const maxStep = CORPUS[currentSentenceIdx].words.length;
+      if (currentStep < maxStep) {
+        currentStep++;
+        updateView();
+      }
+    });
+
+    btnPrev.addEventListener("click", () => {
+      if (currentStep > 0) {
+        currentStep--;
+        updateView();
+      }
+    });
+
+    btnReset.addEventListener("click", () => {
+      currentStep = 0;
+      updateView();
+    });
+
+    sentenceTabs.addEventListener("click", (e) => {
+      const btn = e.target.closest(".sentence-btn");
+      if (!btn) return;
+      document.querySelectorAll(".sentence-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentSentenceIdx = parseInt(btn.dataset.sid, 10);
+      currentStep = 0;
+      updateView();
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowRight") {
+        btnNext.click();
+      } else if (e.key === "ArrowLeft") {
+        btnPrev.click();
+      }
+    });
+
+    // 初始化运行
+    updateView();
+  </script>
+</body>
+</html>

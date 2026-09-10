@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* 顶部导航与章节标示 */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+    .kicker {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--learner);
+      text-transform: uppercase;
+    }
+    .deck-tag {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-feature-settings: "tnum";
+    }
+
+    /* 主标题区块 */
+    .hero-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-width: 860px;
+      z-index: 10;
+    }
+    .chapter-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--aggregate);
+      letter-spacing: 0.08em;
+    }
+    .chapter-badge .num-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--aggregate);
+    }
+    .main-title {
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      font-weight: 900;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+    .main-title span.hl {
+      color: var(--aggregate);
+    }
+    .subtitle {
+      font-size: var(--fs-h2);
+      line-height: 1.4;
+      color: var(--muted);
+      font-weight: 500;
+      margin: 0;
+    }
+
+    /* 中部动效剧场舞台（三轮逐步修正与残差收敛过程） */
+    .stage-canvas-card {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      margin: 20px 0;
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 16px rgba(20,37,51,0.06);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 5;
+    }
+    .card-header {
+      padding: 12px 24px;
+      border-bottom: 1px solid var(--surface-strong);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.4);
+    }
+    .card-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card-legend {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .card-legend .item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sw-box {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+    .sw-box.target { background: #8ba2b5; border: 1px dashed #536777; }
+    .sw-box.base { background: var(--learner); }
+    .sw-box.residual { background: #df5d45; }
+    .sw-box.boosted { background: var(--aggregate); }
+
+    .canvas-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+    }
+
+    /* 底部三联步进说明与概览卡片 */
+    .bottom-strip {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 340px;
+      gap: 16px;
+      z-index: 10;
+    }
+    .step-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: relative;
+      transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+    }
+    .step-card.active {
+      border-color: var(--aggregate);
+      background: #fff;
+    }
+    .step-label {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .step-name {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .step-desc {
+      font-size: var(--fs-label);
+      line-height: 1.4;
+      color: var(--muted);
+    }
+    .step-metric {
+      margin-top: auto;
+      padding-top: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-top: 1px dashed var(--surface-strong);
+    }
+    .metric-name {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .metric-val {
+      font-size: var(--fs-body);
+      font-family: var(--font-num, sans-serif);
+      font-weight: 700;
+      color: var(--learner);
+    }
+    .step-card.final .metric-val {
+      color: var(--aggregate);
+    }
+
+    /* 右侧章节导言卡片 */
+    .summary-card {
+      background: var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 6px;
+    }
+    .summary-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .summary-text {
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--muted);
+      margin: 0;
+    }
+  </style>
+</head>
+<body data-page="14" data-total="27">
+  <div id="stage">
+    <!-- 顶栏信息 -->
+    <header class="top-bar">
+      <div class="kicker">集成学习 · 串行提升范式</div>
+      <div class="deck-tag">集成学习 · 第 3 单元</div>
+    </header>
+
+    <!-- 标题与导语 -->
+    <section class="hero-wrap">
+      <div class="chapter-badge">
+        <span class="num-dot"></span>
+        <span>第 03 部分 · 误差递归补偿</span>
+      </div>
+      <h1 class="main-title">Boosting：<span class="hl">让后续模型修正前序不足</span></h1>
+      <p class="subtitle">与 Bagging 的独立并行投票不同，Boosting 顺次训练弱模型，把前一轮的误差与残差作为下一轮的重点关注对象。</p>
+    </section>
+
+    <!-- 核心视觉剧场：三阶段序列修正交互与拟合示意 -->
+    <section class="stage-canvas-card min0">
+      <div class="card-header">
+        <div class="card-title">
+          <span>串行拟合轨迹：目标函数 vs 累计集成估计值</span>
+        </div>
+        <div class="card-legend">
+          <div class="item"><div class="sw-box target"></div>真实目标 y</div>
+          <div class="item"><div class="sw-box base"></div>基学习器 h_m(x)</div>
+          <div class="item"><div class="sw-box residual"></div>残差 r_m</div>
+          <div class="item"><div class="sw-box boosted"></div>集成预测 F_m(x)</div>
+        </div>
+      </div>
+      <div class="canvas-container min0">
+        <canvas id="flowCanvas" class="cv-fill"></canvas>
+      </div>
+    </section>
+
+    <!-- 底部三阶段说明条 + 机制总结卡 -->
+    <footer class="bottom-strip min0">
+      <div class="step-card" id="cardRound1">
+        <div class="step-label">轮次 m = 1</div>
+        <div class="step-name">初生基学习器 h₁(x)</div>
+        <div class="step-desc">初步拟合基准均值与大趋势，但在复杂峰谷处遗留显著未解释残差。</div>
+        <div class="step-metric">
+          <span class="metric-name">未解残差方差</span>
+          <span class="metric-val" id="resVal1">0.420</span>
+        </div>
+      </div>
+
+      <div class="step-card" id="cardRound2">
+        <div class="step-label">轮次 m = 2</div>
+        <div class="step-name">专注残差补偿 h₂(x)</div>
+        <div class="step-desc">下一模型不再重复学已知趋势，专门拟合前轮误差峰值，缩小偏差。</div>
+        <div class="step-metric">
+          <span class="metric-name">未解残差方差</span>
+          <span class="metric-val" id="resVal2">0.145</span>
+        </div>
+      </div>
+
+      <div class="step-card final" id="cardRound3">
+        <div class="step-label">轮次 m = 3</div>
+        <div class="step-name">高阶集成收敛 F₃(x)</div>
+        <div class="step-desc">弱学习器依权重线性组合，整体逼近真实目标，残留误差被均匀抹平。</div>
+        <div class="step-metric">
+          <span class="metric-name">最终收敛误差</span>
+          <span class="metric-val" id="resVal3">0.028</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-title">核心逻辑推演</div>
+        <p class="summary-text">Boosting 依靠「上一轮失分 → 下一轮加权」的连贯因果，把基学习器从相互独立的投票者，重构成前后衔接的纠错接力。</p>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/gsap.min.js"></script>
+  <script>
+    Deck.init({ index: 14, total: 27 });
+
+    const canvas = document.getElementById('flowCanvas');
+    const cards = [
+      document.getElementById('cardRound1'),
+      document.getElementById('cardRound2'),
+      document.getElementById('cardRound3')
+    ];
+
+    // 确定性数学信号数据：包含主趋势与两个局部波峰
+    // y(x) = sin(1.2 * x) + 0.5 * cos(3.0 * x)
+    const N_POINTS = 160;
+    const xRange = [-3.0, 3.0];
+    const dataPoints = [];
+    for (let i = 0; i < N_POINTS; i++) {
+      const x = xRange[0] + (xRange[1] - xRange[0]) * (i / (N_POINTS - 1));
+      const y = Math.sin(1.2 * x) + 0.45 * Math.cos(2.8 * x);
+      dataPoints.push({ x, y });
+    }
+
+    // 三轮模型的拟合逼近（前向分步加法模型）
+    // h1: 平缓的主正弦拟合
+    // h2: 针对两端与中心波峰的补偿
+    // h3: 细化高频微调
+    const rounds = [
+      {
+        h: (x) => 0.85 * Math.sin(1.15 * x),
+        F: (x) => 0.85 * Math.sin(1.15 * x),
+        res: (x, y) => y - (0.85 * Math.sin(1.15 * x))
+      },
+      {
+        h: (x) => 0.40 * Math.cos(2.8 * x) + 0.12 * Math.sin(1.2 * x),
+        F: (x) => 0.85 * Math.sin(1.15 * x) + 0.40 * Math.cos(2.8 * x) + 0.12 * Math.sin(1.2 * x),
+        res: (x, y) => y - (0.85 * Math.sin(1.15 * x) + 0.40 * Math.cos(2.8 * x) + 0.12 * Math.sin(1.2 * x))
+      },
+      {
+        h: (x) => 0.05 * Math.cos(2.8 * x) + 0.03 * Math.sin(3.5 * x),
+        F: (x) => Math.sin(1.2 * x) + 0.45 * Math.cos(2.8 * x) - 0.03 * Math.sin(2.0 * x),
+        res: (x, y) => (y - (Math.sin(1.2 * x) + 0.45 * Math.cos(2.8 * x) - 0.03 * Math.sin(2.0 * x)))
+      }
+    ];
+
+    let animProgress = { val: 2.99 }; // 0: 轮次1, 1: 轮次2, 2: 轮次3
+    let isReduced = Deck.reduced();
+
+    function drawScene(ctx, w, h) {
+      ctx.clearRect(0, 0, w, h);
+
+      // 划分左侧主拟合区与右侧残差直方/关注度区
+      const padL = 64;
+      const padR = 48;
+      const padT = 32;
+      const padB = 40;
+
+      const mainW = (w - padL - padR) * 0.68;
+      const resW = (w - padL - padR) * 0.28;
+      const gap = (w - padL - padR) * 0.04;
+
+      const mainL = padL;
+      const mainR = mainL + mainW;
+      const resL = mainR + gap;
+      const resR = resL + resW;
+
+      const topY = padT;
+      const botY = h - padB;
+      const midY = (topY + botY) / 2;
+
+      // 坐标映射
+      const mapX = (x) => mainL + ((x - xRange[0]) / (xRange[1] - xRange[0])) * mainW;
+      const mapY = (y) => midY - y * (botY - topY) * 0.28;
+
+      // 背景网格与零线
+      ctx.strokeStyle = '#e2ebf1';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+
+      // 水平标线
+      ctx.beginPath();
+      ctx.moveTo(mainL, midY);
+      ctx.lineTo(mainR, midY);
+      ctx.moveTo(resL, midY);
+      ctx.lineTo(resR, midY);
+      ctx.stroke();
+
+      // 垂直边界线
+      ctx.beginPath();
+      ctx.moveTo(mainL, topY); ctx.lineTo(mainL, botY);
+      ctx.moveTo(mainR, topY); ctx.lineTo(mainR, botY);
+      ctx.moveTo(resL, topY); ctx.lineTo(resL, botY);
+      ctx.moveTo(resR, topY); ctx.lineTo(resR, botY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 轴文字提示
+      ctx.fillStyle = '#6b8296';
+      ctx.font = '13px "Noto Sans SC", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('主拟合空间: y vs F_m(x)', mainL + 10, topY + 18);
+      ctx.fillText('各样本残差 |y - F(x)| 与权重分配', resL + 10, topY + 18);
+
+      // 当前状态阶段
+      const curP = isReduced ? 2.99 : Deck.clamp(animProgress.val, 0, 2.99);
+      const curStage = Math.min(2, Math.floor(curP));
+      const subT = curP - curStage;
+
+      // 更新卡片高亮
+      cards.forEach((c, idx) => {
+        if (idx === curStage) {
+          c.classList.add('active');
+        } else {
+          c.classList.remove('active');
+        }
+      });
+
+      // 1. 绘制真实目标点与信号曲线 y(x)
+      ctx.beginPath();
+      ctx.strokeStyle = '#8ba2b5';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 6]);
+      for (let i = 0; i < N_POINTS; i++) {
+        const px = mapX(dataPoints[i].x);
+        const py = mapY(dataPoints[i].y);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 散点真实数据
+      ctx.fillStyle = '#9cb4c5';
+      for (let i = 0; i < N_POINTS; i += 4) {
+        const px = mapX(dataPoints[i].x);
+        const py = mapY(dataPoints[i].y);
+        ctx.beginPath();
+        ctx.arc(px, py, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 2. 绘制基学习器曲线 (单轮贡献)
+      const curRoundData = rounds[curStage];
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(39, 93, 145, 0.45)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < N_POINTS; i++) {
+        const x = dataPoints[i].x;
+        const hy = curRoundData.h(x);
+        const px = mapX(x);
+        const py = mapY(hy);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+
+      // 3. 绘制累计集成模型 F_m(x) (带阶段内微动插值)
+      const prevF = curStage > 0 ? rounds[curStage - 1].F : (x) => 0;
+      const targetF = rounds[curStage].F;
+
+      ctx.beginPath();
+      ctx.strokeStyle = '#B63B24';
+      ctx.lineWidth = 3.5;
+      for (let i = 0; i < N_POINTS; i++) {
+        const x = dataPoints[i].x;
+        const interpF = Deck.lerp(prevF(x), targetF(x), Math.min(1, subT * 1.5 + 0.3));
+        const px = mapX(x);
+        const py = mapY(interpF);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+
+      // 4. 残差针线图与关注度高亮 (在主图上标记)
+      for (let i = 0; i < N_POINTS; i += 6) {
+        const x = dataPoints[i].x;
+        const y = dataPoints[i].y;
+        const interpF = Deck.lerp(prevF(x), targetF(x), Math.min(1, subT * 1.5 + 0.3));
+        const px = mapX(x);
+        const py1 = mapY(y);
+        const py2 = mapY(interpF);
+        const err = Math.abs(y - interpF);
+
+        // 连线表示残差
+        ctx.beginPath();
+        ctx.strokeStyle = err > 0.25 ? 'rgba(223, 93, 69, 0.65)' : 'rgba(83, 103, 119, 0.25)';
+        ctx.lineWidth = err > 0.25 ? 2 : 1;
+        ctx.moveTo(px, py1);
+        ctx.lineTo(px, py2);
+        ctx.stroke();
+      }
+
+      // 5. 右侧残差分布柱状与重构区
+      const nBars = 24;
+      const barW = (resW - 40) / nBars;
+      for (let b = 0; b < nBars; b++) {
+        const idx = Math.floor(b * (N_POINTS / nBars));
+        const pt = dataPoints[idx];
+        const interpF = Deck.lerp(prevF(pt.x), targetF(pt.x), Math.min(1, subT * 1.5 + 0.3));
+        const resVal = pt.y - interpF;
+        const absRes = Math.abs(resVal);
+
+        const bx = resL + 20 + b * barW;
+        const barHeight = absRes * (botY - topY) * 0.35;
+        const by = resVal >= 0 ? midY - barHeight : midY;
+
+        // 根据残差大小强调颜色（AdaBoost样本加权视觉表征）
+        if (absRes > 0.3) {
+          ctx.fillStyle = '#df5d45';
+        } else if (absRes > 0.15) {
+          ctx.fillStyle = '#275D91';
+        } else {
+          ctx.fillStyle = '#8ba2b5';
+        }
+
+        ctx.fillRect(bx + 1, by, barW - 2, barHeight);
+      }
+
+      // 标注当前轮次残差收敛标签
+      ctx.fillStyle = '#142533';
+      ctx.font = 'bold 14px "Noto Sans SC", sans-serif';
+      ctx.textAlign = 'right';
+      const roundNames = ['轮次 1: 拟合大局，暴露误差', '轮次 2: 锁定高残差区域', '轮次 3: 整体加权收敛完成'];
+      ctx.fillText(roundNames[curStage], mainR - 12, topY + 22);
+    }
+
+    let redraw = null;
+    Deck.autofit(canvas, (ctx) => {
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      redraw = () => drawScene(ctx, w, h);
+      redraw();
+    });
+
+    // 动效循环：GSAP 串行平滑过渡 3 个轮次
+    if (!Deck.reduced()) {
+      const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.5 });
+      tl.to(animProgress, {
+        val: 1.0,
+        duration: 2.2,
+        ease: "power2.inOut",
+        onUpdate: () => redraw && redraw()
+      })
+      .to(animProgress, {
+        val: 2.0,
+        duration: 2.2,
+        delay: 0.8,
+        ease: "power2.inOut",
+        onUpdate: () => redraw && redraw()
+      })
+      .to(animProgress, {
+        val: 2.99,
+        duration: 2.2,
+        delay: 0.8,
+        ease: "power2.inOut",
+        onUpdate: () => redraw && redraw()
+      });
+    } else {
+      animProgress.val = 2.99;
+      if (redraw) redraw();
+    }
+  </script>
+</body>
+</html>

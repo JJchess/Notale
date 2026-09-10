@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+    header {
+      position: absolute;
+      top: 48px;
+      left: 56px;
+      right: 56px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 16px;
+      z-index: 10;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0;
+      color: var(--text);
+    }
+    .kicker {
+      font-family: var(--font-mono);
+      font-size: var(--fs-lead);
+      color: var(--energy-bond);
+    }
+    #membrane-view {
+      position: absolute;
+      inset: 120px 56px 88px 56px;
+    }
+    .step-dock {
+      position: absolute;
+      bottom: 24px;
+      left: 56px;
+      right: 56px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid var(--rule);
+      padding-top: 14px;
+      font-size: var(--fs-body);
+      color: var(--text);
+      z-index: 10;
+    }
+    .step-dock strong {
+      color: var(--action-green);
+      font-weight: 600;
+      margin-right: 12px;
+      font-size: var(--fs-h2);
+    }
+    .delta-badge {
+      font-family: var(--font-mono);
+      font-size: var(--fs-lead);
+      color: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="07" data-total="16">
+  <div id="stage">
+    <header>
+      <h1>光系统 II 与水裂解：电子抽提与质子泵入</h1>
+      <span class="kicker">2H₂O → 4H⁺ + 4e⁻ + O₂</span>
+    </header>
+
+    <div id="membrane-view">
+      <canvas id="cv" class="cv-fill"></canvas>
+    </div>
+
+    <div class="step-dock">
+      <div id="step-desc">
+        <strong id="step-title">基态静息</strong>
+        <span id="step-detail">类囊体膜分隔基质与类囊体腔，P680 与 Mn₄CaO₅ 催化簇就绪。</span>
+      </div>
+      <div class="delta-badge" id="step-stat">ΔpH 0.0 · 腔内 0 H⁺</div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    光系统 II 位于类囊体膜上。
+    当波长 680nm 的光子被捕获时，反应中心 P680 激发成为极强氧化剂 P680*，向质体醌传递电子。
+    失去电子的 P680+ 从放氧复合体的锰钙簇中强行夺取电子，促使两分子水彻底裂解。
+    水裂解在腔内直接产生 4 个质子并释放 1 个氧气分子；
+    还原态质体醌随后跨膜穿梭并被细胞色素 b6f 复合体氧化，把更多质子从基质泵入类囊体腔，
+    从而建立起驱动后续 ATP 合成的跨膜质子动力势。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+  (function () {
+    "use strict";
+
+    Deck.init({ index: 7, total: 16 });
+
+    const cv = document.getElementById("cv");
+    const descTitle = document.getElementById("step-title");
+    const descDetail = document.getElementById("step-detail");
+    const descStat = document.getElementById("step-stat");
+
+    const STEPS = [
+      {
+        title: "基态就绪",
+        detail: "基质与类囊体腔被双层磷脂膜分隔，PSII 核心复合体位于膜中。",
+        stat: "ΔpH 0.0 · 腔内 0 H⁺"
+      },
+      {
+        title: "光子激发 P680",
+        detail: "680 nm 光子激发 P680*，高能电子沿电子链脱离，生成强氧化态 P680⁺。",
+        stat: "E°′ +1.25V 极强氧化剂"
+      },
+      {
+        title: "锰钙簇裂解水",
+        detail: "Mn₄CaO₅ 簇从 2H₂O 夺取 4 电子补充 P680⁺，原位释放 O₂ 并产生 4H⁺。",
+        stat: "放氧 1 O₂ · 产生 4 H⁺(腔内)"
+      },
+      {
+        title: "质子梯度建立",
+        detail: "PQH₂ 穿梭与 Cyt b₆f 协同转运，质子在腔内富集，跨膜 ΔpH 显著升高。",
+        stat: "ΔpH ~3.2 · 质子动力势建立"
+      }
+    ];
+
+    let currentStep = 0;
+    let animPhase = 0;
+
+    const C = {
+      bg: Deck.rgb("bg"),
+      text: Deck.rgb("text"),
+      muted: Deck.rgb("muted"),
+      rule: Deck.rgb("rule"),
+      focus: Deck.rgb("focus"),
+      green: Deck.rgb("action-green"),
+      energy: Deck.rgb("energy-bond"),
+      carbon: Deck.rgb("carbon-fix")
+    };
+
+    function rgba(c, a) {
+      return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+    }
+
+    function draw(ctx, w, h) {
+      ctx.clearRect(0, 0, w, h);
+
+      // 膜位置定义
+      // 顶部：基质 (Stroma, pH ~8.0)
+      // 中间：类囊体脂双层 (Thylakoid Membrane)
+      // 底部：类囊体腔 (Lumen, pH ~5.0-5.5)
+      const memTop = h * 0.38;
+      const memBottom = h * 0.62;
+      const memThick = memBottom - memTop;
+
+      // 1. 区域底标与隔室分界
+      ctx.fillStyle = rgba(C.carbon, 0.05);
+      ctx.fillRect(0, 0, w, memTop); // 基质
+
+      ctx.fillStyle = rgba(C.energy, 0.06);
+      ctx.fillRect(0, memBottom, w, h - memBottom); // 腔内
+
+      // 磷脂双层背景
+      ctx.fillStyle = rgba(C.rule, 0.45);
+      ctx.fillRect(0, memTop, w, memThick);
+
+      // 绘制磷脂分子层示意 (细密小点/线)
+      ctx.strokeStyle = rgba(C.muted, 0.3);
+      ctx.lineWidth = 1;
+      const beadStep = 18;
+      for (let x = 10; x < w; x += beadStep) {
+        // 上层磷脂极性头与尾
+        ctx.beginPath();
+        ctx.arc(x, memTop + 4, 3, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, memTop + 7);
+        ctx.lineTo(x, memTop + 24);
+        ctx.stroke();
+
+        // 下层磷脂极性头与尾
+        ctx.beginPath();
+        ctx.arc(x, memBottom - 4, 3, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, memBottom - 7);
+        ctx.lineTo(x, memBottom - 24);
+        ctx.stroke();
+      }
+
+      // 隔室文字标记
+      ctx.font = "16px " + Deck.token("--font-sans");
+      ctx.fillStyle = rgba(C.text, 0.85);
+      ctx.textAlign = "left";
+      ctx.fillText("叶绿体基质 (Stroma, pH ≈ 8.0)", 24, 34);
+      ctx.fillStyle = rgba(C.muted, 0.85);
+      ctx.fillText("类囊体双层膜 (Thylakoid Membrane)", 24, memTop + 26);
+      ctx.fillStyle = rgba(C.energy, 0.95);
+      ctx.fillText("类囊体腔 (Lumen, 质子蓄积空间)", 24, memBottom + 34);
+
+      // 2. 光系统 II (PSII) 核心蛋白复合体
+      const psiiX = w * 0.35;
+      const psiiW = 230;
+      const psiiY = memTop - 36;
+      const psiiH = memThick + 72;
+
+      // 蛋白轮廓
+      ctx.fillStyle = rgba(C.rule, 0.9);
+      ctx.strokeStyle = rgba(C.green, 0.85);
+      ctx.lineWidth = 1.5;
+      Deck.rr(ctx, psiiX - psiiW / 2, psiiY, psiiW, psiiH, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      // PSII 核心标牌
+      ctx.fillStyle = rgba(C.text, 0.95);
+      ctx.font = "16px " + Deck.token("--font-sans");
+      ctx.textAlign = "center";
+      ctx.fillText("PS II 反应中心复合体", psiiX, psiiY + 28);
+
+      // P680 反应中心
+      const p680Y = memTop + memThick * 0.45;
+      const isP680Excited = currentStep >= 1;
+
+      ctx.fillStyle = isP680Excited ? rgba(C.focus, 0.25) : rgba(C.rule, 0.6);
+      ctx.strokeStyle = isP680Excited ? rgba(C.focus, 0.9) : rgba(C.muted, 0.5);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(psiiX, p680Y, 34, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = isP680Excited ? rgba(C.focus, 1) : rgba(C.text, 0.9);
+      ctx.font = "600 18px " + Deck.token("--font-mono");
+      ctx.fillText(isP680Excited ? (currentStep === 1 ? "P680*" : "P680⁺") : "P680", psiiX, p680Y + 6);
+
+      // 放氧复合体 (OEC / Mn₄CaO₅ 簇)
+      const oecY = memBottom + 8;
+      ctx.fillStyle = rgba(C.carbon, 0.35);
+      ctx.strokeStyle = rgba(C.carbon, 0.9);
+      ctx.lineWidth = 1.5;
+      Deck.rr(ctx, psiiX - 78, oecY - 14, 156, 44, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = rgba(C.text, 0.95);
+      ctx.font = "14px " + Deck.token("--font-sans");
+      ctx.fillText("放氧复合体 (Mn₄CaO₅)", psiiX, oecY + 13);
+
+      // 3. 次级复合体：细胞色素 b6f (Cyt b6f)
+      const cytX = w * 0.72;
+      const cytW = 170;
+      const cytY = memTop - 20;
+      const cytH = memThick + 40;
+
+      ctx.fillStyle = rgba(C.rule, 0.85);
+      ctx.strokeStyle = rgba(C.muted, 0.7);
+      ctx.lineWidth = 1.5;
+      Deck.rr(ctx, cytX - cytW / 2, cytY, cytW, cytH, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = rgba(C.text, 0.95);
+      ctx.font = "16px " + Deck.token("--font-sans");
+      ctx.fillText("Cyt b₆f 复合体", cytX, cytY + 30);
+      ctx.font = "13px " + Deck.token("--font-mono");
+      ctx.fillStyle = rgba(C.muted, 0.9);
+      ctx.fillText("质子泵通道", cytX, cytY + 52);
+
+      // 4. 质体醌 PQ 穿梭池
+      const pqX = (psiiX + cytX) / 2;
+      const pqY = memTop + memThick * 0.45;
+      ctx.fillStyle = rgba(C.energy, 0.2);
+      ctx.strokeStyle = rgba(C.energy, 0.8);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(pqX, pqY, 32, 20, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = rgba(C.energy, 1);
+      ctx.font = "13px " + Deck.token("--font-mono");
+      ctx.fillText(currentStep >= 3 ? "PQH₂" : "PQ", pqX, pqY + 4);
+
+      // Step 1: 光子入射光束
+      if (currentStep >= 1) {
+        ctx.strokeStyle = rgba(C.focus, 0.85);
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(psiiX - 110, memTop - 90);
+        ctx.lineTo(psiiX - 18, p680Y - 24);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 光子波长标签
+        ctx.fillStyle = rgba(C.focus, 1);
+        ctx.font = "14px " + Deck.token("--font-mono");
+        ctx.fillText("hν (680 nm)", psiiX - 118, memTop - 96);
+      }
+
+      // Step 1-2: 电子流动轨迹 (PSII -> PQ -> Cyt b6f)
+      if (currentStep >= 1) {
+        ctx.strokeStyle = rgba(C.green, 0.85);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(psiiX + 32, p680Y);
+        ctx.lineTo(pqX - 32, pqY);
+        ctx.stroke();
+
+        // 电子标示 e-
+        ctx.fillStyle = rgba(C.green, 1);
+        ctx.font = "13px " + Deck.token("--font-mono");
+        ctx.fillText("2e⁻", (psiiX + pqX) / 2, p680Y - 8);
+
+        if (currentStep >= 3) {
+          ctx.beginPath();
+          ctx.moveTo(pqX + 32, pqY);
+          ctx.lineTo(cytX - 80, cytY + cytH * 0.5);
+          ctx.stroke();
+          ctx.fillText("2e⁻", (pqX + cytX) / 2, pqY - 8);
+        }
+      }
+
+      // Step 2: 水裂解化学反应与产物
+      if (currentStep >= 2) {
+        // 反应箭头：2H2O -> Mn4CaO5
+        const rxY = oecY + 74;
+        ctx.strokeStyle = rgba(C.carbon, 0.8);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(psiiX - 80, rxY);
+        ctx.lineTo(psiiX - 24, oecY + 28);
+        ctx.stroke();
+
+        ctx.fillStyle = rgba(C.carbon, 1);
+        ctx.font = "15px " + Deck.token("--font-mono");
+        ctx.fillText("2 H₂O", psiiX - 95, rxY + 5);
+
+        // 电子回填箭头
+        ctx.strokeStyle = rgba(C.green, 0.8);
+        ctx.beginPath();
+        ctx.moveTo(psiiX, oecY - 14);
+        ctx.lineTo(psiiX, p680Y + 32);
+        ctx.stroke();
+        ctx.fillStyle = rgba(C.green, 1);
+        ctx.font = "13px " + Deck.token("--font-mono");
+        ctx.fillText("4e⁻ 补充", psiiX + 36, (oecY + p680Y) / 2 + 10);
+
+        // 放氧与质子释放
+        ctx.fillStyle = rgba(C.energy, 1);
+        ctx.font = "600 16px " + Deck.token("--font-mono");
+        ctx.fillText("O₂ ↑ (释放气体)", psiiX + 90, oecY + 52);
+
+        ctx.fillStyle = rgba(C.focus, 1);
+        ctx.font = "600 15px " + Deck.token("--font-mono");
+        ctx.fillText("+ 4 H⁺ (定域于腔内)", psiiX - 4, rxY + 16);
+      }
+
+      // Step 3: Cyt b6f 泵送质子与质子富集
+      if (currentStep >= 3) {
+        // 泵送流线
+        ctx.strokeStyle = rgba(C.focus, 0.85);
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(cytX, memTop - 24);
+        ctx.lineTo(cytX, memBottom + 40);
+        ctx.stroke();
+
+        // 箭头头部
+        ctx.beginPath();
+        ctx.moveTo(cytX - 6, memBottom + 32);
+        ctx.lineTo(cytX, memBottom + 44);
+        ctx.lineTo(cytX + 6, memBottom + 32);
+        ctx.stroke();
+
+        ctx.fillStyle = rgba(C.focus, 1);
+        ctx.font = "14px " + Deck.token("--font-mono");
+        ctx.fillText("4 H⁺ 泵入", cytX + 44, (memTop + memBottom) / 2);
+
+        // 腔内质子群 (H+) 渲染，体现质子浓度差
+        const hPoints = [
+          [w * 0.18, h * 0.74],
+          [w * 0.28, h * 0.82],
+          [w * 0.44, h * 0.76],
+          [w * 0.52, h * 0.84],
+          [w * 0.62, h * 0.72],
+          [w * 0.76, h * 0.82],
+          [w * 0.85, h * 0.75]
+        ];
+
+        hPoints.forEach(([px, py], i) => {
+          ctx.fillStyle = rgba(C.focus, 0.18);
+          ctx.beginPath();
+          ctx.arc(px, py, 16, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = rgba(C.focus, 0.95);
+          ctx.font = "600 14px " + Deck.token("--font-mono");
+          ctx.textAlign = "center";
+          ctx.fillText("H⁺", px, py + 5);
+        });
+
+        // 梯度跨膜标尺 (右侧)
+        const scaleX = w - 100;
+        ctx.strokeStyle = rgba(C.rule, 0.9);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(scaleX, memTop - 10);
+        ctx.lineTo(scaleX, memBottom + 60);
+        ctx.stroke();
+
+        ctx.fillStyle = rgba(C.text, 0.9);
+        ctx.font = "14px " + Deck.token("--font-mono");
+        ctx.textAlign = "right";
+        ctx.fillText("pH ≈ 8.0", scaleX - 12, memTop);
+        ctx.fillStyle = rgba(C.focus, 1);
+        ctx.fillText("pH ≈ 5.0", scaleX - 12, memBottom + 50);
+      }
+    }
+
+    const fitHandle = Deck.autofit(cv, (ctx, w, h) => {
+      draw(ctx, w, h);
+    });
+
+    Deck.onStep((step) => {
+      currentStep = step;
+      const s = STEPS[step] || STEPS[0];
+      descTitle.textContent = s.title;
+      descDetail.textContent = s.detail;
+      descStat.textContent = s.stat;
+      fitHandle.redraw();
+    }, STEPS.length);
+
+  })();
+  </script>
+</body>
+</html>

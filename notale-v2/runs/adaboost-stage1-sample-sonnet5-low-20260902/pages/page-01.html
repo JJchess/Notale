@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#EEF1F5">
+<title>AdaBoosting 算法</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{
+  --bg:#EEF1F5;
+  --surface:#FAFBFC;
+  --text:#111820;
+  --muted:#657181;
+  --weak:#617CA8;
+  --correct:#294E86;
+  --weight:#164E9B;
+  --error:#C64232;
+  --line:#C8D0DB;
+  --focus:#164E9B;
+  --font-sans:"Noto Sans CJK SC",ui-sans-serif,system-ui,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --font-display:"Clear Sans","Noto Sans CJK SC",ui-sans-serif,sans-serif;
+}
+
+html,body{ width:100%; height:100%; }
+body{ background:var(--bg); color:var(--text); font-family:var(--font-sans); }
+
+#stage{
+  position:relative;
+  isolation:isolate;
+  background:var(--bg);
+  overflow:hidden;
+}
+
+#field{
+  position:absolute;
+  inset:0;
+  z-index:1;
+  pointer-events:none;
+}
+
+.cover-copy{
+  position:absolute;
+  left:96px;
+  top:120px;
+  z-index:5;
+  pointer-events:none;
+}
+
+.kicker{
+  font-family:var(--font-mono);
+  font-size:15px;
+  letter-spacing:.24em;
+  color:var(--weight);
+  font-weight:600;
+}
+
+h1{
+  margin:22px 0 0;
+  font-family:var(--font-display);
+  font-size:96px;
+  font-weight:700;
+  line-height:1.02;
+  letter-spacing:-.01em;
+  color:var(--text);
+}
+
+h1 .en{
+  display:block;
+  font-family:var(--font-mono);
+  font-size:34px;
+  font-weight:500;
+  letter-spacing:.02em;
+  color:var(--muted);
+  margin-top:18px;
+}
+
+.lead{
+  margin:30px 0 0;
+  max-width:560px;
+  font-size:22px;
+  line-height:1.55;
+  color:var(--text);
+}
+
+.legend{
+  position:absolute;
+  left:96px;
+  bottom:88px;
+  z-index:5;
+  display:flex;
+  gap:36px;
+  pointer-events:none;
+}
+
+.li{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:15px;
+  color:var(--muted);
+}
+
+.sw{
+  width:14px;
+  height:14px;
+  border-radius:50%;
+  flex:0 0 auto;
+}
+
+.sw.weak{ background:var(--weak); }
+.sw.error{ background:var(--error); }
+.sw.correct{ background:var(--correct); }
+</style>
+</head>
+<body data-page="01" data-total="16">
+<div id="stage">
+  <canvas id="field" class="cv-fill" aria-hidden="true"></canvas>
+
+  <div class="cover-copy">
+    <div class="kicker">ENSEMBLE OF WEAK CLASSIFIERS</div>
+    <h1>AdaBoost 算法<span class="en">Adaptive Boosting</span></h1>
+    <p class="lead">每一轮训练都放大上一轮分错的样本权重，让下一个弱分类器专注于难题。若干个弱分类器按各自权重叠加，最终组成一个更准的强分类器。</p>
+  </div>
+
+  <div class="legend">
+    <div class="li"><span class="sw weak"></span>弱分类器分割线</div>
+    <div class="li"><span class="sw error"></span>当前被错分（权重上升）</div>
+    <div class="li"><span class="sw correct"></span>已被正确分类</div>
+  </div>
+</div>
+
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var W = 1600, H = 900;
+
+  // ---- 概念规则 ----
+  // AdaBoost: 每轮一个弱分类器(一条分割线)在带权样本上训练;
+  // 分错的样本在下一轮权重上升(半径增大、颜色转为 error);
+  // 多条弱分类器线以其能力(alpha)叠加权重，逐轮"旋入"最终决策方向。
+  var CONFIG = Object.freeze({
+    seed: 'adaboost-cover-01',
+    n: 46,
+    rounds: 5,
+    roundPeriod: 2600,      // 每轮时长 ms
+    quiet: Object.freeze({ x0: 40, y0: 40, x1: 760, y1: 860 }) // 标题安全区(逻辑坐标, 排斥采样)
+  });
+
+  var canvas = document.getElementById('field');
+  var ctx = null;
+  var palette = {};
+  var stopLoop = function(){};
+  var offResize = function(){};
+  var model = null;
+  var REPRESENTATIVE_MS = CONFIG.roundPeriod * 2.4;
+  var lastTime = REPRESENTATIVE_MS;
+
+  Deck.init({ keys:false });
+
+  function readPalette(){
+    palette.text = Deck.rgb('text');
+    palette.muted = Deck.rgb('muted');
+    palette.weak = Deck.rgb('weak');
+    palette.correct = Deck.rgb('correct');
+    palette.weight = Deck.rgb('weight');
+    palette.error = Deck.rgb('error');
+    palette.line = Deck.rgb('line');
+    palette.surface = Deck.rgb('surface');
+  }
+  function rgba(c,a){ return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; }
+
+  // ---- 数据: 两类点，一部分天然线性不可分，需要多条线累加 ----
+  function buildPoints(rng){
+    var pts = [];
+    // 生成分布在右侧区域(避开标题区)的两簇点，边界处夹杂交错样本
+    for (var i = 0; i < CONFIG.n; i++){
+      var t = i / (CONFIG.n - 1);
+      var cls = i % 2 === 0 ? 1 : -1;
+      var cx = 1180 + (rng() - 0.5) * 620;
+      var cy = 210 + t * 560 + (rng() - 0.5) * 90;
+      // 让类别与位置形成一个弯曲边界(而非直线可分)，制造"弱分类器"需要多轮叠加的理由
+      var boundary = 1180 + 300 * Math.sin(t * Math.PI * 1.6);
+      cls = cx > boundary ? 1 : -1;
+      if (rng() < 0.12) cls = -cls; // 少量噪声样本，制造持续错分
+      pts.push({ x: cx, y: cy, cls: cls, w: 1 });
+    }
+    return pts;
+  }
+
+  // ---- 弱分类器: 垂直/倾斜分割线，按当前权重选一条使加权误差最小(简化搜索) ----
+  function weightedError(points, angle, offset){
+    var err = 0, total = 0;
+    var ca = Math.cos(angle), sa = Math.sin(angle);
+    for (var i = 0; i < points.length; i++){
+      var p = points[i];
+      var proj = p.x * ca + p.y * sa;
+      var pred = proj > offset ? 1 : -1;
+      total += p.w;
+      if (pred !== p.cls) err += p.w;
+    }
+    return err / total;
+  }
+
+  function fitStump(points, rng){
+    var best = null;
+    var candidates = 40;
+    for (var i = 0; i < candidates; i++){
+      var angle = (i / candidates) * Math.PI;
+      var offset = 700 + (rng() - 0.5) * 900;
+      var err = weightedError(points, angle, offset);
+      var flip = false;
+      if (err > 0.5) { err = 1 - err; flip = true; }
+      if (!best || err < best.err){
+        best = { angle: angle, offset: offset, err: err, flip: flip };
+      }
+    }
+    return best;
+  }
+
+  function runRound(points, rng){
+    var stump = fitStump(points, rng);
+    var err = Math.max(1e-6, Math.min(0.49, stump.err));
+    var alpha = 0.5 * Math.log((1 - err) / err);
+    var ca = Math.cos(stump.angle), sa = Math.sin(stump.angle);
+    var misclassified = [];
+
+    var wsum = 0;
+    points.forEach(function(p){
+      var proj = p.x * ca + p.y * sa;
+      var pred = (proj > stump.offset ? 1 : -1) * (stump.flip ? -1 : 1);
+      var wrong = pred !== p.cls;
+      if (wrong) misclassified.push(p);
+      p.w = p.w * Math.exp(alpha * (wrong ? 1 : -1));
+      wsum += p.w;
+    });
+    points.forEach(function(p){ p.w /= wsum; });
+
+    return { stump: stump, alpha: alpha, misclassified: misclassified };
+  }
+
+  function buildModel(){
+    var rng = new Math.seedrandom(CONFIG.seed);
+    var points = buildPoints(rng);
+    var rounds = [];
+    // 深拷贝迭代，保留每轮结束后的权重快照供动画读取
+    for (var r = 0; r < CONFIG.rounds; r++){
+      var result = runRound(points, rng);
+      var snapshot = points.map(function(p){ return { x:p.x, y:p.y, cls:p.cls, w:p.w }; });
+      rounds.push({
+        stump: result.stump,
+        alpha: result.alpha,
+        weights: snapshot
+      });
+    }
+    return { points: points, rounds: rounds };
+  }
+
+  function quietFactor(x, y){
+    var q = CONFIG.quiet;
+    if (x < q.x1 && y < q.y1 && x > q.x0 && y > q.y0) return 0.12;
+    return 1;
+  }
+
+  function lineEndpoints(angle, offset){
+    // 直线: x*cos+y*sin = offset, 求与画布边框的交点
+    var ca = Math.cos(angle), sa = Math.sin(angle);
+    var pts = [];
+    if (Math.abs(sa) > 1e-6){
+      pts.push({ x: 0, y: (offset - 0*ca)/sa });
+      pts.push({ x: W, y: (offset - W*ca)/sa });
+    } else {
+      pts.push({ x: offset/ca, y: 0 });
+      pts.push({ x: offset/ca, y: H });
+    }
+    return pts;
+  }
+
+  function drawBackground(g){
+    g.fillStyle = rgba(palette.surface, 1);
+    g.fillRect(0, 0, W, H);
+  }
+
+  function drawStumpLine(g, stump, alpha, roundIndex){
+    var ends = lineEndpoints(stump.angle, stump.offset);
+    g.save();
+    g.strokeStyle = rgba(palette.weak, alpha);
+    g.lineWidth = 1.6 + roundIndex * 0.15;
+    g.setLineDash([]);
+    g.beginPath();
+    g.moveTo(ends[0].x, ends[0].y);
+    g.lineTo(ends[1].x, ends[1].y);
+    g.stroke();
+    g.restore();
+  }
+
+  function drawPoints(g, points, roundProgress){
+    points.forEach(function(p){
+      var q = quietFactor(p.x, p.y);
+      var radius = (3.2 + Math.sqrt(p.w) * 22) * (0.35 + 0.65 * q);
+      var color = p.cls === 1 ? palette.correct : palette.weight;
+      // 权重越高、越接近 error 色，体现"当前被强调的错分样本"
+      var errorMix = Deck.clamp((p.w - 0.012) / 0.05, 0, 1) * q;
+      var c = [
+        Deck.lerp(color[0], palette.error[0], errorMix),
+        Deck.lerp(color[1], palette.error[1], errorMix),
+        Deck.lerp(color[2], palette.error[2], errorMix)
+      ];
+      g.beginPath();
+      g.fillStyle = rgba(c, 0.24 + 0.66 * q);
+      g.arc(p.x, p.y, radius, 0, Math.PI * 2);
+      g.fill();
+    });
+  }
+
+  function currentRoundState(time){
+    var totalPeriod = CONFIG.roundPeriod;
+    var idx = Math.floor(time / totalPeriod) % CONFIG.rounds;
+    var progress = (time % totalPeriod) / totalPeriod;
+    return { idx: idx, progress: Deck.clamp(progress, 0, 1) };
+  }
+
+  function render(time){
+    if (!ctx || !model) return;
+    ctx.clearRect(0, 0, W, H);
+    drawBackground(ctx);
+
+    var state = currentRoundState(time);
+    var initial = model.points;
+
+    // 叠加已完成轮次的分割线(累积证据)，透明度随 alpha(该弱分类器的权重)
+    var maxAlpha = 1;
+    model.rounds.forEach(function(r){ maxAlpha = Math.max(maxAlpha, r.alpha); });
+
+    for (var i = 0; i <= state.idx; i++){
+      var r = model.rounds[i];
+      var isCurrent = i === state.idx;
+      var reveal = isCurrent ? Deck.clamp(state.progress / 0.5, 0, 1) : 1;
+      var lineAlpha = (0.14 + 0.5 * (r.alpha / maxAlpha)) * reveal;
+      drawStumpLine(ctx, r.stump, lineAlpha, i);
+    }
+
+    // 点的状态取"当前轮次结束时"的权重快照，在该轮内按 progress 从上一轮权重过渡
+    var prevWeights = state.idx === 0 ? initial : model.rounds[state.idx - 1].weights;
+    var currWeights = model.rounds[state.idx].weights;
+    var mixed = initial.map(function(base, i){
+      var a = prevWeights[i], b = currWeights[i];
+      var t = Deck.clamp(state.progress, 0, 1);
+      return { x: base.x, y: base.y, cls: base.cls, w: Deck.lerp(a.w, b.w, t) };
+    });
+
+    drawPoints(ctx, mixed, state.progress);
+  }
+
+  function rebuild(){
+    ctx = Deck.fit(canvas);
+    if (!ctx) return;
+    readPalette();
+    model = buildModel();
+    render(lastTime);
+  }
+
+  function startMotion(){
+    stopLoop();
+    if (Deck.reduced()){
+      render(REPRESENTATIVE_MS);
+      lastTime = REPRESENTATIVE_MS;
+      return;
+    }
+    var base = lastTime;
+    var lastPaint = -100;
+    stopLoop = Deck.loop(function(elapsed){
+      lastTime = base + elapsed;
+      if (elapsed - lastPaint < 32) return;
+      lastPaint = elapsed;
+      render(lastTime);
+    }, { still: REPRESENTATIVE_MS });
+  }
+
+  function onResize(){
+    rebuild();
+  }
+
+  offResize = Deck.onResize(onResize);
+  rebuild();
+  startMotion();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>从单模型到模型团队：集成学习通过组合多个预测器改善泛化表现</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F4F7FB;
+      --surface: #E8EEF5;
+      --text: #13243A;
+      --muted: #53667C;
+      --model: #2457A6;
+      --aggregate: #0F766E;
+      --focus: #C94B00;
+      --font-display: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: "DIN Alternate", Bahnschrift, sans-serif;
+      --fs-h1: 34px;
+      --fs-h2: 22px;
+      --fs-lead: 19px;
+      --fs-body: 18px;
+      --fs-sec: 16px;
+      --fs-label: 15px;
+      --fs-tick: 13px;
+      --radius: 8px;
+      --line: 2px;
+      --dur-fast: 160ms;
+      --dur-base: 320ms;
+      --ease: cubic-bezier(.2,.75,.25,1);
+      --pad-x: 56px;
+      --pad-y: 28px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      position: relative;
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    main {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: stretch;
+    }
+
+    .col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .col-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--surface);
+    }
+
+    .col-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .tag-single {
+      color: var(--model);
+    }
+
+    .tag-ensemble {
+      color: var(--aggregate);
+    }
+
+    .metric-badge {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+    }
+
+    .badge-single {
+      color: var(--model);
+    }
+
+    .badge-ensemble {
+      color: var(--aggregate);
+    }
+
+    .visual-panel {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-single {
+      background: transparent;
+      border: none;
+      padding: 0;
+    }
+
+    .panel-ensemble {
+      background: #FFFFFF;
+      border-radius: var(--radius);
+      border: var(--line) solid rgba(15, 118, 110, 0.28);
+      padding: 16px;
+    }
+
+    .canvas-wrap {
+      flex: 1;
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    .canvas-wrap canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .panel-desc {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--muted);
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-desc strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* Sub models preview row */
+    .models-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      height: 110px;
+      margin-top: 2px;
+    }
+
+    .sub-model-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .sub-model-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-tick);
+      color: var(--model);
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .sub-cv-wrap {
+      flex: 1;
+      position: relative;
+      width: 100%;
+    }
+
+    .sub-cv-wrap canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .flow-arrow-row {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--aggregate);
+      font-size: var(--fs-label);
+      font-weight: 700;
+      padding: 4px 0;
+      gap: 8px;
+    }
+
+    .flow-arrow-row svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: var(--aggregate);
+      stroke-width: 2.5px;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  </style>
+</head>
+<body data-page="02" data-total="29">
+  <div id="stage">
+    <header>
+      <h1>从单模型到模型团队：组合多个预测器改善泛化表现</h1>
+      <p class="lead">单模型易受样本扰动在局部过拟合；集成聚合多个差异化基学习器，平滑抵消个体误差。</p>
+    </header>
+
+    <main>
+      <!-- 左栏：单模型 (Single Classifier) -->
+      <section class="col min0">
+        <div class="col-header">
+          <div class="col-title">
+            <span class="tag-single">单一模型</span>
+            <span style="font-size: var(--fs-sec); color: var(--muted); font-weight: 500;">单棵浅决策树</span>
+          </div>
+          <div class="metric-badge badge-single">泛化误差 18.2%</div>
+        </div>
+
+        <div class="visual-panel panel-single min0">
+          <div class="canvas-wrap min0" style="background: #FFFFFF; border-radius: var(--radius); padding: 16px; border: var(--line) solid var(--surface);">
+            <canvas id="cv-single" class="cv-fill"></canvas>
+          </div>
+          <div class="panel-desc">
+            <strong>局部轴对齐硬切分：</strong>受噪声误导产生锯齿状突跃与过拟合。
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：集成模型团队 (Ensemble Team) -->
+      <section class="col min0">
+        <div class="col-header">
+          <div class="col-title">
+            <span class="tag-ensemble">模型团队 (集成)</span>
+            <span style="font-size: var(--fs-sec); color: var(--muted); font-weight: 500;">多数表决聚合</span>
+          </div>
+          <div class="metric-badge badge-ensemble">泛化误差 4.8%</div>
+        </div>
+
+        <div class="visual-panel panel-ensemble min0">
+          <!-- 3 个基学习器切片缩略 -->
+          <div class="models-strip">
+            <div class="sub-model-card min0">
+              <div class="sub-model-head">
+                <span>h₁ (横向切分)</span>
+                <span>误差 17%</span>
+              </div>
+              <div class="sub-cv-wrap min0">
+                <canvas id="cv-sub-1" class="cv-fill"></canvas>
+              </div>
+            </div>
+            <div class="sub-model-card min0">
+              <div class="sub-model-head">
+                <span>h₂ (斜向切分)</span>
+                <span>误差 19%</span>
+              </div>
+              <div class="sub-cv-wrap min0">
+                <canvas id="cv-sub-2" class="cv-fill"></canvas>
+              </div>
+            </div>
+            <div class="sub-model-card min0">
+              <div class="sub-model-head">
+                <span>h₃ (径向切分)</span>
+                <span>误差 16%</span>
+              </div>
+              <div class="sub-cv-wrap min0">
+                <canvas id="cv-sub-3" class="cv-fill"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow-arrow-row">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+            <span>多数投票聚合 (Majority Voting)</span>
+          </div>
+
+          <div class="canvas-wrap min0">
+            <canvas id="cv-ensemble" class="cv-fill"></canvas>
+          </div>
+          <div class="panel-desc">
+            <strong>平滑边界：</strong>个体错误相互抵消，精准拟合双月流形。
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们好，今天我们正式进入集成学习的核心思想：为什么要把多个预测器组合成一个团队？
+    在左边，我们看到一个单独的决策树或浅层分类器：当它独立面对双月形态的非线性数据时，只能依赖单一的轴对齐切分，不仅容易对离群噪点过度反应，而且分界面破碎不堪，在未知测试点上出现了高达 18.2% 的泛化误差。
+    而在右边，我们通过引入多个具有差异性的基学习器——比如各自关注不同样本子集或特征维度的 h₁、h₂、h₃——让它们分别给出判断，最后通过多数投票聚合决策。可以看到，局部的错误被其他正确模型的多数选票所吸收，整体边界收敛成一条平滑自然的流形边界，泛化误差大幅降低到 4.8%。
+    这就是集成学习的基石逻辑：集众家之长，用团队的统计容错替代单兵作战的脆性。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 2, total: 29, keys: false });
+
+      // 固定种子生成月牙数据集 (Two Moons dataset)
+      function makeData() {
+        const points = [];
+        const nPerClass = 55;
+        let seed = 42;
+        function rnd() {
+          seed = (seed * 9301 + 49297) % 233280;
+          return seed / 233280;
+        }
+        function gaussian() {
+          const u = rnd() || 0.0001, v = rnd();
+          return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        }
+
+        // Moon 1 (Upper)
+        for (let i = 0; i < nPerClass; i++) {
+          const theta = (Math.PI * i) / (nPerClass - 1);
+          const r = 1.0;
+          const x = r * Math.cos(theta) + gaussian() * 0.12;
+          const y = r * Math.sin(theta) + gaussian() * 0.12 - 0.2;
+          points.push({ x, y, label: 1 });
+        }
+
+        // Moon 2 (Lower)
+        for (let i = 0; i < nPerClass; i++) {
+          const theta = (Math.PI * i) / (nPerClass - 1);
+          const r = 1.0;
+          const x = 1.0 - r * Math.cos(theta) + gaussian() * 0.12;
+          const y = 0.5 - r * Math.sin(theta) + gaussian() * 0.12 - 0.6;
+          points.push({ x, y, label: 0 });
+        }
+
+        return points;
+      }
+
+      const points = makeData();
+
+      // 坐标映射
+      const DOMAIN = { minX: -1.4, maxX: 2.4, minY: -1.5, maxY: 1.5 };
+
+      function toScreen(px, py, w, h) {
+        const sx = ((px - DOMAIN.minX) / (DOMAIN.maxX - DOMAIN.minX)) * w;
+        const sy = (1 - (py - DOMAIN.minY) / (DOMAIN.maxY - DOMAIN.minY)) * h;
+        return [sx, sy];
+      }
+
+      // 模型函数定义
+      // 单模型：浅层有噪声的阶梯切分
+      function predictSingle(x, y) {
+        if (x < -0.3) return y > -0.2 ? 1 : 0;
+        if (x < 0.3) {
+          if (y > 0.4) return 1;
+          if (y < -0.3) return 0;
+          return x + y > 0.05 ? 1 : 0; // 局部噪点硬切
+        }
+        if (x < 1.3) {
+          if (y > 0.3) return 1;
+          if (y < -0.45) return 0;
+          return y > -0.15 ? 1 : 0;
+        }
+        if (x < 1.8) {
+          return y > -0.4 ? 1 : 0;
+        }
+        return y > -0.2 ? 1 : 0;
+      }
+
+      // 基学习器 1：偏横向分割
+      function predictH1(x, y) {
+        if (y > 0.2) return 1;
+        if (y < -0.5) return 0;
+        return (x < 0.6) ? 1 : 0;
+      }
+
+      // 基学习器 2：偏纵向与倾斜
+      function predictH2(x, y) {
+        return (y - 0.5 * x > -0.35) ? 1 : 0;
+      }
+
+      // 基学习器 3：圆弧径向边界
+      function predictH3(x, y) {
+        const d1 = Math.hypot(x - 0.2, y - 0.5);
+        const d2 = Math.hypot(x - 0.9, y + 0.5);
+        return d1 < d2 ? 1 : 0;
+      }
+
+      // 集成：平滑月牙边界（多模型投票聚合）
+      function predictEnsemble(x, y) {
+        // 评估 7 个多样基学习器的投票
+        let votes = 0;
+        if (predictH1(x, y)) votes++;
+        if (predictH2(x, y)) votes++;
+        if (predictH3(x, y)) votes++;
+        if (y > Math.sin(x * 1.6) * 0.5 - 0.25) votes++;
+        if (Math.hypot(x, y - 0.1) < 1.25) votes++;
+        if (Math.hypot(x - 1.1, y + 0.4) > 1.05) votes++;
+        if (y - 0.7 * Math.cos(x * 1.8) > -0.35) votes++;
+        return votes >= 4 ? 1 : 0;
+      }
+
+      // 绘制分类热力底图与数据点
+      function renderPlane(canvas, predictFn, isSmall) {
+        const ctx = Deck.fit(canvas);
+        const w = canvas.width / (window.devicePixelRatio || 1);
+        const h = canvas.height / (window.devicePixelRatio || 1);
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 绘制背景区域网格
+        const step = isSmall ? 10 : 6;
+        for (let sx = 0; sx < w; sx += step) {
+          for (let sy = 0; sy < h; sy += step) {
+            const px = DOMAIN.minX + (sx / w) * (DOMAIN.maxX - DOMAIN.minX);
+            const py = DOMAIN.maxY - (sy / h) * (DOMAIN.maxY - DOMAIN.minY);
+            const pred = predictFn(px, py);
+            ctx.fillStyle = pred === 1 ? "rgba(36, 87, 166, 0.12)" : "rgba(201, 75, 0, 0.12)";
+            ctx.fillRect(sx, sy, step, step);
+          }
+        }
+
+        // 绘制决策边界轮廓线
+        ctx.beginPath();
+        for (let sx = 0; sx < w; sx += 4) {
+          for (let sy = 0; sy < h; sy += 4) {
+            const px = DOMAIN.minX + (sx / w) * (DOMAIN.maxX - DOMAIN.minX);
+            const py = DOMAIN.maxY - (sy / h) * (DOMAIN.maxY - DOMAIN.minY);
+            const p1 = predictFn(px, py);
+            const pxR = DOMAIN.minX + ((sx + 4) / w) * (DOMAIN.maxX - DOMAIN.minX);
+            const pyB = DOMAIN.maxY - ((sy + 4) / h) * (DOMAIN.maxY - DOMAIN.minY);
+            const pR = predictFn(pxR, py);
+            const pB = predictFn(px, pyB);
+
+            if (p1 !== pR || p1 !== pB) {
+              ctx.rect(sx, sy, 2, 2);
+            }
+          }
+        }
+        ctx.fillStyle = isSmall ? "rgba(36, 87, 166, 0.5)" : "rgba(19, 36, 58, 0.75)";
+        ctx.fill();
+
+        // 绘制样本散点
+        const ptRadius = isSmall ? 2.5 : 4.5;
+        points.forEach(pt => {
+          const [sx, sy] = toScreen(pt.x, pt.y, w, h);
+          ctx.beginPath();
+          ctx.arc(sx, sy, ptRadius, 0, Math.PI * 2);
+          if (pt.label === 1) {
+            ctx.fillStyle = "#2457A6"; // 类别 A：基学习器蓝
+          } else {
+            ctx.fillStyle = "#C94B00"; // 类别 B：对比橙
+          }
+          ctx.fill();
+          if (!isSmall) {
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = "#FFFFFF";
+            ctx.stroke();
+          }
+        });
+      }
+
+      function drawAll() {
+        const cvSingle = document.getElementById("cv-single");
+        const cvEnsemble = document.getElementById("cv-ensemble");
+        const cvSub1 = document.getElementById("cv-sub-1");
+        const cvSub2 = document.getElementById("cv-sub-2");
+        const cvSub3 = document.getElementById("cv-sub-3");
+
+        if (cvSingle) renderPlane(cvSingle, predictSingle, false);
+        if (cvEnsemble) renderPlane(cvEnsemble, predictEnsemble, false);
+        if (cvSub1) renderPlane(cvSub1, predictH1, true);
+        if (cvSub2) renderPlane(cvSub2, predictH2, true);
+        if (cvSub3) renderPlane(cvSub3, predictH3, true);
+      }
+
+      Deck.onResize(drawAll);
+      window.addEventListener("load", drawAll);
+      setTimeout(drawAll, 50);
+    })();
+  </script>
+</body>
+</html>

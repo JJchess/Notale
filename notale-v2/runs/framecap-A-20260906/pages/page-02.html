@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>从单模型到模型团队：集成学习通过组合多个预测器改善泛化表现</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      justify-content: flex-start;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    main {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 320px 80px 1fr 90px 320px;
+      align-items: center;
+      gap: 0;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: var(--line) solid #d6e0ea;
+      padding: 24px 32px;
+      position: relative;
+    }
+
+    /* Column 1: Single Learner */
+    .col-card {
+      background: var(--bg);
+      border-radius: var(--radius);
+      border: var(--line) solid #d4deea;
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      height: 100%;
+      justify-content: space-between;
+      box-sizing: border-box;
+    }
+
+    .col-card.aggregate {
+      border: 3px solid var(--aggregate);
+      background: #f0f8f6;
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid #d4deea;
+      padding-bottom: 10px;
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .card-tag {
+      font-size: var(--fs-label);
+      font-family: var(--font-numeric);
+      font-weight: 700;
+      color: var(--model);
+    }
+
+    .aggregate .card-tag {
+      color: var(--aggregate);
+    }
+
+    .metric-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .metric-num {
+      font-family: var(--font-numeric);
+      font-size: 34px;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--text);
+    }
+
+    .metric-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .mini-canvas-box {
+      width: 100%;
+      height: 250px;
+      position: relative;
+      background: #fff;
+      border-radius: 6px;
+      border: 1px solid #dce4ee;
+      overflow: hidden;
+    }
+
+    .card-foot {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    /* Mid Stage: Flow connectors and ensemble members */
+    .flow-connector {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+    }
+
+    .flow-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Ensemble Members Column */
+    .col-members {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      height: 100%;
+      justify-content: center;
+      padding: 0 10px;
+    }
+
+    .member-item {
+      background: var(--bg);
+      border-radius: var(--radius);
+      border: var(--line) solid #d4deea;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: relative;
+      transition: border-color var(--dur-fast) var(--ease);
+    }
+
+    .member-item.active {
+      border-color: var(--model);
+    }
+
+    .member-badge {
+      font-size: var(--fs-label);
+      font-family: var(--font-numeric);
+      font-weight: 700;
+      color: var(--model);
+      background: #e2ecf9;
+      padding: 3px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .member-plot {
+      width: 110px;
+      height: 80px;
+      background: #fff;
+      border-radius: 4px;
+      border: 1px solid #dce4ee;
+      position: relative;
+    }
+
+    .member-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .member-name {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .member-acc {
+      font-size: var(--fs-label);
+      font-family: var(--font-numeric);
+      color: var(--muted);
+    }
+
+    .member-bias {
+      font-size: var(--fs-tick);
+      color: var(--focus);
+    }
+
+    /* Aggregation symbol / connector */
+    .agg-hub {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .agg-symbol {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--aggregate);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 700;
+      box-shadow: 0 2px 6px rgba(15,118,110,0.25);
+    }
+
+    .agg-label {
+      font-size: var(--fs-tick);
+      color: var(--aggregate);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body data-page="02" data-total="29">
+  <div id="stage">
+    <header>
+      <h1>从单模型到模型团队：集成学习通过组合多个预测器改善泛化表现</h1>
+      <p class="lead">单模型易受训练波动或局部偏倚影响；集成多个基学习器，聚合后显著提升泛化能力。</p>
+    </header>
+
+    <main>
+      <!-- Column 1: Single Model -->
+      <section class="col-card min0">
+        <div class="card-head">
+          <h2 class="card-title">单个决策模型</h2>
+          <span class="card-tag">Single</span>
+        </div>
+        <div class="mini-canvas-box">
+          <canvas id="cv-single" class="cv-fill"></canvas>
+        </div>
+        <div class="metric-row">
+          <div class="metric-num" style="color: var(--muted);">81.2%</div>
+          <div class="metric-desc">测试准确率（高方差过拟合）</div>
+        </div>
+        <p class="card-foot">单模型容易拟合噪声，在未见区域产生孤立误判。</p>
+      </section>
+
+      <!-- Flow 1: Fork to ensemble -->
+      <div class="flow-connector min0">
+        <svg class="flow-svg" viewBox="0 0 80 500" fill="none">
+          <path d="M 10 250 C 45 250, 45 105, 75 105" stroke="var(--model)" stroke-width="2" stroke-dasharray="4 3"/>
+          <path d="M 10 250 C 45 250, 45 250, 75 250" stroke="var(--model)" stroke-width="2"/>
+          <path d="M 10 250 C 45 250, 45 395, 75 395" stroke="var(--model)" stroke-width="2" stroke-dasharray="4 3"/>
+          <polygon points="75,100 80,105 75,110" fill="var(--model)"/>
+          <polygon points="75,245 80,250 75,255" fill="var(--model)"/>
+          <polygon points="75,390 80,395 75,400" fill="var(--model)"/>
+        </svg>
+      </div>
+
+      <!-- Column 2: Ensemble Members -->
+      <section class="col-members min0">
+        <div class="member-item active">
+          <div class="member-plot">
+            <canvas id="cv-m1" class="cv-fill"></canvas>
+          </div>
+          <div class="member-info">
+            <div class="member-name">基学习器 1</div>
+            <div class="member-acc">准确率 82.5%</div>
+            <div class="member-bias">左上偏倚</div>
+          </div>
+          <span class="member-badge">h₁(x)</span>
+        </div>
+
+        <div class="member-item active">
+          <div class="member-plot">
+            <canvas id="cv-m2" class="cv-fill"></canvas>
+          </div>
+          <div class="member-info">
+            <div class="member-name">基学习器 2</div>
+            <div class="member-acc">准确率 80.0%</div>
+            <div class="member-bias">中央平移</div>
+          </div>
+          <span class="member-badge">h₂(x)</span>
+        </div>
+
+        <div class="member-item active">
+          <div class="member-plot">
+            <canvas id="cv-m3" class="cv-fill"></canvas>
+          </div>
+          <div class="member-info">
+            <div class="member-name">基学习器 3</div>
+            <div class="member-acc">准确率 81.8%</div>
+            <div class="member-bias">右侧过渡硬</div>
+          </div>
+          <span class="member-badge">h₃(x)</span>
+        </div>
+      </section>
+
+      <!-- Flow 2: Convergence to Aggregation -->
+      <div class="flow-connector min0">
+        <div class="agg-hub">
+          <svg width="80" height="240" viewBox="0 0 80 240" fill="none">
+            <path d="M 5 30 C 35 30, 35 120, 50 120" stroke="var(--model)" stroke-width="2"/>
+            <path d="M 5 120 L 50 120" stroke="var(--model)" stroke-width="2"/>
+            <path d="M 5 210 C 35 210, 35 120, 50 120" stroke="var(--model)" stroke-width="2"/>
+            <!-- Thick line into aggregate -->
+            <path d="M 50 120 L 76 120" stroke="var(--aggregate)" stroke-width="4"/>
+            <polygon points="74,115 80,120 74,125" fill="var(--aggregate)"/>
+          </svg>
+          <div class="agg-symbol">Σ</div>
+          <span class="agg-label">多数表决</span>
+        </div>
+      </div>
+
+      <!-- Column 3: Ensemble Aggregate -->
+      <section class="col-card aggregate min0">
+        <div class="card-head">
+          <h2 class="card-title" style="color: var(--aggregate);">集成预测团队</h2>
+          <span class="card-tag">H(x)</span>
+        </div>
+        <div class="mini-canvas-box">
+          <canvas id="cv-ensemble" class="cv-fill"></canvas>
+        </div>
+        <div class="metric-row">
+          <div class="metric-num" style="color: var(--aggregate);">92.4%</div>
+          <div class="metric-desc">测试准确率（稳定边界）</div>
+        </div>
+        <p class="card-foot">各模型错位互补，经表决抵消局部波动，泛化能力显著优于单模型。</p>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    在机器学习任务中，单个模型受制于训练样本局限与算法假设，容易在部分区域产生过拟合或预测偏倚。
+    集成学习的核心思想，是将若干个各有差异的基学习器组合成一个“模型团队”。
+    例如这里，三个基学习器在不同的局部存在错判，但只要它们的错误不完全重合，通过多数投票或平均聚合，
+    集成模型的决策边界就会更加平滑，泛化准确率从单模型的81%提升至92%以上。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      Deck.init({ index: 2, total: 29 });
+
+      // Generate fixed synthetic 2D data points for visual inspection
+      const pts = [];
+      const SEED = 42;
+      function pseudoRandom(seed) {
+        let s = seed;
+        return function () {
+          s = Math.sin(s) * 10000;
+          return s - Math.floor(s);
+        };
+      }
+      const rand = pseudoRandom(SEED);
+
+      for (let i = 0; i < 40; i++) {
+        // Class 0 (cluster left/bottom)
+        const x = 0.15 + rand() * 0.35 + (rand() - 0.5) * 0.1;
+        const y = 0.2 + rand() * 0.45 + (rand() - 0.5) * 0.1;
+        pts.push({ x, y, c: 0 });
+      }
+      for (let i = 0; i < 40; i++) {
+        // Class 1 (cluster right/top)
+        const x = 0.5 + rand() * 0.38 + (rand() - 0.5) * 0.1;
+        const y = 0.45 + rand() * 0.45 + (rand() - 0.5) * 0.1;
+        pts.push({ x, y, c: 1 });
+      }
+
+      // Decision boundary functions f(x, y) > 0 => class 1
+      // Model 1: tilted with wiggly left
+      function b1(x, y) {
+        return (x - 0.48) * 1.2 + (y - 0.45) * 0.8 + 0.08 * Math.sin(y * 12);
+      }
+      // Model 2: steeper slope with vertical bias
+      function b2(x, y) {
+        return (x - 0.52) * 1.8 + (y - 0.5) * 0.4 - 0.06;
+      }
+      // Model 3: smoother curve with horizontal tilt
+      function b3(x, y) {
+        return (x - 0.46) * 0.9 + (y - 0.42) * 1.3 - 0.07 * Math.cos(x * 10);
+      }
+      // Ensemble: majority vote
+      function bEns(x, y) {
+        const v1 = b1(x, y) > 0 ? 1 : 0;
+        const v2 = b2(x, y) > 0 ? 1 : 0;
+        const v3 = b3(x, y) > 0 ? 1 : 0;
+        return (v1 + v2 + v3 >= 2) ? 1 : -1;
+      }
+      // Single model (wiggly, overfitted on sample)
+      function bSingle(x, y) {
+        return (x - 0.48) * 1.2 + (y - 0.48) * 1.0 + 0.12 * Math.sin(y * 14) - 0.08 * Math.cos(x * 12);
+      }
+
+      function drawDecisionPlot(cv, boundFn, isAgg = false) {
+        const ctx = Deck.fit(cv);
+        const w = cv.clientWidth;
+        const h = cv.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        // Draw background decision field (coarse grid)
+        const step = 6;
+        for (let px = 0; px < w; px += step) {
+          for (let py = 0; py < h; py += step) {
+            const nx = px / w;
+            const ny = 1 - py / h;
+            const val = boundFn(nx, ny);
+            if (val > 0) {
+              ctx.fillStyle = isAgg ? 'rgba(15, 118, 110, 0.12)' : 'rgba(36, 87, 166, 0.10)';
+            } else {
+              ctx.fillStyle = 'rgba(201, 75, 0, 0.08)';
+            }
+            ctx.fillRect(px, py, step, step);
+          }
+        }
+
+        // Draw decision boundary contour
+        ctx.beginPath();
+        ctx.strokeStyle = isAgg ? '#0F766E' : '#2457A6';
+        ctx.lineWidth = isAgg ? 3 : 2;
+        let lastVal = null;
+        // Approximate zero-crossing line
+        for (let py = 0; py < h; py += 2) {
+          const ny = 1 - py / h;
+          // Find root nx
+          for (let px = 0; px < w; px += 2) {
+            const nx = px / w;
+            const v = boundFn(nx, ny);
+            if (px > 0 && ((lastVal > 0 && v <= 0) || (lastVal <= 0 && v > 0))) {
+              ctx.fillStyle = isAgg ? '#0F766E' : '#2457A6';
+              ctx.fillRect(px - 1, py - 1, 2.5, 2.5);
+              break;
+            }
+            lastVal = v;
+          }
+        }
+
+        // Draw sample points
+        pts.forEach(p => {
+          const sx = p.x * w;
+          const sy = (1 - p.y) * h;
+          ctx.beginPath();
+          ctx.arc(sx, sy, isAgg ? 3.5 : 2.5, 0, Math.PI * 2);
+          if (p.c === 1) {
+            ctx.fillStyle = isAgg ? '#0F766E' : '#2457A6';
+            ctx.fill();
+          } else {
+            ctx.fillStyle = '#C94B00';
+            ctx.fill();
+          }
+        });
+      }
+
+      function renderAll() {
+        drawDecisionPlot(document.getElementById('cv-single'), bSingle, false);
+        drawDecisionPlot(document.getElementById('cv-m1'), b1, false);
+        drawDecisionPlot(document.getElementById('cv-m2'), b2, false);
+        drawDecisionPlot(document.getElementById('cv-m3'), b3, false);
+        drawDecisionPlot(document.getElementById('cv-ensemble'), bEns, true);
+      }
+
+      Deck.onResize(renderAll);
+      renderAll();
+    })();
+  </script>
+</body>
+</html>

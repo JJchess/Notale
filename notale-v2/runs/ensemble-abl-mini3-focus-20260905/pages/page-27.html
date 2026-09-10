@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成学习概念检验：方法识别与陷阱诊断</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题与总体进度 */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+    .header-title h1 {
+      font-size: var(--fs-h1);
+      margin: 0 0 4px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .header-title p {
+      margin: 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .progress-pill {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 6px 14px;
+    }
+    .progress-pill .label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .progress-pill .val {
+      font-family: var(--font-num);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--model);
+    }
+
+    /* 主诊断台布局: 左侧情境切片与实测证据，右侧决策与诊断反馈 */
+    .lab-layout {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 240px 1fr 380px;
+      gap: 18px;
+    }
+
+    /* 左栏：情境列表 */
+    .case-nav {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .nav-head {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .case-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 3px;
+      width: 100%;
+      padding: 10px 12px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+      transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease);
+    }
+    .case-btn:hover {
+      background: var(--surface-strong);
+    }
+    .case-btn.active {
+      background: var(--surface-strong);
+      border-color: var(--model);
+    }
+    .c-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .c-tag {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--surface-strong);
+      border: 1px solid var(--muted);
+    }
+    .case-btn.solved .status-dot {
+      background: var(--answer);
+      border-color: var(--answer);
+    }
+    .case-btn.fault .status-dot {
+      background: var(--aggregate);
+      border-color: var(--aggregate);
+    }
+
+    /* 中栏：主证据场 (Evidence Stage) */
+    .evidence-stage {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 10px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .stage-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+    .stage-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .stage-badge {
+      font-size: var(--fs-tick);
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .stage-desc {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    /* 三大真实证据网格 */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      flex: 1;
+      min-height: 0;
+    }
+    .metric-panel {
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      background: #FAFCFD;
+    }
+    .metric-panel.full-span {
+      grid-column: 1 / -1;
+    }
+    .panel-name {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-name span.alert {
+      color: var(--aggregate);
+      font-size: var(--fs-tick);
+      font-weight: 600;
+    }
+
+    /* 证据可视化内部 */
+    .corr-matrix {
+      display: grid;
+      grid-template-columns: 64px 1fr 1fr 1fr;
+      gap: 6px;
+      font-family: var(--font-num);
+      font-size: var(--fs-tick);
+      align-items: center;
+      text-align: center;
+    }
+    .corr-cell {
+      padding: 6px 4px;
+      border-radius: 4px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+    }
+    .corr-cell.high {
+      background: #FDEDEC;
+      color: #922B21;
+      font-weight: 700;
+      border-color: #F5B7B1;
+    }
+    .corr-cell.low {
+      background: #E8F8F5;
+      color: #117864;
+      font-weight: 700;
+      border-color: #A3E4D7;
+    }
+    .corr-cell.diag {
+      color: var(--muted);
+      background: var(--surface-strong);
+    }
+    .th-cell {
+      font-weight: 700;
+      color: var(--muted);
+      font-size: var(--fs-tick);
+    }
+
+    /* 依赖与序列拓扑 */
+    .topo-flow {
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 10px 4px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      flex: 1;
+    }
+    .topo-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      text-align: center;
+    }
+    .topo-box {
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      border: 1px solid var(--surface-strong);
+      background: #F4F7F9;
+      color: var(--text);
+    }
+    .topo-box.model-box {
+      border-color: var(--model);
+      color: var(--model);
+      background: #EDF4F9;
+    }
+    .topo-box.leak-box {
+      border-color: var(--aggregate);
+      color: var(--aggregate);
+      background: #FDF2E9;
+    }
+    .topo-arrow {
+      color: var(--muted);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+    }
+
+    /* 验证与评估读数 */
+    .validation-trace {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      justify-content: center;
+      flex: 1;
+    }
+    .trace-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 4px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      font-size: var(--fs-tick);
+    }
+    .trace-label {
+      color: var(--muted);
+    }
+    .trace-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .trace-val.bad {
+      color: var(--aggregate);
+    }
+    .trace-val.good {
+      color: var(--answer);
+    }
+
+    /* 右栏：决策与诊断面板 */
+    .decision-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .section-label {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .action-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .choice-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: #FAFCFD;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+      text-align: left;
+      transition: all var(--duration) var(--ease);
+    }
+    .choice-btn:hover:not(:disabled) {
+      border-color: var(--model);
+      background: #F0F6FA;
+    }
+    .choice-btn.selected {
+      border-color: var(--focus);
+      background: #FDF7F2;
+      font-weight: 600;
+    }
+    .choice-btn.correct {
+      border-color: var(--answer);
+      background: #E8F8F5;
+      color: #117864;
+    }
+    .choice-btn.wrong {
+      border-color: var(--aggregate);
+      background: #FDEDEC;
+      color: #922B21;
+    }
+
+    /* 诊断结果反馈框 */
+    .feedback-box {
+      flex: 1;
+      min-height: 100px;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+      background: #F7FAFC;
+      border: 1px solid var(--surface-strong);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .feedback-box .fb-title {
+      font-weight: 700;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: var(--fs-sec);
+    }
+    .feedback-box.pass {
+      background: #EAF8F4;
+      border-color: #A3E4D7;
+      color: #117864;
+    }
+    .feedback-box.fail {
+      background: #FDF2E9;
+      border-color: #F5CBA7;
+      color: #935116;
+    }
+    .feedback-box.idle {
+      color: var(--muted);
+    }
+
+    .footer-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: auto;
+    }
+    .reset-btn {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid var(--surface-strong);
+      background: var(--surface);
+      border-radius: 6px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: var(--fs-label);
+      font-family: inherit;
+    }
+    .reset-btn:hover {
+      background: var(--surface-strong);
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="27" data-total="27">
+  <div id="stage">
+    <!-- 顶部状态栏 -->
+    <header class="header-bar">
+      <div class="header-title">
+        <h1>集成学习概念检验：方法识别与陷阱诊断</h1>
+        <p>基于基模型误差相关性、训练依赖顺序与验证评估路径，做出正确的集成策略判断或排除隐蔽陷阱</p>
+      </div>
+      <div class="progress-pill">
+        <span class="label">完成进度</span>
+        <span class="val" id="progressVal">0 / 4</span>
+      </div>
+    </header>
+
+    <!-- 主诊断台 -->
+    <main class="lab-layout">
+      <!-- 左栏：情境切片 -->
+      <nav class="case-nav" aria-label="情境导航">
+        <div class="nav-head">检验情境 (4 组)</div>
+        <button class="case-btn active" data-id="0">
+          <span class="c-title">情境 A：高维树集成</span>
+          <span class="c-tag"><span class="status-dot"></span>高方差、低偏差单树</span>
+        </button>
+        <button class="case-btn" data-id="1">
+          <span class="c-title">情境 B：序列梯度纠错</span>
+          <span class="c-tag"><span class="status-dot"></span>高偏差弱分类器</span>
+        </button>
+        <button class="case-btn" data-id="2">
+          <span class="c-title">情境 C：异质融合陷阱</span>
+          <span class="c-tag"><span class="status-dot"></span>同训练集元特征提取</span>
+        </button>
+        <button class="case-btn" data-id="3">
+          <span class="c-title">情境 D：伪多样性陷阱</span>
+          <span class="c-tag"><span class="status-dot"></span>同构微调模型堆叠</span>
+        </button>
+      </nav>
+
+      <!-- 中栏：证据场 (主视觉焦点) -->
+      <section class="evidence-stage min0" aria-labelledby="stageTitle">
+        <div class="stage-header">
+          <h2 class="stage-title" id="stageTitle">情境 A：高维特征下的高方差树模型</h2>
+          <span class="stage-badge" id="stageBadge">训练集：10,000 样本 · 120 特征</span>
+        </div>
+        <p class="stage-desc" id="stageDesc">
+          单棵全深度决策树在训练集准确率 99.4%，但在独立验证集仅 78.1%。模型表现出显著的高方差过拟合特征。
+        </p>
+
+        <!-- 真实证据矩阵与拓扑 -->
+        <div class="metrics-grid">
+          <!-- 证据 1：错误相关性矩阵 -->
+          <div class="metric-panel">
+            <div class="panel-name">
+              <span>基模型错误相关性矩阵 (Error ρ)</span>
+              <span id="corrHint" class="alert"></span>
+            </div>
+            <div class="corr-matrix" id="corrMatrix">
+              <!-- 动态填充 -->
+            </div>
+          </div>
+
+          <!-- 证据 2：验证指标与泛化差异 -->
+          <div class="metric-panel">
+            <div class="panel-name">
+              <span>验证数据与误差结构读数</span>
+              <span id="metricHint"></span>
+            </div>
+            <div class="validation-trace" id="valTrace">
+              <!-- 动态填充 -->
+            </div>
+          </div>
+
+          <!-- 证据 3：训练与验证拓扑流程 (全宽) -->
+          <div class="metric-panel full-span">
+            <div class="panel-name">
+              <span>架构依赖与验证路径拓扑</span>
+              <span id="topoHint"></span>
+            </div>
+            <div class="topo-flow" id="topoFlow">
+              <!-- 动态填充 -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：交互决策区 -->
+      <aside class="decision-panel">
+        <div>
+          <div class="section-label">第一步：判断系统状态或风险</div>
+          <div class="action-group" id="statusChoices">
+            <button class="choice-btn" data-type="diagnosis" data-val="normal">
+              <span>架构健康，可直接配置集成</span>
+            </button>
+            <button class="choice-btn" data-type="diagnosis" data-val="leakage">
+              <span>存在数据泄漏（同集生成元特征）</span>
+            </button>
+            <button class="choice-btn" data-type="diagnosis" data-val="redundant">
+              <span>缺乏多样性（错误相关系数极高）</span>
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-label">第二步：选择最优处理方案</div>
+          <div class="action-group" id="strategyChoices">
+            <button class="choice-btn" data-type="strategy" data-val="bagging">
+              <span>Bagging / 随机森林 (Bootstrap)</span>
+            </button>
+            <button class="choice-btn" data-type="strategy" data-val="boosting">
+              <span>Boosting (串行残差学习)</span>
+            </button>
+            <button class="choice-btn" data-type="strategy" data-val="stacking_cv">
+              <span>Stacking + 折外交叉验证 (K-Fold OOF)</span>
+            </button>
+            <button class="choice-btn" data-type="strategy" data-val="reject">
+              <span>放弃集成，增加独立异质模型或特征</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 诊断反馈 -->
+        <div class="feedback-box idle" id="feedbackBox">
+          <div>
+            <div class="fb-title" id="fbTitle">等待选择策略</div>
+            <div id="fbContent">请根据中央面板的基模型错误相关性、训练序列依赖和验证数据结构，判断系统是否存在陷阱并选出最匹配的解法。</div>
+          </div>
+        </div>
+
+        <div class="footer-actions">
+          <button class="reset-btn" id="resetBtn">重置当前情境答题</button>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 4 组真实模型情境数据与证据链
+      const SCENARIOS = [
+        {
+          id: 0,
+          name: "情境 A：高维树集成",
+          title: "情境 A：高维特征下的高方差单树模型",
+          badge: "训练集：10,000 样本 · 120 特征",
+          desc: "基学习器均为高方差、充分生长的决策树。各树在不同特征子集与自举抽样上生长，错误重合度低，具备互相抵消方差的条件。",
+          corr: [
+            ["-", "0.22", "0.19"],
+            ["0.22", "-", "0.25"],
+            ["0.19", "0.25", "-"]
+          ],
+          corrAlert: "基模型间错误相关性较低 (ρ ≈ 0.2)，多样性充分",
+          metrics: [
+            { label: "单模型训练集误差", val: "0.6%", type: "good" },
+            { label: "单模型验证集误差 (高方差)", val: "21.9%", type: "bad" },
+            { label: "训练依赖方式", val: "完全并行无依赖", type: "good" },
+            { label: "验证方案", val: "袋外验证 (OOB) 或折外留出", type: "good" }
+          ],
+          topo: [
+            { box: "原始样本 D", type: "normal" },
+            { arrow: "自举重采样" },
+            { box: "子集 D_1 ... D_k (并行)", type: "model" },
+            { arrow: "独立训练" },
+            { box: "决策树集 T_1 ... T_k", type: "model" },
+            { arrow: "投票 / 平均" },
+            { box: "平滑集成边界", type: "normal" }
+          ],
+          correctDiagnosis: "normal",
+          correctStrategy: "bagging",
+          explanation: "基模型单体方差极高但错误相关性低 (ρ<0.3)，且训练无序列先后依赖。标准的 Bagging (如随机森林) 能通过平均独立随机采样的大量深树，显著削减方差而不增加偏差。"
+        },
+        {
+          id: 1,
+          name: "情境 B：序列梯度纠错",
+          title: "情境 B：欠拟合弱桩的逐步纠错",
+          badge: "训练集：50,000 样本 · 32 特征",
+          desc: "单模型选用浅层决策树桩 (深度 2–3)，单体偏差极大。每次训练需显式依赖上一轮模型的残差梯度分布，按顺序累加构建强分类器。",
+          corr: [
+            ["-", "0.12", "0.08"],
+            ["0.12", "-", "0.14"],
+            ["0.08", "0.14", "-"]
+          ],
+          corrAlert: "后序树专门对准前序残差，预测空间互补",
+          metrics: [
+            { label: "单桩训练集误差 (高偏差)", val: "38.2%", type: "bad" },
+            { label: "验证集基线误差", val: "39.5%", type: "bad" },
+            { label: "训练依赖方式", val: "严格前向序列依赖 (残差传递)", type: "bad" },
+            { label: "优化目标", val: "拟合损失函数负梯度", type: "good" }
+          ],
+          topo: [
+            { box: "弱基学习器 h_1", type: "model" },
+            { arrow: "计算残差 r_1" },
+            { box: "拟合残差树 h_2", type: "model" },
+            { arrow: "加权累加" },
+            { box: "收敛强模型 F_m", type: "normal" }
+          ],
+          correctDiagnosis: "normal",
+          correctStrategy: "boosting",
+          explanation: "单基学习器偏差高（欠拟合），且每一步需要前序模型的残差或样本权重作为输入。这属于典型的 Boosting 序列接力修正架构，通过残差梯度步步逼近最优解。"
+        },
+        {
+          id: 2,
+          name: "情境 C：异质融合陷阱",
+          title: "情境 C：异质模型堆叠中的元特征泄漏",
+          badge: "训练集：8,000 样本 · 45 特征",
+          desc: "团队训练了 XGBoost、SVM 与神经网络 3 个异质模型，直接用训练集全体生成预测概率作为次级训练集，元学习器在训练集达到 99.8% 准确率，但线上大幅滑坡。",
+          corr: [
+            ["-", "0.38", "0.41"],
+            ["0.38", "-", "0.35"],
+            ["0.41", "0.35", "-"]
+          ],
+          corrAlert: "模型结构各异，但次级数据产生严重同集污染",
+          metrics: [
+            { label: "元学习器训练集准确率", val: "99.8%", type: "bad" },
+            { label: "真实测试集准确率 (断崖式)", val: "74.2%", type: "bad" },
+            { label: "基特征生成路径", val: "用训练集自身预测自己", type: "bad" },
+            { label: "泄漏诊断", val: "元特征包含了基模型的记忆过拟合", type: "bad" }
+          ],
+          topo: [
+            { box: "完整训练集 D", type: "normal" },
+            { arrow: "同集预测" },
+            { box: "虚假乐观元特征 Z (泄漏)", type: "leak" },
+            { arrow: "直接训练" },
+            { box: "严重过拟合元学习器", type: "leak" }
+          ],
+          correctDiagnosis: "leakage",
+          correctStrategy: "stacking_cv",
+          explanation: "典型 Stacking 陷阱！如果用基模型在全量训练集上的原位预测作为元特征，元学习器学到的只是基模型的‘作弊记忆’。必须采用 K-Fold 折外交叉验证 (OOF) 生成洁净的次级训练特征。"
+        },
+        {
+          id: 3,
+          name: "情境 D：伪多样性陷阱",
+          title: "情境 D：同构微调模型的伪集成堆叠",
+          badge: "训练集：12,000 样本 · 80 特征",
+          desc: "工程中使用了同一基础网络、仅更换了随机种子的 5 个模型做融合。虽然平均预测消耗了 5 倍算力，但测试集准确率仅提升 0.05%，收益完全不抵推理成本。",
+          corr: [
+            ["-", "0.96", "0.95"],
+            ["0.96", "-", "0.97"],
+            ["0.95", "0.97", "-"]
+          ],
+          corrAlert: "错误相关性极高 (ρ > 0.95)！错误完全重叠",
+          metrics: [
+            { label: "基模型错误重合率", val: "96.4%", type: "bad" },
+            { label: "单模型测试集准确率", val: "84.1%", type: "good" },
+            { label: "5 模平均测试准确率", val: "84.15% (+0.05%)", type: "bad" },
+            { label: "推理计算成本倍率", val: "5.0× (算力浪费)", type: "bad" }
+          ],
+          topo: [
+            { box: "相同主干网络", type: "normal" },
+            { arrow: "仅变微小种子" },
+            { box: "5 个近乎同构的模型", type: "leak" },
+            { arrow: "投票 / 平均" },
+            { box: "共同犯错，无互补增益", type: "leak" }
+          ],
+          correctDiagnosis: "redundant",
+          correctStrategy: "reject",
+          explanation: "典型缺乏多样性陷阱！当模型间错误相关性接近 1 时，集成完全无法提供错误互补机制，任何集成算法都无法凭空消除系统共性偏差。此时盲目集成只会增加延迟和算力消耗，必须引入真正异质模型或不同特征视图。"
+        }
+      ];
+
+      // 运行状态
+      const state = {
+        currentId: 0,
+        answers: {
+          0: { diagnosis: null, strategy: null, solved: false },
+          1: { diagnosis: null, strategy: null, solved: false },
+          2: { diagnosis: null, strategy: null, solved: false },
+          3: { diagnosis: null, strategy: null, solved: false }
+        }
+      };
+
+      // 元素绑定
+      const ui = {
+        progressVal: document.getElementById("progressVal"),
+        stageTitle: document.getElementById("stageTitle"),
+        stageBadge: document.getElementById("stageBadge"),
+        stageDesc: document.getElementById("stageDesc"),
+        corrHint: document.getElementById("corrHint"),
+        corrMatrix: document.getElementById("corrMatrix"),
+        valTrace: document.getElementById("valTrace"),
+        topoFlow: document.getElementById("topoFlow"),
+        caseButtons: document.querySelectorAll(".case-btn"),
+        diagnosisButtons: document.querySelectorAll("#statusChoices .choice-btn"),
+        strategyButtons: document.querySelectorAll("#strategyChoices .choice-btn"),
+        feedbackBox: document.getElementById("feedbackBox"),
+        fbTitle: document.getElementById("fbTitle"),
+        fbContent: document.getElementById("fbContent"),
+        resetBtn: document.getElementById("resetBtn")
+      };
+
+      // 渲染当前情境的证据场
+      function renderEvidence(sc) {
+        ui.stageTitle.textContent = sc.title;
+        ui.stageBadge.textContent = sc.badge;
+        ui.stageDesc.textContent = sc.desc;
+        ui.corrHint.textContent = sc.corrAlert;
+
+        // 1. 错误相关矩阵
+        let matrixHtml = `
+          <div class="th-cell"></div>
+          <div class="th-cell">模型 1</div>
+          <div class="th-cell">模型 2</div>
+          <div class="th-cell">模型 3</div>
+        `;
+        for (let i = 0; i < 3; i++) {
+          matrixHtml += `<div class="th-cell">模型 ${i + 1}</div>`;
+          for (let j = 0; j < 3; j++) {
+            const val = sc.corr[i][j];
+            if (i === j) {
+              matrixHtml += `<div class="corr-cell diag">1.00</div>`;
+            } else {
+              const num = parseFloat(val);
+              const cls = num > 0.7 ? "high" : (num < 0.3 ? "low" : "");
+              matrixHtml += `<div class="corr-cell ${cls}">ρ = ${val}</div>`;
+            }
+          }
+        }
+        ui.corrMatrix.innerHTML = matrixHtml;
+
+        // 2. 验证指标
+        ui.valTrace.innerHTML = sc.metrics.map(m => `
+          <div class="trace-item">
+            <span class="trace-label">${m.label}</span>
+            <span class="trace-val ${m.type}">${m.val}</span>
+          </div>
+        `).join("");
+
+        // 3. 拓扑图
+        ui.topoFlow.innerHTML = sc.topo.map(item => {
+          if (item.arrow) {
+            return `<div class="topo-arrow">→ <span style="font-size:var(--fs-tick);font-weight:normal;color:var(--muted)">${item.arrow}</span> →</div>`;
+          } else {
+            let cls = "normal";
+            if (item.type === "model") cls = "model-box";
+            if (item.type === "leak") cls = "leak-box";
+            return `
+              <div class="topo-node">
+                <div class="topo-box ${cls}">${item.box}</div>
+              </div>
+            `;
+          }
+        }).join("");
+      }
+
+      // 渲染答题控制区状态
+      function renderControls() {
+        const sc = SCENARIOS[state.currentId];
+        const curAns = state.answers[state.currentId];
+
+        // 导航按钮
+        ui.caseButtons.forEach((btn, idx) => {
+          btn.classList.toggle("active", idx === state.currentId);
+          btn.classList.toggle("solved", state.answers[idx].solved);
+          btn.classList.toggle("fault", !state.answers[idx].solved && (state.answers[idx].diagnosis !== null || state.answers[idx].strategy !== null));
+        });
+
+        // 选项高亮
+        ui.diagnosisButtons.forEach(btn => {
+          const val = btn.dataset.val;
+          btn.classList.toggle("selected", curAns.diagnosis === val);
+          btn.classList.remove("correct", "wrong");
+          if (curAns.solved) {
+            if (val === sc.correctDiagnosis) btn.classList.add("correct");
+          } else if (curAns.diagnosis === val && curAns.strategy !== null) {
+            if (val !== sc.correctDiagnosis) btn.classList.add("wrong");
+          }
+        });
+
+        ui.strategyButtons.forEach(btn => {
+          const val = btn.dataset.val;
+          btn.classList.toggle("selected", curAns.strategy === val);
+          btn.classList.remove("correct", "wrong");
+          if (curAns.solved) {
+            if (val === sc.correctStrategy) btn.classList.add("correct");
+          } else if (curAns.strategy === val && curAns.diagnosis !== null) {
+            if (val !== sc.correctStrategy) btn.classList.add("wrong");
+          }
+        });
+
+        // 反馈信息
+        ui.feedbackBox.classList.remove("idle", "pass", "fail");
+        if (curAns.diagnosis === null && curAns.strategy === null) {
+          ui.feedbackBox.classList.add("idle");
+          ui.fbTitle.textContent = "等待诊断与决策";
+          ui.fbContent.textContent = "请观察中央三大证据面板：1) 错误相关性是否过高？2) 训练是否为序列传递？3) 元特征生成是否存在同集泄漏？结合两者作出判断。";
+        } else if (curAns.diagnosis === null || curAns.strategy === null) {
+          ui.feedbackBox.classList.add("idle");
+          ui.fbTitle.textContent = "已选定单项，请完成完整决策";
+          ui.fbContent.textContent = "还需要选择另一维度的方案，系统将结合两者立即验证你的集成决策。";
+        } else {
+          // 两项都有
+          const isDiagCorrect = curAns.diagnosis === sc.correctDiagnosis;
+          const isStratCorrect = curAns.strategy === sc.correctStrategy;
+          if (isDiagCorrect && isStratCorrect) {
+            curAns.solved = true;
+            ui.feedbackBox.classList.add("pass");
+            ui.fbTitle.innerHTML = "✓ 诊断与策略完全命中";
+            ui.fbContent.textContent = sc.explanation;
+          } else {
+            curAns.solved = false;
+            ui.feedbackBox.classList.add("fail");
+            ui.fbTitle.innerHTML = "✕ 诊断偏差或策略不适配";
+            let reason = "";
+            if (!isDiagCorrect) {
+              reason += "对当前架构的风险状态判断不符。请复查错误相关系数或拓扑中是否存在泄漏。";
+            }
+            if (!isStratCorrect) {
+              reason += (reason ? " " : "") + "所选策略无法解决此问题或并非最优路径。请依据模型方差/偏差特征及依赖重新推导。";
+            }
+            ui.fbContent.textContent = reason;
+          }
+        }
+
+        // 统计总进度
+        const solvedCount = Object.values(state.answers).filter(a => a.solved).length;
+        ui.progressVal.textContent = `${solvedCount} / ${SCENARIOS.length}`;
+        if (solvedCount === SCENARIOS.length) {
+          ui.progressVal.style.color = "var(--answer)";
+        }
+      }
+
+      function switchCase(id) {
+        state.currentId = id;
+        renderEvidence(SCENARIOS[id]);
+        renderControls();
+      }
+
+      // 事件监听
+      ui.caseButtons.forEach((btn, idx) => {
+        btn.addEventListener("click", () => switchCase(idx));
+      });
+
+      ui.diagnosisButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          state.answers[state.currentId].diagnosis = btn.dataset.val;
+          renderControls();
+        });
+      });
+
+      ui.strategyButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          state.answers[state.currentId].strategy = btn.dataset.val;
+          renderControls();
+        });
+      });
+
+      ui.resetBtn.addEventListener("click", () => {
+        state.answers[state.currentId] = { diagnosis: null, strategy: null, solved: false };
+        renderControls();
+      });
+
+      // 初始化底盘与首屏
+      Deck.init({ index: 27, total: 27 });
+      switchCase(0);
+
+      // 暴露自动化测试与判定挂钩
+      window.EnsembleLab = {
+        state,
+        switchCase,
+        solveCurrent: () => {
+          const sc = SCENARIOS[state.currentId];
+          state.answers[state.currentId] = {
+            diagnosis: sc.correctDiagnosis,
+            strategy: sc.correctStrategy,
+            solved: true
+          };
+          renderControls();
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

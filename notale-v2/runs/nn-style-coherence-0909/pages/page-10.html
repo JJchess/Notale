@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+.kicker{position:absolute;left:70px;top:44px;font-size:var(--fs-label);color:var(--muted);letter-spacing:.06em}
+h1.title{position:absolute;left:70px;top:66px;right:70px;font-size:var(--fs-h1);line-height:1.15;max-width:1300px}
+
+/* graph stage */
+.graph-wrap{position:absolute;left:70px;top:216px;width:1460px;height:284px}
+svg#graph{width:100%;height:100%;overflow:visible}
+
+.nt-diagram-line{fill:none;stroke:var(--line);stroke-width:var(--diagram-line-width);}
+.edge-path{fill:none;stroke:var(--line);stroke-width:2.5}
+.edge-path[data-active="true"]{stroke:var(--accent);stroke-width:4}
+.edge-arrow{fill:var(--line)}
+.edge-arrow[data-active="true"]{fill:var(--accent)}
+
+.local-tag{font:var(--fs-tick) var(--font-sans);fill:var(--muted)}
+.local-tag[data-active="true"]{fill:var(--accent);font-weight:600}
+.local-tag-bg{fill:var(--bg);opacity:.92}
+
+circle.nt-node{stroke:var(--line);stroke-width:2;fill:var(--bg)}
+circle.nt-node[data-role="param"]{stroke:var(--stable)}
+circle.nt-node[data-role="param"][data-active="true"]{stroke:var(--accent);stroke-width:3}
+circle.nt-node[data-role="value"][data-active="true"]{stroke:var(--accent);stroke-width:3}
+circle.nt-node[data-role="loss"]{stroke:var(--accent);stroke-width:3}
+
+text.node-label{font:600 20px var(--font-sans);fill:var(--text);text-anchor:middle;dominant-baseline:middle}
+text.node-sub{font:var(--fs-tick) var(--font-mono,var(--font-sans));fill:var(--muted);text-anchor:middle}
+text.node-sub[data-active="true"]{fill:var(--accent)}
+
+/* right rail: chain readout */
+.rail{position:absolute;left:70px;top:566px;width:1460px}
+.rail-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}
+.rail-title{font-size:var(--fs-sec);color:var(--text)}
+.rail-note{font-size:var(--fs-label);color:var(--muted)}
+
+.chain{display:flex;align-items:center;gap:10px;font-size:26px;flex-wrap:wrap;padding:18px 24px;border:1px solid var(--line)}
+.chain .term{font:600 28px var(--font-mono,var(--font-sans));color:var(--text);white-space:nowrap}
+.chain .term.hi{color:var(--accent)}
+.chain .op{color:var(--muted);font-size:22px}
+.chain .eq-num{font:600 26px var(--font-mono,var(--font-sans));color:var(--muted)}
+.chain .eq-num.hi{color:var(--accent)}
+.chain .arrow{color:var(--muted);font-size:22px;padding:0 4px}
+
+.result-line{margin-top:14px;display:flex;align-items:baseline;gap:16px}
+.result-line .label{font-size:var(--fs-label);color:var(--muted)}
+.result-line .value{font:700 34px var(--font-mono,var(--font-sans));color:var(--accent)}
+
+/* controls */
+.nt-controls{position:absolute;left:70px;top:812px;width:1460px;display:flex;align-items:center;gap:28px}
+.nt-control-row{display:flex;align-items:center;gap:14px}
+.nt-control-label{font-size:var(--fs-label);color:var(--muted)}
+.nt-button{font-size:var(--fs-label);padding:8px 18px;border:1px solid var(--line);background:none;color:var(--text);cursor:pointer}
+.nt-button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.nt-readout{font-size:var(--fs-label);color:var(--muted);margin-left:auto}
+.nt-readout b{color:var(--text);font-weight:600}
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+  <div class="kicker">MLP 与训练原理</div>
+  <h1 class="title">链式法则沿计算图分摊责任：局部导数相乘，把输出错误追溯到每个参数</h1>
+
+  <div class="graph-wrap">
+    <svg id="graph" viewBox="0 0 1460 330" aria-hidden="true"></svg>
+  </div>
+
+  <div class="rail">
+    <div class="rail-head">
+      <div class="rail-title" id="railTitle">对参数 w₁ 的责任：五段局部导数相乘</div>
+      <div class="rail-note" id="railNote">路径越长，经过的局部导数越多</div>
+    </div>
+    <div class="chain" id="chain" aria-live="polite"></div>
+    <div class="result-line">
+      <span class="label" id="resultLabel">∂L/∂w₁ =</span>
+      <span class="value" id="resultValue">—</span>
+    </div>
+  </div>
+
+  <div class="nt-controls">
+    <div class="nt-control-row">
+      <span class="nt-control-label">追踪路径</span>
+      <button class="nt-button" data-target="w1" aria-pressed="true">w₁（远，5 段）</button>
+      <button class="nt-button" data-target="w3" aria-pressed="false">w₃（近，2 段）</button>
+    </div>
+    <div class="nt-readout" id="readout"></div>
+  </div>
+
+  <svg class="sr-only" aria-hidden="true"></svg>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+"use strict";
+
+// ---- fixed teaching numbers (same forward pass as the小数值例) ----
+const V = {
+  x1:0.5, x2:-0.3, w1:0.8, w2:-0.6, b1:0.1,
+  w3:1.2, b2:-0.2, y:1
+};
+V.z1 = V.w1*V.x1 + V.w2*V.x2 + V.b1;
+V.h  = 1/(1+Math.exp(-V.z1));
+V.z2 = V.w3*V.h + V.b2;
+V.yhat = 1/(1+Math.exp(-V.z2));
+V.L = -(V.y*Math.log(V.yhat) + (1-V.y)*Math.log(1-V.yhat));
+
+const dL_dyhat = -(V.y/V.yhat - (1-V.y)/(1-V.yhat));
+const dyhat_dz2 = V.yhat*(1-V.yhat);
+const dL_dz2 = dL_dyhat*dyhat_dz2;       // = yhat - y
+const dz2_dh = V.w3;
+const dL_dh = dL_dz2*dz2_dh;
+const dh_dz1 = V.h*(1-V.h);
+const dL_dz1 = dL_dh*dh_dz1;
+const dz1_dw1 = V.x1;
+const dz1_dw2 = V.x2;
+const dz2_dw3 = V.h;
+
+const dL_dw1 = dL_dz1*dz1_dw1;
+const dL_dw3 = dL_dz2*dz2_dw3;
+
+const fmt = n => (n<0?"":"") + n.toFixed(4);
+const fmt3 = n => n.toFixed(3);
+
+// ---- graph node layout (logical 1460x330) ----
+// columns: x/w1/w2/b1 -> z1 -> h -> (w3,b2) -> z2 -> yhat -> L
+const N = {
+  x1:  {x:80,  y:70,  role:"value", label:"x₁", sub:fmt3(V.x1)},
+  x2:  {x:80,  y:230, role:"value", label:"x₂", sub:fmt3(V.x2)},
+  w1:  {x:80,  y:140, role:"param", label:"w₁", sub:fmt3(V.w1)},
+  w2:  {x:80,  y:300, role:"param", label:"w₂", sub:fmt3(V.w2)},
+  b1:  {x:280, y:300, role:"param", label:"b₁", sub:fmt3(V.b1)},
+  z1:  {x:400, y:150, role:"value", label:"z₁", sub:fmt3(V.z1)},
+  h:   {x:600, y:150, role:"value", label:"h",  sub:fmt3(V.h)},
+  w3:  {x:760, y:40,  role:"param", label:"w₃", sub:fmt3(V.w3)},
+  b2:  {x:760, y:300, role:"param", label:"b₂", sub:fmt3(V.b2)},
+  z2:  {x:920, y:150, role:"value", label:"z₂", sub:fmt3(V.z2)},
+  yhat:{x:1120,y:150, role:"value", label:"ŷ",  sub:fmt3(V.yhat)},
+  L:   {x:1340,y:150, role:"loss",  label:"L",  sub:fmt3(V.L)}
+};
+
+// edges: id, from, to, deriv label(function of), value
+const EDGES = [
+  {id:"w1-z1", from:"w1", to:"z1", d:"∂z₁/∂w₁ = x₁", v:dz1_dw1},
+  {id:"x1-z1", from:"x1", to:"z1", d:"", v:null},
+  {id:"w2-z1", from:"w2", to:"z1", d:"∂z₁/∂w₂ = x₂", v:dz1_dw2},
+  {id:"x2-z1", from:"x2", to:"z1", d:"", v:null},
+  {id:"b1-z1", from:"b1", to:"z1", d:"∂z₁/∂b₁ = 1", v:1},
+  {id:"z1-h",  from:"z1", to:"h",  d:"∂h/∂z₁ = h(1-h)", v:dh_dz1},
+  {id:"h-z2",  from:"h",  to:"z2", d:"∂z₂/∂h = w₃", v:dz2_dh},
+  {id:"w3-z2", from:"w3", to:"z2", d:"∂z₂/∂w₃ = h", v:dz2_dw3},
+  {id:"b2-z2", from:"b2", to:"z2", d:"∂z₂/∂b₂ = 1", v:1},
+  {id:"z2-yhat",from:"z2",to:"yhat", d:"∂ŷ/∂z₂ = ŷ(1-ŷ)", v:dyhat_dz2},
+  {id:"yhat-L",from:"yhat",to:"L", d:"∂L/∂ŷ", v:dL_dyhat}
+];
+
+const PATHS = {
+  w1: {
+    edges:["w1-z1","z1-h","h-z2","z2-yhat","yhat-L"],
+    nodes:["w1","z1","h","z2","yhat","L"],
+    target:"w1",
+    terms:[
+      {label:"∂L/∂ŷ", val:dL_dyhat},
+      {label:"∂ŷ/∂z₂", val:dyhat_dz2},
+      {label:"∂z₂/∂h", val:dz2_dh},
+      {label:"∂h/∂z₁", val:dh_dz1},
+      {label:"∂z₁/∂w₁", val:dz1_dw1}
+    ],
+    result: dL_dw1,
+    title: "对参数 w₁ 的责任：五段局部导数相乘",
+    note: "路径越长，经过的局部导数越多"
+  },
+  w3: {
+    edges:["w3-z2","z2-yhat","yhat-L"],
+    nodes:["w3","z2","yhat","L"],
+    target:"w3",
+    terms:[
+      {label:"∂L/∂ŷ", val:dL_dyhat},
+      {label:"∂ŷ/∂z₂", val:dyhat_dz2},
+      {label:"∂z₂/∂w₃", val:dz2_dw3}
+    ],
+    result: dL_dw3,
+    title: "对参数 w₃ 的责任：三段局部导数相乘",
+    note: "w₃ 离损失更近，路径更短"
+  }
+};
+
+const svg = document.getElementById("graph");
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs){
+  const e = document.createElementNS(NS, tag);
+  for(const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+function nodePath(fromKey, toKey, sink){
+  const a = N[fromKey], b = N[toKey];
+  const r = 34;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx,dy) || 1;
+  const ux = dx/len, uy = dy/len;
+  const sx = a.x + ux*r, sy = a.y + uy*r;
+  const ex = b.x - ux*(r+10), ey = b.y - uy*(r+10);
+  return {sx,sy,ex,ey,ux,uy};
+}
+
+function buildGraph(){
+  // edge layer first
+  const edgeLayer = el("g", {id:"edgeLayer"});
+  const nodeLayer = el("g", {id:"nodeLayer"});
+  const labelLayer = el("g", {id:"labelLayer"});
+  svg.appendChild(edgeLayer);
+  svg.appendChild(nodeLayer);
+  svg.appendChild(labelLayer);
+
+  EDGES.forEach(edge=>{
+    const {sx,sy,ex,ey} = nodePath(edge.from, edge.to);
+    const path = el("path", {
+      class:"edge-path",
+      id:"edge-"+edge.id,
+      "data-active":"false",
+      d:`M${sx},${sy} L${ex},${ey}`
+    });
+    edgeLayer.appendChild(path);
+
+    // arrowhead
+    const ang = Math.atan2(ey-sy, ex-sx);
+    const ah = 9;
+    const p1x = ex - ah*Math.cos(ang-0.4), p1y = ey - ah*Math.sin(ang-0.4);
+    const p2x = ex - ah*Math.cos(ang+0.4), p2y = ey - ah*Math.sin(ang+0.4);
+    const arrow = el("path", {
+      class:"edge-arrow", id:"arrow-"+edge.id, "data-active":"false",
+      d:`M${ex},${ey} L${p1x},${p1y} L${p2x},${p2y} Z`
+    });
+    edgeLayer.appendChild(arrow);
+
+    if(edge.d){
+      const mx = (sx+ex)/2, my = (sy+ey)/2;
+      const bg = el("rect", {class:"local-tag-bg", id:"tagbg-"+edge.id, x:mx-70, y:my-30, width:140, height:20});
+      const tag = el("text", {class:"local-tag", id:"tag-"+edge.id, x:mx, y:my-16, "text-anchor":"middle", "data-active":"false"});
+      tag.textContent = edge.d;
+      labelLayer.appendChild(bg);
+      labelLayer.appendChild(tag);
+    }
+  });
+
+  Object.keys(N).forEach(key=>{
+    const n = N[key];
+    const g = el("g", {id:"node-"+key});
+    const circle = el("circle", {
+      class:"nt-node", id:"circle-"+key, cx:n.x, cy:n.y, r:34,
+      "data-role":n.role, "data-active":"false"
+    });
+    const label = el("text", {class:"node-label", x:n.x, y:n.y-4});
+    label.textContent = n.label;
+    const sub = el("text", {class:"node-sub", id:"sub-"+key, x:n.x, y:n.y+22, "data-active":"false"});
+    sub.textContent = n.sub;
+    g.appendChild(circle); g.appendChild(label); g.appendChild(sub);
+    nodeLayer.appendChild(g);
+  });
+}
+
+function setActive(target){
+  const path = PATHS[target];
+  const activeEdges = new Set(path.edges);
+  const activeNodes = new Set(path.nodes);
+
+  EDGES.forEach(edge=>{
+    const on = activeEdges.has(edge.id);
+    document.getElementById("edge-"+edge.id).setAttribute("data-active", on?"true":"false");
+    document.getElementById("arrow-"+edge.id).setAttribute("data-active", on?"true":"false");
+    const tag = document.getElementById("tag-"+edge.id);
+    if(tag) tag.setAttribute("data-active", on?"true":"false");
+  });
+  Object.keys(N).forEach(key=>{
+    const on = activeNodes.has(key);
+    document.getElementById("circle-"+key).setAttribute("data-active", on?"true":"false");
+    document.getElementById("sub-"+key).setAttribute("data-active", on?"true":"false");
+  });
+
+  // chain readout
+  const chain = document.getElementById("chain");
+  chain.innerHTML = "";
+  path.terms.forEach((term, i)=>{
+    if(i>0){
+      const op = document.createElement("span");
+      op.className = "op"; op.textContent = "×";
+      chain.appendChild(op);
+    }
+    const t = document.createElement("span");
+    t.className = "term hi";
+    t.textContent = term.label;
+    chain.appendChild(t);
+    const eq = document.createElement("span");
+    eq.className = "eq-num hi";
+    eq.textContent = "("+fmt(term.val)+")";
+    chain.appendChild(eq);
+  });
+  const arrow = document.createElement("span");
+  arrow.className = "arrow"; arrow.textContent = "=";
+  chain.appendChild(arrow);
+  const result = document.createElement("span");
+  result.className = "term hi";
+  result.textContent = fmt(path.result);
+  chain.appendChild(result);
+
+  document.getElementById("railTitle").textContent = path.title;
+  document.getElementById("railNote").textContent = path.note;
+  document.getElementById("resultLabel").textContent = "∂L/∂"+ (target==="w1"?"w₁":"w₃") + " =";
+  document.getElementById("resultValue").textContent = fmt(path.result);
+
+  document.getElementById("readout").innerHTML =
+    "前向：z₁=<b>"+fmt3(V.z1)+"</b>　h=<b>"+fmt3(V.h)+"</b>　z₂=<b>"+fmt3(V.z2)+"</b>　ŷ=<b>"+fmt3(V.yhat)+"</b>　L=<b>"+fmt3(V.L)+"</b>";
+
+  document.querySelectorAll(".nt-button").forEach(btn=>{
+    btn.setAttribute("aria-pressed", btn.dataset.target===target ? "true":"false");
+  });
+}
+
+buildGraph();
+setActive("w1");
+
+document.querySelectorAll(".nt-button").forEach(btn=>{
+  btn.addEventListener("click", ()=> setActive(btn.dataset.target));
+});
+
+Deck.init({index:10, total:44});
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>样本随机性与特征随机性的分工</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "DIN Alternate", "Bahnschrift", system-ui, sans-serif;
+    }
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .header {
+      flex: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2px solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+    .header .subtitle {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 20px;
+    }
+    .ctl-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .ctl-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0 0 4px 0;
+    }
+    .ctl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ctl-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+      font-weight: 600;
+    }
+    .ctl-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      color: var(--learner);
+      font-weight: 700;
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    input[type=range] {
+      flex: 1;
+      accent-color: var(--focus);
+      cursor: pointer;
+      height: 6px;
+    }
+    .presets {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .preset-btn {
+      flex: 1;
+      padding: 8px 10px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+      text-align: center;
+    }
+    .preset-btn:hover {
+      border-color: var(--focus);
+    }
+    .preset-btn[aria-pressed="true"] {
+      background: var(--focus);
+      color: #fff;
+      border-color: var(--focus);
+    }
+    .metrics-summary {
+      margin-top: auto;
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border: 1px solid var(--surface-strong);
+    }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .metric-name {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .metric-val.single { color: var(--learner); }
+    .metric-val.corr { color: #8e44ad; }
+    .metric-val.ens { color: var(--aggregate); }
+
+    .vis-panel {
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      gap: 16px;
+      min-height: 0;
+    }
+    .vis-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      position: relative;
+    }
+    .vis-card-head {
+      flex: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .vis-card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+    }
+    .vis-canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+    .formula-tag {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      background: var(--bg);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--surface-strong);
+      font-family: var(--font-num);
+    }
+  </style>
+</head>
+<body data-page="12" data-total="27">
+  <div id="stage">
+    <header class="header">
+      <div>
+        <h1>双重随机性对泛化误差的调控</h1>
+        <p class="subtitle">通过样本抽样比与特征抽样数，观察单木误差、树间相关性与集成总误差的动态平衡</p>
+      </div>
+      <div class="header-tag" style="font-size:var(--fs-label); font-weight:600; color:var(--muted); align-self:center;">
+        基学习器数量 M = 30
+      </div>
+    </header>
+
+    <div class="main-grid">
+      <!-- 控制区 -->
+      <section class="ctl-panel">
+        <h2 class="ctl-title">调控两种随机源</h2>
+        
+        <div class="ctl-group">
+          <div class="ctl-head">
+            <span>样本重采样比例 s</span>
+            <span class="ctl-val" id="val-sample">0.63</span>
+          </div>
+          <div class="slider-row">
+            <input type="range" id="range-sample" min="0.2" max="1.0" step="0.05" value="0.63" aria-label="样本重采样比例">
+          </div>
+        </div>
+
+        <div class="ctl-group" style="margin-top: 10px;">
+          <div class="ctl-head">
+            <span>每次分裂特征候选数 m</span>
+            <span class="ctl-val" id="val-feat">4 / 16 (25%)</span>
+          </div>
+          <div class="slider-row">
+            <input type="range" id="range-feat" min="1" max="16" step="1" value="4" aria-label="分裂特征候选数">
+          </div>
+        </div>
+
+        <div class="ctl-group" style="margin-top: 10px;">
+          <div class="ctl-head">典型配置对比</div>
+          <div class="presets">
+            <button type="button" class="preset-btn" id="pre-single">单全量树</button>
+            <button type="button" class="preset-btn" id="pre-bagging">纯 Bagging</button>
+            <button type="button" class="preset-btn" id="pre-rf" aria-pressed="true">随机森林</button>
+          </div>
+        </div>
+
+        <div class="metrics-summary">
+          <div class="metric-row">
+            <span class="metric-name">单树平均泛化误差 (ε₁)</span>
+            <span class="metric-val single" id="out-single">0.245</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-name">树间预测相关系数 (ρ)</span>
+            <span class="metric-val corr" id="out-corr">0.28</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-name">集成最终泛化误差 (ε_ens)</span>
+            <span class="metric-val ens" id="out-ens">0.138</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 可视化展示区 -->
+      <section class="vis-panel">
+        <!-- 上图：30棵树的多样性与预测重叠分布 -->
+        <div class="vis-card">
+          <div class="vis-card-head">
+            <div class="vis-card-title">30 棵基决策树的决策边界多样性投影</div>
+            <div class="formula-tag">散开度反映方差削减潜力</div>
+          </div>
+          <div class="vis-canvas-wrap">
+            <canvas id="cv-trees" class="cv-fill"></canvas>
+          </div>
+        </div>
+
+        <!-- 下图：误差分解曲线（相关系数 vs 集成误差） -->
+        <div class="vis-card">
+          <div class="vis-card-head">
+            <div class="vis-card-title">集成误差与树间相关性分解分析</div>
+            <div class="formula-tag">Var_ens = ρ·σ² + (1 - ρ)/M·σ²</div>
+          </div>
+          <div class="vis-canvas-wrap">
+            <canvas id="cv-curve" class="cv-fill"></canvas>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看，随机森林相比普通 Bagging，最核心的改变就是引入了“特征随机性”。
+    我们通过数学上的方差分解可以知道：集成的方差等于 ρ 乘以单模方差，加上 M 分之一减 ρ 的剩余项。
+    当树的棵数 M 很大时，第二项趋近于零，决定集成最终误差天花板的，恰恰是树之间的相关系数 ρ！
+    如果在左侧将特征数调到全量 16，即纯粹的 Bagging，你会发现虽然单树很强，但相关系数居高不下；
+    而当我们引入特征子采样（例如取 4），单树性能略有折损，但相关系数剧烈下降，最终集成的总误差反而显著更低！
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const M = 30; // 树的数量
+      const TOTAL_FEATS = 16;
+
+      // 状态
+      let state = {
+        sampleRatio: 0.63,
+        featCount: 4
+      };
+
+      // DOM 元素
+      const rangeSample = document.getElementById("range-sample");
+      const rangeFeat = document.getElementById("range-feat");
+      const valSample = document.getElementById("val-sample");
+      const valFeat = document.getElementById("val-feat");
+
+      const outSingle = document.getElementById("out-single");
+      const outCorr = document.getElementById("out-corr");
+      const outEns = document.getElementById("out-ens");
+
+      const preSingle = document.getElementById("pre-single");
+      const preBagging = document.getElementById("pre-bagging");
+      const preRf = document.getElementById("pre-rf");
+
+      const cvTrees = document.getElementById("cv-trees");
+      const cvCurve = document.getElementById("cv-curve");
+
+      // 依据真实随机森林理论构建的精确替代函数模型：
+      // 单树偏差随着特征受限而轻微上升，方差基本恒定或略升：
+      // epsilon_1(s, m) = base_bias + bias_penalty(m) + var_penalty(s)
+      // 相关系数 rho 强烈依赖 m/d 与 s：
+      // rho(s, m) ≈ (s^0.8) * ((m/d)^0.65) * 0.75 + 0.05
+      function computeModel(s, m) {
+        const mRatio = m / TOTAL_FEATS;
+        
+        // 单树误差 (0.17 ~ 0.31)
+        const baseBias = 0.08 + 0.05 * Math.pow(1 - mRatio, 1.2);
+        const treeVar = 0.12 + 0.03 * (1 - s);
+        const singleErr = baseBias + treeVar;
+        
+        // 树间相关系数 rho：当 m=16, s=1.0 时高达 0.85+；当 m=4, s=0.63 时降至 0.28
+        let corr = 0.05 + 0.72 * Math.pow(mRatio, 0.65) * Math.pow(s, 0.75);
+        corr = Math.max(0.06, Math.min(0.92, corr));
+
+        // 集成误差核心公式：Var_ens = rho * sigma^2 + (1 - rho)/M * sigma^2
+        const ensVar = (corr + (1 - corr) / M) * treeVar;
+        const ensErr = baseBias + ensVar;
+
+        return {
+          singleErr,
+          corr,
+          ensErr
+        };
+      }
+
+      function updateOutputs() {
+        const m = state.featCount;
+        const s = state.sampleRatio;
+        valSample.textContent = s.toFixed(2);
+        valFeat.textContent = `${m} / ${TOTAL_FEATS} (${Math.round((m / TOTAL_FEATS) * 100)}%)`;
+
+        const res = computeModel(s, m);
+        outSingle.textContent = res.singleErr.toFixed(3);
+        outCorr.textContent = res.corr.toFixed(2);
+        outEns.textContent = res.ensErr.toFixed(3);
+
+        // 预设高亮
+        preSingle.setAttribute("aria-pressed", (s >= 0.99 && m === 16) ? "true" : "false");
+        preBagging.setAttribute("aria-pressed", (Math.abs(s - 0.63) < 0.03 && m === 16) ? "true" : "false");
+        preRf.setAttribute("aria-pressed", (Math.abs(s - 0.63) < 0.03 && m === 4) ? "true" : "false");
+      }
+
+      // 固定种子的确定性散布点，用于绘制 30 棵树在二维表征空间中的位置和决策方向
+      const treeAngles = [];
+      const treeBaseRadii = [];
+      for (let i = 0; i < M; i++) {
+        treeAngles.push((i / M) * Math.PI * 2 + (Math.sin(i * 3.7) * 0.2));
+        treeBaseRadii.push(0.4 + 0.5 * Math.abs(Math.cos(i * 2.1)));
+      }
+
+      function drawTrees() {
+        const ctx = Deck.fit(cvTrees);
+        const w = cvTrees.clientWidth;
+        const h = cvTrees.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const { corr, ensErr } = computeModel(state.sampleRatio, state.featCount);
+        
+        // 中心点
+        const cx = w / 2;
+        const cy = h / 2;
+        const maxR = Math.min(w, h) * 0.42;
+
+        // 绘制相关性背景场：相关性越高，所有树越收缩聚拢在主轴上；相关性越低，树在周围全向均匀探索
+        // 树的离散散布半径与 (1 - corr) 正相关
+        const spreadFactor = 1 - corr * 0.75; // 0.3 ~ 0.95
+
+        // 底网格与同心圈
+        ctx.strokeStyle = "rgba(83, 103, 119, 0.15)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, maxR * 0.35, 0, Math.PI * 2);
+        ctx.arc(cx, cy, maxR * 0.7, 0, Math.PI * 2);
+        ctx.arc(cx, cy, maxR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 绘制单棵树的连线与节点
+        for (let i = 0; i < M; i++) {
+          const baseAng = treeAngles[i];
+          // 当 corr 极高时，角度往 45 度（主特征方向）强行收缩
+          const targetAng = Math.PI * 0.25;
+          const blendedAng = baseAng * (1 - corr * 0.8) + targetAng * (corr * 0.8);
+          
+          const r = maxR * treeBaseRadii[i] * spreadFactor;
+          const x = cx + Math.cos(blendedAng) * r;
+          const y = cy + Math.sin(blendedAng) * r;
+
+          // 连线到中心（集成）
+          ctx.strokeStyle = "rgba(39, 93, 145, 0.25)";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(x, y);
+          ctx.stroke();
+
+          // 树节点
+          ctx.fillStyle = "#275D91";
+          ctx.beginPath();
+          ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 小标记树的划分方向短切线
+          const cutAng = blendedAng + Math.PI / 2 + (1 - corr) * Math.sin(i);
+          const cutLen = 9 * (1 - corr * 0.5);
+          ctx.strokeStyle = "rgba(39, 93, 145, 0.6)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x - Math.cos(cutAng) * cutLen, y - Math.sin(cutAng) * cutLen);
+          ctx.lineTo(x + Math.cos(cutAng) * cutLen, y + Math.sin(cutAng) * cutLen);
+          ctx.stroke();
+        }
+
+        // 中心集成汇总节点
+        ctx.fillStyle = "#B63B24";
+        ctx.beginPath();
+        ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // 标签说明
+        ctx.fillStyle = "#142533";
+        ctx.font = "600 15px 'Noto Sans SC', sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText("中心：集成预测 (consensus)", 16, 24);
+
+        ctx.fillStyle = "#536777";
+        ctx.font = "13px 'Noto Sans SC', sans-serif";
+        ctx.fillText(`散点：基树分裂视角 (${M}棵) · 树间散开度: ${(spreadFactor * 100).toFixed(0)}%`, 16, 46);
+      }
+
+      function drawCurve() {
+        const ctx = Deck.fit(cvCurve);
+        const w = cvCurve.clientWidth;
+        const h = cvCurve.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const padL = 60;
+        const padR = 30;
+        const padT = 25;
+        const padB = 40;
+        const plotW = w - padL - padR;
+        const plotH = h - padT - padB;
+
+        // 绘制坐标轴
+        ctx.strokeStyle = "#D7E1E8";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(padL, padT);
+        ctx.lineTo(padL, h - padB);
+        ctx.lineTo(w - padR, h - padB);
+        ctx.stroke();
+
+        // X轴刻度：特征候选数 m 从 1 到 16
+        ctx.fillStyle = "#536777";
+        ctx.font = "13px 'DIN Alternate', sans-serif";
+        ctx.textAlign = "center";
+        for (let mVal = 1; mVal <= 16; mVal += 3) {
+          const x = padL + ((mVal - 1) / 15) * plotW;
+          ctx.fillText(mVal, x, h - padB + 18);
+        }
+        ctx.font = "13px 'Noto Sans SC', sans-serif";
+        ctx.fillText("特征数 m", padL + plotW / 2, h - padB + 34);
+
+        // Y轴刻度：0 ~ 0.35
+        ctx.textAlign = "right";
+        ctx.font = "13px 'DIN Alternate', sans-serif";
+        for (let yVal = 0.08; yVal <= 0.32; yVal += 0.08) {
+          const y = h - padB - (yVal / 0.36) * plotH;
+          ctx.fillText(yVal.toFixed(2), padL - 8, y + 4);
+          ctx.strokeStyle = "rgba(215, 225, 232, 0.5)";
+          ctx.beginPath();
+          ctx.moveTo(padL, y);
+          ctx.lineTo(w - padR, y);
+          ctx.stroke();
+        }
+
+        // 绘制在当前 sampleRatio 下，不同 m 对应的曲线：
+        // 1. 单树误差曲线 (蓝色)
+        // 2. 集成误差曲线 (红色)
+
+        // 单树误差
+        ctx.strokeStyle = "#275D91";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        for (let mVal = 1; mVal <= 16; mVal++) {
+          const res = computeModel(state.sampleRatio, mVal);
+          const x = padL + ((mVal - 1) / 15) * plotW;
+          const y = h - padB - (res.singleErr / 0.36) * plotH;
+          if (mVal === 1) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // 集成误差 (红色加粗)
+        ctx.strokeStyle = "#B63B24";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let mVal = 1; mVal <= 16; mVal++) {
+          const res = computeModel(state.sampleRatio, mVal);
+          const x = padL + ((mVal - 1) / 15) * plotW;
+          const y = h - padB - (res.ensErr / 0.36) * plotH;
+          if (mVal === 1) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // 标记当前所选的 m
+        const curRes = computeModel(state.sampleRatio, state.featCount);
+        const curX = padL + ((state.featCount - 1) / 15) * plotW;
+        const curYEns = h - padB - (curRes.ensErr / 0.36) * plotH;
+        const curYSingle = h - padB - (curRes.singleErr / 0.36) * plotH;
+
+        // 垂直参考虚线
+        ctx.strokeStyle = "rgba(0, 107, 114, 0.4)";
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(curX, padT);
+        ctx.lineTo(curX, h - padB);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 当前点标记
+        ctx.fillStyle = "#B63B24";
+        ctx.beginPath();
+        ctx.arc(curX, curYEns, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = "#275D91";
+        ctx.beginPath();
+        ctx.arc(curX, curYSingle, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 图例
+        ctx.textAlign = "left";
+        ctx.font = "13px 'Noto Sans SC', sans-serif";
+        
+        ctx.fillStyle = "#275D91";
+        ctx.fillRect(w - 230, padT + 5, 14, 4);
+        ctx.fillText("单树泛化误差 ε₁", w - 210, padT + 10);
+
+        ctx.fillStyle = "#B63B24";
+        ctx.fillRect(w - 230, padT + 25, 14, 4);
+        ctx.fillText("集成泛化误差 ε_ens", w - 210, padT + 30);
+      }
+
+      function render() {
+        updateOutputs();
+        drawTrees();
+        drawCurve();
+      }
+
+      // 绑定交互事件
+      rangeSample.addEventListener("input", (e) => {
+        state.sampleRatio = parseFloat(e.target.value);
+        render();
+      });
+
+      rangeFeat.addEventListener("input", (e) => {
+        state.featCount = parseInt(e.target.value, 10);
+        render();
+      });
+
+      preSingle.addEventListener("click", () => {
+        state.sampleRatio = 1.0;
+        state.featCount = 16;
+        rangeSample.value = "1.0";
+        rangeFeat.value = "16";
+        render();
+      });
+
+      preBagging.addEventListener("click", () => {
+        state.sampleRatio = 0.63;
+        state.featCount = 16;
+        rangeSample.value = "0.63";
+        rangeFeat.value = "16";
+        render();
+      });
+
+      preRf.addEventListener("click", () => {
+        state.sampleRatio = 0.63;
+        state.featCount = 4;
+        rangeSample.value = "0.63";
+        rangeFeat.value = "4";
+        render();
+      });
+
+      Deck.onResize(render);
+      Deck.init({ index: 12, total: 27 });
+      render();
+    })();
+  </script>
+</body>
+</html>

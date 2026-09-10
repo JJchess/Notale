@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 48px 64px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2px solid var(--text);
+      padding-bottom: 16px;
+    }
+    .header-text {
+      max-width: 900px;
+    }
+    .kicker {
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #E63926;
+      margin-bottom: 6px;
+    }
+    .main-title {
+      font-size: 38px;
+      line-height: 1.15;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+    .scenario-nav {
+      display: flex;
+      gap: 10px;
+    }
+    .scenario-btn {
+      padding: 10px 18px;
+      font-size: 15px;
+      font-weight: 700;
+      border: 1.5px solid var(--text);
+      background: transparent;
+      cursor: pointer;
+      color: var(--text);
+      transition: background 0.15s, color 0.15s;
+    }
+    .scenario-btn.active {
+      background: var(--text);
+      color: var(--bg);
+    }
+
+    /* 主网格：左侧网络地图，右侧对比仪表板 */
+    .workspace {
+      display: grid;
+      grid-template-columns: 820px 1fr;
+      gap: 36px;
+      height: 670px;
+      margin-top: 18px;
+    }
+
+    /* 地图容器 */
+    .map-panel {
+      border: 1.5px solid var(--text);
+      position: relative;
+      background: #FFFFFF;
+      overflow: hidden;
+    }
+    .map-tag {
+      position: absolute;
+      top: 14px;
+      left: 16px;
+      font-size: 13px;
+      font-weight: 700;
+      background: #121314;
+      color: #FFF;
+      padding: 3px 8px;
+      letter-spacing: 0.05em;
+    }
+    #metro-map {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 方案对比面板 */
+    .analysis-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    /* 方案卡片 */
+    .route-card {
+      border: 1.5px solid var(--text);
+      padding: 16px 20px;
+      background: #FFFFFF;
+      cursor: pointer;
+      position: relative;
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+    .route-card.selected {
+      border-width: 3px;
+      box-shadow: 4px 4px 0 #121314;
+    }
+    .route-card.winner {
+      border-left: 8px solid #00873D;
+    }
+    .route-card.slower {
+      border-left: 8px solid #E63926;
+    }
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .card-title {
+      font-size: 20px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card-badge {
+      font-size: 12px;
+      font-weight: 800;
+      padding: 2px 6px;
+      color: #fff;
+    }
+    .badge-direct { background: #E63926; }
+    .badge-transfer { background: #00873D; }
+
+    .card-total {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .unit {
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    /* 耗时堆叠拆解条 */
+    .breakdown-bar {
+      display: flex;
+      height: 24px;
+      border: 1px solid #121314;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    .seg {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+    }
+    .seg-ride { background: #2B4C7E; }
+    .seg-walk { background: #E63926; }
+    .seg-wait { background: #D9822B; }
+
+    .breakdown-legend {
+      display: flex;
+      gap: 14px;
+      font-size: 13px;
+      color: #555;
+    }
+    .legend-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      vertical-align: -1px;
+      margin-right: 4px;
+    }
+
+    /* 交互调控区（换乘通道步行时间 / 发车间隔滑动条） */
+    .controls-box {
+      border: 1.5px solid var(--text);
+      background: #FFFFFF;
+      padding: 16px 20px;
+    }
+    .controls-title {
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .param-group {
+      margin-bottom: 12px;
+    }
+    .param-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .param-slider {
+      width: 100%;
+      accent-color: #121314;
+      cursor: pointer;
+    }
+
+    /* 动态结论卡片 */
+    .verdict-box {
+      border: 1.5px solid var(--text);
+      background: #F4F4F2;
+      padding: 14px 18px;
+      font-size: 15px;
+      line-height: 1.4;
+      font-weight: 600;
+    }
+    .verdict-box b {
+      color: #E63926;
+    }
+  </style>
+</head>
+<body data-page="03" data-total="3">
+  <div id="stage">
+    <!-- 顶部状态与场景切换 -->
+    <header class="top-bar">
+      <div class="header-text">
+        <div class="kicker">示例网络 · 实验决策</div>
+        <h1 class="main-title">直达绕行 vs 换乘捷径：耗时与临界点</h1>
+      </div>
+      <div class="scenario-nav" role="tablist">
+        <button class="scenario-btn active" id="btn-sc1" data-scenario="1">场景 A：长通道换乘</button>
+        <button class="scenario-btn" id="btn-sc2" data-scenario="2">场景 B：低频郊区干线</button>
+      </div>
+    </header>
+
+    <!-- 主分析工作区 -->
+    <main class="workspace">
+      <!-- 拓扑地图 (SVG) -->
+      <section class="map-panel" aria-label="示例地铁拓扑">
+        <div class="map-tag">SIMULATED NETWORK MAP</div>
+        <svg id="metro-map" viewBox="0 0 820 670">
+          <defs>
+            <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+              <feDropShadow dx="2" dy="2" stdDeviation="0" flood-color="#121314"/>
+            </filter>
+          </defs>
+
+          <!-- 线路底层轨迹 -->
+          <!-- 1号线 (红色): 起点 A(100,520) -> B(100,160) -> C(720,160) -> 终点 D(720,520) 大 U 形绕行 -->
+          <path id="line1" d="M 120 500 L 120 180 Q 120 160 140 160 L 680 160 Q 700 160 700 180 L 700 500" 
+                fill="none" stroke="#E63926" stroke-width="12" stroke-linejoin="round" stroke-linecap="round"/>
+          
+          <!-- 2号线 (蓝色截线/捷径): 起点 A 附近节点 -> 枢纽站 M(410, 500) -> 终点 D 附近 -->
+          <!-- 3号线 (绿色截线): 纵贯 M 站连接终点 -->
+          <path id="line2" d="M 120 500 L 410 500" 
+                fill="none" stroke="#2B4C7E" stroke-width="12" stroke-linecap="round"/>
+          <path id="line3" d="M 410 500 L 700 500" 
+                fill="none" stroke="#00873D" stroke-width="12" stroke-linecap="round"/>
+
+          <!-- 换乘虚线 / 通道标记在 M 站 -->
+          <circle cx="410" cy="500" r="26" fill="#FFF" stroke="#121314" stroke-width="3.5"/>
+          <path id="transfer-footpath" d="M 396 500 L 424 500" stroke="#121314" stroke-dasharray="3 3" stroke-width="4"/>
+
+          <!-- 车站节点 -->
+          <!-- 节点 A (起点) -->
+          <circle cx="120" cy="500" r="14" fill="#FFF" stroke="#121314" stroke-width="4"/>
+          <text x="120" y="546" text-anchor="middle" font-weight="800" font-size="18" fill="#121314">起点站 A</text>
+
+          <!-- 节点 B (拐角) -->
+          <circle cx="120" cy="160" r="8" fill="#FFF" stroke="#121314" stroke-width="3"/>
+          <text x="100" y="140" font-weight="700" font-size="14" fill="#555">西环站</text>
+
+          <!-- 节点 C (拐角) -->
+          <circle cx="700" cy="160" r="8" fill="#FFF" stroke="#121314" stroke-width="3"/>
+          <text x="680" y="140" font-weight="700" font-size="14" fill="#555">东环站</text>
+
+          <!-- 节点 D (终点) -->
+          <circle cx="700" cy="500" r="14" fill="#FFF" stroke="#121314" stroke-width="4"/>
+          <text x="700" y="546" text-anchor="middle" font-weight="800" font-size="18" fill="#121314">终点站 D</text>
+
+          <!-- 节点 M (枢纽) -->
+          <text x="410" y="445" text-anchor="middle" font-weight="800" font-size="17" fill="#121314">枢纽 M (换乘站)</text>
+          <text id="map-transfer-time" x="410" y="468" text-anchor="middle" font-weight="700" font-size="13" fill="#E63926">通道步行 8 分钟</text>
+
+          <!-- 路线高亮光带 -->
+          <path id="route-highlight" d="" fill="none" stroke="#FFD000" stroke-width="6" stroke-linecap="round" stroke-dasharray="10 6" opacity="0.9"/>
+
+          <!-- 线路编号标签 -->
+          <rect x="360" y="140" width="100" height="28" fill="#E63926" filter="url(#shadow)"/>
+          <text x="410" y="159" text-anchor="middle" fill="#FFF" font-weight="800" font-size="14">1号线 · 绕行大环</text>
+
+          <rect x="210" y="475" width="80" height="24" fill="#2B4C7E"/>
+          <text x="250" y="492" text-anchor="middle" fill="#FFF" font-weight="700" font-size="13">2号线 · 6站</text>
+
+          <rect x="530" y="475" width="80" height="24" fill="#00873D"/>
+          <text x="570" y="492" text-anchor="middle" fill="#FFF" font-weight="700" font-size="13">3号线 · 5站</text>
+
+          <!-- 距离与站数标注 -->
+          <g font-size="13" font-weight="600" fill="#666">
+            <text id="map-direct-stat" x="360" y="196" text-anchor="middle">直达 1号线：24 站 · 行车 48 分</text>
+            <text id="map-seg1-stat" x="250" y="540" text-anchor="middle">行车 12 分</text>
+            <text id="map-seg2-stat" x="570" y="540" text-anchor="middle">行车 10 分</text>
+          </g>
+        </svg>
+      </section>
+
+      <!-- 对比分析仪表盘 -->
+      <section class="analysis-panel">
+        <!-- 方案 1: 直达绕行 -->
+        <div class="route-card" id="card-direct" tabindex="0" role="button" aria-pressed="false">
+          <div class="card-head">
+            <div class="card-title">
+              <span class="card-badge badge-direct">方案 1</span>
+              <span>1号线直达 (大U形)</span>
+            </div>
+            <div class="card-total" id="direct-total">49.5 <span class="unit">分</span></div>
+          </div>
+          <div class="breakdown-bar" id="direct-bar">
+            <!-- 动态宽度分段 -->
+            <div class="seg seg-ride" id="d-seg-ride" style="width: 96%;">行车 48m</div>
+            <div class="seg seg-wait" id="d-seg-wait" style="width: 4%;">1m</div>
+          </div>
+          <div class="breakdown-legend">
+            <span><i class="legend-dot" style="background:#2B4C7E;"></i>行车: <b id="d-ride-text">48</b>m</span>
+            <span><i class="legend-dot" style="background:#D9822B;"></i>候车: <b id="d-wait-text">1.5</b>m</span>
+            <span>换乘 0 次</span>
+          </div>
+        </div>
+
+        <!-- 方案 2: 换乘捷径 -->
+        <div class="route-card selected" id="card-transfer" tabindex="0" role="button" aria-pressed="true">
+          <div class="card-head">
+            <div class="card-title">
+              <span class="card-badge badge-transfer">方案 2</span>
+              <span>2号线 ➔ 3号线 (M站)</span>
+            </div>
+            <div class="card-total" id="transfer-total">34.0 <span class="unit">分</span></div>
+          </div>
+          <div class="breakdown-bar" id="transfer-bar">
+            <!-- 动态分段 -->
+            <div class="seg seg-ride" id="t-seg-ride" style="width: 60%;">行车 22m</div>
+            <div class="seg seg-walk" id="t-seg-walk" style="width: 25%;">步行 8m</div>
+            <div class="seg seg-wait" id="t-seg-wait" style="width: 15%;">等车 4m</div>
+          </div>
+          <div class="breakdown-legend">
+            <span><i class="legend-dot" style="background:#2B4C7E;"></i>行车: <b id="t-ride-text">22</b>m</span>
+            <span><i class="legend-dot" style="background:#E63926;"></i>步行: <b id="t-walk-text">8</b>m</span>
+            <span><i class="legend-dot" style="background:#D9822B;"></i>等车: <b id="t-wait-text">4</b>m</span>
+          </div>
+        </div>
+
+        <!-- 可调节隐形成本控制台 -->
+        <div class="controls-box">
+          <div class="controls-title">
+            <span>换乘隐形成本参数调控</span>
+            <span id="threshold-hint" style="color:#E63926;">当前捷径快 15 分钟</span>
+          </div>
+
+          <div class="param-group">
+            <div class="param-row">
+              <label for="slider-walk">M 站换乘通道步行时间</label>
+              <span><b id="val-walk">8</b> 分钟</span>
+            </div>
+            <input type="range" id="slider-walk" class="param-slider" min="2" max="25" step="1" value="8">
+          </div>
+
+          <div class="param-group">
+            <div class="param-row">
+              <label for="slider-headway">3号线发车间隔 (决定中转候车)</label>
+              <span><b id="val-headway">5</b> 分钟 (期望等 <b id="val-wait">2.5</b> 分)</span>
+            </div>
+            <input type="range" id="slider-headway" class="param-slider" min="2" max="20" step="1" value="5">
+          </div>
+        </div>
+
+        <!-- 临界点判定结论 -->
+        <div class="verdict-box" id="verdict-text">
+          换乘隐形成本为 <b>10.5 分</b>。捷径省去大回环，总耗时仍领先直达方案 <b>15.5 分</b>。
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    各位学员，现在我们进入实验决策环节。
+    在左侧地图中，从起点站 A 到终点站 D，直觉上许多人会选择红色的 1 号线直达，因为“不折腾”。
+    但 1 号线走的是外环大 U 形，足足 24 站需要 48 分钟。
+    而经过枢纽 M 站换乘，虽然车上运行仅 22 分钟，但必须支付通道步行与等车的双重隐形成本。
+    请拖动右侧的滑块：当通道极长或发车间隔变大，换乘方案的总时间何时会击穿直达方案的基准？这正是高阶通勤规划的核心算法逻辑。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      // 场景模型
+      const SCENARIOS = {
+        1: {
+          name: "场景 A：长通道换乘",
+          directRide: 48,
+          directHeadway: 3, // 期望初次候车 1.5 分
+          transferRide: 22,
+          transferWalk: 8,
+          transferHeadway: 5,
+          desc: "常态市区工况：24站大绕行对比短途换乘。"
+        },
+        2: {
+          name: "场景 B：低频郊区干线",
+          directRide: 40,
+          directHeadway: 6,
+          transferRide: 24,
+          transferWalk: 14,
+          transferHeadway: 16,
+          desc: "郊区大站快线，班次稀疏，换乘耗时激增。"
+        }
+      };
+
+      let activeScenario = 1;
+      let walkTime = 8;
+      let headway = 5;
+      let selectedRoute = 'transfer'; // 'direct' | 'transfer'
+
+      // DOM 元素引用
+      const sliderWalk = document.getElementById('slider-walk');
+      const sliderHeadway = document.getElementById('slider-headway');
+      const valWalk = document.getElementById('val-walk');
+      const valHeadway = document.getElementById('val-headway');
+      const valWait = document.getElementById('val-wait');
+
+      const directTotalEl = document.getElementById('direct-total');
+      const transferTotalEl = document.getElementById('transfer-total');
+      const thresholdHint = document.getElementById('threshold-hint');
+      const verdictText = document.getElementById('verdict-text');
+
+      const cardDirect = document.getElementById('card-direct');
+      const cardTransfer = document.getElementById('card-transfer');
+      const routeHighlight = document.getElementById('route-highlight');
+      const mapTransferTime = document.getElementById('map-transfer-time');
+
+      const dSegRide = document.getElementById('d-seg-ride');
+      const dSegWait = document.getElementById('d-seg-wait');
+      const tSegRide = document.getElementById('t-seg-ride');
+      const tSegWalk = document.getElementById('t-seg-walk');
+      const tSegWait = document.getElementById('t-seg-wait');
+
+      const dRideText = document.getElementById('d-ride-text');
+      const dWaitText = document.getElementById('d-wait-text');
+      const tRideText = document.getElementById('t-ride-text');
+      const tWalkText = document.getElementById('t-walk-text');
+      const tWaitText = document.getElementById('t-wait-text');
+
+      const btnSc1 = document.getElementById('btn-sc1');
+      const btnSc2 = document.getElementById('btn-sc2');
+
+      // 更新高亮轨迹
+      function updateMapHighlight() {
+        if (selectedRoute === 'direct') {
+          routeHighlight.setAttribute('d', 'M 120 500 L 120 180 Q 120 160 140 160 L 680 160 Q 700 160 700 180 L 700 500');
+          routeHighlight.setAttribute('stroke', '#E63926');
+          cardDirect.classList.add('selected');
+          cardDirect.setAttribute('aria-pressed', 'true');
+          cardTransfer.classList.remove('selected');
+          cardTransfer.setAttribute('aria-pressed', 'false');
+        } else {
+          routeHighlight.setAttribute('d', 'M 120 500 L 410 500 L 700 500');
+          routeHighlight.setAttribute('stroke', '#00873D');
+          cardTransfer.classList.add('selected');
+          cardTransfer.setAttribute('aria-pressed', 'true');
+          cardDirect.classList.remove('selected');
+          cardDirect.setAttribute('aria-pressed', 'false');
+        }
+      }
+
+      // 计算与渲染状态
+      function recalculate() {
+        const sc = SCENARIOS[activeScenario];
+        const directWait = sc.directHeadway / 2;
+        const directTotal = sc.directRide + directWait;
+
+        const initialWait = 1.5; // 起点平均候车
+        const transferWait = headway / 2;
+        const totalTransferWait = initialWait + transferWait;
+        const transferTotal = sc.transferRide + walkTime + totalTransferWait;
+
+        // 更新文案与数值
+        valWalk.textContent = walkTime;
+        valHeadway.textContent = headway;
+        valWait.textContent = transferWait.toFixed(1);
+        mapTransferTime.textContent = `通道步行 ${walkTime} 分钟`;
+
+        const mapDirectStat = document.getElementById('map-direct-stat');
+        const mapSeg1Stat = document.getElementById('map-seg1-stat');
+        const mapSeg2Stat = document.getElementById('map-seg2-stat');
+
+        if (activeScenario === 1) {
+          mapDirectStat.textContent = '直达 1号线：24 站 · 行车 48 分';
+          mapSeg1Stat.textContent = '行车 12 分';
+          mapSeg2Stat.textContent = '行车 10 分';
+        } else {
+          mapDirectStat.textContent = '直达 1号线：20 站 · 行车 40 分';
+          mapSeg1Stat.textContent = '行车 13 分';
+          mapSeg2Stat.textContent = '行车 11 分';
+        }
+
+        directTotalEl.innerHTML = `${directTotal.toFixed(1)} <span class="unit">分</span>`;
+        transferTotalEl.innerHTML = `${transferTotal.toFixed(1)} <span class="unit">分</span>`;
+
+        dRideText.textContent = sc.directRide;
+        dWaitText.textContent = directWait.toFixed(1);
+        tRideText.textContent = sc.transferRide;
+        tWalkText.textContent = walkTime;
+        tWaitText.textContent = totalTransferWait.toFixed(1);
+
+        // 拆解条百分比映射（基于两者最大值归一化展示）
+        const scaleMax = Math.max(directTotal, transferTotal, 60);
+        dSegRide.style.width = `${(sc.directRide / scaleMax) * 100}%`;
+        dSegRide.textContent = `行车 ${sc.directRide}m`;
+        dSegWait.style.width = `${(directWait / scaleMax) * 100}%`;
+        dSegWait.textContent = `${directWait.toFixed(1)}m`;
+
+        tSegRide.style.width = `${(sc.transferRide / scaleMax) * 100}%`;
+        tSegRide.textContent = `行车 ${sc.transferRide}m`;
+        tSegWalk.style.width = `${(walkTime / scaleMax) * 100}%`;
+        tSegWalk.textContent = `步行 ${walkTime}m`;
+        tSegWait.style.width = `${(totalTransferWait / scaleMax) * 100}%`;
+        tSegWait.textContent = `等车 ${totalTransferWait.toFixed(1)}m`;
+
+        // 判定优劣与临界点
+        const diff = Math.abs(directTotal - transferTotal).toFixed(1);
+        const hiddenCost = (walkTime + transferWait).toFixed(1);
+
+        if (transferTotal < directTotal) {
+          cardTransfer.className = 'route-card winner' + (selectedRoute === 'transfer' ? ' selected' : '');
+          cardDirect.className = 'route-card slower' + (selectedRoute === 'direct' ? ' selected' : '');
+          thresholdHint.textContent = `当前捷径快 ${diff} 分`;
+          thresholdHint.style.color = '#00873D';
+          verdictText.innerHTML = `换乘隐形成本为 <b>${hiddenCost} 分</b>。捷径省去大回环，总耗时仍领先直达 <b>${diff} 分</b>。`;
+        } else if (transferTotal > directTotal) {
+          cardDirect.className = 'route-card winner' + (selectedRoute === 'direct' ? ' selected' : '');
+          cardTransfer.className = 'route-card slower' + (selectedRoute === 'transfer' ? ' selected' : '');
+          thresholdHint.textContent = `直达反超快 ${diff} 分!`;
+          thresholdHint.style.color = '#E63926';
+          verdictText.innerHTML = `换乘隐形成本达 <b>${hiddenCost} 分</b>，超过代偿阈值！此时<b>直达 1号线更快</b>。`;
+        } else {
+          thresholdHint.textContent = `耗时持平`;
+          thresholdHint.style.color = '#121314';
+          verdictText.innerHTML = `总耗时同为 <b>${directTotal.toFixed(1)} 分</b>（临界点）。直达免受中转折腾。`;
+        }
+      }
+
+      // 事件绑定
+      sliderWalk.addEventListener('input', (e) => {
+        walkTime = parseFloat(e.target.value);
+        recalculate();
+      });
+
+      sliderHeadway.addEventListener('input', (e) => {
+        headway = parseFloat(e.target.value);
+        recalculate();
+      });
+
+      cardDirect.addEventListener('click', () => {
+        selectedRoute = 'direct';
+        updateMapHighlight();
+      });
+
+      cardTransfer.addEventListener('click', () => {
+        selectedRoute = 'transfer';
+        updateMapHighlight();
+      });
+
+      btnSc1.addEventListener('click', () => {
+        activeScenario = 1;
+        btnSc1.classList.add('active');
+        btnSc2.classList.remove('active');
+        walkTime = SCENARIOS[1].transferWalk;
+        headway = SCENARIOS[1].transferHeadway;
+        sliderWalk.value = walkTime;
+        sliderHeadway.value = headway;
+        recalculate();
+      });
+
+      btnSc2.addEventListener('click', () => {
+        activeScenario = 2;
+        btnSc2.classList.add('active');
+        btnSc1.classList.remove('active');
+        walkTime = SCENARIOS[2].transferWalk;
+        headway = SCENARIOS[2].transferHeadway;
+        sliderWalk.value = walkTime;
+        sliderHeadway.value = headway;
+        recalculate();
+      });
+
+      // 初始化
+      updateMapHighlight();
+      recalculate();
+      Deck.init({ index: 3, total: 3, title: "示例地铁网络下的路线决策" });
+    })();
+  </script>
+</body>
+</html>

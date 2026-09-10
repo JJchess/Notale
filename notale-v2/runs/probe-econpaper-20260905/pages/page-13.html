@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>从显著性回到经济意义：点估计、置信区间、基准量级与 estimand 的对应</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    :root {
+      --bg: #F2F6F7;
+      --surface: #FFFFFF;
+      --soft: #E3ECEF;
+      --text: #17272D;
+      --muted: #52666E;
+      --observed: #245A74;
+      --cause: #B13F2A;
+      --uncertain: #7A5B12;
+      --supported: #2D694C;
+      --selected: #D6E8EE;
+      --focus: #B13F2A;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: 38px 56px 32px 56px;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      gap: 16px;
+      color: var(--text);
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin: 0;
+      color: var(--text);
+    }
+
+    .lead-text {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    /* 主网格两栏布局 */
+    .content-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 22px;
+      min-height: 0;
+    }
+
+    /* 左侧图表区 */
+    .chart-panel {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid rgba(82, 102, 110, 0.18);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px 14px 20px;
+      position: relative;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .chart-header h2 {
+      font-size: var(--fs-h2);
+      margin: 0;
+      color: var(--text);
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-line {
+      width: 16px;
+      height: 2px;
+      display: inline-block;
+    }
+
+    .chart-host-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+
+    #echarts-host {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid var(--soft);
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 右侧解析面板 */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .scenario-nav {
+      background: var(--surface);
+      border: 1px solid rgba(82, 102, 110, 0.18);
+      border-radius: var(--r-md);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .nav-label {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .scenario-btns {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .scenario-btn {
+      background: var(--soft);
+      border: 1px solid transparent;
+      border-radius: var(--r-sm);
+      padding: 8px 6px;
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: background var(--fast), border-color var(--fast);
+      line-height: 1.25;
+    }
+
+    .scenario-btn:hover {
+      background: #D8E4E8;
+    }
+
+    .scenario-btn.active {
+      background: var(--selected);
+      border-color: var(--observed);
+      color: var(--observed);
+    }
+
+    .scenario-btn:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 1px;
+    }
+
+    /* 选定场景详细剖析面板 */
+    .analysis-panel {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid rgba(82, 102, 110, 0.18);
+      border-radius: var(--r-md);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .status-badge-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: var(--r-sm);
+      font-size: var(--fs-label);
+      font-weight: 700;
+    }
+
+    .status-badge.stat-yes {
+      background: rgba(45, 105, 76, 0.12);
+      color: var(--supported);
+    }
+
+    .status-badge.stat-no {
+      background: rgba(177, 63, 42, 0.12);
+      color: var(--cause);
+    }
+
+    .stat-tag {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-family: var(--font-num, monospace);
+    }
+
+    .metric-summary-card {
+      background: var(--bg);
+      border-radius: var(--r-sm);
+      padding: 10px 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .metric-item .title {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    .metric-item .val {
+      font-size: var(--fs-h2);
+      font-weight: 800;
+      color: var(--text);
+      font-family: var(--font-num, monospace);
+    }
+
+    .metric-item .sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    .analysis-text {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+    }
+
+    .analysis-item {
+      display: flex;
+      gap: 8px;
+    }
+
+    .analysis-item .icon-tag {
+      font-weight: 800;
+      color: var(--observed);
+      flex-shrink: 0;
+    }
+
+    .formula-banner {
+      background: var(--surface);
+      border: 1px solid rgba(82, 102, 110, 0.2);
+      border-radius: var(--r-sm);
+      padding: 10px 14px;
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="13" data-total="24">
+  <div id="stage">
+    <header>
+      <h1 class="page-title">从显著性回到经济意义：点估计、置信区间与基准量级</h1>
+      <p class="lead-text">星号仅代表拒绝零假设的统计信度；一个系数是否重要，取决于它相对被解释变量均值（基准量级）的比例，以及 95% 置信区间排除了何种经济后果。</p>
+    </header>
+
+    <div class="content-grid min0">
+      <!-- 左侧图表区 -->
+      <section class="chart-panel min0" aria-labelledby="chart-title">
+        <div class="chart-header">
+          <h2 id="chart-title">四类典型回归估计值的区间与经济门槛对比</h2>
+          <div class="chart-legend" aria-hidden="true">
+            <span class="legend-item"><span class="legend-line" style="background:#52666E; border-top:2px dashed #52666E;"></span>零效应线 (0)</span>
+            <span class="legend-item"><span class="legend-line" style="background:#B13F2A; border-top:2px dotted #B13F2A;"></span>经济显著门槛 (±0.05)</span>
+            <span class="legend-item"><span class="legend-line" style="background:#245A74; height:4px; border-radius:2px;"></span>95% 置信区间 (β ± 1.96 SE)</span>
+          </div>
+        </div>
+
+        <div class="chart-host-wrap min0">
+          <div id="echarts-host" role="img" aria-label="展示四种估计情景的置信区间与经济门槛对应关系的图表"></div>
+        </div>
+
+        <div class="chart-footer">
+          <span>横轴刻度：标准化的政策影响系数（基准因变量均值 Ȳ = 1.00，±0.05 对应 ±5% 经济影响门槛）</span>
+          <span>点击右侧按钮切换深读情景</span>
+        </div>
+      </section>
+
+      <!-- 右侧说明与对比面板 -->
+      <aside class="right-col min0">
+        <!-- 场景切换 -->
+        <nav class="scenario-nav" aria-label="情景选择">
+          <div class="nav-label">切换回归结果典型形态：</div>
+          <div class="scenario-btns" role="tablist">
+            <button class="scenario-btn active" id="btn-s1" role="tab" aria-selected="true" data-scenario="0">
+              情景 A<br>经济+统计显著
+            </button>
+            <button class="scenario-btn" id="btn-s2" role="tab" aria-selected="false" data-scenario="1">
+              情景 B<br>伪显著 (大样本微效应)
+            </button>
+            <button class="scenario-btn" id="btn-s3" role="tab" aria-selected="false" data-scenario="2">
+              情景 C<br>真无效 (精确零效应)
+            </button>
+            <button class="scenario-btn" id="btn-s4" role="tab" aria-selected="false" data-scenario="3">
+              情景 D<br>功效不足 (噪音掩盖)
+            </button>
+          </div>
+        </nav>
+
+        <!-- 详细剖析卡片 -->
+        <div class="analysis-panel min0" id="analysis-card">
+          <div class="status-badge-row">
+            <span class="status-badge stat-yes" id="badge-stat">p &lt; 0.001（统计显著 ★★★）</span>
+            <span class="stat-tag" id="tag-estimand">对应 Estimand: LATE / ATT</span>
+          </div>
+
+          <div class="metric-summary-card">
+            <div class="metric-item">
+              <span class="title">点估计与 95% 置信区间</span>
+              <span class="val" id="val-estimate">+0.142 [0.083, 0.201]</span>
+              <span class="sub" id="sub-se">SE = 0.030，距 0 偏离明显</span>
+            </div>
+            <div class="metric-item">
+              <span class="title">相对经济基准效应 (β / Ȳ)</span>
+              <span class="val" id="val-magnitude">+14.2%</span>
+              <span class="sub" id="sub-threshold">远高于 5% 的政策实质门槛</span>
+            </div>
+          </div>
+
+          <div class="analysis-text" id="desc-container">
+            <div class="analysis-item">
+              <span class="icon-tag">【诊断】</span>
+              <span id="desc-diag">点估计具备显著的经济重要性（提升 14.2%），且置信区间下界（+8.3%）仍完全落在实质有益区域内。</span>
+            </div>
+            <div class="analysis-item">
+              <span class="icon-tag">【防坑】</span>
+              <span id="desc-pitfall">读论文不仅看是否带星号，必须先算 β / Mean(Y) 或 β × SD(X) / SD(Y)。</span>
+            </div>
+            <div class="analysis-item">
+              <span class="icon-tag">【外推】</span>
+              <span id="desc-extrap">此 estimand 仅由依从政策群体识别，不能直接推广到全人群未干预组。</span>
+            </div>
+          </div>
+
+          <div class="formula-banner">
+            <strong>实证阅读标尺：</strong>相对效应 = $\hat{\beta} / \bar{Y}$（半弹性）或 $\hat{\beta} \cdot \text{SD}(X) / \text{SD}(Y)$（标准化效应）。统计显著仅拒绝零假设，置信区间跨度才决定排除了何种经济后果。
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- 读屏无障碍表格替代 -->
+    <div class="sr-only">
+      <table>
+        <caption>四种回归估计值的统计与经济意义对照</caption>
+        <thead>
+          <tr><th>情景</th><th>估计值 (β)</th><th>标准误 (SE)</th><th>95% 置信区间</th><th>相对基准 (β/Ȳ)</th><th>统计显著性</th><th>经济实质判断</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>情景 A: 经济与统计双显著</td><td>0.142</td><td>0.030</td><td>[0.083, 0.201]</td><td>+14.2%</td><td>显著 (p &lt; 0.001)</td><td>显著且效应重大</td></tr>
+          <tr><td>情景 B: 统计显著但经济微弱</td><td>0.012</td><td>0.003</td><td>[0.006, 0.018]</td><td>+1.2%</td><td>显著 (p &lt; 0.001)</td><td>微不足道，缺乏政策意义</td></tr>
+          <tr><td>情景 C: 精确零效应</td><td>0.004</td><td>0.012</td><td>[-0.020, 0.027]</td><td>+0.4%</td><td>不显著 (p = 0.74)</td><td>有力证据排除实质影响</td></tr>
+          <tr><td>情景 D: 样本过小无法推断</td><td>0.085</td><td>0.090</td><td>[-0.091, 0.261]</td><td>+8.5%</td><td>不显著 (p = 0.34)</td><td>估计无精度，既不能证实也不能排除</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 4组情景数据，基准 Y_mean = 1.00，经济实质门槛设定为 5% (±0.05)
+      var SCENARIOS = [
+        {
+          id: "A",
+          title: "情景 A：经济与统计双显著",
+          label: "情景 A：实质重要且显著",
+          beta: 0.142,
+          se: 0.030,
+          ciLow: 0.083,
+          ciHigh: 0.201,
+          pStr: "p < 0.001（统计显著 ★★★）",
+          isStatSig: true,
+          estimand: "对应 Estimand: LATE / ATT",
+          estimateStr: "+0.142 [0.083, 0.201]",
+          seStr: "SE = 0.030，置信区间窄且远离 0",
+          magnitudeStr: "+14.2%",
+          thresholdStr: "远高于 5% 的经济实质门槛",
+          diag: "估计值具备极高经济实质重要性（提升 14.2%），95% 置信区间的下界（+8.3%）仍稳稳高于经济重要性门槛，结论兼具统计信度与现实意义。",
+          pitfall: "作者常止步于报告三颗星；读者需主动核实因变量基准均值与样本标准差，避免把 0.142 误作百分比直接引用。",
+          extrap: "识别由局部处理人群（如依从者或断点邻域）提供，解释时需严格匹配 estimand 范围，避免泛化为主体普遍效应。"
+        },
+        {
+          id: "B",
+          title: "情景 B：统计显著但经济微弱（大样本微效应）",
+          label: "情景 B：伪显著 (大样本微效应)",
+          beta: 0.012,
+          se: 0.003,
+          ciLow: 0.006,
+          ciHigh: 0.018,
+          pStr: "p < 0.001（统计显著 ★★★）",
+          isStatSig: true,
+          estimand: "对应 Estimand: ATE (超大行政样本)",
+          estimateStr: "+0.012 [0.006, 0.018]",
+          seStr: "SE = 0.003，极其精确地定在 0 附近",
+          magnitudeStr: "+1.2%",
+          thresholdStr: "完全落在 5% 经济门槛下方",
+          diag: "因样本量达数百万，极微弱的变动（1.2%）也能产生极小标准误并获得三颗星。但置信区间上限仅为 1.8%，整个区间都深陷在经济微不足道区域。",
+          pitfall: "这是阅读中最易被糊弄的情形。统计检验只回答『系数是否恰好为零』，绝不回答『这个效应在现实中值不值得实施或推行』。",
+          extrap: "微小点估计容易受到极轻微未观测选择偏差的颠覆，即便 p < 0.001 也缺乏坚实的现实政策意涵。"
+        },
+        {
+          id: "C",
+          title: "情景 C：精确的零效应（有价值的否定结论）",
+          label: "情景 C：真无效 (精确零效应)",
+          beta: 0.004,
+          se: 0.012,
+          ciLow: -0.020,
+          ciHigh: 0.027,
+          pStr: "p = 0.738（统计不显著）",
+          isStatSig: false,
+          estimand: "对应 Estimand: ITT (严密随机对照)",
+          estimateStr: "+0.004 [-0.020, 0.027]",
+          seStr: "SE = 0.012，精度极高，紧扣零线",
+          magnitudeStr: "+0.4%",
+          thresholdStr: "置信区间严密排除 ±5% 的实质效应",
+          diag: "无星号并不等于『研究毫无发现』。本例置信区间紧凑地包含在 [-2.0%, +2.7%] 之间，以 95% 置信度完全排除了政策带来 5% 以上改善或损害的可能。",
+          pitfall: "不可直接说『该变量没有影响』。准确的学术表述是：『数据给出了精确的零估计，足以排除大于 2.7% 的潜在促进效果』。",
+          extrap: "精确零结论在实证文献中极为宝贵，常用于推翻早期无对照实验建立的虚假因果主张或安慰剂检验。"
+        },
+        {
+          id: "D",
+          title: "情景 D：功效不足（噪音掩盖真实效应）",
+          label: "情景 D：功效不足 (噪音掩盖)",
+          beta: 0.085,
+          se: 0.090,
+          ciLow: -0.091,
+          ciHigh: 0.261,
+          pStr: "p = 0.345（统计不显著）",
+          isStatSig: false,
+          estimand: "对应 Estimand: LATE (小样本子组)",
+          estimateStr: "+0.085 [-0.091, 0.261]",
+          seStr: "SE = 0.090，误差过大，跨越正负",
+          magnitudeStr: "+8.5%",
+          thresholdStr: "区间跨度达 35%，既含巨大正面也含实质负面",
+          diag: "点估计高达 8.5%（具潜在重要性），但标准误过大导致无法拒绝零假设。由于置信区间极其宽泛，它既相容 +26% 的巨大红利，也相容 -9% 的严重损害。",
+          pitfall: "绝对不能将此处的不显著等同于『政策无效』。这是统计功效不足（Underpowered）导致的『无法下结论』，属于无信息量的估计。",
+          extrap: "遇到此类结果，读者应重点核查样本量、聚类层级或工具变量的第一阶段强度，不应采纳作者关于有无效应的任何断言。"
+        }
+      ];
+
+      var currentIndex = 0;
+      var host = document.getElementById("echarts-host");
+      var chart = null;
+
+      // 初始化 ECharts
+      function initChart() {
+        if (!window.echarts) return;
+        chart = echarts.init(host, null, { renderer: "svg" });
+        updateChart();
+      }
+
+      function updateChart() {
+        if (!chart) return;
+
+        var yCategories = [
+          "情景 D: 功效不足 (宽噪音)",
+          "情景 C: 精确零效应 (有界排除)",
+          "情景 B: 统计显著但微弱",
+          "情景 A: 经济与统计双显著"
+        ];
+
+        // 对应 SCENARIOS 逆序（ECharts 从下往上画）
+        // 索引映射: yIndex 0 -> SCENARIO 3, yIndex 1 -> SCENARIO 2, yIndex 2 -> SCENARIO 1, yIndex 3 -> SCENARIO 0
+        var chartData = [3, 2, 1, 0].map(function (sIdx, visualRow) {
+          var sc = SCENARIOS[sIdx];
+          var isCurrent = sIdx === currentIndex;
+          return {
+            sIdx: sIdx,
+            y: visualRow,
+            beta: sc.beta,
+            ciLow: sc.ciLow,
+            ciHigh: sc.ciHigh,
+            isCurrent: isCurrent
+          };
+        });
+
+        var option = {
+          animation: false,
+          grid: {
+            left: 210,
+            right: 40,
+            top: 30,
+            bottom: 40
+          },
+          xAxis: {
+            type: "value",
+            min: -0.15,
+            max: 0.30,
+            interval: 0.05,
+            axisLabel: {
+              formatter: function (v) {
+                return (v > 0 ? "+" : "") + v.toFixed(2);
+              },
+              color: "#52666E",
+              fontSize: 13
+            },
+            axisLine: {
+              lineStyle: { color: "#52666E" }
+            },
+            splitLine: {
+              lineStyle: {
+                color: "#E3ECEF",
+                type: "dashed"
+              }
+            }
+          },
+          yAxis: {
+            type: "category",
+            data: yCategories,
+            axisLabel: {
+              color: function (val, idx) {
+                var sIdx = 3 - idx;
+                return sIdx === currentIndex ? "#17272D" : "#52666E";
+              },
+              fontWeight: function (val, idx) {
+                var sIdx = 3 - idx;
+                return sIdx === currentIndex ? "bold" : "normal";
+              },
+              fontSize: 14
+            },
+            axisTick: { show: false },
+            axisLine: { lineStyle: { color: "#52666E" } }
+          },
+          series: [
+            // 背景高亮当前选中行
+            {
+              type: "custom",
+              renderItem: function (params, api) {
+                var sIdx = 3 - params.dataIndex;
+                if (sIdx !== currentIndex) return;
+                var ptBottom = api.coord([params.coordSys.x, params.dataIndex - 0.44]);
+                var ptTop = api.coord([params.coordSys.x + params.coordSys.width, params.dataIndex + 0.44]);
+                return {
+                  type: "rect",
+                  shape: {
+                    x: params.coordSys.x,
+                    y: ptTop[1],
+                    width: params.coordSys.width,
+                    height: ptBottom[1] - ptTop[1]
+                  },
+                  style: {
+                    fill: "rgba(214, 232, 238, 0.45)"
+                  },
+                  silent: true
+                };
+              },
+              data: [0, 1, 2, 3]
+            },
+            // 经济显著门槛带 (±0.05 之间为无实质经济意义区)
+            {
+              type: "custom",
+              renderItem: function (params, api) {
+                var pt1 = api.coord([-0.05, -0.5]);
+                var pt2 = api.coord([0.05, 3.5]);
+                return {
+                  type: "rect",
+                  shape: {
+                    x: pt1[0],
+                    y: pt2[1],
+                    width: pt2[0] - pt1[0],
+                    height: pt1[1] - pt2[1]
+                  },
+                  style: {
+                    fill: "rgba(227, 236, 239, 0.35)",
+                    stroke: "none"
+                  },
+                  silent: true
+                };
+              },
+              data: [0]
+            },
+            // 辅助线：0 零效应线、±0.05 经济显著门槛线
+            {
+              type: "line",
+              markLine: {
+                silent: true,
+                symbol: "none",
+                data: [
+                  {
+                    xAxis: 0,
+                    lineStyle: { color: "#52666E", width: 1.5, type: "dashed" },
+                    label: {
+                      formatter: "β = 0 (统计零假设)",
+                      position: "insideStartTop",
+                      fontSize: 12,
+                      color: "#52666E"
+                    }
+                  },
+                  {
+                    xAxis: 0.05,
+                    lineStyle: { color: "#B13F2A", width: 1.5, type: "dotted" },
+                    label: {
+                      formatter: "+0.05 (经济重要性下限)",
+                      position: "insideStartTop",
+                      fontSize: 12,
+                      color: "#B13F2A"
+                    }
+                  },
+                  {
+                    xAxis: -0.05,
+                    lineStyle: { color: "#B13F2A", width: 1, type: "dotted" },
+                    label: { show: false }
+                  }
+                ]
+              }
+            },
+            // 置信区间线段与误差端点
+            {
+              type: "custom",
+              renderItem: function (params, api) {
+                var item = chartData[params.dataIndex];
+                var sIdx = item.sIdx;
+                var isCur = sIdx === currentIndex;
+
+                var ptBeta = api.coord([item.beta, item.y]);
+                var ptLow = api.coord([item.ciLow, item.y]);
+                var ptHigh = api.coord([item.ciHigh, item.y]);
+
+                var mainColor = isCur ? "#245A74" : "rgba(36, 90, 116, 0.45)";
+                var pointColor = isCur ? (SCENARIOS[sIdx].isStatSig ? "#245A74" : "#B13F2A") : "rgba(82, 102, 110, 0.5)";
+                var lineWidth = isCur ? 3.5 : 2;
+
+                return {
+                  type: "group",
+                  children: [
+                    // 横向区间线
+                    {
+                      type: "line",
+                      shape: {
+                        x1: ptLow[0],
+                        y1: ptLow[1],
+                        x2: ptHigh[0],
+                        y2: ptHigh[1]
+                      },
+                      style: {
+                        stroke: mainColor,
+                        lineWidth: lineWidth,
+                        lineCap: "round"
+                      }
+                    },
+                    // 左端须
+                    {
+                      type: "line",
+                      shape: {
+                        x1: ptLow[0],
+                        y1: ptLow[1] - 6,
+                        x2: ptLow[0],
+                        y2: ptLow[1] + 6
+                      },
+                      style: { stroke: mainColor, lineWidth: lineWidth }
+                    },
+                    // 右端须
+                    {
+                      type: "line",
+                      shape: {
+                        x1: ptHigh[0],
+                        y1: ptHigh[1] - 6,
+                        x2: ptHigh[0],
+                        y2: ptHigh[1] + 6
+                      },
+                      style: { stroke: mainColor, lineWidth: lineWidth }
+                    },
+                    // 点估计圆点
+                    {
+                      type: "circle",
+                      shape: {
+                        cx: ptBeta[0],
+                        cy: ptBeta[1],
+                        r: isCur ? 6.5 : 5
+                      },
+                      style: {
+                        fill: pointColor,
+                        stroke: "#FFFFFF",
+                        lineWidth: 2
+                      }
+                    },
+                    // 标注数值文本
+                    {
+                      type: "text",
+                      style: {
+                        text: (item.beta > 0 ? "+" : "") + item.beta.toFixed(3),
+                        x: ptBeta[0],
+                        y: ptBeta[1] - 14,
+                        textAlign: "center",
+                        fill: isCur ? "#17272D" : "#52666E",
+                        font: (isCur ? "bold 13px " : "12px ") + "var(--font-num, monospace)"
+                      }
+                    }
+                  ]
+                };
+              },
+              data: chartData
+            }
+          ]
+        };
+
+        chart.setOption(option, true);
+      }
+
+      function switchScenario(index) {
+        if (index === currentIndex) return;
+        currentIndex = index;
+
+        // 更新按钮状态
+        for (var i = 0; i < 4; i++) {
+          var btn = document.getElementById("btn-s" + (i + 1));
+          if (btn) {
+            btn.classList.toggle("active", i === currentIndex);
+            btn.setAttribute("aria-selected", i === currentIndex ? "true" : "false");
+          }
+        }
+
+        var sc = SCENARIOS[currentIndex];
+
+        // 更新卡片内容
+        var badge = document.getElementById("badge-stat");
+        badge.textContent = sc.pStr;
+        badge.className = "status-badge " + (sc.isStatSig ? "stat-yes" : "stat-no");
+
+        document.getElementById("tag-estimand").textContent = sc.estimand;
+        document.getElementById("val-estimate").textContent = sc.estimateStr;
+        document.getElementById("sub-se").textContent = sc.seStr;
+        document.getElementById("val-magnitude").textContent = sc.magnitudeStr;
+        document.getElementById("sub-threshold").textContent = sc.thresholdStr;
+        document.getElementById("desc-diag").textContent = sc.diag;
+        document.getElementById("desc-pitfall").textContent = sc.pitfall;
+        document.getElementById("desc-extrap").textContent = sc.extrap;
+
+        updateChart();
+      }
+
+      // 绑定按钮事件
+      for (var i = 0; i < 4; i++) {
+        (function (idx) {
+          var btn = document.getElementById("btn-s" + (idx + 1));
+          if (btn) {
+            btn.addEventListener("click", function () {
+              switchScenario(idx);
+            });
+          }
+        })(i);
+      }
+
+      window.addEventListener("resize", function () {
+        if (chart) chart.resize();
+      });
+
+      Deck.init({ index: 13, total: 24 });
+      initChart();
+
+      // 渲染公式排版
+      if (window.katex) {
+        var banner = document.querySelector(".formula-banner");
+        if (banner) {
+          banner.innerHTML = '<strong>实证阅读标尺：</strong>相对效应 = <span id="eq-semi"></span>（半弹性）或 <span id="eq-std"></span>（标准化效应）。统计显著仅拒绝零假设，置信区间跨度才决定排除了何种经济后果。';
+          katex.render("\\frac{\\hat{\\beta}}{\\bar{Y}}", document.getElementById("eq-semi"), { throwOnError: false });
+          katex.render("\\hat{\\beta} \\cdot \\frac{\\text{SD}(X)}{\\text{SD}(Y)}", document.getElementById("eq-std"), { throwOnError: false });
+        }
+      }
+
+      // 暴露切换接口供 Check 自动化测试
+      window.__switchScenario = switchScenario;
+    })();
+  </script>
+</body>
+</html>

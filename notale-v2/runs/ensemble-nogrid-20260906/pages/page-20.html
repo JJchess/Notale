@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+    }
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: var(--line) solid rgba(83, 101, 117, 0.2);
+      padding-bottom: 12px;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .loss-type-nav {
+      display: flex;
+      gap: 10px;
+    }
+    .type-btn {
+      background: var(--paper);
+      border: 1.5px solid rgba(83, 101, 117, 0.4);
+      color: var(--text);
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+    .type-btn[aria-pressed="true"] {
+      background: var(--model);
+      color: #fff;
+      border-color: var(--model);
+    }
+
+    /* 主网格 */
+    .grid-container {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 36px;
+      margin-top: 24px;
+      height: 600px;
+    }
+
+    /* 左侧：梯度视角与逐步累加机制卡 */
+    .left-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--paper);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      box-shadow: 0 4px 16px rgba(23, 42, 58, 0.05);
+      border: 1px solid rgba(83, 101, 117, 0.12);
+    }
+
+    .formula-badge {
+      display: inline-block;
+      font-family: var(--font-num);
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--aggregate);
+      margin-bottom: 8px;
+    }
+
+    .card h2 {
+      font-size: var(--fs-h2);
+      margin: 0 0 8px 0;
+      color: var(--text);
+    }
+
+    .card p {
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .math-callout {
+      background: var(--bg);
+      border: 1px solid rgba(83, 101, 117, 0.2);
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      font-family: var(--font-num);
+      font-size: 16px;
+      color: var(--text);
+      margin-top: 10px;
+      line-height: 1.4;
+    }
+
+    /* 步进控制 */
+    .step-controller {
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .step-buttons {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .step-btn {
+      background: var(--paper);
+      border: 1.5px solid rgba(83, 101, 117, 0.25);
+      padding: 10px 4px;
+      border-radius: var(--radius);
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--dur) var(--ease);
+    }
+    .step-btn[aria-current="true"] {
+      background: var(--aggregate);
+      color: #fff;
+      border-color: var(--aggregate);
+    }
+
+    /* 右侧图表区 */
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .stage-wrapper {
+      position: relative;
+      background: var(--paper);
+      border-radius: var(--radius);
+      flex: 1;
+      border: 1px solid rgba(83, 101, 117, 0.12);
+      box-shadow: 0 4px 16px rgba(23, 42, 58, 0.05);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .chart-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .legend {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .cv-box {
+      position: relative;
+      width: 100%;
+      flex: 1;
+    }
+
+    .metrics-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      height: 72px;
+    }
+    .metric-card {
+      background: var(--paper);
+      border-radius: var(--radius);
+      padding: 12px 18px;
+      border: 1px solid rgba(83, 101, 117, 0.12);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .metric-lbl {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="20" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>梯度提升将新弱模型拟合为负梯度方向</h1>
+      <div class="loss-type-nav">
+        <button class="type-btn" id="btn-sq" aria-pressed="true">均方损失 (残差)</button>
+        <button class="type-btn" id="btn-hub" aria-pressed="false">Huber 损失 (稳健梯度)</button>
+      </div>
+    </header>
+
+    <div class="grid-container">
+      <!-- 左侧控制与公式体系 -->
+      <div class="left-panel min0">
+        <div class="card">
+          <div class="formula-badge" id="step-math-title">r_im = y_i - F_{m-1}(x_i)</div>
+          <h2 id="step-title">初始化基准</h2>
+          <p id="step-desc">常数模型 F_0(x) = ȳ 最小化全局损失，作为加权累加的起点。</p>
+          <div class="math-callout" id="math-display">
+            F_m(x) = F_{m-1}(x) + η · h_m(x)
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>统一损失视角</h2>
+          <p>
+            均方损失下负梯度为残差；换为分类或稳健损失时，算法骨架完全一致。
+          </p>
+        </div>
+
+        <div class="step-controller">
+          <div class="step-buttons">
+            <button class="step-btn" data-step="0" aria-current="true">基准 m=0</button>
+            <button class="step-btn" data-step="1" aria-current="false">迭代 m=1</button>
+            <button class="step-btn" data-step="2" aria-current="false">迭代 m=2</button>
+            <button class="step-btn" data-step="3" aria-current="false">迭代 m=3</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧双联动图表 -->
+      <div class="chart-panel min0">
+        <div class="stage-wrapper">
+          <div class="chart-header">
+            <div class="chart-title">空间函数逼近 F(x) 与样本目标 y</div>
+            <div class="legend">
+              <div class="legend-item"><span class="dot" style="background: var(--text);"></span> 真实样本 y</div>
+              <div class="legend-item"><span class="dot" style="background: var(--model);"></span> 当前拟合 h_m(x)</div>
+              <div class="legend-item"><span class="dot" style="background: var(--aggregate);"></span> 累加预测 F_m(x)</div>
+            </div>
+          </div>
+          <div class="cv-box min0">
+            <canvas id="main-cv" class="cv-fill"></canvas>
+          </div>
+        </div>
+
+        <div class="metrics-bar">
+          <div class="metric-card">
+            <span class="metric-lbl">当前累加模型</span>
+            <span class="metric-val" id="val-model">F_0(x) = ȳ</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-lbl">负梯度均方范数 ||-g||</span>
+            <span class="metric-val" id="val-grad">1.42</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-lbl">总损失 L(y, F)</span>
+            <span class="metric-val" id="val-loss">1.84</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页我们建立梯度提升的统一视角。
+    Boosting 的早期代表 AdaBoost 通过重加权样本来聚焦错误，而 Breiman 与 Friedman 发现：
+    这本质上是函数空间中的梯度下降。每一轮我们并不直接拟合目标 y，
+    而是求解当前累加模型在每个样本处的损失函数负梯度。
+    若使用均方误差，负梯度正好退化为普通残差 y 减去 F(x)；
+    若改用绝对误差或 Huber 损失，负梯度则提供了抗离群点干扰的稳健方向。
+    通过将每轮的新弱学习器沿负梯度步进相加，各种复杂损失均可被纳入统一的集成优化框架中。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+  (function(){
+    "use strict";
+
+    // 1. 固定确定性数据 (12个采样点，带一个离群值以对比 Huber 与 MSE)
+    const DATA = [
+      {x: 0.10, y: 0.22},
+      {x: 0.18, y: 0.35},
+      {x: 0.25, y: 0.58},
+      {x: 0.35, y: 0.90},
+      {x: 0.42, y: 0.82},
+      {x: 0.52, y: 0.45},
+      {x: 0.60, y: 0.15},
+      {x: 0.70, y: 0.10},
+      {x: 0.78, y: 0.30},
+      {x: 0.85, y: 0.65},
+      {x: 0.92, y: 0.95},
+      {x: 0.65, y: 0.92} // 异常偏离点，演示 Huber 与 L2 负梯度差异
+    ];
+
+    let lossType = 'sq'; // 'sq' | 'hub'
+    let currentStep = 0; // 0, 1, 2, 3
+
+    // 梯度计算
+    // L2: L = 1/2 (y - F)^2 => -dL/dF = y - F
+    // Huber (delta=0.3): if |y-F|<=d => y-F; else d * sign(y-F)
+    const HUB_DELTA = 0.28;
+
+    function getNegGrad(y, f, type) {
+      const res = y - f;
+      if (type === 'sq') return res;
+      if (Math.abs(res) <= HUB_DELTA) return res;
+      return HUB_DELTA * Math.sign(res);
+    }
+
+    function getLoss(y, f, type) {
+      const res = y - f;
+      if (type === 'sq') return 0.5 * res * res;
+      if (Math.abs(res) <= HUB_DELTA) return 0.5 * res * res;
+      return HUB_DELTA * (Math.abs(res) - 0.5 * HUB_DELTA);
+    }
+
+    // 决策树桩 (Decision Stump) 逼近负梯度
+    function fitStump(points, targets) {
+      let bestSplit = 0.5, bestLeft = 0, bestRight = 0, minSse = 1e9;
+      // 候选分割点
+      for (let s = 0.15; s <= 0.85; s += 0.05) {
+        let lSum = 0, lCount = 0, rSum = 0, rCount = 0;
+        for (let i = 0; i < points.length; i++) {
+          if (points[i].x < s) { lSum += targets[i]; lCount++; }
+          else { rSum += targets[i]; rCount++; }
+        }
+        const lVal = lCount ? lSum / lCount : 0;
+        const rVal = rCount ? rSum / rCount : 0;
+        let sse = 0;
+        for (let i = 0; i < points.length; i++) {
+          const pred = points[i].x < s ? lVal : rVal;
+          sse += (targets[i] - pred) ** 2;
+        }
+        if (sse < minSse) {
+          minSse = sse;
+          bestSplit = s;
+          bestLeft = lVal;
+          bestRight = rVal;
+        }
+      }
+      return (x) => (x < bestSplit ? bestLeft : bestRight);
+    }
+
+    // 计算各阶段模型状态
+    function solveSequence(type) {
+      const yMean = DATA.reduce((a, b) => a + b.y, 0) / DATA.length;
+      const stages = [];
+
+      // m = 0: F0(x) = yMean
+      let currentF = DATA.map(() => yMean);
+      let fFuncs = [(x) => yMean];
+      
+      let totLoss0 = DATA.reduce((acc, p, i) => acc + getLoss(p.y, currentF[i], type), 0);
+      let grads0 = DATA.map((p, i) => getNegGrad(p.y, currentF[i], type));
+      let norm0 = Math.sqrt(grads0.reduce((acc, g) => acc + g * g, 0));
+
+      stages.push({
+        m: 0,
+        fFunc: (x) => yMean,
+        hFunc: null,
+        fValues: [...currentF],
+        grads: grads0,
+        loss: totLoss0,
+        gradNorm: norm0,
+        desc: "常数模型 F_0(x) = ȳ 最小化全局损失，作为累加起点。"
+      });
+
+      const LEARNING_RATE = 0.65;
+
+      for (let m = 1; m <= 3; m++) {
+        const grads = DATA.map((p, i) => getNegGrad(p.y, currentF[i], type));
+        const stump = fitStump(DATA, grads);
+        
+        // 更新累加模型
+        const prevFunc = fFuncs[fFuncs.length - 1];
+        const newFunc = (x) => prevFunc(x) + LEARNING_RATE * stump(x);
+        fFuncs.push(newFunc);
+
+        currentF = DATA.map(p => newFunc(p.x));
+        const newLoss = DATA.reduce((acc, p, i) => acc + getLoss(p.y, currentF[i], type), 0);
+        const nextGrads = DATA.map((p, i) => getNegGrad(p.y, currentF[i], type));
+        const norm = Math.sqrt(nextGrads.reduce((acc, g) => acc + g * g, 0));
+
+        stages.push({
+          m: m,
+          fFunc: newFunc,
+          hFunc: stump,
+          fValues: [...currentF],
+          grads: grads,
+          loss: newLoss,
+          gradNorm: norm,
+          desc: `新树桩 h_${m} 沿负梯度拟合，加权累加后残余梯度与总损失同步减小。`
+        });
+      }
+      return stages;
+    }
+
+    const canvas = document.getElementById('main-cv');
+    const ctx = canvas.getContext('2d');
+
+    const btnSq = document.getElementById('btn-sq');
+    const btnHub = document.getElementById('btn-hub');
+    const stepBtns = document.querySelectorAll('.step-btn');
+
+    const elStepTitle = document.getElementById('step-title');
+    const elStepDesc = document.getElementById('step-desc');
+    const elMathTitle = document.getElementById('step-math-title');
+    const elValModel = document.getElementById('val-model');
+    const elValGrad = document.getElementById('val-grad');
+    const elValLoss = document.getElementById('val-loss');
+
+    function render() {
+      const stages = solveSequence(lossType);
+      const cur = stages[currentStep];
+
+      // 更新界面文案
+      elStepTitle.textContent = currentStep === 0 ? "初始化基准" : `迭代轮次 m = ${currentStep}`;
+      elStepDesc.textContent = cur.desc;
+      elMathTitle.textContent = lossType === 'sq' ? "r_im = y_i - F_{m-1}(x_i)" : "r_im = -[∂L(y_i, F)/∂F]_{F_{m-1}}";
+      
+      elValModel.textContent = currentStep === 0 ? "F_0(x) = ȳ" : `F_${currentStep}(x) = F_${currentStep-1} + η h_${currentStep}`;
+      elValGrad.textContent = cur.gradNorm.toFixed(2);
+      elValLoss.textContent = cur.loss.toFixed(2);
+
+      stepBtns.forEach((b, idx) => {
+        b.setAttribute('aria-current', idx === currentStep ? "true" : "false");
+      });
+      btnSq.setAttribute('aria-pressed', lossType === 'sq' ? "true" : "false");
+      btnHub.setAttribute('aria-pressed', lossType === 'hub' ? "true" : "false");
+
+      // 绘图
+      drawCanvas(cur);
+    }
+
+    function drawCanvas(cur) {
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      // 坐标映射
+      const padLeft = 60, padRight = 30, padTop = 30, padBottom = 50;
+      const plotW = w - padLeft - padRight;
+      const plotH = h - padTop - padBottom;
+
+      const mapX = (x) => padLeft + x * plotW;
+      const mapY = (y) => padTop + (1 - y) * plotH;
+
+      // 坐标轴与网格
+      ctx.strokeStyle = "rgba(83, 101, 117, 0.15)";
+      ctx.lineWidth = 1;
+      for (let v = 0; v <= 1.0; v += 0.25) {
+        const yPos = mapY(v);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, yPos);
+        ctx.lineTo(w - padRight, yPos);
+        ctx.stroke();
+
+        ctx.fillStyle = "#536575";
+        ctx.font = "13px var(--font-num)";
+        ctx.textAlign = "right";
+        ctx.fillText(v.toFixed(2), padLeft - 10, yPos + 4);
+      }
+
+      for (let vx = 0; vx <= 1.0; vx += 0.2) {
+        const xPos = mapX(vx);
+        ctx.beginPath();
+        ctx.moveTo(xPos, padTop);
+        ctx.lineTo(xPos, padTop + plotH);
+        ctx.stroke();
+
+        ctx.fillStyle = "#536575";
+        ctx.font = "13px var(--font-num)";
+        ctx.textAlign = "center";
+        ctx.fillText(vx.toFixed(1), xPos, padTop + plotH + 20);
+      }
+
+      // 负梯度向量指示 (每个点垂直延伸的梯度线)
+      for (let i = 0; i < DATA.length; i++) {
+        const pt = DATA[i];
+        const curY = cur.fValues[i];
+        const grad = cur.grads[i];
+        const px = mapX(pt.x);
+        const pyPred = mapY(curY);
+        const pyTarget = mapY(pt.y);
+
+        // 误差连接虚线 / 负梯度方向
+        ctx.beginPath();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "#C94F2D";
+        ctx.lineWidth = 2;
+        ctx.moveTo(px, pyPred);
+        ctx.lineTo(px, pyTarget);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 梯度微小箭头
+        if (Math.abs(pyPred - pyTarget) > 10) {
+          const dir = pyTarget < pyPred ? -1 : 1;
+          ctx.beginPath();
+          ctx.fillStyle = "#C94F2D";
+          ctx.moveTo(px, pyTarget);
+          ctx.lineTo(px - 4, pyTarget - dir * 6);
+          ctx.lineTo(px + 4, pyTarget - dir * 6);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      // 绘制当前弱学习器 h_m(x) (若存在，以虚线阶梯展示当前树桩预测)
+      if (cur.hFunc && currentStep > 0) {
+        ctx.beginPath();
+        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = "#245FA6";
+        ctx.lineWidth = 2.5;
+        for (let ix = 0; ix <= plotW; ix += 2) {
+          const xVal = ix / plotW;
+          // 当前轮树桩单独贡献 (以0.5为中间基线偏置显示，展示阶梯形状)
+          const yVal = 0.5 + cur.hFunc(xVal);
+          const canvasX = padLeft + ix;
+          const canvasY = mapY(Math.max(0, Math.min(1, yVal)));
+          if (ix === 0) ctx.moveTo(canvasX, canvasY);
+          else ctx.lineTo(canvasX, canvasY);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // 绘制主累加预测曲线 F_m(x)
+      ctx.beginPath();
+      ctx.strokeStyle = "#C94F2D";
+      ctx.lineWidth = 3.5;
+      for (let ix = 0; ix <= plotW; ix += 2) {
+        const xVal = ix / plotW;
+        const yVal = cur.fFunc(xVal);
+        const canvasX = padLeft + ix;
+        const canvasY = mapY(yVal);
+        if (ix === 0) ctx.moveTo(canvasX, canvasY);
+        else ctx.lineTo(canvasX, canvasY);
+      }
+      ctx.stroke();
+
+      // 绘制样本数据点
+      for (let i = 0; i < DATA.length; i++) {
+        const pt = DATA[i];
+        const px = mapX(pt.x);
+        const py = mapY(pt.y);
+
+        ctx.beginPath();
+        ctx.arc(px, py, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "#172A3A";
+        ctx.fill();
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+
+    Deck.fit(canvas);
+    Deck.onResize(() => {
+      Deck.fit(canvas);
+      render();
+    });
+
+    // 交互事件
+    stepBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentStep = parseInt(btn.dataset.step, 10);
+        render();
+      });
+    });
+
+    btnSq.addEventListener('click', () => {
+      lossType = 'sq';
+      render();
+    });
+
+    btnHub.addEventListener('click', () => {
+      lossType = 'hub';
+      render();
+    });
+
+    render();
+  })();
+  </script>
+</body>
+</html>

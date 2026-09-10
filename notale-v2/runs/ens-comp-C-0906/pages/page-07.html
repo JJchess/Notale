@@ -1,0 +1,371 @@
+<!--
+  构图意图：
+  1. 主对象是 Bagging 的两段核心机制：各基学习器在并行抽样集上独立拟合，随后通过投票或均值汇聚成集成预测。
+  2. 关系通过从左侧训练集分流到中段三棵并行基学习器（回归预测曲线 / 分类表决），最终流线收束至右侧深色聚合结果中。
+  3. 说明文字直接附着在并行分支与聚合汇聚节点旁，配以任务模式切换（回归均值 vs 分类投票）。
+-->
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+    }
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+    header {
+      position: absolute;
+      top: 36px;
+      left: 56px;
+      right: 56px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      letter-spacing: -0.01em;
+    }
+    .lead {
+      margin: 8px 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-tight);
+    }
+    .toggle-group {
+      display: inline-flex;
+      background: rgba(116, 129, 124, 0.2);
+      border-radius: 4px;
+      padding: 3px;
+      gap: 4px;
+    }
+    .toggle-btn {
+      border: none;
+      background: transparent;
+      padding: 6px 18px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      font-weight: var(--weight-medium);
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: 3px;
+      transition: background var(--duration-fast), color var(--duration-fast);
+    }
+    .toggle-btn[aria-pressed="true"] {
+      background: var(--aggregate);
+      color: #fff;
+    }
+    .diagram-wrap {
+      position: absolute;
+      top: 130px;
+      left: 56px;
+      width: 1488px;
+      height: 720px;
+    }
+    svg.canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    /* 精简包裹与强化图解核心：去除多余容器框，让基学习器与汇聚曲线成为主视觉 */
+    .lane-title {
+      font-size: 15px;
+      font-weight: var(--weight-medium);
+      fill: var(--muted);
+      letter-spacing: 0.05em;
+    }
+    .node-title {
+      font-size: 16px;
+      font-weight: var(--weight-bold);
+      fill: var(--text);
+    }
+    .node-sub {
+      font-size: 13px;
+      fill: var(--muted);
+      font-family: var(--font-numeric);
+    }
+    .agg-tag {
+      font-size: 18px;
+      font-weight: var(--weight-bold);
+      fill: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="07" data-total="26">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>训练独立并行，预测聚合收束</h1>
+        <p class="lead">Bootstrap 子集支撑并行拟合；预测期以均值或多数投票抵消单模型扰动。</p>
+      </div>
+      <div class="toggle-group" role="group" aria-label="聚合模式">
+        <button type="button" class="toggle-btn" id="btn-reg" aria-pressed="true">数值回归 · 算术均值</button>
+        <button type="button" class="toggle-btn" id="btn-clf" aria-pressed="false">离散分类 · 多数投票</button>
+      </div>
+    </header>
+
+    <div class="diagram-wrap">
+      <svg class="canvas" viewBox="0 0 1488 720">
+        <defs>
+          <marker id="arrow-model" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 7 4 L 0 7 z" fill="#2E5F78" />
+          </marker>
+          <marker id="arrow-agg" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 7 4 L 0 7 z" fill="#173E50" />
+          </marker>
+          <marker id="arrow-line" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 7 4 L 0 7 z" fill="#74817C" />
+          </marker>
+        </defs>
+
+        <!-- 列标引导线 -->
+        <g opacity="0.6">
+          <line x1="80" y1="36" x2="300" y2="36" stroke="#74817C" stroke-width="1" />
+          <text x="80" y="24" class="lane-title">① 自助重采样 (Bootstrap)</text>
+
+          <line x1="420" y1="36" x2="900" y2="36" stroke="#74817C" stroke-width="1" />
+          <text x="420" y="24" class="lane-title">② 并行独立拟合 (Base Learners)</text>
+
+          <line x1="1040" y1="36" x2="1420" y2="36" stroke="#74817C" stroke-width="1" />
+          <text x="1040" y="24" class="lane-title">③ 聚合输出 (Aggregation)</text>
+        </g>
+
+        <!-- 原始数据集与采样分支 -->
+        <g id="input-col">
+          <!-- 原始样本集：无过度修饰方框，以点群及边界表现集合 -->
+          <rect x="70" y="270" width="130" height="150" rx="4" fill="none" stroke="#74817C" stroke-width="1.5" />
+          <text x="135" y="304" text-anchor="middle" class="node-title">原始样本集 D</text>
+          <text x="135" y="328" text-anchor="middle" class="node-sub">N 个样本</text>
+          <circle cx="100" cy="365" r="4.5" fill="#2E5F78" />
+          <circle cx="120" cy="385" r="4.5" fill="#C64B2E" />
+          <circle cx="145" cy="360" r="4.5" fill="#2E5F78" />
+          <circle cx="160" cy="380" r="4.5" fill="#8B6941" />
+          <circle cx="125" cy="360" r="4.5" fill="#2E5F78" />
+
+          <!-- 子样本集 D1, D2, D3 -->
+          <rect x="255" y="85" width="110" height="90" rx="4" fill="none" stroke="#74817C" stroke-width="1" stroke-dasharray="3 3" />
+          <text x="310" y="125" text-anchor="middle" class="node-title">子样本集 D₁</text>
+          <text x="310" y="150" text-anchor="middle" class="node-sub">Bootstrap 抽样</text>
+
+          <rect x="255" y="300" width="110" height="90" rx="4" fill="none" stroke="#74817C" stroke-width="1" stroke-dasharray="3 3" />
+          <text x="310" y="340" text-anchor="middle" class="node-title">子样本集 D₂</text>
+          <text x="310" y="365" text-anchor="middle" class="node-sub">Bootstrap 抽样</text>
+
+          <rect x="255" y="515" width="110" height="90" rx="4" fill="none" stroke="#74817C" stroke-width="1" stroke-dasharray="3 3" />
+          <text x="310" y="555" text-anchor="middle" class="node-title">子样本集 Dₘ</text>
+          <text x="310" y="580" text-anchor="middle" class="node-sub">Bootstrap 抽样</text>
+
+          <!-- 采样分流曲线 -->
+          <path d="M 200 320 C 225 320, 230 130, 255 130" fill="none" stroke="#74817C" stroke-width="1.5" marker-end="url(#arrow-line)" />
+          <path d="M 200 345 L 255 345" fill="none" stroke="#74817C" stroke-width="1.5" marker-end="url(#arrow-line)" />
+          <path d="M 200 370 C 225 370, 230 560, 255 560" fill="none" stroke="#74817C" stroke-width="1.5" marker-end="url(#arrow-line)" />
+        </g>
+
+        <!-- 中部三组基学习器 (树结构 / 拟合示意) -->
+        <g id="learner-col">
+          <!-- 基学习器 1 -->
+          <path d="M 365 130 L 430 130" fill="none" stroke="#2E5F78" stroke-width="1.8" marker-end="url(#arrow-model)" />
+          <g transform="translate(435, 60)">
+            <rect width="470" height="140" rx="4" fill="none" stroke="#2E5F78" stroke-width="1.2" />
+            <text x="24" y="36" class="node-title">基学习器 h₁(x)</text>
+            <text x="24" y="58" class="node-sub">独立并行拟合</text>
+            <g transform="translate(30, 76)" stroke="#2E5F78" stroke-width="1.5" fill="#FFF">
+              <circle cx="20" cy="10" r="4" fill="#2E5F78" />
+              <line x1="20" y1="14" x2="8" y2="28" />
+              <line x1="20" y1="14" x2="32" y2="28" />
+              <circle cx="8" cy="30" r="3.5" />
+              <circle cx="32" cy="30" r="3.5" />
+            </g>
+            <g class="slot-mode" id="slot-1" transform="translate(180, 16)"></g>
+          </g>
+
+          <!-- 基学习器 2 -->
+          <path d="M 365 345 L 430 345" fill="none" stroke="#2E5F78" stroke-width="1.8" marker-end="url(#arrow-model)" />
+          <g transform="translate(435, 275)">
+            <rect width="470" height="140" rx="4" fill="none" stroke="#2E5F78" stroke-width="1.2" />
+            <text x="24" y="36" class="node-title">基学习器 h₂(x)</text>
+            <text x="24" y="58" class="node-sub">独立并行拟合</text>
+            <g transform="translate(30, 76)" stroke="#2E5F78" stroke-width="1.5" fill="#FFF">
+              <circle cx="20" cy="10" r="4" fill="#2E5F78" />
+              <line x1="20" y1="14" x2="8" y2="28" />
+              <line x1="20" y1="14" x2="32" y2="28" />
+              <circle cx="8" cy="30" r="3.5" />
+              <circle cx="32" cy="30" r="3.5" />
+            </g>
+            <g class="slot-mode" id="slot-2" transform="translate(180, 16)"></g>
+          </g>
+
+          <!-- 基学习器 M -->
+          <path d="M 365 560 L 430 560" fill="none" stroke="#2E5F78" stroke-width="1.8" marker-end="url(#arrow-model)" />
+          <g transform="translate(435, 490)">
+            <rect width="470" height="140" rx="4" fill="none" stroke="#2E5F78" stroke-width="1.2" />
+            <text x="24" y="36" class="node-title">基学习器 hₘ(x)</text>
+            <text x="24" y="58" class="node-sub">独立并行拟合</text>
+            <g transform="translate(30, 76)" stroke="#2E5F78" stroke-width="1.5" fill="#FFF">
+              <circle cx="20" cy="10" r="4" fill="#2E5F78" />
+              <line x1="20" y1="14" x2="8" y2="28" />
+              <line x1="20" y1="14" x2="32" y2="28" />
+              <circle cx="8" cy="30" r="3.5" />
+              <circle cx="32" cy="30" r="3.5" />
+            </g>
+            <g class="slot-mode" id="slot-3" transform="translate(180, 16)"></g>
+          </g>
+        </g>
+
+        <!-- 聚合收束连线与聚合节点 -->
+        <g id="agg-col">
+          <path d="M 905 130 C 975 130, 995 325, 1040 335" fill="none" stroke="#2E5F78" stroke-width="2" />
+          <path d="M 905 345 L 1040 345" fill="none" stroke="#2E5F78" stroke-width="2" />
+          <path d="M 905 560 C 975 560, 995 365, 1040 355" fill="none" stroke="#2E5F78" stroke-width="2" />
+
+          <!-- 聚合输出方框 -->
+          <g transform="translate(1040, 230)">
+            <rect width="390" height="230" rx="6" fill="none" stroke="#173E50" stroke-width="2.5" />
+            <text x="28" y="44" class="agg-tag" id="agg-title">算术均值</text>
+            <text x="28" y="72" class="node-sub" id="agg-desc">抵消各树独立随机扰动</text>
+
+            <g id="agg-content" transform="translate(28, 95)"></g>
+          </g>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    在这一页中我们看到完整的 Bagging 框架。首先，左侧通过有放回的 Bootstrap 自助采样，从同一份原始数据生成多份大小相同的训练集。
+    中间是关键特征：每个基学习器都在自己的子集上独立训练，互相之间没有任何串行依赖，这意味着它们可以完全并行化加速。
+    在预测阶段，针对新样本 x，所有基学习器同时给出预测值。如果是回归任务，集成结果通常取算术均值，这样可以有效抵消不相关的随机波动；如果是分类任务，则采用多数投票（或概率平均）选出赢家。下一页我们将严格推导，为什么这种平均能直接带来方差的成倍下降。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 7, total: 26 });
+
+    const btnReg = document.getElementById('btn-reg');
+    const btnClf = document.getElementById('btn-clf');
+    const slot1 = document.getElementById('slot-1');
+    const slot2 = document.getElementById('slot-2');
+    const slot3 = document.getElementById('slot-3');
+    const aggTitle = document.getElementById('agg-title');
+    const aggDesc = document.getElementById('agg-desc');
+    const aggContent = document.getElementById('agg-content');
+
+    const regData = [
+      {
+        tag: "预测曲线 1",
+        val: "h₁(x) = 4.2",
+        svg: `<rect x="0" y="8" width="270" height="92" fill="#EBF0ED" rx="3"/>
+              <path d="M 15 75 Q 85 15, 160 65 T 255 30" fill="none" stroke="#2E5F78" stroke-width="2.5"/>
+              <circle cx="170" cy="58" r="4.5" fill="#C64B2E"/>
+              <text x="180" y="63" font-size="13" fill="#C64B2E" font-weight="bold">x=x₀: 4.2</text>`
+      },
+      {
+        tag: "预测曲线 2",
+        val: "h₂(x) = 4.9",
+        svg: `<rect x="0" y="8" width="270" height="92" fill="#EBF0ED" rx="3"/>
+              <path d="M 15 50 Q 75 85, 150 30 T 255 60" fill="none" stroke="#2E5F78" stroke-width="2.5"/>
+              <circle cx="170" cy="39" r="4.5" fill="#C64B2E"/>
+              <text x="180" y="44" font-size="13" fill="#C64B2E" font-weight="bold">x=x₀: 4.9</text>`
+      },
+      {
+        tag: "预测曲线 M",
+        val: "hₘ(x) = 4.4",
+        svg: `<rect x="0" y="8" width="270" height="92" fill="#EBF0ED" rx="3"/>
+              <path d="M 15 65 Q 95 20, 170 55 T 255 45" fill="none" stroke="#2E5F78" stroke-width="2.5"/>
+              <circle cx="170" cy="55" r="4.5" fill="#C64B2E"/>
+              <text x="180" y="60" font-size="13" fill="#C64B2E" font-weight="bold">x=x₀: 4.4</text>`
+      }
+    ];
+
+    const clfData = [
+      {
+        tag: "分类判别",
+        val: "类别 A",
+        svg: `<g transform="translate(10, 16)">
+                <rect x="0" y="10" width="140" height="34" rx="3" fill="#2E5F78"/>
+                <text x="70" y="32" fill="#FFF" font-size="15" font-weight="bold" text-anchor="middle">类别 A · 82%</text>
+                <rect x="150" y="10" width="95" height="34" rx="3" fill="#CCD5D1"/>
+                <text x="197" y="32" fill="#46534F" font-size="13" text-anchor="middle">类别 B · 18%</text>
+                <text x="0" y="70" font-size="13" fill="#2E5F78" font-weight="bold">判决：h₁(x) = 类别 A</text>
+              </g>`
+      },
+      {
+        tag: "分类判别",
+        val: "类别 B",
+        svg: `<g transform="translate(10, 16)">
+                <rect x="0" y="10" width="95" height="34" rx="3" fill="#CCD5D1"/>
+                <text x="47" y="32" fill="#46534F" font-size="13" text-anchor="middle">类别 A · 35%</text>
+                <rect x="105" y="10" width="140" height="34" rx="3" fill="#8B6941"/>
+                <text x="175" y="32" fill="#FFF" font-size="15" font-weight="bold" text-anchor="middle">类别 B · 65%</text>
+                <text x="0" y="70" font-size="13" fill="#8B6941" font-weight="bold">判决：h₂(x) = 类别 B</text>
+              </g>`
+      },
+      {
+        tag: "分类判别",
+        val: "类别 A",
+        svg: `<g transform="translate(10, 16)">
+                <rect x="0" y="10" width="140" height="34" rx="3" fill="#2E5F78"/>
+                <text x="70" y="32" fill="#FFF" font-size="15" font-weight="bold" text-anchor="middle">类别 A · 78%</text>
+                <rect x="150" y="10" width="95" height="34" rx="3" fill="#CCD5D1"/>
+                <text x="197" y="32" fill="#46534F" font-size="13" text-anchor="middle">类别 B · 22%</text>
+                <text x="0" y="70" font-size="13" fill="#2E5F78" font-weight="bold">判决：hₘ(x) = 类别 A</text>
+              </g>`
+      }
+    ];
+
+    function renderMode(mode) {
+      const isReg = mode === 'reg';
+      btnReg.setAttribute('aria-pressed', isReg ? 'true' : 'false');
+      btnClf.setAttribute('aria-pressed', isReg ? 'false' : 'true');
+
+      const data = isReg ? regData : clfData;
+      slot1.innerHTML = data[0].svg;
+      slot2.innerHTML = data[1].svg;
+      slot3.innerHTML = data[2].svg;
+
+      if (isReg) {
+        aggTitle.textContent = "算术均值 (Simple Average)";
+        aggDesc.textContent = "抵消各树独立随机扰动，方差成倍降低";
+        aggContent.innerHTML = `
+          <rect x="0" y="0" width="334" height="102" fill="#EBF0ED" rx="4"/>
+          <text x="20" y="36" font-size="16" font-weight="bold" fill="#173E50">H(x) = 1/M Σ hₘ(x)</text>
+          <text x="20" y="70" font-size="22" font-family="var(--font-numeric)" font-weight="bold" fill="#C64B2E">预测均值 = 4.5</text>
+          <text x="180" y="70" font-size="13" fill="#46534F">(4.2 + 4.9 + 4.4)/3</text>
+        `;
+      } else {
+        aggTitle.textContent = "多数投票 (Majority Vote)";
+        aggDesc.textContent = "少数分支误判被多数表决纠正";
+        aggContent.innerHTML = `
+          <rect x="0" y="0" width="334" height="102" fill="#EBF0ED" rx="4"/>
+          <text x="20" y="36" font-size="16" font-weight="bold" fill="#173E50">H(x) = argmax Σ I(hₘ(x) = c)</text>
+          <text x="20" y="70" font-size="22" font-weight="bold" fill="#173E50">集成决策: 类别 A</text>
+          <text x="195" y="70" font-size="13" fill="#46534F">表决票数 2 : 1</text>
+        `;
+      }
+    }
+
+    btnReg.addEventListener('click', () => renderMode('reg'));
+    btnClf.addEventListener('click', () => renderMode('clf'));
+
+    // 默认展示回归
+    renderMode('reg');
+  </script>
+</body>
+</html>

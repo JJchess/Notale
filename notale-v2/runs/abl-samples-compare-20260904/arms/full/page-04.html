@@ -1,0 +1,808 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>分类投票与回归平均：硬投票、软投票与数值平均</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 24px var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* 顶部标题区 */
+    .header-area {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+    .header-titles h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text);
+    }
+    .header-titles .subtitle {
+      margin-top: 4px;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 标签与模式切换器 */
+    .mode-nav {
+      display: flex;
+      gap: 8px;
+      background: var(--surface-strong);
+      padding: 4px;
+      border-radius: 8px;
+    }
+    .mode-btn {
+      border: none;
+      background: transparent;
+      padding: 8px 16px;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--muted);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
+    }
+    .mode-btn:focus-visible {
+      outline: 2px solid var(--focus);
+    }
+    .mode-btn.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 2px 6px rgba(18, 38, 52, 0.08);
+    }
+
+    /* 主舞台双栏：左侧卡片概览与机制说明，右侧动态计算试验板 */
+    .main-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 480px 1fr;
+      gap: 24px;
+      min-height: 0;
+    }
+
+    /* 左侧：3大聚合规则对比卡片 */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+    .rule-card {
+      flex: 1;
+      background: var(--surface);
+      border-radius: 10px;
+      padding: 14px 18px;
+      border: 1px solid var(--surface-strong);
+      cursor: pointer;
+      transition: all var(--duration) var(--ease);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 6px;
+      position: relative;
+    }
+    .rule-card:focus-visible {
+      outline: 2px solid var(--focus);
+    }
+    .rule-card.active {
+      border-color: var(--model);
+      background: #FFFFFF;
+      box-shadow: 0 4px 16px rgba(39, 100, 143, 0.12);
+    }
+    .rule-card.active::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 10px;
+      bottom: 10px;
+      width: 4px;
+      background: var(--model);
+      border-radius: 0 4px 4px 0;
+    }
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-badge {
+      font-size: var(--fs-tick);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+      background: var(--surface-strong);
+      color: var(--muted);
+    }
+    .rule-card.active .card-badge {
+      background: #E8F1F6;
+      color: var(--model);
+    }
+    .card-formula {
+      font-family: var(--font-num);
+      font-size: 15px;
+      color: var(--model);
+      background: #F4F8FA;
+      padding: 4px 10px;
+      border-radius: 5px;
+      border: 1px dashed var(--surface-strong);
+      letter-spacing: 0.02em;
+    }
+    .card-desc {
+      font-size: 15px;
+      color: var(--text);
+      line-height: 1.42;
+      margin: 0;
+    }
+    .card-contrast {
+      font-size: 14px;
+      color: var(--muted);
+      background: #F8FAFB;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border-left: 3px solid var(--model);
+      line-height: 1.4;
+    }
+
+    /* 右侧：动态聚合计算实验台 */
+    .right-col {
+      background: var(--surface);
+      border-radius: 12px;
+      border: 1px solid var(--surface-strong);
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 18px;
+      min-height: 0;
+      box-shadow: 0 4px 20px rgba(18, 38, 52, 0.04);
+    }
+
+    .board-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .board-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .board-subtitle {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 预设案例按钮组 */
+    .preset-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .preset-btn {
+      background: var(--surface-strong);
+      border: 1px solid transparent;
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--text);
+      transition: all var(--duration) var(--ease);
+    }
+    .preset-btn:hover {
+      background: #D5E2EA;
+    }
+    .preset-btn.active {
+      background: var(--model);
+      color: #fff;
+    }
+
+    /* 模型输入卡片列表 */
+    .models-list {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .model-box {
+      background: #FAFBFD;
+      border: 1px solid var(--surface-strong);
+      border-radius: 10px;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .model-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #ECEFF2;
+      padding-bottom: 8px;
+    }
+    .model-name {
+      font-weight: 700;
+      font-size: var(--fs-sec);
+      color: var(--model);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .model-type-tag {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      background: #ECEFF2;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    /* 槽位：硬投票、软投票、回归各有一套直观显示 */
+    .model-body {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .val-display {
+      font-family: var(--font-num);
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .prob-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .prob-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+    }
+    .prob-lbl {
+      width: 48px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .prob-track {
+      flex: 1;
+      height: 14px;
+      background: var(--surface-strong);
+      border-radius: 7px;
+      overflow: hidden;
+      display: flex;
+    }
+    .prob-fill {
+      height: 100%;
+      border-radius: 7px;
+      transition: width var(--duration) var(--ease);
+    }
+    .prob-fill.cls-a { background: #27648F; }
+    .prob-fill.cls-b { background: #E06C47; }
+    .prob-num {
+      width: 42px;
+      text-align: right;
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* 滑动条调节 */
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .slider-row input[type=range] {
+      flex: 1;
+      height: 6px;
+      accent-color: var(--model);
+      cursor: pointer;
+    }
+
+    /* 聚合汇聚流与结果展示区 */
+    .aggregation-stage {
+      background: #F4F7F9;
+      border-radius: 12px;
+      padding: 18px 24px;
+      border: 1px solid #DCE5EB;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .agg-flow-diagram {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .flow-calc-box {
+      flex: 1;
+      background: #FFFFFF;
+      border: 1px solid #DCE5EB;
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: var(--fs-sec);
+      line-height: 1.5;
+    }
+    .flow-calc-formula {
+      font-family: var(--font-num);
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--model);
+      margin-bottom: 6px;
+    }
+    .flow-calc-detail {
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .flow-arrow {
+      font-size: 32px;
+      color: var(--aggregate);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 6px;
+    }
+
+    .flow-result-box {
+      width: 270px;
+      background: #FFFFFF;
+      border: 2px solid var(--aggregate);
+      border-radius: 10px;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      box-shadow: 0 4px 14px rgba(195, 75, 34, 0.12);
+    }
+    .res-label {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--aggregate);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .res-value {
+      font-family: var(--font-num);
+      font-size: 36px;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1.15;
+      margin: 4px 0;
+    }
+    .res-note {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 底部关键对比结论栏 */
+    .summary-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: #FDFEFE;
+      border: 1px solid var(--surface-strong);
+      border-radius: 10px;
+      padding: 14px 20px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+    }
+    .summary-badge {
+      font-weight: 700;
+      font-size: var(--fs-label);
+      color: var(--model);
+      background: #E8F1F6;
+      padding: 5px 12px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+    .summary-text {
+      flex: 1;
+      line-height: 1.5;
+    }
+    .summary-text strong {
+      color: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="04" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题与任务定位 -->
+    <header class="header-area">
+      <div class="header-titles">
+        <h1>分类投票与回归平均：输出信息的利用深度</h1>
+        <div class="subtitle">集成聚合规则的选择直接决定：成员模型是只交出离散类别标签，还是交出连续概率与实数值</div>
+      </div>
+      <nav class="mode-nav" aria-label="聚合规则切换">
+        <button class="mode-btn active" id="btn-hard" data-mode="hard">硬投票 (Hard Voting)</button>
+        <button class="mode-btn" id="btn-soft" data-mode="soft">软投票 (Soft Voting)</button>
+        <button class="mode-btn" id="btn-reg" data-mode="reg">回归数值平均</button>
+      </nav>
+    </header>
+
+    <!-- 主展示区 -->
+    <div class="main-grid">
+      <!-- 左栏：三类聚合规则的结构化对比 -->
+      <div class="left-col" role="region" aria-label="规则定义">
+        <div class="rule-card active" id="card-hard" tabindex="0" data-mode="hard">
+          <div class="card-top">
+            <div class="card-title">硬投票 · 少数服从多数</div>
+            <span class="card-badge">离散分类标签</span>
+          </div>
+          <div class="card-formula">ŷ = mode{C₁(x), C₂(x), ..., Cₘ(x)}</div>
+          <p class="card-desc">每个模型无论有多确信，只投出 1 票类别标签。直接统计得票数，以众数作为最终裁决。</p>
+          <div class="card-contrast">信息损失：99% 确信与 51% 侥幸投出的票在权重上完全等价。</div>
+        </div>
+
+        <div class="rule-card" id="card-soft" tabindex="0" data-mode="soft">
+          <div class="card-top">
+            <div class="card-title">软投票 · 置信概率加权</div>
+            <span class="card-badge">连续概率分布</span>
+          </div>
+          <div class="card-formula">P(c|x) = 1/m ∑ Pᵢ(c|x)，ŷ = argmax P(c|x)</div>
+          <p class="card-desc">成员模型交出各类别的概率预测。先对每类概率做算术平均，再挑出平均概率最高的类别。</p>
+          <div class="card-contrast">信息保留：高置信度模型的强烈判断能够合理校正低置信度群体的摇摆。</div>
+        </div>
+
+        <div class="rule-card" id="card-reg" tabindex="0" data-mode="reg">
+          <div class="card-top">
+            <div class="card-title">数值平均 · 连续目标汇聚</div>
+            <span class="card-badge">连续实数值</span>
+          </div>
+          <div class="card-formula">ŷ = 1/m ∑ fᵢ(x)  (或加权平均 ∑ wᵢ fᵢ(x))</div>
+          <p class="card-desc">用于回归问题。各个成员输出连续预测实数，直接做算术平均或按历史误差反比加权。</p>
+          <div class="card-contrast">误差抵消：独立误差期望为零时，m 个独立模型的均方差可降至单模型的 1/m。</div>
+        </div>
+      </div>
+
+      <!-- 右栏：动态计算面板与交互实验台 -->
+      <div class="right-col" role="region" aria-label="交互计算演示">
+        <div class="board-header">
+          <div class="board-title">
+            <span id="board-curr-title">硬投票机制演示：3个基学习器独立裁决</span>
+          </div>
+          <div class="preset-bar">
+            <span>典型工况：</span>
+            <button class="preset-btn active" id="preset-1">经典一致</button>
+            <button class="preset-btn" id="preset-2">分歧对抗</button>
+            <button class="preset-btn" id="preset-3">高确信翻盘</button>
+          </div>
+        </div>
+
+        <!-- 3 个基模型的即时输出 -->
+        <div class="models-list" id="models-container">
+          <!-- 动态渲染 3 个模型卡片 -->
+        </div>
+
+        <!-- 聚合计算路径与输出 -->
+        <div class="aggregation-stage">
+          <div class="agg-flow-diagram">
+            <div class="flow-calc-box">
+              <div class="flow-calc-formula" id="calc-formula-text">硬投票统计：类别 A 共得 2 票，类别 B 共得 1 票</div>
+              <div class="flow-calc-detail" id="calc-detail-text">直接取票数最高项：mode(A, A, B) = A</div>
+            </div>
+            <div class="flow-arrow">➔</div>
+            <div class="flow-result-box">
+              <span class="res-label" id="res-type-label">集成最终判断</span>
+              <span class="res-value" id="res-val-display">类别 A</span>
+              <span class="res-note" id="res-note-text">以 2:1 多数胜出</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部总结提示 -->
+        <div class="summary-bar">
+          <span class="summary-badge" id="sum-badge">规则特性</span>
+          <span class="summary-text" id="sum-desc">
+            硬投票计算轻便，只需离散标签；软投票利用概率信息，通常在基分类器经过良好概率校准（Calibrated）时表现出更高的判别精度。
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      Deck.init({ index: 4, total: 27 });
+
+      // 3 组代表性预设数据
+      const PRESETS = {
+        1: { // 经典一致
+          hard: ['A', 'A', 'B'],
+          probs: [
+            { a: 0.85, b: 0.15 },
+            { a: 0.70, b: 0.30 },
+            { a: 0.40, b: 0.60 }
+          ],
+          regs: [48.2, 51.5, 49.8]
+        },
+        2: { // 分歧对抗
+          hard: ['B', 'A', 'B'],
+          probs: [
+            { a: 0.45, b: 0.55 },
+            { a: 0.90, b: 0.10 },
+            { a: 0.48, b: 0.52 }
+          ],
+          regs: [32.0, 68.0, 36.5]
+        },
+        3: { // 软硬分歧反转：2个弱偏好 B vs 1个极确信 A
+          hard: ['B', 'B', 'A'],
+          probs: [
+            { a: 0.48, b: 0.52 },
+            { a: 0.46, b: 0.54 },
+            { a: 0.96, b: 0.04 }
+          ],
+          regs: [21.0, 24.5, 95.0]
+        }
+      };
+
+      let currentMode = 'hard'; // 'hard' | 'soft' | 'reg'
+      let currentPreset = 1;
+
+      // 控件引用
+      const modeBtns = document.querySelectorAll('.mode-btn');
+      const ruleCards = document.querySelectorAll('.rule-card');
+      const presetBtns = document.querySelectorAll('.preset-btn');
+      const modelsContainer = document.getElementById('models-container');
+
+      const boardCurrTitle = document.getElementById('board-curr-title');
+      const calcFormulaText = document.getElementById('calc-formula-text');
+      const calcDetailText = document.getElementById('calc-detail-text');
+      const resTypeLabel = document.getElementById('res-type-label');
+      const resValDisplay = document.getElementById('res-val-display');
+      const resNoteText = document.getElementById('res-note-text');
+      const sumBadge = document.getElementById('sum-badge');
+      const sumDesc = document.getElementById('sum-desc');
+
+      function setMode(mode) {
+        currentMode = mode;
+
+        modeBtns.forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.mode === mode);
+        });
+        ruleCards.forEach(card => {
+          card.classList.toggle('active', card.dataset.mode === mode);
+        });
+
+        render();
+      }
+
+      function setPreset(idx) {
+        currentPreset = idx;
+        presetBtns.forEach((btn, i) => {
+          btn.classList.toggle('active', i + 1 === idx);
+        });
+        render();
+      }
+
+      function render() {
+        const data = PRESETS[currentPreset];
+        modelsContainer.innerHTML = '';
+
+        if (currentMode === 'hard') {
+          boardCurrTitle.textContent = '硬投票演示：各基分类器投出确切类别标签';
+          const votes = data.probs.map(p => (p.a >= 0.5 ? 'A' : 'B'));
+          const countA = votes.filter(v => v === 'A').length;
+          const countB = votes.filter(v => v === 'B').length;
+          const winner = countA > countB ? 'A' : (countB > countA ? 'B' : '平局');
+
+          votes.forEach((v, i) => {
+            const el = document.createElement('div');
+            el.className = 'model-box';
+            el.innerHTML = `
+              <div class="model-header">
+                <span class="model-name">基模型 M${i + 1}</span>
+                <span class="model-type-tag">分类器</span>
+              </div>
+              <div class="model-body">
+                <div style="font-size:14px;color:var(--muted)">预测输出类别标签：</div>
+                <div class="val-display">
+                  <span style="color:${v === 'A' ? 'var(--model)' : 'var(--aggregate)'}">类别 ${v}</span>
+                  <span style="font-size:14px;color:var(--muted);font-weight:normal">(1票)</span>
+                </div>
+                <div class="slider-row">
+                  <span>切换判定：</span>
+                  <button class="preset-btn" style="padding:2px 8px;font-size:13px;${v==='A'?'background:var(--model);color:#fff':''}" onclick="updateHardVote(${i}, 'A')">A</button>
+                  <button class="preset-btn" style="padding:2px 8px;font-size:13px;${v==='B'?'background:var(--aggregate);color:#fff':''}" onclick="updateHardVote(${i}, 'B')">B</button>
+                </div>
+              </div>
+            `;
+            modelsContainer.appendChild(el);
+          });
+
+          calcFormulaText.textContent = `投票汇总：类别 A 得 ${countA} 票，类别 B 得 ${countB} 票`;
+          calcDetailText.textContent = `判定规则：mode([${votes.join(', ')}]) ➔ 多数为胜`;
+          resTypeLabel.textContent = '硬投票最终裁决';
+          resValDisplay.textContent = `类别 ${winner}`;
+          resValDisplay.style.color = winner === 'A' ? 'var(--model)' : 'var(--aggregate)';
+          resNoteText.textContent = `得票比 ${countA} : ${countB}`;
+
+          sumBadge.textContent = '信息利用机制';
+          sumDesc.innerHTML = '<strong>硬投票只收集类别归属</strong>。即使某个分类器在边界以 50.1% 勉强挑中类别 B，它的权重与 99.9% 确信的投票完全相同，极易造成置信信息浪费。';
+        } else if (currentMode === 'soft') {
+          boardCurrTitle.textContent = '软投票演示：各基分类器输出后验概率并求均值';
+          let sumA = 0;
+          let sumB = 0;
+
+          data.probs.forEach((p, i) => {
+            sumA += p.a;
+            sumB += p.b;
+
+            const el = document.createElement('div');
+            el.className = 'model-box';
+            el.innerHTML = `
+              <div class="model-header">
+                <span class="model-name">基模型 M${i + 1}</span>
+                <span class="model-type-tag">概率输出</span>
+              </div>
+              <div class="model-body">
+                <div class="prob-bars">
+                  <div class="prob-item">
+                    <span class="prob-lbl">类别 A</span>
+                    <div class="prob-track">
+                      <div class="prob-fill cls-a" style="width:${(p.a * 100).toFixed(0)}%"></div>
+                    </div>
+                    <span class="prob-num">${(p.a * 100).toFixed(0)}%</span>
+                  </div>
+                  <div class="prob-item">
+                    <span class="prob-lbl">类别 B</span>
+                    <div class="prob-track">
+                      <div class="prob-fill cls-b" style="width:${(p.b * 100).toFixed(0)}%"></div>
+                    </div>
+                    <span class="prob-num">${(p.b * 100).toFixed(0)}%</span>
+                  </div>
+                </div>
+                <div class="slider-row" style="margin-top:4px">
+                  <span>A概率:</span>
+                  <input type="range" min="0" max="100" value="${(p.a * 100).toFixed(0)}" oninput="updateSoftProb(${i}, this.value)">
+                </div>
+              </div>
+            `;
+            modelsContainer.appendChild(el);
+          });
+
+          const avgA = sumA / 3;
+          const avgB = sumB / 3;
+          const winner = avgA >= avgB ? 'A' : 'B';
+
+          calcFormulaText.textContent = `类别平均概率：P̄(A) = ${(avgA * 100).toFixed(1)}% ； P̄(B) = ${(avgB * 100).toFixed(1)}%`;
+          calcDetailText.textContent = `计算公式：P̄(c) = 1/3 ∑ Pᵢ(c)，取 argmax 得胜者`;
+          resTypeLabel.textContent = '软投票最终裁决';
+          resValDisplay.textContent = `类别 ${winner}`;
+          resValDisplay.style.color = winner === 'A' ? 'var(--model)' : 'var(--aggregate)';
+          resNoteText.textContent = `平均胜出概率 ${(Math.max(avgA, avgB) * 100).toFixed(1)}%`;
+
+          sumBadge.textContent = '软硬对比关键';
+          sumDesc.innerHTML = '在预设 3「高确信翻盘」中，虽然两位模型以微弱优势投出 B，但第三个模型以 <strong>96% 极高确信</strong> 判断为 A，软投票能捕捉该强烈信号实现更优校正。';
+        } else {
+          // 回归数值平均
+          boardCurrTitle.textContent = '回归数值平均：各基回归器预测实数并计算均值';
+          let sumVal = 0;
+
+          data.regs.forEach((val, i) => {
+            sumVal += val;
+            const el = document.createElement('div');
+            el.className = 'model-box';
+            el.innerHTML = `
+              <div class="model-header">
+                <span class="model-name">基回归器 M${i + 1}</span>
+                <span class="model-type-tag">连续预测</span>
+              </div>
+              <div class="model-body">
+                <div style="font-size:14px;color:var(--muted)">预测目标值 ŷ${i + 1}：</div>
+                <div class="val-display">
+                  <span style="color:var(--model)">${val.toFixed(1)}</span>
+                  <span style="font-size:14px;color:var(--muted);font-weight:normal">单位数值</span>
+                </div>
+                <div class="slider-row" style="margin-top:6px">
+                  <span>调节:</span>
+                  <input type="range" min="0" max="100" step="0.5" value="${val}" oninput="updateRegVal(${i}, this.value)">
+                </div>
+              </div>
+            `;
+            modelsContainer.appendChild(el);
+          });
+
+          const meanVal = sumVal / 3;
+          calcFormulaText.textContent = `算术平均：ŷ = (${data.regs.map(v => v.toFixed(1)).join(' + ')}) / 3`;
+          calcDetailText.textContent = `误差消解效应：当各基模型预测误差互不相关时，平均值的方差显著小于单个基学习器`;
+          resTypeLabel.textContent = '集成回归预测值';
+          resValDisplay.textContent = meanVal.toFixed(2);
+          resValDisplay.style.color = 'var(--text)';
+          resNoteText.textContent = `三成员算术中心`;
+
+          sumBadge.textContent = '方差削减机理';
+          sumDesc.innerHTML = '对于回归任务，<strong>简单平均</strong>是最健壮的基线聚合方式。只要各模型的过拟合摆动方向不一致，取均值就能直接抹平极端抖动，达成低方差。';
+        }
+      }
+
+      // 暴露交互更新函数
+      window.updateHardVote = (index, choice) => {
+        PRESETS[currentPreset].probs[index].a = (choice === 'A' ? 0.8 : 0.2);
+        PRESETS[currentPreset].probs[index].b = (choice === 'B' ? 0.8 : 0.2);
+        render();
+      };
+
+      window.updateSoftProb = (index, val) => {
+        const pA = parseFloat(val) / 100;
+        PRESETS[currentPreset].probs[index].a = pA;
+        PRESETS[currentPreset].probs[index].b = 1 - pA;
+        render();
+      };
+
+      window.updateRegVal = (index, val) => {
+        PRESETS[currentPreset].regs[index] = parseFloat(val);
+        render();
+      };
+
+      // 模式切换事件
+      modeBtns.forEach(btn => {
+        btn.addEventListener('click', () => setMode(btn.dataset.mode));
+      });
+      ruleCards.forEach(card => {
+        card.addEventListener('click', () => setMode(card.dataset.mode));
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setMode(card.dataset.mode);
+          }
+        });
+      });
+
+      // 预设切换事件
+      presetBtns.forEach((btn, idx) => {
+        btn.addEventListener('click', () => setPreset(idx + 1));
+      });
+
+      // 键盘快捷键 1/2/3 切换预设，H/S/R 切换模式
+      document.addEventListener('keydown', (e) => {
+        if (e.key === '1') setPreset(1);
+        else if (e.key === '2') setPreset(2);
+        else if (e.key === '3') setPreset(3);
+        else if (e.key === 'h' || e.key === 'H') setMode('hard');
+        else if (e.key === 's' || e.key === 'S') setMode('soft');
+        else if (e.key === 'r' || e.key === 'R') setMode('reg');
+      });
+
+      // 初始化渲染
+      render();
+    })();
+  </script>
+</body>
+</html>

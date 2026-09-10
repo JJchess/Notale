@@ -1,0 +1,995 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: var(--line-structure) solid var(--rule);
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+    }
+    .header h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      color: var(--text);
+    }
+    .header .subtitle {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    /* 主工作区布局：左侧交互控制与参数，右侧模拟实测图与对比 */
+    .workbench {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 32px;
+      height: 740px;
+    }
+
+    /* 左侧控制面板 */
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: var(--surface);
+      border: var(--line-structure) solid var(--rule);
+      border-radius: 4px;
+      padding: 20px 24px;
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--text);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .scenario-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .scenario-btn {
+      background: var(--bg);
+      border: 1px solid var(--rule);
+      border-radius: 3px;
+      padding: 10px 12px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      line-height: 1.3;
+      transition: all var(--motion-fast) ease;
+    }
+    .scenario-btn:hover {
+      border-color: var(--model);
+    }
+    .scenario-btn[aria-pressed="true"] {
+      border-color: var(--focus);
+      background: rgba(197, 70, 32, 0.08);
+      font-weight: 600;
+      box-shadow: 0 0 0 1px var(--focus);
+    }
+
+    .slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 12px 0;
+      border-top: 1px dashed var(--rule);
+      border-bottom: 1px dashed var(--rule);
+    }
+
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+    .control-val {
+      font-family: var(--font-numeric);
+      color: var(--model);
+      font-weight: 600;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      background: var(--rule);
+      border-radius: 3px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--model);
+      cursor: pointer;
+      transition: transform var(--motion-fast);
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    /* 路线选择器 */
+    .routes-box {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .route-tabs {
+      display: flex;
+      gap: 8px;
+    }
+    .route-btn {
+      flex: 1;
+      padding: 8px 4px;
+      background: var(--bg);
+      border: 1px solid var(--rule);
+      border-radius: 3px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      color: var(--muted);
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--motion-fast);
+    }
+    .route-btn[aria-pressed="true"] {
+      background: var(--model);
+      color: var(--on-model);
+      border-color: var(--model);
+      font-weight: 600;
+    }
+
+    /* 诊断与结论提示卡 */
+    .diagnostic-card {
+      margin-top: auto;
+      background: rgba(36, 91, 103, 0.06);
+      border: 1px solid var(--rule);
+      padding: 12px 14px;
+      border-radius: 4px;
+    }
+    .diag-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--model);
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .diag-desc {
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--text);
+      margin: 0;
+    }
+
+    /* 右侧画布与定量对比区 */
+    .display-area {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .vis-container {
+      position: relative;
+      background: var(--surface);
+      border: var(--line-structure) solid var(--rule);
+      border-radius: 4px;
+      height: 480px;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+
+    .vis-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .vis-legend {
+      display: flex;
+      gap: 18px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .leg-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .leg-line {
+      width: 18px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    #sim-canvas {
+      width: 100%;
+      height: 410px;
+      display: block;
+    }
+
+    /* 底部三条路线定量度量对照表 */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      height: 220px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: var(--line-structure) solid var(--rule);
+      border-radius: 4px;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      transition: all var(--motion-base) var(--ease-ensemble);
+    }
+    .metric-card.active {
+      border-color: var(--focus);
+      background: #FFFFFF;
+      box-shadow: 0 4px 12px rgba(20, 42, 45, 0.08);
+    }
+    .metric-card.active::after {
+      content: "当前选中路线";
+      position: absolute;
+      top: -10px;
+      right: 14px;
+      background: var(--focus);
+      color: var(--on-focus);
+      font-size: var(--fs-tick);
+      padding: 2px 6px;
+      border-radius: 2px;
+      font-weight: 600;
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .card-name {
+      font-family: var(--font-display);
+      font-size: var(--fs-body);
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .card-tag {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-numeric);
+      white-space: nowrap;
+    }
+
+    .bars-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 8px 0;
+    }
+    .bar-row {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .bar-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .bar-track {
+      height: 6px;
+      background: rgba(130, 148, 146, 0.25);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width var(--motion-base) var(--ease-ensemble);
+    }
+
+    .card-foot {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-top: 1px solid rgba(130, 148, 146, 0.3);
+      padding-top: 6px;
+    }
+    .test-err-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .test-err-val {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .metric-card.active .test-err-val {
+      color: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="23" data-total="24">
+  <div id="stage">
+    <header class="header min0">
+      <div>
+        <h1>数据特征驱动的集成路线选择</h1>
+      </div>
+      <div class="subtitle">偏差、方差与噪声决定了模型接力纠错还是重采样方差抑制</div>
+    </header>
+
+    <main class="workbench min0">
+      <!-- 左侧控制面板 -->
+      <section class="panel min0" aria-label="环境特征配置">
+        <h2 class="section-title">典型工况预设</h2>
+        <div class="scenario-grid">
+          <button type="button" class="scenario-btn" data-preset="noisy" aria-pressed="false">
+            <strong>高标签噪声</strong>
+          </button>
+          <button type="button" class="scenario-btn" data-preset="small" aria-pressed="false">
+            <strong>小样本多变量</strong>
+          </button>
+          <button type="button" class="scenario-btn" data-preset="underfit" aria-pressed="false">
+            <strong>欠拟合基模型</strong>
+          </button>
+          <button type="button" class="scenario-btn" data-preset="hetero" aria-pressed="false">
+            <strong>异构多算法</strong>
+          </button>
+        </div>
+
+        <div class="slider-group">
+          <div class="control-row">
+            <div class="control-label">
+              <span>标签噪声强度 (Noise)</span>
+              <span id="val-noise" class="control-val">15%</span>
+            </div>
+            <input type="range" id="input-noise" min="0" max="60" value="15" step="1" aria-label="标签噪声强度">
+          </div>
+          <div class="control-row">
+            <div class="control-label">
+              <span>训练样本规模 (N)</span>
+              <span id="val-samples" class="control-val">120</span>
+            </div>
+            <input type="range" id="input-samples" min="30" max="400" value="120" step="10" aria-label="训练样本规模">
+          </div>
+          <div class="control-row">
+            <div class="control-label">
+              <span>基学习器容量 (Complexity)</span>
+              <span id="val-complexity" class="control-val">中等 (树深 4)</span>
+            </div>
+            <input type="range" id="input-complexity" min="1" max="5" value="3" step="1" aria-label="基学习器容量">
+          </div>
+        </div>
+
+        <div class="routes-box">
+          <span style="font-size:var(--fs-label);font-weight:600;color:var(--text)">聚焦集成范式</span>
+          <div class="route-tabs" role="tablist">
+            <button type="button" class="route-btn" role="tab" data-route="bagging" aria-pressed="true">Bagging / RF</button>
+            <button type="button" class="route-btn" role="tab" data-route="boosting" aria-pressed="false">Boosting</button>
+            <button type="button" class="route-btn" role="tab" data-route="stacking" aria-pressed="false">Stacking</button>
+          </div>
+        </div>
+
+        <div class="diagnostic-card" id="diag-box">
+          <div class="diag-title">
+            <span id="diag-rec-title">推荐路线：Bagging / RF</span>
+            <span id="diag-badge" style="color:var(--focus)">匹配度高</span>
+          </div>
+          <p class="diag-desc" id="diag-rec-desc">当前样本受方差主导，并行重采样结合特征扰动能最大化平抑基模型抖动，且对中度噪声更稳健。</p>
+        </div>
+      </section>
+
+      <!-- 右侧图解与结果 -->
+      <section class="display-area min0">
+        <div class="vis-container min0">
+          <div class="vis-header">
+            <span style="font-family:var(--font-display);font-size:var(--fs-h2);color:var(--text)">真实函数拟合与成员分歧</span>
+            <div class="vis-legend">
+              <div class="legend-item"><div class="leg-dot" style="background:var(--rule)"></div><span>样本点(带噪)</span></div>
+              <div class="legend-item"><div class="leg-line" style="background:var(--rule);height:1px;border-top:2px dashed var(--rule)"></div><span>真实目标函数</span></div>
+              <div class="legend-item"><div class="leg-line" style="background:var(--member);opacity:0.45"></div><span>成员假说轨迹</span></div>
+              <div class="legend-item"><div class="leg-line" style="background:var(--model)"></div><span>集成最终预测</span></div>
+            </div>
+          </div>
+          <canvas id="sim-canvas"></canvas>
+        </div>
+
+        <!-- 定量度量卡片 -->
+        <div class="metrics-grid min0">
+          <!-- Bagging 卡 -->
+          <div class="metric-card active" id="card-bagging">
+            <div class="card-head">
+              <span class="card-name">Bagging / 随机森林</span>
+              <span class="card-tag">重采样平均</span>
+            </div>
+            <div class="bars-wrap">
+              <div class="bar-row">
+                <div class="bar-meta"><span>偏差 (Bias²)</span><span id="bag-bias-val">0.08</span></div>
+                <div class="bar-track"><div id="bag-bias-bar" class="bar-fill" style="background:var(--uncertain);width:20%"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-meta"><span>方差 (Variance)</span><span id="bag-var-val">0.06</span></div>
+                <div class="bar-track"><div id="bag-var-bar" class="bar-fill" style="background:var(--member);width:15%"></div></div>
+              </div>
+            </div>
+            <div class="card-foot">
+              <span class="test-err-label">期望泛化误差</span>
+              <span class="test-err-val" id="bag-err-val">0.24</span>
+            </div>
+          </div>
+
+          <!-- Boosting 卡 -->
+          <div class="metric-card" id="card-boosting">
+            <div class="card-head">
+              <span class="card-name">Boosting</span>
+              <span class="card-tag">串行残差加权</span>
+            </div>
+            <div class="bars-wrap">
+              <div class="bar-row">
+                <div class="bar-meta"><span>偏差 (Bias²)</span><span id="boo-bias-val">0.04</span></div>
+                <div class="bar-track"><div id="boo-bias-bar" class="bar-fill" style="background:var(--uncertain);width:10%"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-meta"><span>方差 (Variance)</span><span id="boo-var-val">0.14</span></div>
+                <div class="bar-track"><div id="boo-var-bar" class="bar-fill" style="background:var(--member);width:35%"></div></div>
+              </div>
+            </div>
+            <div class="card-foot">
+              <span class="test-err-label">期望泛化误差</span>
+              <span class="test-err-val" id="boo-err-val">0.28</span>
+            </div>
+          </div>
+
+          <!-- Stacking 卡 -->
+          <div class="metric-card" id="card-stacking">
+            <div class="card-head">
+              <span class="card-name">Stacking</span>
+              <span class="card-tag">异构模型融合</span>
+            </div>
+            <div class="bars-wrap">
+              <div class="bar-row">
+                <div class="bar-meta"><span>偏差 (Bias²)</span><span id="sta-bias-val">0.06</span></div>
+                <div class="bar-track"><div id="sta-bias-bar" class="bar-fill" style="background:var(--uncertain);width:15%"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-meta"><span>方差 (Variance)</span><span id="sta-var-val">0.09</span></div>
+                <div class="bar-track"><div id="sta-var-bar" class="bar-fill" style="background:var(--member);width:22%"></div></div>
+              </div>
+            </div>
+            <div class="card-foot">
+              <span class="test-err-label">期望泛化误差</span>
+              <span class="test-err-val" id="sta-err-val">0.25</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    在解决实际问题时，选择集成路线不能凭运气。
+    高方差、数据量小或存在中度噪声时，Bagging 与随机森林通过无放回或有放回采样平抑模型抖动，稳定性最好；
+    若基模型能力受限、出现显著欠拟合，Boosting 能通过串行接力逼近真实残差，大幅压缩偏差，但一旦标签噪声过大，Boosting 会把权重堆在异常值上导致过拟合；
+    而对于特征异构、不同基模型各具专长的复杂任务，Stacking 用折外预测让元学习器学到最佳结合方案。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 真实底层函数: f(x) = sin(1.8 * pi * x) + 0.3 * cos(4.2 * pi * x)
+      function targetFn(x) {
+        return Math.sin(1.8 * Math.PI * x) + 0.3 * Math.cos(4.2 * Math.PI * x);
+      }
+
+      // 确定性伪随机数生成器（固定种子以保持一致性）
+      function createRng(seed) {
+        let s = seed;
+        return () => {
+          s = (s * 16807) % 2147483647;
+          return (s - 1) / 2147483646;
+        };
+      }
+
+      // 状态机核心状态
+      let state = {
+        noise: 15,          // 0 - 60%
+        samples: 120,       // 30 - 400
+        complexity: 3,      // 1 (低, 强欠拟合) 到 5 (高, 易过拟合)
+        route: 'bagging',   // 'bagging' | 'boosting' | 'stacking'
+        preset: null
+      };
+
+      const canvas = document.getElementById('sim-canvas');
+      const ctx = Deck.fit(canvas);
+
+      // DOM 控件引用
+      const inputNoise = document.getElementById('input-noise');
+      const inputSamples = document.getElementById('input-samples');
+      const inputComplexity = document.getElementById('input-complexity');
+      const valNoise = document.getElementById('val-noise');
+      const valSamples = document.getElementById('val-samples');
+      const valComplexity = document.getElementById('val-complexity');
+
+      const presetBtns = document.querySelectorAll('.scenario-btn');
+      const routeBtns = document.querySelectorAll('.route-btn');
+      const cards = {
+        bagging: document.getElementById('card-bagging'),
+        boosting: document.getElementById('card-boosting'),
+        stacking: document.getElementById('card-stacking')
+      };
+
+      const diagRecTitle = document.getElementById('diag-rec-title');
+      const diagRecDesc = document.getElementById('diag-rec-desc');
+      const diagBadge = document.getElementById('diag-badge');
+
+      const complexityLabels = [
+        "极弱 (桩模型)",
+        "较弱 (深度2)",
+        "中等 (深度4)",
+        "较强 (深度8)",
+        "深树 (易过拟合)"
+      ];
+
+      // 计算偏差、方差、噪声与泛化误差模型
+      function computeMetrics(route, s) {
+        const noiseFactor = s.noise / 100;
+        const sampleRatio = 120 / s.samples; // 样本越少，方差基数越大
+        const c = s.complexity; // 1 to 5
+
+        // 基学习器固有属性
+        // c=1: bias高, var低; c=5: bias极低, var极高
+        let baseBias = Math.max(0.01, 0.45 * Math.pow((6 - c) / 5, 2.2));
+        let baseVar = Math.max(0.02, 0.04 * Math.pow(c, 1.8) * sampleRatio);
+
+        let bias = 0;
+        let variance = 0;
+        let noiseErr = noiseFactor * 0.35; // 固有不可约误差
+
+        if (route === 'bagging') {
+          // Bagging 主要是降低方差，对偏差几乎无改善
+          // 聚合 M=10 个树，方差缩小为 (rho + (1-rho)/M)
+          const rho = 0.35;
+          bias = baseBias * 1.02; 
+          variance = baseVar * (rho + (1 - rho) / 10);
+          // 噪声对 bagging 干扰平缓
+          variance += noiseFactor * 0.08;
+        } else if (route === 'boosting') {
+          // Boosting 大幅降低偏差，但会扩大方差；特别是高噪声下容易强拟合噪声
+          bias = baseBias * 0.22;
+          variance = baseVar * 1.65;
+          // 噪声惩罚: boosting 持续放大难样本权重，噪声越大方差爆炸越严重
+          const noisePenalty = Math.pow(noiseFactor, 1.6) * 1.2 * (c >= 3 ? 1.4 : 0.8);
+          variance += noisePenalty;
+          bias += noiseFactor * 0.06; // 标签被噪化导致学到假边界
+        } else if (route === 'stacking') {
+          // Stacking 异构融合，偏差与方差折中，需充足样本支持元模型
+          bias = baseBias * 0.55;
+          variance = baseVar * 0.75;
+          if (s.samples < 60) {
+            // 小样本下元学习器发生过拟合风险
+            variance += (60 - s.samples) * 0.003;
+          }
+          variance += noiseFactor * 0.15;
+        }
+
+        const totalErr = bias + variance + noiseErr;
+        return {
+          bias: Math.max(0.01, bias),
+          variance: Math.max(0.01, variance),
+          total: totalErr
+        };
+      }
+
+      // 生成带有噪声的数据点与各模型轨迹
+      function generateModelTraces(s) {
+        const rng = createRng(42);
+        const dataPoints = [];
+        for (let i = 0; i < s.samples; i++) {
+          const x = rng();
+          const cleanY = targetFn(x);
+          const noiseRange = (s.noise / 100) * 1.4;
+          const noise = (rng() - 0.5) * 2 * noiseRange;
+          dataPoints.push({ x, y: cleanY + noise });
+        }
+
+        // 采样点 (用于绘制平滑曲线，评估步长 80 点)
+        const N_EVAL = 80;
+        const xs = [];
+        const targetYs = [];
+        for (let i = 0; i <= N_EVAL; i++) {
+          const x = i / N_EVAL;
+          xs.push(x);
+          targetYs.push(targetFn(x));
+        }
+
+        // 模拟基学习器成员假说 (8条虚线) 与 集成聚合线
+        const memberCount = 7;
+        const memberTraces = [];
+        const ensembleTrace = [];
+
+        const c = s.complexity;
+        const noiseFactor = s.noise / 100;
+
+        for (let m = 0; m < memberCount; m++) {
+          const mRng = createRng(100 + m * 31);
+          const phaseShift = (mRng() - 0.5) * (0.04 * (6 - c));
+          const freqWobble = 1 + (mRng() - 0.5) * 0.2 * (c / 3);
+          const memberYs = [];
+
+          for (let i = 0; i <= N_EVAL; i++) {
+            const x = xs[i];
+            let y = 0;
+            if (s.route === 'bagging') {
+              // bagging 成员各自在 bootstrap 扰动下波动
+              const subBias = (c <= 2) ? Math.sin(x * Math.PI) * 0.8 : targetFn(x);
+              const mNoiseWobble = (mRng() - 0.5) * (0.2 + 0.15 * c + noiseFactor * 0.4);
+              y = subBias * (0.9 + 0.2 * mRng()) + mNoiseWobble * Math.sin((x + phaseShift) * 6 * freqWobble);
+            } else if (s.route === 'boosting') {
+              // boosting 成员是在前一步残差上的弱拟合
+              // 成员本身往往很偏，汇聚起来很紧贴
+              const stageWeight = Math.pow(0.85, m);
+              y = targetFn(x) * (0.6 + 0.4 * stageWeight) + (mRng() - 0.5) * (0.8 - stageWeight * 0.5 + noiseFactor * 0.8);
+            } else {
+              // stacking: 异构模型，有线性平滑型、也有局部波动型
+              if (m % 3 === 0) {
+                // 平滑型 (高偏差)
+                y = 1.2 * x - 0.4 + (mRng() - 0.5) * 0.2;
+              } else if (m % 3 === 1) {
+                // 近邻/局部型 (高方差)
+                y = targetFn(x) + (mRng() - 0.5) * (0.3 + noiseFactor * 0.5);
+              } else {
+                // 树状阶梯型
+                const stepX = Math.floor(x * 6) / 6;
+                y = targetFn(stepX) + (mRng() - 0.5) * 0.15;
+              }
+            }
+            memberYs.push(y);
+          }
+          memberTraces.push(memberYs);
+        }
+
+        // 生成最终聚合集成线
+        for (let i = 0; i <= N_EVAL; i++) {
+          const x = xs[i];
+          let sum = 0;
+          for (let m = 0; m < memberCount; m++) {
+            sum += memberTraces[m][i];
+          }
+          let avg = sum / memberCount;
+
+          // 集成线修正：根据当前路线的偏差/方差表现更真实
+          if (s.route === 'boosting') {
+            // boosting 偏差极低，但如果噪声大，则在噪声高频处过拟合产生剧烈抖动
+            const overfitWobble = noiseFactor > 0.2 ? Math.sin(x * 18) * (noiseFactor * 0.45) : 0;
+            const biasCorrection = targetFn(x) * 0.95;
+            avg = biasCorrection + overfitWobble;
+          } else if (s.route === 'bagging') {
+            // bagging 曲线非常平滑稳健
+            const trueY = targetFn(x);
+            if (c <= 2) {
+              avg = avg * 0.6 + trueY * 0.4; // 仍有一定基模型偏差
+            } else {
+              avg = trueY * 0.92 + (avg - trueY) * 0.25;
+            }
+          } else {
+            // stacking
+            const trueY = targetFn(x);
+            avg = trueY * 0.9 + avg * 0.1;
+          }
+          ensembleTrace.push(avg);
+        }
+
+        return { dataPoints, xs, targetYs, memberTraces, ensembleTrace };
+      }
+
+      // 绘制主视图
+      function drawScene() {
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const margin = { top: 20, right: 30, bottom: 35, left: 45 };
+        const plotW = w - margin.left - margin.right;
+        const plotH = h - margin.top - margin.bottom;
+
+        // 坐标映射: x in [0, 1], y in [-1.8, 1.8]
+        const toX = x => margin.left + x * plotW;
+        const toY = y => margin.top + (1.8 - y) / 3.6 * plotH;
+
+        // 坐标系网格与轴
+        ctx.strokeStyle = "rgba(130, 148, 146, 0.3)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        // 水平零线
+        const y0 = toY(0);
+        ctx.moveTo(margin.left, y0);
+        ctx.lineTo(margin.left + plotW, y0);
+        ctx.stroke();
+
+        // 边框轴线
+        ctx.strokeStyle = Deck.token('--rule') || '#829492';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(margin.left, margin.top);
+        ctx.lineTo(margin.left, margin.top + plotH);
+        ctx.lineTo(margin.left + plotW, margin.top + plotH);
+        ctx.stroke();
+
+        // 刻度文字
+        ctx.fillStyle = Deck.token('--muted') || '#485A59';
+        ctx.font = '13px ' + (Deck.token('--font-numeric') || 'monospace');
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('+1.5', margin.left - 8, toY(1.5));
+        ctx.fillText(' 0.0', margin.left - 8, toY(0));
+        ctx.fillText('-1.5', margin.left - 8, toY(-1.5));
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText('0.0', toX(0), margin.top + plotH + 8);
+        ctx.fillText('0.5', toX(0.5), margin.top + plotH + 8);
+        ctx.fillText('1.0', toX(1.0), margin.top + plotH + 8);
+
+        const sim = generateModelTraces(state);
+
+        // 1. 绘制样本散点
+        ctx.fillStyle = Deck.rgba('--rule', 0.6);
+        for (let i = 0; i < sim.dataPoints.length; i++) {
+          const pt = sim.dataPoints[i];
+          const px = toX(pt.x);
+          const py = toY(pt.y);
+          if (py >= margin.top && py <= margin.top + plotH) {
+            ctx.beginPath();
+            ctx.arc(px, py, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // 2. 绘制真实目标函数 (虚线)
+        ctx.strokeStyle = Deck.token('--rule') || '#829492';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        for (let i = 0; i < sim.xs.length; i++) {
+          const px = toX(sim.xs[i]);
+          const py = toY(sim.targetYs[i]);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 3. 绘制弱学习器/基学习器成员轨迹 (青灰弱化线)
+        ctx.strokeStyle = Deck.rgba('--member', 0.4);
+        ctx.lineWidth = 1.5;
+        sim.memberTraces.forEach(mYs => {
+          ctx.beginPath();
+          for (let i = 0; i < sim.xs.length; i++) {
+            const px = toX(sim.xs[i]);
+            const py = toY(mYs[i]);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.stroke();
+        });
+
+        // 4. 绘制集成聚合线 (主数据深青色)
+        ctx.strokeStyle = Deck.token('--model') || '#245B67';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        for (let i = 0; i < sim.xs.length; i++) {
+          const px = toX(sim.xs[i]);
+          const py = toY(sim.ensembleTrace[i]);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+
+      // 计算与更新各卡片度量和诊断
+      function updateMetricsAndDiagnostics() {
+        const bagM = computeMetrics('bagging', state);
+        const booM = computeMetrics('boosting', state);
+        const staM = computeMetrics('stacking', state);
+
+        const maxTotal = Math.max(0.5, bagM.total, booM.total, staM.total);
+
+        // 更新 Bagging 卡
+        document.getElementById('bag-bias-val').textContent = bagM.bias.toFixed(3);
+        document.getElementById('bag-var-val').textContent = bagM.variance.toFixed(3);
+        document.getElementById('bag-err-val').textContent = bagM.total.toFixed(3);
+        document.getElementById('bag-bias-bar').style.width = `${Math.min(100, (bagM.bias / maxTotal) * 100)}%`;
+        document.getElementById('bag-var-bar').style.width = `${Math.min(100, (bagM.variance / maxTotal) * 100)}%`;
+
+        // 更新 Boosting 卡
+        document.getElementById('boo-bias-val').textContent = booM.bias.toFixed(3);
+        document.getElementById('boo-var-val').textContent = booM.variance.toFixed(3);
+        document.getElementById('boo-err-val').textContent = booM.total.toFixed(3);
+        document.getElementById('boo-bias-bar').style.width = `${Math.min(100, (booM.bias / maxTotal) * 100)}%`;
+        document.getElementById('boo-var-bar').style.width = `${Math.min(100, (booM.variance / maxTotal) * 100)}%`;
+
+        // 更新 Stacking 卡
+        document.getElementById('sta-bias-val').textContent = staM.bias.toFixed(3);
+        document.getElementById('sta-var-val').textContent = staM.variance.toFixed(3);
+        document.getElementById('sta-err-val').textContent = staM.total.toFixed(3);
+        document.getElementById('sta-bias-bar').style.width = `${Math.min(100, (staM.bias / maxTotal) * 100)}%`;
+        document.getElementById('sta-var-bar').style.width = `${Math.min(100, (staM.variance / maxTotal) * 100)}%`;
+
+        // 判断当前条件下的客观最优路线
+        let bestRoute = 'bagging';
+        let minErr = bagM.total;
+        if (booM.total < minErr) {
+          minErr = booM.total;
+          bestRoute = 'boosting';
+        }
+        if (staM.total < minErr) {
+          minErr = staM.total;
+          bestRoute = 'stacking';
+        }
+
+        // 诊断文案匹配
+        const routeNames = {
+          bagging: 'Bagging / 随机森林',
+          boosting: 'Boosting (残差接力)',
+          stacking: 'Stacking (分层融合)'
+        };
+
+        const isMatch = state.route === bestRoute;
+        diagBadge.textContent = isMatch ? '匹配当前最优' : '次优或存在风险';
+        diagBadge.style.color = isMatch ? 'var(--model)' : 'var(--focus)';
+
+        if (bestRoute === 'bagging') {
+          diagRecTitle.textContent = `建议：${routeNames.bagging}`;
+          if (state.noise >= 30) {
+            diagRecDesc.textContent = '高噪声环境下，重采样平均避免对离群点过度修正，泛化稳健。';
+          } else {
+            diagRecDesc.textContent = '样本少或基模型方差大，重采样与特征扰动有效平抑波动。';
+          }
+        } else if (bestRoute === 'boosting') {
+          diagRecTitle.textContent = `建议：${routeNames.boosting}`;
+          diagRecDesc.textContent = '低噪声且基模型欠拟合时，串行残差逼近快速降低偏差。';
+        } else {
+          diagRecTitle.textContent = `建议：${routeNames.stacking}`;
+          diagRecDesc.textContent = '样本充足且基模型多样时，折外预测元学习器取得更优综合。';
+        }
+
+        // 激活卡片高亮
+        Object.keys(cards).forEach(key => {
+          cards[key].classList.toggle('active', key === state.route);
+        });
+      }
+
+      function updateUI() {
+        valNoise.textContent = `${state.noise}%`;
+        valSamples.textContent = state.samples;
+        valComplexity.textContent = complexityLabels[state.complexity - 1];
+
+        inputNoise.value = state.noise;
+        inputSamples.value = state.samples;
+        inputComplexity.value = state.complexity;
+
+        routeBtns.forEach(btn => {
+          btn.setAttribute('aria-pressed', String(btn.dataset.route === state.route));
+        });
+
+        presetBtns.forEach(btn => {
+          btn.setAttribute('aria-pressed', String(btn.dataset.preset === state.preset));
+        });
+
+        drawScene();
+        updateMetricsAndDiagnostics();
+      }
+
+      // 事件绑定
+      inputNoise.addEventListener('input', e => {
+        state.noise = parseInt(e.target.value, 10);
+        state.preset = null;
+        updateUI();
+      });
+
+      inputSamples.addEventListener('input', e => {
+        state.samples = parseInt(e.target.value, 10);
+        state.preset = null;
+        updateUI();
+      });
+
+      inputComplexity.addEventListener('input', e => {
+        state.complexity = parseInt(e.target.value, 10);
+        state.preset = null;
+        updateUI();
+      });
+
+      routeBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.route = btn.dataset.route;
+          updateUI();
+        });
+      });
+
+      presetBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const p = btn.dataset.preset;
+          state.preset = p;
+          if (p === 'noisy') {
+            state.noise = 45;
+            state.samples = 140;
+            state.complexity = 3;
+            state.route = 'bagging';
+          } else if (p === 'small') {
+            state.noise = 10;
+            state.samples = 40;
+            state.complexity = 4;
+            state.route = 'bagging';
+          } else if (p === 'underfit') {
+            state.noise = 5;
+            state.samples = 220;
+            state.complexity = 1;
+            state.route = 'boosting';
+          } else if (p === 'hetero') {
+            state.noise = 15;
+            state.samples = 320;
+            state.complexity = 3;
+            state.route = 'stacking';
+          }
+          updateUI();
+        });
+      });
+
+      Deck.onResize(() => {
+        Deck.fit(canvas);
+        drawScene();
+      });
+
+      Deck.init({ index: 23, total: 24, keys: false });
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

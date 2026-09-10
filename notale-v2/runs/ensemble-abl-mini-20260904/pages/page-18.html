@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>学习率、树深与迭代轮数：梯度提升的三维权衡</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      box-sizing: border-box;
+      background: var(--bg);
+    }
+    .header-area {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+    .header-titles h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .header-titles p {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+    }
+    .main-grid {
+      display: grid;
+      grid-template-columns: 360px 1fr 340px;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+    .col-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+    .col-panel h2 {
+      margin: 0;
+      font-size: var(--fs-h2);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .param-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: var(--bg);
+      padding: 12px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--surface-strong);
+    }
+    .param-row-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .param-name {
+      font-size: var(--fs-body);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .param-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--model);
+    }
+    .param-ctl {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .param-ctl input[type="range"] {
+      flex: 1;
+      accent-color: var(--model);
+      cursor: pointer;
+    }
+    .param-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .param-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+    }
+    .preset-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .preset-btn {
+      flex: 1;
+      min-width: 90px;
+      padding: 8px 10px;
+      background: var(--surface-strong);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--duration) var(--ease);
+    }
+    .preset-btn:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+    .preset-btn.active {
+      background: var(--model);
+      color: #fff;
+    }
+
+    /* Chart center */
+    .chart-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px 20px;
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chart-legend {
+      display: flex;
+      gap: 18px;
+      font-size: var(--fs-label);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text);
+    }
+    .legend-line {
+      width: 20px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .legend-line.train {
+      background: var(--sample);
+      border-top: 2px dashed var(--sample);
+      height: 0;
+    }
+    .legend-line.val {
+      background: var(--aggregate);
+      height: 3px;
+    }
+    .legend-dot.opt {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--answer);
+    }
+    #chartHost {
+      flex: 1;
+      width: 100%;
+      min-height: 380px;
+    }
+
+    /* Right diagnostics */
+    .diag-card {
+      background: var(--bg);
+      border-radius: 6px;
+      border: 1px solid var(--surface-strong);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .diag-title {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .diag-main {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .diag-num {
+      font-family: var(--font-num);
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .diag-status {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .status-optimal {
+      background: #e8f5e9;
+      color: var(--answer);
+    }
+    .status-underfit {
+      background: #e3f2fd;
+      color: var(--model);
+    }
+    .status-overfit {
+      background: #fbe9e7;
+      color: var(--aggregate);
+    }
+    .diag-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+      margin: 0;
+    }
+    .tradeoff-formula {
+      background: #f8fafb;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .tradeoff-formula code {
+      color: var(--model);
+      font-family: var(--font-num);
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body data-page="18" data-total="27">
+  <div id="stage">
+    <header class="header-area">
+      <div class="header-titles">
+        <h1>学习率、树深与迭代轮数：梯度提升的三维权衡</h1>
+        <p>用缩减步长（Shrinkage）换取更多树的组合余量，在模型容量与泛化风险之间建立缓冲</p>
+      </div>
+    </header>
+
+    <div class="main-grid">
+      <!-- 左栏：超参数交互配置 -->
+      <div class="col-panel">
+        <h2>超参数配置</h2>
+
+        <div class="param-group">
+          <div class="param-row-head">
+            <span class="param-name">学习率 (η / Shrinkage)</span>
+            <span class="param-val" id="valEta">0.10</span>
+          </div>
+          <div class="param-ctl">
+            <input type="range" id="inputEta" min="0.02" max="0.50" step="0.02" value="0.10">
+          </div>
+          <div class="param-meta">
+            <span>0.02 (稳健细调)</span>
+            <span>0.50 (激进快速)</span>
+          </div>
+          <p class="param-desc">每棵新树对最终集成的贡献折减系数。越小越平滑，但需要更多轮数。</p>
+        </div>
+
+        <div class="param-group">
+          <div class="param-row-head">
+            <span class="param-name">树最大深度 (Max Depth)</span>
+            <span class="param-val" id="valDepth">3</span>
+          </div>
+          <div class="param-ctl">
+            <input type="range" id="inputDepth" min="1" max="6" step="1" value="3">
+          </div>
+          <div class="param-meta">
+            <span>1 (树桩/单特征)</span>
+            <span>6 (高阶交互)</span>
+          </div>
+          <p class="param-desc">控制单棵树分裂层数与特征交互阶数。深度过大单轮方差剧增，过小拟合偏慢。</p>
+        </div>
+
+        <div class="param-group">
+          <div class="param-row-head">
+            <span class="param-name">当前总轮数 (Trees M)</span>
+            <span class="param-val" id="valTrees">55</span>
+          </div>
+          <div class="param-ctl">
+            <input type="range" id="inputTrees" min="20" max="250" step="5" value="55">
+          </div>
+          <div class="param-meta">
+            <span>20 轮</span>
+            <span>250 轮</span>
+          </div>
+          <p class="param-desc">累积训练的弱学习器总数。过多会导致模型开始记忆训练集噪点。</p>
+        </div>
+
+        <div>
+          <div style="font-size: var(--fs-label); color: var(--muted); margin-bottom: 8px; font-weight: 600;">典型配置方案预设：</div>
+          <div class="preset-row">
+            <button class="preset-btn active" id="btnPresetBal">经典平衡</button>
+            <button class="preset-btn" id="btnPresetFast">激进贪婪</button>
+            <button class="preset-btn" id="btnPresetSlow">极小学习率</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 中栏：ECharts 训练与验证曲线 -->
+      <div class="chart-container min0">
+        <div class="chart-header">
+          <span style="font-weight: 700; font-size: var(--fs-h2);">迭代损失曲线 (Mean Squared Error)</span>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <span class="legend-line train"></span>
+              <span>训练集损失 (Train)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line val"></span>
+              <span>验证集损失 (Val)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-dot opt"></span>
+              <span>最佳早停点 (M*)</span>
+            </div>
+          </div>
+        </div>
+        <div id="chartHost"></div>
+      </div>
+
+      <!-- 右栏：量化诊断与机制解读 -->
+      <div class="col-panel">
+        <h2>泛化状态诊断</h2>
+
+        <div class="diag-card">
+          <div class="diag-title">泛化状态与早停判断</div>
+          <div class="diag-main">
+            <span class="diag-num" id="metricOptM">M* = 49</span>
+            <span class="diag-status status-optimal" id="metricStatus">处于最佳区间</span>
+          </div>
+          <p class="diag-desc" id="metricStatusDesc">在第 49 轮达到最低验证损失 0.244。此时偏差与方差取得极佳平衡。</p>
+        </div>
+
+        <div class="diag-card">
+          <div class="diag-title">当前第 M 轮误差差值 (泛化鸿沟)</div>
+          <div class="diag-main">
+            <span class="diag-num" id="metricGap">Δ 0.170</span>
+          </div>
+          <p class="diag-desc" id="metricGapDesc">验证损失与训练损失的差值。学习率过大或树深过高都会加速该差距扩张。</p>
+        </div>
+
+        <div class="tradeoff-formula">
+          <strong style="color: var(--text);">集成累加更新形式：</strong><br>
+          <code>F_m(x) = F_{m-1}(x) + η · h_m(x)</code>
+          <p style="margin: 6px 0 0 0; font-size: var(--fs-sec); color: var(--muted); line-height: 1.4;">
+            <strong>权衡法则：</strong>调小 <code>η</code>（学习率）可以显著降低单棵树对整体的冲击，留下更多优化空间；但必须相应增加 <code>M</code>（树数量），使累积容量足以消除系统偏差。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      var state = {
+        eta: 0.10,
+        depth: 3,
+        trees: 55
+      };
+
+      var dom = {
+        inputEta: document.getElementById("inputEta"),
+        inputDepth: document.getElementById("inputDepth"),
+        inputTrees: document.getElementById("inputTrees"),
+        valEta: document.getElementById("valEta"),
+        valDepth: document.getElementById("valDepth"),
+        valTrees: document.getElementById("valTrees"),
+        chartHost: document.getElementById("chartHost"),
+        metricOptM: document.getElementById("metricOptM"),
+        metricStatus: document.getElementById("metricStatus"),
+        metricStatusDesc: document.getElementById("metricStatusDesc"),
+        metricGap: document.getElementById("metricGap"),
+        metricGapDesc: document.getElementById("metricGapDesc"),
+        btnBal: document.getElementById("btnPresetBal"),
+        btnFast: document.getElementById("btnPresetFast"),
+        btnSlow: document.getElementById("btnPresetSlow")
+      };
+
+      var chart = null;
+
+      // 遵循真实 GBDT 动力学模型生成收敛曲线
+      function simulateLossCurves(eta, depth, maxTrees) {
+        var trainData = [];
+        var valData = [];
+        
+        // 噪声底线与特征可解释极限
+        var irreducibleNoise = 0.12;
+        // 深度越大，表达能力越强（可达到的训练极限更低），但单棵树方差越大
+        var capacityFloor = 0.05 + 0.08 / depth;
+        var varPenaltyCoeff = 0.00045 * Math.pow(depth, 1.8) * Math.sqrt(eta);
+
+        var curTrain = 1.0;
+        var minVal = 999;
+        var bestM = 1;
+
+        for (var m = 1; m <= maxTrees; m++) {
+          // 单步学习递减步长，随着轮数增加拟合边际递减
+          var stepProgress = Math.exp(-0.015 * m * eta * Math.sqrt(depth));
+          var deltaFit = (curTrain - capacityFloor) * (eta * 0.45 * Math.pow(depth, 0.4)) * stepProgress;
+          curTrain = Math.max(capacityFloor, curTrain - deltaFit);
+
+          // 验证误差：训练拟合收益 + 累积方差膨胀
+          var varianceInflation = varPenaltyCoeff * Math.pow(m, 1.15);
+          var valLoss = curTrain + (irreducibleNoise - capacityFloor) + varianceInflation;
+
+          if (valLoss < minVal) {
+            minVal = valLoss;
+            bestM = m;
+          }
+
+          trainData.push([m, parseFloat(curTrain.toFixed(4))]);
+          valData.push([m, parseFloat(valLoss.toFixed(4))]);
+        }
+
+        return {
+          train: trainData,
+          val: valData,
+          bestM: bestM,
+          minVal: minVal,
+          currentTrain: trainData[trainData.length - 1][1],
+          currentVal: valData[valData.length - 1][1]
+        };
+      }
+
+      function updateDashboard() {
+        dom.valEta.textContent = state.eta.toFixed(2);
+        dom.valDepth.textContent = state.depth;
+        dom.valTrees.textContent = state.trees;
+
+        var sim = simulateLossCurves(state.eta, state.depth, state.trees);
+        var curTrain = sim.currentTrain;
+        var curVal = sim.currentVal;
+        var gap = Math.max(0, curVal - curTrain);
+
+        dom.metricOptM.textContent = "M* = " + sim.bestM;
+        dom.metricGap.textContent = "Δ " + gap.toFixed(3);
+
+        // 状态分类
+        var diffFromBest = state.trees - sim.bestM;
+        if (diffFromBest < -5) {
+          dom.metricStatus.className = "diag-status status-underfit";
+          dom.metricStatus.textContent = "拟合未达最佳";
+          dom.metricStatusDesc.textContent = "当前轮数尚未充分发挥模型容量，验证集损失仍在持续下降中，增加迭代轮数能进一步提升效果。";
+        } else if (diffFromBest <= 15) {
+          dom.metricStatus.className = "diag-status status-optimal";
+          dom.metricStatus.textContent = "最佳早停区间";
+          dom.metricStatusDesc.textContent = "在第 " + sim.bestM + " 轮达到最低验证损失 " + sim.minVal.toFixed(3) + "。此时偏差与方差取得极佳平衡。";
+        } else {
+          dom.metricStatus.className = "diag-status status-overfit";
+          dom.metricStatus.textContent = "出现过拟合";
+          dom.metricStatusDesc.textContent = "已超过最佳轮数 " + sim.bestM + " 轮（最低损失 " + sim.minVal.toFixed(3) + "）。后续树开始记忆噪声，泛化误差逐渐抬头。";
+        }
+
+        dom.metricGapDesc.textContent = "验证损失 " + curVal.toFixed(3) + " 与训练损失 " + curTrain.toFixed(3) + " 的差值。学习率过大或树深过高都会加速该差距扩张。";
+
+        // 更新图表
+        renderChart(sim);
+      }
+
+      function renderChart(sim) {
+        if (!chart) {
+          chart = echarts.init(dom.chartHost, null, { renderer: 'svg' });
+        }
+
+        var option = {
+          animation: false,
+          grid: {
+            left: 55,
+            right: 35,
+            top: 30,
+            bottom: 45
+          },
+          tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            borderColor: '#E2EBF0',
+            textStyle: { color: '#122634', fontSize: 13 },
+            formatter: function(params) {
+              var m = params[0].value[0];
+              var res = '<div style="font-weight:700;margin-bottom:4px;">迭代轮数 M = ' + m + '</div>';
+              params.forEach(function(p) {
+                res += '<div style="display:flex;justify-content:space-between;gap:12px;font-size:12px;">' +
+                  '<span>' + p.seriesName + ':</span>' +
+                  '<strong style="font-family:var(--font-num);">' + p.value[1].toFixed(3) + '</strong></div>';
+              });
+              return res;
+            }
+          },
+          xAxis: {
+            type: 'value',
+            min: 1,
+            max: state.trees,
+            name: '迭代轮数 (M)',
+            nameLocation: 'middle',
+            nameGap: 28,
+            nameTextStyle: { color: '#536A78', fontSize: 14 },
+            axisLine: { lineStyle: { color: '#536A78' } },
+            axisLabel: { color: '#536A78', fontSize: 12 },
+            splitLine: { lineStyle: { color: '#E2EBF0', type: 'dashed' } }
+          },
+          yAxis: {
+            type: 'value',
+            min: 0,
+            max: 1.05,
+            name: '损失 (MSE)',
+            nameTextStyle: { color: '#536A78', fontSize: 14 },
+            axisLine: { lineStyle: { color: '#536A78' } },
+            axisLabel: { color: '#536A78', fontSize: 12 },
+            splitLine: { lineStyle: { color: '#E2EBF0' } }
+          },
+          series: [
+            {
+              name: '训练集损失 (Train)',
+              type: 'line',
+              showSymbol: false,
+              smooth: true,
+              data: sim.train,
+              lineStyle: {
+                color: '#2F7568',
+                width: 2.5,
+                type: 'dashed'
+              },
+              itemStyle: { color: '#2F7568' }
+            },
+            {
+              name: '验证集损失 (Val)',
+              type: 'line',
+              showSymbol: false,
+              smooth: true,
+              data: sim.val,
+              lineStyle: {
+                color: '#C34B22',
+                width: 3.2
+              },
+              itemStyle: { color: '#C34B22' },
+              markPoint: {
+                symbol: 'circle',
+                symbolSize: 12,
+                data: [
+                  {
+                    name: '最佳早停点',
+                    coord: [sim.bestM, sim.minVal],
+                    itemStyle: { color: '#237052', borderColor: '#FFFFFF', borderWidth: 2 }
+                  }
+                ]
+              },
+              markLine: {
+                symbol: ['none', 'none'],
+                data: [
+                  {
+                    xAxis: sim.bestM,
+                    lineStyle: {
+                      color: '#237052',
+                      type: 'dotted',
+                      width: 2
+                    },
+                    label: {
+                      formatter: '早停截断点 M* = ' + sim.bestM,
+                      position: 'insideEndTop',
+                      color: '#237052',
+                      fontSize: 13,
+                      fontWeight: 'bold',
+                      padding: [0, 0, 0, 8]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        };
+
+        chart.setOption(option, true);
+      }
+
+      function clearActivePresets() {
+        dom.btnBal.classList.remove("active");
+        dom.btnFast.classList.remove("active");
+        dom.btnSlow.classList.remove("active");
+      }
+
+      // 监听交互
+      dom.inputEta.addEventListener("input", function(e) {
+        state.eta = parseFloat(e.target.value);
+        clearActivePresets();
+        updateDashboard();
+      });
+
+      dom.inputDepth.addEventListener("input", function(e) {
+        state.depth = parseInt(e.target.value, 10);
+        clearActivePresets();
+        updateDashboard();
+      });
+
+      dom.inputTrees.addEventListener("input", function(e) {
+        state.trees = parseInt(e.target.value, 10);
+        clearActivePresets();
+        updateDashboard();
+      });
+
+      // 预设模式
+      dom.btnBal.addEventListener("click", function() {
+        clearActivePresets();
+        this.classList.add("active");
+        state.eta = 0.10;
+        state.depth = 3;
+        state.trees = 55;
+        dom.inputEta.value = "0.10";
+        dom.inputDepth.value = "3";
+        dom.inputTrees.value = "55";
+        updateDashboard();
+      });
+
+      dom.btnFast.addEventListener("click", function() {
+        clearActivePresets();
+        this.classList.add("active");
+        state.eta = 0.40;
+        state.depth = 5;
+        state.trees = 100;
+        dom.inputEta.value = "0.40";
+        dom.inputDepth.value = "5";
+        dom.inputTrees.value = "100";
+        updateDashboard();
+      });
+
+      dom.btnSlow.addEventListener("click", function() {
+        clearActivePresets();
+        this.classList.add("active");
+        state.eta = 0.03;
+        state.depth = 2;
+        state.trees = 220;
+        dom.inputEta.value = "0.03";
+        dom.inputDepth.value = "2";
+        dom.inputTrees.value = "220";
+        updateDashboard();
+      });
+
+      window.addEventListener("resize", function() {
+        if (chart) chart.resize();
+      });
+
+      Deck.init({ index: 18, total: 27, keys: false });
+      updateDashboard();
+    })();
+  </script>
+</body>
+</html>

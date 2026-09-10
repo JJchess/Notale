@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      box-sizing: border-box;
+    }
+
+    header.page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: var(--line) solid var(--surface-strong);
+      padding-bottom: 12px;
+    }
+    .head-main {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .head-topic {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+    h1.page-title {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.15;
+      color: var(--text);
+    }
+    .head-stats {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .weight-rule-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .weight-rule-badge strong {
+      color: var(--text);
+      font-family: var(--font-num);
+    }
+
+    /* 主工作台：左侧推导看板与几何流，右侧公式与交互联动 */
+    .workbench {
+      display: grid;
+      grid-template-columns: 1000px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .card-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      position: relative;
+    }
+
+    .panel-header {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--surface-strong);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 样本演进看板 */
+    .vis-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      padding: 12px 18px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .distribution-lanes {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex: 1;
+      justify-content: center;
+    }
+
+    .round-row {
+      display: grid;
+      grid-template-columns: 190px 1fr;
+      align-items: center;
+      background: #ffffff;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px 16px;
+      position: relative;
+    }
+    .round-row.highlight-round {
+      border-color: var(--learner);
+      background: #fdfefe;
+      box-shadow: 0 2px 8px rgba(39,93,145,0.06);
+    }
+
+    .round-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .round-name {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .round-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      max-width: 100%;
+    }
+    .round-error-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      color: var(--aggregate);
+      margin-top: 2px;
+    }
+
+    .sample-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      gap: 8px;
+      height: 78px;
+      position: relative;
+    }
+
+    /* 样本气泡 / 权重圆盘 */
+    .sample-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 72px;
+      height: 100%;
+      position: relative;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: background var(--dur) var(--ease);
+      padding: 2px 0;
+    }
+    .sample-cell:hover, .sample-cell.selected {
+      background: rgba(39,93,145,0.06);
+    }
+    .sample-cell.selected {
+      outline: 2px solid var(--focus);
+    }
+
+    .sample-disc-wrap {
+      width: 52px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .sample-disc {
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: var(--font-num);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      transition: width var(--dur) var(--ease), height var(--dur) var(--ease), background var(--dur) var(--ease);
+    }
+    .sample-disc.type-pos {
+      background: var(--learner);
+    }
+    .sample-disc.type-neg {
+      background: #4a5d6e;
+    }
+    .sample-disc.status-mis {
+      box-shadow: 0 0 0 3px var(--aggregate);
+    }
+
+    .sample-sub {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      color: var(--muted);
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      white-space: nowrap;
+    }
+    .sample-sub.weight-up {
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+    .sample-sub.weight-down {
+      color: var(--correct);
+    }
+
+    /* 状态指示条 */
+    .round-divider-summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--surface-strong);
+    }
+    .state-box {
+      background: #ffffff;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+    .state-box-title {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .state-box-val {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .state-box-val .num {
+      font-family: var(--font-num);
+      font-size: 20px;
+    }
+
+    /* 右侧推导与解析板 */
+    .math-panel {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow: hidden;
+    }
+
+    .formula-block {
+      background: #ffffff;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .formula-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--learner);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .math-eq {
+      font-size: 19px;
+      color: var(--text);
+      line-height: 1.4;
+      padding: 8px 12px;
+      text-align: center;
+      background: var(--surface);
+      border-radius: 6px;
+      border: 1px dashed var(--surface-strong);
+      margin-bottom: 8px;
+    }
+
+    .formula-explain {
+      font-size: var(--fs-label);
+      line-height: 1.5;
+      color: var(--muted);
+      margin: 0;
+    }
+    .formula-explain strong {
+      color: var(--text);
+    }
+
+    .inspection-card {
+      background: #ffffff;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 16px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+    .inspection-card h3 {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      margin: 0;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .detail-item {
+      background: var(--surface);
+      padding: 8px 10px;
+      border-radius: 6px;
+    }
+    .detail-k {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .detail-v {
+      font-size: var(--fs-sec);
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--text);
+      margin-top: 2px;
+    }
+
+    .takeaway-box {
+      background: #edf3f7;
+      border-left: 3px solid var(--learner);
+      padding: 10px 12px;
+      border-radius: 0 6px 6px 0;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      margin-top: auto;
+    }
+    .takeaway-box strong {
+      color: var(--aggregate);
+    }
+
+    /* 底部控制器条 */
+    .step-controller {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 10px 20px;
+    }
+    .step-btns {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-step {
+      padding: 6px 16px;
+      border-radius: 6px;
+      border: 1px solid var(--surface-strong);
+      background: #ffffff;
+      color: var(--text);
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+    .btn-step:hover:not(:disabled) {
+      border-color: var(--learner);
+      color: var(--learner);
+    }
+    .btn-step:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .step-info {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .step-info span {
+      color: var(--text);
+      font-weight: 700;
+      font-family: var(--font-num);
+    }
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot-sample {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+  </style>
+</head>
+<body data-page="16" data-total="27">
+  <div id="stage">
+    <header class="page-head min0">
+      <div class="head-main">
+        <div class="head-topic">第三部分 · Boosting 机制</div>
+        <h1 class="page-title">AdaBoost 的样本权重：错分样本在下一轮获得更高关注度</h1>
+      </div>
+      <div class="head-stats">
+        <div class="weight-rule-badge">
+          <span>样本总数</span>
+          <strong>N = 10</strong>
+        </div>
+        <div class="weight-rule-badge">
+          <span>初始权重分布</span>
+          <strong>w₁(i) = 1/N = 0.100</strong>
+        </div>
+      </div>
+    </header>
+
+    <div class="workbench min0">
+      <!-- 左侧：3 轮迭代中 10 个样本的权重伸缩与分类实况 -->
+      <section class="card-panel min0">
+        <div class="panel-header min0">
+          <h2 class="panel-title">
+            <span>样本分布演变看板 (D₁ → D₂ → D₃)</span>
+          </h2>
+          <div class="legend-row">
+            <div class="legend-item">
+              <span class="dot-sample" style="background:var(--learner);"></span>
+              <span>正类 (+1)</span>
+            </div>
+            <div class="legend-item">
+              <span class="dot-sample" style="background:#4a5d6e;"></span>
+              <span>负类 (-1)</span>
+            </div>
+            <div class="legend-item">
+              <span class="dot-sample" style="border:2px solid var(--aggregate); width:10px; height:10px; background:transparent;"></span>
+              <span>当前轮被错分 (权重放大)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="vis-wrap min0">
+          <div class="distribution-lanes" id="lanesContainer">
+            <!-- 由 JS 动态渲染三轮样本权重状态 -->
+          </div>
+
+          <div class="round-divider-summary min0">
+            <div class="state-box">
+              <div class="state-box-title">第 1 轮加权误差率 ε₁ 与权重系数 α₁</div>
+              <div class="state-box-val">
+                <span>ε₁ = <span class="num">0.300</span></span>
+                <span style="color:var(--muted); font-size:14px; margin-left:8px;">α₁ = <span class="num" style="color:var(--learner)">0.424</span></span>
+              </div>
+            </div>
+            <div class="state-box">
+              <div class="state-box-title">第 2 轮加权误差率 ε₂ 与权重系数 α₂</div>
+              <div class="state-box-val">
+                <span>ε₂ = <span class="num">0.214</span></span>
+                <span style="color:var(--muted); font-size:14px; margin-left:8px;">α₂ = <span class="num" style="color:var(--learner)">0.649</span></span>
+              </div>
+            </div>
+            <div class="state-box">
+              <div class="state-box-title">归一化因子 Zt 的刚性保证</div>
+              <div class="state-box-val">
+                <span>Σ w_t(i) ≡ <span class="num" style="color:var(--correct)">1.000</span></span>
+                <span style="color:var(--muted); font-size:13px; margin-left:8px;">(概率分布保真)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：更新公式与选定样本聚焦核验 -->
+      <section class="card-panel min0 math-panel">
+        <div class="formula-block min0">
+          <div class="formula-title">
+            <span>权重迭代公式</span>
+            <span style="font-size:var(--fs-tick); font-weight:normal; color:var(--muted);">逐点重权</span>
+          </div>
+          <div class="math-eq" id="formulaKatex">
+            w_{t+1}(i) = \frac{w_t(i)}{Z_t} \exp\big(-\alpha_t y_i h_t(x_i)\big)
+          </div>
+          <p class="formula-explain">
+            其中 <strong>y_i h_t(x_i)</strong> 为分类正确性标识：<br>
+            • 预测正确时为 <strong>+1</strong>，权重乘以 <strong>e^{-α_t} &lt; 1</strong>（衰减降权）；<br>
+            • 预测错误时为 <strong>-1</strong>，权重乘以 <strong>e^{+α_t} &gt; 1</strong>（指数膨胀）。
+          </p>
+        </div>
+
+        <div class="inspection-card min0" id="detailCard">
+          <h3>
+            <span id="inspectSampleId">选定样本核验：x₄</span>
+            <span id="inspectSampleLabel" class="tag" style="background:var(--learner); color:#fff; padding:2px 8px; border-radius:4px; font-size:13px;">y = +1</span>
+          </h3>
+          <div class="detail-grid min0">
+            <div class="detail-item">
+              <div class="detail-k">初始权重 w₁</div>
+              <div class="detail-v" id="detailW1">0.100</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-k">第 1 轮判定 h₁(x)</div>
+              <div class="detail-v" id="detailH1" style="color:var(--aggregate);">-1 (错分)</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-k">更新倍率 factor</div>
+              <div class="detail-v" id="detailFactor">× 1.528 (e^{+0.424})</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-k">第 2 轮权重 w₂</div>
+              <div class="detail-v" id="detailW2" style="color:var(--aggregate);">0.167 (+67%)</div>
+            </div>
+          </div>
+          <p id="inspectNote" style="font-size:var(--fs-label); color:var(--muted); line-height:1.45; margin-top:4px;">
+            该样本在第 1 轮被弱学习器误判为负类，因此在下一轮权重显著拉高，强迫弱分类器 h₂ 必须优先把分界面挪向该点。
+          </p>
+        </div>
+
+        <div class="takeaway-box min0">
+          <strong>关注度转移本质：</strong>基学习器不需要具备强大的非线性拟合力，每一轮仅需比随机猜测稍优（ε &lt; 0.5）。AdaBoost 用权重涨跌构筑“动态关注度”，逼迫后续模型专攻硬骨头。
+        </div>
+      </section>
+    </div>
+
+    <!-- 底部控制与步进交互 -->
+    <footer class="step-controller min0">
+      <div class="step-info">
+        当前观察轮次：<span id="currentRoundLabel">第 1 轮 → 第 2 轮权重转移</span>
+        （点击上方任意样本气泡可查看详细计算）
+      </div>
+      <div class="step-btns">
+        <button class="btn-step" id="prevBtn" disabled>上一轮演变</button>
+        <button class="btn-step" id="nextBtn">下一轮演变</button>
+        <button class="btn-step" id="resetBtn">重置初始状态</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      // 10个经典 1D AdaBoost 教学推导样本数据
+      // x: 0..9, y: [+1, +1, +1, -1, -1, -1, +1, +1, +1, -1]
+      // 真实 AdaBoost 离散分类桩基准数据
+      const SAMPLES = [
+        { id: 1, x: 0, y: 1 },
+        { id: 2, x: 1, y: 1 },
+        { id: 3, x: 2, y: 1 },
+        { id: 4, x: 3, y: -1 },
+        { id: 5, x: 4, y: -1 },
+        { id: 6, x: 5, y: -1 },
+        { id: 7, x: 6, y: 1 },
+        { id: 8, x: 7, y: 1 },
+        { id: 9, x: 8, y: 1 },
+        { id: 10, x: 9, y: -1 }
+      ];
+
+      // 3 轮推导数据 (按标准 AdaBoost 计算)
+      // Round 1: h1 splits at x=2.5 => points 7,8,9 misclassified? Or standard threshold at 2.5: x<2.5 => +1 else -1.
+      // Misclassified: 7, 8, 9 (y=+1 but predicted -1). error eps1 = 0.3. alpha1 = 0.5*ln(0.7/0.3) = 0.4236.
+      // Round 2: weights updated. h2 splits at x=8.5: x>8.5 => -1 else +1. Misclassified: 4, 5, 6.
+      // Round 3: weights updated.
+      const ROUNDS = [
+        {
+          round: 1,
+          name: "第 1 轮：初始均匀分布 D₁",
+          desc: "分类阈值 x < 2.5",
+          errorRate: 0.300,
+          alpha: 0.424,
+          rule: "h₁(x) = 1 (x < 2.5) 否则 -1",
+          // 0,1,2 正确(+1); 3,4,5 正确(-1); 6,7,8 错分(+1被判为-1); 9 正确(-1) => 错分点为 7,8,9 (index 6,7,8)
+          mis: [7, 8, 9],
+          weights: [0.100, 0.100, 0.100, 0.100, 0.100, 0.100, 0.100, 0.100, 0.100, 0.100]
+        },
+        {
+          round: 2,
+          name: "第 2 轮：聚焦前序错分点 D₂",
+          desc: "分类阈值 x > 8.5",
+          errorRate: 0.214,
+          alpha: 0.649,
+          rule: "h₂(x) = -1 (x > 8.5) 否则 1",
+          // 在上一轮被错分的 7,8,9 权重从 0.100 暴增到 0.167
+          // 4,5,6 (实际为-1) 在此轮被 h2 误判为 +1 => 错分点为 4,5,6
+          mis: [4, 5, 6],
+          weights: [0.071, 0.071, 0.071, 0.071, 0.071, 0.071, 0.167, 0.167, 0.167, 0.071]
+        },
+        {
+          round: 3,
+          name: "第 3 轮：两极攻坚与精细调权 D₃",
+          desc: "分类阈值 x > 5.5",
+          errorRate: 0.182,
+          alpha: 0.751,
+          rule: "h₃(x) 重点压制中间与两端混杂区",
+          mis: [1, 2, 3],
+          weights: [0.045, 0.045, 0.045, 0.166, 0.166, 0.166, 0.106, 0.106, 0.106, 0.045]
+        }
+      ];
+
+      let currentRoundIdx = 1; // 默认展示第2轮视角
+      let selectedSampleId = 7; // 默认选中在第1轮被错分的关键样本 x7
+
+      const lanesContainer = document.getElementById("lanesContainer");
+      const prevBtn = document.getElementById("prevBtn");
+      const nextBtn = document.getElementById("nextBtn");
+      const resetBtn = document.getElementById("resetBtn");
+      const currentRoundLabel = document.getElementById("currentRoundLabel");
+
+      const inspectSampleId = document.getElementById("inspectSampleId");
+      const inspectSampleLabel = document.getElementById("inspectSampleLabel");
+      const detailW1 = document.getElementById("detailW1");
+      const detailH1 = document.getElementById("detailH1");
+      const detailFactor = document.getElementById("detailFactor");
+      const detailW2 = document.getElementById("detailW2");
+      const inspectNote = document.getElementById("inspectNote");
+
+      function renderLanes() {
+        lanesContainer.innerHTML = "";
+
+        ROUNDS.forEach((r, rIdx) => {
+          const row = document.createElement("div");
+          row.className = "round-row" + (rIdx === currentRoundIdx ? " highlight-round" : "");
+
+          const meta = document.createElement("div");
+          meta.className = "round-meta min0";
+          meta.innerHTML = `
+            <div class="round-name">${r.name.split("：")[0]}</div>
+            <div class="round-desc" title="${r.desc}">${r.desc}</div>
+            <div class="round-error-tag">加权误差 ε = ${r.errorRate.toFixed(3)}</div>
+          `;
+          row.appendChild(meta);
+
+          const strip = document.createElement("div");
+          strip.className = "sample-strip min0";
+
+          SAMPLES.forEach((s) => {
+            const w = r.weights[s.id - 1];
+            const isMis = r.mis.includes(s.id);
+            const isSelected = (s.id === selectedSampleId);
+
+            // 尺寸由权重决定：从 20px 到 46px
+            // 权重 0.045 -> 22px, 0.100 -> 30px, 0.167 -> 44px
+            const discSize = Math.round(18 + (w / 0.167) * 26);
+
+            const cell = document.createElement("div");
+            cell.className = "sample-cell" + (isSelected ? " selected" : "");
+            cell.dataset.id = s.id;
+            cell.title = `样本 x${s.id} (y = ${s.y > 0 ? '+1' : '-1'}) | 权重: ${w.toFixed(3)}`;
+
+            let subClass = "";
+            let subText = w.toFixed(3);
+            if (rIdx > 0) {
+              const prevW = ROUNDS[rIdx - 1].weights[s.id - 1];
+              if (w > prevW) {
+                subClass = "weight-up";
+                subText = `↑ ${w.toFixed(3)}`;
+              } else if (w < prevW) {
+                subClass = "weight-down";
+                subText = `↓ ${w.toFixed(3)}`;
+              }
+            }
+
+            cell.innerHTML = `
+              <div class="sample-disc-wrap">
+                <div class="sample-disc ${s.y > 0 ? 'type-pos' : 'type-neg'} ${isMis ? 'status-mis' : ''}"
+                     style="width: ${discSize}px; height: ${discSize}px;">
+                  ${s.y > 0 ? '+' : '−'}
+                </div>
+              </div>
+              <div class="sample-sub ${subClass}">x${s.id}: ${subText}</div>
+            `;
+
+            cell.addEventListener("click", () => {
+              selectedSampleId = s.id;
+              updateDetailCard();
+              renderLanes();
+            });
+
+            strip.appendChild(cell);
+          });
+
+          row.appendChild(strip);
+          lanesContainer.appendChild(row);
+        });
+
+        // 按钮状态与标签
+        prevBtn.disabled = (currentRoundIdx === 0);
+        nextBtn.disabled = (currentRoundIdx === ROUNDS.length - 1);
+        currentRoundLabel.textContent = `第 ${currentRoundIdx + 1} 轮 · ${ROUNDS[currentRoundIdx].name.split("：")[1]}`;
+      }
+
+      function updateDetailCard() {
+        const s = SAMPLES.find(item => item.id === selectedSampleId);
+        const r1 = ROUNDS[0];
+        const r2 = ROUNDS[1];
+        const r3 = ROUNDS[2];
+
+        inspectSampleId.textContent = `选定样本核验：x${s.id}`;
+        inspectSampleLabel.textContent = `真实标签 y = ${s.y > 0 ? '+1' : '-1'}`;
+        inspectSampleLabel.style.background = s.y > 0 ? "var(--learner)" : "#4a5d6e";
+
+        if (currentRoundIdx <= 1) {
+          // 比较轮次 1 到 2
+          const w1 = r1.weights[s.id - 1];
+          const w2 = r2.weights[s.id - 1];
+          const isMis1 = r1.mis.includes(s.id);
+          
+          detailW1.textContent = w1.toFixed(3);
+          detailH1.textContent = isMis1 ? `${s.y > 0 ? '-1' : '+1'} (错分)` : `${s.y > 0 ? '+1' : '-1'} (正确)`;
+          detailH1.style.color = isMis1 ? "var(--aggregate)" : "var(--correct)";
+
+          const factorStr = isMis1 ? "× 1.528 (e^{+0.424})" : "× 0.654 (e^{-0.424})";
+          detailFactor.textContent = factorStr;
+
+          const pctChange = Math.round(((w2 - w1) / w1) * 100);
+          detailW2.textContent = `${w2.toFixed(3)} (${pctChange >= 0 ? '+' : ''}${pctChange}%)`;
+          detailW2.style.color = isMis1 ? "var(--aggregate)" : "var(--correct)";
+
+          if (isMis1) {
+            inspectNote.innerHTML = `样本 <strong>x${s.id}</strong> 在第 1 轮被弱学习器 h₁ 误分类，因指数项乘以 <strong>e^{+α₁} = 1.528</strong>，归一化后权重从 <strong>0.100</strong> 暴增至 <strong>${w2.toFixed(3)}</strong>，迫使 h₂ 重点处理。`;
+          } else {
+            inspectNote.innerHTML = `样本 <strong>x${s.id}</strong> 在第 1 轮分类正确，权重乘以 <strong>e^{-α₁} = 0.654</strong>，归一化后降至 <strong>${w2.toFixed(3)}</strong>，模型关注度向错分点倾斜。`;
+          }
+        } else {
+          // 比较轮次 2 到 3
+          const w2 = r2.weights[s.id - 1];
+          const w3 = r3.weights[s.id - 1];
+          const isMis2 = r2.mis.includes(s.id);
+
+          detailW1.textContent = w2.toFixed(3);
+          detailH1.textContent = isMis2 ? `${s.y > 0 ? '-1' : '+1'} (第2轮错分)` : `${s.y > 0 ? '+1' : '-1'} (正确)`;
+          detailH1.style.color = isMis2 ? "var(--aggregate)" : "var(--correct)";
+
+          const factorStr = isMis2 ? "× 1.913 (e^{+0.649})" : "× 0.523 (e^{-0.649})";
+          detailFactor.textContent = factorStr;
+
+          const pctChange = Math.round(((w3 - w2) / w2) * 100);
+          detailW2.textContent = `${w3.toFixed(3)} (${pctChange >= 0 ? '+' : ''}${pctChange}%)`;
+          detailW2.style.color = isMis2 ? "var(--aggregate)" : "var(--correct)";
+
+          if (isMis2) {
+            inspectNote.innerHTML = `样本 <strong>x${s.id}</strong> 在第 2 轮被错分，权重从 <strong>${w2.toFixed(3)}</strong> 进一步跃升至 <strong>${w3.toFixed(3)}</strong>，成为第 3 轮必须优先克服的焦点。`;
+          } else {
+            inspectNote.innerHTML = `样本 <strong>x${s.id}</strong> 在第 2 轮分类正确，权重被进一步压制至 <strong>${w3.toFixed(3)}</strong>。`;
+          }
+        }
+      }
+
+      prevBtn.addEventListener("click", () => {
+        if (currentRoundIdx > 0) {
+          currentRoundIdx--;
+          renderLanes();
+          updateDetailCard();
+        }
+      });
+
+      nextBtn.addEventListener("click", () => {
+        if (currentRoundIdx < ROUNDS.length - 1) {
+          currentRoundIdx++;
+          renderLanes();
+          updateDetailCard();
+        }
+      });
+
+      resetBtn.addEventListener("click", () => {
+        currentRoundIdx = 0;
+        selectedSampleId = 7;
+        renderLanes();
+        updateDetailCard();
+      });
+
+      // 初始化
+      if (window.katex) {
+        katex.render("w_{t+1}(i) = \\frac{w_t(i)}{Z_t} \\exp\\big(-\\alpha_t y_i h_t(x_i)\\big)", document.getElementById("formulaKatex"), {
+          throwOnError: false,
+          displayMode: true
+        });
+      }
+      renderLanes();
+      updateDetailCard();
+      Deck.init({ index: 16, total: 27, keys: false });
+    })();
+  </script>
+</body>
+</html>

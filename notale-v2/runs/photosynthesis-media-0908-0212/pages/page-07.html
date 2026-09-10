@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --spec-blue: #235d8a;
+      --spec-green: #3d8a55;
+      --spec-red: #c04128;
+    }
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+    header {
+      margin-bottom: 18px;
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0 0 6px 0;
+      color: var(--text);
+    }
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: 820px 1fr;
+      gap: 36px;
+      flex: 1;
+      min-height: 0;
+    }
+    /* 左侧光谱与吸收曲线图谱 */
+    .spectrum-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .chart-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+    #spectrum-cv {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    /* 波长控制滑块条 */
+    .slider-row {
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .slider-row label {
+      font-size: var(--fs-label);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .slider-track {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 10px;
+      border-radius: 5px;
+      background: linear-gradient(to right,
+        #4f2f84 0%,
+        #2940ab 16.6%,
+        #1e8fa8 33.3%,
+        #3b9942 50%,
+        #cbb01a 66.6%,
+        #d1591f 83.3%,
+        #b51a1a 100%);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 3px solid var(--text);
+      cursor: pointer;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    }
+    .presets {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .btn-preset {
+      background: transparent;
+      border: 1px solid var(--rule);
+      padding: 5px 12px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all var(--motion-fast) var(--ease-out);
+    }
+    .btn-preset:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+    .btn-preset.active {
+      border-color: var(--focus);
+      background: var(--focus);
+      color: #fff;
+    }
+    /* 右侧试管分光与定量读数区 */
+    .cuvette-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 0;
+      padding-left: 20px;
+      border-left: 1px solid var(--rule);
+    }
+    .cuvette-box {
+      position: relative;
+      height: 260px;
+    }
+    #cuvette-cv {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .metric-card {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .metric-val {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      color: var(--text);
+    }
+    .metric-val small {
+      font-size: var(--fs-sec);
+      font-family: var(--font-sans);
+      color: var(--muted);
+      margin-left: 4px;
+    }
+    #val-primary {
+      font-size: var(--fs-h2) !important;
+      line-height: var(--lh-tight) !important;
+    }
+    .observation {
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--text);
+      border-top: 1px solid var(--rule);
+      padding-top: 14px;
+      margin-top: 10px;
+    }
+    .observation b {
+      color: var(--focus);
+    }
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 6px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-line {
+      width: 16px;
+      height: 3px;
+      border-radius: 2px;
+    }
+  </style>
+</head>
+<body data-page="07" data-total="25">
+  <div id="stage">
+    <header>
+      <h1>光合色素的波长吸收模拟与分光比色</h1>
+      <p class="lead">调节单色入射光波长，观察叶绿素提取液的吸光比色与透过强度</p>
+    </header>
+
+    <main class="workspace">
+      <!-- 左：吸收光谱主图 -->
+      <section class="spectrum-panel min0" aria-label="吸收光谱与波长控制">
+        <div class="chart-container min0">
+          <canvas id="spectrum-cv" class="cv-fill"></canvas>
+        </div>
+        <div class="legend-row">
+          <div class="legend-item"><div class="legend-line" style="background:#17628E;"></div>叶绿素 a (430 nm / 662 nm)</div>
+          <div class="legend-item"><div class="legend-line" style="background:#4a824e;"></div>叶绿素 b (453 nm / 642 nm)</div>
+          <div class="legend-item"><div class="legend-line" style="background:#d9822b;"></div>类胡萝卜素 (400-500 nm)</div>
+        </div>
+        <div class="slider-row">
+          <label for="wavelength">入射波长 λ：<span id="lambda-text">430</span> nm</label>
+          <div class="slider-track">
+            <input type="range" id="wavelength" min="380" max="750" value="430" step="1">
+          </div>
+        </div>
+        <div class="presets" aria-label="典型光谱波段">
+          <button type="button" class="btn-preset active" data-wl="430">蓝紫峰 430nm</button>
+          <button type="button" class="btn-preset" data-wl="550">绿光谷 550nm</button>
+          <button type="button" class="btn-preset" data-wl="660">红光峰 660nm</button>
+          <button type="button" class="btn-preset" data-wl="720">远红光 720nm</button>
+        </div>
+      </section>
+
+      <!-- 右：比色皿光路与读数 -->
+      <section class="cuvette-panel min0" aria-label="比色皿光路与读数">
+        <div>
+          <div class="cuvette-box">
+            <canvas id="cuvette-cv" class="cv-fill"></canvas>
+          </div>
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <span class="metric-label">吸光度 (OD)</span>
+              <span class="metric-val" id="val-od">1.48<small>A</small></span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">透光率 (T)</span>
+              <span class="metric-val" id="val-t">3.3<small>%</small></span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">叶绿素相对吸收</span>
+              <span class="metric-val" id="val-abs">96.7<small>%</small></span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">主要吸收色素</span>
+              <span class="metric-val" id="val-primary">叶绿素 a</span>
+            </div>
+          </div>
+        </div>
+        <div class="observation" id="obs-text">
+          <b>蓝紫光区（430 nm）</b>：处于叶绿素 a 最强吸收峰，光能绝大部分被吸收转化，透过光极弱。
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看，通过调节单色光波长，我们可以直观验证叶绿体中光合色素的选择性吸收特征。
+    当波长滑到 430 纳米与 660 纳米附近时，叶绿素 a 和 b 出现双重吸收峰，试管透光率骤降至 5% 以下；
+    而在 550 纳米的绿光区，色素吸收降到极低谷，透光率高达 85% 以上。这就是植物在日光下呈现绿色的根本物理原因——绝大部分绿光无法被捕获而被透射或反射。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 光学吸收模型：叶绿素 a、叶绿素 b 和类胡萝卜素的标准吸收近似高斯/洛伦兹曲线
+      function gauss(x, mu, sigma, amp) {
+        return amp * Math.exp(-0.5 * Math.pow((x - mu) / sigma, 2));
+      }
+
+      function getAbsorption(wl) {
+        // 叶绿素 a: 主峰 430nm, 次峰 662nm
+        const chla = gauss(wl, 430, 16, 0.95) + gauss(wl, 410, 20, 0.4) + gauss(wl, 662, 18, 0.88) + gauss(wl, 615, 18, 0.15);
+        // 叶绿素 b: 主峰 453nm, 次峰 642nm
+        const chlb = gauss(wl, 453, 17, 0.85) + gauss(wl, 430, 15, 0.35) + gauss(wl, 642, 17, 0.62) + gauss(wl, 600, 16, 0.12);
+        // 类胡萝卜素: 400 - 500nm 双肩峰
+        const caro = gauss(wl, 445, 22, 0.72) + gauss(wl, 472, 18, 0.68) + gauss(wl, 425, 20, 0.45);
+
+        // 混合叶绿体提取液综合相对吸光度 (0 - 1.0 标定)
+        const combined = Math.min(1.0, chla * 0.55 + chlb * 0.35 + caro * 0.2);
+        return { chla, chlb, caro, combined };
+      }
+
+      // 波长转 RGB 颜色显示
+      function wavelengthToRGB(wl) {
+        let r = 0, g = 0, b = 0;
+        if (wl >= 380 && wl < 440) {
+          r = -(wl - 440) / (440 - 380);
+          b = 1.0;
+        } else if (wl >= 440 && wl < 490) {
+          g = (wl - 440) / (490 - 440);
+          b = 1.0;
+        } else if (wl >= 490 && wl < 510) {
+          g = 1.0;
+          b = -(wl - 510) / (510 - 490);
+        } else if (wl >= 510 && wl < 580) {
+          r = (wl - 510) / (580 - 510);
+          g = 1.0;
+        } else if (wl >= 580 && wl < 645) {
+          r = 1.0;
+          g = -(wl - 645) / (645 - 580);
+        } else if (wl >= 645 && wl <= 750) {
+          r = 1.0;
+        }
+
+        // 边缘强度衰减
+        let factor = 1.0;
+        if (wl < 420) factor = 0.3 + 0.7 * (wl - 380) / (420 - 380);
+        else if (wl > 700) factor = 0.3 + 0.7 * (750 - wl) / (750 - 700);
+
+        return {
+          r: Math.round(r * factor * 255),
+          g: Math.round(g * factor * 255),
+          b: Math.round(b * factor * 255)
+        };
+      }
+
+      const spectrumCanvas = document.getElementById("spectrum-cv");
+      const cuvetteCanvas = document.getElementById("cuvette-cv");
+      const slider = document.getElementById("wavelength");
+      const lambdaText = document.getElementById("lambda-text");
+      const presetBtns = document.querySelectorAll(".btn-preset");
+
+      const valOd = document.getElementById("val-od");
+      const valT = document.getElementById("val-t");
+      const valAbs = document.getElementById("val-abs");
+      const valPrimary = document.getElementById("val-primary");
+      const obsText = document.getElementById("obs-text");
+
+      let currentWl = 430;
+
+      // 绘制光谱图
+      function drawSpectrum(ctx) {
+        const w = spectrumCanvas.clientWidth;
+        const h = spectrumCanvas.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const padLeft = 46;
+        const padRight = 20;
+        const padTop = 30;
+        const padBottom = 40;
+        const plotW = w - padLeft - padRight;
+        const plotH = h - padTop - padBottom;
+
+        // 坐标变换
+        const wlToX = wl => padLeft + ((wl - 380) / (750 - 380)) * plotW;
+        const absToY = val => padTop + plotH - (val / 1.0) * plotH;
+
+        // 背景网格线
+        ctx.strokeStyle = "#cad4d8";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let a = 0; a <= 1.0; a += 0.25) {
+          const y = absToY(a);
+          ctx.moveTo(padLeft, y);
+          ctx.lineTo(padLeft + plotW, y);
+        }
+        for (let l = 400; l <= 700; l += 50) {
+          const x = wlToX(l);
+          ctx.moveTo(x, padTop);
+          ctx.lineTo(x, padTop + plotH);
+        }
+        ctx.stroke();
+
+        // 刻度标签
+        ctx.fillStyle = "#50616B";
+        ctx.font = "12px sans-serif";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        for (let a = 0; a <= 1.0; a += 0.25) {
+          ctx.fillText(a.toFixed(2), padLeft - 8, absToY(a));
+        }
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        for (let l = 400; l <= 700; l += 50) {
+          ctx.fillText(l, wlToX(l), padTop + plotH + 8);
+        }
+        ctx.fillText("波长 λ (nm)", padLeft + plotW / 2, padTop + plotH + 24);
+
+        // 轴线
+        ctx.strokeStyle = "#71828B";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(padLeft, padTop);
+        ctx.lineTo(padLeft, padTop + plotH);
+        ctx.lineTo(padLeft + plotW, padTop + plotH);
+        ctx.stroke();
+
+        // 曲线绘制函数
+        function drawCurve(dataKey, color, strokeW) {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = strokeW;
+          ctx.beginPath();
+          for (let l = 380; l <= 750; l++) {
+            const val = getAbsorption(l)[dataKey];
+            const x = wlToX(l);
+            const y = absToY(val);
+            if (l === 380) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+
+        // 绘制三条主要色素曲线
+        drawCurve("caro", "#d9822b", 2);
+        drawCurve("chlb", "#4a824e", 2);
+        drawCurve("chla", "#17628E", 2.5);
+
+        // 当前指示游标线
+        const curX = wlToX(currentWl);
+        ctx.strokeStyle = "#B83D0B";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(curX, padTop);
+        ctx.lineTo(curX, padTop + plotH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 游标交点标记
+        const curAbs = getAbsorption(currentWl);
+        [
+          { val: curAbs.chla, col: "#17628E" },
+          { val: curAbs.chlb, col: "#4a824e" },
+          { val: curAbs.caro, col: "#d9822b" }
+        ].forEach(pt => {
+          ctx.fillStyle = pt.col;
+          ctx.beginPath();
+          ctx.arc(curX, absToY(pt.val), 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "#fff";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        });
+      }
+
+      // 绘制比色皿与光路
+      function drawCuvette(ctx) {
+        const w = cuvetteCanvas.clientWidth;
+        const h = cuvetteCanvas.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const curRgb = wavelengthToRGB(currentWl);
+        const lightColor = `rgb(${curRgb.r}, ${curRgb.g}, ${curRgb.b})`;
+        const absData = getAbsorption(currentWl);
+
+        // 提取液综合透过强度 (0.02 到 0.95)
+        const transRatio = Math.max(0.02, 1.0 - absData.combined * 0.94);
+
+        // 比色皿几何位置
+        const cuvW = 90;
+        const cuvH = 170;
+        const cuvX = w / 2 - cuvW / 2;
+        const cuvY = (h - cuvH) / 2;
+
+        const beamY = h / 2;
+        const beamH = 36;
+
+        // 1. 入射光束 (左侧到比色皿)
+        const gradIn = ctx.createLinearGradient(10, beamY, cuvX, beamY);
+        gradIn.addColorStop(0, `rgba(${curRgb.r}, ${curRgb.g}, ${curRgb.b}, 0.95)`);
+        gradIn.addColorStop(1, `rgba(${curRgb.r}, ${curRgb.g}, ${curRgb.b}, 0.9)`);
+        ctx.fillStyle = gradIn;
+        ctx.fillRect(20, beamY - beamH / 2, cuvX - 20, beamH);
+
+        // 入射标签
+        ctx.fillStyle = "#50616B";
+        ctx.font = "13px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("入射光 I₀ (100%)", (20 + cuvX) / 2, beamY - beamH / 2 - 8);
+
+        // 2. 透过光束 (比色皿右侧到边缘)
+        const outAlpha = Math.min(0.95, Math.max(0.08, transRatio));
+        ctx.fillStyle = `rgba(${curRgb.r}, ${curRgb.g}, ${curRgb.b}, ${outAlpha})`;
+        ctx.fillRect(cuvX + cuvW, beamY - beamH / 2, w - cuvX - cuvW - 30, beamH);
+
+        // 透过标签
+        ctx.fillStyle = "#50616B";
+        ctx.fillText(`透过光 I (${(transRatio * 100).toFixed(1)}%)`, (cuvX + cuvW + w - 30) / 2, beamY - beamH / 2 - 8);
+
+        // 3. 比色皿主体（装有叶绿体绿色提取液）
+        ctx.fillStyle = "rgba(42, 133, 68, 0.45)"; // 绿色提取液
+        ctx.fillRect(cuvX, cuvY + 15, cuvW, cuvH - 15);
+
+        // 内部衰减光晕
+        const gradInside = ctx.createLinearGradient(cuvX, beamY, cuvX + cuvW, beamY);
+        gradInside.addColorStop(0, `rgba(${curRgb.r}, ${curRgb.g}, ${curRgb.b}, 0.7)`);
+        gradInside.addColorStop(1, `rgba(${curRgb.r}, ${curRgb.g}, ${curRgb.b}, ${outAlpha})`);
+        ctx.fillStyle = gradInside;
+        ctx.fillRect(cuvX, beamY - beamH / 2, cuvW, beamH);
+
+        // 比色皿玻璃外框
+        ctx.strokeStyle = "#50616B";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(cuvX, cuvY, cuvW, cuvH);
+
+        ctx.fillStyle = "#142630";
+        ctx.font = "14px sans-serif";
+        ctx.fillText("叶绿体提取液", cuvX + cuvW / 2, cuvY + cuvH + 20);
+      }
+
+      function updateData() {
+        const absData = getAbsorption(currentWl);
+        const transRatio = Math.max(0.02, 1.0 - absData.combined * 0.94);
+        // 比尔朗伯定律近似计算 OD
+        const od = -Math.log10(transRatio);
+
+        lambdaText.textContent = currentWl;
+        valOd.innerHTML = `${od.toFixed(2)}<small>A</small>`;
+        valT.innerHTML = `${(transRatio * 100).toFixed(1)}<small>%</small>`;
+        valAbs.innerHTML = `${((1 - transRatio) * 100).toFixed(1)}<small>%</small>`;
+
+        // 主导吸收色素判定
+        let dominant = "无强烈吸收";
+        if (absData.chla > absData.chlb && absData.chla > absData.caro && absData.chla > 0.3) {
+          dominant = "叶绿素 a";
+        } else if (absData.chlb > absData.chla && absData.chlb > absData.caro && absData.chlb > 0.3) {
+          dominant = "叶绿素 b";
+        } else if (absData.caro > 0.3) {
+          dominant = "类胡萝卜素";
+        }
+        valPrimary.textContent = dominant;
+
+        // 动态教学结论
+        if (currentWl >= 420 && currentWl <= 460) {
+          obsText.innerHTML = `<b>蓝紫光峰（${currentWl} nm）</b>：处于叶绿素与类胡萝卜素强吸收带，光子被高效捕获，吸光度极高。`;
+        } else if (currentWl >= 520 && currentWl <= 570) {
+          obsText.innerHTML = `<b>绿光透射区（${currentWl} nm）</b>：色素分子几乎不吸收此波段，透光率高达 ${(transRatio * 100).toFixed(0)}%，因而植物呈绿色。`;
+        } else if (currentWl >= 640 && currentWl <= 675) {
+          obsText.innerHTML = `<b>红光吸收峰（${currentWl} nm）</b>：叶绿素 a/b 的第二大吸收主峰，驱动光反应水光解与电子传递。`;
+        } else if (currentWl > 700) {
+          obsText.innerHTML = `<b>远红光区（${currentWl} nm）</b>：超出光合有效辐射 (PAR) 主要吸收带，吸收迅速衰退。`;
+        } else {
+          obsText.innerHTML = `<b>过渡光谱（${currentWl} nm）</b>：混合色素吸收适中，吸收与透射处于平衡态。`;
+        }
+      }
+
+      let specFit, cuvFit;
+
+      function renderAll() {
+        updateData();
+        if (specFit) specFit.redraw();
+        if (cuvFit) cuvFit.redraw();
+      }
+
+      function setWavelength(val) {
+        currentWl = parseInt(val, 10);
+        slider.value = currentWl;
+        presetBtns.forEach(btn => {
+          btn.classList.toggle("active", parseInt(btn.dataset.wl, 10) === currentWl);
+        });
+        renderAll();
+      }
+
+      slider.addEventListener("input", e => {
+        setWavelength(e.target.value);
+      });
+
+      presetBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          setWavelength(btn.dataset.wl);
+        });
+      });
+
+      specFit = Deck.autofit(spectrumCanvas, drawSpectrum);
+      cuvFit = Deck.autofit(cuvetteCanvas, drawCuvette);
+
+      Deck.init({ index: 7, total: 25, keys: false });
+      renderAll();
+    })();
+  </script>
+</body>
+</html>

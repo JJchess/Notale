@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>AdaBoost 轮次推进（模拟训练）</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F4F7FB;
+      --surface: #E8EEF5;
+      --text: #13243A;
+      --muted: #53667C;
+      --model: #2457A6;
+      --aggregate: #0F766E;
+      --focus: #C94B00;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: "DIN Alternate", "Bahnschrift", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      flex: 0 0 auto;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      margin: 6px 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    main {
+      flex: 1 1 0;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 20px;
+    }
+
+    .plane-panel {
+      display: flex;
+      flex-direction: column;
+      background: #FFFFFF;
+      border: var(--line) solid var(--surface);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      position: relative;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: var(--fs-label);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-mark {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .legend-mark.pos { background: var(--model); }
+    .legend-mark.neg { background: var(--focus); }
+    .legend-line {
+      width: 20px;
+      height: 0;
+      border-top: 2px dashed var(--model);
+    }
+    .legend-agg {
+      width: 20px;
+      height: 0;
+      border-top: 4px solid var(--aggregate);
+    }
+
+    .canvas-box {
+      flex: 1 1 0;
+      min-height: 0;
+      position: relative;
+    }
+
+    .canvas-box canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .control-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .metric-card {
+      background: #FFFFFF;
+      border: var(--line) solid var(--surface);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+
+    .card-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+    .stat-row:last-child { margin-bottom: 0; }
+
+    .stat-label {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .stat-val {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .stat-val.accent { color: var(--aggregate); }
+    .stat-val.model { color: var(--model); }
+
+    .history-card {
+      flex: 1 1 auto;
+      min-height: 0;
+      background: transparent;
+      border: var(--line) solid var(--surface);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .history-list {
+      flex: 1 1 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-right: 4px;
+    }
+
+    .stump-item {
+      border: 1px solid var(--surface);
+      border-radius: 6px;
+      padding: 8px 12px;
+      background: var(--bg);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+    }
+    .stump-item.active {
+      border-color: var(--model);
+      background: #EEF4FD;
+    }
+
+    .stump-name {
+      font-weight: 700;
+      color: var(--model);
+      font-family: var(--font-numeric);
+    }
+    .stump-rule {
+      font-family: var(--font-numeric);
+      color: var(--text);
+    }
+    .stump-alpha {
+      font-family: var(--font-numeric);
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    .action-group {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      flex: 1;
+      height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius);
+      border: 2px solid var(--text);
+      background: var(--text);
+      color: #FFFFFF;
+      font-size: var(--fs-body);
+      font-weight: 700;
+      cursor: pointer;
+      transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+    }
+    .btn:hover:not(:disabled) {
+      background: var(--model);
+      border-color: var(--model);
+    }
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .btn.secondary {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--muted);
+      flex: 0 0 80px;
+    }
+    .btn.secondary:hover:not(:disabled) {
+      border-color: var(--text);
+      background: var(--surface);
+    }
+  </style>
+</head>
+<body data-page="18" data-total="29">
+  <div id="stage">
+    <header>
+      <h1>AdaBoost 轮次推进：样本加权与基分类器级联</h1>
+      <p class="lead">误分类样本权重大幅递增，促使后续弱分类器转向补偿难分区域；加权聚合收敛出非线性强边界。</p>
+    </header>
+
+    <main>
+      <section class="plane-panel min0">
+        <div class="panel-header">
+          <div class="legend-row">
+            <span class="legend-item"><i class="legend-mark pos"></i> 正样本 (+1)</span>
+            <span class="legend-item"><i class="legend-mark neg"></i> 负样本 (-1)</span>
+            <span class="legend-item"><i class="legend-line"></i> 本轮单桩阈值 (hₘ)</span>
+            <span class="legend-item"><i class="legend-agg"></i> 累积集成边界 (H)</span>
+          </div>
+          <span style="font-size:var(--fs-label); color:var(--muted)">点半径与当前样本权重 wᵢ 成正比</span>
+        </div>
+        <div class="canvas-box min0">
+          <canvas id="cv" class="cv-fill"></canvas>
+        </div>
+      </section>
+
+      <aside class="control-panel min0">
+        <div class="metric-card">
+          <div class="card-title">当前轮次指标 (Round <span id="lbl-round">1</span> / 5)</div>
+          <div class="stat-row">
+            <span class="stat-label">加权错误率 εₘ</span>
+            <span class="stat-val model" id="lbl-eps">0.300</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">分类器权重 αₘ</span>
+            <span class="stat-val model" id="lbl-alpha">0.424</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">集成错分点</span>
+            <span class="stat-val accent" id="lbl-ens-err">2 / 10</span>
+          </div>
+        </div>
+
+        <div class="history-card min0">
+          <div class="card-title">基学习器级联序列</div>
+          <div class="history-list" id="stump-list">
+            <!-- 动态填充 -->
+          </div>
+        </div>
+
+        <div class="action-group">
+          <button id="btn-step" class="btn" type="button">训练下一轮</button>
+          <button id="btn-reset" class="btn secondary" type="button">重置</button>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    在 AdaBoost 中，每个基学习器都是极简单的决策单桩（单轴一次切分）。
+    初态下所有样本权重均等，第一轮单桩只能横向或纵向切一刀，必定留下错分样本。
+    根据错分率计算模型权重 α 后，错分点的权重被乘上指数因子而显著放大，正确点被抑制。
+    下一轮单桩被迫把注意力集中在这些加重的大圆点上，寻找新的正交切分面。
+    随着轮次叠加，各个基分类器依据 α 线性加权组合，原先不可线性分割的数据集逐渐被刻画出高精度的集成决策面。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 经典的 10 个二维交互样本点，交错分布，不可单桩线性可分
+    const SAMPLES = [
+      { id: 0, x: 1.0, y: 5.0, yTrue: 1 },
+      { id: 1, x: 2.0, y: 2.0, yTrue: 1 },
+      { id: 2, x: 3.0, y: 7.0, yTrue: 1 },
+      { id: 3, x: 4.0, y: 3.5, yTrue: -1 },
+      { id: 4, x: 5.0, y: 6.0, yTrue: -1 },
+      { id: 5, x: 6.0, y: 2.5, yTrue: -1 },
+      { id: 6, x: 7.0, y: 8.0, yTrue: 1 },
+      { id: 7, x: 8.0, y: 4.5, yTrue: -1 },
+      { id: 8, x: 8.5, y: 7.5, yTrue: 1 },
+      { id: 9, x: 9.0, y: 1.5, yTrue: -1 }
+    ];
+
+    const MAX_ROUNDS = 5;
+
+    // 寻找在当前权重下的最佳决策单桩 (Decision Stump)
+    function findBestStump(weights) {
+      let bestErr = Infinity;
+      let bestStump = null;
+
+      const axes = ['x', 'y'];
+      for (const axis of axes) {
+        const vals = SAMPLES.map(p => p[axis]).sort((a, b) => a - b);
+        const thresholds = [];
+        thresholds.push(vals[0] - 0.5);
+        for (let i = 0; i < vals.length - 1; i++) {
+          thresholds.push((vals[i] + vals[i + 1]) / 2);
+        }
+        thresholds.push(vals[vals.length - 1] + 0.5);
+
+        for (const th of thresholds) {
+          for (const sign of [1, -1]) { // sign=1: val >= th 为 +1, 否则 -1; sign=-1 反之
+            let err = 0;
+            for (let i = 0; i < SAMPLES.length; i++) {
+              const p = SAMPLES[i];
+              const pred = (p[axis] >= th) ? sign : -sign;
+              if (pred !== p.yTrue) {
+                err += weights[i];
+              }
+            }
+            if (err < bestErr - 1e-6) {
+              bestErr = err;
+              bestStump = { axis, th, sign, err };
+            }
+          }
+        }
+      }
+      return bestStump;
+    }
+
+    // 预测函数
+    function evalStump(stump, x, y) {
+      const v = (stump.axis === 'x') ? x : y;
+      return (v >= stump.th) ? stump.sign : -stump.sign;
+    }
+
+    // 集成预测
+    function evalEnsemble(stumps, x, y) {
+      if (!stumps || stumps.length === 0) return 0;
+      let sum = 0;
+      for (const s of stumps) {
+        sum += s.alpha * evalStump(s, x, y);
+      }
+      return sum;
+    }
+
+    // 状态机
+    let state = {
+      round: 0,
+      weights: SAMPLES.map(() => 1 / SAMPLES.length),
+      stumps: [],
+      history: []
+    };
+
+    function stepAdaBoost() {
+      if (state.round >= MAX_ROUNDS) return;
+
+      const stump = findBestStump(state.weights);
+      const eps = Math.max(1e-4, Math.min(0.4999, stump.err));
+      const alpha = 0.5 * Math.log((1 - eps) / eps);
+      stump.alpha = alpha;
+
+      const newStumps = [...state.stumps, stump];
+
+      // 更新权重
+      let newWeights = state.weights.map((w, i) => {
+        const p = SAMPLES[i];
+        const pred = evalStump(stump, p.x, p.y);
+        return w * Math.exp(-alpha * p.yTrue * pred);
+      });
+      const sumW = newWeights.reduce((a, b) => a + b, 0);
+      newWeights = newWeights.map(w => w / sumW);
+
+      state.round += 1;
+      state.stumps = newStumps;
+      state.weights = newWeights;
+      state.history.push({ stump, eps, alpha });
+
+      renderUI();
+      draw();
+    }
+
+    function resetAdaBoost() {
+      state = {
+        round: 0,
+        weights: SAMPLES.map(() => 1 / SAMPLES.length),
+        stumps: [],
+        history: []
+      };
+      // 执行第一轮
+      stepAdaBoost();
+    }
+
+    // 渲染 UI 数据与历史
+    function renderUI() {
+      const curRound = state.round;
+      const latest = state.history[curRound - 1];
+
+      document.getElementById('lbl-round').textContent = curRound;
+      document.getElementById('lbl-eps').textContent = latest ? latest.eps.toFixed(3) : '-';
+      document.getElementById('lbl-alpha').textContent = latest ? latest.alpha.toFixed(3) : '-';
+
+      // 统计集成错误数
+      let ensErrCount = 0;
+      SAMPLES.forEach(p => {
+        const pred = Math.sign(evalEnsemble(state.stumps, p.x, p.y));
+        if (pred !== p.yTrue) ensErrCount++;
+      });
+      document.getElementById('lbl-ens-err').textContent = `${ensErrCount} / ${SAMPLES.length}`;
+
+      // 按钮状态
+      const btnStep = document.getElementById('btn-step');
+      btnStep.disabled = (curRound >= MAX_ROUNDS);
+      if (curRound >= MAX_ROUNDS) {
+        btnStep.textContent = '训练收敛完成';
+      } else {
+        btnStep.textContent = `训练第 ${curRound + 1} 轮`;
+      }
+
+      // 列表
+      const listEl = document.getElementById('stump-list');
+      listEl.innerHTML = '';
+      state.history.forEach((h, idx) => {
+        const item = document.createElement('div');
+        item.className = 'stump-item' + (idx === curRound - 1 ? ' active' : '');
+        const cmp = h.stump.sign === 1 ? '≥' : '<';
+        const axisName = h.stump.axis.toUpperCase();
+        item.innerHTML = `
+          <div>
+            <span class="stump-name">h${idx + 1}:</span>
+            <span class="stump-rule">${axisName} ${cmp} ${h.stump.th.toFixed(1)}</span>
+          </div>
+          <div class="stump-alpha">α=${h.alpha.toFixed(2)}</div>
+        `;
+        listEl.appendChild(item);
+      });
+    }
+
+    // Canvas 绘制
+    const cv = document.getElementById('cv');
+    let ctx = null;
+
+    function draw(canvasCtx) {
+      const c = canvasCtx || ctx;
+      if (!c) return;
+      const w = cv.width;
+      const h = cv.height;
+
+      c.clearRect(0, 0, w, h);
+
+      // 坐标映射 [0, 10] -> 留边距画布
+      const padX = 50;
+      const padY = 40;
+      const plotW = w - padX * 2;
+      const plotH = h - padY * 2;
+
+      function toScreenX(x) { return padX + (x / 10) * plotW; }
+      function toScreenY(y) { return h - padY - (y / 10) * plotH; }
+
+      // 1. 绘制网格与底图背景集成决策区域
+      const resolution = 70;
+      const stepX = 10 / resolution;
+      const stepY = 10 / resolution;
+      for (let i = 0; i < resolution; i++) {
+        for (let j = 0; j < resolution; j++) {
+          const gx = (i + 0.5) * stepX;
+          const gy = (j + 0.5) * stepY;
+          const score = evalEnsemble(state.stumps, gx, gy);
+          if (score > 0) {
+            c.fillStyle = 'rgba(36, 87, 166, 0.08)'; // 正样本区域蓝
+          } else if (score < 0) {
+            c.fillStyle = 'rgba(201, 75, 0, 0.08)'; // 负样本区域橙
+          } else {
+            continue;
+          }
+          const sx = toScreenX(i * stepX);
+          const sy = toScreenY((j + 1) * stepY);
+          const sw = (stepX / 10) * plotW + 0.8;
+          const sh = (stepY / 10) * plotH + 0.8;
+          c.fillRect(sx, sy, sw, sh);
+        }
+      }
+
+      // 2. 绘制坐标轴及网格
+      c.strokeStyle = '#D5DFEA';
+      c.lineWidth = 1;
+      c.beginPath();
+      for (let g = 1; g < 10; g++) {
+        c.moveTo(toScreenX(g), toScreenY(0));
+        c.lineTo(toScreenX(g), toScreenY(10));
+        c.moveTo(toScreenX(0), toScreenY(g));
+        c.lineTo(toScreenX(10), toScreenY(g));
+      }
+      c.stroke();
+
+      c.strokeStyle = '#94A3B8';
+      c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(toScreenX(0), toScreenY(0));
+      c.lineTo(toScreenX(10), toScreenY(0));
+      c.moveTo(toScreenX(0), toScreenY(0));
+      c.lineTo(toScreenX(0), toScreenY(10));
+      c.stroke();
+
+      // 3. 绘制最新单桩的决策边界 (虚线)
+      const latest = state.history[state.history.length - 1];
+      if (latest) {
+        c.save();
+        c.strokeStyle = '#2457A6';
+        c.lineWidth = 2.5;
+        c.setLineDash([8, 6]);
+        c.beginPath();
+        if (latest.stump.axis === 'x') {
+          const sx = toScreenX(latest.stump.th);
+          c.moveTo(sx, toScreenY(0));
+          c.lineTo(sx, toScreenY(10));
+        } else {
+          const sy = toScreenY(latest.stump.th);
+          c.moveTo(toScreenX(0), sy);
+          c.lineTo(toScreenX(10), sy);
+        }
+        c.stroke();
+        c.restore();
+      }
+
+      // 4. 绘制集成决策边界 (score = 0 的等值线，加粗绿色)
+      c.save();
+      c.strokeStyle = '#0F766E';
+      c.lineWidth = 4;
+      c.setLineDash([]);
+      for (let i = 0; i < resolution - 1; i++) {
+        for (let j = 0; j < resolution - 1; j++) {
+          const x1 = i * stepX, x2 = (i + 1) * stepX;
+          const y1 = j * stepY, y2 = (j + 1) * stepY;
+          const s1 = evalEnsemble(state.stumps, x1, y1);
+          const s2 = evalEnsemble(state.stumps, x2, y1);
+          const s3 = evalEnsemble(state.stumps, x1, y2);
+          if ((s1 > 0 && s2 <= 0) || (s1 <= 0 && s2 > 0)) {
+            const crossX = x1 + (x2 - x1) * (0 - s1) / (s2 - s1);
+            c.fillStyle = '#0F766E';
+            c.fillRect(toScreenX(crossX) - 2.5, toScreenY(y1) - 2.5, 5, 5);
+          }
+          if ((s1 > 0 && s3 <= 0) || (s1 <= 0 && s3 > 0)) {
+            const crossY = y1 + (y2 - y1) * (0 - s1) / (s3 - s1);
+            c.fillStyle = '#0F766E';
+            c.fillRect(toScreenX(x1) - 2.5, toScreenY(crossY) - 2.5, 5, 5);
+          }
+        }
+      }
+      c.restore();
+
+      // 5. 绘制样本点（半径按当前轮次权重 w 放大）
+      SAMPLES.forEach((p, i) => {
+        const wVal = state.weights[i];
+        const r = Math.max(7, Math.min(26, 7 + (wVal * 10 - 1) * 8.5));
+        const sx = toScreenX(p.x);
+        const sy = toScreenY(p.y);
+
+        const ensPred = Math.sign(evalEnsemble(state.stumps, p.x, p.y));
+        const isEnsWrong = (ensPred !== p.yTrue);
+
+        c.save();
+        c.beginPath();
+        c.arc(sx, sy, r, 0, Math.PI * 2);
+        c.fillStyle = (p.yTrue === 1) ? '#2457A6' : '#C94B00';
+        c.fill();
+
+        if (isEnsWrong) {
+          c.strokeStyle = '#C94B00';
+          c.lineWidth = 3.5;
+          c.stroke();
+        } else {
+          c.strokeStyle = '#FFFFFF';
+          c.lineWidth = 2.5;
+          c.stroke();
+        }
+
+        // 中心标号与符号
+        c.fillStyle = '#FFFFFF';
+        c.font = 'bold 14px "DIN Alternate", sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.fillText(p.yTrue === 1 ? '+' : '−', sx, sy);
+        c.restore();
+      });
+    }
+
+    document.getElementById('btn-step').addEventListener('click', () => {
+      stepAdaBoost();
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      resetAdaBoost();
+    });
+
+    // 初始化底盘与画布
+    Deck.init({ index: 18, total: 29, keys: false });
+    Deck.autofit(cv, (fittedCtx) => {
+      ctx = fittedCtx;
+      draw(fittedCtx);
+    });
+    resetAdaBoost();
+  </script>
+</body>
+</html>

@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bagging 与随机森林</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+:root {
+  --stage-w: 1600px;
+  --stage-h: 900px;
+}
+
+#stage {
+  position: relative;
+  width: 1600px;
+  height: 900px;
+  padding: var(--pad-y) var(--pad-x);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+}
+
+/* 背景生成式画布层 */
+.canvas-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* 标题区排版 */
+.header-area {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 900px;
+  margin-top: 36px;
+}
+
+.kicker-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.kicker-tag {
+  font-family: var(--font-sans);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.title-main {
+  font-size: 58px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin: 0;
+}
+
+.lead-desc {
+  font-size: 21px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 740px;
+  margin: 0;
+}
+
+/* 底部机制注释与签名 */
+.footer-row {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  border-top: 1px solid rgba(83, 106, 120, 0.22);
+  padding-top: 24px;
+}
+
+.concepts-group {
+  display: flex;
+  gap: 40px;
+}
+
+.concept-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 320px;
+}
+
+.concept-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.concept-label .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot-sample { background: var(--sample); }
+.dot-model { background: var(--model); }
+.dot-agg { background: var(--aggregate); }
+
+.concept-text {
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--muted);
+  margin: 0;
+}
+
+.brand-meta {
+  text-align: right;
+  font-size: var(--fs-sec);
+  color: var(--muted);
+}
+.brand-meta strong {
+  color: var(--text);
+  font-weight: 600;
+}
+  </style>
+</head>
+<body data-page="06" data-total="27">
+  <div id="stage">
+    <figure class="canvas-layer" aria-hidden="true">
+      <canvas id="forest-canvas" class="cv-fill"></canvas>
+      <canvas id="flow-canvas" class="cv-fill"></canvas>
+    </figure>
+
+    <header class="header-area">
+      <div class="kicker-row">
+        <span class="kicker-tag">Chapter 02</span>
+      </div>
+      <h1 class="title-main">Bagging 与随机森林</h1>
+      <p class="lead-desc">
+        从同一数据池重采样出多样化样本，并行训练多棵高方差决策树，并通过特征子采样进一步打破同构相关性，最终通过投票与平均合成稳健预测。
+      </p>
+    </header>
+
+    <footer class="footer-row">
+      <div class="concepts-group">
+        <div class="concept-item">
+          <span class="concept-label" style="color: var(--sample);">
+            <span class="dot dot-sample"></span>Bootstrap 重采样
+          </span>
+          <p class="concept-text">通过有放回抽样构造互有差异的训练子集，赋予基学习器数据扰动。</p>
+        </div>
+        <div class="concept-item">
+          <span class="concept-label" style="color: var(--model);">
+            <span class="dot dot-model"></span>树间去相关
+          </span>
+          <p class="concept-text">在分裂节点引入特征随机子采样，避免主导特征导致决策树结构同质化。</p>
+        </div>
+        <div class="concept-item">
+          <span class="concept-label" style="color: var(--aggregate);">
+            <span class="dot dot-agg"></span>平均削弱方差
+          </span>
+          <p class="concept-text">集合多个低偏差、高方差的独立判断，在保持准确度的同时平抑预测波动。</p>
+        </div>
+      </div>
+
+      <div class="brand-meta">
+        <div>机器学习概论第八讲</div>
+        <strong>集成学习理论与演进</strong>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+  (function(){
+    'use strict';
+
+    Deck.init({ index: 6, total: 27, keys: false });
+
+    var forestCanvas = document.getElementById('forest-canvas');
+    var flowCanvas = document.getElementById('flow-canvas');
+
+    // 严谨确定性生成规格
+    var CONFIG = Object.freeze({
+      seed: 8848,
+      treeCount: 5,
+      convergenceX: 1380,
+      convergenceY: 410,
+      titleSafeZone: Object.freeze({ x: 0, y: 0, w: 980, h: 420 })
+    });
+
+    function rngFrom(seed) {
+      var state = (seed >>> 0) || 1;
+      return function() {
+        state += 0x6D2B79F5;
+        var t = state;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    // 生成五棵并行的分叉决策树，并在末端由弱到强汇聚到聚合中心
+    function buildForestModel() {
+      var rng = rngFrom(CONFIG.seed);
+      var trees = [];
+      var leafNodes = [];
+      var baseRoots = [
+        { x: 920, y: 680 },
+        { x: 1040, y: 695 },
+        { x: 1160, y: 685 },
+        { x: 1280, y: 675 },
+        { x: 1400, y: 670 }
+      ];
+
+      baseRoots.forEach(function(root, treeIdx) {
+        var segments = [];
+        var nodes = [];
+
+        function growBranch(x, y, angle, length, depth, branchIdx) {
+          nodes.push({ x: x, y: y, depth: depth });
+          if (depth >= 5) {
+            leafNodes.push({ x: x, y: y, treeIdx: treeIdx });
+            return;
+          }
+
+          // 向右上/上方生长
+          var nx = x + Math.cos(angle) * length;
+          var ny = y + Math.sin(angle) * length;
+
+          segments.push({
+            x1: x, y1: y,
+            x2: nx, y2: ny,
+            depth: depth,
+            treeIdx: treeIdx
+          });
+
+          // 分裂角度：模拟特征子采样造成的非对称分叉
+          var spread = 0.38 + rng() * 0.22;
+          var lenDecay = 0.76 + rng() * 0.08;
+
+          growBranch(nx, ny, angle - spread, length * lenDecay, depth + 1, 0);
+          growBranch(nx, ny, angle + spread * 0.9, length * lenDecay, depth + 1, 1);
+        }
+
+        var initAngle = -Math.PI / 2 + (rng() - 0.5) * 0.22 - (treeIdx - 2) * 0.08;
+        growBranch(root.x, root.y, initAngle, 84 + rng() * 16, 0, 0);
+
+        trees.push({
+          root: root,
+          treeIdx: treeIdx,
+          segments: segments,
+          nodes: nodes
+        });
+      });
+
+      // 聚合流线：从各叶子节点流向最终预测汇聚中心 (convergenceX, convergenceY)
+      var convergenceLines = [];
+      leafNodes.forEach(function(leaf, idx) {
+        var cx = CONFIG.convergenceX;
+        var cy = CONFIG.convergenceY;
+        // 采样三阶贝塞尔曲线控制点
+        var cp1x = leaf.x + (cx - leaf.x) * 0.4;
+        var cp1y = leaf.y - 20 - rng() * 40;
+        var cp2x = leaf.x + (cx - leaf.x) * 0.8;
+        var cp2y = cy + (rng() - 0.5) * 30;
+
+        convergenceLines.push({
+          x0: leaf.x, y0: leaf.y,
+          cp1x: cp1x, cp1y: cp1y,
+          cp2x: cp2x, cp2y: cp2y,
+          x1: cx, y1: cy,
+          treeIdx: leaf.treeIdx,
+          id: idx
+        });
+      });
+
+      return {
+        trees: trees,
+        leafNodes: leafNodes,
+        convergenceLines: convergenceLines,
+        dest: { x: CONFIG.convergenceX, y: CONFIG.convergenceY }
+      };
+    }
+
+    var model = buildForestModel();
+
+    // 绘制静态底图（网格底纹、5棵树、叶节点到汇聚点的束流）
+    function drawForestStatic(ctx, w, h) {
+      ctx.clearRect(0, 0, w, h);
+
+      // 1. 微弱的坐标网格与数据空间参考底
+      ctx.save();
+      ctx.strokeStyle = 'rgba(83, 106, 120, 0.05)';
+      ctx.lineWidth = 1;
+      for (var x = 840; x <= w; x += 60) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, 720);
+        ctx.stroke();
+      }
+      for (var y = 80; y <= 720; y += 60) {
+        ctx.beginPath();
+        ctx.moveTo(840, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      // 2. 汇聚目标（集成终态）外发光区
+      var targetGrad = ctx.createRadialGradient(
+        model.dest.x, model.dest.y, 8,
+        model.dest.x, model.dest.y, 140
+      );
+      targetGrad.addColorStop(0, 'rgba(195, 75, 34, 0.18)');
+      targetGrad.addColorStop(0.6, 'rgba(195, 75, 34, 0.04)');
+      targetGrad.addColorStop(1, 'rgba(195, 75, 34, 0)');
+      ctx.fillStyle = targetGrad;
+      ctx.beginPath();
+      ctx.arc(model.dest.x, model.dest.y, 140, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 3. 绘制汇聚引导束线（微细半透明贝塞尔曲线）
+      ctx.lineWidth = 1;
+      model.convergenceLines.forEach(function(line) {
+        ctx.strokeStyle = 'rgba(195, 75, 34, 0.14)';
+        ctx.beginPath();
+        ctx.moveTo(line.x0, line.y0);
+        ctx.bezierCurveTo(line.cp1x, line.cp1y, line.cp2x, line.cp2y, line.x1, line.y1);
+        ctx.stroke();
+      });
+
+      // 4. 绘制五棵决策树分支
+      model.trees.forEach(function(tree) {
+        tree.segments.forEach(function(seg) {
+          var width = Math.max(1.2, 4.4 - seg.depth * 0.7);
+          var alpha = 0.85 - seg.depth * 0.08;
+          ctx.strokeStyle = 'rgba(39, 100, 143, ' + alpha + ')'; // --model
+          ctx.lineWidth = width;
+          ctx.beginPath();
+          ctx.moveTo(seg.x1, seg.y1);
+          ctx.lineTo(seg.x2, seg.y2);
+          ctx.stroke();
+        });
+
+        // 决策树分裂节点（决策判断点）
+        tree.nodes.forEach(function(nd) {
+          if (nd.depth < 5) {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.arc(nd.x, nd.y, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(39, 100, 143, 0.9)';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+          }
+        });
+      });
+
+      // 5. 叶子节点采样特征点（各树的独立输出）
+      model.leafNodes.forEach(function(leaf) {
+        ctx.fillStyle = 'rgba(47, 117, 104, 0.9)'; // --sample 概念
+        ctx.beginPath();
+        ctx.arc(leaf.x, leaf.y, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(leaf.x, leaf.y, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // 6. 最终汇聚点标记（集成输出锚点）
+      ctx.fillStyle = 'rgba(195, 75, 34, 0.95)'; // --aggregate
+      ctx.beginPath();
+      ctx.arc(model.dest.x, model.dest.y, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(195, 75, 34, 0.9)';
+      ctx.font = '600 13px system-ui, sans-serif';
+      ctx.fillText('集成聚合', model.dest.x - 26, model.dest.y - 18);
+
+      ctx.restore();
+    }
+
+    // 动态流光粒子（流动沿树枝上升，再沿贝塞尔曲线汇聚至集成点）
+    function getBezierPoint(t, p0, p1, p2, p3) {
+      var u = 1 - t;
+      var tt = t * t;
+      var uu = u * u;
+      var uuu = uu * u;
+      var ttt = tt * t;
+      var x = uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x;
+      var y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+      return { x: x, y: y };
+    }
+
+    function drawFlowAnimation(ctx, time) {
+      var w = flowCanvas.width || 1600;
+      var h = flowCanvas.height || 900;
+      ctx.clearRect(0, 0, w, h);
+
+      if (Deck.reduced()) return;
+
+      ctx.save();
+      // 在汇聚线路上流动的高光脉冲粒子
+      var lines = model.convergenceLines;
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        // 错开相位
+        var progress = ((time / 3200) + (i * 0.083)) % 1;
+        var pt = getBezierPoint(
+          progress,
+          { x: line.x0, y: line.y0 },
+          { x: line.cp1x, y: line.cp1y },
+          { x: line.cp2x, y: line.cp2y },
+          { x: line.x1, y: line.y1 }
+        );
+
+        var radius = 2.2 * Math.sin(progress * Math.PI);
+        ctx.fillStyle = 'rgba(195, 75, 34, ' + (0.75 * Math.sin(progress * Math.PI)) + ')';
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, Math.max(0.6, radius), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 汇聚中心的轻柔光晕呼吸
+      var pulse = 0.5 + 0.5 * Math.sin(time / 450);
+      ctx.strokeStyle = 'rgba(195, 75, 34, ' + (0.2 + pulse * 0.25) + ')';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(model.dest.x, model.dest.y, 10 + pulse * 7, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    Deck.autofit(forestCanvas, drawForestStatic);
+    var flowFit = Deck.autofit(flowCanvas, function(ctx) {
+      drawFlowAnimation(ctx, 0);
+    });
+
+    Deck.loop(function(time) {
+      var ctx = flowCanvas.getContext('2d');
+      if (ctx) drawFlowAnimation(ctx, time);
+    }, { still: 1600 });
+
+  })();
+  </script>
+</body>
+</html>

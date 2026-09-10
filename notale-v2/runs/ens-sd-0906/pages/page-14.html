@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Boosting 的序列纠错机制</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E3E8E6;
+      --text: #142A2D;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      background: var(--bg);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .subhead {
+      margin-top: 6px;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-tight);
+    }
+
+    .stepper {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .step-btn {
+      background: var(--surface);
+      border: 1.5px solid var(--rule);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: all var(--motion-fast);
+    }
+
+    .step-btn:hover {
+      border-color: var(--model);
+    }
+
+    .step-btn.active {
+      background: var(--model);
+      border-color: var(--model);
+      color: var(--on-model);
+    }
+
+    /* 主网格 */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 24px;
+      flex: 1;
+      margin-bottom: 14px;
+    }
+
+    .round-card {
+      background: var(--surface);
+      border: 1.5px solid var(--rule);
+      border-radius: 8px;
+      padding: 16px 20px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      transition: border-color var(--motion-base), box-shadow var(--motion-base);
+    }
+
+    .round-card.is-active {
+      border-color: var(--focus);
+      box-shadow: 0 0 0 1px var(--focus);
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+
+    .card-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .card-badge {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      letter-spacing: 0.5px;
+    }
+
+    .round-card.is-active .card-badge {
+      color: var(--focus);
+      font-weight: 700;
+    }
+
+    .plot-container {
+      position: relative;
+      width: 100%;
+      height: 440px;
+    }
+
+    .plot-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .card-verdict {
+      margin-top: 10px;
+      border-top: 1px dashed var(--rule);
+      padding-top: 10px;
+      min-height: 48px;
+    }
+
+    .verdict-line {
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .verdict-line strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .verdict-line .focus-txt {
+      color: var(--focus);
+      font-weight: 700;
+    }
+
+    /* 底部收束结论条 */
+    .summary-strip {
+      background: var(--surface);
+      border: 1.5px solid var(--rule);
+      border-radius: 6px;
+      padding: 14px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .summary-text {
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--text);
+      margin: 0;
+    }
+
+    .legend-group {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .legend-line {
+      width: 22px;
+      height: 3px;
+      background: var(--model);
+    }
+  </style>
+</head>
+<body data-page="14" data-total="24">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>Boosting 的序列接力：紧盯未解残差</h1>
+        <div class="subhead">串行迭代中，下一轮基学习器以当前尚未拟合好的残差为学习目标</div>
+      </div>
+      <div class="stepper" role="group" aria-label="迭代轮数控制">
+        <button class="step-btn" data-step="0" id="btn-0">第 1 轮</button>
+        <button class="step-btn" data-step="1" id="btn-1">第 2 轮</button>
+        <button class="step-btn active" data-step="2" id="btn-2">第 3 轮集成</button>
+      </div>
+    </header>
+
+    <div class="comparison-grid">
+      <!-- 轮次 1 -->
+      <div class="round-card" id="card-0">
+        <div class="card-top">
+          <div class="card-title">基学习器 1</div>
+          <div class="card-badge">残差 MSE: 0.38</div>
+        </div>
+        <div class="plot-container">
+          <canvas class="plot-canvas" id="cv-0"></canvas>
+        </div>
+        <div class="card-verdict">
+          <p class="verdict-line">单一粗树拟合全景，中部凸峰与边缘遗漏 <strong class="focus-txt">较大残差</strong>。</p>
+        </div>
+      </div>
+
+      <!-- 轮次 2 -->
+      <div class="round-card" id="card-1">
+        <div class="card-top">
+          <div class="card-title">基学习器 2（拟合残差 1）</div>
+          <div class="card-badge">残差 MSE: 0.14</div>
+        </div>
+        <div class="plot-container">
+          <canvas class="plot-canvas" id="cv-1"></canvas>
+        </div>
+        <div class="card-verdict">
+          <p class="verdict-line">放弃已学平坦区，仅在 <strong class="focus-txt">前序亏空区间</strong> 重点纠错补偿。</p>
+        </div>
+      </div>
+
+      <!-- 轮次 3 -->
+      <div class="round-card is-active" id="card-2">
+        <div class="card-top">
+          <div class="card-title">加法集成累加</div>
+          <div class="card-badge">最终 MSE: 0.03</div>
+        </div>
+        <div class="plot-container">
+          <canvas class="plot-canvas" id="cv-2"></canvas>
+        </div>
+        <div class="card-verdict">
+          <p class="verdict-line">累加三轮弱学习器：多段纠错轨迹汇为一条 <strong style="color:var(--model)">精准逼近主线</strong>。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="summary-strip">
+      <p class="summary-text">
+        <strong>机制结论：</strong>不同于并行独立的 Bagging，Boosting 让后序学习器始终围绕未解误差施加算力，逐阶收敛偏差。
+      </p>
+      <div class="legend-group">
+        <div class="legend-item">
+          <span class="legend-dot" style="background: var(--sample);"></span>
+          <span>真实样本 y</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-line"></span>
+          <span>集成预测 F(x)</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-line" style="background: var(--focus); height: 2px; border-top: 1px dashed var(--focus);"></span>
+          <span>残差缺口</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学请看大屏幕。这一页展示的是 Boosting 的灵魂所在：序列化接力纠错。
+    在 Bagging 中，所有基模型平起平坐，分别在重抽样数据上独立拟合。但 Boosting 完全不同——它是有记忆、有承接的串行系统。
+    大家看左侧第一轮：弱分类器由于结构简单，只能粗糙拟合，在横轴 3 到 6 的凸峰处留下了巨大的垂直残差。
+    中间的第二轮学习器不再拿原始目标 y 作为训练信号，而是专门拟合第一轮没解出来的残差。
+    最后到第三轮，我们把这些弱学习器加权累加，原本单薄的弱模型就精准拼合出了复杂的目标函数。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      // 确定性样本点数据 (x: 1..10)
+      // 真实函数：非线性曲线 y = sin(x*0.7) + 0.3*x
+      const points = [
+        { x: 1.0, y: 0.95 },
+        { x: 2.0, y: 1.58 },
+        { x: 3.0, y: 1.76 },
+        { x: 4.0, y: 1.50 },
+        { x: 5.0, y: 1.15 },
+        { x: 6.0, y: 1.05 },
+        { x: 7.0, y: 1.42 },
+        { x: 8.0, y: 2.25 },
+        { x: 9.0, y: 2.85 },
+        { x: 10.0, y: 3.20 }
+      ];
+
+      // 学习器 1 预测（浅层决策树分段常数：x<4: 1.4, 4<=x<7: 1.2, x>=7: 2.5）
+      function predTree1(x) {
+        if (x < 4) return 1.40;
+        if (x < 7) return 1.22;
+        return 2.50;
+      }
+
+      // 残差 1 = y - predTree1
+      // 学习器 2 拟合残差 1
+      function predTree2(x) {
+        // 在 x 2~4 区间有 +0.35 的缺口，在 8~10 区间有 +0.55 的缺口，4~7 区间接近 0
+        if (x < 4.5) return 0.28;
+        if (x < 7.0) return -0.08;
+        return 0.48;
+      }
+
+      // 残差 2 = 残差 1 - predTree2
+      // 学习器 3 进一步补偿细微毛刺
+      function predTree3(x) {
+        if (x < 2.5) return -0.10;
+        if (x < 5.5) return 0.08;
+        if (x < 8.0) return -0.06;
+        return 0.16;
+      }
+
+      // 集成预测 F_m(x)
+      function ensemblePred(x, round) {
+        let val = predTree1(x);
+        if (round >= 1) val += predTree2(x);
+        if (round >= 2) val += predTree3(x);
+        return val;
+      }
+
+      const canvases = [
+        document.getElementById('cv-0'),
+        document.getElementById('cv-1'),
+        document.getElementById('cv-2')
+      ];
+
+      function drawPlot(cv, mode) {
+        const ctx = Deck.fit(cv);
+        const w = cv.parentElement.clientWidth;
+        const h = cv.parentElement.clientHeight;
+
+        ctx.clearRect(0, 0, w, h);
+
+        const pad = { left: 42, right: 24, top: 24, bottom: 32 };
+        const plotW = w - pad.left - pad.right;
+        const plotH = h - pad.top - pad.bottom;
+
+        // X: 0.5 -> 10.5, Y: 0.4 -> 3.6 (对卡片 1 和 3) / Y: -0.6 -> +0.8 (对卡片 2 残差)
+        const isResidual = (mode === 1);
+        const minY = isResidual ? -0.6 : 0.6;
+        const maxY = isResidual ? 0.8 : 3.5;
+
+        function toScreenX(x) {
+          return pad.left + ((x - 0.5) / 10.0) * plotW;
+        }
+        function toScreenY(y) {
+          return pad.top + ((maxY - y) / (maxY - minY)) * plotH;
+        }
+
+        // 背景虚线网格与坐标轴
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = Deck.token('--rule') || '#829492';
+        ctx.beginPath();
+        // X 轴
+        const zeroY = toScreenY(isResidual ? 0 : minY);
+        ctx.moveTo(pad.left, zeroY);
+        ctx.lineTo(pad.left + plotW, zeroY);
+        // Y 轴
+        ctx.moveTo(pad.left, pad.top);
+        ctx.lineTo(pad.left, pad.top + plotH);
+        ctx.stroke();
+
+        // 刻度文字
+        ctx.fillStyle = Deck.token('--muted') || '#485A59';
+        ctx.font = '14px "Noto Sans Mono", monospace';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+
+        if (isResidual) {
+          [-0.4, 0, 0.4].forEach(tick => {
+            const py = toScreenY(tick);
+            ctx.fillText((tick > 0 ? '+' : '') + tick.toFixed(1), pad.left - 8, py);
+            ctx.strokeStyle = tick === 0 ? 'rgba(130, 148, 146, 0.6)' : 'rgba(130, 148, 146, 0.25)';
+            ctx.beginPath();
+            ctx.moveTo(pad.left, py);
+            ctx.lineTo(pad.left + plotW, py);
+            ctx.stroke();
+          });
+        } else {
+          [1.0, 2.0, 3.0].forEach(tick => {
+            const py = toScreenY(tick);
+            ctx.fillText(tick.toFixed(1), pad.left - 8, py);
+            ctx.strokeStyle = 'rgba(130, 148, 146, 0.25)';
+            ctx.beginPath();
+            ctx.moveTo(pad.left, py);
+            ctx.lineTo(pad.left + plotW, py);
+            ctx.stroke();
+          });
+        }
+
+        // 绘制预测分段阶梯线
+        ctx.beginPath();
+        const step = 0.05;
+        let started = false;
+        for (let x = 0.8; x <= 10.2; x += step) {
+          let yVal;
+          if (mode === 0) {
+            yVal = predTree1(x);
+          } else if (mode === 1) {
+            yVal = predTree2(x);
+          } else {
+            yVal = ensemblePred(x, 2);
+          }
+          const sx = toScreenX(x);
+          const sy = toScreenY(yVal);
+          if (!started) {
+            ctx.moveTo(sx, sy);
+            started = true;
+          } else {
+            ctx.lineTo(sx, sy);
+          }
+        }
+
+        if (mode === 1) {
+          ctx.strokeStyle = Deck.token('--member') || '#688C91';
+          ctx.lineWidth = 3;
+        } else if (mode === 0) {
+          ctx.strokeStyle = Deck.token('--member') || '#688C91';
+          ctx.lineWidth = 2.5;
+        } else {
+          ctx.strokeStyle = Deck.token('--model') || '#245B67';
+          ctx.lineWidth = 3.5;
+        }
+        ctx.stroke();
+
+        // 绘制数据点与残差连线
+        points.forEach(pt => {
+          let targetY, predY;
+          if (mode === 0) {
+            targetY = pt.y;
+            predY = predTree1(pt.x);
+          } else if (mode === 1) {
+            targetY = pt.y - predTree1(pt.x); // 残差目标
+            predY = predTree2(pt.x);
+          } else {
+            targetY = pt.y;
+            predY = ensemblePred(pt.x, 2);
+          }
+
+          const sx = toScreenX(pt.x);
+          const syTarget = toScreenY(targetY);
+          const syPred = toScreenY(predY);
+
+          // 残差垂直线
+          const residualGap = Math.abs(targetY - predY);
+          if (residualGap > 0.06) {
+            ctx.strokeStyle = (mode === 2) ? Deck.token('--muted') : Deck.token('--focus');
+            ctx.lineWidth = (mode === 2) ? 1 : 1.8;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(sx, syTarget);
+            ctx.lineTo(sx, syPred);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+
+          // 样本点圆圈
+          ctx.fillStyle = Deck.token('--sample') || '#A77A24';
+          ctx.beginPath();
+          ctx.arc(sx, syTarget, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        });
+      }
+
+      function redrawAll() {
+        drawPlot(canvases[0], 0);
+        drawPlot(canvases[1], 1);
+        drawPlot(canvases[2], 2);
+      }
+
+      // 初始化底盘
+      Deck.init({ index: 14, total: 24, keys: false });
+
+      redrawAll();
+      window.addEventListener('resize', redrawAll);
+
+      // 交互高亮控制
+      const buttons = [
+        document.getElementById('btn-0'),
+        document.getElementById('btn-1'),
+        document.getElementById('btn-2')
+      ];
+      const cards = [
+        document.getElementById('card-0'),
+        document.getElementById('card-1'),
+        document.getElementById('card-2')
+      ];
+
+      function setActiveRound(idx) {
+        buttons.forEach((b, i) => b.classList.toggle('active', i === idx));
+        cards.forEach((c, i) => c.classList.toggle('is-active', i === idx));
+      }
+
+      buttons.forEach((btn, i) => {
+        btn.addEventListener('click', () => setActiveRound(i));
+      });
+
+      window.setStep = setActiveRound;
+    })();
+  </script>
+</body>
+</html>

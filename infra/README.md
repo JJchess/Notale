@@ -1,9 +1,26 @@
-# infra —— Claude Code 轨迹采集台
+# infra —— Agent 轨迹采集台
 
 从 `~/work/Motale/infra` 迁来(2026-09-06)。`harness-kit/` 领域无关,`experiments/` 按实验放定义。
 方法论见 `harness-kit/METHOD.md`。
 
-## 一行命令
+## Codex / GPT-6 Astra
+
+并行 kit：[`codex-harness-kit/`](codex-harness-kit/README.md)。默认 `gpt-6-astra / high`，
+独立 HOME/工作目录，原生 rollout + HTTP/SSE/WebSocket 请求记录，退出后归档、脱敏和测量。
+主实验为 [PPTX template2html](experiments/template2html/README.md)：将整套 PPTX 模板转成可复用、可接入互动讲义的 HTML，重点观测素材提取/代码重建/生图编辑的决策。运行数据留在该 kit 自己的 `runs/`。
+秀钟首轮的[提炼报告](experiments/template2html/distillation/astra-xiuzhong-01.md)及[harness v1 独立运行时](experiments/template2html/harness/README.md)已建立；包含上下文、Code-mode 工具、文件版本、检查反馈与恢复，真实模型验证及弱模型迁移待做。
+
+```bash
+cd ~/ws2/Notale/infra/codex-harness-kit
+./setup.sh                         # 首次安装
+./go.sh astra-template-01 --pptx /absolute/template.pptx --dry-run
+./go.sh astra-template-01 --pptx /absolute/template.pptx
+```
+
+`--exec` 用于非交互采集；`--native-only` 只收原生轨迹，不能用来还原请求 schema。
+完整说明、历史会话导出与验证方法见该 kit 的 README。下面保留 Claude Code 的操作说明。
+
+## Claude Code 一行命令
 
 ```bash
 ~/ws2/Notale/infra/harness-kit/go.sh --auto                       # 默认任务书(集成学习),分屏:左监控 右 claude

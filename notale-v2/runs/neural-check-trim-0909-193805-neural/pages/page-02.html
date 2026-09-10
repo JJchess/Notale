@@ -1,0 +1,942 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>感知机的诞生：罗森布拉特用加权求和与阈值模拟生物神经元的信息整合</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    /* 页面特定布局与直角网格对齐 */
+    #stage {
+      padding: 48px 56px;
+      box-sizing: border-box;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 28px;
+    }
+
+    /* 顶部标题区 */
+    .header-block {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      align-items: flex-end;
+      border-bottom: 2px solid var(--text);
+      padding-bottom: 16px;
+      gap: 32px;
+    }
+    .header-main {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .kicker-line {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .kicker-tag {
+      background: var(--text);
+      color: var(--bg);
+      padding: 2px 6px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+    }
+    .header-formula-box {
+      background: #FFFFFF;
+      border: 1px solid var(--border-strong);
+      padding: 12px 18px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 2px 2px 0 rgba(0,0,0,0.04);
+      min-height: 72px;
+    }
+    .header-formula-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .header-formula-math {
+      font-size: 20px;
+      color: var(--text);
+      line-height: 1.4;
+      overflow: visible;
+    }
+
+    /* 主体三列工作区 */
+    .workspace {
+      display: grid;
+      grid-template-columns: 310px 1fr 310px;
+      gap: 28px;
+      min-height: 0;
+      align-items: start;
+    }
+
+    /* 左列：历史实体与工程原物 */
+    .history-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      border-right: 1px solid var(--border);
+      padding-right: 24px;
+    }
+    .card-meta {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .img-frame {
+      border: 1px solid var(--border-strong);
+      background: #FFFFFF;
+      padding: 4px;
+      position: relative;
+    }
+    .img-frame img {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      display: block;
+      filter: contrast(1.05) grayscale(0.15);
+    }
+    .img-caption {
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--text-dim);
+      margin-top: 8px;
+    }
+    .history-context {
+      background: rgba(255,255,255,0.6);
+      border: 1px solid var(--border);
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      line-height: 1.55;
+      color: var(--text-dim);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .history-highlight {
+      color: var(--text);
+      font-weight: 600;
+      border-left: 2px solid var(--accent);
+      padding-left: 8px;
+    }
+
+    /* 中列：对偶图解与交互主舞台 */
+    .diagram-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+      min-width: 0;
+    }
+    .diagram-header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .stage-mode-tabs {
+      display: flex;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 2px;
+      gap: 2px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 5px 12px;
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      transition: all 0.15s ease;
+    }
+    .tab-btn.active {
+      background: #FFFFFF;
+      color: var(--text);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    }
+
+    /* 画布与几何面板 */
+    .interactive-canvas-panel {
+      position: relative;
+      flex: 1;
+      background: #FFFFFF;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    #neuron-canvas {
+      width: 100%;
+      height: 380px;
+      display: block;
+    }
+    
+    /* 底部步骤与对齐条 */
+    .diagram-footer {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-top: 1px solid var(--border);
+      background: #FAFBF9;
+      min-height: 108px;
+    }
+    .step-card {
+      padding: 12px 14px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: relative;
+    }
+    .step-card:last-child {
+      border-right: none;
+    }
+    .step-card.active {
+      background: var(--class-a-soft);
+    }
+    .step-num {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+    .step-card.active .step-num {
+      color: var(--class-a);
+    }
+    .step-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .step-desc {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.45;
+    }
+
+    /* 右列：可调参数实验室与计算实时断言 */
+    .lab-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      border-left: 1px solid var(--border);
+      padding-left: 24px;
+    }
+    .lab-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .slider-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-dim);
+    }
+    .slider-val {
+      font-family: var(--font-mono);
+      color: var(--text);
+      font-weight: 700;
+    }
+    .range-input {
+      accent-color: var(--accent);
+      width: 100%;
+      height: 6px;
+      background: var(--bg-subtle);
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    
+    /* 状态输出卡 */
+    .output-eval-card {
+      background: #FAFBF9;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .eval-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+    }
+    .eval-label {
+      color: var(--muted);
+    }
+    .eval-val {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--text);
+    }
+    .decision-banner {
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      text-align: center;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.02em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .decision-active {
+      background: var(--class-a);
+      color: #FFFFFF;
+    }
+    .decision-inactive {
+      background: var(--bg-subtle);
+      color: var(--muted);
+      border: 1px dashed var(--border-strong);
+    }
+
+    /* 罗森布拉特规则标注 */
+    .rule-note {
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--text-dim);
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="15">
+  <div id="stage">
+    <!-- 顶部标题栏 -->
+    <header class="header-block">
+      <div class="header-main">
+        <div class="kicker-line">
+          <span class="kicker-tag">HISTORICAL ORIGIN</span>
+          <span>1958 · 康奈尔航空实验室 · 弗兰克·罗森布拉特</span>
+        </div>
+        <h1 class="nt-title">感知机：将生物突触抽象为加权求和与阈值阶跃</h1>
+        <p class="nt-subtitle">借鉴麦卡洛克-皮茨神经元模型，感知机首次让机器通过调整可变权重学习判定模式，开创人工神经网络先河。</p>
+      </div>
+      <div class="header-formula-box">
+        <div class="header-formula-label">数学决策模型（M-P / Perceptron）</div>
+        <div class="header-formula-math" id="formula-display">
+          <!-- KaTeX will render here -->
+        </div>
+      </div>
+    </header>
+
+    <!-- 主工作区 -->
+    <main class="workspace">
+      <!-- 左列：历史物证与物理机 -->
+      <section class="history-col">
+        <div>
+          <div class="card-meta">
+            <span>PHYSICAL HARDWARE</span>
+            <span>1958</span>
+          </div>
+          <div class="img-frame">
+            <img src="assets/img/planner-efb31222ca9e/00.png" 
+                 alt="Mark I Perceptron Operator's Manual Figure 2" 
+                 title="Mark I Perceptron, Figure 2 of operator's manual · Wikimedia Commons">
+          </div>
+          <p class="img-caption">
+            <strong>Mark I 感知机物理架构图</strong>：20×20 硫化镉光敏阵列（S点）感知图像，随机连接到关联单元（A点），最后汇聚于可变电位器构成的响应单元（R点）。
+          </p>
+        </div>
+
+        <div class="history-context">
+          <div class="history-highlight">
+            “权重不是虚构的代码，而是驱动电机旋转电位器的实际物理阻值。”
+          </div>
+          <p>
+            罗森布拉特制造的 Mark I 感知机重达数吨，利用定制电动机根据分类误差实时微调电位器滑片。这是人类历史上首次由机器自动通过试错更新权重的联结主义实体。
+          </p>
+        </div>
+      </section>
+
+      <!-- 中列：神经元结构对偶映射图解 -->
+      <section class="diagram-col">
+        <div class="diagram-header-bar">
+          <h2 class="nt-section-title">
+            <span>从生物突触到数学代数的对偶映射</span>
+          </h2>
+          <div class="stage-mode-tabs" role="tablist">
+            <button class="tab-btn active" id="tab-integrated" role="tab" aria-selected="true">对偶叠加透视</button>
+            <button class="tab-btn" id="tab-biology" role="tab" aria-selected="false">生物形态</button>
+            <button class="tab-btn" id="tab-math" role="tab" aria-selected="false">数学向量计算</button>
+          </div>
+        </div>
+
+        <div class="interactive-canvas-panel">
+          <canvas id="neuron-canvas" width="670" height="380"></canvas>
+          <div class="diagram-footer">
+            <div class="step-card active" id="step-1">
+              <span class="step-num">01 · 树突 / 输入</span>
+              <span class="step-title">树突接收刺激</span>
+              <span class="step-desc">输入信号向量 <span class="math-inline">x_1, x_2, x_3</span> 外部刺激强度。</span>
+            </div>
+            <div class="step-card" id="step-2">
+              <span class="step-num">02 · 突触 / 权重</span>
+              <span class="step-title">突触连接强度</span>
+              <span class="step-desc">突触间隙递质效能映射为实数权重 <span class="math-inline">w_i</span>（兴奋或抑制）。</span>
+            </div>
+            <div class="step-card" id="step-3">
+              <span class="step-num">03 · 胞体 / 求和与偏置</span>
+              <span class="step-title">胞体空间时间总和</span>
+              <span class="step-desc">膜电位整合所有突触电流 <span class="math-inline">z = \sum w_i x_i + b</span>。</span>
+            </div>
+            <div class="step-card" id="step-4">
+              <span class="step-num">04 · 轴突 / 阈值点火</span>
+              <span class="step-title">轴突小丘全或无</span>
+              <span class="step-desc">超过极化阈值时爆发动作电位，输出 <span class="math-inline">\hat{y} \in \{0, 1\}</span>。</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右列：计算实验室与实时验证 -->
+      <section class="lab-col">
+        <div class="card-meta">
+          <span>INTERACTIVE CALCULATOR</span>
+          <span>LIVE EVALUATION</span>
+        </div>
+
+        <div class="lab-card">
+          <div class="slider-group">
+            <div class="slider-meta">
+              <span>输入 1 (x₁)</span>
+              <span class="slider-val" id="val-x1">1.0</span>
+            </div>
+            <input type="range" class="range-input" id="input-x1" min="0" max="2" step="0.1" value="1.0">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-meta">
+              <span>权重 1 (w₁)</span>
+              <span class="slider-val" id="val-w1">0.8</span>
+            </div>
+            <input type="range" class="range-input" id="input-w1" min="-2" max="2" step="0.1" value="0.8">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-meta">
+              <span>输入 2 (x₂)</span>
+              <span class="slider-val" id="val-x2">0.5</span>
+            </div>
+            <input type="range" class="range-input" id="input-x2" min="0" max="2" step="0.1" value="0.5">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-meta">
+              <span>权重 2 (w₂)</span>
+              <span class="slider-val" id="val-w2">-0.4</span>
+            </div>
+            <input type="range" class="range-input" id="input-w2" min="-2" max="2" step="0.1" value="-0.4">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-meta">
+              <span>偏置 b (阈值反转)</span>
+              <span class="slider-val" id="val-b">-0.5</span>
+            </div>
+            <input type="range" class="range-input" id="input-b" min="-2" max="2" step="0.1" value="-0.5">
+          </div>
+        </div>
+
+        <div class="output-eval-card">
+          <div class="eval-row">
+            <span class="eval-label">加权输入总和 Σ:</span>
+            <span class="eval-val" id="eval-sum">0.60</span>
+          </div>
+          <div class="eval-row">
+            <span class="eval-label">净刺激 z (Σ + b):</span>
+            <span class="eval-val" id="eval-z">+0.10</span>
+          </div>
+          <div class="decision-banner decision-active" id="decision-box">
+            <span id="decision-icon">⚡</span>
+            <span id="decision-text">轴突兴奋点火 (ŷ = 1)</span>
+          </div>
+          <p class="rule-note">
+            <strong>阶跃激活法则</strong>：当 <span class="math-inline">z \ge 0</span>（即总刺激超过阈值 <span class="math-inline">\theta = -b</span>）时输出 1，否则输出 0。
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学好。今天我们正式进入神经网络的起点：1958 年由心理学家弗兰克·罗森布拉特提出的“感知机”（Perceptron）。
+    
+    在罗森布拉特之前，麦卡洛克与皮茨在 1943 年提出了生物神经元的简化二值逻辑模型。罗森布拉特在此基础上往前迈出了决定性的一步：他证明了神经元之间的连接权重不用人工硬编码，而是可以通过对训练样本的误差反馈自动调节！
+    
+    请看左侧这张珍贵的历史档案图：这就是安装在康奈尔航空实验室的 Mark I 感知机工程图。最前方的 S 点是 400 个硫化镉光敏电阻构成的视网膜阵列，光电信号汇总到中间的 A 单元，最后汇集到 R 响应单元。那里的每个突触权重，不是计算机内存里的一段浮点数代码，而是由微型电动机直接驱动旋转的电位器阻值！如果判断错了，电机就转动一下改变阻值。
+    
+    我们来看中间的核心机制对偶图：
+    第一步：生物学上的树突（Dendrites），抽象为向量输入 x₁、x₂；
+    第二步：突触（Synapses）传递神经递质的效率，抽象为权重参数 w₁、w₂。正数代表兴奋性突触，负数代表抑制性突触；
+    第三步：细胞体（Soma）进行空间与时间上的离子电流总和，抽象为代数上的加权求和 ∑xᵢwᵢ，加上静息电位偏置 b；
+    第四步：当总膜电位超过极化阈值时，轴突小丘（Axon Hillock）爆发动作电位，沿着轴突向下传递。数学上就是一个阶跃激活函数（Heaviside step function），决定输出 1 还是 0。
+    
+    大家可以在右侧的控制器里试着调节输入和权重：当加权净刺激 z 大于等于 0 时，神经元就会像闪电一样激发。这个极其简单的形式，就是今天所有千亿参数大模型最底层的基本积木。下一页，我们将进入这个单神经元的二维几何空间，看它如何用一条直线在平面上切分数据。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 1. 公式初始化
+      const formulaEl = document.getElementById("formula-display");
+      if (window.katex && formulaEl) {
+        katex.render(
+          "\\hat{y} = \\text{step}\\left(\\sum_{i=1}^n w_i x_i + b\\right)",
+          formulaEl,
+          { throwOnError: false }
+        );
+        // 内联数学
+        document.querySelectorAll(".math-inline").forEach(el => {
+          const tex = el.textContent;
+          katex.render(tex, el, { throwOnError: false });
+        });
+      }
+
+      // 2. 状态交互与计算
+      const x1Slider = document.getElementById("input-x1");
+      const w1Slider = document.getElementById("input-w1");
+      const x2Slider = document.getElementById("input-x2");
+      const w2Slider = document.getElementById("input-w2");
+      const bSlider  = document.getElementById("input-b");
+
+      const valX1 = document.getElementById("val-x1");
+      const valW1 = document.getElementById("val-w1");
+      const valX2 = document.getElementById("val-x2");
+      const valW2 = document.getElementById("val-w2");
+      const valB  = document.getElementById("val-b");
+
+      const evalSum = document.getElementById("eval-sum");
+      const evalZ   = document.getElementById("eval-z");
+      const decisionBox = document.getElementById("decision-box");
+      const decisionText = document.getElementById("decision-text");
+      const decisionIcon = document.getElementById("decision-icon");
+
+      // 对偶透视 Tab
+      let viewMode = 'integrated'; // 'integrated' | 'biology' | 'math'
+      const tabIntegrated = document.getElementById("tab-integrated");
+      const tabBio = document.getElementById("tab-biology");
+      const tabMath = document.getElementById("tab-math");
+
+      function setViewMode(mode) {
+        viewMode = mode;
+        [tabIntegrated, tabBio, tabMath].forEach(b => b.classList.remove("active"));
+        if (mode === 'integrated') tabIntegrated.classList.add("active");
+        if (mode === 'biology') tabBio.classList.add("active");
+        if (mode === 'math') tabMath.classList.add("active");
+        drawScene();
+      }
+
+      tabIntegrated.addEventListener("click", () => setViewMode('integrated'));
+      tabBio.addEventListener("click", () => setViewMode('biology'));
+      tabMath.addEventListener("click", () => setViewMode('math'));
+
+      // 画布初始化
+      const canvas = document.getElementById("neuron-canvas");
+      const ctx = canvas.getContext("2d");
+
+      // 几何参数 (Canvas 逻辑尺寸 670 x 380)
+      const CANVAS_W = 670;
+      const CANVAS_H = 380;
+      canvas.width = CANVAS_W;
+      canvas.height = CANVAS_H;
+
+      function updateCalculation() {
+        const x1 = parseFloat(x1Slider.value);
+        const w1 = parseFloat(w1Slider.value);
+        const x2 = parseFloat(x2Slider.value);
+        const w2 = parseFloat(w2Slider.value);
+        const b  = parseFloat(bSlider.value);
+
+        valX1.textContent = x1.toFixed(1);
+        valW1.textContent = (w1 >= 0 ? "+" : "") + w1.toFixed(1);
+        valX2.textContent = x2.toFixed(1);
+        valW2.textContent = (w2 >= 0 ? "+" : "") + w2.toFixed(1);
+        valB.textContent  = (b >= 0 ? "+" : "") + b.toFixed(1);
+
+        const sumVal = x1 * w1 + x2 * w2;
+        const zVal = sumVal + b;
+        const fired = zVal >= 0;
+
+        evalSum.textContent = sumVal.toFixed(2);
+        evalZ.textContent   = (zVal >= 0 ? "+" : "") + zVal.toFixed(2);
+
+        if (fired) {
+          decisionBox.className = "decision-banner decision-active";
+          decisionIcon.textContent = "⚡";
+          decisionText.textContent = "轴突兴奋点火 (ŷ = 1)";
+        } else {
+          decisionBox.className = "decision-banner decision-inactive";
+          decisionIcon.textContent = "○";
+          decisionText.textContent = "处于极化抑制状态 (ŷ = 0)";
+        }
+
+        drawScene();
+      }
+
+      [x1Slider, w1Slider, x2Slider, w2Slider, bSlider].forEach(slider => {
+        slider.addEventListener("input", updateCalculation);
+      });
+
+      // 绘制主场景
+      function drawScene() {
+        ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+        const x1 = parseFloat(x1Slider.value);
+        const w1 = parseFloat(w1Slider.value);
+        const x2 = parseFloat(x2Slider.value);
+        const w2 = parseFloat(w2Slider.value);
+        const b  = parseFloat(bSlider.value);
+        const sumVal = x1 * w1 + x2 * w2;
+        const zVal = sumVal + b;
+        const fired = zVal >= 0;
+
+        // 核心几何锚点
+        const somaCenter = { x: 340, y: 190 };
+        const inY = [100, 190, 280]; // x1, x2, x3
+        const inX = 90;
+
+        // 辅助绘图颜色
+        const colBio = "#526B63";
+        const colBioLight = "#A4B5AC";
+        const colText = "#1C2220";
+        const colClassA = "#1E6B65";
+        const colClassB = "#B64D79";
+        const colAccent = "#E03E2D";
+        const colBorder = "#C6CEC8";
+
+        // 1. 绘制左侧树突 / 输入流线
+        const inputs = [
+          { label: "x₁=" + x1.toFixed(1), wLabel: "w₁=" + (w1>=0?"+":"")+w1.toFixed(1), y: inY[0], w: w1, act: x1 },
+          { label: "x₂=" + x2.toFixed(1), wLabel: "w₂=" + (w2>=0?"+":"")+w2.toFixed(1), y: inY[1], w: w2, act: x2 },
+          { label: "x₃=0.0", wLabel: "w₃=+0.2", y: inY[2], w: 0.2, act: 0 }
+        ];
+
+        inputs.forEach((inp, idx) => {
+          // 生物突触分支（树突树）
+          if (viewMode === 'integrated' || viewMode === 'biology') {
+            ctx.beginPath();
+            ctx.moveTo(inX, inp.y);
+            // 弯曲树突感
+            ctx.bezierCurveTo(inX + 80, inp.y + (idx === 1 ? 0 : (idx === 0 ? 30 : -30)), somaCenter.x - 70, somaCenter.y + (idx === 1 ? 0 : (idx === 0 ? -40 : 40)), somaCenter.x - 45, somaCenter.y + (idx === 0 ? -25 : (idx === 1 ? 0 : 25)));
+            ctx.strokeStyle = viewMode === 'biology' ? colBio : "rgba(82,107,99,0.35)";
+            ctx.lineWidth = viewMode === 'biology' ? 4 : 2;
+            ctx.stroke();
+
+            // 小树突分支刺
+            if (viewMode === 'biology') {
+              for (let i = 0; i < 4; i++) {
+                const px = inX + 25 + i * 35;
+                const py = inp.y + (idx === 0 ? i * 8 : (idx === 2 ? -i * 8 : 0));
+                ctx.beginPath();
+                ctx.moveTo(px, py);
+                ctx.lineTo(px - 12, py + (i % 2 === 0 ? 15 : -15));
+                ctx.strokeStyle = colBioLight;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+              }
+            }
+          }
+
+          // 数学向量流线
+          if (viewMode === 'integrated' || viewMode === 'math') {
+            ctx.beginPath();
+            ctx.moveTo(inX + 30, inp.y);
+            ctx.lineTo(somaCenter.x - 45, somaCenter.y + (idx === 0 ? -25 : (idx === 1 ? 0 : 25)));
+            // 权重大小时粗细不同，正负不同色
+            const isPos = inp.w >= 0;
+            ctx.strokeStyle = isPos ? (fired ? colClassA : "#4A7C59") : colClassB;
+            ctx.lineWidth = Math.min(6, Math.max(1.5, Math.abs(inp.w) * 3));
+            ctx.stroke();
+
+            // 权重突触标记（小方块钻石）
+            const midX = (inX + 30 + somaCenter.x - 45) / 2;
+            const midY = (inp.y + somaCenter.y + (idx === 0 ? -25 : (idx === 1 ? 0 : 25))) / 2;
+
+            ctx.save();
+            ctx.translate(midX, midY);
+            ctx.rotate(Math.PI / 4);
+            ctx.fillStyle = isPos ? "#2A6E52" : "#C44536";
+            ctx.fillRect(-6, -6, 12, 12);
+            ctx.restore();
+
+            // 权重文本标尺
+            ctx.font = "12px monospace";
+            ctx.fillStyle = isPos ? "#1E6B65" : "#B64D79";
+            ctx.textAlign = "center";
+            ctx.fillText(inp.wLabel, midX, midY - 14);
+          }
+
+          // 输入端点圆圈与标签
+          ctx.beginPath();
+          ctx.arc(inX, inp.y, 14, 0, Math.PI * 2);
+          ctx.fillStyle = inp.act > 0 ? "rgba(30, 107, 101, 0.15)" : "#F2F4F1";
+          ctx.fill();
+          ctx.strokeStyle = inp.act > 0 ? colClassA : colBorder;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          ctx.font = "bold 13px 'NTF-inter', sans-serif";
+          ctx.fillStyle = colText;
+          ctx.textAlign = "right";
+          ctx.fillText(inp.label, inX - 20, inp.y + 4);
+          if (viewMode !== 'math') {
+            ctx.font = "11px 'NTF-inter', sans-serif";
+            ctx.fillStyle = "#64706A";
+            ctx.fillText("树突受体", inX - 20, inp.y + 18);
+          }
+        });
+
+        // 2. 偏置输入通道（从上方汇入胞体）
+        if (viewMode === 'integrated' || viewMode === 'math') {
+          ctx.beginPath();
+          ctx.moveTo(somaCenter.x, 70);
+          ctx.lineTo(somaCenter.x, somaCenter.y - 45);
+          ctx.strokeStyle = "#8C6D3B";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          // 偏置钻石
+          ctx.save();
+          ctx.translate(somaCenter.x, 105);
+          ctx.rotate(Math.PI / 4);
+          ctx.fillStyle = "#B38600";
+          ctx.fillRect(-6, -6, 12, 12);
+          ctx.restore();
+
+          ctx.font = "bold 13px monospace";
+          ctx.fillStyle = "#8C6D3B";
+          ctx.textAlign = "left";
+          ctx.fillText("b=" + (b>=0?"+":"")+b.toFixed(1), somaCenter.x + 14, 108);
+          ctx.font = "11px sans-serif";
+          ctx.fillStyle = "#64706A";
+          ctx.fillText("阈值偏置基底", somaCenter.x + 14, 92);
+        }
+
+        // 3. 胞体（Soma）/ 加权求和核心圆
+        // 生物外轮廓
+        if (viewMode === 'integrated' || viewMode === 'biology') {
+          ctx.beginPath();
+          for (let i = 0; i <= 24; i++) {
+            const ang = (i / 24) * Math.PI * 2;
+            const r = 52 + 5 * Math.sin(ang * 4 + 1.2);
+            const px = somaCenter.x + Math.cos(ang) * r;
+            const py = somaCenter.y + Math.sin(ang) * r;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          ctx.fillStyle = viewMode === 'biology' ? "rgba(82,107,99,0.12)" : "rgba(82,107,99,0.06)";
+          ctx.fill();
+          ctx.strokeStyle = viewMode === 'biology' ? colBio : "rgba(82,107,99,0.25)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+
+        // 数学求和圆圈
+        if (viewMode === 'integrated' || viewMode === 'math') {
+          ctx.beginPath();
+          ctx.arc(somaCenter.x, somaCenter.y, 45, 0, Math.PI * 2);
+          ctx.fillStyle = fired ? "#F3FAF7" : "#FAFBF9";
+          ctx.fill();
+          ctx.strokeStyle = fired ? colClassA : colBorder;
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+
+          // 核心代数符号与数值
+          ctx.font = "800 24px 'NTF-barlow-condensed', sans-serif";
+          ctx.fillStyle = colText;
+          ctx.textAlign = "center";
+          ctx.fillText("Σ + b", somaCenter.x, somaCenter.y - 6);
+
+          ctx.font = "bold 13px monospace";
+          ctx.fillStyle = fired ? colClassA : "#84938D";
+          ctx.fillText("z=" + (zVal>=0?"+":"")+zVal.toFixed(2), somaCenter.x, somaCenter.y + 16);
+        }
+
+        // 生物核标记
+        if (viewMode === 'biology') {
+          ctx.beginPath();
+          ctx.arc(somaCenter.x, somaCenter.y, 16, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(82,107,99,0.4)";
+          ctx.fill();
+          ctx.font = "12px sans-serif";
+          ctx.fillStyle = colText;
+          ctx.textAlign = "center";
+          ctx.fillText("细胞核", somaCenter.x, somaCenter.y + 30);
+        }
+
+        // 4. 轴突小丘与激活函数阶跃器
+        const stepCenter = { x: 490, y: somaCenter.y };
+
+        // 胞体连接到阶跃器的通道
+        ctx.beginPath();
+        ctx.moveTo(somaCenter.x + 45, somaCenter.y);
+        ctx.lineTo(stepCenter.x - 30, stepCenter.y);
+        ctx.strokeStyle = fired ? colAccent : colBorder;
+        ctx.lineWidth = fired ? 3 : 1.5;
+        ctx.stroke();
+
+        // 阶跃激活函数小方块
+        ctx.beginPath();
+        ctx.rect(stepCenter.x - 30, stepCenter.y - 30, 60, 60);
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fill();
+        ctx.strokeStyle = fired ? colAccent : colBorder;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // 绘制阶跃函数微型坐标系
+        ctx.beginPath();
+        ctx.moveTo(stepCenter.x - 22, stepCenter.y + 16);
+        ctx.lineTo(stepCenter.x + 22, stepCenter.y + 16); // 横轴
+        ctx.moveTo(stepCenter.x, stepCenter.y + 22);
+        ctx.lineTo(stepCenter.x, stepCenter.y - 22); // 纵轴
+        ctx.strokeStyle = "#D1D8D4";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // 阶跃折线
+        ctx.beginPath();
+        ctx.moveTo(stepCenter.x - 20, stepCenter.y + 16);
+        ctx.lineTo(stepCenter.x, stepCenter.y + 16);
+        ctx.lineTo(stepCenter.x, stepCenter.y - 14);
+        ctx.lineTo(stepCenter.x + 20, stepCenter.y - 14);
+        ctx.strokeStyle = fired ? colAccent : colText;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // 阶跃器上方文本
+        ctx.font = "11px 'NTF-inter', sans-serif";
+        ctx.fillStyle = colAccent;
+        ctx.textAlign = "center";
+        ctx.fillText("step(z)", stepCenter.x, stepCenter.y - 36);
+
+        // 5. 轴突（Axon）传导与终端输出
+        const axonEndX = 620;
+        if (viewMode === 'integrated' || viewMode === 'biology') {
+          // 生物髓鞘与节段
+          ctx.beginPath();
+          ctx.moveTo(stepCenter.x + 30, stepCenter.y);
+          ctx.lineTo(axonEndX - 30, stepCenter.y);
+          ctx.strokeStyle = viewMode === 'biology' ? colBio : "rgba(82,107,99,0.3)";
+          ctx.lineWidth = 6;
+          ctx.stroke();
+
+          // 髓鞘段
+          for (let i = 0; i < 2; i++) {
+            const mx = stepCenter.x + 45 + i * 35;
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillRect(mx - 10, stepCenter.y - 5, 20, 10);
+            ctx.strokeRect(mx - 10, stepCenter.y - 5, 20, 10);
+          }
+
+          // 轴突末梢分支
+          const termY = [stepCenter.y - 20, stepCenter.y, stepCenter.y + 20];
+          termY.forEach(ty => {
+            ctx.beginPath();
+            ctx.moveTo(axonEndX - 30, stepCenter.y);
+            ctx.lineTo(axonEndX - 10, ty);
+            ctx.strokeStyle = colBioLight;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(axonEndX - 8, ty, 3, 0, Math.PI * 2);
+            ctx.fillStyle = colBio;
+            ctx.fill();
+          });
+        }
+
+        // 数学输出端点
+        if (viewMode === 'integrated' || viewMode === 'math') {
+          ctx.beginPath();
+          ctx.moveTo(stepCenter.x + 30, stepCenter.y);
+          ctx.lineTo(axonEndX, stepCenter.y);
+          ctx.strokeStyle = fired ? colAccent : colBorder;
+          ctx.lineWidth = fired ? 3 : 2;
+          ctx.stroke();
+
+          // 箭头
+          ctx.beginPath();
+          ctx.moveTo(axonEndX - 8, stepCenter.y - 5);
+          ctx.lineTo(axonEndX, stepCenter.y);
+          ctx.lineTo(axonEndX - 8, stepCenter.y + 5);
+          ctx.strokeStyle = fired ? colAccent : colBorder;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          // 输出点状态
+          ctx.beginPath();
+          ctx.arc(axonEndX + 16, stepCenter.y, 16, 0, Math.PI * 2);
+          ctx.fillStyle = fired ? colAccent : "#FFFFFF";
+          ctx.fill();
+          ctx.strokeStyle = fired ? colAccent : colBorder;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          ctx.font = "bold 15px 'NTF-inter', sans-serif";
+          ctx.fillStyle = fired ? "#FFFFFF" : colText;
+          ctx.textAlign = "center";
+          ctx.fillText(fired ? "1" : "0", axonEndX + 16, stepCenter.y + 5);
+
+          // 标签
+          ctx.font = "bold 13px 'NTF-inter', sans-serif";
+          ctx.fillStyle = colText;
+          ctx.textAlign = "center";
+          ctx.fillText("ŷ (输出)", axonEndX + 16, stepCenter.y - 24);
+        }
+
+        // 顶部模式提示水印
+        ctx.font = "11px 'NTF-inter', sans-serif";
+        ctx.fillStyle = "#A4B5AC";
+        ctx.textAlign = "left";
+        const modeDesc = viewMode === 'integrated' 
+          ? "模式：生物形态与数学代数同步映射" 
+          : (viewMode === 'biology' ? "模式：生物神经元电生理传导" : "模式：纯代数向量运算图");
+        ctx.fillText(modeDesc, 16, 26);
+      }
+
+      // 启动初次计算与绘制
+      updateCalculation();
+    })();
+  </script>
+</body>
+</html>

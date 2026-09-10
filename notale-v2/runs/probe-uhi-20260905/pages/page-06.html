@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>城市峡谷微气候机制</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 页面特定构图与微排版 */
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    /* 顶部标题栏 */
+    .header-block {
+      flex: 0 0 auto;
+      margin-bottom: 16px;
+    }
+    .header-block h1 {
+      margin: 0 0 6px 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .header-block .lead-text {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主工作台分栏：左侧几何切面剖面交互与物理场，右侧机制因果面板与对比 */
+    .canyon-workbench {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 28px;
+      min-height: 0;
+    }
+
+    /* 左侧剖面图谱卡片 */
+    .stage-card {
+      background: var(--surface);
+      border: 1px solid var(--muted);
+      border-radius: 8px;
+      padding: 20px 22px 18px 22px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      position: relative;
+    }
+
+    .stage-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .stage-card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .stage-card-title .tag {
+      font-size: var(--fs-label);
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--observed);
+    }
+
+    /* 剖面 SVG 容器 */
+    .canyon-svg-wrap {
+      flex: 1;
+      position: relative;
+      background: #FFFFFF;
+      border: 1px solid #D1DDE0;
+      border-radius: 6px;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .canyon-svg-wrap svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 物理量刻度与动态读数条 */
+    .canyon-readouts {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--surface-strong);
+    }
+    .readout-item {
+      background: var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 14px;
+    }
+    .readout-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .readout-value {
+      font-family: var(--font-num);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+    .readout-unit {
+      font-size: var(--fs-label);
+      font-weight: normal;
+      color: var(--muted);
+    }
+
+    /* 右侧机制控制与证据分解栏 */
+    .mechanism-column {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    /* 控件面板 */
+    .control-box {
+      background: var(--surface);
+      border: 1px solid var(--muted);
+      border-radius: 8px;
+      padding: 18px 20px;
+    }
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .control-row:last-child {
+      margin-bottom: 0;
+    }
+    .control-row-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-body);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .control-row-top .val-pill {
+      font-family: var(--font-num);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--cooling);
+    }
+
+    /* 昼夜与机制切换模式 */
+    .mode-switch-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .mode-btn {
+      padding: 9px 12px;
+      background: var(--surface-strong);
+      border: 1px solid #BACAD0;
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--dur) var(--ease);
+    }
+    .mode-btn:hover {
+      background: #CFDFE3;
+      color: var(--text);
+    }
+    .mode-btn.active {
+      background: var(--cooling);
+      border-color: var(--cooling);
+      color: #FFFFFF;
+    }
+    .mode-btn.active[data-phase="night"] {
+      background: #1F363D;
+      border-color: #1F363D;
+      color: #FFFFFF;
+    }
+
+    /* 机制解释分解卡 */
+    .cards-stack {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      overflow-y: auto;
+    }
+    .mechanism-card {
+      background: var(--surface);
+      border: 1px solid #CBD8DC;
+      border-radius: 8px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+    }
+    .mechanism-card.heat-active {
+      border-color: var(--heat);
+      background: #FDF9F8;
+    }
+    .mechanism-card.cooling-active {
+      border-color: var(--cooling);
+      background: #F4F9FA;
+    }
+    .mechanism-card.wind-active {
+      border-color: var(--observed);
+      background: #F4F8F9;
+    }
+    .card-title-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .card-desc {
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--muted);
+      margin: 0;
+    }
+    .card-desc strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* 底部小提示条 */
+    .summary-bar {
+      background: var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      line-height: 1.4;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .summary-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--heat);
+      flex-shrink: 0;
+    }
+
+    /* 滑杆自定义细微样式 */
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--cooling);
+      cursor: pointer;
+      height: 6px;
+    }
+  </style>
+</head>
+<body data-page="06" data-total="19">
+  <div id="stage">
+    <!-- 顶部导语 -->
+    <header class="header-block">
+      <h1>城市峡谷通过几何遮阴、长波辐射滞留与通风阻滞改变近地层温度</h1>
+      <p class="lead-text">街道高宽比（H/W）与天空视域因子（SVF）重构了日间太阳受照角、夜间长波辐射冷却阻力与巷道风涡流形态。</p>
+    </header>
+
+    <!-- 工作台容器 -->
+    <div class="canyon-workbench">
+      <!-- 左：剖面物理场与动态切片 -->
+      <section class="stage-card">
+        <div class="stage-card-header">
+          <div class="stage-card-title">
+            <span>几何剖面：辐射与涡流传递场</span>
+            <span class="tag" id="aspectBadge">深峡谷 (H/W = 2.0)</span>
+          </div>
+          <div class="legend" style="display:flex; gap:16px; font-size:var(--fs-label); color:var(--muted);">
+            <span style="display:inline-flex; align-items:center; gap:6px;">
+              <span style="width:14px; height:3px; background:var(--heat); display:inline-block; border-radius:2px;"></span> 太阳短波/受热立面
+            </span>
+            <span style="display:inline-flex; align-items:center; gap:6px;">
+              <span style="width:14px; height:3px; background:#8E44AD; stroke-dasharray:3 3; display:inline-block; border-radius:2px;"></span> 长波捕获滞留
+            </span>
+            <span style="display:inline-flex; align-items:center; gap:6px;">
+              <span style="width:14px; height:3px; background:var(--cooling); display:inline-block; border-radius:2px;"></span> 屋顶及峡谷风场
+            </span>
+          </div>
+        </div>
+
+        <div class="canyon-svg-wrap">
+          <svg id="canyonSvg" viewBox="0 0 836 470">
+            <defs>
+              <linearGradient id="skyGradDay" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#D9EEF5"/>
+                <stop offset="100%" stop-color="#F2F8FA"/>
+              </linearGradient>
+              <linearGradient id="skyGradNight" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#142129"/>
+                <stop offset="100%" stop-color="#23353F"/>
+              </linearGradient>
+              <marker id="arrowHeat" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6 Z" fill="#C63F20" />
+              </marker>
+              <marker id="arrowCool" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6 Z" fill="#176B82" />
+              </marker>
+              <marker id="arrowTrap" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6 Z" fill="#8E44AD" />
+              </marker>
+            </defs>
+
+            <!-- 天空底色 -->
+            <rect id="skyRect" x="0" y="0" width="836" height="470" fill="url(#skyGradDay)"/>
+
+            <!-- 动态生成的建筑峡谷、气流漩涡、光线与长波辐射线 -->
+            <g id="sceneElements"></g>
+          </svg>
+        </div>
+
+        <!-- 关键定量读数 -->
+        <div class="canyon-readouts">
+          <div class="readout-item">
+            <div class="readout-label">
+              <span>天空视域因子 (SVF)</span>
+              <span>底面开敞度</span>
+            </div>
+            <div class="readout-value">
+              <span id="valSvf">0.31</span>
+              <span class="readout-unit">/ 1.00</span>
+            </div>
+          </div>
+          <div class="readout-item">
+            <div class="readout-label">
+              <span>长波辐射耗散受阻</span>
+              <span>夜间降温滞后</span>
+            </div>
+            <div class="readout-value">
+              <span id="valTrap">+69%</span>
+              <span class="readout-unit">受阻截留</span>
+            </div>
+          </div>
+          <div class="readout-item">
+            <div class="readout-label">
+              <span>街底风速衰减比</span>
+              <span>近地层通量</span>
+            </div>
+            <div class="readout-value">
+              <span id="valWind">82%</span>
+              <span class="readout-unit">风速削减</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右：调控控件与三大物理机制展开 -->
+      <aside class="mechanism-column">
+        <!-- 控件群 -->
+        <div class="control-box">
+          <div class="control-row">
+            <div class="control-row-top">
+              <span>高宽比调节 (H/W)</span>
+              <span class="val-pill" id="hwDisplay">2.0</span>
+            </div>
+            <input type="range" id="hwSlider" min="0.4" max="3.0" step="0.1" value="2.0" aria-label="高宽比">
+            <div style="display:flex; justify-content:space-between; font-size:var(--fs-tick); color:var(--muted); font-family:var(--font-num);">
+              <span>0.4 (开阔阔街)</span>
+              <span>1.0 (中等峡谷)</span>
+              <span>3.0 (高密深峡谷)</span>
+            </div>
+          </div>
+
+          <div class="control-row" style="margin-top: 10px;">
+            <div class="control-row-top">
+              <span>时段与日照相位</span>
+            </div>
+            <div class="mode-switch-group">
+              <button class="mode-btn active" id="btnDay" data-phase="day">白天：太阳遮阴与蓄热</button>
+              <button class="mode-btn" id="btnNight" data-phase="night">夜间：长波滞留与释热</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 机制卡片流 -->
+        <div class="cards-stack">
+          <!-- 机制 1：遮阴效应 -->
+          <article class="mechanism-card cooling-active" id="cardShadow">
+            <div class="card-title-line">
+              <span>1. 白天立体遮阴（日间冷岛缓冲）</span>
+              <span style="font-family:var(--font-num); font-size:var(--fs-label); color:var(--cooling);" id="shadowStat">街道底面阴影 74%</span>
+            </div>
+            <p class="card-desc">
+              深狭峡谷中高耸建筑物彼此遮挡直射阳光，入射短波大部分被立面上层吸收，<strong>街道底层日间反而容易形成相对凉爽的遮阴冷槽</strong>。
+            </p>
+          </article>
+
+          <!-- 机制 2：长波多次反射与辐射截留 -->
+          <article class="mechanism-card heat-active" id="cardTrap">
+            <div class="card-title-line">
+              <span>2. 辐射几何封闭与长波截留（夜间主增温）</span>
+              <span style="font-family:var(--font-num); font-size:var(--fs-label); color:var(--heat);" id="trapStat">长波逃逸角仅 29°</span>
+            </div>
+            <p class="card-desc">
+              地面与对向墙面释放的长波辐射（L↑）无法直接射入冷太空，而在相对的墙体间<strong>反复多次反射吸收</strong>，SVF 越小，夜间冷却速率越迟缓。
+            </p>
+          </article>
+
+          <!-- 机制 3：气流动力与环流脱耦 -->
+          <article class="mechanism-card wind-active" id="cardWind">
+            <div class="card-title-line">
+              <span>3. 冠层风速衰减与隔离涡流</span>
+              <span style="font-family:var(--font-num); font-size:14px; color:var(--observed);" id="windPattern">隔离下沉空腔涡流</span>
+            </div>
+            <p class="card-desc">
+              当 H/W &gt; 0.7 时，顶部剪切风驱动峡谷内形成<strong>滑流孤立空腔涡</strong>（Skimming flow），巷内空气与上空新鲜冷空气无法对流交换，显热蓄积在下层。
+            </p>
+          </article>
+        </div>
+
+        <!-- 底部总结事实 -->
+        <div class="summary-bar">
+          <div class="summary-dot"></div>
+          <div><strong>核心规律：</strong>热岛强度在夜间达到峰值，主因正是城市峡谷的<strong>长波几何捕获</strong>与<strong>近地面通风解耦</strong>共同阻滞了散热。</div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 状态模型
+      var state = {
+        hw: 2.0,
+        phase: 'day' // 'day' | 'night'
+      };
+
+      // 元素引用
+      var hwSlider = document.getElementById('hwSlider');
+      var hwDisplay = document.getElementById('hwDisplay');
+      var btnDay = document.getElementById('btnDay');
+      var btnNight = document.getElementById('btnNight');
+      var aspectBadge = document.getElementById('aspectBadge');
+      var sceneElements = document.getElementById('sceneElements');
+      var skyRect = document.getElementById('skyRect');
+
+      // 读数元素
+      var valSvf = document.getElementById('valSvf');
+      var valTrap = document.getElementById('valTrap');
+      var valWind = document.getElementById('valWind');
+      var shadowStat = document.getElementById('shadowStat');
+      var trapStat = document.getElementById('trapStat');
+      var windPattern = document.getElementById('windPattern');
+
+      // 卡片高亮指示
+      var cardShadow = document.getElementById('cardShadow');
+      var cardTrap = document.getElementById('cardTrap');
+      var cardWind = document.getElementById('cardWind');
+
+      // 计算几何与物理量
+      function computePhysics(hw) {
+        // 街道宽按固定或比例标准计算，根据经典城市气象公式:
+        // SVF_ground_center = cos(arctan(H / (0.5 * W))) = cos(arctan(2 * hw))
+        // 积分后标准对称峡谷中点 SVF:
+        var theta = Math.atan(2 * hw);
+        var svf = Math.cos(theta); // 简化公式准确反映中心对天空视域
+        if (svf < 0.08) svf = 0.08;
+        if (svf > 0.95) svf = 0.95;
+
+        // 长波截留率 (Trapping) ~ 1 - SVF
+        var trapping = (1 - svf) * 100;
+
+        // 街道遮阴率 (按太阳天顶角约 40 度，即高度角 50 度计算日照投射)
+        var shadowRatio = Math.min(0.96, Math.max(0.15, (hw * 0.42)));
+
+        // 风流形态：
+        // H/W < 0.3: 孤立粗糙流 (Isolated roughness)
+        // 0.3 <= H/W <= 0.65: 尾流干扰流 (Wake interference)
+        // H/W > 0.65: 滑流区涡流 (Skimming flow)
+        var regime = "";
+        var windDecay = 0;
+        if (hw < 0.6) {
+          regime = "孤立与尾流干扰流";
+          windDecay = Math.round(30 + hw * 40);
+        } else {
+          regime = "隔离下沉空腔涡 (Skimming)";
+          windDecay = Math.min(92, Math.round(55 + (hw - 0.6) * 18));
+        }
+
+        return {
+          svf: svf,
+          trapping: trapping,
+          shadowRatio: shadowRatio,
+          regime: regime,
+          windDecay: windDecay
+        };
+      }
+
+      // 渲染场景与绘制 SVG
+      function renderScene() {
+        var hw = state.hw;
+        var phase = state.phase;
+        var p = computePhysics(hw);
+
+        // 更新数值文本
+        hwDisplay.textContent = hw.toFixed(1);
+        valSvf.textContent = p.svf.toFixed(2);
+        valTrap.textContent = "+" + Math.round(p.trapping) + "%";
+        valWind.textContent = p.windDecay + "%";
+
+        // 分类标签
+        var canyonType = "中等峡谷";
+        if (hw <= 0.8) canyonType = "开阔街道 (H/W=" + hw.toFixed(1) + ")";
+        else if (hw <= 1.8) canyonType = "典型峡谷 (H/W=" + hw.toFixed(1) + ")";
+        else canyonType = "深狭峡谷 (H/W=" + hw.toFixed(1) + ")";
+        aspectBadge.textContent = canyonType;
+
+        // 机制卡片详情文本
+        shadowStat.textContent = "底面阴影率 " + Math.round(p.shadowRatio * 100) + "%";
+        var escapeAngle = Math.round(2 * Math.asin(p.svf) * 180 / Math.PI);
+        if (escapeAngle < 15) escapeAngle = 15;
+        trapStat.textContent = "长波逃逸顶角 " + escapeAngle + "°";
+        windPattern.textContent = p.regime;
+
+        // 昼夜卡片高亮联动
+        if (phase === 'day') {
+          skyRect.setAttribute('fill', 'url(#skyGradDay)');
+          cardShadow.style.opacity = '1';
+          cardTrap.style.opacity = '0.75';
+        } else {
+          skyRect.setAttribute('fill', 'url(#skyGradNight)');
+          cardShadow.style.opacity = '0.7';
+          cardTrap.style.opacity = '1';
+        }
+
+        // SVG 几何构建
+        // 画布尺寸 836 x 470
+        // 地面基准 y = 410, 峡谷中心 x = 418
+        // 峡谷宽度固定 W = 280, 深度由 H 变化
+        var cx = 418;
+        var groundY = 410;
+        var W = 280;
+        var halfW = W / 2; // 140
+        var leftBuildingRight = cx - halfW;  // 278
+        var rightBuildingLeft = cx + halfW;  // 558
+
+        // 高度：当 hw = 2.0 时，H = 280 * 2.0 = 560 (超出)，所以采用比例尺：
+        // 让最大 hw=3.0 时，H 对应 320px
+        var scaleH = 105; // hw=1 时 H=105px; hw=2 时 H=210px; hw=3 时 H=315px
+        var canyonH = hw * scaleH;
+        var roofY = groundY - canyonH;
+
+        var svgContent = [];
+
+        // 1. 地基与建筑物轮廓
+        // 左建筑
+        var buildingFill = phase === 'day' ? '#D6E2E6' : '#283B44';
+        var buildingStroke = phase === 'day' ? '#50646B' : '#6A828B';
+        var groundFill = phase === 'day' ? '#C2D1D6' : '#1F2F37';
+
+        // 地面
+        svgContent.push('<rect x="0" y="' + groundY + '" width="836" height="60" fill="' + groundFill + '" />');
+        svgContent.push('<line x1="0" y1="' + groundY + '" x2="836" y2="' + groundY + '" stroke="' + buildingStroke + '" stroke-width="2" />');
+
+        // 左侧建筑主体 (x: 0 到 leftBuildingRight)
+        svgContent.push('<rect x="0" y="' + roofY + '" width="' + leftBuildingRight + '" height="' + (groundY - roofY) + '" fill="' + buildingFill + '" stroke="' + buildingStroke + '" stroke-width="2" />');
+        // 右侧建筑主体 (x: rightBuildingLeft 到 836)
+        svgContent.push('<rect x="' + rightBuildingLeft + '" y="' + roofY + '" width="' + (836 - rightBuildingLeft) + '" height="' + (groundY - roofY) + '" fill="' + buildingFill + '" stroke="' + buildingStroke + '" stroke-width="2" />');
+
+        // 建筑立面楼层装饰窗线
+        var floors = Math.max(2, Math.floor(hw * 4));
+        var floorHeight = (groundY - roofY) / floors;
+        for (var f = 1; f < floors; f++) {
+          var lineY = roofY + f * floorHeight;
+          var winColor = phase === 'day' ? '#B8CCD2' : '#394E58';
+          // 左建筑窗
+          for (var wx = 40; wx < leftBuildingRight - 20; wx += 55) {
+            svgContent.push('<rect x="' + wx + '" y="' + (lineY - floorHeight * 0.65) + '" width="32" height="' + (floorHeight * 0.45) + '" rx="2" fill="' + winColor + '" />');
+          }
+          // 右建筑窗
+          for (var ex = rightBuildingLeft + 25; ex < 800; ex += 55) {
+            svgContent.push('<rect x="' + ex + '" y="' + (lineY - floorHeight * 0.65) + '" width="32" height="' + (floorHeight * 0.45) + '" rx="2" fill="' + winColor + '" />');
+          }
+        }
+
+        // 2. 标注几何尺寸
+        // 宽度 W 标线 (地面上方 14px)
+        svgContent.push('<line x1="' + leftBuildingRight + '" y1="' + (groundY - 10) + '" x2="' + rightBuildingLeft + '" y2="' + (groundY - 10) + '" stroke="#78929A" stroke-width="1.5" stroke-dasharray="3,3" />');
+        svgContent.push('<text x="' + cx + '" y="' + (groundY - 16) + '" fill="' + (phase === 'day' ? '#50646B' : '#A5C0CB') + '" font-size="13" font-weight="700" text-anchor="middle">街道宽度 W</text>');
+
+        // 高度 H 标线 (左建筑内立面)
+        svgContent.push('<line x1="' + (leftBuildingRight + 12) + '" y1="' + roofY + '" x2="' + (leftBuildingRight + 12) + '" y2="' + groundY + '" stroke="#78929A" stroke-width="1.5" stroke-dasharray="3,3" />');
+        svgContent.push('<text x="' + (leftBuildingRight + 20) + '" y="' + (roofY + canyonH / 2 + 5) + '" fill="' + (phase === 'day' ? '#50646B' : '#A5C0CB') + '" font-size="13" font-weight="700">建筑高度 H</text>');
+
+        // 3. 核心物理图解：日间 VS 夜间
+        if (phase === 'day') {
+          // --- 白天图解 ---
+          // 太阳符号
+          var sunX = 140;
+          var sunY = 60;
+          svgContent.push('<circle cx="' + sunX + '" cy="' + sunY + '" r="22" fill="#E67E22" />');
+          svgContent.push('<circle cx="' + sunX + '" cy="' + sunY + '" r="28" fill="none" stroke="#E67E22" stroke-width="2" stroke-dasharray="4,4" opacity="0.6"/>');
+          svgContent.push('<text x="' + sunX + '" y="' + (sunY + 45) + '" fill="#C63F20" font-size="13" font-weight="700" text-anchor="middle">太阳入射 (短波)</text>');
+
+          // 阳光直射线 (照入峡谷，被左建筑遮挡)
+          // 太阳入射角度 50 度
+          // 从左建筑顶边缘 (leftBuildingRight, roofY) 射下的光影分割线:
+          // 斜率 k = tan(50deg) ≈ 1.19
+          var sunTan = 1.19;
+          var shadowHitX = leftBuildingRight + (canyonH / sunTan);
+          var floorShadowed = false;
+
+          // 阴影多边形 (峡谷内未照到阳光的深色区域)
+          if (shadowHitX < rightBuildingLeft) {
+            // 光线照到了地面一部分 (从 shadowHitX 到 rightBuildingLeft)
+            var shadowPoints = [
+              leftBuildingRight + ',' + roofY,
+              shadowHitX + ',' + groundY,
+              leftBuildingRight + ',' + groundY
+            ].join(' ');
+            svgContent.push('<polygon points="' + shadowPoints + '" fill="#176B82" opacity="0.12" />');
+
+            // 阳光照射在地面右侧的亮区
+            svgContent.push('<rect x="' + shadowHitX + '" y="' + (groundY - 3) + '" width="' + (rightBuildingLeft - shadowHitX) + '" height="5" fill="#E67E22" opacity="0.8" />');
+
+            // 阳光光线
+            svgContent.push('<line x1="' + (sunX + 30) + '" y1="' + (sunY + 20) + '" x2="' + shadowHitX + '" y2="' + groundY + '" stroke="#C63F20" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#arrowHeat)" />');
+          } else {
+            // 光线连地面都射不到，直接打在右建筑立面上！(深峡谷完全遮阴)
+            floorShadowed = true;
+            var hitWallY = roofY + (W * sunTan) - (canyonH); // 相对立面高度
+            var wallHitY = roofY + ((rightBuildingLeft - leftBuildingRight) * sunTan * 0.45);
+            if (wallHitY > groundY) wallHitY = groundY;
+
+            var shadowPointsFull = [
+              leftBuildingRight + ',' + roofY,
+              rightBuildingLeft + ',' + wallHitY,
+              rightBuildingLeft + ',' + groundY,
+              leftBuildingRight + ',' + groundY
+            ].join(' ');
+            svgContent.push('<polygon points="' + shadowPointsFull + '" fill="#176B82" opacity="0.15" />');
+
+            svgContent.push('<line x1="' + (sunX + 30) + '" y1="' + (sunY + 20) + '" x2="' + rightBuildingLeft + '" y2="' + wallHitY + '" stroke="#C63F20" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#arrowHeat)" />');
+          }
+
+          // 日间受热立面蓄热标注 (右侧建筑迎光面上部受强照)
+          svgContent.push('<rect x="' + rightBuildingLeft + '" y="' + roofY + '" width="12" height="' + (canyonH * 0.6) + '" fill="#C63F20" opacity="0.45" />');
+          svgContent.push('<text x="' + (rightBuildingLeft + 20) + '" y="' + (roofY + 24) + '" fill="#C63F20" font-size="13" font-weight="700">迎光面吸热储热</text>');
+
+          // 街底凉爽阴影区文字
+          var shadowTextY = groundY - 76;
+          svgContent.push('<text x="' + (cx - 15) + '" y="' + shadowTextY + '" fill="#176B82" font-size="15" font-weight="700" text-anchor="middle">日间阴影冷槽区</text>');
+          svgContent.push('<text x="' + (cx - 15) + '" y="' + (shadowTextY + 18) + '" fill="#50646B" font-size="13" text-anchor="middle">直射受阻，地温升幅缓</text>');
+
+        } else {
+          // --- 夜间图解 ---
+          // 天顶极寒背景与狭窄的长波逃逸漏斗 (SVF 扇面)
+          var midGroundX = cx;
+          var midGroundY = groundY - 6;
+
+          // 辐射逃逸夹角扇区
+          var angleRad = Math.asin(p.svf);
+          var topSpanX = Math.min(halfW, canyonH * Math.tan(angleRad));
+
+          // 绘制天顶逃逸有效视域
+          var conePoints = [
+            midGroundX + ',' + midGroundY,
+            (midGroundX - topSpanX) + ',' + roofY,
+            (midGroundX + topSpanX) + ',' + roofY
+          ].join(' ');
+          svgContent.push('<polygon points="' + conePoints + '" fill="#255F73" opacity="0.25" />');
+
+          // 长波逃逸箭头 (朝向天空)
+          svgContent.push('<line x1="' + midGroundX + '" y1="' + (groundY - 20) + '" x2="' + midGroundX + '" y2="' + (roofY - 25) + '" stroke="#3498DB" stroke-width="2.5" marker-end="url(#arrowCool)" />');
+          svgContent.push('<text x="' + (midGroundX + 8) + '" y="' + (roofY - 10) + '" fill="#85C1E9" font-size="13" font-weight="700">净逃逸长波辐射 (仅经由 SVF 开口)</text>');
+
+          // 墙体间相互长波辐射反射与截留 (Trapping)
+          // 绘制在两侧墙体之间弹射的紫红色箭头
+          var bounceY1 = groundY - canyonH * 0.25;
+          var bounceY2 = groundY - canyonH * 0.55;
+          var bounceY3 = groundY - canyonH * 0.80;
+
+          svgContent.push('<path d="M ' + (leftBuildingRight + 8) + ' ' + (groundY - 20) + ' L ' + (rightBuildingLeft - 8) + ' ' + bounceY1 + ' L ' + (leftBuildingRight + 8) + ' ' + bounceY2 + ' L ' + (rightBuildingLeft - 8) + ' ' + bounceY3 + '" fill="none" stroke="#D7BDE2" stroke-width="2.5" stroke-dasharray="6,4" marker-end="url(#arrowTrap)" />');
+
+          // 立面释热辐射标注
+          svgContent.push('<rect x="' + (leftBuildingRight) + '" y="' + roofY + '" width="8" height="' + canyonH + '" fill="#C63F20" opacity="0.4" />');
+          svgContent.push('<rect x="' + (rightBuildingLeft - 8) + '" y="' + roofY + '" width="8" height="' + canyonH + '" fill="#C63F20" opacity="0.4" />');
+
+          svgContent.push('<text x="' + cx + '" y="' + (bounceY2 - 8) + '" fill="#F5EEF8" font-size="15" font-weight="700" text-anchor="middle">长波相互反射截留 (滞热不退)</text>');
+          svgContent.push('<text x="' + cx + '" y="' + (groundY - 60) + '" fill="#F1948A" font-size="15" font-weight="700" text-anchor="middle">夜间近地层保温增温显著</text>');
+        }
+
+        // 4. 风场涡流图解（无论昼夜均由几何主导）
+        // 顶部水平环境剪切风 (顶部快速气流)
+        var windY = roofY - 20;
+        if (windY < 25) windY = 25;
+        var roofWindTextFill = phase === 'day' ? '#176B82' : '#85C1E9';
+        svgContent.push('<line x1="80" y1="' + windY + '" x2="760" y2="' + windY + '" stroke="#176B82" stroke-width="3" marker-end="url(#arrowCool)" />');
+        svgContent.push('<text x="760" y="' + (windY - 8) + '" fill="' + roofWindTextFill + '" font-size="13" font-weight="700" text-anchor="end">城市边界层剪切风 (U_roof)</text>');
+
+        // 峡谷内部涡流形态
+        if (hw >= 0.7) {
+          // 典型 Skimming 流：孤立空腔闭合旋转涡流
+          var vortexRadiusX = halfW * 0.65;
+          var vortexRadiusY = Math.min(vortexRadiusX, (canyonH * 0.35));
+          // 保证涡流中心在上部，不与底部文字严重挤压
+          var vortexCY = roofY + Math.max(vortexRadiusY + 10, canyonH * 0.38);
+
+          // 画一个椭圆闭合流线带箭头
+          var vortexStroke = phase === 'day' ? '#255F73' : '#5DADE2';
+          svgContent.push('<ellipse cx="' + cx + '" cy="' + vortexCY + '" rx="' + vortexRadiusX + '" ry="' + vortexRadiusY + '" fill="none" stroke="' + vortexStroke + '" stroke-width="2" stroke-dasharray="6,4" opacity="0.8" />');
+          // 标注涡流转向（顺时针）
+          svgContent.push('<path d="M ' + (cx + vortexRadiusX) + ' ' + vortexCY + ' L ' + (cx + vortexRadiusX) + ' ' + (vortexCY + 12) + '" stroke="' + vortexStroke + '" stroke-width="2.5" marker-end="url(#arrowCool)"/>');
+          svgContent.push('<text x="' + cx + '" y="' + (vortexCY + 4) + '" fill="' + vortexStroke + '" font-size="13" font-weight="700" text-anchor="middle">闭合滑流空腔涡</text>');
+
+          // 街底滞风区
+          var floorWindColor = phase === 'day' ? '#50646B' : '#A6ACAF';
+          svgContent.push('<text x="' + cx + '" y="' + (groundY - 36) + '" fill="' + floorWindColor + '" font-size="13" font-weight="500" text-anchor="middle">底部风速滞涩 · 显热脱耦积聚</text>');
+        } else {
+          // 开阔型流通气流 (顺畅吹入地面)
+          var flowStroke = phase === 'day' ? '#176B82' : '#5DADE2';
+          var pathD = 'M ' + (leftBuildingRight - 40) + ' ' + (roofY - 10) + ' Q ' + cx + ' ' + (groundY - 30) + ' ' + (rightBuildingLeft + 50) + ' ' + (groundY - 30);
+          svgContent.push('<path d="' + pathD + '" fill="none" stroke="' + flowStroke + '" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#arrowCool)"/>');
+          svgContent.push('<text x="' + cx + '" y="' + (groundY - 45) + '" fill="' + flowStroke + '" font-size="13" font-weight="700" text-anchor="middle">穿透对流通风良好</text>');
+        }
+
+        sceneElements.innerHTML = svgContent.join('');
+      }
+
+      // 事件绑定
+      hwSlider.addEventListener('input', function (e) {
+        state.hw = parseFloat(e.target.value);
+        renderScene();
+      });
+
+      btnDay.addEventListener('click', function () {
+        state.phase = 'day';
+        btnDay.classList.add('active');
+        btnNight.classList.remove('active');
+        renderScene();
+      });
+
+      btnNight.addEventListener('click', function () {
+        state.phase = 'night';
+        btnNight.classList.add('active');
+        btnDay.classList.remove('active');
+        renderScene();
+      });
+
+      // 初始化
+      Deck.init({ index: 6, total: 19, keys: false });
+      renderScene();
+    })();
+  </script>
+</body>
+</html>

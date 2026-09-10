@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>08 · AdaBoost</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/deck.css">
+<link rel="stylesheet" href="assets/lib/katex.min.css">
+<style>
+  .lab{ position:absolute; left:64px; top:196px; width:640px; height:580px; }
+  .lab .ttl{ display:flex; justify-content:space-between; align-items:baseline; height:30px; font-size:15px; font-weight:700; }
+  .lab .ttl span{ font-size:13px; color:var(--muted); font-weight:500; }
+  .lab canvas{ position:absolute; left:0; top:36px; width:640px; height:544px; border-radius:12px; border:1px solid var(--rule); background:var(--paper); }
+  .steps{ position:absolute; left:728px; top:196px; width:808px; height:580px; display:grid; grid-template-columns:440px 1fr; grid-template-rows:auto 1fr; gap:16px; }
+  .ctlbar{ grid-column:1/-1; padding:16px 22px; display:flex; align-items:center; gap:12px; }
+  .ctlbar .sp{ flex:1; }
+  .ctlbar .round{ font-family:var(--font-num); font-size:15px; color:var(--muted); }
+  .ctlbar .round b{ font-size:22px; color:var(--boost); font-weight:700; }
+  .algo{ padding:20px 24px; display:grid; gap:10px; align-content:start; }
+  .algo h2{ font-size:18px; }
+  .algo .st{ display:grid; grid-template-columns:28px 1fr; gap:10px; align-items:start; padding:10px 12px; border-radius:10px; border:1px solid transparent; transition:background .25s, border-color .25s; }
+  .algo .st .n{ width:26px; height:26px; border-radius:50%; background:var(--rule-2); display:grid; place-items:center; font-family:var(--font-num); font-size:13px; font-weight:700; color:var(--muted); }
+  .algo .st .t{ font-size:15px; line-height:1.5; color:var(--muted); }
+  .algo .st .t b{ color:var(--text); font-weight:600; }
+  .algo .st .math{ margin-top:6px; font-size:19px; color:var(--text); white-space:nowrap; }
+  sub{ font-size:.8em; } .log th sub{ font-size:12px; }
+  .algo .st[data-on=true]{ background:var(--boost-bg); border-color:var(--boost-lt); }
+  .algo .st[data-on=true] .n{ background:var(--boost); color:var(--paper); }
+  .algo .st[data-on=true] .t{ color:var(--text); }
+  .log{ padding:20px 24px; display:grid; grid-template-rows:auto 1fr auto; gap:10px; }
+  .log h2{ font-size:18px; display:flex; justify-content:space-between; align-items:baseline; }
+  .log h2 span{ font-size:13px; color:var(--muted); font-weight:500; }
+  .log table{ width:100%; border-collapse:collapse; font-family:var(--font-num); font-variant-numeric:tabular-nums; font-size:14px; }
+  .log th{ text-align:right; font-weight:600; color:var(--muted); font-size:12px; letter-spacing:.04em; padding:4px 6px; border-bottom:1px solid var(--rule); }
+  .log th:first-child, .log td:first-child{ text-align:left; }
+  .log td{ text-align:right; padding:6px 6px; border-bottom:1px solid var(--rule-2); color:var(--text); }
+  .log tr.cur td{ background:var(--boost-bg); font-weight:600; }
+  .log .err{ display:grid; grid-template-columns:1fr 1fr; gap:10px; border-top:1px solid var(--rule); padding-top:10px; }
+  .log .err .k{ font-size:12px; color:var(--muted); } .log .err .v{ font-family:var(--font-num); font-size:26px; font-weight:600; }
+</style>
+</head>
+<body>
+<main id="stage">
+  <header class="hd">
+    <div class="kicker"><b>03 · Boosting</b>ADABOOST · FREUND &amp; SCHAPIRE 1995</div>
+    <h1>一棵接一棵：把上一轮<em class="boost">分错的点放大</em>，再切一刀</h1>
+    <p class="lede">基学习器是决策桩（一次切分）。每轮在带权样本上找最好的一刀，答错的样本权重翻大、答对的缩小，下一刀就被逼着去照顾它们。最后按每刀的可信度 α 加权投票。</p>
+  </header>
+
+  <figure class="lab" aria-label="AdaBoost 逐轮演示">
+    <div class="ttl">点的大小 = 当前权重 · 底色 = 目前的加权投票 <span id="tag">第 0 轮 · 还没有分类器</span></div>
+    <canvas id="cv"></canvas>
+  </figure>
+
+  <section class="steps">
+    <div class="panel ctlbar">
+      <button class="btn boost" id="step">下一轮 →</button>
+      <button class="btn ghost" id="auto">自动跑 10 轮</button>
+      <button class="btn ghost" id="reset">重置</button>
+      <span class="sp"></span>
+      <span class="round">轮次 <b id="m">0</b> / 30</span>
+    </div>
+    <div class="panel algo">
+      <h2>每一轮做四件事</h2>
+      <div class="st" id="s1"><div class="n">1</div><div class="t"><b>带权拟合一棵桩</b> h<sub>m</sub>：在当前权重 w 下错得最少的那一刀。</div></div>
+      <div class="st" id="s2"><div class="n">2</div><div class="t"><b>算加权错误率</b><div class="math" id="f2"></div></div></div>
+      <div class="st" id="s3"><div class="n">3</div><div class="t"><b>算这一刀的话语权</b><div class="math" id="f3"></div></div></div>
+      <div class="st" id="s4"><div class="n">4</div><div class="t"><b>更新权重再归一化</b><div class="math" id="f4"></div></div></div>
+      <p style="font-size:14px;color:var(--muted);line-height:1.5;margin-top:4px">最终分类器 <span id="f5" style="font-size:18px"></span> —— 错得少的桩（ε 小）α 大，说话更响。</p>
+    </div>
+    <div class="panel log">
+      <h2>每一刀的账 <span>切分特征 · 阈值 · ε · α</span></h2>
+      <div style="overflow:hidden"><table><thead><tr><th>m</th><th>切在</th><th>ε<sub>m</sub></th><th>α<sub>m</sub></th></tr></thead><tbody id="tb"></tbody></table></div>
+      <div class="err">
+        <div><div class="k">训练错误率</div><div class="v" style="color:var(--boost)" id="etr">–</div></div>
+        <div><div class="k">测试错误率（600 个新点）</div><div class="v" id="ete">–</div></div>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="assets/base.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/katex.min.js"></script>
+<script src="assets/ens.js"></script>
+<script>
+Ens.footer(8);
+var K = { throwOnError: false };
+katex.render('\\varepsilon_m=\\textstyle\\sum_i w_i\\,\\mathbb{1}[h_m(x_i)\\neq y_i]', document.getElementById('f2'), K);
+katex.render('\\alpha_m=\\tfrac{1}{2}\\ln\\big((1-\\varepsilon_m)/\\varepsilon_m\\big)', document.getElementById('f3'), K);
+katex.render('w_i\\leftarrow w_i\\exp(-\\alpha_m y_i h_m(x_i))', document.getElementById('f4'), K);
+katex.render('H(x)=\\operatorname{sign}\\big(\\textstyle\\sum_m \\alpha_m h_m(x)\\big)', document.getElementById('f5'), K);
+var train = Ens.moons(60, 0.28, Ens.rng('ada-08')), test = Ens.moons(600, 0.28, Ens.rng('ada-08-test'));
+var y = train.y.map(function (c) { return c ? 1 : -1; }), ty = test.y.map(function (c) { return c ? 1 : -1; });
+var n = train.X.length, w, stumps, m;
+var A = Deck.rgb('--cls-a'), Bc = Deck.rgb('--cls-b');
+var cv = document.getElementById('cv'), ctx = Deck.fit(cv), W = 640, H = 544;
+function F(pt) { var s = 0; for (var k = 0; k < stumps.length; k++) s += stumps[k].alpha * stumps[k].h(pt); return s; }
+function reset() { w = new Float64Array(n).fill(1 / n); stumps = []; m = 0; document.getElementById('tb').innerHTML = ''; update(); }
+function step() {
+  if (m >= 30) return;
+  var st = Ens.stump(train.X, y, w), eps = Math.max(1e-6, Math.min(1 - 1e-6, st.err));
+  st.alpha = 0.5 * Math.log((1 - eps) / eps); st.eps = eps;
+  var Z = 0; for (var i = 0; i < n; i++) { w[i] *= Math.exp(-st.alpha * y[i] * st.h(train.X[i])); Z += w[i]; }
+  for (var j = 0; j < n; j++) w[j] /= Z;
+  stumps.push(st); m++;
+  var tr = document.createElement('tr'); tr.innerHTML = '<td>' + m + '</td><td>' + (st.f === 0 ? 'x₁' : 'x₂') + (st.s === 1 ? ' > ' : ' ≤ ') + st.thr.toFixed(2) + '</td><td>' + eps.toFixed(3) + '</td><td>' + st.alpha.toFixed(2) + '</td>';
+  var tb = document.getElementById('tb'); tb.appendChild(tr); tb.querySelectorAll('tr').forEach(function (r) { r.className = ''; }); tr.className = 'cur';
+  while (tb.children.length > 7) tb.removeChild(tb.firstChild);
+  update();
+}
+function update() {
+  ['s1', 's2', 's3', 's4'].forEach(function (id) { document.getElementById(id).dataset.on = m > 0; });
+  document.getElementById('m').textContent = m;
+  document.getElementById('tag').textContent = m ? '第 ' + m + ' 轮 · 加粗的线是这一轮新加的桩' : '第 0 轮 · 所有点权重相同 1/' + n;
+  var etr = 0, ete = 0;
+  if (m) { for (var i = 0; i < n; i++) if (Math.sign(F(train.X[i])) !== y[i]) etr++; for (var j = 0; j < test.X.length; j++) if (Math.sign(F(test.X[j])) !== ty[j]) ete++; }
+  document.getElementById('etr').innerHTML = m ? (etr / n * 100).toFixed(1) + '<small style="font-size:14px;color:var(--muted)">%</small>' : '–';
+  document.getElementById('ete').innerHTML = m ? (ete / test.X.length * 100).toFixed(1) + '<small style="font-size:14px;color:var(--muted)">%</small>' : '–';
+  draw();
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if (m) { var tot = stumps.reduce(function (s, k) { return s + k.alpha; }, 0); Ens.field(ctx, W, H, function (x, yy) { return 0.5 + 0.5 * F([x, yy]) / tot; }, 5, A, Bc, 0.45); }
+  // 每一刀
+  stumps.forEach(function (st, k) {
+    var last = k === stumps.length - 1;
+    ctx.strokeStyle = last ? Deck.token('--boost') : 'rgba(29,35,39,' + (0.12 + 0.3 * st.alpha / 2) + ')'; ctx.lineWidth = last ? 3 : 1.2; ctx.setLineDash(last ? [] : [4, 4]);
+    ctx.beginPath(); if (st.f === 0) { ctx.moveTo(st.thr * W, 0); ctx.lineTo(st.thr * W, H); } else { ctx.moveTo(0, (1 - st.thr) * H); ctx.lineTo(W, (1 - st.thr) * H); } ctx.stroke();
+  });
+  ctx.setLineDash([]);
+  for (var i = 0; i < n; i++) {
+    var p = train.X[i], rr = 3 + Math.sqrt(w[i] * n) * 4.5, wrong = m && Math.sign(F(p)) !== y[i];
+    ctx.beginPath(); ctx.arc(p[0] * W, (1 - p[1]) * H, rr, 0, 7);
+    ctx.fillStyle = y[i] > 0 ? 'rgb(' + Bc.join(',') + ')' : 'rgb(' + A.join(',') + ')'; ctx.fill();
+    ctx.lineWidth = wrong ? 2.5 : 1.5; ctx.strokeStyle = wrong ? Deck.token('--gold') : 'rgba(250,248,242,.95)'; ctx.stroke();
+  }
+}
+document.getElementById('step').addEventListener('click', step);
+document.getElementById('reset').addEventListener('click', reset);
+var timer = null;
+document.getElementById('auto').addEventListener('click', function () { if (timer) return; var k = 0; timer = setInterval(function () { step(); if (++k >= 10 || m >= 30) { clearInterval(timer); timer = null; } }, 450); });
+Deck.onResize(function () { ctx = Deck.fit(cv); draw(); });
+reset();
+</script>
+</body>
+</html>

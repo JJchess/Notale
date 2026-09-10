@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>主张重建：推导一句不过度外推的结论</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F7;
+      --surface: #FFFFFF;
+      --soft: #E3ECEF;
+      --text: #17272D;
+      --muted: #52666E;
+      --observed: #245A74;
+      --cause: #B13F2A;
+      --uncertain: #7A5B12;
+      --supported: #2D694C;
+      --selected: #D6E8EE;
+      --focus: #B13F2A;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: 28px 48px 24px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      height: 900px;
+      width: 1600px;
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    .top-bar {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--soft);
+      padding-bottom: 10px;
+    }
+    .top-bar h1 {
+      font-size: var(--fs-h1);
+      color: var(--text);
+      line-height: 1.2;
+      margin: 0;
+      font-weight: 700;
+    }
+    .top-bar p {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 6px 0 0;
+      line-height: 1.4;
+    }
+    .scenario-switch {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .scenario-switch span {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-right: 4px;
+    }
+
+    /* 主工作台：左右结构 */
+    .workspace {
+      flex: 1 1 0;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 16px;
+    }
+
+    /* 左栏：论文实证凭据卡片 */
+    .paper-card {
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .card-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--soft);
+      padding-bottom: 10px;
+    }
+    .card-title-row h2 {
+      font-size: var(--fs-h2);
+      color: var(--text);
+      margin: 0;
+      font-weight: 700;
+    }
+    .tag {
+      font-size: var(--fs-tick);
+      padding: 3px 8px;
+      border-radius: var(--r-sm);
+      background: var(--soft);
+      color: var(--observed);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .evidence-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .evidence-item {
+      background: #F8FAFB;
+      border: 1px solid var(--soft);
+      border-radius: var(--r-sm);
+      padding: 10px 12px;
+    }
+    .evidence-item.wide {
+      grid-column: span 2;
+    }
+    .evidence-k {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-bottom: 4px;
+      display: block;
+    }
+    .evidence-v {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      font-weight: 600;
+      line-height: 1.35;
+    }
+    .evidence-v .num {
+      font-size: 20px;
+      color: var(--observed);
+      font-family: var(--font-num), sans-serif;
+    }
+
+    .ci-visual {
+      background: #F8FAFB;
+      border: 1px solid var(--soft);
+      border-radius: var(--r-sm);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ci-bar-wrap {
+      position: relative;
+      height: 28px;
+      background: #EAEFF1;
+      border-radius: 4px;
+      overflow: visible;
+      margin: 10px 0 4px;
+    }
+    .ci-zero-line {
+      position: absolute;
+      left: 35%;
+      top: -4px;
+      bottom: -4px;
+      width: 2px;
+      background: var(--muted);
+      z-index: 2;
+    }
+    .ci-zero-label {
+      position: absolute;
+      left: 35%;
+      top: -18px;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--font-num), sans-serif;
+    }
+    .ci-span {
+      position: absolute;
+      top: 6px;
+      height: 16px;
+      background: rgba(36, 90, 116, 0.25);
+      border: 1.5px solid var(--observed);
+      border-radius: 3px;
+      z-index: 3;
+    }
+    .ci-point {
+      position: absolute;
+      top: 2px;
+      width: 8px;
+      height: 24px;
+      background: var(--cause);
+      border-radius: 2px;
+      transform: translateX(-50%);
+      z-index: 4;
+    }
+    .ci-readout {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .ci-readout strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .validity-boundary {
+      background: rgba(177, 63, 42, 0.05);
+      border: 1px solid rgba(177, 63, 42, 0.25);
+      border-radius: var(--r-sm);
+      padding: 10px 12px;
+      font-size: var(--fs-tick);
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .validity-boundary b {
+      color: var(--cause);
+    }
+
+    /* 右栏：主张积木拼装台与实时裁定 */
+    .builder-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    /* 4 个积木插槽选择区 */
+    .slots-container {
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 12px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .slot-row {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      align-items: center;
+      gap: 12px;
+    }
+    .slot-label {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .slot-label .step-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--soft);
+      color: var(--observed);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+
+    .pill-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pill {
+      background: #F8FAFB;
+      border: 1px solid var(--soft);
+      color: var(--text);
+      border-radius: var(--r-sm);
+      padding: 4px 10px;
+      font-size: var(--fs-label);
+      cursor: pointer;
+      line-height: 1.3;
+      transition: all var(--fast) var(--ease);
+      text-align: left;
+    }
+    .pill:hover {
+      border-color: var(--observed);
+      background: #FFFFFF;
+    }
+    .pill[aria-pressed="true"] {
+      background: var(--selected);
+      border-color: var(--observed);
+      color: var(--text);
+      font-weight: 600;
+      box-shadow: 0 0 0 1px var(--observed);
+    }
+    .pill:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 1px;
+    }
+
+    /* 组装出的完整陈述句子 */
+    .sentence-display {
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 10px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .sentence-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .sentence-text {
+      font-size: var(--fs-body);
+      color: var(--text);
+      line-height: 1.45;
+      font-weight: 500;
+      min-height: 40px;
+    }
+    .token-chip {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin: 0 3px;
+      font-weight: 600;
+      border-bottom: 2px solid;
+    }
+    .token-pop { background: #E8EFF2; border-color: var(--observed); color: var(--observed); }
+    .token-treat { background: #F6ECE9; border-color: var(--cause); color: var(--cause); }
+    .token-mag { background: #F3EEDB; border-color: var(--uncertain); color: var(--uncertain); }
+    .token-bound { background: #E6F0EA; border-color: var(--supported); color: var(--supported); }
+
+    /* 实时裁定评估面板 */
+    .verdict-pane {
+      background: var(--surface);
+      border: 1px solid var(--soft);
+      border-radius: var(--r-md);
+      padding: 12px 18px;
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .verdict-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .verdict-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status-badge {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 4px;
+    }
+    .status-badge.exact {
+      background: rgba(45, 105, 76, 0.15);
+      color: var(--supported);
+      border: 1px solid var(--supported);
+    }
+    .status-badge.warning {
+      background: rgba(177, 63, 42, 0.12);
+      color: var(--cause);
+      border: 1px solid var(--cause);
+    }
+    .status-badge.neutral {
+      background: var(--soft);
+      color: var(--muted);
+    }
+
+    .diagnostics-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      flex: 1 1 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .diag-item {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      padding: 7px 10px;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--soft);
+      background: #F8FAFB;
+      font-size: var(--fs-tick);
+      line-height: 1.35;
+    }
+    .diag-item.pass {
+      border-color: rgba(45, 105, 76, 0.35);
+      background: rgba(45, 105, 76, 0.04);
+    }
+    .diag-item.fail {
+      border-color: rgba(177, 63, 42, 0.35);
+      background: rgba(177, 63, 42, 0.04);
+    }
+    .diag-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .diag-axis {
+      font-weight: 700;
+      font-size: var(--fs-tick);
+      color: var(--text);
+    }
+    .diag-tag {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 3px;
+    }
+    .diag-item.pass .diag-tag {
+      background: rgba(45, 105, 76, 0.15);
+      color: var(--supported);
+    }
+    .diag-item.fail .diag-tag {
+      background: rgba(177, 63, 42, 0.15);
+      color: var(--cause);
+    }
+    .diag-desc {
+      color: var(--muted);
+      font-size: var(--fs-tick);
+    }
+    .diag-desc strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* 按钮样式 */
+    .btn {
+      padding: 6px 14px;
+      border: 1px solid var(--soft);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      color: var(--text);
+      font-size: var(--fs-sec);
+      cursor: pointer;
+      font-weight: 500;
+      transition: all var(--fast) var(--ease);
+    }
+    .btn:hover {
+      border-color: var(--observed);
+      background: #FAFDFE;
+    }
+    .btn.active {
+      background: var(--observed);
+      color: #FFFFFF;
+      border-color: var(--observed);
+    }
+  </style>
+</head>
+<body data-page="15" data-total="24">
+  <div id="stage">
+    <header class="top-bar">
+      <div>
+        <h1>主张重建：从估计值到不过度外推的结论</h1>
+        <p>组装实证主张的四项要素（研究人群、因果干预、效应量级与适用边界），模型实时检验外推风险与因果漏洞</p>
+      </div>
+      <div class="scenario-switch">
+        <span>切换论文案例：</span>
+        <button class="btn active" id="btn-case-1" data-case="0" type="button">案例 1：最低工资雇佣效应</button>
+        <button class="btn" id="btn-case-2" data-case="1" type="button">案例 2：小班教学与升学率</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <!-- 左栏：论文证据卡片 -->
+      <section class="paper-card" aria-labelledby="paper-evidence-heading">
+        <div class="card-title-row">
+          <h2 id="paper-evidence-heading">论文实证凭据表</h2>
+          <span class="tag" id="paper-design">DID 双重差分</span>
+        </div>
+
+        <div class="evidence-grid">
+          <div class="evidence-item">
+            <span class="evidence-k">样本人群与范围</span>
+            <div class="evidence-v" id="ev-sample">新泽西州与宾州东部快餐连锁店</div>
+          </div>
+          <div class="evidence-item">
+            <span class="evidence-k">处理变量 (Treatment)</span>
+            <div class="evidence-v" id="ev-treatment">州法定最低时薪 $4.25 → $5.05</div>
+          </div>
+          <div class="evidence-item wide">
+            <span class="evidence-k">点估计与标准误 (Estimand: ATT)</span>
+            <div class="evidence-v" id="ev-estimate">
+              <span class="num" id="ev-coef">+2.76</span> 家全职当量 FTE/店 
+              <span style="font-weight:400; color:var(--muted); font-size:14px;">(SE = 1.34, p ≈ 0.039)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 置信区间可视化 -->
+        <div class="ci-visual">
+          <div style="display:flex; justify-content:space-between; align-items:baseline;">
+            <span class="evidence-k">95% 置信区间 (真实效应可能区间)</span>
+            <span style="font-size:var(--fs-tick); color:var(--observed); font-weight:600;" id="ci-text">[+0.13, +5.39]</span>
+          </div>
+          <div class="ci-bar-wrap" id="ci-bar-wrap">
+            <div class="ci-zero-line" id="ci-zero"></div>
+            <div class="ci-zero-label" id="ci-zero-lbl">0</div>
+            <div class="ci-span" id="ci-span" style="left: 36.5%; width: 52.6%;"></div>
+            <div class="ci-point" id="ci-point" style="left: 64.1%;" title="点估计 +2.76"></div>
+          </div>
+          <div class="ci-readout">
+            <span>基准均值: <strong id="ev-baseline">20.4 FTE/店</strong></span>
+            <span>相对变化: <strong id="ev-rel">+13.5%</strong></span>
+          </div>
+        </div>
+
+        <div class="validity-boundary">
+          <b>外推边界警示：</b>
+          <span id="ev-boundary">时效为上调后 8–10 个月短期；行业限于对低技能劳动力高度依赖的快餐业；工资调幅为 18.8%。对长期、制造业或大幅翻倍上调无直接推论效力。</span>
+        </div>
+      </section>
+
+      <!-- 右栏：主张装配与裁定 -->
+      <section class="builder-pane" aria-label="主张拼装工作区">
+        <!-- 选项插槽区 -->
+        <div class="slots-container" id="slots-area">
+          <!-- 1. 人群范围 -->
+          <div class="slot-row" data-axis="pop">
+            <div class="slot-label">
+              <span class="step-num">1</span>
+              <span>样本范围</span>
+            </div>
+            <div class="pill-group" id="pills-pop">
+              <!-- JS 动态渲染 -->
+            </div>
+          </div>
+
+          <!-- 2. 处理/因果动词 -->
+          <div class="slot-row" data-axis="treat">
+            <div class="slot-label">
+              <span class="step-num">2</span>
+              <span>处理干预</span>
+            </div>
+            <div class="pill-group" id="pills-treat">
+              <!-- JS 动态渲染 -->
+            </div>
+          </div>
+
+          <!-- 3. 量级与不确定性 -->
+          <div class="slot-row" data-axis="mag">
+            <div class="slot-label">
+              <span class="step-num">3</span>
+              <span>效应量级</span>
+            </div>
+            <div class="pill-group" id="pills-mag">
+              <!-- JS 动态渲染 -->
+            </div>
+          </div>
+
+          <!-- 4. 边界限定语 -->
+          <div class="slot-row" data-axis="bound">
+            <div class="slot-label">
+              <span class="step-num">4</span>
+              <span>推论边界</span>
+            </div>
+            <div class="pill-group" id="pills-bound">
+              <!-- JS 动态渲染 -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 组装出的句子展示 -->
+        <div class="sentence-display">
+          <div class="sentence-label">当前组装的学术结论 (Claim Sentence)</div>
+          <div class="sentence-text" id="assembled-sentence">
+            <!-- 组装文本 -->
+          </div>
+        </div>
+
+        <!-- 实时诊断面板 -->
+        <div class="verdict-pane">
+          <div class="verdict-header">
+            <div class="verdict-status">
+              <span style="font-size:var(--fs-label); color:var(--muted); font-weight:700;">检验结果：</span>
+              <span class="status-badge" id="verdict-badge">待完整装配</span>
+            </div>
+            <button class="btn" id="btn-reset" type="button">重置初始状态</button>
+          </div>
+
+          <div class="diagnostics-list" id="diag-list">
+            <!-- 4 条维度的评估细则 -->
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页我们做一个实证经济学核心训练：推导一句不过度外推的主张。
+    当我们在回归表里看到一个在 5% 水平显著的系数时，许多初学者会脱口而出：最低工资能增加就业，或者缩小班级能全面提高升学。
+    但规范的实证主张必须严丝合缝地锚定四个支点：样本范围、干预方式、效应量级与置信区间、以及因果机制的外推边界。
+    请尝试在右侧切换不同的积木短语。你会发现，一旦忽略了快餐业这一特定行业，或者把 18% 增幅夸大为普遍无害，检验系统就会立刻报出外推偏误。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 案例数据模型
+      const SCENARIOS = [
+        {
+          id: 0,
+          title: "最低工资与快餐业雇佣",
+          design: "DID 差异法 (Card & Krueger 1994)",
+          sample: "新泽西州与宾州东部快餐连锁店",
+          treatment: "州最低时薪由 $4.25 提高到 $5.05 (+18.8%)",
+          estimate: "+2.76",
+          se: "1.34",
+          p: "0.039",
+          ci: [+0.13, +5.39],
+          baseline: "20.4 FTE/店",
+          relChange: "+13.5% (CI: +0.6% ~ +26.4%)",
+          boundaryNote: "时效为调薪后 8–10 个月短期；仅限于对兼职低技能工依赖极高的快餐业；不能外推至大幅翻倍、全国全行业或多年资本替代的长期情境。",
+          // 标尺可视化参数 (min, max, zeroPos)
+          axisMin: -2.0,
+          axisMax: 6.0,
+          // 4个插槽的备选项
+          options: {
+            pop: [
+              { id: "pop_exact", text: "在美东新泽西及宾州边缘的快餐业样本中", valid: true, penalty: null },
+              { id: "pop_over1", text: "在全美所有低技能劳动密集型行业中", valid: false, penalty: "【样本过度外推】快餐业需求刚性强且可转嫁售价，不能直接推广到受国际贸易竞争冲击的制造业或小微零售业。" },
+              { id: "pop_over2", text: "在整个宏观经济体与所有劳动力市场中", valid: false, penalty: "【宏观外推谬误】局部地方小幅调价的局部均衡效应（Partial Equilibrium）绝不等于整体宏观一般均衡效应。" }
+            ],
+            treat: [
+              { id: "treat_exact", text: "法定最低时薪温和上调 18.8%（约 $0.80）", valid: true, penalty: null },
+              { id: "treat_vague", text: "提高最低工资水平", valid: false, penalty: "【处理变量模糊】未限定调薪幅度。温和提薪可能不减员，但翻倍上调可能诱发企业退出或加速自动化。" },
+              { id: "treat_causal_over", text: "强制提升底层劳动者整体收入", valid: false, penalty: "【偷换概念】最低工资干预的是法定费率，未测量总工时缩减，不能直接等同于劳动者总收入必定提高。" }
+            ],
+            mag: [
+              { id: "mag_exact", text: "使单店短期全职当量就地增加了约 2.8 人（95% CI: [+0.1, +5.4]）", valid: true, penalty: null },
+              { id: "mag_point_only", text: "显著使单店雇佣确定性净增 2.76 人", valid: false, penalty: "【忽略抽样不确定性】系数 2.76 附带 SE=1.34，置信区间下界极其贴近 0 (+0.13)，不能表述为绝对确定的数值。" },
+              { id: "mag_dir_only", text: "有力带动了就业岗位的普遍繁荣", valid: false, penalty: "【过度夸大经济显著性】相对基准该效应在统计上仅轻微显著，且下界接近零，不能夸大为普遍繁荣。" }
+            ],
+            bound: [
+              { id: "bound_exact", text: "该结论为调薪后一年的短期局部效应，不支持推断全国长期影响。", valid: true, penalty: null },
+              { id: "bound_missing", text: "充分证明了提高最低工资既不会损害就业，更对整体经济有百利而无一害。", valid: false, penalty: "【外推边界严重穿透】完全无视了快餐企业通过提价吸收成本、以及企业缺乏时间替换自动化设备的短期约束。" },
+              { id: "bound_weak", text: "研究结果具有普遍的政策借鉴意义。", valid: false, penalty: "【缺乏证伪与限定】规范学术主张必须主动交代自身局限与不可外推的红线。" }
+            ]
+          }
+        },
+        {
+          id: 1,
+          title: "田纳西 STAR 小班教学实验",
+          design: "随机对照实验 RCT (Krueger 1999)",
+          sample: "田纳西州 79 所公立小学 K–3 年级学生",
+          treatment: "班级规模从常规 22–25 人缩减为 13–17 人",
+          estimate: "+0.22",
+          se: "0.05",
+          p: "< 0.001",
+          ci: [+0.12, +0.32],
+          baseline: "标化考试标准差 (SD)",
+          relChange: "+0.22 个标准差 (约提升 8 个百分位)",
+          boundaryNote: "实验发生于公立初小阶段；教师质量在实验期保持稳定；不能直接外推至师资极度匮乏的高中或大班授课大学。",
+          axisMin: -0.1,
+          axisMax: 0.4,
+          options: {
+            pop: [
+              { id: "pop_exact", text: "在田纳西州参与实验的公立初小低年级学生中", valid: true, penalty: null },
+              { id: "pop_over1", text: "在全美各学段（含初高中与大学）所有学生中", valid: false, penalty: "【学段外推过度】小班对行为习惯未定型的小学低年级最有效，不能直接推广到自律与基础不同的大龄学段。" },
+              { id: "pop_over2", text: "对发展中国家任意资源匮乏的乡村学校", valid: false, penalty: "【背景外推过度】田纳西有充足合格师资，若在教师短缺地区盲目拆班，师资稀释将抵消班额红利。" }
+            ],
+            treat: [
+              { id: "treat_exact", text: "班级人数由 22–25 人实质缩减至 13–17 人", valid: true, penalty: null },
+              { id: "treat_vague", text: "减少班级规模与推行个性化关怀", valid: false, penalty: "【干预外延过宽】STAR 实验只操纵了生师比，并未绑定特定的个性化教学法培训。" },
+              { id: "treat_causal_over", text: "大幅增加学校财政投入", valid: false, penalty: "【混淆因果机制】小班化只是经费投入的一种极特殊方式，不能等同于一般性财政拨款。" }
+            ],
+            mag: [
+              { id: "mag_exact", text: "使早期标化成绩提升约 0.22 个标准差（95% CI: [+0.12, +0.32]）", valid: true, penalty: null },
+              { id: "mag_point_only", text: "确定能让学生考试成绩精准提高 0.22 个标准差", valid: false, penalty: "【省略区间】未提供置信区间，抹杀了抽样异质性与估计扰动。" },
+              { id: "mag_dir_only", text: "彻底扭转了低收入家庭学生的学业劣势", valid: false, penalty: "【效应夸大】0.22 SD 属于中等可观改善，远未达到彻底消除家庭背景差距的量级。" }
+            ],
+            bound: [
+              { id: "bound_exact", text: "结论依赖合格教师供给充足的假设，不能推断大规模扩招下师资摊薄的后果。", valid: true, penalty: null },
+              { id: "bound_missing", text: "证明了任何教育体系只要缩减班额就能稳步提高产出。", valid: false, penalty: "【严重外推】加州 1996 年全面推广小班制因急聘未达标教师导致教学质量反降，印证了外推边界的重要性。" },
+              { id: "bound_weak", text: "这一因果效应在未来仍有重要价值。", valid: false, penalty: "【空洞注记】未能指明外部有效性（External Validity）受制于教师劳动力供给弹性。" }
+            ]
+          }
+        }
+      ];
+
+      // 状态管理
+      let activeScenarioIndex = 0;
+      let selections = {
+        pop: "pop_exact",
+        treat: "treat_vague", // 初始故意给一个非完美状态，引发读者修改
+        mag: "mag_point_only",
+        bound: "bound_missing"
+      };
+
+      const el = {
+        btnCase1: document.getElementById("btn-case-1"),
+        btnCase2: document.getElementById("btn-case-2"),
+        paperDesign: document.getElementById("paper-design"),
+        evSample: document.getElementById("ev-sample"),
+        evTreatment: document.getElementById("ev-treatment"),
+        evEstimate: document.getElementById("ev-estimate"),
+        evBaseline: document.getElementById("ev-baseline"),
+        evRel: document.getElementById("ev-rel"),
+        ciText: document.getElementById("ci-text"),
+        ciSpan: document.getElementById("ci-span"),
+        ciPoint: document.getElementById("ci-point"),
+        ciZero: document.getElementById("ci-zero"),
+        ciZeroLbl: document.getElementById("ci-zero-lbl"),
+        evBoundary: document.getElementById("ev-boundary"),
+        pillsPop: document.getElementById("pills-pop"),
+        pillsTreat: document.getElementById("pills-treat"),
+        pillsMag: document.getElementById("pills-mag"),
+        pillsBound: document.getElementById("pills-bound"),
+        assembledSentence: document.getElementById("assembled-sentence"),
+        verdictBadge: document.getElementById("verdict-badge"),
+        diagList: document.getElementById("diag-list"),
+        btnReset: document.getElementById("btn-reset")
+      };
+
+      function currentScenario() {
+        return SCENARIOS[activeScenarioIndex];
+      }
+
+      function updateScenarioInfo() {
+        const sc = currentScenario();
+        el.paperDesign.textContent = sc.design;
+        el.evSample.textContent = sc.sample;
+        el.evTreatment.textContent = sc.treatment;
+        
+        if (sc.id === 0) {
+          el.evEstimate.innerHTML = `<span class="num">${sc.estimate}</span> 家全职当量 FTE/店 <span style="font-weight:400; color:var(--muted); font-size:14px;">(SE = ${sc.se}, p ≈ ${sc.p})</span>`;
+          el.evBaseline.textContent = sc.baseline;
+          el.evRel.textContent = sc.relChange;
+          el.ciText.textContent = `[+${sc.ci[0]}, +${sc.ci[1]}]`;
+        } else {
+          el.evEstimate.innerHTML = `<span class="num">${sc.estimate}</span> 标化标准差 (SD) <span style="font-weight:400; color:var(--muted); font-size:14px;">(SE = ${sc.se}, p ${sc.p})</span>`;
+          el.evBaseline.textContent = sc.baseline;
+          el.evRel.textContent = sc.relChange;
+          el.ciText.textContent = `[+${sc.ci[0]}, +${sc.ci[1]}]`;
+        }
+
+        el.evBoundary.textContent = sc.boundaryNote;
+
+        // 计算 CI 尺标位置
+        const range = sc.axisMax - sc.axisMin;
+        const zeroPct = ((0 - sc.axisMin) / range) * 100;
+        const ciLeftPct = ((sc.ci[0] - sc.axisMin) / range) * 100;
+        const ciRightPct = ((sc.ci[1] - sc.axisMin) / range) * 100;
+        const ptPct = ((parseFloat(sc.estimate) - sc.axisMin) / range) * 100;
+
+        el.ciZero.style.left = `${zeroPct}%`;
+        el.ciZeroLbl.style.left = `${zeroPct}%`;
+        el.ciSpan.style.left = `${ciLeftPct}%`;
+        el.ciSpan.style.width = `${Math.max(4, ciRightPct - ciLeftPct)}%`;
+        el.ciPoint.style.left = `${ptPct}%`;
+
+        // 切换按钮高亮
+        el.btnCase1.classList.toggle("active", activeScenarioIndex === 0);
+        el.btnCase2.classList.toggle("active", activeScenarioIndex === 1);
+      }
+
+      function renderPills() {
+        const sc = currentScenario();
+        const axes = [
+          { key: "pop", container: el.pillsPop },
+          { key: "treat", container: el.pillsTreat },
+          { key: "mag", container: el.pillsMag },
+          { key: "bound", container: el.pillsBound }
+        ];
+
+        axes.forEach(({ key, container }) => {
+          container.innerHTML = "";
+          const options = sc.options[key];
+          options.forEach(opt => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "pill";
+            btn.dataset.axis = key;
+            btn.dataset.id = opt.id;
+            btn.setAttribute("aria-pressed", String(selections[key] === opt.id));
+            btn.textContent = opt.text;
+            container.appendChild(btn);
+          });
+        });
+      }
+
+      function evaluateAndRender() {
+        const sc = currentScenario();
+        
+        // 查找选中的各项对象
+        const selPop = sc.options.pop.find(o => o.id === selections.pop) || sc.options.pop[0];
+        const selTreat = sc.options.treat.find(o => o.id === selections.treat) || sc.options.treat[0];
+        const selMag = sc.options.mag.find(o => o.id === selections.mag) || sc.options.mag[0];
+        const selBound = sc.options.bound.find(o => o.id === selections.bound) || sc.options.bound[0];
+
+        // 渲染完整句子
+        el.assembledSentence.innerHTML = `
+          <span class="token-chip token-pop">${selPop.text}</span>，
+          <span class="token-chip token-treat">${selTreat.text}</span>，
+          <span class="token-chip token-mag">${selMag.text}</span>。
+          <span class="token-chip token-bound">${selBound.text}</span>
+        `;
+
+        // 诊断维度核查
+        const checks = [
+          { name: "人群界定", obj: selPop },
+          { name: "处理变量", obj: selTreat },
+          { name: "效应量级", obj: selMag },
+          { name: "推论边界", obj: selBound }
+        ];
+
+        el.diagList.innerHTML = "";
+        let failureCount = 0;
+
+        checks.forEach(item => {
+          const div = document.createElement("div");
+          const isValid = item.obj.valid;
+          if (!isValid) failureCount++;
+
+          div.className = `diag-item ${isValid ? "pass" : "fail"}`;
+          div.innerHTML = `
+            <div class="diag-head">
+              <span class="diag-axis">${item.name}</span>
+              <span class="diag-tag">${isValid ? "严谨通过" : "存在违约"}</span>
+            </div>
+            <div class="diag-desc">
+              ${isValid 
+                ? `<strong>边界稳固</strong>：符合论文实证设计的观测人群与干预规格。` 
+                : `${item.obj.penalty}`}
+            </div>
+          `;
+          el.diagList.appendChild(div);
+        });
+
+        // 顶层状态徽章
+        if (failureCount === 0) {
+          el.verdictBadge.className = "status-badge exact";
+          el.verdictBadge.textContent = "精准不过度外推（通过学术严谨检验）";
+        } else {
+          el.verdictBadge.className = "status-badge warning";
+          el.verdictBadge.textContent = `存在 ${failureCount} 处外推或规范违约`;
+        }
+      }
+
+      function switchScenario(index) {
+        if (activeScenarioIndex === index) return;
+        activeScenarioIndex = index;
+        // 重置为该案例的测试初态
+        selections = {
+          pop: "pop_exact",
+          treat: "treat_vague",
+          mag: "mag_point_only",
+          bound: "bound_missing"
+        };
+        updateScenarioInfo();
+        renderPills();
+        evaluateAndRender();
+      }
+
+      function resetSelection() {
+        selections = {
+          pop: "pop_exact",
+          treat: "treat_vague",
+          mag: "mag_point_only",
+          bound: "bound_missing"
+        };
+        renderPills();
+        evaluateAndRender();
+      }
+
+      // 绑定事件
+      el.btnCase1.addEventListener("click", () => switchScenario(0));
+      el.btnCase2.addEventListener("click", () => switchScenario(1));
+      el.btnReset.addEventListener("click", resetSelection);
+
+      document.getElementById("slots-area").addEventListener("click", (e) => {
+        const pill = e.target.closest(".pill");
+        if (!pill) return;
+        const axis = pill.dataset.axis;
+        const id = pill.dataset.id;
+        selections[axis] = id;
+        
+        // 更新同组按钮状态
+        const group = pill.parentElement;
+        group.querySelectorAll(".pill").forEach(p => {
+          p.setAttribute("aria-pressed", String(p === pill));
+        });
+
+        evaluateAndRender();
+      });
+
+      // 初始化
+      updateScenarioInfo();
+      renderPills();
+      evaluateAndRender();
+
+      Deck.init({ keys: true, total: 24, index: 15 });
+    })();
+  </script>
+</body>
+</html>

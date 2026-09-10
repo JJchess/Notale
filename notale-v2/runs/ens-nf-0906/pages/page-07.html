@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF1;
+      --text: #142630;
+      --muted: #50616B;
+      --model: #17628E;
+      --focus: #B83D0B;
+      --rule: #71828B;
+      --card-bg: rgba(255, 255, 255, 0.65);
+    }
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: 28px 56px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      user-select: none;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 2px solid var(--rule);
+      padding-bottom: 14px;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      margin: 0;
+      letter-spacing: -0.5px;
+    }
+    .header-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .main-grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 32px;
+      flex: 1;
+      margin-top: 20px;
+      min-height: 0;
+    }
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .control-box {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--rule);
+    }
+    .control-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .val-highlight {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      color: var(--text);
+    }
+    input[type=range] {
+      width: 100%;
+      accent-color: var(--model);
+      cursor: pointer;
+    }
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+    button.mode-btn {
+      padding: 8px 0;
+      font-size: var(--fs-label);
+      border: 1px solid var(--rule);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: all var(--motion-fast);
+    }
+    button.mode-btn.active {
+      background: var(--model);
+      color: #fff;
+      border-color: var(--model);
+    }
+    .kpi-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .kpi-title {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .kpi-val {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      color: var(--focus);
+      line-height: var(--lh-tight);
+    }
+    .kpi-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .vis-area {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      min-height: 0;
+    }
+    .chart-container {
+      display: flex;
+      flex-direction: column;
+      border-top: 1px solid var(--rule);
+      padding-top: 10px;
+      min-height: 0;
+    }
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      line-height: var(--lh-tight);
+    }
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      display: inline-block;
+    }
+    .dot-model { background: var(--model); }
+    .dot-err { background: var(--focus); }
+    .canvas-wrap {
+      position: relative;
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+    }
+    .matrix-view {
+      height: 340px;
+    }
+    .curve-view {
+      height: 310px;
+    }
+    canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body data-page="07" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>误差相关性与多数投票有效性</h1>
+      <span class="header-sub">21 个基学习器（基准单体错误率 35%）</span>
+    </header>
+
+    <div class="main-grid">
+      <div class="panel">
+        <div class="control-box">
+          <div class="control-label">
+            <span>错误相关系数 ρ</span>
+            <span class="val-highlight" id="rho-val">0.00</span>
+          </div>
+          <input type="range" id="rho-slider" min="0" max="0.95" step="0.05" value="0.00">
+          <div class="btn-group">
+            <button class="mode-btn active" data-rho="0.00">完全独立</button>
+            <button class="mode-btn" data-rho="0.30">弱相关</button>
+            <button class="mode-btn" data-rho="0.80">强相关</button>
+          </div>
+        </div>
+
+        <div class="kpi-block">
+          <div class="kpi-title">集成实际错误率</div>
+          <div class="kpi-val" id="ens-err-disp">8.5%</div>
+          <div class="kpi-desc" id="ens-summary">多数投票纠错增益显著</div>
+        </div>
+      </div>
+
+      <div class="vis-area">
+        <div class="chart-container matrix-view">
+          <div class="chart-title">
+            <span>微观样本决策矩阵（20 样本 × 21 学习器）</span>
+            <div class="legend-row">
+              <span class="legend-item"><i class="dot dot-model"></i>预测正确</span>
+              <span class="legend-item"><i class="dot dot-err"></i>预测错误</span>
+            </div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="matrix-cv"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-container curve-view">
+          <div class="chart-title">
+            <span>全域相关性响应曲线（蒙特卡洛 N=2000）</span>
+            <div class="legend-row">
+              <span class="legend-item" style="color:var(--rule)">虚线：单模型 35%</span>
+              <span class="legend-item" style="color:var(--model)">蓝线：集成错误率</span>
+            </div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="curve-cv"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看，单模型准确率达到 65%（错误率 35%）时，若 21 个学习器彼此完全独立，错误相互抵消，多数投票后的集成错误率会急剧下降到 8% 以下。
+    但请大家拖动左侧滑块观察相关系数：一旦基学习器因为相同特征或算法共犯相同错误，矩阵中会出现大面积垂直贯穿的红色错误带。
+    当相关性升到 0.8 时，多数投票失去纠错能力，集成错误率迅速退化并贴近单模型 35% 的底线。这正是为何集成学习必须主动制造模型多样性。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      const M = 21; // 基学习器数量
+      const BASE_ERR = 0.35; // 单模型错误率
+      const SAMPLES = 20; // 微观展示样本数
+      const MC_ROUNDS = 2000; // 模拟轮数
+
+      let currentRho = 0.00;
+
+      const rhoSlider = document.getElementById('rho-slider');
+      const rhoVal = document.getElementById('rho-val');
+      const ensErrDisp = document.getElementById('ens-err-disp');
+      const ensSummary = document.getElementById('ens-summary');
+      const modeBtns = document.querySelectorAll('.mode-btn');
+
+      const matrixCv = document.getElementById('matrix-cv');
+      const curveCv = document.getElementById('curve-cv');
+
+      // 标准正态累积分布逆函数有理近似 (Acklam)
+      function invNorm(p) {
+        const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+        const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
+        const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+        const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00];
+        const p_low = 0.02425, p_high = 1 - p_low;
+        if (p <= 0) return -6;
+        if (p >= 1) return 6;
+        if (p < p_low) {
+          const q = Math.sqrt(-2 * Math.log(p));
+          return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+        }
+        if (p <= p_high) {
+          const q = p - 0.5, r = q * q;
+          return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q / (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+        }
+        const q = Math.sqrt(-2 * Math.log(1 - p));
+        return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+      }
+
+      // 确定种子伪随机
+      function pseudoRandom(seed) {
+        let s = seed % 2147483647;
+        if (s <= 0) s += 2147483646;
+        return function() {
+          s = s * 16807 % 2147483647;
+          return (s - 1) / 2147483646;
+        };
+      }
+
+      // Box-Muller 变换求正态
+      function sampleNormals(count, rng) {
+        const res = [];
+        for (let i = 0; i < count; i += 2) {
+          const u1 = Math.max(1e-7, rng());
+          const u2 = rng();
+          const r = Math.sqrt(-2.0 * Math.log(u1));
+          const theta = 2.0 * Math.PI * u2;
+          res.push(r * Math.cos(theta));
+          if (i + 1 < count) res.push(r * Math.sin(theta));
+        }
+        return res;
+      }
+
+      // 预先生成固定的随机噪声序列，使交互平滑连续
+      const fixedRng = pseudoRandom(42);
+      const fixedMatrixLatent = sampleNormals(SAMPLES, fixedRng);
+      const fixedMatrixIndep = [];
+      for (let i = 0; i < SAMPLES; i++) {
+        fixedMatrixIndep.push(sampleNormals(M, fixedRng));
+      }
+
+      // 蒙特卡洛全域曲线预计算（仅算各 rho 下的大数误差率）
+      const curveRhos = [];
+      const curveErrors = [];
+      const threshold = invNorm(1 - BASE_ERR);
+
+      const mcRng = pseudoRandom(101);
+      const mcLatents = sampleNormals(MC_ROUNDS, mcRng);
+      const mcIndeps = [];
+      for (let r = 0; r < MC_ROUNDS; r++) {
+        mcIndeps.push(sampleNormals(M, mcRng));
+      }
+
+      for (let rStep = 0; rStep <= 0.95; rStep += 0.05) {
+        const rho = Math.round(rStep * 100) / 100;
+        curveRhos.push(rho);
+        const wLatent = Math.sqrt(rho);
+        const wIndep = Math.sqrt(1 - rho);
+        let failCount = 0;
+        for (let i = 0; i < MC_ROUNDS; i++) {
+          const z0 = mcLatents[i];
+          let errs = 0;
+          for (let m = 0; m < M; m++) {
+            const val = wLatent * z0 + wIndep * mcIndeps[i][m];
+            if (val > threshold) errs++;
+          }
+          if (errs > M / 2) failCount++;
+        }
+        curveErrors.push(failCount / MC_ROUNDS);
+      }
+
+      function getInterpolatedErr(rho) {
+        const idx = Math.floor(rho / 0.05);
+        if (idx >= curveErrors.length - 1) return curveErrors[curveErrors.length - 1];
+        const t = (rho - idx * 0.05) / 0.05;
+        return curveErrors[idx] * (1 - t) + curveErrors[idx + 1] * t;
+      }
+
+      // 绘制决策矩阵
+      function drawMatrix(ctx) {
+        const w = matrixCv.width / (window.devicePixelRatio || 1);
+        const h = matrixCv.height / (window.devicePixelRatio || 1);
+        ctx.clearRect(0, 0, w, h);
+
+        const padLeft = 40;
+        const padTop = 18;
+        const padRight = 100;
+        const padBottom = 22;
+
+        const gridW = w - padLeft - padRight;
+        const gridH = h - padTop - padBottom;
+
+        const cellW = gridW / M;
+        const cellH = gridH / SAMPLES;
+
+        const wLatent = Math.sqrt(currentRho);
+        const wIndep = Math.sqrt(1 - currentRho);
+
+        let ensembleFailsInMatrix = 0;
+
+        for (let s = 0; s < SAMPLES; s++) {
+          const z0 = fixedMatrixLatent[s];
+          let errCount = 0;
+          for (let m = 0; m < M; m++) {
+            const z = wLatent * z0 + wIndep * fixedMatrixIndep[s][m];
+            const isErr = z > threshold;
+            if (isErr) errCount++;
+
+            ctx.fillStyle = isErr ? '#B83D0B' : '#17628E';
+            // 留下 1px 间距
+            ctx.fillRect(padLeft + m * cellW, padTop + s * cellH, cellW - 1.5, cellH - 1.5);
+          }
+
+          const ensErr = errCount > M / 2;
+          if (ensErr) ensembleFailsInMatrix++;
+
+          // 样本投票裁决柱
+          ctx.fillStyle = ensErr ? '#B83D0B' : '#17628E';
+          ctx.fillRect(padLeft + gridW + 16, padTop + s * cellH, 32, cellH - 1.5);
+
+          // 裁决字标
+          ctx.font = '11px sans-serif';
+          ctx.fillStyle = ensErr ? '#B83D0B' : '#50616B';
+          ctx.textAlign = 'left';
+          ctx.fillText(ensErr ? '× 误' : '✓ 对', padLeft + gridW + 54, padTop + s * cellH + cellH * 0.75);
+        }
+
+        // 标头与标注
+        ctx.fillStyle = '#50616B';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('M1', padLeft + cellW * 0.5, h - 8);
+        ctx.fillText('M21', padLeft + gridW - cellW * 0.5, h - 8);
+        ctx.fillText('基学习器序列 →', padLeft + gridW * 0.5, h - 8);
+
+        ctx.textAlign = 'center';
+        ctx.fillText('多数表决', padLeft + gridW + 32, padTop - 6);
+      }
+
+      // 绘制全域曲线
+      function drawCurve(ctx) {
+        const w = curveCv.width / (window.devicePixelRatio || 1);
+        const h = curveCv.height / (window.devicePixelRatio || 1);
+        ctx.clearRect(0, 0, w, h);
+
+        const padLeft = 60;
+        const padRight = 40;
+        const padTop = 15;
+        const padBottom = 30;
+
+        const plotW = w - padLeft - padRight;
+        const plotH = h - padTop - padBottom;
+
+        // 坐标轴
+        ctx.strokeStyle = '#71828B';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padLeft, padTop);
+        ctx.lineTo(padLeft, padTop + plotH);
+        ctx.lineTo(padLeft + plotW, padTop + plotH);
+        ctx.stroke();
+
+        // 刻度
+        ctx.fillStyle = '#50616B';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText('40%', padLeft - 8, padTop + plotH * 0.1);
+        ctx.fillText('20%', padLeft - 8, padTop + plotH * 0.55);
+        ctx.fillText('0%', padLeft - 8, padTop + plotH);
+
+        ctx.textAlign = 'center';
+        ctx.fillText('0.0 (独立)', padLeft, padTop + plotH + 20);
+        ctx.fillText('0.5', padLeft + plotW * 0.526, padTop + plotH + 20);
+        ctx.fillText('0.95 (同质)', padLeft + plotW, padTop + plotH + 20);
+
+        // 基准虚线 35%
+        const yBase = padTop + plotH * (1 - BASE_ERR / 0.45);
+        ctx.strokeStyle = '#71828B';
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, yBase);
+        ctx.lineTo(padLeft + plotW, yBase);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 曲线
+        ctx.strokeStyle = '#17628E';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        curveRhos.forEach((r, idx) => {
+          const err = curveErrors[idx];
+          const x = padLeft + (r / 0.95) * plotW;
+          const y = padTop + plotH * (1 - err / 0.45);
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // 当前点高亮
+        const curErr = getInterpolatedErr(currentRho);
+        const curX = padLeft + (currentRho / 0.95) * plotW;
+        const curY = padTop + plotH * (1 - curErr / 0.45);
+
+        // 垂直参考线
+        ctx.strokeStyle = 'rgba(184, 61, 11, 0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(curX, padTop + plotH);
+        ctx.lineTo(curX, curY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 焦点实心圆
+        ctx.fillStyle = '#B83D0B';
+        ctx.beginPath();
+        ctx.arc(curX, curY, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 浮动数值标签
+        ctx.fillStyle = '#B83D0B';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.textAlign = currentRho > 0.7 ? 'right' : 'left';
+        ctx.fillText((curErr * 100).toFixed(1) + '%', curX + (currentRho > 0.7 ? -10 : 10), curY - 6);
+      }
+
+      function update() {
+        const err = getInterpolatedErr(currentRho);
+        rhoVal.textContent = currentRho.toFixed(2);
+        ensErrDisp.textContent = (err * 100).toFixed(1) + '%';
+
+        if (currentRho < 0.15) {
+          ensSummary.textContent = '多数投票大幅纠错（趋近 0 误差）';
+        } else if (currentRho < 0.55) {
+          ensSummary.textContent = '共犯错误增多，纠错收益渐失';
+        } else {
+          ensSummary.textContent = '高度同质，收益几乎归零退化';
+        }
+
+        modeBtns.forEach(btn => {
+          const bRho = parseFloat(btn.dataset.rho);
+          btn.classList.toggle('active', Math.abs(bRho - currentRho) < 0.04);
+        });
+
+        drawMatrix(Deck.fit(matrixCv));
+        drawCurve(Deck.fit(curveCv));
+      }
+
+      rhoSlider.addEventListener('input', function(e) {
+        currentRho = parseFloat(e.target.value);
+        update();
+      });
+
+      modeBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+          currentRho = parseFloat(this.dataset.rho);
+          rhoSlider.value = currentRho;
+          update();
+        });
+      });
+
+      Deck.onResize(() => {
+        update();
+      });
+
+      Deck.init({ index: 7, total: 32, keys: false });
+      update();
+    })();
+  </script>
+</body>
+</html>

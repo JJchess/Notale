@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F9;
+      --text: #172A3A;
+      --muted: #536575;
+      --paper: #FFFFFF;
+      --model: #245FA6;
+      --aggregate: #C94F2D;
+      --diversity: #28785E;
+      --focus: #A63D21;
+      --font-sans: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --font-num: "DIN Alternate", "Avenir Next Condensed", "PingFang SC", sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* 顶部标题区 */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.2;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      font-size: 19px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    /* 主对比工作区：两列对比 */
+    .compare-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 36px;
+      height: 640px;
+      margin-top: 14px;
+    }
+
+    .card {
+      background: var(--paper);
+      border-radius: 10px;
+      border: 1px solid rgba(83, 101, 117, 0.15);
+      box-shadow: 0 4px 16px rgba(23, 42, 58, 0.04);
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+    }
+
+    .card.highlight {
+      border-color: rgba(40, 120, 94, 0.4);
+      box-shadow: 0 6px 20px rgba(40, 120, 94, 0.08);
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(83, 101, 117, 0.12);
+    }
+
+    .card-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .tag {
+      font-size: var(--fs-label);
+      font-family: var(--font-num);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .tag-bagging {
+      background: rgba(36, 95, 166, 0.1);
+      color: var(--model);
+    }
+
+    .tag-rf {
+      background: rgba(40, 120, 94, 0.12);
+      color: var(--diversity);
+    }
+
+    .rule-formula {
+      font-size: var(--fs-sec);
+      font-family: var(--font-num);
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    /* 树形机制示意区 */
+    .tree-stage {
+      position: relative;
+      flex: 1;
+      margin: 16px 0;
+      min-height: 0;
+    }
+
+    svg.diagram {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 底部结论与指标条 */
+    .metric-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(83, 101, 117, 0.1);
+      background: rgba(242, 246, 249, 0.5);
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .metric-val {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      font-family: var(--font-num);
+    }
+
+    .metric-val.blue {
+      color: var(--model);
+    }
+
+    .metric-val.green {
+      color: var(--diversity);
+    }
+
+    /* 交互触发条 */
+    .footer-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 4px;
+    }
+
+    .status-summary {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .status-summary strong {
+      color: var(--text);
+    }
+
+    .btn-resample {
+      background: var(--text);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 20px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.15s ease;
+    }
+
+    .btn-resample:hover {
+      background: #243d52;
+    }
+
+    .btn-resample:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body data-page="12" data-total="26">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>节点切分：从全特征遍历到随机子集</h1>
+      </div>
+      <div class="subtitle">第二重随机性</div>
+    </header>
+
+    <main class="compare-container min0">
+      <!-- 左栏：普通决策树 / Bagging -->
+      <section class="card min0">
+        <div class="card-head">
+          <div class="card-title">
+            <span>传统 Bagging 树</span>
+            <span class="tag tag-bagging">全量候选</span>
+          </div>
+          <div class="rule-formula">m = D = 6</div>
+        </div>
+
+        <div class="tree-stage">
+          <svg class="diagram" id="svg-bagging" viewBox="0 0 660 380"></svg>
+        </div>
+
+        <div class="metric-row">
+          <div class="metric-item">
+            <span class="metric-label">切分候选空间</span>
+            <span class="metric-val blue">遍历全量 6 特征</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">强特征行为</span>
+            <span class="metric-val" style="color: var(--aggregate);">必然垄断顶层切分</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：随机森林决策树 -->
+      <section class="card highlight min0">
+        <div class="card-head">
+          <div class="card-title">
+            <span>随机森林单树</span>
+            <span class="tag tag-rf">随机子集</span>
+          </div>
+          <div class="rule-formula">m = ⌊√D⌋ = 2</div>
+        </div>
+
+        <div class="tree-stage">
+          <svg class="diagram" id="svg-rf" viewBox="0 0 660 380"></svg>
+        </div>
+
+        <div class="metric-row">
+          <div class="metric-item">
+            <span class="metric-label">当前采样候选集</span>
+            <span class="metric-val green" id="rf-candidate-text">{ f₂, f₅ }</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">强特征抑制效果</span>
+            <span class="metric-val green" id="rf-split-result">选出次优特征 f₂</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer-bar">
+      <div class="status-summary" id="desc-text">
+        每个分裂点重新随机抽样 m 个候选特征。
+      </div>
+      <button class="btn-resample" id="btn-reseed">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2v4h-4"></path>
+          <path d="M2 14v-4h4"></path>
+          <path d="M13.5 10a6 6 0 1 1-1.9-6.3L14 6"></path>
+        </svg>
+        重新采样节点特征
+      </button>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页把视角下沉到树的每一个分叉点。
+    在普通 Bagging 决策树中，每个节点分裂都会遍历全部 D 个特征，寻找信息增益最大的最佳切分。如果有少数预测力极强的特征，几乎所有树都会把它们选在顶层，导致各棵树结构高度雷同。
+    随机森林在分裂每个节点时，先无放回随机抽取 m 个特征（分类任务通常取根号 D），只在这 m 个候选特征中寻找最佳切分点。强特征失去垄断机会，各树分叉路径产生质的差异。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      // 6个全局特征及其固定增益值(基准能力)
+      // f1 是统治性强特征 (增益 0.82)
+      // f2..f6 是中弱特征 (增益 0.45 ~ 0.72)
+      const ALL_FEATURES = [
+        { id: 'f1', name: 'f₁ (强)', gain: 0.84, dominant: true },
+        { id: 'f2', name: 'f₂', gain: 0.65, dominant: false },
+        { id: 'f3', name: 'f₃', gain: 0.52, dominant: false },
+        { id: 'f4', name: 'f₄', gain: 0.71, dominant: false },
+        { id: 'f5', name: 'f₅', gain: 0.58, dominant: false },
+        { id: 'f6', name: 'f₆', gain: 0.48, dominant: false }
+      ];
+
+      // 固定随机种子序列
+      let seed = 42;
+      function pseudoRandom() {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+      }
+
+      const svgBagging = document.getElementById('svg-bagging');
+      const svgRf = document.getElementById('svg-rf');
+      const rfCandidateText = document.getElementById('rf-candidate-text');
+      const rfSplitResult = document.getElementById('rf-split-result');
+      const btnReseed = document.getElementById('btn-reseed');
+
+      // 绘制 Bagging 示意图
+      function drawBagging() {
+        // 左边：树节点；中间：候选特征列表(6个高亮)；右边：选择结果
+        let html = `
+          <!-- 节点连线 -->
+          <path d="M 120 70 L 120 130" stroke="#CAD5DE" stroke-width="2" />
+          <path d="M 120 170 L 60 270" stroke="#CAD5DE" stroke-width="2" />
+          <path d="M 120 170 L 180 270" stroke="#CAD5DE" stroke-width="2" />
+
+          <!-- 待分裂节点 -->
+          <circle cx="120" cy="150" r="28" fill="#FFFFFF" stroke="#245FA6" stroke-width="3" />
+          <text x="120" y="155" text-anchor="middle" font-size="15" font-weight="700" fill="#245FA6">Node</text>
+
+          <!-- 树顶与子节点 -->
+          <circle cx="120" cy="50" r="18" fill="#E2EBF4" stroke="#536575" stroke-width="1.5" />
+          <circle cx="60" cy="285" r="16" fill="#F2F6F9" stroke="#CAD5DE" stroke-width="1.5" />
+          <circle cx="180" cy="285" r="16" fill="#F2F6F9" stroke="#CAD5DE" stroke-width="1.5" />
+
+          <!-- 连接到候选池 -->
+          <path d="M 152 150 L 220 150" stroke="#245FA6" stroke-width="2" stroke-dasharray="4 4" />
+          <text x="186" y="142" text-anchor="middle" font-size="13" fill="#536575">送检</text>
+
+          <!-- 候选特征栏背景框 -->
+          <rect x="225" y="25" width="220" height="300" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.5" />
+          <text x="240" y="52" font-size="15" font-weight="700" fill="#172A3A">全量特征评估</text>
+        `;
+
+        ALL_FEATURES.forEach((feat, idx) => {
+          const y = 80 + idx * 38;
+          const isBest = feat.id === 'f1';
+          const rowBg = isBest ? '#E8EFF7' : '#FFFFFF';
+          const stroke = isBest ? '#245FA6' : '#E2E8F0';
+          const textCol = isBest ? '#245FA6' : '#172A3A';
+
+          html += `
+            <g transform="translate(237, ${y})">
+              <rect x="0" y="0" width="196" height="30" rx="6" fill="${rowBg}" stroke="${stroke}" stroke-width="${isBest ? 2 : 1}" />
+              <text x="12" y="20" font-size="15" font-weight="${isBest ? '700' : '500'}" fill="${textCol}">${feat.name}</text>
+              <text x="184" y="20" text-anchor="end" font-size="13" font-family="var(--font-num)" fill="${isBest ? '#245FA6' : '#536575'}">${feat.gain.toFixed(2)}</text>
+            </g>
+          `;
+        });
+
+        // 决策流指向最终切分
+        html += `
+          <path d="M 445 95 L 485 95 L 485 150 L 515 150" stroke="#C94F2D" stroke-width="2.5" fill="none" marker-end="url(#arrow)" />
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#C94F2D"/>
+            </marker>
+            <marker id="arrow-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#28785E"/>
+            </marker>
+          </defs>
+
+          <!-- 最终切分结果框 -->
+          <rect x="520" y="115" width="130" height="70" rx="8" fill="#FFF2EE" stroke="#C94F2D" stroke-width="2" />
+          <text x="585" y="142" text-anchor="middle" font-size="13" fill="#C94F2D" font-weight="600">最佳切分</text>
+          <text x="585" y="167" text-anchor="middle" font-size="16" font-family="var(--font-num)" font-weight="700" fill="#172A3A">特征：f₁</text>
+
+          <text x="335" y="348" text-anchor="middle" font-size="13" fill="#536575">每棵树在节点均首选 f₁</text>
+        `;
+
+        svgBagging.innerHTML = html;
+      }
+
+      // 绘制随机森林切分示意
+      function drawRF(chosenIndices) {
+        const sampledFeats = chosenIndices.map(i => ALL_FEATURES[i]);
+        // 在采样集合中找最佳
+        let bestSubFeat = sampledFeats[0];
+        for (let sf of sampledFeats) {
+          if (sf.gain > bestSubFeat.gain) bestSubFeat = sf;
+        }
+
+        const candidateIdsStr = sampledFeats.map(f => f.name.split(' ')[0]).join(', ');
+        rfCandidateText.textContent = `{ ${candidateIdsStr} }`;
+        if (bestSubFeat.dominant) {
+          rfSplitResult.textContent = '抽中强特征 f₁';
+          rfSplitResult.style.color = 'var(--text)';
+        } else {
+          rfSplitResult.textContent = `选出次优特征 ${bestSubFeat.name.split(' ')[0]}`;
+          rfSplitResult.style.color = 'var(--diversity)';
+        }
+
+        let html = `
+          <!-- 树节点 -->
+          <path d="M 120 70 L 120 130" stroke="#CAD5DE" stroke-width="2" />
+          <path d="M 120 170 L 60 270" stroke="#CAD5DE" stroke-width="2" />
+          <path d="M 120 170 L 180 270" stroke="#CAD5DE" stroke-width="2" />
+
+          <!-- 待分裂节点 -->
+          <circle cx="120" cy="150" r="28" fill="#FFFFFF" stroke="#28785E" stroke-width="3" />
+          <text x="120" y="155" text-anchor="middle" font-size="15" font-weight="700" fill="#28785E">Node</text>
+
+          <circle cx="120" cy="50" r="18" fill="#E2EBF4" stroke="#536575" stroke-width="1.5" />
+          <circle cx="60" cy="285" r="16" fill="#F2F6F9" stroke="#CAD5DE" stroke-width="1.5" />
+          <circle cx="180" cy="285" r="16" fill="#F2F6F9" stroke="#CAD5DE" stroke-width="1.5" />
+
+          <!-- 随机抽取标记 -->
+          <path d="M 152 150 L 220 150" stroke="#28785E" stroke-width="2" stroke-dasharray="4 4" />
+          <text x="186" y="142" text-anchor="middle" font-size="13" fill="#28785E" font-weight="600">随机抽 2</text>
+
+          <!-- 候选特征栏背景框 -->
+          <rect x="225" y="25" width="220" height="300" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.5" />
+          <text x="240" y="52" font-size="15" font-weight="700" fill="#172A3A">随机子集采样</text>
+        `;
+
+        ALL_FEATURES.forEach((feat, idx) => {
+          const y = 80 + idx * 38;
+          const isSampled = chosenIndices.includes(idx);
+          const isChosenBest = (bestSubFeat.id === feat.id);
+
+          let rowBg = '#FFFFFF';
+          let stroke = '#E2E8F0';
+          let textCol = '#A0AEC0';
+          let borderW = 1;
+
+          if (isSampled) {
+            if (isChosenBest) {
+              rowBg = '#EDF7F2';
+              stroke = '#28785E';
+              textCol = '#28785E';
+              borderW = 2;
+            } else {
+              rowBg = '#F0F9F5';
+              stroke = '#7BC3A4';
+              textCol = '#172A3A';
+            }
+          }
+
+          html += `
+            <g transform="translate(237, ${y})">
+              <rect x="0" y="0" width="196" height="30" rx="6" fill="${rowBg}" stroke="${stroke}" stroke-width="${borderW}" />
+              <text x="12" y="20" font-size="15" font-weight="${isChosenBest ? '700' : '500'}" fill="${textCol}">${feat.name}</text>
+              ${isSampled ? `
+                <text x="184" y="20" text-anchor="end" font-size="13" font-family="var(--font-num)" font-weight="${isChosenBest ? '700' : '500'}" fill="${textCol}">
+                  ${feat.gain.toFixed(2)}
+                </text>
+              ` : `
+                <text x="184" y="20" text-anchor="end" font-size="13" fill="#A0AEC0">—</text>
+              `}
+            </g>
+          `;
+        });
+
+        // 连线到切分结果
+        const bestIdxInAll = ALL_FEATURES.findIndex(f => f.id === bestSubFeat.id);
+        const bestY = 80 + bestIdxInAll * 38 + 15;
+
+        html += `
+          <path d="M 445 ${bestY} L 485 ${bestY} L 485 150 L 515 150" stroke="#28785E" stroke-width="2.5" fill="none" marker-end="url(#arrow-green)" />
+
+          <!-- 最终切分结果框 -->
+          <rect x="520" y="115" width="130" height="70" rx="8" fill="#EDF7F2" stroke="#28785E" stroke-width="2" />
+          <text x="585" y="142" text-anchor="middle" font-size="13" fill="#28785E" font-weight="600">子集最佳切分</text>
+          <text x="585" y="167" text-anchor="middle" font-size="16" font-family="var(--font-num)" font-weight="700" fill="#172A3A">特征：${bestSubFeat.name.split(' ')[0]}</text>
+
+          <text x="335" y="348" text-anchor="middle" font-size="13" fill="#28785E" font-weight="600">候选受限，次优特征获得分裂权</text>
+        `;
+
+        svgRf.innerHTML = html;
+      }
+
+      // 抽取两个不同特征
+      function sampleTwo() {
+        const pool = [0, 1, 2, 3, 4, 5];
+        const first = Math.floor(pseudoRandom() * pool.length);
+        const i1 = pool.splice(first, 1)[0];
+        const second = Math.floor(pseudoRandom() * pool.length);
+        const i2 = pool.splice(second, 1)[0];
+        return [i1, i2].sort((a, b) => a - b);
+      }
+
+      drawBagging();
+      // 预设第一次采样避开 f1，直接展现多样性产生机制
+      drawRF([1, 4]);
+
+      btnReseed.addEventListener('click', () => {
+        const chosen = sampleTwo();
+        drawRF(chosen);
+      });
+
+    })();
+  </script>
+</body>
+</html>

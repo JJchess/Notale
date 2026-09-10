@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      font-family: var(--font-sans);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      line-height: var(--lh-tight);
+      font-weight: 600;
+    }
+
+    .subtitle {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 56px;
+      height: 690px;
+      align-items: stretch;
+    }
+
+    .viz-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-width: 0;
+    }
+
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 480px;
+    }
+
+    #bars-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .weight-track {
+      display: flex;
+      justify-content: space-between;
+      padding-top: 16px;
+      border-top: 1px solid var(--rule);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .weight-track b {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .side-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding-left: 24px;
+      border-left: 1px solid var(--rule);
+    }
+
+    .iter-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .iter-card {
+      padding: 14px 20px;
+      border-left: var(--stroke-strong) solid var(--rule);
+      transition: border-color var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
+      opacity: 0.35;
+      cursor: pointer;
+    }
+
+    .iter-card.active {
+      border-left-color: var(--focus);
+      opacity: 1;
+    }
+
+    .iter-card h3 {
+      margin: 0 0 6px 0;
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .iter-card .err-stat {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0 0 4px 0;
+    }
+
+    .iter-card .alpha-val {
+      font-size: var(--fs-body);
+      color: var(--model);
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .formula-dock {
+      padding-top: 16px;
+      border-top: 1px solid var(--rule);
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+    }
+
+    .formula-dock strong {
+      color: var(--text);
+      display: block;
+      margin-bottom: 6px;
+      font-size: var(--fs-body);
+    }
+
+    .formula-dock .math {
+      font-family: var(--font-sans);
+      color: var(--model);
+      font-size: var(--fs-sec);
+    }
+
+    .cutoff-line {
+      stroke: var(--model);
+      stroke-width: var(--stroke);
+      stroke-dasharray: 6 4;
+    }
+
+    .tick-text {
+      font-size: var(--fs-tick);
+      fill: var(--muted);
+      text-anchor: middle;
+    }
+
+    .axis-line {
+      stroke: var(--rule);
+      stroke-width: var(--stroke);
+    }
+  </style>
+</head>
+<body data-page="12" data-total="22">
+  <div id="stage">
+    <header>
+      <h1>AdaBoost 算法机制：错分加权与基学习器表决</h1>
+      <p class="subtitle">串行迭代聚焦难分样本，投票权由误差率决定</p>
+    </header>
+
+    <div class="main-grid">
+      <!-- Left side: Weight distribution chart -->
+      <div class="viz-col">
+        <div class="chart-container">
+          <svg id="bars-svg" viewBox="0 0 880 480" aria-label="10个样本的权重与分类状态分布图"></svg>
+        </div>
+        <div class="weight-track">
+          <span>样本总数：<b>10</b></span>
+          <span id="stat-err">当前错分：<b>3 个</b> (x6, x7, x8)</span>
+          <span id="stat-alpha">分配表决权：<b>α₁ = 0.424</b></span>
+        </div>
+      </div>
+
+      <!-- Right side: Step progression cards -->
+      <div class="side-col">
+        <div class="iter-cards">
+          <div class="iter-card active" id="card-1">
+            <h3>基学习器 h₁ (x &lt; 2.5)</h3>
+            <p class="err-stat">均匀权重 ｜ 误差率 ε₁ = 0.300</p>
+            <p class="alpha-val">表决权 α₁ = 0.424 ｜ 错分权增至 0.167</p>
+          </div>
+
+          <div class="iter-card" id="card-2">
+            <h3>基学习器 h₂ (x &gt; 8.5)</h3>
+            <p class="err-stat">聚焦前轮错分点 ｜ 误差率 ε₂ = 0.214</p>
+            <p class="alpha-val">表决权 α₂ = 0.650 ｜ 错分权增至 0.455</p>
+          </div>
+
+          <div class="iter-card" id="card-3">
+            <h3>集成强分类器 H(x)</h3>
+            <p class="err-stat">加权求和 sign(0.42h₁ + 0.65h₂ + 0.92h₃)</p>
+            <p class="alpha-val" style="color: var(--focus);">训练集集成误差率降至 0%</p>
+          </div>
+        </div>
+
+        <div class="formula-dock">
+          <strong>权重与表决权更新律</strong>
+          <div class="math">α_m = 0.5 · ln((1 − ε_m) / ε_m)</div>
+          <div class="math" style="margin-top: 4px;">w_{m+1, i} ∝ w_{m, i} · exp(−α_m · y_i · h_m(x_i))</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    在 AdaBoost 中，训练是严格串行推进的。
+    第一轮每个样本权重均等为 0.1。基分类器 h1 错分了三个样本，误差率为 0.3，据此算出表决权 alpha1 为 0.424。
+    随后，错分样本权重被乘上 exp(alpha) 放大，正确样本相对缩小。
+    第二轮分类器 h2 被迫重点关注这些难分样本。多轮基学习器按表决权线性相加后，整体集成误差快速收敛到零。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      // 10 canonical samples (classic AdaBoost 1D toy dataset)
+      // x: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+      // y: 1, 1, 1, -1,-1,-1, 1, 1, 1, -1
+      const stepsData = [
+        {
+          weights: [0.100, 0.100, 0.100, 0.100, 0.100, 0.100, 0.100, 0.100, 0.100, 0.100],
+          errors: [6, 7, 8],
+          statErr: '当前错分：<b>3 个</b> (x6, x7, x8)',
+          statAlpha: '分配表决权：<b>α₁ = 0.424</b>',
+          cutoffX: 2.5,
+          cutoffDesc: 'h₁ 切分点 x = 2.5'
+        },
+        {
+          // After round 1 re-weighting, h2 errors on x=3, 4, 5
+          weights: [0.071, 0.071, 0.071, 0.071, 0.071, 0.071, 0.167, 0.167, 0.167, 0.071],
+          errors: [3, 4, 5],
+          statErr: '聚焦前轮难点，当前错分：<b>3 个</b> (x3, x4, x5)',
+          statAlpha: '分配表决权：<b>α₂ = 0.650</b>',
+          cutoffX: 8.5,
+          cutoffDesc: 'h₂ 切分点 x = 8.5'
+        },
+        {
+          // After round 2 re-weighting & final integration
+          weights: [0.045, 0.045, 0.045, 0.167, 0.167, 0.167, 0.106, 0.106, 0.106, 0.045],
+          errors: [],
+          statErr: '三轮基分类器线性加权表决完成',
+          statAlpha: '集成训练误差率：<b>0 / 10 (0%)</b>',
+          cutoffX: null,
+          cutoffDesc: '最终集成判决：三轮弱分类器投票完全正确'
+        }
+      ];
+
+      const svg = document.getElementById('bars-svg');
+      const statErr = document.getElementById('stat-err');
+      const statAlpha = document.getElementById('stat-alpha');
+      const cards = [
+        document.getElementById('card-1'),
+        document.getElementById('card-2'),
+        document.getElementById('card-3')
+      ];
+
+      const margin = { top: 44, right: 30, bottom: 64, left: 56 };
+      const width = 880;
+      const height = 480;
+      const plotW = width - margin.left - margin.right;
+      const plotH = height - margin.top - margin.bottom;
+
+      const labels = [1, 1, 1, -1, -1, -1, 1, 1, 1, -1];
+      const maxWeight = 0.22;
+
+      function render(step) {
+        const d = stepsData[step] || stepsData[0];
+
+        cards.forEach((c, idx) => {
+          if (idx === step) {
+            c.classList.add('active');
+          } else {
+            c.classList.remove('active');
+          }
+        });
+
+        statErr.innerHTML = d.statErr;
+        statAlpha.innerHTML = d.statAlpha;
+
+        let svgContent = '';
+
+        // Horizontal grid lines
+        const yTicks = [0, 0.05, 0.10, 0.15, 0.20];
+        yTicks.forEach(val => {
+          const yPos = margin.top + plotH - (val / maxWeight) * plotH;
+          svgContent += `<line x1="${margin.left}" y1="${yPos}" x2="${margin.left + plotW}" y2="${yPos}" stroke="#71828B" stroke-opacity="0.25" stroke-width="1"/>`;
+          svgContent += `<text x="${margin.left - 12}" y="${yPos + 4}" class="tick-text" text-anchor="end">${val.toFixed(2)}</text>`;
+        });
+
+        // Baseline
+        svgContent += `<line x1="${margin.left}" y1="${margin.top + plotH}" x2="${margin.left + plotW}" y2="${margin.top + plotH}" class="axis-line"/>`;
+
+        // 10 sample columns
+        const colWidth = plotW / 10;
+        const barW = 44;
+
+        d.weights.forEach((w, i) => {
+          const cx = margin.left + i * colWidth + colWidth / 2;
+          const barH = (w / maxWeight) * plotH;
+          const barY = margin.top + plotH - barH;
+          const isErr = d.errors.includes(i);
+          const barColor = isErr ? 'var(--focus)' : 'var(--model)';
+          const labelText = labels[i] > 0 ? '+1' : '−1';
+
+          // Bar rect
+          svgContent += `<rect x="${cx - barW / 2}" y="${barY}" width="${barW}" height="${barH}" rx="3" fill="${barColor}" fill-opacity="${isErr ? '0.9' : '0.75'}"/>`;
+
+          // Top value
+          svgContent += `<text x="${cx}" y="${barY - 8}" text-anchor="middle" font-size="13" font-family="var(--font-sans)" fill="${isErr ? 'var(--focus)' : 'var(--text)'}" font-weight="600">${w.toFixed(3)}</text>`;
+
+          // Sample x index
+          svgContent += `<text x="${cx}" y="${margin.top + plotH + 24}" class="tick-text">x${i}</text>`;
+          // True label
+          svgContent += `<text x="${cx}" y="${margin.top + plotH + 46}" text-anchor="middle" font-size="15" font-weight="600" fill="${labels[i] > 0 ? 'var(--model)' : 'var(--muted)'}">${labelText}</text>`;
+        });
+
+        // Decision cutoff line or ensemble banner
+        if (d.cutoffX !== null) {
+          const cutX = margin.left + d.cutoffX * colWidth;
+          svgContent += `<line x1="${cutX}" y1="${margin.top - 8}" x2="${cutX}" y2="${margin.top + plotH}" class="cutoff-line"/>`;
+          svgContent += `<rect x="${cutX - 60}" y="${margin.top - 32}" width="120" height="24" rx="3" fill="var(--bg)" stroke="var(--model)" stroke-width="1"/>`;
+          svgContent += `<text x="${cutX}" y="${margin.top - 16}" text-anchor="middle" font-size="13" fill="var(--model)" font-weight="600">${d.cutoffDesc}</text>`;
+        } else {
+          svgContent += `<rect x="${margin.left + 230}" y="${margin.top - 34}" width="320" height="26" rx="3" fill="var(--bg)" stroke="var(--focus)" stroke-width="1.5"/>`;
+          svgContent += `<text x="${margin.left + 390}" y="${margin.top - 16}" text-anchor="middle" font-size="13" fill="var(--focus)" font-weight="600">${d.cutoffDesc}</text>`;
+        }
+
+        // Legend at top-right
+        svgContent += `
+          <g transform="translate(${width - 230}, 10)">
+            <rect x="0" y="0" width="12" height="12" rx="2" fill="var(--model)" fill-opacity="0.75"/>
+            <text x="18" y="10" font-size="13" fill="var(--muted)">正确分类样本</text>
+            <rect x="110" y="0" width="12" height="12" rx="2" fill="var(--focus)" fill-opacity="0.9"/>
+            <text x="128" y="10" font-size="13" fill="var(--focus)">错分样本 (加权)</text>
+          </g>
+        `;
+
+        svg.innerHTML = svgContent;
+      }
+
+      Deck.init({ total: 22 });
+      let currentStep = 0;
+
+      function goTo(step) {
+        currentStep = Math.max(0, Math.min(2, step));
+        render(currentStep);
+      }
+
+      cards.forEach((card, idx) => {
+        card.addEventListener('click', () => goTo(idx));
+      });
+
+      Deck.onStep(function (step) {
+        currentStep = step;
+        render(step);
+      }, 3);
+
+      render(0);
+    })();
+  </script>
+</body>
+</html>

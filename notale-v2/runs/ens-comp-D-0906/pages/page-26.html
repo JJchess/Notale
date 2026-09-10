@@ -1,0 +1,437 @@
+<!--
+构图意图：
+1. 主对象是集成学习的知识地图架构：左侧基学习器多样性源泉，中轴三大集成策略（Bagging、Boosting、Stacking），右侧最终统一的强集成判断。
+2. 对象之间的关系通过 SVG 精确路由的预测轨迹展现：多条平行冷蓝细轨迹（多样性基模型）分别通过平均汇聚（Bagging 降方差）、加权纠偏（Boosting 减偏差）、折外特征训练组合器（Stacking 学习元模型），最终收束进深色加粗的集成结论轨迹。
+3. 说明文字直接依附在三大策略路径分岔与汇聚节点上，不设卡片面板，通过微步对齐、文字层级与轨迹粗细直观暴露各策略机制。
+-->
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>本讲知识地图：多样性是集成收益的来源</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: "Lato", "Noto Sans SC", sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      margin: 0;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+    }
+
+    /* 顶部标题与导引 */
+    header {
+      position: absolute;
+      left: 64px;
+      top: 48px;
+      width: 1472px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      font-weight: var(--weight-medium);
+    }
+
+    /* 主视区 SVG 与布局层 */
+    .map-canvas {
+      position: absolute;
+      inset: 128px 64px 40px 64px;
+      width: 1472px;
+      height: 720px;
+    }
+
+    svg.map-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 节点文字与标记样式 */
+    .node-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-bold);
+      fill: var(--text);
+    }
+
+    .node-sub {
+      font-size: var(--fs-sec);
+      fill: var(--muted);
+      font-weight: var(--weight-regular);
+    }
+
+    .node-tag {
+      font-size: var(--fs-tick);
+      font-family: var(--font-numeric);
+      fill: var(--uncertain);
+      font-weight: var(--weight-bold);
+      letter-spacing: 0.05em;
+    }
+
+    .cluster-title {
+      font-size: var(--fs-sec);
+      font-weight: var(--weight-bold);
+      letter-spacing: 0.08em;
+      fill: var(--aggregate);
+      text-transform: uppercase;
+    }
+
+    /* 交互切换按键（轻量，无卡片框） */
+    .filter-nav {
+      position: absolute;
+      right: 64px;
+      top: 50px;
+      display: flex;
+      gap: 20px;
+      z-index: 10;
+    }
+
+    .filter-btn {
+      background: none;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      padding: 4px 6px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      color: var(--text);
+      opacity: 0.75;
+      cursor: pointer;
+      transition: color var(--duration-fast), border-color var(--duration-fast), opacity var(--duration-fast);
+    }
+
+    .filter-btn:hover {
+      opacity: 1;
+    }
+
+    .filter-btn.active {
+      color: var(--focus);
+      opacity: 1;
+      font-weight: var(--weight-bold);
+      border-bottom-color: var(--focus);
+    }
+
+    /* 轨迹连接线定义 */
+    .wire-base {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: stroke-opacity var(--duration-step), stroke-width var(--duration-step), stroke var(--duration-step);
+    }
+
+    .wire-member {
+      stroke: var(--model);
+      stroke-width: 2px;
+      stroke-dasharray: 4 4;
+      opacity: 0.65;
+    }
+
+    .wire-active {
+      stroke: var(--model);
+      stroke-width: 2.5px;
+      opacity: 0.85;
+    }
+
+    .wire-consensus {
+      stroke: var(--aggregate);
+      stroke-width: 4.5px;
+      stroke-linecap: round;
+    }
+
+    .wire-highlight {
+      stroke: var(--focus) !important;
+      stroke-width: 3.5px !important;
+      opacity: 1 !important;
+    }
+
+    /* 节点背景圆或标点 */
+    .point-pin {
+      fill: var(--bg);
+      stroke: var(--model);
+      stroke-width: 2.5px;
+      transition: transform var(--duration-fast), stroke var(--duration-fast);
+    }
+
+    .point-agg {
+      fill: var(--aggregate);
+    }
+
+    .point-focus {
+      stroke: var(--focus);
+      fill: var(--focus);
+    }
+
+    /* 底部收束总结单行 */
+    .footer-summary {
+      position: absolute;
+      left: 64px;
+      bottom: 28px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      display: flex;
+      gap: 32px;
+    }
+
+    .footer-summary b {
+      color: var(--aggregate);
+      font-weight: var(--weight-bold);
+    }
+  </style>
+</head>
+<body data-page="26" data-total="26">
+  <main id="stage">
+    <header>
+      <div>
+        <h1>集成学习全景地图</h1>
+      </div>
+      <div class="filter-nav" role="tablist">
+        <button class="filter-btn active" data-mode="all" role="tab">全景收束</button>
+        <button class="filter-btn" data-mode="bagging" role="tab">Bagging</button>
+        <button class="filter-btn" data-mode="boosting" role="tab">Boosting</button>
+        <button class="filter-btn" data-mode="stacking" role="tab">Stacking</button>
+      </div>
+    </header>
+
+    <div class="map-canvas">
+      <svg class="map-svg" viewBox="0 0 1472 700">
+        <defs>
+          <marker id="arrow-agg" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#173E50" />
+          </marker>
+          <marker id="arrow-model" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 2 L 7 5 L 0 8 z" fill="#2E5F78" />
+          </marker>
+        </defs>
+
+        <!-- 阶段列界线与标题导引 -->
+        <g class="grid-columns" opacity="0.45">
+          <line x1="360" y1="20" x2="360" y2="620" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 4" />
+          <line x1="980" y1="20" x2="980" y2="620" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 4" />
+        </g>
+
+        <text x="60" y="46" class="cluster-title">多样性基础</text>
+        <text x="410" y="46" class="cluster-title">三大集成范式</text>
+        <text x="1030" y="46" class="cluster-title">集成泛化解</text>
+
+        <!-- 根节点：多样性之源 -->
+        <g id="node-diversity" transform="translate(60, 200)">
+          <!-- 基学习器 1, 2, 3 示意轨迹 -->
+          <circle cx="16" cy="70" r="6" class="point-pin" />
+          <text x="36" y="75" class="node-title">基学习器多样性</text>
+          <text x="36" y="104" class="node-sub">样本扰动 · 特征子空间 · 算法异构</text>
+          <text x="36" y="132" class="node-tag">互补误差方可抵消</text>
+        </g>
+
+        <!-- 左侧多条并行细轨迹 -->
+        <g id="tracks-input" class="wire-base wire-member">
+          <!-- 从 diversity 到三大分支 -->
+          <path id="wire-b-in" d="M 230 270 C 300 270, 340 160, 410 160" />
+          <path id="wire-o-in" d="M 230 270 C 300 270, 340 330, 410 330" />
+          <path id="wire-s-in" d="M 230 270 C 300 270, 340 500, 410 500" />
+          <!-- 补充两条伴生弱学习器轨迹，体现集体并行 -->
+          <path d="M 120 230 C 260 210, 330 145, 410 145" opacity="0.4" />
+          <path d="M 120 310 C 260 330, 330 345, 410 345" opacity="0.4" />
+        </g>
+
+        <!-- 中部三路集成策略分支 -->
+
+        <!-- 1. Bagging -->
+        <g id="group-bagging" class="branch-group">
+          <!-- 路径 -->
+          <path id="track-bagging" class="wire-base wire-active" d="M 410 160 L 890 160" />
+          <path d="M 410 145 L 870 145" class="wire-base wire-member" />
+          <path d="M 410 175 L 870 175" class="wire-base wire-member" />
+
+          <circle cx="410" cy="160" r="7" class="point-pin" />
+          <text x="430" y="140" class="node-title">Bagging</text>
+          <text x="536" y="140" class="node-tag">并行采样</text>
+          <text x="430" y="196" class="node-sub">主攻方差 · 自助抽样并行训练 · 均值/投票平滑波动</text>
+
+          <!-- 汇聚点 -->
+          <circle cx="890" cy="160" r="6" class="point-pin" />
+          <text x="836" y="138" class="node-tag">简单平均</text>
+        </g>
+
+        <!-- 2. Boosting -->
+        <g id="group-boosting" class="branch-group">
+          <!-- 阶梯形纠错路径 -->
+          <path id="track-boosting" class="wire-base wire-active" d="M 410 330 Q 520 300, 600 330 T 780 330 L 890 330" />
+          <!-- 串行残差递推虚线 -->
+          <path d="M 500 315 L 500 345" stroke="var(--focus)" stroke-width="2" stroke-linecap="round" />
+          <path d="M 680 315 L 680 345" stroke="var(--focus)" stroke-width="2" stroke-linecap="round" />
+
+          <circle cx="410" cy="330" r="7" class="point-pin" />
+          <text x="430" y="310" class="node-title">Boosting</text>
+          <text x="548" y="310" class="node-tag">串行纠错</text>
+          <text x="430" y="366" class="node-sub">主攻偏差 · 样本重权与残差逼近 · 累加基模型逐轮纠偏</text>
+
+          <!-- 汇聚点 -->
+          <circle cx="890" cy="330" r="6" class="point-pin" />
+          <text x="836" y="310" class="node-tag">加权表决</text>
+        </g>
+
+        <!-- 3. Stacking -->
+        <g id="group-stacking" class="branch-group">
+          <!-- 交叉特征堆叠路径 -->
+          <path id="track-stacking" class="wire-base wire-active" d="M 410 500 L 760 500 L 890 500" />
+          <path d="M 410 480 C 580 480, 680 500, 760 500" class="wire-base wire-member" />
+          <path d="M 410 520 C 580 520, 680 500, 760 500" class="wire-base wire-member" />
+
+          <circle cx="410" cy="500" r="7" class="point-pin" />
+          <text x="430" y="480" class="node-title">Stacking</text>
+          <text x="540" y="480" class="node-tag">学习组合</text>
+          <text x="430" y="536" class="node-sub">折外预测防泄漏 · 异构基模型产出特征 · 元学习器学习组合</text>
+
+          <!-- 汇聚点 -->
+          <circle cx="890" cy="500" r="6" class="point-pin" />
+          <text x="814" y="480" class="node-tag">元学习器决断</text>
+        </g>
+
+        <!-- 右侧汇流至统一强集成结论：粗线聚拢 -->
+        <g id="tracks-aggregate">
+          <path id="wire-agg-b" class="wire-base wire-consensus" d="M 890 160 C 970 160, 1010 330, 1070 330" />
+          <path id="wire-agg-o" class="wire-base wire-consensus" d="M 890 330 L 1070 330" />
+          <path id="wire-agg-s" class="wire-base wire-consensus" d="M 890 500 C 970 500, 1010 330, 1070 330" />
+
+          <!-- 最终出鞘粗轨迹 -->
+          <path id="wire-final" class="wire-base wire-consensus" marker-end="url(#arrow-agg)" d="M 1070 330 L 1380 330" style="stroke-width: 6px;" />
+        </g>
+
+        <!-- 最终输出终点 -->
+        <g id="node-output" transform="translate(1080, 270)">
+          <circle cx="0" cy="60" r="10" class="point-agg" />
+          <text x="32" y="56" class="node-title" style="font-size: var(--fs-h1); fill: var(--aggregate);">强集成预测器</text>
+          <text x="32" y="88" class="node-sub">综合性能优于任意单一基模型</text>
+          <text x="32" y="114" class="node-tag" style="fill: var(--aggregate);">泛化误差显著降低</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="footer-summary">
+      <span><b>核心准则</b>：基模型须“好而不同”，无独立性则无集成红利</span>
+      <span><b>机制区别</b>：Bagging 压方差，Boosting 削偏差，Stacking 调元权</span>
+    </div>
+  </main>
+
+  <aside class="notes" hidden>
+    这一页是全讲的认知总装配图。
+    集成学习的力量从来不是模型数量的简单堆叠，它的数学基石是“多样性”。
+    左侧的多条平行细线代表不同扰动下训练出的基学习器，只有当它们犯错的分布不重合时，集成的红利才存在。
+    顺着中轴，我们整理了三种截然不同的整合逻辑：
+    上路是 Bagging，通过 Bootstrap 自助重采样制造并行样本，求平均来降低方差；
+    中路是 Boosting，利用前一轮的预测残差和样本重权逐轮纠错，专注击穿偏差；
+    下路是 Stacking，严守折外预测边界，把基模型的判断变成新特征，交给元学习器去学习如何组合。
+    最终，三条道路汇聚到右侧这条最深最粗的轨迹上——一个方差与偏差双重受控的高泛化强模型。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+      Deck.init({ index: 26, total: 26 });
+
+      const buttons = document.querySelectorAll('.filter-nav button');
+      const groups = {
+        bagging: document.getElementById('group-bagging'),
+        boosting: document.getElementById('group-boosting'),
+        stacking: document.getElementById('group-stacking')
+      };
+      const wiresIn = {
+        bagging: document.getElementById('wire-b-in'),
+        boosting: document.getElementById('wire-o-in'),
+        stacking: document.getElementById('wire-s-in')
+      };
+      const wiresAgg = {
+        bagging: document.getElementById('wire-agg-b'),
+        boosting: document.getElementById('wire-agg-o'),
+        stacking: document.getElementById('wire-agg-s')
+      };
+
+      function setMode(mode) {
+        buttons.forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.mode === mode);
+        });
+
+        const all = mode === 'all';
+        ['bagging', 'boosting', 'stacking'].forEach(key => {
+          const active = all || mode === key;
+          const grp = groups[key];
+          const wIn = wiresIn[key];
+          const wAgg = wiresAgg[key];
+
+          if (active) {
+            grp.style.opacity = '1';
+            grp.style.filter = 'none';
+            if (wIn) {
+              wIn.style.opacity = all ? '0.65' : '1';
+              wIn.style.stroke = all ? 'var(--model)' : 'var(--focus)';
+              wIn.style.strokeWidth = all ? '2px' : '3.5px';
+            }
+            if (wAgg) {
+              wAgg.style.opacity = '1';
+              wAgg.style.stroke = all ? 'var(--aggregate)' : 'var(--focus)';
+              wAgg.style.strokeWidth = all ? '4.5px' : '6px';
+            }
+          } else {
+            grp.style.opacity = '0.22';
+            grp.style.filter = 'grayscale(0.6)';
+            if (wIn) {
+              wIn.style.opacity = '0.15';
+              wIn.style.stroke = 'var(--line)';
+              wIn.style.strokeWidth = '1.5px';
+            }
+            if (wAgg) {
+              wAgg.style.opacity = '0.15';
+              wAgg.style.stroke = 'var(--line)';
+              wAgg.style.strokeWidth = '2px';
+            }
+          }
+        });
+      }
+
+      buttons.forEach(btn => {
+        btn.addEventListener('click', () => setMode(btn.dataset.mode));
+      });
+    })();
+  </script>
+</body>
+</html>

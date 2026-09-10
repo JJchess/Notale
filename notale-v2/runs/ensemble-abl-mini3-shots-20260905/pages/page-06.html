@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      overflow: hidden;
+      background: var(--bg);
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* 生成背景画布 */
+    #forest-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* 前景文字内容 */
+    .cover-header {
+      position: relative;
+      z-index: 2;
+      max-width: 680px;
+      margin-top: 36px;
+    }
+
+    .chapter-tag {
+      font-size: var(--fs-label);
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+
+    .cover-title {
+      font-size: var(--fs-h1);
+      line-height: 1.18;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.01em;
+      margin: 0 0 16px 0;
+    }
+
+    .cover-desc {
+      font-size: var(--fs-lead);
+      line-height: 1.5;
+      color: var(--muted);
+      margin: 0;
+      max-width: 580px;
+    }
+
+    /* 底部概念图例卡 */
+    .cover-footer {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      gap: 24px;
+      margin-bottom: 16px;
+    }
+
+    .concept-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(83, 106, 120, 0.18);
+      border-radius: 8px;
+      padding: 14px 18px;
+      max-width: 330px;
+    }
+
+    .concept-marker {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+
+    .concept-marker.sample {
+      background: var(--sample);
+      box-shadow: 0 0 0 3px rgba(47, 117, 104, 0.2);
+    }
+
+    .concept-marker.tree {
+      background: var(--model);
+      box-shadow: 0 0 0 3px rgba(39, 100, 143, 0.2);
+    }
+
+    .concept-marker.agg {
+      background: var(--aggregate);
+      box-shadow: 0 0 0 3px rgba(195, 75, 34, 0.2);
+    }
+
+    .concept-title {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .concept-text {
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--muted);
+      margin: 0;
+    }
+  </style>
+</head>
+<body data-page="06" data-total="27">
+  <div id="stage">
+    <canvas id="forest-canvas" class="cv-fill"></canvas>
+
+    <header class="cover-header">
+      <h1 class="cover-title">Bagging 与随机森林</h1>
+      <p class="cover-desc">
+        通过自助重采样与特征子采样构建互不相同的基决策树，并在集合投票中化解单树的过拟合高方差。
+      </p>
+    </header>
+
+    <footer class="cover-footer">
+      <div class="concept-item">
+        <div class="concept-marker sample"></div>
+        <div>
+          <div class="concept-title">Bootstrap 重采样</div>
+          <p class="concept-text">有放回自样本池采样，约 36.8% 袋外数据用于无偏验证</p>
+        </div>
+      </div>
+      <div class="concept-item">
+        <div class="concept-marker tree"></div>
+        <div>
+          <div class="concept-title">特征子采样与树的多样性</div>
+          <p class="concept-text">每次切分仅考察随机特征子集，瓦解单一强特征统治</p>
+        </div>
+      </div>
+      <div class="concept-item">
+        <div class="concept-marker agg"></div>
+        <div>
+          <div class="concept-title">方差削减与集成决策</div>
+          <p class="concept-text">低相关性的基树集合通过平权投票显著降低整体预测方差</p>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("forest-canvas");
+      let ctx = null;
+
+      // 确定性随机生成器
+      function seededRandom(seed) {
+        let s = seed >>> 0;
+        return () => {
+          s = (s + 0x6d2b79f5) >>> 0;
+          let n = s;
+          n = Math.imul(n ^ (n >>> 15), n | 1);
+          n ^= n + Math.imul(n ^ (n >>> 7), n | 61);
+          return ((n ^ (n >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      // 生成多棵随机决策树结构 (Bagging Forest)
+      const SEED = 202409;
+      const rng = seededRandom(SEED);
+
+      // 根节点分布在画布右半区，从下往上或呈结构散开，汇聚到顶部投票聚合点
+      const ROOT_POSITIONS = [
+        { x: 920, y: 720 },
+        { x: 1080, y: 760 },
+        { x: 1240, y: 740 },
+        { x: 1400, y: 710 },
+        { x: 780, y: 680 }
+      ];
+
+      // 每棵树的递归分支生成
+      function generateTree(startX, startY, length, angle, depth, maxDepth, r) {
+        const segments = [];
+        const nodes = [{ x: startX, y: startY, depth: 0 }];
+
+        function branch(x, y, len, ang, d) {
+          if (d >= maxDepth || len < 18) return;
+          const endX = x + Math.cos(ang) * len;
+          const endY = y + Math.sin(ang) * len;
+          segments.push({ x1: x, y1: y, x2: endX, y2: endY, depth: d });
+          nodes.push({ x: endX, y: endY, depth: d + 1 });
+
+          // 随机二叉分支 (角度偏转与长度衰减体现不同特征切分选择)
+          const angleDiff1 = -(0.25 + r() * 0.35);
+          const angleDiff2 = (0.25 + r() * 0.35);
+          const lenScale1 = 0.68 + r() * 0.22;
+          const lenScale2 = 0.68 + r() * 0.22;
+
+          branch(endX, endY, len * lenScale1, ang + angleDiff1, d + 1);
+          branch(endX, endY, len * lenScale2, ang + angleDiff2, d + 1);
+        }
+
+        branch(startX, startY, length, angle, 0);
+        return { segments, nodes };
+      }
+
+      // 预生成森林结构
+      const trees = ROOT_POSITIONS.map((pos, idx) => {
+        const angle = -Math.PI / 2 + (rng() - 0.5) * 0.35;
+        const length = 110 + rng() * 45;
+        const maxDepth = 4 + (idx % 2);
+        return generateTree(pos.x, pos.y, length, angle, 0, maxDepth, rng);
+      });
+
+      // 汇聚点 (Ensemble Aggregation Hub)
+      const HUB = { x: 1150, y: 150 };
+
+      // 采集所有叶子节点并连接至汇聚点
+      const convergenceRays = [];
+      trees.forEach(t => {
+        // 选取深度最大的若干叶节点
+        const leaves = t.nodes.filter(n => n.depth >= 3);
+        leaves.forEach(leaf => {
+          if (rng() > 0.45) {
+            convergenceRays.push({ x: leaf.x, y: leaf.y });
+          }
+        });
+      });
+
+      // 离散样本点背景散布 (Bootstrap Sample Pool)
+      const dataSamples = [];
+      for (let i = 0; i < 90; i++) {
+        dataSamples.push({
+          x: 740 + rng() * 800,
+          y: 80 + rng() * 750,
+          r: 2 + rng() * 3,
+          alpha: 0.15 + rng() * 0.4,
+          isSampled: rng() > 0.368 // 符合 1 - 1/e ≈ 63.2% 采样概率
+        });
+      }
+
+      function draw(context) {
+        if (!context) return;
+        const w = 1600;
+        const h = 900;
+        context.clearRect(0, 0, w, h);
+
+        // 1. 绘制背景数据样本分布 (Bootstrap 样本云)
+        dataSamples.forEach(pt => {
+          context.beginPath();
+          context.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2);
+          if (pt.isSampled) {
+            context.fillStyle = Deck.rgba("--sample", pt.alpha);
+          } else {
+            context.fillStyle = Deck.rgba("--muted", pt.alpha * 0.6);
+          }
+          context.fill();
+        });
+
+        // 2. 绘制汇聚弱光纤（叶节点到集成顶点的平均化投影）
+        context.lineWidth = 1;
+        convergenceRays.forEach(ray => {
+          context.beginPath();
+          context.moveTo(ray.x, ray.y);
+          // 贝塞尔弧线平滑汇向 HUB
+          const cx = (ray.x + HUB.x) / 2 + (ray.x > HUB.x ? 30 : -30);
+          const cy = (ray.y + HUB.y) / 2 - 40;
+          context.quadraticCurveTo(cx, cy, HUB.x, HUB.y);
+          context.strokeStyle = Deck.rgba("--aggregate", 0.16);
+          context.stroke();
+        });
+
+        // 3. 绘制森林决策树结构
+        trees.forEach(tree => {
+          // 树枝
+          tree.segments.forEach(seg => {
+            context.beginPath();
+            context.moveTo(seg.x1, seg.y1);
+            context.lineTo(seg.x2, seg.y2);
+            const branchAlpha = Math.max(0.2, 0.85 - seg.depth * 0.12);
+            context.strokeStyle = Deck.rgba("--model", branchAlpha);
+            context.lineWidth = Math.max(1.2, 4 - seg.depth * 0.7);
+            context.stroke();
+          });
+
+          // 分裂节点
+          tree.nodes.forEach(n => {
+            context.beginPath();
+            const nodeRadius = Math.max(2.2, 5 - n.depth * 0.7);
+            context.arc(n.x, n.y, nodeRadius, 0, Math.PI * 2);
+            context.fillStyle = n.depth >= 4 ? Deck.rgba("--aggregate", 0.8) : Deck.rgba("--surface", 0.95);
+            context.fill();
+            context.strokeStyle = Deck.rgba("--model", 0.9);
+            context.lineWidth = 1.2;
+            context.stroke();
+          });
+        });
+
+        // 4. 绘制集成聚合中心 (Hub: 投票/平均)
+        // 外圈光晕
+        context.beginPath();
+        context.arc(HUB.x, HUB.y, 44, 0, Math.PI * 2);
+        context.fillStyle = Deck.rgba("--aggregate", 0.08);
+        context.fill();
+
+        context.beginPath();
+        context.arc(HUB.x, HUB.y, 28, 0, Math.PI * 2);
+        context.fillStyle = Deck.rgba("--aggregate", 0.16);
+        context.fill();
+
+        context.beginPath();
+        context.arc(HUB.x, HUB.y, 10, 0, Math.PI * 2);
+        context.fillStyle = Deck.rgba("--aggregate", 0.95);
+        context.fill();
+        context.strokeStyle = Deck.rgba("--surface", 1);
+        context.lineWidth = 2.5;
+        context.stroke();
+
+        // 标注 hub 文本
+        context.font = "600 13px system-ui, -apple-system, sans-serif";
+        context.fillStyle = Deck.token("--aggregate");
+        context.textAlign = "center";
+        context.fillText("集成决策 (Majority Vote / Mean)", HUB.x, HUB.y - 48);
+
+        // 5. 数据池标注
+        context.font = "500 13px system-ui, -apple-system, sans-serif";
+        context.fillStyle = Deck.token("--muted");
+        context.textAlign = "left";
+        context.fillText("Bootstrap 扰动样本空间 (N 组重采样并行拟合)", 780, 810);
+      }
+
+      // 自适应重绘与底盘初始化
+      Deck.init({ index: 6, total: 27, keys: false });
+      Deck.autofit(canvas, draw);
+    })();
+  </script>
+</body>
+</html>

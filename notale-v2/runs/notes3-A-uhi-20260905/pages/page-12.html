@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>固定站与移动走航互补：前者追踪时间变化，后者刻画街区差异</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* 顶栏 */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+      flex-shrink: 0;
+    }
+    .header-text {
+      max-width: 1040px;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      margin: 0 0 6px 0;
+      color: var(--text);
+      font-weight: 700;
+    }
+    .lead {
+      font-size: var(--fs-lead);
+      line-height: 1.45;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 互补核心指标胶囊 */
+    .metric-badges {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .badge-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      padding: 6px 14px;
+      text-align: right;
+    }
+    .badge-card .k {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      display: block;
+    }
+    .badge-card .v {
+      font-family: var(--font-num);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .badge-card.fixed .v { color: var(--observed); }
+    .badge-card.mobile .v { color: var(--heat); }
+
+    /* 主布局 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧图表观测区：上下双图协同 */
+    .charts-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      height: 100%;
+    }
+
+    .panel-view {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 12px 18px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .panel-view.fixed-chart {
+      flex: 1.1;
+      min-height: 0;
+    }
+    .panel-view.mobile-chart {
+      flex: 1.15;
+      min-height: 0;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+      flex-shrink: 0;
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-sub {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 走航剖面与地图示意联动 */
+    .plot-wrapper {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+    }
+    .plot-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 右侧机制解析与对比导读栏 */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .comp-table-box {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 14px;
+    }
+    .comp-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--fs-label);
+      margin-top: 6px;
+    }
+    .comp-table th {
+      text-align: left;
+      padding: 4px 3px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--surface-strong);
+      font-weight: 600;
+    }
+    .comp-table td {
+      padding: 5px 3px;
+      border-bottom: 1px solid #f0f4f5;
+      color: var(--text);
+    }
+    .comp-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .analysis-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 14px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 0;
+    }
+    .analysis-card h3 {
+      margin: 0;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      font-weight: 700;
+    }
+    .analysis-card p {
+      margin: 0;
+      font-size: var(--fs-label);
+      line-height: 1.42;
+      color: var(--muted);
+    }
+
+    .control-box {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ctl-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: var(--fs-label);
+    }
+    .ctl-row label {
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+    .time-chip {
+      flex: 1;
+      padding: 5px 0;
+      background: var(--surface-strong);
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: var(--text);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--dur) var(--ease);
+    }
+    .time-chip.active {
+      background: var(--surface);
+      border-color: var(--focus);
+      color: var(--focus);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+
+    .readout-panel {
+      padding: 6px 8px;
+      background: var(--surface-strong);
+      border-radius: 4px;
+      font-size: var(--fs-tick);
+      line-height: 1.4;
+      color: var(--text);
+    }
+    .readout-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--heat);
+    }
+
+    /* 交互光标线指示 */
+    .sync-cursor {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: var(--focus);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      z-index: 10;
+    }
+    .sync-cursor::after {
+      content: attr(data-label);
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      font-family: var(--font-num);
+      font-size: var(--fs-tick);
+      background: var(--surface);
+      border: 1px solid var(--focus);
+      color: var(--focus);
+      padding: 1px 4px;
+      border-radius: 2px;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body data-page="12" data-total="19">
+  <div id="stage">
+    <header>
+      <div class="header-text">
+        <h1>固定站与移动走航互补：前者追踪时间变化，后者刻画街区差异</h1>
+        <p class="lead">单靠气象站无法捕捉深街峡谷与绿带微气候，单次走航又缺乏连续时间基准。双重采样实现“时间深度”与“空间颗粒度”的精确缝合。</p>
+      </div>
+      <div class="metric-badges">
+        <div class="badge-card fixed">
+          <span class="k">固定站基准</span>
+          <span class="v">24 h 连续监测</span>
+        </div>
+        <div class="badge-card mobile">
+          <span class="k">移动走航断面</span>
+          <span class="v">10 m 空间颗粒度</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="main-grid min0">
+      <!-- 左侧双图结构：上面是固定站24小时时间序列，下面是走航空间断面 -->
+      <div class="charts-container min0">
+        <!-- 上图：固定站点 24h 气温曲线对比 -->
+        <div class="panel-view fixed-chart min0" id="fixedBox">
+          <div class="panel-head">
+            <div class="panel-title">
+              <span class="tag" data-kind="observed">时间序列</span>
+              <span>固定气象站（24 小时气温日演变）</span>
+            </div>
+            <div class="legend">
+              <span class="li"><span class="sw.line" style="display:inline-block;width:18px;height:3px;background:#C63F20;margin-right:5px;vertical-align:middle;"></span>城市站 (密质高层)</span>
+              <span class="li" style="margin-left:14px;"><span class="sw.line" style="display:inline-block;width:18px;height:3px;background:#255F73;margin-right:5px;vertical-align:middle;"></span>郊区参照站 (农田/草地)</span>
+              <span class="li" style="margin-left:14px;"><span style="display:inline-block;width:12px;height:12px;background:rgba(198,63,32,0.12);border:1px solid #C63F20;margin-right:4px;vertical-align:middle;"></span>热岛强度 ΔT</span>
+            </div>
+          </div>
+          <div class="plot-wrapper" id="fixedPlotWrap">
+            <canvas id="fixedCv" class="plot-canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- 下图：移动走航空间断面剖面（沿城市断面的瞬时/同步气温） -->
+        <div class="panel-view mobile-chart min0" id="mobileBox">
+          <div class="panel-head">
+            <div class="panel-title">
+              <span class="tag" data-kind="heat">空间颗粒度</span>
+              <span>移动走航实测剖面（郊区 → 工业区 → 密集商业区 → 城市公园 → 郊区）</span>
+            </div>
+            <div class="panel-sub">
+              <span>空间分辨率 ~10 m · 车载快响热敏电阻 (已剔除自热与行车滞后)</span>
+            </div>
+          </div>
+          <div class="plot-wrapper" id="mobilePlotWrap">
+            <canvas id="mobileCv" class="plot-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧侧边栏：走航时相切换、局地气候区对照与互补机制解析 -->
+      <aside class="sidebar min0">
+        <div class="control-box">
+          <div class="ctl-row">
+            <label>走航采样时段：</label>
+            <span class="panel-sub" id="timePeriodLabel">午后 (14:30–15:30)</span>
+          </div>
+          <div class="btn-group">
+            <button class="time-chip" data-time="day">午后 15:00</button>
+            <button class="time-chip active" data-time="night">夜间 22:30</button>
+          </div>
+          <div class="readout-panel" id="syncReadout">
+            夜间热岛达到峰值：城市站 <span class="readout-val" id="roUrbanT">28.4 °C</span>，郊区站 <span class="readout-val" id="roRuralT">23.8 °C</span> (ΔT = +4.6 °C)。街区微气候最大温差高达 <span class="readout-val" id="roTransectMax">5.8 °C</span>。
+          </div>
+        </div>
+
+        <div class="comp-table-box">
+          <span style="font-weight:700;font-size:var(--fs-sec);color:var(--text);">观测方式对比</span>
+          <table class="comp-table">
+            <thead>
+              <tr>
+                <th>维度</th>
+                <th>固定气象站</th>
+                <th>移动走航断面</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><b>时间辨识</b></td>
+                <td>连续无间断 (秒/分级)</td>
+                <td>单次截面 (1~2 小时)</td>
+              </tr>
+              <tr>
+                <td><b>空间覆盖</b></td>
+                <td>孤立稀疏点，代表性受限</td>
+                <td>沿线高密连续 (~10 m)</td>
+              </tr>
+              <tr>
+                <td><b>微气候捕捉</b></td>
+                <td>易抹平街谷、绿岛差异</td>
+                <td>清晰呈现树冠阻隔与峡谷热集聚</td>
+              </tr>
+              <tr>
+                <td><b>关键修正</b></td>
+                <td>仪器架设高度、防辐射罩通风</td>
+                <td>行车热机污染、时空漂移标准化</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="analysis-card">
+          <h3>时空漂移与基准订正</h3>
+          <p>移动观测通常耗时 45–90 分钟，在此期间背景气温随日照或夜间有效辐射持续变化。</p>
+          <p>若不加校正，后测地点气温将掺杂系统性时间降温或升温。必须以固定气象站的高频序列为参考基线执行趋势订正（Detrending），才能将移动轨迹准确折算至统一基准时刻。</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      // 数据定义
+      // 24小时固定站数据 (小时 0 - 24)
+      const hours = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24];
+      // 城市核心站气温 (°C)
+      const urbanTemp24 = [28.2, 27.8, 27.5, 27.2, 27.0, 26.8, 27.3, 28.5, 30.1, 31.8, 33.2, 34.4, 35.1, 35.6, 35.8, 35.5, 34.8, 33.7, 32.2, 30.9, 29.8, 29.1, 28.6, 28.3, 28.0];
+      // 郊区参照站气温 (°C)
+      const ruralTemp24 = [23.5, 23.0, 22.6, 22.3, 22.0, 21.8, 22.8, 25.1, 27.8, 30.2, 32.1, 33.4, 34.2, 34.7, 34.8, 34.2, 33.0, 31.0, 28.8, 27.0, 25.6, 24.8, 24.2, 23.8, 23.4];
+
+      // 走航剖面：空间坐标从 0 km 到 18 km，穿越五个典型地类
+      // 0-3km: 郊区开阔农田
+      // 3-6.5km: 物流与低矮工业区 (高反照率屋顶、宽柏油路面)
+      // 6.5-11km: 密质高层商业金融区 (LCZ 1: 狭窄街谷、深天穹阻挡、密集人造热)
+      // 11-13.5km: 综合城市森林公园与湖泊 (冷岛生态效应)
+      // 13.5-16km: 中层居住区 (混合绿化)
+      // 16-18km: 郊野缓冲区
+      const transectPoints = 120;
+      const transectDist = [];
+      const zones = [
+        { name: "郊区农田", start: 0, end: 3.2, lcz: "A" },
+        { name: "低矮工业仓储区", start: 3.2, end: 6.8, lcz: "LCZ 8" },
+        { name: "密质高层CBD街谷", start: 6.8, end: 11.2, lcz: "LCZ 1" },
+        { name: "城市湿地/森林公园", start: 11.2, end: 13.8, lcz: "LCZ A/G" },
+        { name: "多层居住混合区", start: 13.8, end: 16.2, lcz: "LCZ 2" },
+        { name: "郊区农田", start: 16.2, end: 18.0, lcz: "A" }
+      ];
+
+      for (let i = 0; i < transectPoints; i++) {
+        transectDist.push((i / (transectPoints - 1)) * 18.0);
+      }
+
+      // 生成典型白昼 (15:00) 与夜间 (22:30) 的走航剖面温度
+      function getTransectTemp(dist, mode) {
+        if (mode === "night") {
+          // 夜间：密质高层蓄热释放最猛，公园显著冷岛，农田快速冷却
+          let base = 23.8; // 郊区夜温
+          if (dist < 3.2) return base + 0.2 * Math.sin(dist);
+          if (dist < 6.8) return base + 2.4 + 0.3 * Math.sin(dist * 3);
+          if (dist < 11.2) {
+            // CBD 街谷波动热峰，最大温差可超 5°C
+            let cbdCenter = 9.0;
+            let bell = Math.exp(-Math.pow((dist - cbdCenter)/1.8, 2));
+            return base + 4.8 * bell + 0.4 * Math.sin(dist * 7);
+          }
+          if (dist < 13.8) {
+            // 城市公园冷岛 (温度陡降)
+            let parkCenter = 12.5;
+            let dip = Math.exp(-Math.pow((dist - parkCenter)/0.9, 2));
+            return base + 2.5 - 2.8 * dip + 0.15 * Math.sin(dist * 5);
+          }
+          if (dist < 16.2) return base + 2.6 + 0.25 * Math.sin(dist * 4);
+          return base + 0.3 * Math.sin(dist);
+        } else {
+          // 白昼 15:00：工业区与CBD地表暴晒，但空气热岛强度通常弱于夜间甚至出现微弱绿岛
+          let base = 34.4;
+          if (dist < 3.2) return base + 0.3 * Math.sin(dist);
+          if (dist < 6.8) return base + 1.8 + 0.4 * Math.cos(dist * 2);
+          if (dist < 11.2) {
+            let cbdCenter = 9.0;
+            let bell = Math.exp(-Math.pow((dist - cbdCenter)/2.2, 2));
+            return base + 1.6 * bell + 0.5 * Math.sin(dist * 6);
+          }
+          if (dist < 13.8) {
+            // 公园白天强蒸腾遮荫降温
+            let parkCenter = 12.5;
+            let dip = Math.exp(-Math.pow((dist - parkCenter)/0.9, 2));
+            return base + 1.0 - 2.2 * dip + 0.2 * Math.sin(dist * 4);
+          }
+          if (dist < 16.2) return base + 1.2 + 0.3 * Math.sin(dist * 3);
+          return base + 0.2 * Math.sin(dist);
+        }
+      }
+
+      let currentMode = "night"; // 默认聚焦夜间热岛峰值
+      let activeHoverDist = null;
+      let activeHoverHour = null;
+
+      // DOM 元素
+      const fixedCv = document.getElementById("fixedCv");
+      const mobileCv = document.getElementById("mobileCv");
+      const timeBtns = document.querySelectorAll(".time-chip");
+      const timePeriodLabel = document.getElementById("timePeriodLabel");
+      const roUrbanT = document.getElementById("roUrbanT");
+      const roRuralT = document.getElementById("roRuralT");
+      const roTransectMax = document.getElementById("roTransectMax");
+
+      // 初始化 Deck
+      Deck.init({ index: 12, total: 19 });
+
+      function updateReadouts() {
+        if (currentMode === "night") {
+          timePeriodLabel.textContent = "夜间 (22:00–23:00) · 强辐射逆温与热岛峰值";
+          roUrbanT.textContent = "28.5 °C";
+          roRuralT.textContent = "23.9 °C";
+          roTransectMax.textContent = "5.6 °C";
+        } else {
+          timePeriodLabel.textContent = "午后 (14:30–15:30) · 日照与湍流对流充分发展";
+          roUrbanT.textContent = "35.6 °C";
+          roRuralT.textContent = "34.6 °C";
+          roTransectMax.textContent = "3.4 °C";
+        }
+      }
+
+      // 绘制固定站 24h 序列
+      function drawFixed(ctx, w, h) {
+        ctx.clearRect(0, 0, w, h);
+
+        const pad = { top: 22, right: 35, bottom: 28, left: 52 };
+        const pw = w - pad.left - pad.right;
+        const ph = h - pad.top - pad.bottom;
+
+        const minT = 20, maxT = 38;
+        const xPos = hour => pad.left + (hour / 24) * pw;
+        const yPos = temp => pad.top + ph - ((temp - minT) / (maxT - minT)) * ph;
+
+        // 背景水平网格线与纵坐标
+        ctx.strokeStyle = "#DCE7EA";
+        ctx.lineWidth = 1;
+        ctx.fillStyle = "#50646B";
+        ctx.font = '12px "Bahnschrift", sans-serif';
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+
+        for (let t = 20; t <= 36; t += 4) {
+          let y = yPos(t);
+          ctx.beginPath();
+          ctx.moveTo(pad.left, y);
+          ctx.lineTo(pad.left + pw, y);
+          ctx.stroke();
+          ctx.fillText(t + "°C", pad.left - 8, y);
+        }
+
+        // 横轴时刻与竖向标线
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        for (let hr = 0; hr <= 24; hr += 4) {
+          let x = xPos(hr);
+          ctx.beginPath();
+          ctx.moveTo(x, pad.top);
+          ctx.lineTo(x, pad.top + ph);
+          ctx.strokeStyle = "#E4EDEF";
+          ctx.stroke();
+          let hrStr = (hr < 10 ? "0" + hr : hr) + ":00";
+          ctx.fillText(hrStr, x, pad.top + ph + 8);
+        }
+
+        // 绘制走航时段覆盖窗口标记 (15:00 或 22:30)
+        let sampledHour = currentMode === "night" ? 22.5 : 15.0;
+        let sx = xPos(sampledHour);
+        ctx.fillStyle = "rgba(169, 47, 24, 0.08)";
+        ctx.fillRect(sx - 18, pad.top, 36, ph);
+        ctx.strokeStyle = "#A92F18";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(sx, pad.top);
+        ctx.lineTo(sx, pad.top + ph);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 时段文字注记
+        ctx.fillStyle = "#A92F18";
+        ctx.font = 'bold 12px "Noto Sans SC", sans-serif';
+        ctx.textAlign = "center";
+        ctx.fillText(currentMode === "night" ? "走航实测时窗 (22:30)" : "走航实测时窗 (15:00)", sx, pad.top - 16);
+
+        // 填充两曲线之间的温差面积 (热岛差值 ΔT)
+        ctx.beginPath();
+        for (let i = 0; i <= 24; i++) {
+          let x = xPos(hours[i]);
+          let y = yPos(urbanTemp24[i]);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        for (let i = 24; i >= 0; i--) {
+          let x = xPos(hours[i]);
+          let y = yPos(ruralTemp24[i]);
+          ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fillStyle = "rgba(198, 63, 32, 0.12)";
+        ctx.fill();
+
+        // 绘制郊区站曲线 (冷却快，昼夜温差大)
+        ctx.beginPath();
+        for (let i = 0; i <= 24; i++) {
+          let x = xPos(hours[i]);
+          let y = yPos(ruralTemp24[i]);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = "#255F73";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // 绘制城市站曲线 (热惯性大，夜间降温极其缓慢)
+        ctx.beginPath();
+        for (let i = 0; i <= 24; i++) {
+          let x = xPos(hours[i]);
+          let y = yPos(urbanTemp24[i]);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = "#C63F20";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // 走航时刻对应的点与差值批注
+        let uTemp = currentMode === "night" ? 28.5 : 35.6;
+        let rTemp = currentMode === "night" ? 23.9 : 34.6;
+        let uy = yPos(uTemp);
+        let ry = yPos(rTemp);
+
+        ctx.fillStyle = "#C63F20";
+        ctx.beginPath();
+        ctx.arc(sx, uy, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#255F73";
+        ctx.beginPath();
+        ctx.arc(sx, ry, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 差值连线与文字
+        ctx.strokeStyle = "#A92F18";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(sx + 10, uy);
+        ctx.lineTo(sx + 10, ry);
+        ctx.stroke();
+
+        ctx.fillStyle = "#A92F18";
+        ctx.font = 'bold 13px "Bahnschrift", sans-serif';
+        ctx.textAlign = "left";
+        let delta = (uTemp - rTemp).toFixed(1);
+        ctx.fillText("ΔT = +" + delta + " °C", sx + 14, (uy + ry) / 2);
+
+        // 夜间最大差值标注引导
+        ctx.fillStyle = "#50646B";
+        ctx.font = '12px "Noto Sans SC", sans-serif';
+        ctx.textAlign = "left";
+        if (currentMode === "night") {
+          ctx.fillText("夜间下垫面长波持续放热，郊区迅速变冷，气温热岛在此刻达到顶峰", pad.left + 12, pad.top + 16);
+        } else {
+          ctx.fillText("午后强烈对流与湍流混合，城乡近地气温差缩小，甚至可能出现逆转", pad.left + 12, pad.top + 16);
+        }
+      }
+
+      // 绘制移动走航空间剖面图
+      function drawMobile(ctx, w, h) {
+        ctx.clearRect(0, 0, w, h);
+
+        const pad = { top: 28, right: 35, bottom: 44, left: 52 };
+        const pw = w - pad.left - pad.right;
+        const ph = h - pad.top - pad.bottom;
+
+        const minT = currentMode === "night" ? 22 : 31;
+        const maxT = currentMode === "night" ? 31 : 38;
+        const xPos = dist => pad.left + (dist / 18.0) * pw;
+        const yPos = temp => pad.top + ph - ((temp - minT) / (maxT - minT)) * ph;
+
+        // 背景地类色块与分区标注
+        const zoneColors = [
+          "rgba(57, 112, 74, 0.08)",   // 郊区农田 浅绿
+          "rgba(115, 95, 42, 0.08)",   // 工业区
+          "rgba(198, 63, 32, 0.10)",   // CBD 热区
+          "rgba(23, 107, 130, 0.12)",  // 湿地公园 冷区
+          "rgba(115, 95, 42, 0.07)",   // 混合居住区
+          "rgba(57, 112, 74, 0.08)"    // 郊区农田
+        ];
+
+        zones.forEach((z, idx) => {
+          let x1 = xPos(z.start);
+          let x2 = xPos(z.end);
+          ctx.fillStyle = zoneColors[idx];
+          ctx.fillRect(x1, pad.top, x2 - x1, ph);
+
+          // 绘制区域分割虚线
+          if (idx > 0) {
+            ctx.strokeStyle = "#CAD6D8";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(x1, pad.top);
+            ctx.lineTo(x1, pad.top + ph);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+
+          // 地类标签与LCZ标签
+          ctx.fillStyle = "#50646B";
+          ctx.font = '12px "Noto Sans SC", sans-serif';
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+          let cx = (x1 + x2) / 2;
+          ctx.fillText(z.name, cx, pad.top - 6);
+
+          ctx.fillStyle = "#82959C";
+          ctx.font = '11px "Bahnschrift", sans-serif';
+          ctx.textBaseline = "top";
+          ctx.fillText(z.lcz, cx, pad.top + 4);
+        });
+
+        // 纵轴刻度与水平网格
+        ctx.strokeStyle = "#DCE7EA";
+        ctx.lineWidth = 1;
+        ctx.fillStyle = "#50646B";
+        ctx.font = '12px "Bahnschrift", sans-serif';
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+
+        let step = 2;
+        for (let t = minT; t <= maxT; t += step) {
+          let y = yPos(t);
+          ctx.beginPath();
+          ctx.moveTo(pad.left, y);
+          ctx.lineTo(pad.left + pw, y);
+          ctx.stroke();
+          ctx.fillText(t + "°C", pad.left - 8, y);
+        }
+
+        // 横轴公里刻度
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        for (let km = 0; km <= 18; km += 2) {
+          let x = xPos(km);
+          ctx.fillText(km + " km", x, pad.top + ph + 8);
+        }
+        ctx.fillStyle = "#50646B";
+        ctx.font = '12px "Noto Sans SC", sans-serif';
+        ctx.fillText("走航横断面测线距离", pad.left + pw / 2, pad.top + ph + 24);
+
+        // 走航连续采样实测曲线
+        ctx.beginPath();
+        let pts = [];
+        for (let i = 0; i < transectPoints; i++) {
+          let d = transectDist[i];
+          let val = getTransectTemp(d, currentMode);
+          let px = xPos(d);
+          let py = yPos(val);
+          pts.push({ x: px, y: py, dist: d, temp: val });
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.strokeStyle = "#C63F20";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // 绘制高密采样点 (每隔 3 个点画一个微型节点表示 10m 密度)
+        ctx.fillStyle = "#C63F20";
+        pts.forEach((p, idx) => {
+          if (idx % 2 === 0) {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        });
+
+        // 关键特征点直接标注 (直接标注原则，无需 hover 就能看懂)
+        // 1. CBD 高层街谷热峰
+        let cbdPt = pts.find(p => p.dist >= 9.0);
+        if (cbdPt) {
+          ctx.fillStyle = "#C63F20";
+          ctx.beginPath();
+          ctx.arc(cbdPt.x, cbdPt.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.font = 'bold 13px "Noto Sans SC", sans-serif';
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+          ctx.fillText("街谷聚热峰 +" + cbdPt.temp.toFixed(1) + "°C", cbdPt.x, cbdPt.y - 10);
+        }
+
+        // 2. 公园绿岛冷湿谷
+        let parkPt = pts.find(p => p.dist >= 12.5);
+        if (parkPt) {
+          ctx.fillStyle = "#176B82";
+          ctx.beginPath();
+          ctx.arc(parkPt.x, parkPt.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.font = 'bold 13px "Noto Sans SC", sans-serif';
+          ctx.textAlign = "center";
+          ctx.textBaseline = "top";
+          ctx.fillText("城市绿岛冷谷 " + parkPt.temp.toFixed(1) + "°C", parkPt.x, parkPt.y + 10);
+
+          // 画一条箭头或冷岛效应幅度标注
+          ctx.strokeStyle = "#176B82";
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([2, 2]);
+          ctx.beginPath();
+          ctx.moveTo(parkPt.x, parkPt.y - 4);
+          ctx.lineTo(parkPt.x, parkPt.y - 28);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = "#176B82";
+          ctx.font = '12px "Noto Sans SC", sans-serif';
+          ctx.textBaseline = "bottom";
+          let diffWithCbd = (cbdPt.temp - parkPt.temp).toFixed(1);
+          ctx.fillText("相距仅 3.5km 温差达 " + diffWithCbd + "°C", parkPt.x, parkPt.y - 30);
+        }
+
+        // 3. 固定站如果仅设在公园和郊区，将完全错失 CBD 的剧烈增温
+        ctx.fillStyle = "#735F2A";
+        ctx.font = '12px "Noto Sans SC", sans-serif';
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.fillText("⚠ 固定站通常布设在标准化气象观测场或开阔绿地，单靠固定站会严重低估高密度街区的实况暴露", pad.left + 8, pad.top + ph - 24);
+
+        // 如果用户鼠标悬停在断面上，绘制精准指示线
+        if (activeHoverDist !== null) {
+          let hx = xPos(activeHoverDist);
+          let hTemp = getTransectTemp(activeHoverDist, currentMode);
+          let hy = yPos(hTemp);
+
+          ctx.strokeStyle = "#A92F18";
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(hx, pad.top);
+          ctx.lineTo(hx, pad.top + ph);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = "#A92F18";
+          ctx.beginPath();
+          ctx.arc(hx, hy, 6, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 悬停气泡
+          ctx.fillStyle = "#17282E";
+          ctx.fillRect(hx + 8, hy - 24, 110, 26);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.font = '12px "Bahnschrift", sans-serif';
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(`${activeHoverDist.toFixed(1)} km · ${hTemp.toFixed(1)}°C`, hx + 14, hy - 11);
+        }
+      }
+
+      // 重绘全部画布
+      function redrawAll() {
+        Deck.autofit(fixedCv, function(ctx, w, h){
+          drawFixed(ctx, w, h);
+        });
+        Deck.autofit(mobileCv, function(ctx, w, h){
+          drawMobile(ctx, w, h);
+        });
+        updateReadouts();
+      }
+
+      // 事件监听：切换午后/夜间
+      timeBtns.forEach(btn => {
+        btn.addEventListener("click", function(){
+          timeBtns.forEach(b => b.classList.remove("active"));
+          this.classList.add("active");
+          currentMode = this.dataset.time;
+          redrawAll();
+        });
+      });
+
+      // 移动走航图的交互拾取
+      mobileCv.addEventListener("mousemove", function(e){
+        let pt = Deck.pt(mobileCv, e);
+        let rect = mobileCv.getBoundingClientRect();
+        let w = 1140; // 内部画布参考宽
+        // 粗略换算比例
+        let padLeft = 52, padRight = 35;
+        let innerW = mobileCv.offsetWidth - padLeft - padRight;
+        let relX = pt.x - padLeft;
+        if (relX >= 0 && relX <= innerW) {
+          activeHoverDist = (relX / innerW) * 18.0;
+          redrawAll();
+        } else {
+          if (activeHoverDist !== null) {
+            activeHoverDist = null;
+            redrawAll();
+          }
+        }
+      });
+
+      mobileCv.addEventListener("mouseleave", function(){
+        if (activeHoverDist !== null) {
+          activeHoverDist = null;
+          redrawAll();
+        }
+      });
+
+      // 首次绘制
+      redrawAll();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    .header {
+      position: absolute;
+      top: 56px;
+      left: 56px;
+      z-index: 10;
+      max-width: 620px;
+    }
+    .kicker {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .kicker::before {
+      content: "";
+      width: 24px;
+      height: 2px;
+      background: var(--rule);
+    }
+    h1 {
+      margin: 0 0 16px 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+    }
+    .forest-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+    .diagram-labels {
+      position: absolute;
+      bottom: 48px;
+      left: 56px;
+      z-index: 10;
+      display: flex;
+      gap: 32px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .legend-line {
+      width: 24px;
+      height: 2px;
+      background: var(--model);
+    }
+    .legend-accent {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--focus);
+    }
+    .legend-converge {
+      width: 24px;
+      height: 4px;
+      background: var(--model);
+    }
+  </style>
+</head>
+<body data-page="14" data-total="32">
+  <div id="stage">
+    <div class="header">
+      <div class="kicker">集成学习 · 第四模块</div>
+      <h1>随机森林：在 Bagging 中<br>进一步制造差异</h1>
+      <p class="lead">样本重采样 + 特征子采样<br>多棵差异化决策树汇聚成强鲁棒决策</p>
+    </div>
+    <canvas id="forestCv" class="forest-canvas"></canvas>
+    <div class="diagram-labels">
+      <div class="legend-item">
+        <span class="legend-line"></span>
+        <span>差异化分支</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-accent"></span>
+        <span>随机特征切分</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-converge"></span>
+        <span>多数表决汇聚</span>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们好，今天我们进入集成学习的第四个核心模块：随机森林（Random Forest）。
+    在上一模块我们学习了 Bagging 的核心哲学——利用并行自助采样训练多棵树，通过平均来降低方差。
+    但如果数据集中存在若干个“压倒性强特征”，普通 Bagging 的每一棵树在顶部都会贪婪地选择这些强特征，导致生成的树高度相似、相关性极强，限制了方差缩减的效果。
+    随机森林在 Bagging 的样本扰动基础上，在每个分裂节点引入了“候选特征子集随机采样”，强行制造树与树之间的解耦差异。今天我们就来看看这两层随机性是如何让森林拥有超越单树与基础 Bagging 的强大泛化能力的。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 14, total: 32 });
+
+    const cv = document.getElementById('forestCv');
+    const modelCol = Deck.rgb('model');
+    const focusCol = Deck.rgb('focus');
+    const ruleCol = Deck.rgb('rule');
+
+    // 森林结构生成：4 棵基树，自左向右排列，最后向下收束至聚合线
+    // 树 1~4 的根节点与分支结构
+    const trees = [
+      {
+        root: { x: 740, y: 140 },
+        // 节点由层次分裂
+        depth: 3,
+        seed: 101,
+        leafX: [650, 680, 710, 740, 770]
+      },
+      {
+        root: { x: 950, y: 120 },
+        depth: 3,
+        seed: 202,
+        leafX: [870, 910, 950, 990, 1030]
+      },
+      {
+        root: { x: 1180, y: 130 },
+        depth: 3,
+        seed: 303,
+        leafX: [1100, 1140, 1180, 1220, 1260]
+      },
+      {
+        root: { x: 1400, y: 150 },
+        depth: 3,
+        seed: 404,
+        leafX: [1320, 1360, 1400, 1440, 1480]
+      }
+    ];
+
+    // 为每棵树生成具体的分支与切分点
+    function buildTreeNodes(tree) {
+      const nodes = [];
+      const edges = [];
+      
+      // 根节点
+      const r = { x: tree.root.x, y: tree.root.y, level: 0, isSplit: true, id: 'r' };
+      nodes.push(r);
+
+      // 第一层两子节点
+      const l1 = { x: tree.root.x - 45, y: tree.root.y + 80, level: 1, isSplit: true, id: 'l1' };
+      const r1 = { x: tree.root.x + 45, y: tree.root.y + 80, level: 1, isSplit: true, id: 'r1' };
+      nodes.push(l1, r1);
+      edges.push({ from: r, to: l1 }, { from: r, to: r1 });
+
+      // 第二层四子节点
+      const l2_1 = { x: l1.x - 30, y: l1.y + 80, level: 2, isSplit: (tree.seed % 2 === 0), id: 'l2_1' };
+      const l2_2 = { x: l1.x + 25, y: l1.y + 80, level: 2, isSplit: (tree.seed % 3 === 0), id: 'l2_2' };
+      const r2_1 = { x: r1.x - 25, y: r1.y + 80, level: 2, isSplit: true, id: 'r2_1' };
+      const r2_2 = { x: r1.x + 35, y: r1.y + 80, level: 2, isSplit: (tree.seed % 5 !== 0), id: 'r2_2' };
+      nodes.push(l2_1, l2_2, r2_1, r2_2);
+      edges.push({ from: l1, to: l2_1 }, { from: l1, to: l2_2 }, { from: r1, to: r2_1 }, { from: r1, to: r2_2 });
+
+      // 叶子节点层 y = 420
+      const leaves = tree.leafX.map((lx, i) => ({
+        x: lx,
+        y: 400 + (i % 2) * 15,
+        level: 3,
+        isLeaf: true,
+        pred: (i + tree.seed) % 2 === 0 ? 1 : 0
+      }));
+      nodes.push(...leaves);
+
+      // 连接第二层到叶子
+      edges.push(
+        { from: l2_1, to: leaves[0] },
+        { from: l2_1, to: leaves[1] },
+        { from: l2_2, to: leaves[2] },
+        { from: r2_1, to: leaves[3] },
+        { from: r2_2, to: leaves[4] }
+      );
+
+      return { nodes, edges, leaves };
+    }
+
+    const forestData = trees.map(buildTreeNodes);
+
+    // 汇聚投票中心
+    const voteCenter = { x: 1100, y: 680 };
+
+    function draw(ctx) {
+      ctx.clearRect(0, 0, Deck.W, Deck.H);
+
+      // 背景微弱架构网格/导引线
+      ctx.strokeStyle = `rgba(${ruleCol[0]}, ${ruleCol[1]}, ${ruleCol[2]}, 0.15)`;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 6]);
+
+      // 树顶采样区域示意线
+      ctx.beginPath();
+      ctx.moveTo(600, 70);
+      ctx.lineTo(1520, 70);
+      ctx.stroke();
+
+      // 叶子汇聚基线
+      ctx.beginPath();
+      ctx.moveTo(600, 480);
+      ctx.lineTo(1520, 480);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 树 1~4 顶部采样集标注
+      ctx.fillStyle = Deck.token('--muted');
+      ctx.font = '15px ' + Deck.token('--font-sans');
+      ctx.textAlign = 'center';
+      ['Bootstrap 样本 1 + 特征子集', 'Bootstrap 样本 2 + 特征子集', 'Bootstrap 样本 3 + 特征子集', 'Bootstrap 样本 4 + 特征子集'].forEach((label, i) => {
+        ctx.fillText(label, trees[i].root.x, 82);
+      });
+
+      // 绘制各棵树及其分支
+      forestData.forEach((treeData, tIdx) => {
+        // 树背景光晕/包络
+        ctx.fillStyle = `rgba(${modelCol[0]}, ${modelCol[1]}, ${modelCol[2]}, 0.03)`;
+        ctx.beginPath();
+        const root = treeData.nodes[0];
+        ctx.moveTo(root.x, root.y - 20);
+        ctx.lineTo(treeData.leaves[0].x - 15, treeData.leaves[0].y + 20);
+        ctx.lineTo(treeData.leaves[treeData.leaves.length - 1].x + 15, treeData.leaves[treeData.leaves.length - 1].y + 20);
+        ctx.closePath();
+        ctx.fill();
+
+        // 边
+        ctx.lineWidth = 2;
+        treeData.edges.forEach(edge => {
+          ctx.strokeStyle = `rgba(${modelCol[0]}, ${modelCol[1]}, ${modelCol[2]}, 0.55)`;
+          ctx.beginPath();
+          ctx.moveTo(edge.from.x, edge.from.y);
+          // 曲线微弯增加图解美感
+          const cpY = (edge.from.y + edge.to.y) / 2;
+          ctx.bezierCurveTo(edge.from.x, cpY, edge.to.x, cpY, edge.to.x, edge.to.y);
+          ctx.stroke();
+        });
+
+        // 节点
+        treeData.nodes.forEach(node => {
+          if (node.isLeaf) {
+            ctx.fillStyle = `rgba(${modelCol[0]}, ${modelCol[1]}, ${modelCol[2]}, 0.8)`;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, 4, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            // 分裂节点：特意突出部分为橙色（随机特征切分）
+            const isFeatured = (node.level === 1 && tIdx % 2 === 0) || (node.level === 0 && tIdx === 2);
+            ctx.fillStyle = isFeatured ? `rgb(${focusCol.join(',')})` : `rgb(${modelCol.join(',')})`;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, isFeatured ? 5 : 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 外部微圈
+            if (isFeatured) {
+              ctx.strokeStyle = `rgba(${focusCol[0]}, ${focusCol[1]}, ${focusCol[2]}, 0.4)`;
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.arc(node.x, node.y, 9, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+          }
+        });
+
+        // 每棵树的聚合出线 -> 连向多数表决汇聚中心
+        const mainLeaf = treeData.leaves[2];
+        ctx.strokeStyle = `rgba(${modelCol[0]}, ${modelCol[1]}, ${modelCol[2]}, 0.35)`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(mainLeaf.x, mainLeaf.y + 6);
+        ctx.bezierCurveTo(mainLeaf.x, 560, voteCenter.x, 560, voteCenter.x, voteCenter.y - 30);
+        ctx.stroke();
+      });
+
+      // 汇聚中心与最终预测决策路径（粗线收束，体现契约签名）
+      // 汇聚节点外环
+      ctx.fillStyle = `rgba(${modelCol[0]}, ${modelCol[1]}, ${modelCol[2]}, 0.08)`;
+      ctx.beginPath();
+      ctx.arc(voteCenter.x, voteCenter.y - 25, 36, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = `rgba(${modelCol[0]}, ${modelCol[1]}, ${modelCol[2]}, 0.8)`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(voteCenter.x, voteCenter.y - 25, 26, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 汇聚文字/记号
+      ctx.fillStyle = `rgb(${modelCol.join(',')})`;
+      ctx.font = '500 15px ' + Deck.token('--font-sans');
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('多数表决', voteCenter.x, voteCenter.y - 25);
+
+      // 最终收束路径（4px 粗线，签名元素）
+      ctx.strokeStyle = `rgb(${modelCol.join(',')})`;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(voteCenter.x, voteCenter.y + 2);
+      ctx.lineTo(voteCenter.x, voteCenter.y + 110);
+      ctx.stroke();
+
+      // 终点决策指示箭头
+      ctx.fillStyle = `rgb(${modelCol.join(',')})`;
+      ctx.beginPath();
+      ctx.moveTo(voteCenter.x, voteCenter.y + 124);
+      ctx.lineTo(voteCenter.x - 7, voteCenter.y + 106);
+      ctx.lineTo(voteCenter.x + 7, voteCenter.y + 106);
+      ctx.closePath();
+      ctx.fill();
+
+      // 最终强分类结果说明
+      ctx.fillStyle = Deck.token('--text');
+      ctx.font = '500 18px ' + Deck.token('--font-display');
+      ctx.textAlign = 'center';
+      ctx.fillText('集成分类决策 H(x)', voteCenter.x, voteCenter.y + 148);
+    }
+
+    Deck.autofit(cv, draw);
+  </script>
+</body>
+</html>

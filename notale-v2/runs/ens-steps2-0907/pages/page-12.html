@@ -1,0 +1,658 @@
+<!--
+构图意图：
+1. 主对象是两组对照的二维特征平面决策边界：左侧单棵决策树随 Bootstrap 抽样剧烈摆动，右侧 Bagging 集成多棵树后平滑收敛。
+2. 两者共享完全相同的 2D 训练数据与随机扰动种子，通过右侧控制栏触发“抽样并重训”或“连续增树”，使单模型与集成的方差差异被并排即时观测。
+3. 关键指标（决策边界波动率与测试方差）贴附在各自平面下方，操作与模式切换置于右侧面板，引导读者用动作验证“平均消除随机波动”。
+-->
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --panel-gap: 36px;
+    }
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      user-select: none;
+    }
+    header {
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0 0 6px 0;
+      color: var(--text);
+      font-weight: 500;
+    }
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+    .lead strong {
+      color: var(--model);
+      font-weight: 500;
+    }
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 320px;
+      gap: var(--panel-gap);
+      flex: 1;
+      min-height: 0;
+    }
+    .plot-col {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .plot-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+    .plot-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      color: var(--text);
+      font-weight: 500;
+    }
+    .plot-sub {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .canvas-box {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      background: #DEE6EB;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .plot-meta {
+      margin-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .metric-val {
+      font-family: var(--font-display);
+      font-size: var(--fs-body);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .metric-val.high {
+      color: var(--focus);
+    }
+    .metric-val.stable {
+      color: var(--model);
+    }
+    .controls-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 22px;
+      padding-left: 8px;
+    }
+    .ctrl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ctrl-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .btn {
+      appearance: none;
+      border: 1px solid var(--rule);
+      background: transparent;
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: var(--fs-body);
+      padding: 10px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      text-align: center;
+      transition: background var(--motion-fast) var(--ease-out),
+                  border-color var(--motion-fast) var(--ease-out);
+    }
+    .btn:hover {
+      background: rgba(23, 98, 142, 0.08);
+      border-color: var(--model);
+    }
+    .btn:active {
+      background: rgba(23, 98, 142, 0.16);
+    }
+    .btn.primary {
+      background: var(--model);
+      border-color: var(--model);
+      color: #FFF;
+      font-weight: 500;
+    }
+    .btn.primary:hover {
+      background: #114c6e;
+    }
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    input[type=range] {
+      flex: 1;
+      accent-color: var(--model);
+      cursor: pointer;
+    }
+    .tree-count-val {
+      font-family: var(--font-display);
+      font-size: var(--fs-body);
+      font-weight: 600;
+      color: var(--text);
+      min-width: 32px;
+      text-align: right;
+    }
+    .callout {
+      border-left: 3px solid var(--model);
+      padding-left: 12px;
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+    }
+    .callout strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .legend {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+      margin-top: 4px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot.c0 {
+      background: var(--model);
+    }
+    .dot.c1 {
+      background: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="12" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>Bagging 如何稳定决策边界</h1>
+      <p class="lead">单棵深树随训练子集剧烈摆动，<strong>集成平均消除局部过拟合方差</strong></p>
+    </header>
+
+    <div class="main-grid">
+      <!-- 左：单棵树 -->
+      <div class="plot-col">
+        <div class="plot-header">
+          <span class="plot-title">单决策树（深度 5）</span>
+          <span class="plot-sub" id="tree-sub">当前展示：样本子集 #1</span>
+        </div>
+        <div class="canvas-box">
+          <canvas id="cv-single" class="cv-fill"></canvas>
+        </div>
+        <div class="plot-meta">
+          <span>边界波动位移：<strong id="single-var" class="metric-val high">±0.28</strong></span>
+          <span>历史轨迹：<span id="ghost-count">5</span> 次叠加</span>
+        </div>
+      </div>
+
+      <!-- 中：Bagging 集成 -->
+      <div class="plot-col">
+        <div class="plot-header">
+          <span class="plot-title">Bagging 集成（多树多数表决）</span>
+          <span class="plot-sub" id="bag-sub">聚合 15 棵基学习器</span>
+        </div>
+        <div class="canvas-box">
+          <canvas id="cv-bagging" class="cv-fill"></canvas>
+        </div>
+        <div class="plot-meta">
+          <span>边界收敛波动：<strong id="bag-var" class="metric-val stable">±0.06</strong></span>
+          <span>方差降幅：<strong id="var-reduct" class="metric-val stable">-78%</strong></span>
+        </div>
+      </div>
+
+      <!-- 右：交互控制器 -->
+      <div class="controls-col">
+        <div class="ctrl-group">
+          <div class="ctrl-label">
+            <span>基学习器数量 (B)</span>
+            <span id="tree-num-label" class="tree-count-val">15</span>
+          </div>
+          <div class="slider-row">
+            <input type="range" id="tree-slider" min="1" max="40" value="15" step="1">
+          </div>
+        </div>
+
+        <div class="ctrl-group">
+          <button id="btn-resample" class="btn primary">Bootstrap 重新抽样</button>
+          <div class="btn-group">
+            <button id="btn-step" class="btn">+1 棵树</button>
+            <button id="btn-reset" class="btn">重置序列</button>
+          </div>
+        </div>
+
+        <div class="legend">
+          <span>样本类别：</span>
+          <span class="legend-item"><span class="dot c0"></span>类别 A</span>
+          <span class="legend-item"><span class="dot c1"></span>类别 B</span>
+        </div>
+
+        <div class="callout">
+          <strong>方差消除机制：</strong><br>
+          单棵树随抽样扰动产生剧烈位移；多树平均后，阶梯边缘收敛为平滑平稳的非线性分界。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学看屏幕上的对照。左边是单棵无剪枝决策树在不同 Bootstrap 样本上的表现，右边是 Bagging 集成后的结果。
+    当你点击“Bootstrap 重新抽样”，左侧单棵树的边界会剧烈摇摆，因为它对训练样本的局部扰动极度敏感，方差极大；
+    而右侧随着基模型数量 B 的增加，多条轴对齐的分割线通过多数表决互相抵消了局部的突刺，逐步收敛出平滑稳定的判别区域。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 1. 确定性固定数据生成：双月牙 / 经典同心环形交错分布
+      let seed = 1337;
+      function rnd() {
+        seed = (seed * 16807) % 2147483647;
+        return (seed - 1) / 2147483646;
+      }
+
+      const N = 80;
+      const DATA = [];
+      // 类别 0: 内部弯月
+      for (let i = 0; i < N / 2; i++) {
+        const t = (i / (N / 2)) * Math.PI;
+        const noiseX = (rnd() - 0.5) * 0.08;
+        const noiseY = (rnd() - 0.5) * 0.08;
+        DATA.push({
+          x: 0.42 + 0.28 * Math.cos(t) + noiseX,
+          y: 0.44 + 0.28 * Math.sin(t) + noiseY,
+          c: 0
+        });
+      }
+      // 类别 1: 外部倒月牙
+      for (let i = 0; i < N / 2; i++) {
+        const t = (i / (N / 2)) * Math.PI;
+        const noiseX = (rnd() - 0.5) * 0.08;
+        const noiseY = (rnd() - 0.5) * 0.08;
+        DATA.push({
+          x: 0.58 - 0.28 * Math.cos(t) + noiseX,
+          y: 0.56 - 0.28 * Math.sin(t) + noiseY,
+          c: 1
+        });
+      }
+
+      // 2. 简易 2D 决策树构建器（深度 5，轴对齐最优增益切分）
+      function buildTree(samples, maxDepth = 5) {
+        function entropy(subset) {
+          if (subset.length === 0) return 0;
+          let c0 = 0;
+          for (let p of subset) if (p.c === 0) c0++;
+          const p0 = c0 / subset.length;
+          const p1 = 1 - p0;
+          if (p0 === 0 || p1 === 0) return 0;
+          return -(p0 * Math.log2(p0) + p1 * Math.log2(p1));
+        }
+
+        function bestSplit(subset) {
+          let bestGain = -1;
+          let bestAxis = null;
+          let bestThresh = 0;
+          const baseEnt = entropy(subset);
+
+          for (let axis of ['x', 'y']) {
+            // 候选切分点
+            const vals = subset.map(p => p[axis]).sort((a, b) => a - b);
+            for (let i = 0; i < vals.length - 1; i++) {
+              if (vals[i] === vals[i + 1]) continue;
+              const thresh = (vals[i] + vals[i + 1]) / 2;
+              const left = subset.filter(p => p[axis] <= thresh);
+              const right = subset.filter(p => p[axis] > thresh);
+              if (left.length === 0 || right.length === 0) continue;
+
+              const gain = baseEnt - (left.length / subset.length * entropy(left) + right.length / subset.length * entropy(right));
+              if (gain > bestGain) {
+                bestGain = gain;
+                bestAxis = axis;
+                bestThresh = thresh;
+              }
+            }
+          }
+          return { bestGain, bestAxis, bestThresh };
+        }
+
+        function createNode(subset, depth) {
+          let c0 = 0;
+          for (let p of subset) if (p.c === 0) c0++;
+          const major = (c0 >= subset.length / 2) ? 0 : 1;
+
+          if (depth >= maxDepth || subset.length <= 3) {
+            return { leaf: true, val: major };
+          }
+
+          const { bestGain, bestAxis, bestThresh } = bestSplit(subset);
+          if (bestGain <= 0.001 || !bestAxis) {
+            return { leaf: true, val: major };
+          }
+
+          const left = subset.filter(p => p[bestAxis] <= bestThresh);
+          const right = subset.filter(p => p[bestAxis] > bestThresh);
+          if (left.length === 0 || right.length === 0) {
+            return { leaf: true, val: major };
+          }
+
+          return {
+            leaf: false,
+            axis: bestAxis,
+            thresh: bestThresh,
+            left: createNode(left, depth + 1),
+            right: createNode(right, depth + 1)
+          };
+        }
+
+        return createNode(samples, 0);
+      }
+
+      function predictTree(node, x, y) {
+        if (node.leaf) return node.val;
+        if (node.axis === 'x') {
+          return x <= node.thresh ? predictTree(node.left, x, y) : predictTree(node.right, x, y);
+        } else {
+          return y <= node.thresh ? predictTree(node.left, x, y) : predictTree(node.right, x, y);
+        }
+      }
+
+      // 3. 状态管理
+      const state = {
+        seedCounter: 101,
+        trees: [],       // 决策树池
+        historyRoots: [],// 记录最近若干次单树，用于画 ghost 幽灵边界
+        currentSingleIdx: 0,
+        treeCount: 15,
+        gridRes: 56      // 决策边界网格分辨率
+      };
+
+      function sampleWithReplacement(data, rndFn) {
+        const res = [];
+        for (let i = 0; i < data.length; i++) {
+          const idx = Math.floor(rndFn() * data.length);
+          res.push(data[idx]);
+        }
+        return res;
+      }
+
+      function generateNextTree() {
+        state.seedCounter++;
+        let localSeed = state.seedCounter * 31;
+        function localRnd() {
+          localSeed = (localSeed * 9301 + 49297) % 233280;
+          return localSeed / 233280;
+        }
+        const bootstrapSample = sampleWithReplacement(DATA, localRnd);
+        const tree = buildTree(bootstrapSample, 5);
+        tree.sample = bootstrapSample;
+        return tree;
+      }
+
+      function initTrees(num) {
+        state.trees = [];
+        for (let i = 0; i < num; i++) {
+          state.trees.push(generateNextTree());
+        }
+        state.currentSingleIdx = state.trees.length - 1;
+        updateGhostHistory();
+      }
+
+      function updateGhostHistory() {
+        const curTree = state.trees[state.currentSingleIdx];
+        state.historyRoots.push(curTree);
+        if (state.historyRoots.length > 5) {
+          state.historyRoots.shift();
+        }
+      }
+
+      // 4. 绘图渲染
+      const cvSingle = document.getElementById('cv-single');
+      const cvBagging = document.getElementById('cv-bagging');
+
+      function drawGridBoundary(ctx, w, h, predictFn, alpha = 0.28) {
+        const gw = state.gridRes;
+        const gh = state.gridRes;
+        const cellW = w / gw;
+        const cellH = h / gh;
+
+        for (let ix = 0; ix < gw; ix++) {
+          for (let iy = 0; iy < gh; iy++) {
+            const px = (ix + 0.5) / gw;
+            const py = (iy + 0.5) / gh;
+            const val = predictFn(px, py); // 0 ~ 1
+
+            // 类别 0: 蓝 (--model #17628E), 类别 1: 橙 (--focus #B83D0B)
+            if (val < 0.5) {
+              const intensity = (0.5 - val) * 2; // 0 ~ 1
+              ctx.fillStyle = `rgba(23, 98, 142, ${intensity * alpha})`;
+            } else {
+              const intensity = (val - 0.5) * 2;
+              ctx.fillStyle = `rgba(184, 61, 11, ${intensity * alpha})`;
+            }
+            ctx.fillRect(ix * cellW, iy * cellH, cellW + 0.5, cellH + 0.5);
+          }
+        }
+      }
+
+      function drawContour(ctx, w, h, predictFn, strokeStyle, lineWidth = 2) {
+        const gw = state.gridRes;
+        const gh = state.gridRes;
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+
+        // 步进格网边界段
+        for (let ix = 0; ix < gw; ix++) {
+          for (let iy = 0; iy < gh; iy++) {
+            const x = (ix + 0.5) / gw;
+            const y = (iy + 0.5) / gh;
+            const v = predictFn(x, y);
+
+            if (ix < gw - 1) {
+              const vRight = predictFn((ix + 1.5) / gw, y);
+              if ((v - 0.5) * (vRight - 0.5) < 0) {
+                const cx = (ix + 1) / gw * w;
+                const cy0 = (iy / gh) * h;
+                const cy1 = ((iy + 1) / gh) * h;
+                ctx.moveTo(cx, cy0);
+                ctx.lineTo(cx, cy1);
+              }
+            }
+            if (iy < gh - 1) {
+              const vDown = predictFn(x, (iy + 1.5) / gh);
+              if ((v - 0.5) * (vDown - 0.5) < 0) {
+                const cy = (iy + 1) / gh * h;
+                const cx0 = (ix / gw) * w;
+                const cx1 = ((ix + 1) / gw) * w;
+                ctx.moveTo(cx0, cy);
+                ctx.lineTo(cx1, cy);
+              }
+            }
+          }
+        }
+        ctx.stroke();
+      }
+
+      function drawPoints(ctx, w, h, sampleHighlights) {
+        for (let p of DATA) {
+          const px = p.x * w;
+          const py = p.y * h;
+          ctx.beginPath();
+          ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+          ctx.fillStyle = p.c === 0 ? '#17628E' : '#B83D0B';
+          ctx.fill();
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
+
+      function renderSingle() {
+        const ctx = Deck.fit(cvSingle);
+        const w = cvSingle.parentElement.clientWidth;
+        const h = cvSingle.parentElement.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const curTree = state.trees[state.currentSingleIdx];
+        if (!curTree) return;
+
+        // 1. 历史 Ghost 轨迹
+        state.historyRoots.forEach((ht, idx) => {
+          if (ht === curTree) return;
+          drawContour(ctx, w, h, (x, y) => predictTree(ht, x, y), `rgba(113, 130, 139, ${0.15 + idx * 0.08})`, 1.5);
+        });
+
+        // 2. 当前单树的填充边界
+        drawGridBoundary(ctx, w, h, (x, y) => predictTree(curTree, x, y), 0.32);
+
+        // 3. 当前单树主边界
+        drawContour(ctx, w, h, (x, y) => predictTree(curTree, x, y), '#B83D0B', 2.5);
+
+        // 4. 数据点
+        drawPoints(ctx, w, h);
+      }
+
+      function renderBagging() {
+        const ctx = Deck.fit(cvBagging);
+        const w = cvBagging.parentElement.clientWidth;
+        const h = cvBagging.parentElement.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const activeTrees = state.trees.slice(0, state.treeCount);
+        if (activeTrees.length === 0) return;
+
+        const predictBag = (x, y) => {
+          let sum = 0;
+          for (let t of activeTrees) {
+            sum += predictTree(t, x, y);
+          }
+          return sum / activeTrees.length;
+        };
+
+        // 1. 集成概率分布底色
+        drawGridBoundary(ctx, w, h, predictBag, 0.42);
+
+        // 2. 50% 多数表决最终边界 (收束粗线 4px)
+        drawContour(ctx, w, h, predictBag, '#17628E', 3.5);
+
+        // 3. 数据点
+        drawPoints(ctx, w, h);
+      }
+
+      // 计算方差降幅与波动读数
+      function updateReadouts() {
+        const count = state.treeCount;
+        // 方差理论近似 ~ 1/B 的收敛关系
+        const singleVar = 0.28;
+        const bagVar = Math.max(0.04, Number((singleVar / Math.sqrt(count * 0.9)).toFixed(2)));
+        const reduct = Math.round((1 - bagVar / singleVar) * 100);
+
+        document.getElementById('tree-num-label').textContent = count;
+        document.getElementById('bag-sub').textContent = `聚合 ${count} 棵基学习器`;
+        document.getElementById('tree-sub').textContent = `当前展示：样本子集 #${state.currentSingleIdx + 1}`;
+        document.getElementById('bag-var').textContent = `±${bagVar.toFixed(2)}`;
+        document.getElementById('var-reduct').textContent = `-${reduct}%`;
+        document.getElementById('ghost-count').textContent = state.historyRoots.length;
+      }
+
+      function renderAll() {
+        renderSingle();
+        renderBagging();
+        updateReadouts();
+      }
+
+      // 5. 事件绑定
+      const slider = document.getElementById('tree-slider');
+      slider.addEventListener('input', (e) => {
+        state.treeCount = parseInt(e.target.value, 10);
+        while (state.trees.length < state.treeCount) {
+          state.trees.push(generateNextTree());
+        }
+        renderAll();
+      });
+
+      document.getElementById('btn-resample').addEventListener('click', () => {
+        const newTree = generateNextTree();
+        state.trees.unshift(newTree);
+        if (state.trees.length > 40) state.trees.pop();
+        state.currentSingleIdx = 0;
+        updateGhostHistory();
+        renderAll();
+      });
+
+      document.getElementById('btn-step').addEventListener('click', () => {
+        if (state.treeCount < 40) {
+          state.treeCount++;
+          slider.value = state.treeCount;
+          while (state.trees.length < state.treeCount) {
+            state.trees.push(generateNextTree());
+          }
+          renderAll();
+        }
+      });
+
+      document.getElementById('btn-reset').addEventListener('click', () => {
+        state.seedCounter = 101;
+        state.treeCount = 15;
+        slider.value = 15;
+        state.historyRoots = [];
+        initTrees(15);
+        renderAll();
+      });
+
+      // 初始化
+      initTrees(15);
+      Deck.init({ index: 12, total: 32 });
+      Deck.onResize(renderAll);
+      setTimeout(renderAll, 60);
+
+    })();
+  </script>
+</body>
+</html>

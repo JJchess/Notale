@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{ padding:44px 72px; }
+.head{ display:flex; align-items:baseline; gap:28px; }
+.head .nt-title{ font-size:var(--fs-sec); }
+.sub{ margin-top:8px; max-width:60em; }
+main{ display:grid; grid-template-columns: 560px 1fr; gap:56px; margin-top:26px; }
+.board-col{ display:flex; flex-direction:column; gap:14px; }
+.board-wrap{ position:relative; width:540px; height:540px; border:1px solid var(--line-strong); background:var(--paper); }
+#board{ width:100%; height:100%; display:block; touch-action:none; }
+.axis-label{ position:absolute; font-family:var(--font-mono); font-size:var(--fs-tick); color:var(--muted); }
+.al-x1{ left:50%; bottom:-30px; transform:translateX(-50%); }
+.al-x2{ left:-34px; top:50%; transform:translateY(-50%) rotate(-90deg); }
+.legend{ display:flex; gap:22px; align-items:center; flex-wrap:wrap; }
+.legend .item{ display:flex; align-items:center; gap:8px; font-size:var(--fs-label); color:var(--muted); }
+.swatch{ width:16px; height:16px; border:1px solid var(--line-strong); flex:0 0 auto; }
+.sw-1{ background: color-mix(in srgb, var(--accent) 30%, var(--paper)); }
+.sw-0{ background: color-mix(in srgb, var(--stable) 22%, var(--paper)); }
+.ln-1{ width:22px; height:0; border-top:3px solid var(--accent); }
+.ln-2{ width:22px; height:0; border-top:3px solid var(--stable); }
+
+.side{ display:flex; flex-direction:column; gap:16px; min-width:0; }
+.mode-row{ display:flex; gap:10px; }
+.unit-block{ padding:14px 20px; border:1px solid var(--line); }
+.unit-block[data-unit="1"]{ border-left:5px solid var(--accent); }
+.unit-block[data-unit="2"]{ border-left:5px solid var(--stable); }
+.unit-title{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.unit-title .nt-label{ text-transform:uppercase; letter-spacing:0.06em; }
+.unit-eq{ font-size:16px; }
+.slider-row{ display:grid; grid-template-columns: 66px 1fr 56px; align-items:center; gap:12px; margin-top:6px; }
+.slider-row input[type="range"]{ width:100%; accent-color: var(--text); }
+.slider-row .nt-control-label{ font-size:13px; }
+.slider-row .val{ font-family:var(--font-mono); font-size:14px; text-align:right; font-variant-numeric:tabular-nums; }
+
+.status{ display:flex; align-items:center; gap:18px; padding:16px 20px; border:1px solid var(--line-strong); background:var(--paper); }
+.status .nt-readout{ font-size:28px; min-width:64px; }
+.status-text{ flex:1; font-size:var(--fs-label); line-height:1.5; }
+.status[data-solved="true"]{ border-color: var(--accent); }
+.status[data-solved="true"] .nt-readout{ border-color: var(--accent); color: var(--accent); }
+
+.points-check{ display:flex; gap:10px; flex-wrap:wrap; }
+.pt-tag{ font-family:var(--font-mono); font-size:13px; padding:4px 8px; border:1px solid var(--line-strong); }
+.pt-tag[data-ok="true"]{ border-color:var(--accent); color:var(--accent); }
+.pt-tag[data-ok="false"]{ color: var(--warning); border-color: var(--warning); }
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+  <div class="head">
+    <span class="nt-kicker">04 · 非线性</span>
+    <h1 class="nt-title">调两条隐藏单元的分界线，看谁能拆开 XOR</h1>
+  </div>
+  <p class="nt-body sub">
+    每个隐藏单元在输入平面画一条直线，把平面分成两半。拖动下方滑块改变两条线的角度与位置；
+    输出层用固定权重把两个隐藏单元的判断相加。切到「单层」会关掉第二个单元，看单独一条线能不能同时分对四个点。
+  </p>
+
+  <main>
+    <div class="board-col">
+      <div class="board-wrap">
+        <canvas id="board" width="540" height="540"></canvas>
+        <span class="axis-label al-x1">x₁</span>
+        <span class="axis-label al-x2">x₂</span>
+      </div>
+      <div class="legend">
+        <span class="item"><span class="swatch sw-1"></span>网络判为 1</span>
+        <span class="item"><span class="swatch sw-0"></span>网络判为 0</span>
+        <span class="item"><span class="ln-1"></span>隐藏单元 1 分界线</span>
+        <span class="item"><span class="ln-2"></span>隐藏单元 2 分界线</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="mode-row nt-controls" style="display:flex;gap:10px;padding:14px 16px;">
+        <button class="nt-button" id="mode2" aria-pressed="true">两层（两个隐藏单元）</button>
+        <button class="nt-button" id="mode1" aria-pressed="false">单层（只留单元 1）</button>
+      </div>
+
+      <div class="unit-block" data-unit="1">
+        <div class="unit-title">
+          <span class="nt-label">隐藏单元 1</span>
+          <span class="nt-equation unit-eq">h₁ = step(<span id="eq1">w₁x₁+w₂x₂+b</span>)</span>
+        </div>
+        <div class="slider-row">
+          <span class="nt-control-label">w₁</span>
+          <input type="range" id="u1w1" min="-3" max="3" step="0.1" value="1">
+          <span class="val nt-mono" id="u1w1v"></span>
+        </div>
+        <div class="slider-row">
+          <span class="nt-control-label">w₂</span>
+          <input type="range" id="u1w2" min="-3" max="3" step="0.1" value="1">
+          <span class="val nt-mono" id="u1w2v"></span>
+        </div>
+        <div class="slider-row">
+          <span class="nt-control-label">b</span>
+          <input type="range" id="u1b" min="-3" max="3" step="0.1" value="-0.5">
+          <span class="val nt-mono" id="u1bv"></span>
+        </div>
+      </div>
+
+      <div class="unit-block" data-unit="2" id="unit2block">
+        <div class="unit-title">
+          <span class="nt-label">隐藏单元 2</span>
+          <span class="nt-equation unit-eq">h₂ = step(<span id="eq2">w₁x₁+w₂x₂+b</span>)</span>
+        </div>
+        <div class="slider-row">
+          <span class="nt-control-label">w₁</span>
+          <input type="range" id="u2w1" min="-3" max="3" step="0.1" value="1">
+          <span class="val nt-mono" id="u2w1v"></span>
+        </div>
+        <div class="slider-row">
+          <span class="nt-control-label">w₂</span>
+          <input type="range" id="u2w2" min="-3" max="3" step="0.1" value="1">
+          <span class="val nt-mono" id="u2w2v"></span>
+        </div>
+        <div class="slider-row">
+          <span class="nt-control-label">b</span>
+          <input type="range" id="u2b" min="-3" max="3" step="0.1" value="-0.5">
+          <span class="val nt-mono" id="u2bv"></span>
+        </div>
+      </div>
+
+      <div class="status" id="status">
+        <span class="nt-readout" id="scoreReadout">0/4</span>
+        <span class="status-text" id="statusText"></span>
+      </div>
+      <div class="points-check" id="pointsCheck"></div>
+      <p class="nt-note" id="hintNote">
+        输出固定为 y = step(h₁ + h₂ − 1.5)：两个单元都判 1 时输出才是 1。
+        试试让单元 1 画出 OR 那条线、单元 2 画出 NAND 那条线。
+      </p>
+    </div>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  "use strict";
+  const XOR = [
+    { x:[0,0], y:0 }, { x:[0,1], y:1 }, { x:[1,0], y:1 }, { x:[1,1], y:0 }
+  ];
+  const OUT_V = 1, OUT_C = -1.5; // y = step(h1*1 + h2*1 - 1.5)
+  const RANGE = [-0.5, 1.5];
+
+  const ids = ["u1w1","u1w2","u1b","u2w1","u2w2","u2b"];
+  const el = {};
+  ids.forEach(id => el[id] = document.getElementById(id));
+  const canvas = document.getElementById("board");
+  const ctx = canvas.getContext("2d");
+
+  let state = {
+    mode: 2,
+    u1: { w1: 1, w2: 1, b: -0.5 },
+    u2: { w1: 1, w2: 1, b: -0.5 }
+  };
+
+  function step(z) { return z > 0 ? 1 : 0; }
+
+  function unitOut(u, x1, x2) {
+    return step(u.w1 * x1 + u.w2 * x2 + u.b);
+  }
+
+  function networkOut(x1, x2) {
+    const h1 = unitOut(state.u1, x1, x2);
+    const h2 = state.mode === 2 ? unitOut(state.u2, x1, x2) : 0;
+    return { h1, h2, y: step(h1 * OUT_V + h2 * (state.mode === 2 ? OUT_V : 0) + OUT_C) };
+  }
+
+  function toPx(v, axisLen) {
+    return ((v - RANGE[0]) / (RANGE[1] - RANGE[0])) * axisLen;
+  }
+
+  function fmt(v) { return v.toFixed(1); }
+
+  function syncSliderLabels() {
+    document.getElementById("u1w1v").textContent = fmt(state.u1.w1);
+    document.getElementById("u1w2v").textContent = fmt(state.u1.w2);
+    document.getElementById("u1bv").textContent = fmt(state.u1.b);
+    document.getElementById("u2w1v").textContent = fmt(state.u2.w1);
+    document.getElementById("u2w2v").textContent = fmt(state.u2.w2);
+    document.getElementById("u2bv").textContent = fmt(state.u2.b);
+    document.getElementById("eq1").textContent =
+      `${fmt(state.u1.w1)}x₁+${fmt(state.u1.w2)}x₂+${fmt(state.u1.b)}`;
+    document.getElementById("eq2").textContent =
+      `${fmt(state.u2.w1)}x₁+${fmt(state.u2.w2)}x₂+${fmt(state.u2.b)}`;
+  }
+
+  function evaluate() {
+    const results = XOR.map(p => {
+      const out = networkOut(p.x[0], p.x[1]);
+      return { ...p, pred: out.y, ok: out.y === p.y };
+    });
+    const score = results.filter(r => r.ok).length;
+    return { results, score };
+  }
+
+  function render() {
+    syncSliderLabels();
+    const { results, score } = evaluate();
+    const solved = score === 4;
+    document.getElementById("scoreReadout").textContent = `${score}/4`;
+    document.getElementById("status").dataset.solved = String(solved);
+    document.getElementById("statusText").textContent = solved
+      ? (state.mode === 2
+        ? "四个点全部分对。两条线的组合围出了正确的 XOR 区域。"
+        : "单层竟然全对？再检查一下——单层无法同时满足全部 4 点，遇到冲突就会掉分。")
+      : (state.mode === 2
+        ? `分对 ${score} 个。调整两条线，让 (0,1) 和 (1,0) 落在“判 1”区域，(0,0) 和 (1,1) 落在“判 0”区域。`
+        : `分对 ${score} 个。单层只有一条直线，XOR 的两个正例被两个负例夹在中间，任何一条直线都无法同时正确分开全部 4 点。`);
+    document.getElementById("pointsCheck").innerHTML = results.map(r =>
+      `<span class="pt-tag" data-ok="${r.ok}">(${r.x[0]},${r.x[1]})→真${r.y}/判${r.pred}</span>`
+    ).join("");
+    document.getElementById("unit2block").style.opacity = state.mode === 2 ? "1" : "0.35";
+    [el.u2w1, el.u2w2, el.u2b].forEach(inp => inp.disabled = state.mode !== 2);
+    fit.redraw();
+  }
+
+  const fit = Deck.autofit(canvas, draw);
+
+  function draw(context, w, h) {
+    const c = context || ctx;
+    const W = w || canvas.width, H = h || canvas.height;
+    c.clearRect(0, 0, W, H);
+    const stable = Deck.rgb("--stable");
+    const accent = Deck.rgb("--accent");
+    const paper = Deck.rgb("--paper");
+    const text = Deck.rgb("--text");
+    const line = Deck.rgb("--line");
+    const lineStrong = Deck.rgb("--line-strong");
+
+    const N = 90;
+    const cell = W / N;
+    for (let j = 0; j < N; j++) {
+      const x2 = RANGE[0] + (1 - j / (N - 1)) * (RANGE[1] - RANGE[0]);
+      for (let i = 0; i < N; i++) {
+        const x1 = RANGE[0] + (i / (N - 1)) * (RANGE[1] - RANGE[0]);
+        const out = networkOut(x1, x2);
+        const mix = out.y === 1 ? accent : stable;
+        const a = out.y === 1 ? 0.24 : 0.16;
+        c.fillStyle = `rgba(${mix[0]},${mix[1]},${mix[2]},${a})`;
+        c.fillRect(i * cell, j * cell, cell + 0.5, cell + 0.5);
+      }
+    }
+
+    // axes/grid
+    c.strokeStyle = `rgba(${line[0]},${line[1]},${line[2]},0.7)`;
+    c.lineWidth = 1;
+    [0, 1].forEach(v => {
+      const px = toPx(v, W);
+      const py = H - toPx(v, H);
+      c.beginPath(); c.moveTo(px, 0); c.lineTo(px, H); c.stroke();
+      c.beginPath(); c.moveTo(0, py); c.lineTo(W, py); c.stroke();
+    });
+
+    function drawUnitLine(u, color) {
+      // w1*x1 + w2*x2 + b = 0
+      const pts = [];
+      const x1a = RANGE[0], x1b = RANGE[1];
+      if (Math.abs(u.w2) > 1e-6) {
+        [x1a, x1b].forEach(x1 => {
+          const x2 = -(u.w1 * x1 + u.b) / u.w2;
+          pts.push([x1, x2]);
+        });
+      } else if (Math.abs(u.w1) > 1e-6) {
+        const x1 = -u.b / u.w1;
+        pts.push([x1, RANGE[0]], [x1, RANGE[1]]);
+      }
+      if (pts.length < 2) return;
+      c.strokeStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
+      c.lineWidth = 3;
+      c.beginPath();
+      pts.forEach((p, idx) => {
+        const px = toPx(p[0], W);
+        const py = H - toPx(p[1], H);
+        idx === 0 ? c.moveTo(px, py) : c.lineTo(px, py);
+      });
+      c.stroke();
+    }
+
+    drawUnitLine(state.u1, accent);
+    if (state.mode === 2) drawUnitLine(state.u2, stable);
+
+    // XOR points
+    XOR.forEach(p => {
+      const px = toPx(p.x[0], W);
+      const py = H - toPx(p.x[1], H);
+      const out = networkOut(p.x[0], p.x[1]);
+      const ok = out.y === p.y;
+      c.beginPath();
+      c.arc(px, py, 12, 0, Math.PI * 2);
+      c.fillStyle = p.y === 1
+        ? `rgb(${accent[0]},${accent[1]},${accent[2]})`
+        : `rgb(${paper[0]},${paper[1]},${paper[2]})`;
+      c.fill();
+      c.lineWidth = ok ? 3 : 4;
+      c.strokeStyle = ok
+        ? `rgb(${text[0]},${text[1]},${text[2]})`
+        : `rgb(${Deck.rgb("--warning")[0]},${Deck.rgb("--warning")[1]},${Deck.rgb("--warning")[2]})`;
+      c.stroke();
+      c.fillStyle = p.y === 1
+        ? `rgb(${paper[0]},${paper[1]},${paper[2]})`
+        : `rgb(${text[0]},${text[1]},${text[2]})`;
+      c.font = "700 13px " + Deck.token("--font-mono").split(",")[0].trim().replace(/"/g,"");
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      c.fillText(String(p.y), px, py + 1);
+    });
+  }
+
+  function bindSlider(id, unit, key) {
+    el[id].addEventListener("input", () => {
+      state[unit][key] = parseFloat(el[id].value);
+      render();
+    });
+  }
+  bindSlider("u1w1", "u1", "w1");
+  bindSlider("u1w2", "u1", "w2");
+  bindSlider("u1b", "u1", "b");
+  bindSlider("u2w1", "u2", "w1");
+  bindSlider("u2w2", "u2", "w2");
+  bindSlider("u2b", "u2", "b");
+
+  document.getElementById("mode2").addEventListener("click", () => {
+    state.mode = 2;
+    document.getElementById("mode2").setAttribute("aria-pressed", "true");
+    document.getElementById("mode1").setAttribute("aria-pressed", "false");
+    render();
+  });
+  document.getElementById("mode1").addEventListener("click", () => {
+    state.mode = 1;
+    document.getElementById("mode2").setAttribute("aria-pressed", "false");
+    document.getElementById("mode1").setAttribute("aria-pressed", "true");
+    render();
+  });
+
+  render();
+  Deck.init({ index: 7, total: 44 });
+})();
+</script>
+</body>
+</html>

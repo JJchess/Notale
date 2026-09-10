@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>识别策略压力测试</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F7;
+      --surface: #FFFFFF;
+      --soft: #E3ECEF;
+      --text: #17272D;
+      --muted: #52666E;
+      --observed: #245A74;
+      --cause: #B13F2A;
+      --uncertain: #7A5B12;
+      --supported: #2D694C;
+      --selected: #D6E8EE;
+      --focus: #B13F2A;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: 44px 56px;
+      gap: 20px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    header {
+      flex: none;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      font-weight: 700;
+      margin: 0;
+      color: var(--text);
+    }
+    .dek {
+      margin-top: 8px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主工作台：左侧控制与因果图，右侧模拟分布与估计偏误 */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 24px;
+      min-height: 0;
+    }
+
+    /* 左侧控制与 DGP 设定 */
+    .dgp-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: var(--surface);
+      border-radius: var(--r-md);
+      padding: 22px;
+      border: 1px solid var(--soft);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+
+    .section-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .dgp-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .dgp-btn {
+      text-align: left;
+      padding: 12px 14px;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--soft);
+      background: var(--bg);
+      cursor: pointer;
+      transition: all var(--fast) var(--ease);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .dgp-btn:hover {
+      border-color: var(--observed);
+    }
+    .dgp-btn.active {
+      background: var(--selected);
+      border-color: var(--observed);
+      box-shadow: 0 0 0 1px var(--observed);
+    }
+    .dgp-btn-title {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .dgp-btn-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* 变量滑块调节区 */
+    .param-box {
+      background: var(--bg);
+      border-radius: var(--r-sm);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .param-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-label);
+    }
+    .param-val {
+      font-family: monospace;
+      font-weight: 700;
+      color: var(--observed);
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--observed);
+      cursor: pointer;
+    }
+
+    /* 识别公式注记 */
+    .formula-tag {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      padding: 10px;
+      background: var(--soft);
+      border-radius: var(--r-sm);
+      line-height: 1.4;
+    }
+    .formula-tag strong {
+      color: var(--text);
+    }
+
+    /* 右侧图表面板 */
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: var(--surface);
+      border-radius: var(--r-md);
+      padding: 22px;
+      border: 1px solid var(--soft);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+
+    /* 关键读数指标栏 */
+    .metrics-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      flex: none;
+    }
+    .metric-card {
+      background: var(--bg);
+      border-radius: var(--r-sm);
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      border: 1px solid var(--soft);
+    }
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .metric-val {
+      font-size: 26px;
+      font-weight: 700;
+      font-family: monospace;
+    }
+    .metric-val.true-effect {
+      color: var(--text);
+    }
+    .metric-val.estimate {
+      color: var(--observed);
+    }
+    .metric-val.bias-alert {
+      color: var(--cause);
+    }
+    .metric-val.bias-ok {
+      color: var(--supported);
+    }
+
+    /* 画布区域 */
+    .canvas-container {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      border-radius: var(--r-sm);
+      background: #FAFCFD;
+      border: 1px solid var(--soft);
+      overflow: hidden;
+    }
+
+    /* 诊断反馈区 */
+    .verdict-box {
+      flex: none;
+      padding: 12px 16px;
+      border-radius: var(--r-sm);
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .verdict-box.threat {
+      background: #FDF2F0;
+      border: 1px solid rgba(177, 63, 42, 0.25);
+      color: var(--cause);
+    }
+    .verdict-box.clean {
+      background: #EFF7F2;
+      border: 1px solid rgba(45, 105, 76, 0.25);
+      color: var(--supported);
+    }
+  </style>
+</head>
+<body data-page="10" data-total="24">
+  <div id="stage">
+    <header>
+      <h1>识别策略压力测试：替代生成过程如何颠覆因果解释</h1>
+      <div class="dek">同一回归式在不同数据生成机制下，估计出的系数将从真因果效应滑向严重伪相关。</div>
+    </header>
+
+    <main>
+      <!-- 左侧：替代生成过程 (DGP) 选择与扰动 -->
+      <section class="dgp-panel min0">
+        <div class="section-title">
+          <span>替代生成过程 (DGP)</span>
+          <span style="font-size:13px; color:var(--muted);">真因果 β = 2.00</span>
+        </div>
+
+        <div class="dgp-selector" role="radiogroup" aria-label="数据生成过程">
+          <button type="button" class="dgp-btn active" data-dgp="clean" aria-checked="true" role="radio">
+            <div class="dgp-btn-title">
+              <span>1. 外生基准：完全随机分配</span>
+              <span class="tag" style="background:var(--supported);color:#fff;font-size:12px;padding:2px 6px;border-radius:4px;">无偏</span>
+            </div>
+            <div class="dgp-btn-desc">处理变量 D 独立随机生成，与潜在未观测能力 U 完全无关。</div>
+          </button>
+
+          <button type="button" class="dgp-btn" data-dgp="confound" aria-checked="false" role="radio">
+            <div class="dgp-btn-title">
+              <span>2. 混杂威胁：能力偏误导致自选择</span>
+              <span class="tag" style="background:var(--cause);color:#fff;font-size:12px;padding:2px 6px;border-radius:4px;">严重高估</span>
+            </div>
+            <div class="dgp-btn-desc">未观测能力 U 既推动个体接受处理 D，又直接抬高结果 Y。</div>
+          </button>
+
+          <button type="button" class="dgp-btn" data-dgp="badcontrol" aria-checked="false" role="radio">
+            <div class="dgp-btn-title">
+              <span>3. 坏控制变量：控制中介或对撞分流</span>
+              <span class="tag" style="background:var(--uncertain);color:#fff;font-size:12px;padding:2px 6px;border-radius:4px;">因果削减</span>
+            </div>
+            <div class="dgp-btn-desc">错误控制了 D 之后的中介变量 M，吸收了处理效应的关键传导。</div>
+          </button>
+        </div>
+
+        <div class="param-box">
+          <div class="param-row">
+            <span id="param-label">扰动强度：混杂关联度 (Corr)</span>
+            <span class="param-val" id="param-num">0.60</span>
+          </div>
+          <input type="range" id="param-slider" min="0.10" max="0.95" step="0.05" value="0.60" aria-label="扰动强度">
+        </div>
+
+        <div class="formula-tag">
+          <strong>估计方程：</strong> <code>Y = α + β̂·D + ε</code><br>
+          只有当 DGP 满足排他性与无混杂假定时，<code>β̂</code> 才是因果 estimand。
+        </div>
+      </section>
+
+      <!-- 右侧：真实分布与蒙特卡洛抽样散点图 -->
+      <section class="chart-panel min0">
+        <div class="metrics-row">
+          <div class="metric-card">
+            <span class="metric-label">真实因果效应 β</span>
+            <span class="metric-val true-effect">+2.00</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">当前回归估计量 β̂</span>
+            <span class="metric-val estimate" id="beta-hat">+3.35</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">估计偏误 Bias</span>
+            <span class="metric-val bias-alert" id="bias-val">+1.35</span>
+          </div>
+        </div>
+
+        <div class="canvas-container min0">
+          <canvas id="simCanvas" class="cv-fill"></canvas>
+        </div>
+
+        <div class="verdict-box threat" id="verdict">
+          <strong>诊断：</strong> <span id="verdict-text">未观测混杂直接抬高了高 D 群体的基础 Y，普通 OLS 估计量包含巨大正向选择偏误。</span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 确定性随机数发生器，确保每次刷新图形可复现
+      function mulberry32(a) {
+        return function() {
+          let t = a += 0x6D2B79F5;
+          t = Math.imul(t ^ t >>> 15, t | 1);
+          t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        }
+      }
+      const prng = mulberry32(20260905);
+
+      // Box-Muller 产生标准正态分布随机数
+      function randNorm(rng) {
+        let u = 0, v = 0;
+        while (u === 0) u = rng();
+        while (v === 0) v = rng();
+        return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+      }
+
+      // 预生成 120 个基准个体的扰动源
+      const N = 120;
+      const baseSamples = [];
+      for (let i = 0; i < N; i++) {
+        baseSamples.push({
+          u: randNorm(prng),
+          eD: randNorm(prng),
+          eY: randNorm(prng) * 0.75,
+          eM: randNorm(prng) * 0.5
+        });
+      }
+
+      // 状态模型
+      const state = {
+        dgp: "confound", // clean | confound | badcontrol
+        strength: 0.60
+      };
+
+      const dgpButtons = document.querySelectorAll(".dgp-btn");
+      const paramSlider = document.getElementById("param-slider");
+      const paramLabel = document.getElementById("param-label");
+      const paramNum = document.getElementById("param-num");
+      const betaHatEl = document.getElementById("beta-hat");
+      const biasValEl = document.getElementById("bias-val");
+      const verdictEl = document.getElementById("verdict");
+      const verdictText = document.getElementById("verdict-text");
+      const canvas = document.getElementById("simCanvas");
+
+      // 数据生成模型
+      function computeData() {
+        const TRUE_BETA = 2.0;
+        const gamma = state.strength; // 强度系数
+        const points = [];
+        let sumD = 0, sumY = 0;
+
+        for (let i = 0; i < N; i++) {
+          const s = baseSamples[i];
+          let D = 0, Y = 0;
+
+          if (state.dgp === "clean") {
+            // 完全外生
+            D = s.eD * 1.5;
+            Y = TRUE_BETA * D + s.eY + s.u * 0.2;
+          } else if (state.dgp === "confound") {
+            // 能力 U 共同决定 D 和 Y (混杂)
+            D = gamma * s.u * 1.8 + Math.sqrt(Math.max(0.01, 1 - gamma*gamma)) * s.eD * 1.5;
+            Y = TRUE_BETA * D + (gamma * 2.2) * s.u + s.eY;
+          } else if (state.dgp === "badcontrol") {
+            // 控制了中介 M 后的残差关系：M = 0.8 * D + eM
+            // 回归控制 M 相当于考察净除 M 后的变异，导致因果估计严重萎缩
+            D = s.eD * 1.5;
+            const M = 0.9 * D + s.eM;
+            // 控制 M 之后，估计量只捕获 D -> Y 的未通过 M 的直接路径（此处设定真实主要靠 M 传导）
+            const directEffect = TRUE_BETA * (1 - gamma * 0.85);
+            Y = directEffect * D + s.eY;
+          }
+
+          points.push({ D, Y });
+          sumD += D;
+          sumY += Y;
+        }
+
+        // 一元 OLS 回归: Y = a + b * D
+        const meanD = sumD / N;
+        const meanY = sumY / N;
+        let covDY = 0, varD = 0;
+        for (let i = 0; i < N; i++) {
+          const dDiff = points[i].D - meanD;
+          covDY += dDiff * (points[i].Y - meanY);
+          varD += dDiff * dDiff;
+        }
+        const bHat = varD > 0.0001 ? covDY / varD : 0;
+        const aHat = meanY - bHat * meanD;
+        const bias = bHat - TRUE_BETA;
+
+        return { points, bHat, aHat, bias, trueBeta: TRUE_BETA };
+      }
+
+      function drawPlot(ctx) {
+        const w = canvas.width / (window.devicePixelRatio || 1);
+        const h = canvas.height / (window.devicePixelRatio || 1);
+        ctx.clearRect(0, 0, w, h);
+
+        const margin = { top: 30, right: 40, bottom: 40, left: 50 };
+        const plotW = w - margin.left - margin.right;
+        const plotH = h - margin.top - margin.bottom;
+
+        // 坐标轴固定范围，便于稳定对比
+        const xMin = -4.2, xMax = 4.2;
+        const yMin = -8.0, yMax = 11.0;
+
+        const mapX = x => margin.left + ((x - xMin) / (xMax - xMin)) * plotW;
+        const mapY = y => margin.top + plotH - ((y - yMin) / (yMax - yMin)) * plotH;
+
+        // 坐标网格
+        ctx.strokeStyle = "#E3ECEF";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let x = -3; x <= 3; x += 1.5) {
+          const px = mapX(x);
+          ctx.moveTo(px, margin.top);
+          ctx.lineTo(px, margin.top + plotH);
+        }
+        for (let y = -6; y <= 9; y += 3) {
+          const py = mapY(y);
+          ctx.moveTo(margin.left, py);
+          ctx.lineTo(margin.left + plotW, py);
+        }
+        ctx.stroke();
+
+        // 零基准线
+        ctx.strokeStyle = "#CFD9DC";
+        ctx.beginPath();
+        ctx.moveTo(mapX(0), margin.top);
+        ctx.lineTo(mapX(0), margin.top + plotH);
+        ctx.moveTo(margin.left, mapY(0));
+        ctx.lineTo(margin.left + plotW, mapY(0));
+        ctx.stroke();
+
+        const data = computeData();
+
+        // 绘制真因果斜率参考虚线 (斜率 = 2.00，截距 = 0)
+        ctx.strokeStyle = "#7A5B12";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(mapX(xMin), mapY(2.0 * xMin));
+        ctx.lineTo(mapX(xMax), mapY(2.0 * xMax));
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 绘制当前 OLS 拟合回归线
+        const fitColor = state.dgp === "clean" ? "#2D694C" : "#B13F2A";
+        ctx.strokeStyle = fitColor;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(mapX(xMin), mapY(data.aHat + data.bHat * xMin));
+        ctx.lineTo(mapX(xMax), mapY(data.aHat + data.bHat * xMax));
+        ctx.stroke();
+
+        // 绘制样本散点
+        ctx.fillStyle = "rgba(36, 90, 116, 0.65)";
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 1.5;
+        data.points.forEach(p => {
+          const cx = mapX(p.D);
+          const cy = mapY(p.Y);
+          if (cx >= margin.left && cx <= margin.left + plotW && cy >= margin.top && cy <= margin.top + plotH) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          }
+        });
+
+        // 轴标签
+        ctx.fillStyle = "#52666E";
+        ctx.font = "14px var(--font-sans)";
+        ctx.fillText("处理变量变异 (D)", margin.left + plotW - 120, margin.top + plotH - 12);
+        ctx.fillText("观测结果 (Y)", margin.left + 15, margin.top + 22);
+
+        // 图例与标注
+        ctx.font = "15px var(--font-sans)";
+        // 真因果图例
+        ctx.strokeStyle = "#7A5B12";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(margin.left + 125, margin.top + 18);
+        ctx.lineTo(margin.left + 160, margin.top + 18);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#7A5B12";
+        ctx.fillText("真因果斜率 β = +2.00", margin.left + 168, margin.top + 22);
+
+        // 回归线图例
+        ctx.strokeStyle = fitColor;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(margin.left + 355, margin.top + 18);
+        ctx.lineTo(margin.left + 390, margin.top + 18);
+        ctx.stroke();
+        ctx.fillStyle = fitColor;
+        ctx.fillText(`OLS估计斜率 β̂ = ${data.bHat >= 0 ? "+" : ""}${data.bHat.toFixed(2)}`, margin.left + 398, margin.top + 22);
+      }
+
+      let canvasFit = null;
+
+      function updateUI() {
+        const data = computeData();
+
+        betaHatEl.textContent = (data.bHat >= 0 ? "+" : "") + data.bHat.toFixed(2);
+        const biasStr = (data.bias >= 0 ? "+" : "") + data.bias.toFixed(2);
+        biasValEl.textContent = biasStr;
+
+        if (Math.abs(data.bias) < 0.15) {
+          biasValEl.className = "metric-val bias-ok";
+          verdictEl.className = "verdict-box clean";
+          verdictText.textContent = "D 完全随机外生，无遗漏变量或坏控制，OLS 准确识别了真实的因果 estimand。";
+        } else if (state.dgp === "confound") {
+          biasValEl.className = "metric-val bias-alert";
+          verdictEl.className = "verdict-box threat";
+          verdictText.textContent = `未观测混杂 U 制造了 ${biasStr} 的正向偏误，回归估计把“能力差异”误当成了“处理效应”。`;
+        } else {
+          biasValEl.className = "metric-val bias-alert";
+          verdictEl.className = "verdict-box threat";
+          verdictText.textContent = `错误控制中介变量扼杀了因果机制，估计系数严重失真 (${biasStr})，犯了坏控制偏误。`;
+        }
+
+        if (state.dgp === "clean") {
+          paramLabel.textContent = "随机噪声扰动强度 (Noise)";
+        } else if (state.dgp === "confound") {
+          paramLabel.textContent = "混杂关联强度 (Corr(U, D))";
+        } else {
+          paramLabel.textContent = "中介变量吸收份额 (Control M)";
+        }
+        paramNum.textContent = Number(state.strength).toFixed(2);
+
+        if (canvasFit) {
+          canvasFit.redraw();
+        }
+      }
+
+      // 事件绑定
+      dgpButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          dgpButtons.forEach(b => {
+            b.classList.remove("active");
+            b.setAttribute("aria-checked", "false");
+          });
+          btn.classList.add("active");
+          btn.setAttribute("aria-checked", "true");
+          state.dgp = btn.dataset.dgp;
+          updateUI();
+        });
+      });
+
+      paramSlider.addEventListener("input", (e) => {
+        state.strength = parseFloat(e.target.value);
+        updateUI();
+      });
+
+      canvasFit = Deck.autofit(canvas, drawPlot);
+      Deck.init({ keys: false });
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

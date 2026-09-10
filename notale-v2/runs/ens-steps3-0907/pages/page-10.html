@@ -1,0 +1,299 @@
+<!doctype html>
+<!-- 构图意图：
+  1. 主对象是 Bagging 的三阶段管线：左侧原始样本集经 Bootstrap 生成 B 个重叠子集，中间 B 个基模型并行独立训练，右侧新样本进入各模型后汇聚成最终预测。
+  2. 关系表现：横向从左到右形成“样本生成 → 独立学习 → 预测汇聚”的推演链，纵向展现 B 个平行的弱相关基学习器分支，汇聚处以粗线和运算收束（分类多数表决 / 回归算术平均）。
+  3. 说明依附：三阶段列标题直标阶段核心动作，底部紧贴一句话机制结论，所有公式与数据直接注在对应节点处。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF1;
+      --text: #142630;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+    }
+
+    #stage {
+      box-sizing: border-box;
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    /* 标题区 */
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-family: var(--font-display);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      margin: 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 主流程图示区 */
+    .flow-stage {
+      position: relative;
+      width: 100%;
+      height: 680px;
+      min-height: 0;
+    }
+    svg.canvas-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* SVG 内文字样式：严格映射 token (13/15/16/18/19/22/34) */
+    .th-title {
+      font-size: 22px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      fill: var(--text);
+    }
+    .th-sub {
+      font-size: 15px;
+      fill: var(--muted);
+    }
+    .txt-data {
+      font-size: 16px;
+      font-family: var(--font-sans);
+      fill: var(--text);
+    }
+    .txt-muted {
+      font-size: 13px;
+      fill: var(--muted);
+    }
+    .txt-model {
+      font-size: 15px;
+      font-family: var(--font-sans);
+      fill: var(--model);
+    }
+
+    /* 底部收束结论条 */
+    .bottom-bar {
+      border-top: 1px solid var(--rule);
+      padding-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      color: var(--text);
+    }
+    .bottom-bar strong {
+      color: var(--model);
+      font-weight: 700;
+    }
+    .bottom-bar .note {
+      color: var(--muted);
+      font-size: var(--fs-label);
+    }
+  </style>
+</head>
+<body data-page="10" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>Bagging：重采样、独立训练与聚合预测</h1>
+      <p class="lead">Bootstrap Aggregating 完整流程：以并行方式分散方差</p>
+    </header>
+
+    <div class="flow-stage min0">
+      <svg class="canvas-svg" viewBox="0 0 1488 660">
+        <defs>
+          <marker id="arr-m" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M1,1 L7,4 L1,7 Z" fill="#17628E" />
+          </marker>
+          <marker id="arr-g" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M1,1 L7,4 L1,7 Z" fill="#71828B" />
+          </marker>
+          <marker id="arr-f" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M1,1 L8,4.5 L1,8 Z" fill="#B83D0B" />
+          </marker>
+        </defs>
+
+        <!-- 阶段一：重采样 (X: 0 - 360) -->
+        <g id="col-sample">
+          <text x="50" y="32" class="th-title">1. Bootstrap 重采样</text>
+          <text x="50" y="55" class="th-sub">有放回抽取 N 个样本</text>
+
+          <!-- 原始样本集 D -->
+          <g transform="translate(30, 180)">
+            <rect x="0" y="0" width="120" height="220" rx="8" fill="none" stroke="var(--rule)" stroke-width="2" />
+            <text x="60" y="36" text-anchor="middle" font-size="18" font-weight="700" fill="var(--text)">原始集 D</text>
+            <text x="60" y="60" text-anchor="middle" font-size="15" fill="var(--muted)">容量 N</text>
+
+            <!-- 样本示意微点阵 -->
+            <g transform="translate(20, 85)" fill="var(--rule)">
+              <circle cx="10" cy="10" r="4" /><circle cx="40" cy="10" r="4" /><circle cx="70" cy="10" r="4" />
+              <circle cx="10" cy="35" r="4" /><circle cx="40" cy="35" r="4" /><circle cx="70" cy="35" r="4" />
+              <circle cx="10" cy="60" r="4" /><circle cx="40" cy="60" r="4" /><circle cx="70" cy="60" r="4" />
+              <circle cx="10" cy="85" r="4" /><circle cx="40" cy="85" r="4" /><circle cx="70" cy="85" r="4" />
+            </g>
+          </g>
+
+          <!-- 连线去往 D_1, D_2, D_B -->
+          <path d="M 150 235 C 185 235, 195 125, 225 125" fill="none" stroke="var(--rule)" stroke-width="2" marker-end="url(#arr-g)" />
+          <path d="M 150 290 L 225 290" fill="none" stroke="var(--rule)" stroke-width="2" marker-end="url(#arr-g)" />
+          <path d="M 150 345 C 185 345, 195 455, 225 455" fill="none" stroke="var(--rule)" stroke-width="2" marker-end="url(#arr-g)" />
+
+          <!-- 子样本集 D_1 -->
+          <g transform="translate(235, 90)">
+            <rect x="0" y="0" width="115" height="70" rx="6" fill="#fff" stroke="var(--model)" stroke-width="2" />
+            <text x="57" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="var(--model)">子集 D₁</text>
+            <text x="57" y="52" text-anchor="middle" font-size="13" fill="var(--muted)">约 63.2% 独有</text>
+          </g>
+
+          <!-- 子样本集 D_2 -->
+          <g transform="translate(235, 255)">
+            <rect x="0" y="0" width="115" height="70" rx="6" fill="#fff" stroke="var(--model)" stroke-width="2" />
+            <text x="57" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="var(--model)">子集 D₂</text>
+            <text x="57" y="52" text-anchor="middle" font-size="13" fill="var(--muted)">约 63.2% 独有</text>
+          </g>
+
+          <!-- 竖向省略号 -->
+          <circle cx="292" cy="370" r="3" fill="var(--rule)" />
+          <circle cx="292" cy="390" r="3" fill="var(--rule)" />
+          <circle cx="292" cy="410" r="3" fill="var(--rule)" />
+
+          <!-- 子样本集 D_B -->
+          <g transform="translate(235, 420)">
+            <rect x="0" y="0" width="115" height="70" rx="6" fill="#fff" stroke="var(--model)" stroke-width="2" />
+            <text x="57" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="var(--model)">子集 D_B</text>
+            <text x="57" y="52" text-anchor="middle" font-size="13" fill="var(--muted)">第 B 次采样</text>
+          </g>
+        </g>
+
+        <!-- 阶段二：并行训练 (X: 380 - 640) -->
+        <g id="col-train">
+          <text x="450" y="32" class="th-title">2. 并行独立训练</text>
+          <text x="450" y="55" class="th-sub">无依赖同构算法分别拟合</text>
+
+          <!-- D_1 -> Model 1 -->
+          <line x1="350" y1="125" x2="435" y2="125" stroke="var(--model)" stroke-width="2" marker-end="url(#arr-m)" />
+          <!-- D_2 -> Model 2 -->
+          <line x1="350" y1="290" x2="435" y2="290" stroke="var(--model)" stroke-width="2" marker-end="url(#arr-m)" />
+          <!-- D_B -> Model B -->
+          <line x1="350" y1="455" x2="435" y2="455" stroke="var(--model)" stroke-width="2" marker-end="url(#arr-m)" />
+
+          <!-- 基学习器 1 -->
+          <g transform="translate(445, 80)">
+            <rect x="0" y="0" width="145" height="90" rx="8" fill="#fff" stroke="var(--model)" stroke-width="2" />
+            <text x="72" y="35" text-anchor="middle" font-size="18" font-weight="700" fill="var(--text)">基学习器 h₁</text>
+            <text x="72" y="60" text-anchor="middle" font-size="15" fill="var(--model)">拟合 D₁</text>
+            <path d="M 46 72 L 72 66 L 98 74" fill="none" stroke="var(--rule)" stroke-width="1.5" />
+          </g>
+
+          <!-- 基学习器 2 -->
+          <g transform="translate(445, 245)">
+            <rect x="0" y="0" width="145" height="90" rx="8" fill="#fff" stroke="var(--model)" stroke-width="2" />
+            <text x="72" y="35" text-anchor="middle" font-size="18" font-weight="700" fill="var(--text)">基学习器 h₂</text>
+            <text x="72" y="60" text-anchor="middle" font-size="15" fill="var(--model)">拟合 D₂</text>
+            <path d="M 46 74 L 72 68 L 98 70" fill="none" stroke="var(--rule)" stroke-width="1.5" />
+          </g>
+
+          <!-- 竖向省略号 -->
+          <circle cx="517" cy="370" r="3" fill="var(--rule)" />
+          <circle cx="517" cy="390" r="3" fill="var(--rule)" />
+          <circle cx="517" cy="410" r="3" fill="var(--rule)" />
+
+          <!-- 基学习器 B -->
+          <g transform="translate(445, 410)">
+            <rect x="0" y="0" width="145" height="90" rx="8" fill="#fff" stroke="var(--model)" stroke-width="2" />
+            <text x="72" y="35" text-anchor="middle" font-size="18" font-weight="700" fill="var(--text)">基学习器 h_B</text>
+            <text x="72" y="60" text-anchor="middle" font-size="15" fill="var(--model)">拟合 D_B</text>
+            <path d="M 46 70 L 72 73 L 98 67" fill="none" stroke="var(--rule)" stroke-width="1.5" />
+          </g>
+        </g>
+
+        <!-- 阶段三：聚合预测 (X: 680 - 1488) -->
+        <g id="col-aggregate">
+          <text x="880" y="32" class="th-title">3. 聚合预测 (Aggregating)</text>
+          <text x="880" y="55" class="th-sub">输入测试样本 x，并行预测后结合</text>
+
+          <!-- 测试样本 x 输入点：移至聚合区上方，避免与第 2 阶段标题挤压 -->
+          <g transform="translate(735, 190)">
+            <rect x="0" y="0" width="85" height="40" rx="6" fill="#fff" stroke="var(--rule)" stroke-width="1.5" />
+            <text x="42" y="25" text-anchor="middle" font-size="15" font-weight="700" fill="var(--text)">输入 x</text>
+          </g>
+
+          <!-- x 分发虚线到基模型输入端 -->
+          <path d="M 735 210 C 660 210, 630 140, 590 125" fill="none" stroke="var(--rule)" stroke-dasharray="4 3" stroke-width="1.5" />
+          <path d="M 735 210 C 660 210, 630 270, 590 290" fill="none" stroke="var(--rule)" stroke-dasharray="4 3" stroke-width="1.5" />
+          <path d="M 735 210 C 660 210, 630 420, 590 455" fill="none" stroke="var(--rule)" stroke-dasharray="4 3" stroke-width="1.5" />
+
+          <!-- 输出预测线 h1(x) 到聚合器 -->
+          <path d="M 590 125 C 750 125, 800 240, 920 270" fill="none" stroke="var(--model)" stroke-width="2" marker-end="url(#arr-m)" />
+          <text x="730" y="115" font-size="15" font-weight="700" fill="var(--model)">y₁ = h₁(x)</text>
+
+          <!-- 输出预测线 h2(x) 到聚合器 -->
+          <path d="M 590 290 L 920 290" fill="none" stroke="var(--model)" stroke-width="2" marker-end="url(#arr-m)" />
+          <text x="730" y="315" font-size="15" font-weight="700" fill="var(--model)">y₂ = h₂(x)</text>
+
+          <!-- 输出预测线 hB(x) 到聚合器 -->
+          <path d="M 590 455 C 750 455, 800 340, 920 310" fill="none" stroke="var(--model)" stroke-width="2" marker-end="url(#arr-m)" />
+          <text x="730" y="475" font-size="15" font-weight="700" fill="var(--model)">y_B = h_B(x)</text>
+
+          <!-- 聚合策略处理箱 -->
+          <g transform="translate(930, 220)">
+            <rect x="0" y="0" width="170" height="140" rx="10" fill="#fff" stroke="var(--model)" stroke-width="2" />
+            <text x="85" y="38" text-anchor="middle" font-size="18" font-weight="700" fill="var(--model)">聚合策略</text>
+            <line x1="20" y1="52" x2="150" y2="52" stroke="var(--rule)" stroke-width="1" />
+            <text x="85" y="80" text-anchor="middle" font-size="15" fill="var(--text)">分类：多数投票</text>
+            <text x="85" y="110" text-anchor="middle" font-size="15" fill="var(--text)">回归：算术均值</text>
+          </g>
+
+          <!-- 汇聚粗线指向最终结果 H(x) -->
+          <line x1="1100" y1="290" x2="1190" y2="290" stroke="var(--focus)" stroke-width="4" marker-end="url(#arr-f)" />
+
+          <!-- 最终集成预测输出 -->
+          <g transform="translate(1200, 195)">
+            <rect x="0" y="0" width="250" height="190" rx="10" fill="#fff" stroke="var(--focus)" stroke-width="2.5" />
+            <text x="125" y="40" text-anchor="middle" font-size="22" font-weight="700" fill="var(--focus)">集成预测 H(x)</text>
+
+            <text x="25" y="82" font-size="16" font-weight="700" fill="var(--text)">分类任务：</text>
+            <text x="40" y="110" font-size="15" font-family="monospace" fill="var(--text)">argmax ∑ 𝕀(h_b(x)=c)</text>
+
+            <text x="25" y="145" font-size="16" font-weight="700" fill="var(--text)">回归任务：</text>
+            <text x="40" y="172" font-size="15" font-family="monospace" fill="var(--text)">H(x) = 1/B ∑ h_b(x)</text>
+          </g>
+        </g>
+      </svg>
+    </div>
+
+    <!-- 机制小结条 -->
+    <div class="bottom-bar">
+      <div>核心机制：<strong>样本扰动 ➔ 模型互异 ➔ 均值消除方差</strong></div>
+      <div class="note" style="color: var(--text);">各基学习器完全并行训练，无前后依赖</div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    本节我们完整拆解 Bagging 的三阶段管线。
+    首先第一步，通过 Bootstrap 重采样，从规模为 N 的原始训练集 D 中有放回抽取 B 个大小同为 N 的训练子集。数学上，每个子集大约包含原始样本的 63.2%，剩下的约 36.8% 为袋外数据。
+    第二步，在每个重采样集上独立拟合一个基学习器。由于没有前后依从关系，B 个模型可以完全并行训练，极具工程扩展性。
+    第三步，聚合预测。当新样本 x 到来时，所有基模型同时对其进行预测。对于分类任务，采用多数表决法选出票数最多的类别；对于回归任务，直接取算术平均值作为最终集成输出。
+    正是“样本扰动”造就的多样性与“平均化”的结合，使得不稳定基模型的方差在聚合后大幅降低。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 10, total: 32 });
+  </script>
+</body>
+</html>

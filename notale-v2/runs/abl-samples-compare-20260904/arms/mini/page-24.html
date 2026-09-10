@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 64px 72px;
+      box-sizing: border-box;
+      isolation: isolate;
+    }
+
+    /* 背景几何图解：三流收束 (Bagging/Boosting/Stacking -> 合成决策) */
+    .cover-diagram {
+      position: absolute;
+      inset: 0;
+      width: 1600px;
+      height: 900px;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* 文本主区 */
+    .cover-header {
+      position: relative;
+      z-index: 2;
+      max-width: 900px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      margin-top: 16px;
+    }
+
+    .cover-kicker {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .cover-kicker::before {
+      content: "";
+      display: inline-block;
+      width: 28px;
+      height: 2px;
+      background: var(--aggregate);
+    }
+
+    .cover-title {
+      margin: 0;
+      font-size: 64px;
+      line-height: 1.15;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .cover-title span {
+      color: var(--aggregate);
+    }
+
+    .cover-lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      line-height: 1.65;
+      color: var(--muted);
+      max-width: 780px;
+    }
+
+    /* 底部三条流向与权衡对比条 */
+    .cover-footer {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      margin-bottom: 8px;
+      max-width: 1456px;
+    }
+
+    .paradigm-card {
+      background: var(--surface);
+      border: 1px solid rgba(83, 106, 120, 0.2);
+      border-radius: 10px;
+      padding: 26px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 6px 20px rgba(18, 38, 52, 0.05);
+      transition: transform var(--duration) var(--ease), border-color var(--duration) var(--ease);
+    }
+
+    .paradigm-card:hover {
+      border-color: rgba(83, 106, 120, 0.4);
+      transform: translateY(-2px);
+    }
+
+    .card-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+
+    .card-title {
+      font-size: 23px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .card-mark {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--model);
+    }
+
+    .card-mark.boost { background: var(--aggregate); }
+    .card-mark.stack { background: var(--sample); }
+
+    .card-badge {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    .card-desc {
+      font-size: var(--fs-body);
+      color: var(--muted);
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    .card-target {
+      margin-top: 6px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(83, 106, 120, 0.12);
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-target .target-val {
+      color: var(--model);
+    }
+    .paradigm-card:nth-child(2) .card-target .target-val {
+      color: var(--aggregate);
+    }
+    .paradigm-card:nth-child(3) .card-target .target-val {
+      color: var(--sample);
+    }
+
+    /* 进场动效 */
+    .cover-diagram .flow-line {
+      stroke-dasharray: 8 6;
+      animation: dash-flow 25s linear infinite;
+    }
+
+    .cover-diagram .converge-pulse {
+      animation: core-pulse 4s ease-in-out infinite alternate;
+      transform-origin: 1300px 450px;
+    }
+
+    @keyframes dash-flow {
+      to { stroke-dashoffset: -200; }
+    }
+
+    @keyframes core-pulse {
+      0% { r: 52px; opacity: 0.85; }
+      100% { r: 60px; opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .cover-diagram .flow-line { animation: none; }
+      .cover-diagram .converge-pulse { animation: none; }
+    }
+  </style>
+</head>
+<body data-page="24" data-total="27">
+  <div id="stage">
+    <!-- 背景几何：多流汇聚至最终稳健判断 -->
+    <svg class="cover-diagram" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <!-- 渐变定义 -->
+        <linearGradient id="grad-bagging" x1="720" y1="230" x2="1300" y2="450" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#27648F" stop-opacity="0.3"/>
+          <stop offset="70%" stop-color="#27648F" stop-opacity="0.6"/>
+          <stop offset="100%" stop-color="#C34B22" stop-opacity="0.8"/>
+        </linearGradient>
+
+        <linearGradient id="grad-boosting" x1="720" y1="450" x2="1300" y2="450" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#C34B22" stop-opacity="0.3"/>
+          <stop offset="70%" stop-color="#C34B22" stop-opacity="0.7"/>
+          <stop offset="100%" stop-color="#C34B22" stop-opacity="0.9"/>
+        </linearGradient>
+
+        <linearGradient id="grad-stacking" x1="720" y1="670" x2="1300" y2="450" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#2F7568" stop-opacity="0.3"/>
+          <stop offset="70%" stop-color="#2F7568" stop-opacity="0.6"/>
+          <stop offset="100%" stop-color="#C34B22" stop-opacity="0.8"/>
+        </linearGradient>
+
+        <radialGradient id="hub-glow" cx="1300" cy="450" r="140" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#C34B22" stop-opacity="0.18"/>
+          <stop offset="50%" stop-color="#C34B22" stop-opacity="0.05"/>
+          <stop offset="100%" stop-color="#C34B22" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+
+      <!-- 汇聚光晕 -->
+      <circle cx="1300" cy="450" r="140" fill="url(#hub-glow)"/>
+
+      <!-- 流动轨道 (Bezier paths) -->
+      <!-- 流向1: 并行流 (Bagging) -->
+      <path d="M 740 230 C 960 230, 1140 370, 1300 450" stroke="url(#grad-bagging)" stroke-width="3.5" class="flow-line"/>
+      <path d="M 700 190 C 940 190, 1150 350, 1300 450" stroke="url(#grad-bagging)" stroke-width="1.5" stroke-opacity="0.4"/>
+      <path d="M 780 270 C 980 270, 1160 390, 1300 450" stroke="url(#grad-bagging)" stroke-width="1.5" stroke-opacity="0.4"/>
+
+      <!-- 流向2: 串行流 (Boosting) -->
+      <path d="M 740 450 C 940 450, 1120 450, 1300 450" stroke="url(#grad-boosting)" stroke-width="4" class="flow-line"/>
+      <path d="M 710 420 C 920 420, 1130 440, 1300 450" stroke="url(#grad-boosting)" stroke-width="1.5" stroke-opacity="0.4"/>
+      <path d="M 710 480 C 920 480, 1130 460, 1300 450" stroke="url(#grad-boosting)" stroke-width="1.5" stroke-opacity="0.4"/>
+
+      <!-- 流向3: 堆叠多层流 (Stacking) -->
+      <path d="M 740 670 C 960 670, 1140 530, 1300 450" stroke="url(#grad-stacking)" stroke-width="3.5" class="flow-line"/>
+      <path d="M 700 710 C 940 710, 1150 550, 1300 450" stroke="url(#grad-stacking)" stroke-width="1.5" stroke-opacity="0.4"/>
+      <path d="M 780 630 C 980 630, 1160 510, 1300 450" stroke="url(#grad-stacking)" stroke-width="1.5" stroke-opacity="0.4"/>
+
+      <!-- 节点点缀与结构环 -->
+      <!-- 起点群 -->
+      <g fill="#27648F" opacity="0.8">
+        <circle cx="740" cy="230" r="6"/>
+        <circle cx="700" cy="190" r="4.5"/>
+        <circle cx="780" cy="270" r="4.5"/>
+      </g>
+      <g fill="#C34B22" opacity="0.8">
+        <circle cx="740" cy="450" r="6"/>
+        <circle cx="710" cy="420" r="4.5"/>
+        <circle cx="710" cy="480" r="4.5"/>
+      </g>
+      <g fill="#2F7568" opacity="0.8">
+        <circle cx="740" cy="670" r="6"/>
+        <circle cx="700" cy="710" r="4.5"/>
+        <circle cx="780" cy="630" r="4.5"/>
+      </g>
+
+      <!-- 汇聚中心 -->
+      <circle cx="1300" cy="450" r="54" fill="#FFFFFF" stroke="#C34B22" stroke-width="3" class="converge-pulse"/>
+      <circle cx="1300" cy="450" r="28" fill="#C34B22" fill-opacity="0.12"/>
+      <circle cx="1300" cy="450" r="8" fill="#C34B22"/>
+
+      <!-- 汇聚外环刻度环 -->
+      <circle cx="1300" cy="450" r="76" stroke="#536A78" stroke-width="1.5" stroke-opacity="0.25" stroke-dasharray="4 6"/>
+      <circle cx="1300" cy="450" r="98" stroke="#536A78" stroke-width="1" stroke-opacity="0.15"/>
+    </svg>
+
+    <!-- 顶部标题与导语 -->
+    <header class="cover-header">
+      <div class="cover-kicker">集成学习 · 第五单元</div>
+      <h1 class="cover-title">方法选择与<span>收束</span></h1>
+      <p class="cover-lead">
+        不同集成范式对应不同的误差根源与约束条件。在实际业务与建模场景中，理解何时运用方差缩减、何时步进纠错、何时分层互补，是发挥集成威力的关键前提。
+      </p>
+    </header>
+
+    <!-- 底部三范式导引卡片 -->
+    <footer class="cover-footer">
+      <div class="paradigm-card">
+        <div class="card-head">
+          <h2 class="card-title">
+            <span class="card-mark"></span>
+            Bagging 范式
+          </h2>
+          <span class="card-badge">并行采样</span>
+        </div>
+        <p class="card-desc">独立重采样并行构建基模型，以多数投票或平均化压制单模型震荡。</p>
+        <div class="card-target">主要目标：<span class="target-val">抑制模型高方差</span></div>
+      </div>
+
+      <div class="paradigm-card">
+        <div class="card-head">
+          <h2 class="card-title">
+            <span class="card-mark boost"></span>
+            Boosting 范式
+          </h2>
+          <span class="card-badge">串行纠错</span>
+        </div>
+        <p class="card-desc">针对前序模型的残差或错分样本自适应调整权重，逐步逼近真实分布。</p>
+        <div class="card-target">主要目标：<span class="target-val">逐轮削减高偏差</span></div>
+      </div>
+
+      <div class="paradigm-card">
+        <div class="card-head">
+          <h2 class="card-title">
+            <span class="card-mark stack"></span>
+            Stacking 范式
+          </h2>
+          <span class="card-badge">分层学习</span>
+        </div>
+        <p class="card-desc">组合不同原理的异质模型预测，通过元学习器自适应融合互补优势。</p>
+        <div class="card-target">主要目标：<span class="target-val">挖掘多模型互补性</span></div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 24, total: 27, keys: false });
+  </script>
+</body>
+</html>

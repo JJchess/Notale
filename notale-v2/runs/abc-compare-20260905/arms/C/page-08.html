@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bootstrap 重采样：用有放回抽样制造相互不同的训练集</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    /* 局部页面布局与排版 */
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header.deck-header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin: 0;
+      color: var(--text);
+    }
+
+    .page-subtitle {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    /* 主工作台：分左右两栏 */
+    .main-workspace {
+      display: grid;
+      grid-template-columns: 860px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：原始数据集与Bootstrap采样展示 */
+    .resample-panel {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 22px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+
+    .panel-head h2 {
+      font-size: var(--fs-h2);
+      margin: 0;
+      color: var(--text);
+    }
+
+    .panel-head .note {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 样本行布局 */
+    .sample-strip-title {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .sample-strip {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 8px;
+    }
+
+    .sample-token {
+      height: 54px;
+      border-radius: 8px;
+      border: 2px solid var(--surface-strong);
+      background: #FFFFFF;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-num), sans-serif;
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--text);
+      transition: all var(--dur) var(--ease);
+      position: relative;
+    }
+
+    .sample-token .sub {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-top: 1px;
+    }
+
+    /* 抽样集卡片组 */
+    .bootstrap-sets-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+      justify-content: space-between;
+    }
+
+    .b-set-card {
+      background: #FFFFFF;
+      border: 1.5px solid var(--surface-strong);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      cursor: pointer;
+      transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+    }
+
+    .b-set-card:hover {
+      border-color: var(--learner);
+    }
+
+    .b-set-card[aria-selected="true"] {
+      border-color: var(--learner);
+      background: #F0F6FA;
+      outline: 2px solid var(--learner);
+    }
+
+    .b-set-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .b-set-tag {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--learner);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .b-set-stat {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .b-tokens-row {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 8px;
+    }
+
+    .b-token {
+      height: 48px;
+      border-radius: 6px;
+      border: 1.5px solid #C8D7E3;
+      background: #FAFDFE;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-num), sans-serif;
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--learner);
+      position: relative;
+    }
+
+    .b-token.dup {
+      border-color: var(--aggregate);
+      color: var(--aggregate);
+      background: #FFF5F2;
+    }
+
+    .b-token .freq {
+      position: absolute;
+      top: -7px;
+      right: -7px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--aggregate);
+      color: #FFF;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+
+    /* 右侧：数学原理与极限证明卡 */
+    .analysis-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .metric-header {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .formula-box {
+      background: #FFFFFF;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-size: var(--fs-body);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .formula-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .formula-val {
+      font-size: 20px;
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+
+    .breakdown-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .breakdown-list li {
+      margin-bottom: 2px;
+    }
+
+    /* 样本命中对比小矩阵 */
+    .matrix-box {
+      background: #FFFFFF;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .matrix-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: 88px repeat(10, 1fr);
+      gap: 5px;
+      align-items: center;
+      font-size: var(--fs-label);
+      font-family: var(--font-num), sans-serif;
+    }
+
+    .matrix-cell {
+      height: 32px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .cell-hit {
+      background: #E1EDF7;
+      color: var(--learner);
+    }
+
+    .cell-miss {
+      background: #FBEBE8;
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+
+    .cell-label {
+      color: var(--muted);
+      font-size: 14px;
+      justify-content: flex-start;
+      font-family: var(--font-sans);
+    }
+
+    /* 底部控制器条 */
+    .action-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      flex-shrink: 0;
+    }
+
+    .action-btns {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn-action {
+      background: var(--learner);
+      color: #FFFFFF;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 20px;
+      font-size: var(--fs-body);
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: background var(--dur) var(--ease);
+    }
+
+    .btn-action:hover {
+      background: #1B456F;
+    }
+
+    .btn-sec {
+      background: #FFFFFF;
+      color: var(--text);
+      border: 1.5px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: var(--fs-body);
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-sec:hover {
+      border-color: var(--text);
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-sq {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body data-page="08" data-total="27">
+  <div id="stage">
+    <header class="deck-header">
+      <h1 class="page-title">Bootstrap 重采样：用有放回抽样制造相互不同的训练集</h1>
+      <p class="page-subtitle">从大小为 m 的原始数据集中进行 m 次有放回等概率抽取，构建各不相同的基训练集，同时保留约 36.8% 的未抽取样本</p>
+    </header>
+
+    <div class="main-workspace min0">
+      <!-- 左栏：抽样实体与各子集可视化 -->
+      <div class="resample-panel min0">
+        <div class="panel-head">
+          <h2>有放回抽样实验 (m = 10)</h2>
+          <span class="note">每次从原集等概率抽取 1 个放回，独立重复 10 次</span>
+        </div>
+
+        <div>
+          <div class="sample-strip-title">
+            <span>原始数据集 D (共 10 个独立样本)</span>
+            <span style="font-weight: 400; color: var(--muted); font-size: var(--fs-label);">x₁ 至 x₁₀</span>
+          </div>
+          <div class="sample-strip" id="original-strip">
+            <!-- 由 JS 填充原始 10 个样本 -->
+          </div>
+        </div>
+
+        <div class="bootstrap-sets-grid" id="sets-container">
+          <!-- 3 个基学习器对应的 Bootstrap 样本集 -->
+        </div>
+      </div>
+
+      <!-- 右栏：数学机制推导与 OOB 基础说明 -->
+      <div class="analysis-panel min0">
+        <!-- 数学极限卡片 -->
+        <div class="metric-card">
+          <div class="metric-header">
+            <span>样本被抽中与遗漏概率</span>
+            <span style="font-size: var(--fs-label); color: var(--muted); font-weight: normal;">大样本极限推导</span>
+          </div>
+          
+          <div class="formula-box">
+            <div class="formula-row">
+              <span style="font-size: var(--fs-body);">单次抽样未选中概率：</span>
+              <span id="tex-p1"></span>
+            </div>
+            <div class="formula-row">
+              <span style="font-size: var(--fs-body);">m 次独立抽样均未选中：</span>
+              <span id="tex-pm"></span>
+            </div>
+            <div class="formula-row" style="border-top: 1px dashed var(--surface-strong); padding-top: 8px;">
+              <span style="font-size: var(--fs-body); font-weight: 600;">大样本极限 (m &rarr; &infin;)：</span>
+              <span id="tex-lim" class="formula-val"></span>
+            </div>
+          </div>
+
+          <ul class="breakdown-list">
+            <li><strong>包含约 63.2% 原样本：</strong>每个 Bootstrap 子集平均只覆盖约 63.2% 的不同样本，其余通过重复抽样补足大小 m。</li>
+            <li><strong>天然多样性：</strong>不同子集包含不同样本与不同重复频次，基学习器因此学到互有差异的分类面。</li>
+            <li><strong>袋外样本 (OOB)：</strong>约 36.8% 从未进入该子集训练的样本，成为模型后续天然的验证数据。</li>
+          </ul>
+        </div>
+
+        <!-- 样本命中矩阵卡片 -->
+        <div class="metric-card" style="flex: 1; justify-content: space-between;">
+          <div class="matrix-box">
+            <div class="matrix-title">
+              <span>各模型样本覆盖状态矩阵</span>
+              <span id="selected-stat">当前聚焦：模型 1</span>
+            </div>
+            <div class="matrix-grid" id="matrix-grid">
+              <!-- 表头与三行状态由 JS 生成 -->
+            </div>
+          </div>
+          
+          <div style="font-size: var(--fs-sec); color: var(--muted); line-height: 1.45; padding-bottom: 2px;">
+            点击左侧各基学习器卡片，观察该子集内重复抽取的样本（带红色角标）与从未抽到的“袋外样本”（灰色未被命中）。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部操作与图例 -->
+    <div class="action-bar min0">
+      <div class="action-btns">
+        <button class="btn-action" id="btn-resample">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+          重新执行有放回抽样
+        </button>
+        <button class="btn-sec" id="btn-select-next">切换查看下一个基模型</button>
+      </div>
+
+      <div class="legend-row">
+        <div class="legend-item">
+          <div class="legend-sq" style="background: #FAFDFE; border: 1.5px solid #C8D7E3;"></div>
+          <span>抽取 1 次</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-sq" style="background: #FFF5F2; border: 1.5px solid var(--aggregate);"></div>
+          <span>重复抽取 (≥2次)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-sq" style="background: #FBEBE8; border: 1.5px solid #E57373;"></div>
+          <span>未被抽取 (袋外 OOB)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const M = 10;
+      const NUM_SETS = 3;
+
+      // 确定性伪随机数发生器，确保初始态稳定可复现
+      function seededRandom(seed) {
+        let s = seed % 2147483647;
+        if (s <= 0) s += 2147483646;
+        return function () {
+          s = (s * 16807) % 2147483647;
+          return (s - 1) / 2147483646;
+        };
+      }
+
+      let currentSeed = 20260908;
+      let rng = seededRandom(currentSeed);
+      let selectedSetIndex = 0;
+      let datasets = [];
+
+      function sampleWithReplacement(n, randFn) {
+        const res = [];
+        for (let i = 0; i < n; i++) {
+          res.push(Math.floor(randFn() * n) + 1);
+        }
+        res.sort((a, b) => a - b);
+        return res;
+      }
+
+      function generateData() {
+        datasets = [];
+        for (let k = 0; k < NUM_SETS; k++) {
+          const sample = sampleWithReplacement(M, rng);
+          const counts = {};
+          for (let i = 1; i <= M; i++) counts[i] = 0;
+          sample.forEach(x => counts[x]++);
+          const uniqueCount = Object.values(counts).filter(c => c > 0).length;
+          const oobCount = M - uniqueCount;
+          datasets.push({
+            id: k + 1,
+            sample,
+            counts,
+            uniqueCount,
+            oobCount
+          });
+        }
+      }
+
+      // 渲染原数据集
+      function renderOriginalStrip() {
+        const el = document.getElementById("original-strip");
+        el.innerHTML = "";
+        const activeCounts = datasets[selectedSetIndex].counts;
+
+        for (let i = 1; i <= M; i++) {
+          const count = activeCounts[i];
+          const div = document.createElement("div");
+          div.className = "sample-token";
+          if (count === 0) {
+            div.style.borderColor = "var(--aggregate)";
+            div.style.background = "#FDF3F1";
+          } else {
+            div.style.borderColor = "var(--learner)";
+            div.style.background = "#F0F6FA";
+          }
+
+          div.innerHTML = `
+            <span>x<sub>${i}</sub></span>
+            <span class="sub">${count === 0 ? 'OOB' : '×' + count}</span>
+          `;
+          el.appendChild(div);
+        }
+      }
+
+      // 渲染 3 个基数据集
+      function renderBootstrapSets() {
+        const container = document.getElementById("sets-container");
+        container.innerHTML = "";
+
+        datasets.forEach((data, idx) => {
+          const card = document.createElement("div");
+          card.className = "b-set-card";
+          card.setAttribute("aria-selected", idx === selectedSetIndex ? "true" : "false");
+          card.onclick = () => {
+            selectedSetIndex = idx;
+            updateView();
+          };
+
+          const header = document.createElement("div");
+          header.className = "b-set-header";
+          header.innerHTML = `
+            <div class="b-set-tag">
+              <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--learner);"></span>
+              基训练集 D<sup>(${data.id})</sup> (用于训练模型 ${data.id})
+            </div>
+            <div class="b-set-stat">
+              覆盖独有样本: <strong>${data.uniqueCount}/${M}</strong> (${(data.uniqueCount/M*100).toFixed(0)}%) · 
+              袋外未抽中: <strong style="color:var(--aggregate);">${data.oobCount} 个</strong>
+            </div>
+          `;
+
+          const tokensRow = document.createElement("div");
+          tokensRow.className = "b-tokens-row";
+
+          // 显示该子集中的 10 次抽取结果
+          data.sample.forEach((val) => {
+            const freq = data.counts[val];
+            const token = document.createElement("div");
+            token.className = "b-token" + (freq > 1 ? " dup" : "");
+            let badge = freq > 1 ? `<span class="freq">${freq}</span>` : "";
+            token.innerHTML = `<span>x<sub>${val}</sub></span>${badge}`;
+            tokensRow.appendChild(token);
+          });
+
+          card.appendChild(header);
+          card.appendChild(tokensRow);
+          container.appendChild(card);
+        });
+      }
+
+      // 渲染矩阵表格
+      function renderMatrix() {
+        const grid = document.getElementById("matrix-grid");
+        grid.innerHTML = "";
+
+        // 表头
+        const thLabel = document.createElement("div");
+        thLabel.className = "matrix-cell cell-label";
+        thLabel.textContent = "样本编号";
+        grid.appendChild(thLabel);
+
+        for (let i = 1; i <= M; i++) {
+          const colHead = document.createElement("div");
+          colHead.className = "matrix-cell cell-label";
+          colHead.style.justifyContent = "center";
+          colHead.textContent = `x${i}`;
+          grid.appendChild(colHead);
+        }
+
+        // 数据行
+        datasets.forEach((data, dIdx) => {
+          const rowLabel = document.createElement("div");
+          rowLabel.className = "matrix-cell cell-label";
+          rowLabel.style.fontWeight = dIdx === selectedSetIndex ? "700" : "500";
+          rowLabel.style.color = dIdx === selectedSetIndex ? "var(--learner)" : "var(--text)";
+          rowLabel.textContent = `模型 ${data.id}`;
+          grid.appendChild(rowLabel);
+
+          for (let i = 1; i <= M; i++) {
+            const count = data.counts[i];
+            const cell = document.createElement("div");
+            cell.className = "matrix-cell " + (count > 0 ? "cell-hit" : "cell-miss");
+            cell.textContent = count > 0 ? `${count}次` : "OOB";
+            grid.appendChild(cell);
+          }
+        });
+
+        document.getElementById("selected-stat").textContent = `当前聚焦：模型 ${selectedSetIndex + 1} (袋外样本: ${datasets[selectedSetIndex].oobCount} 个)`;
+      }
+
+      function updateView() {
+        renderOriginalStrip();
+        renderBootstrapSets();
+        renderMatrix();
+      }
+
+      // 渲染 KaTeX 公式
+      if (window.katex) {
+        katex.render("1 - \\frac{1}{m}", document.getElementById("tex-p1"), { throwOnError: false });
+        katex.render("P = \\left(1 - \\frac{1}{m}\\right)^m", document.getElementById("tex-pm"), { throwOnError: false });
+        katex.render("\\lim_{m \\to \\infty}\\left(1 - \\frac{1}{m}\\right)^m = \\frac{1}{e} \\approx 36.8\\%", document.getElementById("tex-lim"), { throwOnError: false });
+      }
+
+      // 初始化与交互绑定
+      generateData();
+      updateView();
+
+      document.getElementById("btn-resample").addEventListener("click", () => {
+        currentSeed += 13;
+        rng = seededRandom(currentSeed);
+        generateData();
+        updateView();
+      });
+
+      document.getElementById("btn-select-next").addEventListener("click", () => {
+        selectedSetIndex = (selectedSetIndex + 1) % NUM_SETS;
+        updateView();
+      });
+
+      Deck.init({ index: 8, total: 27 });
+    })();
+  </script>
+</body>
+</html>

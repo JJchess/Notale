@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    /* 页面特定布局与覆盖 */
+    #stage {
+      padding: 48px 56px 40px;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-sizing: border-box;
+      background: var(--bg);
+    }
+
+    .page-head {
+      flex: 0 0 auto;
+    }
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+      margin: 0 0 6px;
+    }
+    .page-lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    .focus-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 820px 1fr;
+      gap: 32px;
+    }
+
+    /* 左侧：滴定曲线对比图区 */
+    .plot-panel {
+      background: var(--paper);
+      border-radius: 8px;
+      padding: 20px 24px 16px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 1px 3px rgba(20, 43, 51, 0.06);
+    }
+    .plot-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex: 0 0 auto;
+    }
+    .plot-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-line {
+      width: 24px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .legend-line.weak { background: var(--buffer); }
+    .legend-line.strong { background: var(--muted); opacity: 0.45; }
+
+    .chart-host {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+    #curve-chart {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 底部模式切换与探索控制器 */
+    .plot-toolbar {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 12px;
+      border-top: 1px solid rgba(82, 105, 112, 0.15);
+      font-size: var(--fs-sec);
+    }
+    .mode-tabs {
+      display: flex;
+      gap: 8px;
+    }
+    .tab-btn {
+      padding: 6px 14px;
+      border-radius: 4px;
+      border: 1px solid rgba(82, 105, 112, 0.25);
+      background: transparent;
+      color: var(--muted);
+      font-size: var(--fs-label);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      background: var(--buffer);
+      color: #ffffff;
+      border-color: var(--buffer);
+      font-weight: 600;
+    }
+    .vol-readout {
+      font-family: var(--font-num);
+      color: var(--muted);
+      font-size: var(--fs-label);
+    }
+    .vol-readout strong {
+      color: var(--text);
+      font-size: 17px;
+    }
+
+    /* 右侧：化学机制与定量核算面板 */
+    .analysis-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .chem-card {
+      background: var(--paper);
+      border-radius: 8px;
+      padding: 14px 20px;
+      box-shadow: 0 1px 3px rgba(20, 43, 51, 0.06);
+      flex: 0 0 auto;
+    }
+    .chem-card.detail {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: visible;
+      padding: 14px 20px;
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .tag-state {
+      font-size: var(--fs-tick);
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--selected);
+      color: var(--buffer);
+      font-weight: 600;
+    }
+
+    /* 反应方程式与物料平衡 */
+    .formula-box {
+      background: rgba(220, 236, 239, 0.35);
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin: 6px 0 8px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .formula-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* 对比表格：强酸当量点 vs 弱酸当量点 */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 6px;
+    }
+    .comp-item {
+      border: 1px solid rgba(82, 105, 112, 0.15);
+      border-radius: 6px;
+      padding: 8px 10px;
+      background: #fafcfc;
+    }
+    .comp-item.highlight {
+      border-color: var(--buffer);
+      background: rgba(8, 116, 110, 0.04);
+    }
+    .comp-header {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .comp-body {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .comp-ph {
+      font-family: var(--font-num);
+      font-size: 20px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+    .ph-7 { color: var(--muted); }
+    .ph-872 { color: var(--buffer); }
+
+    /* 水解定量推导卡片 */
+    .calc-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .calc-step {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+    }
+    .calc-step strong {
+      color: var(--buffer);
+    }
+    .step-math {
+      font-family: var(--font-num);
+      background: rgba(20, 43, 51, 0.03);
+      padding: 6px 10px;
+      border-radius: 4px;
+      margin: 3px 0;
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.55;
+    }
+    .math-term {
+      font-family: var(--font-num);
+      font-style: italic;
+    }
+    .math-eq {
+      font-family: var(--font-num);
+      letter-spacing: 0.01em;
+    }
+    .math-eq strong {
+      color: var(--buffer);
+    }
+
+    /* 关键读数组件 */
+    .big-ph-box {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin: 2px 0 6px;
+    }
+    .big-val {
+      font-family: var(--font-num);
+      font-size: 42px;
+      font-weight: 700;
+      color: var(--buffer);
+      line-height: 1;
+    }
+    .big-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .big-desc strong {
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="14" data-total="17">
+  <div id="stage">
+    <header class="page-head min0">
+      <h1 class="page-title">弱酸滴定的当量点并非中性：共轭碱水解使当量点 pH 大于 7</h1>
+      <p class="page-lead">在完全中和点，弱酸分子已被滴定剂完全耗尽转化为共轭碱；该共轭碱从水分子夺取质子产生微量 OH⁻，使溶液呈碱性。</p>
+    </header>
+
+    <main class="focus-grid min0">
+      <!-- 左侧滴定曲线 -->
+      <section class="plot-panel min0">
+        <div class="plot-header">
+          <div class="plot-title">滴定曲线与当量点比较 (0.100 mol/L 体系)</div>
+          <div class="legend-row">
+            <div class="legend-item">
+              <span class="legend-line weak"></span>
+              <span>0.100 M 弱酸 (CH₃COOH, 20.00 mL)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line strong"></span>
+              <span>0.100 M 强酸 (HCl, 20.00 mL)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-host">
+          <div id="curve-chart"></div>
+        </div>
+
+        <div class="plot-toolbar">
+          <div class="mode-tabs" role="tablist" aria-label="曲线关键点高亮">
+            <button id="btn-ep" class="tab-btn active" role="tab" aria-selected="true">当量点对比 (20.00 mL)</button>
+            <button id="btn-half" class="tab-btn" role="tab" aria-selected="false">回顾半当量点 (10.00 mL)</button>
+            <button id="btn-jump" class="tab-btn" role="tab" aria-selected="false">陡跃区间对比 (19.98~20.02 mL)</button>
+          </div>
+          <div class="vol-readout" id="status-readout">
+            当前滴定剂：<strong>20.00 mL NaOH</strong>｜弱酸当量点 pH = <strong>8.72</strong>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧解析面板 -->
+      <section class="analysis-col min0">
+        <article class="chem-card">
+          <h2 class="card-title">
+            <span>为什么中和完成却显碱性？</span>
+            <span class="tag-state" id="card-tag">溶质状态：纯共轭碱盐</span>
+          </h2>
+          <div class="big-ph-box">
+            <span class="big-val" id="disp-ph">8.72</span>
+            <div class="big-desc" id="disp-desc">
+              弱酸完全中和点 pH ＞ 7.00<br>
+              <strong>主要物种：CH₃COO⁻ + Na⁺ + H₂O</strong>
+            </div>
+          </div>
+
+          <div class="formula-box">
+            <div class="formula-row">
+              <span id="tex-neutralization"></span>
+            </div>
+            <div class="formula-row" style="margin-top: 4px; border-top: 1px dashed rgba(82, 105, 112, 0.2); padding-top: 6px;">
+              <span id="tex-hydrolysis"></span>
+            </div>
+          </div>
+        </article>
+
+        <article class="chem-card detail">
+          <h2 class="card-title">
+            <span>当量点化学平衡与定量推导</span>
+          </h2>
+
+          <div class="compare-grid">
+            <div class="comp-item">
+              <div class="comp-header">强酸滴定当量点 (HCl)</div>
+              <div class="comp-body">产物 NaCl 为强电解质，Cl⁻ 无可检测碱性，不水解。</div>
+              <div class="comp-ph ph-7">pH = 7.00</div>
+            </div>
+            <div class="comp-item highlight">
+              <div class="comp-header">弱酸滴定当量点 (HAc)</div>
+              <div class="comp-body">产物 NaAc 发生微量水解，释放 OH⁻，打破纯水中性。</div>
+              <div class="comp-ph ph-872">pH = 8.72</div>
+            </div>
+          </div>
+
+          <div class="calc-steps" id="calc-container">
+            <div class="calc-step">
+              <strong>1. 计算中和后共轭碱有效浓度 <span class="math-term">c_b</span></strong>
+              <div class="step-math">
+                总体积加倍 (20.00 + 20.00 = 40.00 mL)：<br>
+                <span class="math-eq">c_b = (0.100 mol/L × 20.00 mL) / 40.00 mL = 0.0500 mol/L</span>
+              </div>
+            </div>
+
+            <div class="calc-step">
+              <strong>2. 由共轭碱水解平衡求 <span class="math-term">[OH⁻]</span></strong>
+              <div class="step-math">
+                <span class="math-eq">K_b = K_w / K_a = 1.0×10⁻¹⁴ / 1.75×10⁻⁵ = 5.71×10⁻¹⁰</span><br>
+                <span class="math-eq">[OH⁻] ≈ √(K_b · c_b) = √(5.71×10⁻¹⁰ × 0.0500) = 5.34×10⁻⁶ mol/L</span>
+              </div>
+            </div>
+
+            <div class="calc-step">
+              <strong>3. 换算 pOH 与当量点 pH</strong>
+              <div class="step-math">
+                <span class="math-eq">pOH = -lg(5.34×10⁻⁶) = 5.27 ⟹ <strong>pH = 14.00 - 5.27 = 8.72</strong></span>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 1. 初始化 KaTeX 反应方程式渲染
+      const kOpts = { throwOnError: false };
+      katex.render(
+        "\\text{中和计量：}\\text{CH}_3\\text{COOH} + \\text{OH}^- \\longrightarrow \\text{CH}_3\\text{COO}^- + \\text{H}_2\\text{O}",
+        document.getElementById("tex-neutralization"),
+        kOpts
+      );
+      katex.render(
+        "\\text{共轭水解：}\\text{CH}_3\\text{COO}^- + \\text{H}_2\\text{O} \\rightleftharpoons \\text{CH}_3\\text{COOH} + \\mathbf{\\text{OH}^-}",
+        document.getElementById("tex-hydrolysis"),
+        kOpts
+      );
+
+      // 2. 弱酸 (HAc, Ka=1.75e-5, V0=20mL, c0=0.1M) 与 强酸 (HCl, 20mL, 0.1M) 数据生成
+      const V0 = 20.0;
+      const c0 = 0.1;
+      const c_b = 0.1;
+      const Ka = 1.75e-5;
+      const Kw = 1.0e-14;
+
+      function calcWeakAcidPH(V) {
+        if (V <= 0.001) {
+          // 起始电离
+          const h = Math.sqrt(Ka * c0);
+          return -Math.log10(h);
+        }
+        if (V < 19.95) {
+          // 缓冲溶液区
+          const molHA = c0 * V0 - c_b * V;
+          const molA = c_b * V;
+          const ratio = molA / molHA;
+          const ph = -Math.log10(Ka) + Math.log10(ratio);
+          return ph;
+        }
+        if (Math.abs(V - 20.0) <= 0.05) {
+          // 当量点：纯共轭碱水解
+          const c_salt = (c0 * V0) / (V0 + V);
+          const Kb = Kw / Ka;
+          const oh = Math.sqrt(Kb * c_salt);
+          const poh = -Math.log10(oh);
+          return 14.0 - poh;
+        }
+        // 过量强碱区
+        const molExcessOH = c_b * (V - 20.0);
+        const totalV = (V0 + V) * 1e-3;
+        const concOH = molExcessOH / totalV;
+        const poh = -Math.log10(concOH);
+        return 14.0 - poh;
+      }
+
+      function calcStrongAcidPH(V) {
+        if (V < 19.99) {
+          const molExcessH = c0 * V0 - c_b * V;
+          const concH = molExcessH / ((V0 + V) * 1e-3);
+          return -Math.log10(concH);
+        }
+        if (Math.abs(V - 20.0) <= 0.02) {
+          return 7.00;
+        }
+        const molExcessOH = c_b * (V - 20.0);
+        const concOH = molExcessOH / ((V0 + V) * 1e-3);
+        return 14.0 - (-Math.log10(concOH));
+      }
+
+      // 采样点分布（特别在 19.8 ~ 20.2 密集采样）
+      const vols = [];
+      for (let v = 0; v < 19.5; v += 0.5) vols.push(Number(v.toFixed(2)));
+      for (let v = 19.5; v <= 19.9; v += 0.1) vols.push(Number(v.toFixed(2)));
+      for (let v = 19.92; v <= 20.08; v += 0.02) vols.push(Number(v.toFixed(2)));
+      for (let v = 20.1; v <= 20.5; v += 0.1) vols.push(Number(v.toFixed(2)));
+      for (let v = 21.0; v <= 30.0; v += 0.5) vols.push(Number(v.toFixed(2)));
+
+      const weakData = vols.map(v => [v, Number(calcWeakAcidPH(v).toFixed(2))]);
+      const strongData = vols.map(v => [v, Number(calcStrongAcidPH(v).toFixed(2))]);
+
+      // 3. ECharts 图表配置
+      const chartHost = document.getElementById("curve-chart");
+      const chart = echarts.init(chartHost, null, { renderer: "svg" });
+
+      let currentMode = "ep"; // 'ep' | 'half' | 'jump'
+
+      function getOption(mode) {
+        const markPoints = [];
+        const markLines = [];
+
+        // 基准横虚线：中性线 pH 7.0
+        markLines.push({
+          yAxis: 7,
+          name: "中性基准 (pH 7.0)",
+          lineStyle: { color: "#526970", type: "dashed", width: 1.5, opacity: 0.5 },
+          label: {
+            formatter: "pH 7.00 中性线",
+            position: "insideEndTop",
+            color: "#526970",
+            fontSize: 13,
+            fontFamily: "Noto Sans SC"
+          }
+        });
+
+        if (mode === "ep") {
+          // 当量点模式
+          markPoints.push(
+            {
+              name: "弱酸当量点",
+              coord: [20.0, 8.72],
+              value: "8.72\n弱酸当量点",
+              itemStyle: { color: "#08746E" },
+              symbol: "circle",
+              symbolSize: 14,
+              label: {
+                formatter: "弱酸当量点 pH 8.72\n(共轭碱水解显碱性)",
+                position: "right",
+                distance: 14,
+                color: "#08746E",
+                fontSize: 14,
+                fontWeight: 700,
+                lineHeight: 18,
+                fontFamily: "Noto Sans SC"
+              }
+            },
+            {
+              name: "强酸当量点",
+              coord: [20.0, 7.0],
+              value: "7.00\n强酸当量点",
+              itemStyle: { color: "#526970" },
+              symbol: "circle",
+              symbolSize: 12,
+              label: {
+                formatter: "强酸当量点 pH 7.00 (中性)",
+                position: "bottom",
+                distance: 12,
+                color: "#526970",
+                fontSize: 13,
+                fontWeight: 600,
+                fontFamily: "Noto Sans SC"
+              }
+            }
+          );
+
+          // 20.0 mL 垂直辅助线
+          markLines.push({
+            xAxis: 20.0,
+            lineStyle: { color: "#08746E", type: "dotted", width: 2, opacity: 0.8 },
+            label: {
+              formatter: "V = 20.00 mL (化学计量点)",
+              position: "insideEndTop",
+              color: "#08746E",
+              fontSize: 13,
+              fontWeight: 600
+            }
+          });
+        } else if (mode === "half") {
+          // 半当量点
+          markPoints.push(
+            {
+              name: "半当量点",
+              coord: [10.0, 4.76],
+              itemStyle: { color: "#23629A" },
+              symbol: "circle",
+              symbolSize: 14,
+              label: {
+                formatter: "半当量点 V=10.00 mL\npH = pKa = 4.76\n(缓冲能力最强)",
+                position: "topLeft",
+                distance: 12,
+                color: "#23629A",
+                fontSize: 14,
+                fontWeight: 700,
+                lineHeight: 18
+              }
+            },
+            {
+              name: "弱酸当量点",
+              coord: [20.0, 8.72],
+              itemStyle: { color: "#08746E" },
+              symbol: "circle",
+              symbolSize: 10,
+              label: {
+                formatter: "当量点 pH 8.72",
+                position: "right",
+                color: "#08746E",
+                fontSize: 13
+              }
+            }
+          );
+          markLines.push({
+            xAxis: 10.0,
+            lineStyle: { color: "#23629A", type: "dotted", width: 1.5 },
+            label: { formatter: "半当量点 V=10.00 mL", position: "insideEndBottom", color: "#23629A" }
+          });
+        } else if (mode === "jump") {
+          // 陡跃区间对比
+          markPoints.push(
+            {
+              name: "弱酸陡跃起点",
+              coord: [19.98, 7.7],
+              symbol: "pin",
+              symbolSize: 20,
+              itemStyle: { color: "#08746E" },
+              label: { show: false }
+            },
+            {
+              name: "弱酸陡跃终点",
+              coord: [20.02, 9.7],
+              symbol: "pin",
+              symbolSize: 20,
+              itemStyle: { color: "#08746E" },
+              label: { show: false }
+            }
+          );
+          markLines.push({
+            yAxis: 7.7,
+            lineStyle: { color: "#08746E", type: "dashed", width: 1 },
+            label: { formatter: "弱酸突跃下限 ≈ 7.7", position: "insideEndBottom", color: "#08746E" }
+          });
+          markLines.push({
+            yAxis: 9.7,
+            lineStyle: { color: "#08746E", type: "dashed", width: 1 },
+            label: { formatter: "弱酸突跃上限 ≈ 9.7", position: "insideEndTop", color: "#08746E" }
+          });
+        }
+
+        return {
+          animation: !Deck.reduced(),
+          grid: {
+            left: 56,
+            right: 180,
+            top: 36,
+            bottom: 48
+          },
+          tooltip: {
+            trigger: "axis",
+            backgroundColor: "#FFFFFF",
+            borderColor: "rgba(82, 105, 112, 0.2)",
+            textStyle: { color: "#142B33", fontSize: 13, fontFamily: "Noto Sans SC" },
+            formatter: function (params) {
+              const v = params[0].value[0].toFixed(2);
+              let s = `<div style="font-weight:700;margin-bottom:4px;border-bottom:1px solid #eee;padding-bottom:3px;">NaOH 体积: ${v} mL</div>`;
+              params.forEach(p => {
+                const col = p.color;
+                const name = p.seriesName;
+                const val = p.value[1].toFixed(2);
+                s += `<div style="display:flex;justify-content:space-between;gap:16px;margin:2px 0;">
+                        <span style="color:${col};font-weight:600;">${name}:</span>
+                        <strong style="font-family:Bahnschrift;">pH ${val}</strong>
+                      </div>`;
+              });
+              return s;
+            }
+          },
+          xAxis: {
+            type: "value",
+            name: "滴加 NaOH 体积 (mL)",
+            nameLocation: "middle",
+            nameGap: 30,
+            nameTextStyle: { color: "#526970", fontSize: 14, fontFamily: "Noto Sans SC" },
+            min: 0,
+            max: 30,
+            interval: 5,
+            axisLabel: { color: "#526970", fontSize: 13, fontFamily: "Bahnschrift" },
+            axisLine: { lineStyle: { color: "rgba(82, 105, 112, 0.3)" } },
+            splitLine: { lineStyle: { color: "rgba(82, 105, 112, 0.08)" } }
+          },
+          yAxis: {
+            type: "value",
+            name: "溶液 pH",
+            nameTextStyle: { color: "#526970", fontSize: 14, fontFamily: "Noto Sans SC" },
+            min: 0,
+            max: 14,
+            interval: 2,
+            axisLabel: { color: "#526970", fontSize: 13, fontFamily: "Bahnschrift" },
+            axisLine: { lineStyle: { color: "rgba(82, 105, 112, 0.3)" } },
+            splitLine: { lineStyle: { color: "rgba(82, 105, 112, 0.12)" } }
+          },
+          series: [
+            {
+              name: "弱酸 (CH₃COOH)",
+              type: "line",
+              data: weakData,
+              showSymbol: false,
+              smooth: 0.15,
+              lineStyle: { color: "#08746E", width: 3.5 },
+              itemStyle: { color: "#08746E" },
+              markPoint: { data: markPoints },
+              markLine: { data: markLines, symbol: ["none", "none"] }
+            },
+            {
+              name: "强酸 (HCl 对比)",
+              type: "line",
+              data: strongData,
+              showSymbol: false,
+              smooth: 0.08,
+              lineStyle: { color: "#526970", width: 2, type: "dashed", opacity: 0.45 },
+              itemStyle: { color: "#526970" }
+            }
+          ]
+        };
+      }
+
+      function updateChart(mode) {
+        currentMode = mode;
+        chart.setOption(getOption(mode), { notMerge: true });
+      }
+
+      updateChart("ep");
+
+      // 4. 模式切换交互联动
+      const btnEp = document.getElementById("btn-ep");
+      const btnHalf = document.getElementById("btn-half");
+      const btnJump = document.getElementById("btn-jump");
+      const statusReadout = document.getElementById("status-readout");
+      const dispPh = document.getElementById("disp-ph");
+      const dispDesc = document.getElementById("disp-desc");
+      const cardTag = document.getElementById("card-tag");
+
+      function setActiveBtn(target) {
+        [btnEp, btnHalf, btnJump].forEach(b => {
+          b.classList.remove("active");
+          b.setAttribute("aria-selected", "false");
+        });
+        target.classList.add("active");
+        target.setAttribute("aria-selected", "true");
+      }
+
+      btnEp.addEventListener("click", () => {
+        setActiveBtn(btnEp);
+        updateChart("ep");
+        statusReadout.innerHTML = "当前滴定剂：<strong>20.00 mL NaOH</strong>｜弱酸当量点 pH = <strong>8.72</strong>";
+        dispPh.textContent = "8.72";
+        dispDesc.innerHTML = "弱酸完全中和点 pH ＞ 7.00<br><strong>主要物种：CH₃COO⁻ + Na⁺ + H₂O</strong>";
+        cardTag.textContent = "溶质状态：纯共轭碱盐";
+      });
+
+      btnHalf.addEventListener("click", () => {
+        setActiveBtn(btnHalf);
+        updateChart("half");
+        statusReadout.innerHTML = "回顾半当量点：<strong>10.00 mL NaOH</strong>｜缓冲容量极大值 pH = <strong>4.76</strong>";
+        dispPh.textContent = "4.76";
+        dispDesc.innerHTML = "弱酸与共轭碱等量 [HA] = [A⁻]<br><strong>主要物种：CH₃COOH + CH₃COO⁻ (最佳缓冲)</strong>";
+        cardTag.textContent = "溶质状态：1:1 共轭缓冲对";
+      });
+
+      btnJump.addEventListener("click", () => {
+        setActiveBtn(btnJump);
+        updateChart("jump");
+        statusReadout.innerHTML = "滴定突跃区间：<strong>19.98 ~ 20.02 mL</strong>｜突跃范围位于碱性侧 <strong>7.7 ~ 9.7</strong>";
+        dispPh.textContent = "7.7~9.7";
+        dispDesc.innerHTML = "化学计量点前后 ±0.1% 的突跃<br><strong>指示剂变色范围必须覆盖 8.72 附近碱性区</strong>";
+        cardTag.textContent = "突跃区域：偏向碱性侧";
+      });
+
+      // 5. 监听宿主缩放与适配
+      const resizeObserver = new ResizeObserver(() => {
+        chart.resize();
+      });
+      resizeObserver.observe(chartHost);
+
+      window.addEventListener("pagehide", () => {
+        resizeObserver.disconnect();
+        chart.dispose();
+      });
+
+      Deck.init({ title: "弱酸滴定的当量点并非中性", keys: false });
+    })();
+  </script>
+</body>
+</html>

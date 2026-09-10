@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 24px 56px 20px 56px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 20px;
+      color: var(--text);
+      box-sizing: border-box;
+      user-select: none;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .header h1 {
+      font-size: var(--fs-h1);
+      margin: 0;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .header .rule-hint {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    
+    .workbench {
+      display: grid;
+      grid-template-columns: 310px 1fr 360px;
+      gap: 36px;
+      height: 770px;
+      align-items: stretch;
+    }
+
+    /* Column 1: Task Picker */
+    .task-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .section-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--structure);
+      margin-bottom: 4px;
+    }
+    .task-card {
+      border: 1.5px solid var(--rule);
+      border-radius: 4px;
+      padding: 14px 16px;
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.15s, background-color 0.15s;
+    }
+    .task-card:hover {
+      border-color: var(--structure);
+    }
+    .task-card.active {
+      border-color: var(--structure);
+      border-width: 2px;
+      background: rgba(28, 68, 54, 0.06);
+    }
+    .task-name {
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .task-tag {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      color: var(--structure);
+      border: 1px solid var(--structure);
+      padding: 1px 5px;
+      border-radius: 2px;
+    }
+    .task-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* Column 2: Architecture Sandbox */
+    .arch-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .arch-selector {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .arch-btn {
+      border: 1.5px solid var(--rule);
+      border-radius: 4px;
+      background: transparent;
+      padding: 10px 4px;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      color: var(--text);
+      transition: all 0.15s;
+    }
+    .arch-btn:hover {
+      border-color: var(--structure);
+    }
+    .arch-btn.active {
+      background: var(--structure);
+      color: #fff;
+      border-color: var(--structure);
+    }
+    
+    .view-canvas-wrap {
+      flex: 1;
+      border: 1px solid var(--rule);
+      position: relative;
+      background: #fafbfa;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+    }
+    .data-flow-svg {
+      width: 100%;
+      height: 100%;
+      flex: 1;
+    }
+
+    /* Column 3: Diagnostic & Consequence */
+    .eval-col {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .verdict-box {
+      padding: 14px 0 0 0;
+    }
+    .verdict-status {
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .verdict-box.match .verdict-status {
+      color: var(--structure);
+    }
+    .verdict-box.mismatch .verdict-status {
+      color: var(--signal);
+    }
+    .verdict-detail {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    .metrics-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      border-top: 1px solid var(--rule);
+      padding-top: 16px;
+    }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+    }
+    .metric-label {
+      color: var(--muted);
+    }
+    .metric-val {
+      font-weight: 700;
+      font-size: var(--fs-sec);
+    }
+    .metric-bar-bg {
+      height: 6px;
+      background: var(--rule);
+      border-radius: 3px;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+    .metric-bar-fill {
+      height: 100%;
+      background: var(--structure);
+      transition: width 0.3s ease;
+    }
+    .metric-bar-fill.warn {
+      background: var(--signal);
+    }
+
+    .tradeoff-summary {
+      font-size: var(--fs-sec);
+      border-top: 1px solid var(--rule);
+      padding-top: 16px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+    .tradeoff-summary strong {
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <div class="header">
+      <h1>任务与架构适配：结构对应与归纳偏置</h1>
+      <span class="rule-hint">核心原则：网络结构必须对应数据几何先验</span>
+    </div>
+
+    <div class="workbench">
+      <!-- 任务选择区 -->
+      <div class="task-col">
+        <div class="section-title">1. 选择任务</div>
+        <div class="task-card active" data-task="image" tabindex="0">
+          <div class="task-name">
+            <span>图像分类</span>
+            <span class="task-tag">2D 网格</span>
+          </div>
+          <div class="task-desc">像素网格，局部近邻高度相关，具平移等变性。</div>
+        </div>
+        
+        <div class="task-card" data-task="text" tabindex="0">
+          <div class="task-name">
+            <span>短句情感</span>
+            <span class="task-tag">离散序列</span>
+          </div>
+          <div class="task-desc">变长词元，跨词依赖，需全局上下文关联。</div>
+        </div>
+
+        <div class="task-card" data-task="timeseries" tabindex="0">
+          <div class="task-name">
+            <span>传感器预测</span>
+            <span class="task-tag">单向时序</span>
+          </div>
+          <div class="task-desc">单向时间演化，连续递推，严格因果时序。</div>
+        </div>
+
+        <div class="task-card" data-task="tabular" tabindex="0">
+          <div class="task-name">
+            <span>表格特征预测</span>
+            <span class="task-tag">异构特征</span>
+          </div>
+          <div class="task-desc">异质字段，无空间或时间临近约束，列可置换。</div>
+        </div>
+      </div>
+
+      <!-- 架构选择与计算流动图示 -->
+      <div class="arch-col">
+        <div class="section-title">2. 指定候选网络架构</div>
+        <div class="arch-selector">
+          <button class="arch-btn active" data-arch="cnn">CNN</button>
+          <button class="arch-btn" data-arch="rnn">RNN / LSTM</button>
+          <button class="arch-btn" data-arch="transformer">Attention</button>
+          <button class="arch-btn" data-arch="mlp">MLP</button>
+        </div>
+
+        <div class="view-canvas-wrap">
+          <svg class="data-flow-svg" id="flowSvg" viewBox="0 0 520 460">
+            <!-- 动态渲染数据在架构中的流动结构 -->
+          </svg>
+        </div>
+      </div>
+
+      <!-- 诊断结论与工程权衡 -->
+      <div class="eval-col">
+        <div class="section-title">3. 适配诊断与工程证据</div>
+        <div class="verdict-box match" id="verdictBox">
+          <div class="verdict-status" id="verdictStatus">适配诊断：高度契合</div>
+          <div class="verdict-detail" id="verdictDetail">
+            局部感受野与权重共享完全利用空间网格先验；参数规模紧凑，平移等变性显著降低样本需求。
+          </div>
+        </div>
+
+        <div class="metrics-panel">
+          <div>
+            <div class="metric-row">
+              <span class="metric-label">归纳偏置契合度</span>
+              <span class="metric-val" id="biasScore">95%</span>
+            </div>
+            <div class="metric-bar-bg">
+              <div class="metric-bar-fill" id="biasBar" style="width: 95%;"></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="metric-row">
+              <span class="metric-label">相对参数规模</span>
+              <span class="metric-val" id="paramScale">紧凑 (4.2 × 10⁴)</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="metric-row">
+              <span class="metric-label">并行训练能力</span>
+              <span class="metric-val" id="parallelAbility">高 (全图矩阵并行)</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="metric-row">
+              <span class="metric-label">计算复杂度阶数</span>
+              <span class="metric-val" id="complexityScale">O(K² · HW)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tradeoff-summary" id="tradeoffSummary">
+          <strong>权衡建议：</strong>现代视觉强基线；若长程全局依赖主导且具备海量数据，可迁往 ViT。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    本页让大家亲自检验输入先验到模型结构的匹配。
+    当我们在图像上选择 CNN 时，局部卷积核正好利用了空间近邻与平移等变，参数极少且训练收敛快；若换成 MLP，把图片展平成向量，丢失了几何拓扑，参数爆炸且对位移极敏感。
+    而在文本任务上，自注意力机制打破了 RNN 的递推遗忘瓶颈；但若把卷积强行套到异构表格上，便凭空捏造了虚假的近邻假设。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    const KNOWLEDGE_BASE = {
+      image: {
+        cnn: {
+          status: '高度契合 (最佳基线)',
+          level: 'match',
+          detail: '局部感受野与权重共享利用空间网格先验；参数规模紧凑，平移等变性显著降低样本需求。',
+          biasScore: 95,
+          paramScale: '紧凑 (4.2 × 10⁴)',
+          parallel: '高 (全图矩阵并行)',
+          complexity: 'O(K² · HW)',
+          tradeoff: '现代视觉强基线；若长程全局依赖主导且具备海量数据，可迁往 ViT。',
+          svgType: 'cnn_image'
+        },
+        rnn: {
+          status: '结构失配 (几何割裂)',
+          level: 'mismatch',
+          detail: '将 2D 网格强制展开为 1D 栅格序列扫描，切断垂直邻近关系，长序列梯度消失且无法并行。',
+          biasScore: 25,
+          paramScale: '中等 (1.8 × 10⁵)',
+          parallel: '极低 (串行递推)',
+          complexity: 'O(HW · D²)',
+          tradeoff: '破坏二维几何连续性，高分辨率下计算开销与梯度衰减均不可控。',
+          svgType: 'rnn_image'
+        },
+        transformer: {
+          status: '可行但依赖海量数据 (ViT)',
+          level: 'match',
+          detail: '将图片切分为 Patch 序列后做全局寻址；缺乏局部先验，依赖大规模预训练或强数据增强。',
+          biasScore: 70,
+          paramScale: '庞大 (2.4 × 10⁷)',
+          parallel: '极高 (全矩阵乘法)',
+          complexity: 'O(P² · D)',
+          tradeoff: '超大数据集上限极高；小样本下极易过拟合，训练开销大。',
+          svgType: 'transformer_image'
+        },
+        mlp: {
+          status: '参数爆炸且丢失拓扑',
+          level: 'mismatch',
+          detail: '展平为一维向量彻底丢弃网格拓扑；输入与隐层全连接导致参数达百万级，对位移极敏感。',
+          biasScore: 15,
+          paramScale: '冗余严重 (1.2 × 10⁶)',
+          parallel: '高 (矩阵并行)',
+          complexity: 'O(HW · D_hidden)',
+          tradeoff: '仅适用于 28×28 极低分辨率玩具数据，真实高分辨率图像无法有效收敛。',
+          svgType: 'mlp_image'
+        }
+      },
+      text: {
+        cnn: {
+          status: '受限局部先验 (TextCNN)',
+          level: 'match',
+          detail: '1D 卷积核滑动捕捉连续短语特征；并行度高，但无法建模跨越长句的语义指代关系。',
+          biasScore: 65,
+          paramScale: '小巧 (6.5 × 10⁴)',
+          parallel: '高 (并行卷积)',
+          complexity: 'O(L · K · D)',
+          tradeoff: '短文本情感分类利器，推理极快，但无法胜任生成式长文本建模。',
+          svgType: 'cnn_text'
+        },
+        rnn: {
+          status: '顺应词序但存在瓶颈',
+          level: 'match',
+          detail: '顺应词序递推隐状态；对短句有效，但深层存在长距离遗忘，串行步进限制并行度。',
+          biasScore: 80,
+          paramScale: '中等 (3.2 × 10⁵)',
+          parallel: '极低 (不可展开并行)',
+          complexity: 'O(L · D²)',
+          tradeoff: '经典流式基线；大模型与长文本已基本被自注意力取代。',
+          svgType: 'rnn_text'
+        },
+        transformer: {
+          status: '现代语言建模核心基线',
+          level: 'match',
+          detail: '任意两词通过 Q-K 点积直接寻址，路径长度为 O(1)；彻底打破固定隐状态的信息瓶颈。',
+          biasScore: 95,
+          paramScale: '大 (1.1 × 10⁸)',
+          parallel: '极高 (整句并行)',
+          complexity: 'O(L² · D)',
+          tradeoff: '需位置编码注入顺序；长文本需注意二次方计算复杂度。',
+          svgType: 'transformer_text'
+        },
+        mlp: {
+          status: '词袋假设导致语法丢失',
+          level: 'mismatch',
+          detail: '采用固定词袋平均或截断拼接彻底丢弃词序与依存结构，无法区分语序否定句。',
+          biasScore: 20,
+          paramScale: '8.0 × 10⁵',
+          parallel: '高',
+          complexity: 'O(L_fixed · D)',
+          tradeoff: '仅可作为极简关键词匹配基线，无法辨析“不怎么好”与“好得不得了”。',
+          svgType: 'mlp_text'
+        }
+      },
+      timeseries: {
+        cnn: {
+          status: '因果卷积时序基线 (TCN)',
+          level: 'match',
+          detail: '因果与空洞卷积保证不泄露未来信息并指数扩大感受野，训练完全并行。',
+          biasScore: 85,
+          paramScale: '中等 (1.5 × 10⁵)',
+          parallel: '高 (训练完全并行)',
+          complexity: 'O(T · K · D)',
+          tradeoff: '训练速度显著优于 RNN，感受野可控，现代时序强基线。',
+          svgType: 'cnn_ts'
+        },
+        rnn: {
+          status: '连续物理系统天然基线 (LSTM)',
+          level: 'match',
+          detail: '单步递推天然契合物理演化；门控机制控制跨步衰减，推理延迟极低。',
+          biasScore: 90,
+          paramScale: '紧凑 (2.1 × 10⁵)',
+          parallel: '低 (时序递推)',
+          complexity: 'O(T · D²)',
+          tradeoff: '端侧与流式传感器预测首选；超长序列仍受梯度衰减约束。',
+          svgType: 'rnn_ts'
+        },
+        transformer: {
+          status: '长周期依赖需因果掩码',
+          level: 'match',
+          detail: '必须添加因果 Mask；多变量耦合长序列优势明显，但小数据易过拟合。',
+          biasScore: 75,
+          paramScale: '偏大 (5.6 × 10⁶)',
+          parallel: '高 (加掩码并行)',
+          complexity: 'O(T² · D)',
+          tradeoff: '小样本传感器预测易过拟合，计算开销显著高于递推模型。',
+          svgType: 'transformer_ts'
+        },
+        mlp: {
+          status: '滑动窗口线性强基线 (DLinear)',
+          level: 'match',
+          detail: '固定长度滑动窗口映射到未来步；参数简单，基准评测常超越复杂模型。',
+          biasScore: 60,
+          paramScale: '极小 (2.5 × 10⁴)',
+          parallel: '极高',
+          complexity: 'O(W · H)',
+          tradeoff: '必须固定输入输出窗口，无法应对采样频率变动。',
+          svgType: 'mlp_ts'
+        }
+      },
+      tabular: {
+        cnn: {
+          status: '归纳偏置虚假错配',
+          level: 'mismatch',
+          detail: '表格各列无空间临近关系；强行用局部卷积核滑动属于虚假特征假定。',
+          biasScore: 10,
+          paramScale: '5.0 × 10⁴',
+          parallel: '高',
+          complexity: 'O(C · K · D)',
+          tradeoff: '列顺序随意调换就会改变卷积结果，违背列置换不变性。',
+          svgType: 'cnn_tab'
+        },
+        rnn: {
+          status: '时序假设完全不成立',
+          level: 'mismatch',
+          detail: '表格特征非时序数据，强行顺序递推无任何因果依据，前向方向完全人为编造。',
+          biasScore: 5,
+          paramScale: '8.0 × 10⁴',
+          parallel: '极低',
+          complexity: 'O(C · D²)',
+          tradeoff: '严重扭曲特征交互逻辑，训练收敛极慢且精度劣化。',
+          svgType: 'rnn_tab'
+        },
+        transformer: {
+          status: '特征自注意力 (FT-Transformer)',
+          level: 'match',
+          detail: '各字段视为独立 token 交叉注意力；具备全排列不变性，但通常难敌 GBDT。',
+          biasScore: 65,
+          paramScale: '重度 (1.2 × 10⁶)',
+          parallel: '高',
+          complexity: 'O(C² · D)',
+          tradeoff: '显存开销大，工程中树模型（XGBoost/LightGBM）仍是首选。',
+          svgType: 'transformer_tab'
+        },
+        mlp: {
+          status: '经典全连接神经网络基线',
+          level: 'match',
+          detail: '全连接层允许任意两特征在隐层实现非线性组合，不预设任何空间或时间假定。',
+          biasScore: 85,
+          paramScale: '灵活 (1.2 × 10⁵)',
+          parallel: '高 (矩阵乘法)',
+          complexity: 'O(C · D_hidden)',
+          tradeoff: '离散特征需配 Embedding；深度不宜过深以防过拟合。',
+          svgType: 'mlp_tab'
+        }
+      }
+    };
+
+    let curTask = 'image';
+    let curArch = 'cnn';
+
+    function renderSvg(task, arch) {
+      const svg = document.getElementById('flowSvg');
+      svg.innerHTML = '';
+
+      const structColor = '#1C4436';
+      const signalColor = '#D43811';
+      const ruleColor = '#BAC4BF';
+      const mutedColor = '#5B6661';
+
+      let defs = `
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="${structColor}"/>
+          </marker>
+          <marker id="arrow-warn" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="${signalColor}"/>
+          </marker>
+        </defs>
+      `;
+
+      let content = '';
+
+      if (task === 'image' && arch === 'cnn') {
+        content += `
+          <!-- 图像网格输入 -->
+          <text x="50" y="50" font-size="15" font-weight="bold" fill="${structColor}">输入：2D 像素阵列</text>
+          <g transform="translate(50, 70)">
+            <rect x="0" y="0" width="120" height="120" fill="none" stroke="${structColor}" stroke-width="2"/>
+            <path d="M 30 0 V 120 M 60 0 V 120 M 90 0 V 120 M 0 30 H 120 M 0 60 H 120 M 0 90 H 120" stroke="${ruleColor}" stroke-width="1"/>
+            <!-- 局部滑动窗口 3x3 -->
+            <rect x="30" y="30" width="60" height="60" fill="rgba(28,68,54,0.15)" stroke="${signalColor}" stroke-width="2"/>
+            <text x="35" y="65" font-size="13" fill="${signalColor}" font-weight="bold">3×3 感受野</text>
+          </g>
+
+          <!-- 权重共享卷积核 -->
+          <path d="M 180 130 L 250 130" stroke="${structColor}" stroke-width="2" marker-end="url(#arrow)"/>
+          <text x="185" y="118" font-size="13" fill="${mutedColor}">共享参数滑动</text>
+
+          <!-- 特征图提取 -->
+          <text x="270" y="50" font-size="15" font-weight="bold" fill="${structColor}">特征图 (Feature Maps)</text>
+          <g transform="translate(270, 70)">
+            <rect x="0" y="0" width="90" height="90" fill="none" stroke="${structColor}" stroke-width="1.5"/>
+            <rect x="15" y="15" width="90" height="90" fill="none" stroke="${structColor}" stroke-width="1.5"/>
+            <rect x="30" y="30" width="90" height="90" fill="rgba(28,68,54,0.08)" stroke="${structColor}" stroke-width="2"/>
+            <text x="45" y="80" font-size="13" fill="${structColor}" font-weight="bold">平移等变特征</text>
+          </g>
+
+          <!-- 降维汇聚到分类 -->
+          <path d="M 400 145 L 450 145" stroke="${structColor}" stroke-width="2" marker-end="url(#arrow)"/>
+          <circle cx="475" cy="145" r="16" fill="${structColor}"/>
+          <text x="463" y="150" font-size="13" fill="#fff" font-weight="bold">分类</text>
+
+          <!-- 先验机制列表 -->
+          <g transform="translate(50, 240)">
+            <text x="0" y="24" font-size="16" font-weight="bold" fill="${structColor}">先验机制核对：</text>
+            <text x="0" y="58" font-size="15" fill="${mutedColor}">• 局部邻域相关：卷积只在 3×3 感受野内加权组合。</text>
+            <text x="0" y="88" font-size="15" fill="${mutedColor}">• 几何平移等变：目标移动时卷积特征同步平移映射。</text>
+            <text x="0" y="118" font-size="15" fill="${mutedColor}">• 参数共享受控：核尺寸固定，总权重与图像分辨率解耦。</text>
+          </g>
+        `;
+      } else if (task === 'image' && arch === 'mlp') {
+        content += `
+          <!-- 展平为一维向量 -->
+          <text x="50" y="50" font-size="15" font-weight="bold" fill="${signalColor}">错误方式：强行展平 (Flatten)</text>
+          <g transform="translate(50, 75)">
+            <rect x="0" y="0" width="30" height="230" fill="none" stroke="${signalColor}" stroke-width="2"/>
+            <line x1="0" y1="20" x2="30" y2="20" stroke="${ruleColor}"/>
+            <line x1="0" y1="40" x2="30" y2="40" stroke="${ruleColor}"/>
+            <line x1="0" y1="60" x2="30" y2="60" stroke="${ruleColor}"/>
+            <text x="8" y="125" font-size="13" fill="${signalColor}" font-weight="bold" writing-mode="vertical-rl">784 维向量</text>
+          </g>
+
+          <!-- 全密集稠密连线 -->
+          <g transform="translate(95, 75)">
+            ${Array.from({length: 8}).map((_, i) => 
+              Array.from({length: 6}).map((_, j) => 
+                `<line x1="0" y1="${i*30 + 10}" x2="160" y2="${j*40 + 15}" stroke="${signalColor}" stroke-opacity="0.25" stroke-width="1"/>`
+              ).join('')
+            ).join('')}
+          </g>
+
+          <!-- 隐层神经元 -->
+          <g transform="translate(275, 75)">
+            <rect x="0" y="0" width="30" height="230" fill="none" stroke="${structColor}" stroke-width="2"/>
+            <text x="8" y="125" font-size="13" fill="${structColor}" font-weight="bold" writing-mode="vertical-rl">隐层神经元</text>
+          </g>
+
+          <path d="M 320 190 L 380 190" stroke="${signalColor}" stroke-width="2" marker-end="url(#arrow-warn)"/>
+          <text x="325" y="175" font-size="13" fill="${signalColor}" font-weight="bold">参数爆炸</text>
+
+          <g transform="translate(400, 170)">
+            <circle cx="20" cy="20" r="20" fill="${signalColor}"/>
+            <text x="10" y="25" font-size="13" fill="#fff" font-weight="bold">失配</text>
+          </g>
+
+          <g transform="translate(50, 340)">
+            <text x="0" y="24" font-size="16" font-weight="bold" fill="${signalColor}">结构失配根源：</text>
+            <text x="0" y="56" font-size="15" fill="${mutedColor}">• 丢失 2D 邻域几何拓扑，邻近像素退化为孤立维度。</text>
+            <text x="0" y="84" font-size="15" fill="${mutedColor}">• 全连接权重规模剧增，小样本训练极易严重过拟合。</text>
+          </g>
+        `;
+      } else if (task === 'text' && arch === 'transformer') {
+        content += `
+          <!-- 文本序列多头自注意力 -->
+          <text x="40" y="45" font-size="15" font-weight="bold" fill="${structColor}">全序列词元并行与内容寻址</text>
+
+          <g transform="translate(40, 70)">
+            <rect x="0" y="0" width="70" height="34" rx="4" fill="none" stroke="${structColor}" stroke-width="1.5"/>
+            <text x="13" y="22" font-size="13" font-weight="bold" fill="${structColor}">Token 1</text>
+
+            <rect x="0" y="55" width="70" height="34" rx="4" fill="none" stroke="${structColor}" stroke-width="1.5"/>
+            <text x="13" y="77" font-size="13" font-weight="bold" fill="${structColor}">Token 2</text>
+
+            <rect x="0" y="110" width="70" height="34" rx="4" fill="none" stroke="${structColor}" stroke-width="1.5"/>
+            <text x="13" y="132" font-size="13" font-weight="bold" fill="${structColor}">Token 3</text>
+
+            <rect x="0" y="165" width="70" height="34" rx="4" fill="none" stroke="${structColor}" stroke-width="1.5"/>
+            <text x="13" y="187" font-size="13" font-weight="bold" fill="${structColor}">Token L</text>
+          </g>
+
+          <!-- Q K V 交叉注意力矩阵 -->
+          <g transform="translate(155, 65)">
+            <text x="20" y="20" font-size="13" font-weight="bold" fill="${structColor}">Softmax(Q Kᵀ / √d)</text>
+            <rect x="15" y="30" width="150" height="150" fill="rgba(28,68,54,0.06)" stroke="${structColor}" stroke-width="1.5"/>
+            
+            <rect x="25" y="40" width="28" height="28" fill="${structColor}" fill-opacity="0.8"/>
+            <rect x="65" y="40" width="28" height="28" fill="${structColor}" fill-opacity="0.2"/>
+            <rect x="105" y="40" width="28" height="28" fill="${structColor}" fill-opacity="0.5"/>
+            
+            <rect x="25" y="78" width="28" height="28" fill="${structColor}" fill-opacity="0.3"/>
+            <rect x="65" y="78" width="28" height="28" fill="${structColor}" fill-opacity="0.9"/>
+            <rect x="105" y="78" width="28" height="28" fill="${structColor}" fill-opacity="0.1"/>
+
+            <rect x="25" y="116" width="28" height="28" fill="${structColor}" fill-opacity="0.6"/>
+            <rect x="65" y="116" width="28" height="28" fill="${structColor}" fill-opacity="0.4"/>
+            <rect x="105" y="116" width="28" height="28" fill="${signalColor}" fill-opacity="0.9"/>
+            <text x="20" y="205" font-size="13" fill="${signalColor}" font-weight="bold">交互路径长恒为 O(1)</text>
+          </g>
+
+          <!-- 输出特征表达 -->
+          <path d="M 350 140 L 410 140" stroke="${structColor}" stroke-width="2" marker-end="url(#arrow)"/>
+          <g transform="translate(420, 105)">
+            <rect x="0" y="0" width="60" height="70" rx="4" fill="${structColor}"/>
+            <text x="8" y="40" font-size="13" fill="#fff" font-weight="bold">全局表征</text>
+          </g>
+
+          <g transform="translate(40, 270)">
+            <text x="0" y="24" font-size="16" font-weight="bold" fill="${structColor}">自注意力机制先验核对：</text>
+            <text x="0" y="58" font-size="15" fill="${mutedColor}">• 突破隐状态瓶颈：无需单向递推压缩，直接内容寻址。</text>
+            <text x="0" y="88" font-size="15" fill="${mutedColor}">• 全局并行吞吐：整句张量并行计算，摆脱时间展开依赖。</text>
+            <text x="0" y="118" font-size="15" fill="${mutedColor}">• 配合位置编码注入离散语序与距离先验。</text>
+          </g>
+        `;
+      } else if (task === 'text' && arch === 'rnn') {
+        content += `
+          <!-- RNN 沿时间串行展开 -->
+          <text x="40" y="45" font-size="15" font-weight="bold" fill="${structColor}">RNN 沿时间逐步压缩与遗忘</text>
+
+          <g transform="translate(40, 85)">
+            <!-- Step 1 -->
+            <rect x="0" y="30" width="55" height="46" rx="3" fill="none" stroke="${structColor}" stroke-width="1.5"/>
+            <text x="18" y="58" font-size="13" font-weight="bold" fill="${structColor}">h₁</text>
+            <line x1="27" y1="115" x2="27" y2="76" stroke="${structColor}" stroke-width="1.5" marker-end="url(#arrow)"/>
+            <text x="14" y="132" font-size="13" fill="${mutedColor}">x₁: 我</text>
+
+            <line x1="55" y1="53" x2="105" y2="53" stroke="${structColor}" stroke-width="2" marker-end="url(#arrow)"/>
+
+            <!-- Step 2 -->
+            <rect x="105" y="30" width="55" height="46" rx="3" fill="none" stroke="${structColor}" stroke-width="1.5"/>
+            <text x="123" y="58" font-size="13" font-weight="bold" fill="${structColor}">h₂</text>
+            <line x1="132" y1="115" x2="132" y2="76" stroke="${structColor}" stroke-width="1.5" marker-end="url(#arrow)"/>
+            <text x="119" y="132" font-size="13" fill="${mutedColor}">x₂: 不</text>
+
+            <line x1="160" y1="53" x2="210" y2="53" stroke="${structColor}" stroke-width="2" marker-end="url(#arrow)"/>
+
+            <!-- Step 3 -->
+            <rect x="210" y="30" width="55" height="46" rx="3" fill="none" stroke="${structColor}" stroke-width="1.5"/>
+            <text x="228" y="58" font-size="13" font-weight="bold" fill="${structColor}">h₃</text>
+            <line x1="237" y1="115" x2="237" y2="76" stroke="${structColor}" stroke-width="1.5" marker-end="url(#arrow)"/>
+            <text x="224" y="132" font-size="13" fill="${mutedColor}">x₃: 喜</text>
+
+            <line x1="265" y1="53" x2="315" y2="53" stroke="${signalColor}" stroke-dasharray="4,3" stroke-width="2" marker-end="url(#arrow-warn)"/>
+
+            <!-- Step L (Bottleneck) -->
+            <rect x="315" y="30" width="65" height="46" rx="3" fill="rgba(212,56,17,0.1)" stroke="${signalColor}" stroke-width="2"/>
+            <text x="333" y="58" font-size="13" font-weight="bold" fill="${signalColor}">h_L</text>
+            <text x="315" y="15" font-size="13" fill="${signalColor}" font-weight="bold">信息瓶颈</text>
+            <line x1="347" y1="115" x2="347" y2="76" stroke="${structColor}" stroke-width="1.5" marker-end="url(#arrow)"/>
+            <text x="334" y="132" font-size="13" fill="${mutedColor}">x_L: 欢</text>
+          </g>
+
+          <g transform="translate(40, 260)">
+            <text x="0" y="24" font-size="16" font-weight="bold" fill="${structColor}">机制与权衡分析：</text>
+            <text x="0" y="58" font-size="15" fill="${mutedColor}">• 单步前传顺应语法，但整句历史挤压进固定维向量 h_L。</text>
+            <text x="0" y="88" font-size="15" fill="${signalColor}">• 梯度需沿序列连乘反传，极易出现长程梯度衰减。</text>
+            <text x="0" y="118" font-size="15" fill="${mutedColor}">• 严格时序串行依赖，限制 GPU 并行训练效率。</text>
+          </g>
+        `;
+      } else if (task === 'tabular' && arch === 'cnn') {
+        content += `
+          <!-- 表格与错误滑动卷积 -->
+          <text x="40" y="45" font-size="15" font-weight="bold" fill="${signalColor}">虚假先验：对异构无序表格强行卷积</text>
+
+          <g transform="translate(40, 80)">
+            <rect x="0" y="0" width="440" height="40" fill="none" stroke="${structColor}" stroke-width="1.5"/>
+            <path d="M 110 0 V 40 M 220 0 V 40 M 330 0 V 40" stroke="${ruleColor}"/>
+            <text x="25" y="25" font-size="13" fill="${structColor}">列1: 年龄</text>
+            <text x="130" y="25" font-size="13" fill="${structColor}">列2: 年收入</text>
+            <text x="240" y="25" font-size="13" fill="${structColor}">列3: 邮政编码</text>
+            <text x="350" y="25" font-size="13" fill="${structColor}">列4: 信用分</text>
+          </g>
+
+          <!-- 荒谬滑动窗口 -->
+          <g transform="translate(40, 145)">
+            <rect x="40" y="0" width="240" height="50" rx="4" fill="rgba(212,56,17,0.12)" stroke="${signalColor}" stroke-width="2"/>
+            <text x="50" y="30" font-size="13" fill="${signalColor}" font-weight="bold">滑动卷积核：[年龄, 年收入, 邮编]</text>
+            <path d="M 160 50 L 160 90" stroke="${signalColor}" stroke-width="2" marker-end="url(#arrow-warn)"/>
+          </g>
+
+          <g transform="translate(40, 260)">
+            <text x="0" y="24" font-size="16" font-weight="bold" fill="${signalColor}">严重归纳偏置错误：</text>
+            <text x="0" y="58" font-size="15" fill="${mutedColor}">• 表格字段顺序人为设定，无任何空间几何近邻含义。</text>
+            <text x="0" y="88" font-size="15" fill="${mutedColor}">• 任意交换列顺序数据语义不变，但卷积输出剧烈突变。</text>
+            <text x="0" y="118" font-size="15" fill="${signalColor}">• 局部滑动卷积注入了完全虚假的几何临近约束。</text>
+          </g>
+        `;
+      } else {
+        content += `
+          <text x="40" y="45" font-size="15" font-weight="bold" fill="${structColor}">当前映射：任务 [${task.toUpperCase()}] ➔ 架构 [${arch.toUpperCase()}]</text>
+
+          <g transform="translate(40, 80)">
+            <rect x="0" y="0" width="180" height="110" rx="4" fill="none" stroke="${structColor}" stroke-width="1.5"/>
+            <text x="20" y="35" font-size="15" font-weight="bold" fill="${structColor}">数据先验假设</text>
+            <text x="20" y="65" font-size="13" fill="${mutedColor}">• 维度拓扑约束</text>
+            <text x="20" y="90" font-size="13" fill="${mutedColor}">• 对称性与置换不变性</text>
+          </g>
+
+          <path d="M 235 135 L 285 135" stroke="${structColor}" stroke-width="2" marker-end="url(#arrow)"/>
+          <text x="240" y="125" font-size="13" fill="${mutedColor}">投射匹配</text>
+
+          <g transform="translate(295, 80)">
+            <rect x="0" y="0" width="180" height="110" rx="4" fill="none" stroke="${structColor}" stroke-width="1.5"/>
+            <text x="20" y="35" font-size="15" font-weight="bold" fill="${structColor}">网络计算图结构</text>
+            <text x="20" y="65" font-size="13" fill="${mutedColor}">• 连接方式与参数共享</text>
+            <text x="20" y="90" font-size="13" fill="${mutedColor}">• 状态存储与反传通路</text>
+          </g>
+
+          <g transform="translate(40, 240)">
+            <text x="0" y="24" font-size="16" font-weight="bold" fill="${structColor}">架构适配核心准则：</text>
+            <text x="0" y="58" font-size="15" fill="${mutedColor}">1. 强归纳偏置（如 CNN 局部性）以泛化先验换取极低样本开销。</text>
+            <text x="0" y="88" font-size="15" fill="${mutedColor}">2. 弱归纳偏置（如 Transformer）表达力通用，但依赖海量数据约束参数。</text>
+            <text x="0" y="118" font-size="15" fill="${mutedColor}">3. 错配的先验（如对表格做卷积）将直接破坏模型的有效学习。</text>
+          </g>
+        `;
+      }
+
+      svg.innerHTML = defs + content;
+    }
+
+    function updateView() {
+      const data = KNOWLEDGE_BASE[curTask][curArch];
+      
+      const vBox = document.getElementById('verdictBox');
+      const vStatus = document.getElementById('verdictStatus');
+      const vDetail = document.getElementById('verdictDetail');
+      const bScore = document.getElementById('biasScore');
+      const bBar = document.getElementById('biasBar');
+      const pScale = document.getElementById('paramScale');
+      const pAbility = document.getElementById('parallelAbility');
+      const cScale = document.getElementById('complexityScale');
+      const tSummary = document.getElementById('tradeoffSummary');
+
+      vBox.className = `verdict-box ${data.level}`;
+      vStatus.innerText = `适配诊断：${data.status}`;
+      vDetail.innerText = data.detail;
+
+      bScore.innerText = `${data.biasScore}%`;
+      bBar.style.width = `${data.biasScore}%`;
+      if (data.biasScore < 50) {
+        bBar.className = 'metric-bar-fill warn';
+      } else {
+        bBar.className = 'metric-bar-fill';
+      }
+
+      pScale.innerText = data.paramScale;
+      pAbility.innerText = data.parallel;
+      cScale.innerText = data.complexity;
+      tSummary.innerHTML = `<strong>权衡建议：</strong>${data.tradeoff}`;
+
+      renderSvg(curTask, curArch);
+    }
+
+    // 绑定任务点击
+    document.querySelectorAll('.task-card').forEach(card => {
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.task-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        curTask = card.dataset.task;
+        updateView();
+      });
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          card.click();
+        }
+      });
+    });
+
+    // 绑定架构点击
+    document.querySelectorAll('.arch-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.arch-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        curArch = btn.dataset.arch;
+        updateView();
+      });
+    });
+
+    // 初始化
+    Deck.init({ index: 31, total: 32 });
+    updateView();
+  </script>
+</body>
+</html>

@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="zh">
+<!--
+构图意图：
+1. 主对象：左侧「纯净数据下 AdaBoost 逐步拟合弯曲边界」与右侧「含离群噪点时权重指数爆炸导致边界扭曲」的并置对比场景。
+2. 关系表达：共享相同的二维特征坐标空间与相同的弱分类器基座，通过对阵列样本点大小（样本权重 $w_i$）与最终集成决策边界的形变，直接展现 AdaBoost 压低偏差的能力与对离群点过度敏感的局限。
+3. 说明依附：核心判断置于顶部左侧，两列对比各自贴顶标示状态，关键数值与数学机理（指数放大倍数）直接标在受害离群点与决策曲折处。
+-->
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* 顶部标题区 */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+    }
+    .header h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .header .subtitle {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主对比舞台：纯净收敛 vs 噪声扭曲 */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 56px;
+      flex: 1;
+      margin-top: 24px;
+      margin-bottom: 16px;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .column-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
+    }
+    .column-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--aggregate);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .column-title.alert {
+      color: var(--focus);
+    }
+    .column-tag {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-family: var(--font-numeric);
+    }
+
+    /* 构图：去除容器卡片无意义描边底色，依托对齐与网格空间构图 */
+    .canvas-card {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .canvas-card svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 机制指标说明条 */
+    .metric-row {
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      border-top: 1px dashed var(--line);
+      padding-top: 10px;
+    }
+    .metric-row b {
+      color: var(--text);
+      font-weight: var(--weight-medium);
+    }
+    .metric-row .highlight {
+      color: var(--focus);
+      font-weight: var(--weight-medium);
+    }
+
+    /* 底部收束条 */
+    .summary-footer {
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .summary-footer strong {
+      color: var(--aggregate);
+      font-weight: var(--weight-medium);
+    }
+  </style>
+</head>
+<body data-page="19" data-total="26">
+  <div id="stage">
+    <header class="header">
+      <h1>AdaBoost 的能力与局限</h1>
+      <p class="subtitle">强行纠偏错分样本，造就了低偏差，也种下了过拟合噪声的隐患</p>
+    </header>
+
+    <div class="comparison-grid">
+      <!-- 左列：纯净样本，低偏差 -->
+      <section class="column min0">
+        <div class="column-title-row">
+          <div class="column-title">
+            <span>低偏差：多轮弱桩逼近复杂曲面</span>
+          </div>
+          <span class="column-tag">T = 30 轮 · 无噪声</span>
+        </div>
+        <div class="canvas-card">
+          <svg viewBox="0 0 680 440" preserveAspectRatio="none">
+            <!-- 网格底纹 -->
+            <defs>
+              <pattern id="grid1" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(116, 129, 124, 0.16)" stroke-width="1"/>
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid1)"/>
+
+            <!-- 分类区域着色：阴影平滑切分 -->
+            <path d="M 0 0 L 320 0 Q 350 180 430 240 T 680 270 L 680 0 Z" fill="rgba(46, 95, 120, 0.08)"/>
+            <path d="M 0 440 L 0 0 L 320 0 Q 350 180 430 240 T 680 270 L 680 440 Z" fill="none"/>
+
+            <!-- 多个基学习器阶梯虚线组合轨迹 -->
+            <path d="M 280 0 L 280 220 L 450 220 L 450 440" fill="none" stroke="var(--model)" stroke-dasharray="4,4" stroke-width="1.2" opacity="0.45"/>
+            <path d="M 0 160 L 380 160 L 380 290 L 680 290" fill="none" stroke="var(--model)" stroke-dasharray="4,4" stroke-width="1.2" opacity="0.45"/>
+            <path d="M 330 0 L 330 260 L 520 260 L 520 440" fill="none" stroke="var(--model)" stroke-dasharray="4,4" stroke-width="1.2" opacity="0.45"/>
+
+            <!-- 最终聚合强分类器平滑决策边界 -->
+            <path d="M 320 0 Q 350 180 430 240 T 680 270" fill="none" stroke="var(--aggregate)" stroke-width="3.5" stroke-linecap="round"/>
+            <text x="360" y="200" fill="var(--aggregate)" font-size="15" font-family="var(--font-sans)" font-weight="500">加权集成决策边界</text>
+
+            <!-- 样本点绘制：类别 A (深蓝圆点) -->
+            <!-- 集中在左上区域 -->
+            <circle cx="80" cy="70" r="5" fill="var(--model)"/>
+            <circle cx="140" cy="110" r="5.5" fill="var(--model)"/>
+            <circle cx="210" cy="60" r="5" fill="var(--model)"/>
+            <circle cx="160" cy="180" r="6" fill="var(--model)"/>
+            <circle cx="250" cy="130" r="6.5" fill="var(--model)"/>
+            <circle cx="100" cy="220" r="5" fill="var(--model)"/>
+            <circle cx="190" cy="270" r="6" fill="var(--model)"/>
+            <circle cx="270" cy="210" r="7" fill="var(--model)"/>
+            <circle cx="350" cy="120" r="7.5" fill="var(--model)"/>
+            <circle cx="390" cy="70" r="5.5" fill="var(--model)"/>
+            <circle cx="480" cy="120" r="6" fill="var(--model)"/>
+            <circle cx="560" cy="80" r="5" fill="var(--model)"/>
+            <circle cx="620" cy="150" r="6" fill="var(--model)"/>
+
+            <!-- 样本点绘制：类别 B (浅色菱形或橙褐色环) -->
+            <!-- 集中在右下区域 -->
+            <rect x="290" y="320" width="11" height="11" rx="2" fill="var(--uncertain)"/>
+            <rect x="360" y="280" width="12" height="12" rx="2" fill="var(--uncertain)"/>
+            <rect x="420" y="360" width="11" height="11" rx="2" fill="var(--uncertain)"/>
+            <rect x="480" y="300" width="12" height="12" rx="2" fill="var(--uncertain)"/>
+            <rect x="520" y="380" width="10" height="10" rx="2" fill="var(--uncertain)"/>
+            <rect x="590" y="310" width="12" height="12" rx="2" fill="var(--uncertain)"/>
+            <rect x="630" y="370" width="11" height="11" rx="2" fill="var(--uncertain)"/>
+            <rect x="460" y="250" width="13" height="13" rx="2" fill="var(--uncertain)"/>
+            <rect x="550" y="230" width="11" height="11" rx="2" fill="var(--uncertain)"/>
+          </svg>
+        </div>
+        <div class="metric-row">
+          <span>机制：弱分类器边界正交叠加</span>
+          <span>表现：<b>训练误差降至 0</b></span>
+        </div>
+      </section>
+
+      <!-- 右列：含噪声，敏感过拟合 -->
+      <section class="column min0">
+        <div class="column-title-row">
+          <div class="column-title alert">
+            <span>局限：离群噪点权重爆炸与边界扭曲</span>
+          </div>
+          <span class="column-tag">T = 30 轮 · 含 1 个错误标签</span>
+        </div>
+        <div class="canvas-card">
+          <svg viewBox="0 0 680 440" preserveAspectRatio="none">
+            <defs>
+              <pattern id="grid2" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(116, 129, 124, 0.16)" stroke-width="1"/>
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid2)"/>
+
+            <!-- 扭曲割裂的分类边界：为了包围孤立噪点而产生畸变岛屿 -->
+            <!-- 正常平滑边界断裂并凸起环绕噪点 -->
+            <path d="M 320 0 Q 340 120 370 170 C 370 170, 400 180, 410 230 C 330 300, 360 340, 360 370 C 360 410, 310 420, 290 370 C 270 330, 280 260, 380 220 T 680 270" 
+                  fill="none" stroke="var(--focus)" stroke-width="3" stroke-dasharray="6,3" opacity="0.4"/>
+            <path d="M 320 0 Q 350 140 370 190 Q 400 220 410 260 Q 420 340 440 370 Q 480 390 470 330 Q 450 270 510 250 T 680 270" 
+                  fill="none" stroke="var(--focus)" stroke-width="3.5" stroke-linecap="round"/>
+
+            <!-- 样本点绘制：类别 A -->
+            <circle cx="80" cy="70" r="4.5" fill="var(--model)" opacity="0.6"/>
+            <circle cx="140" cy="110" r="5" fill="var(--model)" opacity="0.6"/>
+            <circle cx="210" cy="60" r="4.5" fill="var(--model)" opacity="0.6"/>
+            <circle cx="160" cy="180" r="5.5" fill="var(--model)" opacity="0.6"/>
+            <circle cx="250" cy="130" r="5" fill="var(--model)" opacity="0.6"/>
+            <circle cx="100" cy="220" r="4.5" fill="var(--model)" opacity="0.6"/>
+            <circle cx="190" cy="270" r="5" fill="var(--model)" opacity="0.6"/>
+            <circle cx="270" cy="210" r="5.5" fill="var(--model)" opacity="0.6"/>
+            <circle cx="350" cy="120" r="5.5" fill="var(--model)" opacity="0.6"/>
+            <circle cx="390" cy="70" r="5" fill="var(--model)" opacity="0.6"/>
+            <circle cx="480" cy="120" r="5" fill="var(--model)" opacity="0.6"/>
+            <circle cx="560" cy="80" r="4.5" fill="var(--model)" opacity="0.6"/>
+            <circle cx="620" cy="150" r="5" fill="var(--model)" opacity="0.6"/>
+
+            <!-- 类别 B 正常样本 -->
+            <rect x="290" y="320" width="10" height="10" rx="2" fill="var(--uncertain)" opacity="0.7"/>
+            <rect x="360" y="280" width="10" height="10" rx="2" fill="var(--uncertain)" opacity="0.7"/>
+            <rect x="420" y="360" width="10" height="10" rx="2" fill="var(--uncertain)" opacity="0.7"/>
+            <rect x="480" y="300" width="11" height="11" rx="2" fill="var(--uncertain)" opacity="0.7"/>
+            <rect x="520" y="380" width="9" height="9" rx="2" fill="var(--uncertain)" opacity="0.7"/>
+            <rect x="590" y="310" width="10" height="10" rx="2" fill="var(--uncertain)" opacity="0.7"/>
+            <rect x="630" y="370" width="10" height="10" rx="2" fill="var(--uncertain)" opacity="0.7"/>
+            <rect x="460" y="250" width="11" height="11" rx="2" fill="var(--uncertain)" opacity="0.7"/>
+            <rect x="550" y="230" width="10" height="10" rx="2" fill="var(--uncertain)" opacity="0.7"/>
+
+            <!-- 噪点：类别 A 孤立在 B 区域，权重被放大 -->
+            <g transform="translate(320, 360)">
+              <circle cx="0" cy="0" r="24" fill="none" stroke="var(--focus)" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.8"/>
+              <circle cx="0" cy="0" r="14" fill="var(--focus)"/>
+              <text x="32" y="-4" fill="var(--focus)" font-size="15" font-weight="bold" font-family="var(--font-sans)">错标点：权重持续 × e^{2α}</text>
+              <text x="32" y="18" fill="var(--muted)" font-size="13" font-family="var(--font-sans)">多次误分导致权重失控暴增</text>
+            </g>
+
+            <!-- 扭曲指示 -->
+            <text x="120" y="320" fill="var(--focus)" font-size="15" font-family="var(--font-sans)">边界迁就孤岛</text>
+          </svg>
+        </div>
+        <div class="metric-row">
+          <span>成因：指数损失迫使后续桩迁就噪点</span>
+          <span class="highlight">泛化衰减（严重过拟合）</span>
+        </div>
+      </section>
+    </div>
+
+    <footer class="summary-footer">
+      <span><strong>理论启示：</strong>Boosting 强力缩减<strong>偏差 (Bias)</strong>，但抗噪鲁棒性弱于 Bagging。</span>
+      <span>工业解法：采用学习率收缩（Shrinkage）或改用更稳健的残差提升（Gradient Boosting）</span>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+各位同学，上一讲我们完整推演了 AdaBoost 的权重更新公式与投票决策。
+大家可能会惊叹：原来极其简单的单层决策树（决策桩），只要串联迭代几十轮，就能拟合成任意复杂的非线性分界面！这就是 AdaBoost 强大的降偏差（Bias reduction）能力，正如左侧图所示，原本一刀切的简单弱分类器，加权累加后完美勾勒出了双曲线分界面。
+
+但是，世上没有免费的午餐。请看右侧图展示的核心局限：
+如果训练集中混入了哪怕一两个标记错误的异常点（比如本该是负类的样本被误标为正类，深陷在另一类腹地），因为它是无法被简单分类器切分开的，每一轮它都会被错分。
+而根据权重更新公式，每次错分都会让样本权重乘以 exp(alpha)。十轮二十轮过去，这个噪点的权重会呈指数级爆炸，占据全局极大比重！
+结果就是：后续的所有弱分类器都被这个噪点“绑架”了，强行扭曲边界去迁就它，最终导致极其严重的过拟合，模型在真实测试集上的泛化表现一落千丈。
+这也是为什么后续的梯度提升树（GBDT）会引入软损失函数与收缩率（学习率）来控制单步影响。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 19, total: 26 });
+  </script>
+</body>
+</html>

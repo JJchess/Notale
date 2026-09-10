@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>控制站点暴露、同步性、天气背景与土地覆盖混杂</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 页面特定布局与图解样式 */
+    #stage {
+      gap: 12px;
+      padding: 20px var(--pad-x) 16px;
+    }
+
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 24px;
+      flex-shrink: 0;
+    }
+
+    .header-main {
+      max-width: 1040px;
+    }
+
+    .header-main h1 {
+      margin-bottom: 4px;
+    }
+
+    .header-status {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+      background: var(--surface);
+      border: 2px solid var(--muted);
+      border-radius: 10px;
+      padding: 8px 16px;
+      min-width: 250px;
+      flex-shrink: 0;
+    }
+
+    .header-status .status-title {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-weight: 650;
+    }
+
+    .header-status .big {
+      color: var(--heat);
+      line-height: 1;
+      font-size: 46px;
+    }
+
+    .header-status .status-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    /* 4 个控制维度矩阵面板 */
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .factor-btn {
+      display: flex;
+      flex-direction: column;
+      text-align: left;
+      padding: 10px 12px;
+      background: var(--surface);
+      border: 2px solid var(--muted);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+      gap: 4px;
+    }
+
+    .factor-btn:hover {
+      border-color: var(--text);
+    }
+
+    .factor-btn[aria-pressed="true"] {
+      border-color: var(--focus);
+      box-shadow: 0 0 0 1px var(--focus);
+      background: #FFFFFF;
+    }
+
+    .factor-btn-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+    }
+
+    .factor-name {
+      font-weight: 720;
+      font-size: var(--fs-sec);
+      color: var(--text);
+    }
+
+    .factor-brief {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .toggle-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: var(--fs-tick);
+      font-weight: 700;
+    }
+
+    /* 主比较区 */
+    .main-stage {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 410px;
+      gap: 16px;
+    }
+
+    .vis-panel {
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border: 2px solid var(--muted);
+      border-radius: 10px;
+      padding: 12px 18px;
+      position: relative;
+    }
+
+    .vis-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      flex-shrink: 0;
+    }
+
+    .vis-title {
+      font-size: var(--fs-h2);
+      font-weight: 720;
+      color: var(--text);
+    }
+
+    .vis-canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      width: 100%;
+    }
+
+    /* 右侧解析面板 */
+    .detail-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+      justify-content: space-between;
+    }
+
+    .breakdown-card {
+      background: var(--surface);
+      border: 2px solid var(--muted);
+      border-radius: 10px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .breakdown-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      border-bottom: 1px solid var(--surface-strong);
+      font-size: var(--fs-sec);
+    }
+
+    .breakdown-item:last-child {
+      border-bottom: none;
+    }
+
+    .breakdown-label {
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .breakdown-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: var(--fs-sec);
+    }
+
+    .breakdown-val.bias {
+      color: var(--uncertain);
+    }
+
+    .breakdown-val.good {
+      color: var(--cooling);
+    }
+
+    .rule-card {
+      background: var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: var(--fs-tick);
+      line-height: 1.45;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+
+    .rule-card strong {
+      color: var(--focus);
+    }
+
+    .action-bar {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .action-btns {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .action-bar .hint {
+      font-size: var(--fs-tick);
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body data-page="13" data-total="19">
+  <div id="stage">
+    <!-- 顶栏：标题与导语 + 估算热岛强度读数 -->
+    <header class="header-row">
+      <div class="header-main min0">
+        <h1>可信的城市—参照区比较需要控制四大混杂来源</h1>
+        <p class="lead">
+          热岛强度并非简单的两站温差。若未严格控制<strong>站点暴露</strong>、<strong>观测同步性</strong>、<strong>天气背景</strong>与<strong>土地覆盖混杂</strong>，测出的温差往往大量混入非热岛偏差。
+        </p>
+      </div>
+      <div class="header-status min0">
+        <span class="status-title">表观计算热岛温差 (ΔT)</span>
+        <div class="big"><span id="apparentDelta" class="num">+2.9</span><span class="unit">°C</span></div>
+        <div class="status-sub">真热岛效应：<strong id="trueUhiVal" class="num">+1.9</strong>°C ｜ 混杂误差：<span id="biasDelta" class="num">+1.0</span>°C</div>
+      </div>
+    </header>
+
+    <!-- 四大混杂控制开关 -->
+    <section class="controls-grid" aria-label="四大实验控制维度">
+      <button class="factor-btn min0" id="btnExposure" aria-pressed="false" data-factor="exposure">
+        <div class="factor-btn-top">
+          <span class="tag" data-kind="uncertain" id="tagExposure">待校正</span>
+          <span class="toggle-state">控制站点暴露</span>
+        </div>
+        <div class="factor-name">① 站点微环境暴露</div>
+        <div class="factor-brief" id="descExposure">未校准：郊区站设于深冷低洼处，城市站紧邻排热空调口</div>
+      </button>
+
+      <button class="factor-btn min0" id="btnSync" aria-pressed="false" data-factor="sync">
+        <div class="factor-btn-top">
+          <span class="tag" data-kind="uncertain" id="tagSync">未同步</span>
+          <span class="toggle-state">严格时相差</span>
+        </div>
+        <div class="factor-name">② 采样观测同步性</div>
+        <div class="factor-brief" id="descSync">走航时差 45 分钟，且混入日落快速降温相位的自然衰减</div>
+      </button>
+
+      <button class="factor-btn min0" id="btnWeather" aria-pressed="false" data-factor="weather">
+        <div class="factor-btn-top">
+          <span class="tag" data-kind="uncertain" id="tagWeather">大风天气</span>
+          <span class="toggle-state">筛选均质天气</span>
+        </div>
+        <div class="factor-name">③ 天气背景与风速</div>
+        <div class="factor-brief" id="descWeather">4.5 m/s 强风平流将城市暖空气吹向郊区，热岛特征被强行抹平</div>
+      </button>
+
+      <button class="factor-btn min0" id="btnCover" aria-pressed="false" data-factor="cover">
+        <div class="factor-btn-top">
+          <span class="tag" data-kind="uncertain" id="tagCover">LCZ 不对齐</span>
+          <span class="toggle-state">局地气候区匹配</span>
+        </div>
+        <div class="factor-name">④ 土地覆盖与高程</div>
+        <div class="factor-brief" id="descCover">郊区站处于高海拔林区，混杂了海拔垂直递减率与湿地冷源效应</div>
+      </button>
+    </section>
+
+    <!-- 主展示区：左侧测线剖面与误差构成图，右侧误差拆解卡片 -->
+    <main class="main-stage">
+      <div class="vis-panel min0">
+        <div class="vis-panel-header">
+          <div class="vis-title">城市—郊野站点温度剖面与偏差拆解</div>
+          <div class="legend">
+            <span class="li"><span class="sw" style="background:var(--heat); border-color:var(--heat)"></span>表观测量曲线</span>
+            <span class="li"><span class="sw" style="background:var(--observed); border-color:var(--observed)"></span>基准真实气温 (控制后)</span>
+            <span class="li"><span class="sw" style="background:var(--uncertain); border-color:var(--uncertain)"></span>混杂误差带</span>
+          </div>
+        </div>
+        <div class="vis-canvas-wrap">
+          <canvas id="profileCanvas" class="cv-fill"></canvas>
+        </div>
+      </div>
+
+      <aside class="detail-panel min0">
+        <div class="breakdown-card">
+          <h2 style="font-size: var(--fs-h2);">温差分量与误差账本</h2>
+          <div class="breakdown-item">
+            <span class="breakdown-label">基准真热岛 (ΔT<sub>true</sub>)</span>
+            <span class="breakdown-val good">+1.9 °C</span>
+          </div>
+          <div class="breakdown-item">
+            <span class="breakdown-label">① 暴露微环境偏差</span>
+            <span class="breakdown-val bias" id="valExposure">+0.8 °C</span>
+          </div>
+          <div class="breakdown-item">
+            <span class="breakdown-label">② 时间不同步衰减</span>
+            <span class="breakdown-val bias" id="valSync">-0.6 °C</span>
+          </div>
+          <div class="breakdown-item">
+            <span class="breakdown-label">③ 平流风吹散削弱</span>
+            <span class="breakdown-val bias" id="valWeather">-1.1 °C</span>
+          </div>
+          <div class="breakdown-item">
+            <span class="breakdown-label">④ 参照区下垫面混杂</span>
+            <span class="breakdown-val bias" id="valCover">+1.9 °C</span>
+          </div>
+          <div class="breakdown-item" style="border-top: 2px solid var(--muted); margin-top: 4px; padding-top: 6px;">
+            <span class="breakdown-label"><strong>综合表观温差 (测量值)</strong></span>
+            <strong class="breakdown-val" id="valTotal" style="color:var(--heat); font-size: 19px;">+2.9 °C</strong>
+          </div>
+        </div>
+
+        <div class="rule-card">
+          <strong>科学测量准则 (WMO)：</strong><br>
+          ① 参照站与城区具备相似宏观天气与相近高程，无冷湖地形；② 走航必经时相归一消除降温衰减；③ 测点距排热器与暴晒硬化面保持缓冲。四项皆受控时，测得温差方为真实热岛。
+        </div>
+
+        <div class="action-bar">
+          <div class="action-btns">
+            <button class="btn" id="btnResetAll" style="font-size: var(--fs-label); min-height: 38px; padding: 6px 14px;">重置全部干扰</button>
+            <button class="btn" id="btnControlAll" style="font-size: var(--fs-label); min-height: 38px; padding: 6px 14px; background: var(--observed); border-color: var(--observed); color: #fff;">一键全部校正</button>
+          </div>
+          <span class="hint" id="statusHint">点击上方任意卡片查看单独控制的效果</span>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 13, total: 19 });
+
+      // 因子状态：false 表示存在混杂偏差（未控制），true 表示已严格控制/校准
+      const state = {
+        exposure: false,
+        sync: false,
+        weather: false,
+        cover: false
+      };
+
+      // 常量：真实热岛温差
+      const TRUE_UHI = 1.9;
+
+      // 各因子的偏差贡献 (°C) [未控制时, 控制后]
+      const FACTOR_BIAS = {
+        exposure: { raw: +0.8, controlled: 0.0, name: "微环境暴露" },
+        sync: { raw: -0.6, controlled: 0.0, name: "时相异步" },
+        weather: { raw: -1.1, controlled: 0.0, name: "强风平流" },
+        cover: { raw: +1.9, controlled: 0.0, name: "土地覆盖/高程" }
+      };
+
+      // 因子说明与标签文案
+      const FACTOR_TEXTS = {
+        exposure: {
+          off: { tag: "待校正", kind: "uncertain", desc: "未校准：郊区站设于深冷凹地，城市站紧邻空调出风口" },
+          on: { tag: "已校准", kind: "cooling", desc: "已规范：标准百叶箱距地 1.5m，开阔草坪，排热源安全距离" }
+        },
+        sync: {
+          off: { tag: "未同步", kind: "uncertain", desc: "走航时差 45 分钟，混入傍晚自然辐射冷却的系统性降温" },
+          on: { tag: "时相归一", kind: "cooling", desc: "时间标定：通过多站温度时间序列逆推归一到同一基准时刻" }
+        },
+        weather: {
+          off: { tag: "大风天气", kind: "uncertain", desc: "4.5 m/s 强风将城区热羽流快速吹散，表观热岛被过度压低" },
+          on: { tag: "静稳微风", kind: "cooling", desc: "限定晴朗静稳（风速 < 2 m/s），热岛充分显现且空间稳定" }
+        },
+        cover: {
+          off: { tag: "LCZ 不对齐", kind: "uncertain", desc: "郊区站处于高海拔密林，混入了 150m 高程降温与强蒸腾效应" },
+          on: { tag: "LCZ 匹配", kind: "cooling", desc: "高程对齐且下垫面均为标准开阔低矮植被 (LCZ D/B)，无高差干扰" }
+        }
+      };
+
+      const profileCanvas = document.getElementById("profileCanvas");
+      const ctx = profileCanvas.getContext("2d");
+
+      const btnExposure = document.getElementById("btnExposure");
+      const btnSync = document.getElementById("btnSync");
+      const btnWeather = document.getElementById("btnWeather");
+      const btnCover = document.getElementById("btnCover");
+
+      const btnResetAll = document.getElementById("btnResetAll");
+      const btnControlAll = document.getElementById("btnControlAll");
+
+      const apparentDeltaEl = document.getElementById("apparentDelta");
+      const biasDeltaEl = document.getElementById("biasDelta");
+      const valExposure = document.getElementById("valExposure");
+      const valSync = document.getElementById("valSync");
+      const valWeather = document.getElementById("valWeather");
+      const valCover = document.getElementById("valCover");
+      const valTotal = document.getElementById("valTotal");
+      const statusHint = document.getElementById("statusHint");
+
+      function updateUI() {
+        const bExposure = state.exposure ? FACTOR_BIAS.exposure.controlled : FACTOR_BIAS.exposure.raw;
+        const bSync = state.sync ? FACTOR_BIAS.sync.controlled : FACTOR_BIAS.sync.raw;
+        const bWeather = state.weather ? FACTOR_BIAS.weather.controlled : FACTOR_BIAS.weather.raw;
+        const bCover = state.cover ? FACTOR_BIAS.cover.controlled : FACTOR_BIAS.cover.raw;
+
+        const totalBias = bExposure + bSync + bWeather + bCover;
+        const apparentUHI = TRUE_UHI + totalBias;
+
+        apparentDeltaEl.textContent = (apparentUHI >= 0 ? "+" : "") + apparentUHI.toFixed(1);
+        biasDeltaEl.textContent = (totalBias >= 0 ? "+" : "") + totalBias.toFixed(1);
+
+        valExposure.textContent = (bExposure >= 0 ? "+" : "") + bExposure.toFixed(1) + " °C";
+        valExposure.className = "breakdown-val " + (state.exposure ? "good" : "bias");
+
+        valSync.textContent = (bSync >= 0 ? "+" : "") + bSync.toFixed(1) + " °C";
+        valSync.className = "breakdown-val " + (state.sync ? "good" : "bias");
+
+        valWeather.textContent = (bWeather >= 0 ? "+" : "") + bWeather.toFixed(1) + " °C";
+        valWeather.className = "breakdown-val " + (state.weather ? "good" : "bias");
+
+        valCover.textContent = (bCover >= 0 ? "+" : "") + bCover.toFixed(1) + " °C";
+        valCover.className = "breakdown-val " + (state.cover ? "good" : "bias");
+
+        valTotal.textContent = (apparentUHI >= 0 ? "+" : "") + apparentUHI.toFixed(1) + " °C";
+
+        // 更新按钮视觉
+        [
+          { el: btnExposure, factor: "exposure", tagId: "tagExposure", descId: "descExposure" },
+          { el: btnSync, factor: "sync", tagId: "tagSync", descId: "descSync" },
+          { el: btnWeather, factor: "weather", tagId: "tagWeather", descId: "descWeather" },
+          { el: btnCover, factor: "cover", tagId: "tagCover", descId: "descCover" }
+        ].forEach(({ el, factor, tagId, descId }) => {
+          const isControlled = state[factor];
+          el.setAttribute("aria-pressed", isControlled ? "true" : "false");
+          const conf = isControlled ? FACTOR_TEXTS[factor].on : FACTOR_TEXTS[factor].off;
+          const tagEl = document.getElementById(tagId);
+          tagEl.textContent = conf.tag;
+          tagEl.setAttribute("data-kind", conf.kind);
+          document.getElementById(descId).textContent = conf.desc;
+        });
+
+        const controlledCount = Object.values(state).filter(Boolean).length;
+        if (controlledCount === 4) {
+          statusHint.textContent = "已完全控制四大混杂来源：表观测量温差精确回归真实热岛强度！";
+          statusHint.style.color = "var(--cooling)";
+          apparentDeltaEl.style.color = "var(--cooling)";
+        } else if (controlledCount === 0) {
+          statusHint.textContent = "全部干扰均存在：表观温差混入 +1.9°C 的巨大系统误差，结论不可信。";
+          statusHint.style.color = "var(--heat)";
+          apparentDeltaEl.style.color = "var(--heat)";
+        } else {
+          statusHint.textContent = `已控制 ${controlledCount}/4 项：仍有残余偏差 ${(totalBias >= 0 ? "+" : "") + totalBias.toFixed(1)}°C。`;
+          statusHint.style.color = "var(--text)";
+          apparentDeltaEl.style.color = "var(--heat)";
+        }
+
+        drawProfile();
+      }
+
+      // 绘制横截面空间剖面图：郊野(西) -> 城市过渡带 -> 城市中心 -> 郊野(东)
+      function drawProfile() {
+        const w = profileCanvas.width;
+        const h = profileCanvas.height;
+        if (!w || !h) return;
+
+        ctx.clearRect(0, 0, w, h);
+
+        const padLeft = 70;
+        const padRight = 50;
+        const padTop = 40;
+        const padBottom = 60;
+        const plotW = w - padLeft - padRight;
+        const plotH = h - padTop - padBottom;
+
+        // 温度范围：20°C 到 32°C
+        const tMin = 21;
+        const tMax = 31;
+        const getY = (t) => padTop + (1 - (t - tMin) / (tMax - tMin)) * plotH;
+        const getX = (pct) => padLeft + pct * plotW;
+
+        // 背景刻度网格
+        ctx.strokeStyle = "#D2DEE1";
+        ctx.lineWidth = 1;
+        ctx.font = "13px Bahnschrift, 'Noto Sans SC', sans-serif";
+        ctx.fillStyle = "#50646B";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+
+        for (let t = 22; t <= 30; t += 2) {
+          const y = getY(t);
+          ctx.beginPath();
+          ctx.moveTo(padLeft, y);
+          ctx.lineTo(w - padRight, y);
+          ctx.stroke();
+          ctx.fillText(t + "°C", padLeft - 10, y);
+        }
+
+        // X轴刻度与区域划分标记
+        const zones = [
+          { name: "郊区参照站 (西)", pct: 0.12, type: "rural" },
+          { name: "郊区边缘", pct: 0.32, type: "suburb" },
+          { name: "城市核心区 (站A)", pct: 0.60, type: "urban" },
+          { name: "次级城区 (站B)", pct: 0.88, type: "suburb" }
+        ];
+
+        ctx.strokeStyle = "#50646B";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(padLeft, padTop + plotH);
+        ctx.lineTo(w - padRight, padTop + plotH);
+        ctx.stroke();
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        zones.forEach(z => {
+          const x = getX(z.pct);
+          ctx.beginPath();
+          ctx.moveTo(x, padTop + plotH);
+          ctx.lineTo(x, padTop + plotH + 6);
+          ctx.stroke();
+          ctx.fillText(z.name, x, padTop + plotH + 10);
+        });
+
+        // 真实温度剖面（基准线）：郊区 23.5°C，城市中心 25.4°C (+1.9°C)
+        // 关键测站：郊区参照站 (p = 0.12)，城市核心区 (p = 0.60)
+        const bExposure = state.exposure ? 0 : FACTOR_BIAS.exposure.raw;
+        const bSync = state.sync ? 0 : FACTOR_BIAS.sync.raw;
+        const bWeather = state.weather ? 0 : FACTOR_BIAS.weather.raw;
+        const bCover = state.cover ? 0 : FACTOR_BIAS.cover.raw;
+
+        const pointsCount = 100;
+        const trueCurve = [];
+        for (let i = 0; i <= pointsCount; i++) {
+          const p = i / pointsCount;
+          const urbanFactor = Math.exp(-Math.pow((p - 0.60) / 0.20, 2));
+          const t = 23.5 + TRUE_UHI * urbanFactor;
+          trueCurve.push({ x: getX(p), y: getY(t), t });
+        }
+
+        // 表观测量温度剖面
+        const apparentCurve = [];
+        for (let i = 0; i <= pointsCount; i++) {
+          const p = i / pointsCount;
+          let heatAmp = TRUE_UHI;
+          let centerP = 0.60;
+          let heatW = 0.20;
+
+          if (!state.weather) {
+            heatAmp += bWeather; // 强风平流吹散
+            centerP += 0.08;
+            heatW = 0.30;
+          }
+
+          let t = 23.5 + heatAmp * Math.exp(-Math.pow((p - centerP) / heatW, 2));
+
+          // 土地覆盖/高程混杂
+          if (!state.cover) {
+            t -= Math.max(0, 1 - p / 0.35) * bCover;
+          }
+
+          // 站点暴露微环境
+          if (!state.exposure) {
+            t += bExposure * Math.exp(-Math.pow((p - 0.60) / 0.10, 2));
+          }
+
+          // 观测时相异步
+          if (!state.sync) {
+            t += bSync * (p / 0.60);
+          }
+
+          apparentCurve.push({ x: getX(p), y: getY(t), t });
+        }
+
+        // 绘制误差阴影带 (Uncertain Band)
+        ctx.fillStyle = "rgba(115, 95, 42, 0.16)";
+        ctx.beginPath();
+        ctx.moveTo(trueCurve[0].x, trueCurve[0].y);
+        for (let i = 1; i <= pointsCount; i++) {
+          ctx.lineTo(trueCurve[i].x, trueCurve[i].y);
+        }
+        for (let i = pointsCount; i >= 0; i--) {
+          ctx.lineTo(apparentCurve[i].x, apparentCurve[i].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        // 绘制基准真实温度线 (Observed / Reference)
+        ctx.strokeStyle = "#255F73";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(trueCurve[0].x, trueCurve[0].y);
+        for (let i = 1; i <= pointsCount; i++) {
+          ctx.lineTo(trueCurve[i].x, trueCurve[i].y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 绘制表观测量线 (Apparent Measurement)
+        ctx.strokeStyle = "#C63F20";
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.moveTo(apparentCurve[0].x, apparentCurve[0].y);
+        for (let i = 1; i <= pointsCount; i++) {
+          ctx.lineTo(apparentCurve[i].x, apparentCurve[i].y);
+        }
+        ctx.stroke();
+
+        // 关键测站节点打点与直接标注 (西端参照站 p=0.12, 城市核心站 p=0.60)
+        const ruralPIdx = Math.round(0.12 * pointsCount);
+        const urbanPIdx = Math.round(0.60 * pointsCount);
+
+        const rTrue = trueCurve[ruralPIdx];
+        const rApp = apparentCurve[ruralPIdx];
+        const uTrue = trueCurve[urbanPIdx];
+        const uApp = apparentCurve[urbanPIdx];
+
+        const allControlled = state.exposure && state.sync && state.weather && state.cover;
+
+        function drawPoint(pt, color, label, yOffset = -14) {
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = "#FFFFFF";
+          ctx.stroke();
+
+          ctx.fillStyle = "#17282E";
+          ctx.font = "bold 13px Bahnschrift, 'Noto Sans SC', sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(label, pt.x, pt.y + yOffset);
+        }
+
+        if (allControlled) {
+          drawPoint(rTrue, "#176B82", `真/测郊温 23.5°C`, -16);
+          drawPoint(uTrue, "#176B82", `真/测城温 25.4°C`, -16);
+        } else {
+          drawPoint(rTrue, "#255F73", `真郊温 ${rTrue.t.toFixed(1)}°C`, -16);
+          drawPoint(rApp, "#C63F20", `表观 ${rApp.t.toFixed(1)}°C`, 22);
+
+          drawPoint(uTrue, "#255F73", `真城温 ${uTrue.t.toFixed(1)}°C`, -16);
+          drawPoint(uApp, "#C63F20", `表观 ${uApp.t.toFixed(1)}°C`, 22);
+        }
+
+        // 绘制两站温差标注连线
+        const measuredDelta = (uApp.t - rApp.t).toFixed(1);
+
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = "#C63F20";
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(rApp.x, rApp.y);
+        ctx.lineTo(uApp.x, rApp.y);
+        ctx.lineTo(uApp.x, uApp.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = "#C63F20";
+        ctx.font = "bold 15px Bahnschrift, sans-serif";
+        ctx.textAlign = "left";
+        const sign = Number(measuredDelta) >= 0 ? "+" : "";
+        ctx.fillText(`ΔT测 = ${sign}${measuredDelta}°C`, uApp.x + 14, (rApp.y + uApp.y) / 2);
+      }
+
+      // 绑定交互
+      function setupListeners() {
+        const factors = ["exposure", "sync", "weather", "cover"];
+        factors.forEach(f => {
+          const btn = document.getElementById("btn" + f.charAt(0).toUpperCase() + f.slice(1));
+          btn.addEventListener("click", () => {
+            state[f] = !state[f];
+            updateUI();
+          });
+        });
+
+        btnResetAll.addEventListener("click", () => {
+          factors.forEach(f => state[f] = false);
+          updateUI();
+        });
+
+        btnControlAll.addEventListener("click", () => {
+          factors.forEach(f => state[f] = true);
+          updateUI();
+        });
+
+        // 键盘无障碍：数字键 1-4 切换
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "1") { state.exposure = !state.exposure; updateUI(); }
+          if (e.key === "2") { state.sync = !state.sync; updateUI(); }
+          if (e.key === "3") { state.weather = !state.weather; updateUI(); }
+          if (e.key === "4") { state.cover = !state.cover; updateUI(); }
+          if (e.key.toLowerCase() === "r") {
+            factors.forEach(f => state[f] = false);
+            updateUI();
+          }
+        });
+      }
+
+      Deck.autofit(profileCanvas, drawProfile);
+      setupListeners();
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,600 @@
+<!--
+构图意图：
+1. 主对象是集成学习策略选择沙盘（决策矩阵与场景探针），包含高方差、欠拟合、含噪标签、算力受限四大典型场景。
+2. 对象关系表现为：场景特性探针（方差/偏差/噪声敏感度/算力消耗）与三种核心集成范式（Bagging、Boosting、Stacking）的物理制约匹配与实测代价映射。
+3. 说明与结论依附在决策评估台与诊断读数面板旁，操作即时反映在模型性能、训练延迟与泛化收益三维雷达条上。
+-->
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>为不同场景选择集成策略</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans SC", sans-serif;
+      --font-numeric: Lato, "Noto Sans SC", sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-sans); overflow: hidden; }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: 38px 56px 32px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 14px;
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      font-size: var(--fs-body);
+      color: var(--muted);
+      margin-left: 20px;
+    }
+    .header-left {
+      display: flex;
+      align-items: baseline;
+    }
+
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 370px 1fr;
+      gap: 48px;
+      padding-top: 26px;
+      min-height: 0;
+    }
+
+    /* 场景选择栏 */
+    .scenario-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .col-title {
+      font-size: var(--fs-label);
+      font-weight: var(--weight-medium);
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      margin-bottom: 2px;
+    }
+    .scenario-btn {
+      background: transparent;
+      border: 0;
+      border-left: 3px solid var(--line);
+      padding: 10px 14px;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: border-color var(--duration-fast), background var(--duration-fast);
+    }
+    .scenario-btn:hover {
+      border-left-color: var(--text);
+    }
+    .scenario-btn.active {
+      border-left: 4px solid var(--aggregate);
+      background: transparent;
+      padding-left: 13px;
+    }
+    .scenario-name {
+      font-size: var(--fs-body);
+      font-weight: var(--weight-bold);
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .scenario-tag {
+      font-size: var(--fs-tick);
+      font-weight: 400;
+      color: var(--muted);
+      font-family: var(--font-numeric);
+    }
+    .scenario-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 工作台与决策区 */
+    .workbench {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      min-height: 0;
+    }
+
+    /* 策略比选面板 */
+    .strategy-deck {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    .strategy-card {
+      border: 0;
+      border-top: 2px solid var(--line);
+      padding: 12px 6px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: border-color var(--duration-fast), background var(--duration-fast);
+      background: transparent;
+    }
+    .strategy-card:hover {
+      border-top-color: var(--text);
+    }
+    .strategy-card.selected {
+      border-top: 4px solid var(--focus);
+      padding-top: 10px;
+    }
+    .strat-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .strat-title {
+      font-size: var(--fs-lead);
+      font-weight: var(--weight-bold);
+      color: var(--text);
+    }
+    .strat-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .strat-mechanism {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 模拟评估沙盘 */
+    .eval-arena {
+      flex: 1;
+      border-top: 1px solid var(--line);
+      padding-top: 20px;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 36px;
+      min-height: 0;
+    }
+
+    .radar-box {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      justify-content: center;
+    }
+
+    .metric-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .metric-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--text);
+      font-weight: var(--weight-medium);
+    }
+    .metric-val {
+      font-family: var(--font-numeric);
+      font-weight: var(--weight-bold);
+      font-size: var(--fs-body);
+    }
+    .metric-track {
+      height: 10px;
+      background: rgba(116, 129, 124, 0.25);
+      border-radius: 2px;
+      position: relative;
+      overflow: hidden;
+    }
+    .metric-fill {
+      position: absolute;
+      top: 0; bottom: 0; left: 0;
+      border-radius: 2px;
+      transition: width var(--duration-step) var(--ease-join), background var(--duration-fast);
+    }
+
+    /* 诊断解读 */
+    .diagnosis-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding-left: 24px;
+      border-left: 1px solid var(--line);
+    }
+    .verdict-badge {
+      display: inline-block;
+      font-size: var(--fs-label);
+      font-weight: var(--weight-bold);
+      padding: 4px 10px;
+      border-radius: 2px;
+      align-self: flex-start;
+      margin-bottom: 12px;
+    }
+    .badge-optimal {
+      background: var(--aggregate);
+      color: #FFF;
+    }
+    .badge-suboptimal {
+      background: var(--uncertain);
+      color: #FFF;
+    }
+    .badge-danger {
+      background: var(--focus);
+      color: #FFF;
+    }
+    .diagnosis-text {
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+      color: var(--text);
+    }
+    .diagnosis-risk {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin-top: 14px;
+      line-height: var(--lh-copy);
+    }
+
+    /* 底部关键提示 */
+    footer {
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body data-page="25" data-total="26">
+  <div id="stage">
+    <header>
+      <div class="header-left">
+        <h1>策略匹配沙盘</h1>
+        <span class="lead">依据方差、偏差、噪声与算力约束选择最佳策略</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- 场景探针列表 -->
+      <section class="scenario-col" aria-label="典型应用场景">
+        <div class="col-title">选择业务场景</div>
+        <button type="button" class="scenario-btn active" data-s="variance" id="btn-sc-variance">
+          <div class="scenario-name">
+            <span>高方差 · 树过拟合</span>
+            <span class="scenario-tag">Var ↑↑</span>
+          </div>
+          <p class="scenario-desc">单树深度过大、特征多、训练误差极低但在验证集剧烈抖动。</p>
+        </button>
+
+        <button type="button" class="scenario-btn" data-s="bias" id="btn-sc-bias">
+          <div class="scenario-name">
+            <span>高偏差 · 欠拟合</span>
+            <span class="scenario-tag">Bias ↑↑</span>
+          </div>
+          <p class="scenario-desc">单模型容量不足，强非线性边界被抹平成粗糙平面。</p>
+        </button>
+
+        <button type="button" class="scenario-btn" data-s="noisy" id="btn-sc-noisy">
+          <div class="scenario-name">
+            <span>标签含噪 · 异常混杂</span>
+            <span class="scenario-tag">Noise 15%</span>
+          </div>
+          <p class="scenario-desc">工业传感器或人工标注存在 15% 错误翻转标签。</p>
+        </button>
+
+        <button type="button" class="scenario-btn" data-s="latency" id="btn-sc-latency">
+          <div class="scenario-name">
+            <span>算力紧缺 · 低延迟</span>
+            <span class="scenario-tag">CPU ≤ 2 核</span>
+          </div>
+          <p class="scenario-desc">边缘端推断，需充分利用多核并行或极小串行深度。</p>
+        </button>
+      </section>
+
+      <!-- 策略选择与实测评估 -->
+      <section class="workbench" aria-label="集成策略比选与模拟">
+        <div class="col-title">指派集成方案</div>
+        <div class="strategy-deck" role="radiogroup">
+          <div class="strategy-card selected" data-strat="bagging" id="card-bagging" tabindex="0" role="radio" aria-checked="true">
+            <div class="strat-header">
+              <span class="strat-title">Bagging / 随机森林</span>
+              <span class="strat-sub">并行重采样</span>
+            </div>
+            <p class="strat-mechanism">并行训练相互独立的强基学习器，投票或平均输出。</p>
+          </div>
+
+          <div class="strategy-card" data-strat="boosting" id="card-boosting" tabindex="0" role="radio" aria-checked="false">
+            <div class="strat-header">
+              <span class="strat-title">Boosting / GBDT</span>
+              <span class="strat-sub">串行残差递进</span>
+            </div>
+            <p class="strat-mechanism">后继树拟合前序组合的残差或伪残差，逐步压低偏差。</p>
+          </div>
+
+          <div class="strategy-card" data-strat="stacking" id="card-stacking" tabindex="0" role="radio" aria-checked="false">
+            <div class="strat-header">
+              <span class="strat-title">Stacking / 多层堆叠</span>
+              <span class="strat-sub">折外融合元学习</span>
+            </div>
+            <p class="strat-mechanism">异构模型并行产出折外预测，元学习器加权合成。</p>
+          </div>
+        </div>
+
+        <div class="eval-arena">
+          <div class="radar-box">
+            <div class="metric-row">
+              <div class="metric-header">
+                <span>泛化误差降低 (Generalization Gain)</span>
+                <span class="metric-val" id="val-gain">+78%</span>
+              </div>
+              <div class="metric-track">
+                <div class="metric-fill" id="bar-gain" style="width: 78%; background: var(--aggregate);"></div>
+              </div>
+            </div>
+
+            <div class="metric-row">
+              <div class="metric-header">
+                <span>稳健性与抗噪度 (Robustness)</span>
+                <span class="metric-val" id="val-robust">高</span>
+              </div>
+              <div class="metric-track">
+                <div class="metric-fill" id="bar-robust" style="width: 85%; background: var(--model);"></div>
+              </div>
+            </div>
+
+            <div class="metric-row">
+              <div class="metric-header">
+                <span>训练与部署代价 (Compute Overhead)</span>
+                <span class="metric-val" id="val-cost">可完全并行</span>
+              </div>
+              <div class="metric-track">
+                <div class="metric-fill" id="bar-cost" style="width: 35%; background: var(--muted);"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="diagnosis-panel">
+            <div>
+              <span class="verdict-badge badge-optimal" id="diag-badge">最佳契合</span>
+              <p class="diagnosis-text" id="diag-desc">
+                Bagging 的自主采样与随机特征划分大幅解耦单树，集成后方差降幅接近 1/M，且各树互不影响，天然抗噪。
+              </p>
+            </div>
+            <p class="diagnosis-risk" id="diag-risk">
+              注意：若基模型偏差过大，Bagging 无法有效降低系统偏差。
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>原则：Bagging 主攻方差且容忍噪声；Boosting 强力消解偏差但极易过拟合噪声；Stacking 追求异构极限但训练成本最高。</span>
+      <span>点击或键盘切换场景与策略</span>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    在实际工程落地时，没有放之四海皆准的集成策略。我们通过方差、偏差、数据纯度与系统算力四个维度来锚定选型：
+    当基模型复杂度过高导致严重过拟合（高方差）时，Bagging 或随机森林是最优解，它通过重采样和子空间划分拉开模型差异，通过平均有效摊薄方差；
+    如果基模型拟合不足（高偏差），Boosting 逐轮盯住残差补刀，能在浅树基础上迅速压低偏差；
+    但请高度警惕含噪标签：Boosting 会赋予误标样本指数级上升的权重，造成对噪声的严重追逐与恶性过拟合；
+    在生产资源受限时，Bagging 的天然并行性能充分压榨多核并发，而深层 Stacking 虽然能挤出微弱增益，其交叉验证开销与维护复杂度往往得不偿失。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      // 领域知识与模型映射
+      const MATRIX = {
+        variance: {
+          bagging: {
+            gain: 88, robust: 85, cost: 35,
+            level: "optimal",
+            badge: "最佳契合",
+            desc: "Bagging 的重采样能大幅削减单树方差，扰动样本与特征空间拉开多样性，使泛化误差迅速收敛。",
+            risk: "提示：树深度不必过于压制，Bagging 依赖单树的低偏差与高多样性。"
+          },
+          boosting: {
+            gain: 52, robust: 40, cost: 65,
+            level: "suboptimal",
+            badge: "次优选择",
+            desc: "Boosting 虽能控制过拟合，但基学习器原本已方差过大，若正则项（学习率、深度）设置不当极易雪上加霜。",
+            risk: "风险：必须将树深缩减为弱剪枝浅树（max_depth=3~5），否则迭代过早过拟合。"
+          },
+          stacking: {
+            gain: 74, robust: 65, cost: 90,
+            level: "suboptimal",
+            badge: "代价偏高",
+            desc: "若基模型类型单一，多层 Stacking 并不能像 Bagging 那样单纯靠平均平滑方差，算力浪费明显。",
+            risk: "开销：需严格执行 K-Fold 折外预测以防二阶泄漏，实现复杂度高。"
+          }
+        },
+        bias: {
+          bagging: {
+            gain: 30, robust: 80, cost: 35,
+            level: "danger",
+            badge: "方向错误",
+            desc: "Bagging 的数学本质是期望不变、方差降低。若单模型欠拟合（偏差过高），均值操作完全无法降低偏差。",
+            risk: "致命缺陷：即使堆叠 1000 棵简单树，整体精度依然受限于单树的拟合天花板。"
+          },
+          boosting: {
+            gain: 92, robust: 70, cost: 55,
+            level: "optimal",
+            badge: "最佳契合",
+            desc: "Boosting 每轮专门拟合未解决的残差，能将弱学习器逐步推向极高拟合度的非线性强集成判决边界。",
+            risk: "优势机制：加性模型 + 前向分步算法，专为攻克系统性偏差而生。"
+          },
+          stacking: {
+            gain: 78, robust: 72, cost: 85,
+            level: "suboptimal",
+            badge: "有效但冗余",
+            desc: "若元模型采用非线性学习器，可弥补底层偏差，但调参代价与解释性远差于直接用 GBDT/XGBoost。",
+            risk: "建议：仅在需要融合线性模型与树模型的非对称特征时考虑。"
+          }
+        },
+        noisy: {
+          bagging: {
+            gain: 82, robust: 90, cost: 35,
+            level: "optimal",
+            badge: "最佳契合",
+            desc: "由于各树独立训练且等权投票，少量脏样本只会被少数子模型偶然学到，在全局投票中轻易被多数抑制。",
+            risk: "稳健特性：对离群点和误标标签具有天然的免疫力。"
+          },
+          boosting: {
+            gain: 25, robust: 15, cost: 60,
+            level: "danger",
+            badge: "严重受阻",
+            desc: "Boosting 会把噪声标签误判为“极难分类样本”，导致后续轮次疯狂加权追逐噪声，迅速摧毁测试集性能。",
+            risk: "灾难机制：AdaBoost 指数损失或 GBDT 大梯度会完全被离群噪点绑架。"
+          },
+          stacking: {
+            gain: 60, robust: 55, cost: 85,
+            level: "suboptimal",
+            badge: "中等抗性",
+            desc: "折外交叉验证能抑制内部过拟合，但若底层模型包含易受噪声污染的学习器，元特征仍会带偏整体。",
+            risk: "门槛：基分类器需预先剔除对异常敏感的模型。"
+          }
+        },
+        latency: {
+          bagging: {
+            gain: 78, robust: 75, cost: 20,
+            level: "optimal",
+            badge: "并行利器",
+            desc: "各基模型完全无依赖关系，训练可瞬间分摊至所有 CPU 核心；推断阶段同样支持向量化并发执行。",
+            risk: "性能收益：多核服务器上几乎获得线性加速比。"
+          },
+          boosting: {
+            gain: 65, robust: 60, cost: 70,
+            level: "suboptimal",
+            badge: "强依赖串行",
+            desc: "第 m 棵树必须等待第 m-1 棵树完成残差更新后才能构建，单模型训练流水线存在不可避免的串行瓶颈。",
+            risk: "工程限制：即使 GPU 加速直方图构建，树间前后依赖依然严格存在。"
+          },
+          stacking: {
+            gain: 55, robust: 50, cost: 98,
+            level: "danger",
+            badge: "算力黑洞",
+            desc: "K 折折外预测要求对每个基模型训练 K 次，再训练元模型，推断时必须加载所有模型，内存与延迟极高。",
+            risk: "部署灾难：通常只用于竞赛刷榜，工业在线低延迟服务极少裸部署 Stacking。"
+          }
+        }
+      };
+
+      // 权威状态
+      let state = {
+        scenario: "variance",
+        strategy: "bagging"
+      };
+
+      const scBtns = document.querySelectorAll(".scenario-btn");
+      const stratCards = document.querySelectorAll(".strategy-card");
+      const barGain = document.getElementById("bar-gain");
+      const barRobust = document.getElementById("bar-robust");
+      const barCost = document.getElementById("bar-cost");
+      const valGain = document.getElementById("val-gain");
+      const valRobust = document.getElementById("val-robust");
+      const valCost = document.getElementById("val-cost");
+      const diagBadge = document.getElementById("diag-badge");
+      const diagDesc = document.getElementById("diag-desc");
+      const diagRisk = document.getElementById("diag-risk");
+
+      function updateUI() {
+        // 更新激活按钮与卡片
+        scBtns.forEach(btn => {
+          btn.classList.toggle("active", btn.dataset.s === state.scenario);
+        });
+        stratCards.forEach(card => {
+          const isSel = card.dataset.strat === state.strategy;
+          card.classList.toggle("selected", isSel);
+          card.setAttribute("aria-checked", isSel ? "true" : "false");
+        });
+
+        // 查阅实测状态
+        const outcome = MATRIX[state.scenario][state.strategy];
+
+        // 条形指标更新
+        barGain.style.width = outcome.gain + "%";
+        valGain.textContent = "+" + outcome.gain + "%";
+        barGain.style.background = outcome.level === "optimal" ? "var(--aggregate)" :
+                                   outcome.level === "suboptimal" ? "var(--model)" : "var(--focus)";
+
+        barRobust.style.width = outcome.robust + "%";
+        valRobust.textContent = outcome.robust >= 80 ? "极高" : outcome.robust >= 50 ? "中等" : "极差";
+        barRobust.style.background = outcome.robust >= 70 ? "var(--model)" : "var(--uncertain)";
+
+        barCost.style.width = outcome.cost + "%";
+        valCost.textContent = outcome.cost <= 40 ? "优 (可并发)" : outcome.cost <= 70 ? "中 (串行)" : "极重 (多折多层)";
+
+        // 诊断文案
+        diagBadge.textContent = outcome.badge;
+        diagBadge.className = "verdict-badge badge-" + outcome.level;
+        diagDesc.textContent = outcome.desc;
+        diagRisk.textContent = outcome.risk;
+      }
+
+      // 事件派发
+      scBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          state.scenario = btn.dataset.s;
+          updateUI();
+        });
+      });
+
+      stratCards.forEach(card => {
+        card.addEventListener("click", () => {
+          state.strategy = card.dataset.strat;
+          updateUI();
+        });
+        card.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            state.strategy = card.dataset.strat;
+            updateUI();
+          }
+        });
+      });
+
+      // 初始化
+      updateUI();
+      Deck.init({ index: 25, total: 26, keys: true });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      position: relative;
+    }
+
+    #stream-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .cover-content {
+      position: absolute;
+      left: 108px;
+      top: 248px;
+      width: 620px;
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .lecture-label {
+      font-size: var(--fs-sec);
+      font-weight: var(--weight-medium);
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      margin: 0 0 20px 2px;
+      text-transform: uppercase;
+    }
+
+    .cover-title {
+      font-family: var(--font-display);
+      font-size: 76px;
+      font-weight: var(--weight-bold);
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      margin: 0 0 24px 0;
+    }
+
+    .cover-lead {
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      max-width: 520px;
+      margin: 0;
+    }
+
+    .convergence-badge {
+      position: absolute;
+      left: 1220px;
+      top: 360px;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+      pointer-events: none;
+    }
+
+    .badge-label {
+      font-size: var(--fs-label);
+      font-weight: var(--weight-medium);
+      color: var(--aggregate);
+      letter-spacing: 0.08em;
+    }
+
+    .badge-sub {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+  </style>
+</head>
+<body data-page="01" data-total="26">
+  <div id="stage">
+    <canvas id="stream-canvas" class="cv-fill" aria-hidden="true"></canvas>
+
+    <div class="cover-content">
+      <p class="lecture-label">机器学习概论 · 第八讲</p>
+      <h1 class="cover-title">集成学习</h1>
+      <p class="cover-lead">组合多个有差异的弱学习器，汇聚出更稳健、泛化更强的综合判断。</p>
+    </div>
+
+    <div class="convergence-badge">
+      <span class="badge-label">集成共识收束</span>
+      <span class="badge-sub">24 个弱学习器汇入单一稳健预测</span>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学好，今天我们进入第八讲——集成学习。
+    在前面的课程里，我们学习了决策树、支持向量机、神经网络等独立的经典模型。
+    每一类模型都有其优势，但不可避免地存在局部偏差或高方差问题。
+    集成学习的核心哲学，就是不寄希望于创造一个无所不知的“超级单一模型”，
+    而是训练一批各有专长、存在差异的基础学习器，
+    再通过某种确定的汇聚机制将它们的预测整合为一个更为稳健的共识判断。
+    我们今天将全面拆解集成有效性的数学前提，以及 Bagging、Boosting 和 Stacking 三大演化流派。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("stream-canvas");
+      let ctx = null;
+
+      // 标题避让排斥区与右侧汇聚焦点
+      const TITLE_ZONE = { x: 380, y: 360, rx: 320, ry: 190 };
+      const FOCUS_NODE = { x: 1260, y: 450 };
+      const NUM_TRAILS = 24;
+
+      function seeded(s) {
+        let t = s >>> 0 || 1;
+        return () => {
+          t += 0x6D2B79F5;
+          let v = t;
+          v = Math.imul(v ^ v >>> 15, v | 1);
+          v ^= v + Math.imul(v ^ v >>> 7, v | 61);
+          return ((v ^ v >>> 14) >>> 0) / 4294967296;
+        };
+      }
+
+      function buildPaths() {
+        const rand = seeded(8241);
+        const paths = [];
+
+        for (let i = 0; i < NUM_TRAILS; i++) {
+          const ratio = (i + 0.5) / NUM_TRAILS;
+          // 左侧散布起点
+          const startY = 80 + ratio * 740 + (rand() - 0.5) * 40;
+          const startX = -30 + (rand() - 0.5) * 40;
+
+          // 中间控制点1（绕过标题安全区）
+          let cp1Y = startY * 0.7 + 450 * 0.3 + (rand() - 0.5) * 110;
+          let cp1X = 560 + (rand() - 0.5) * 80;
+          // 若落入标题椭圆内，向上下推开
+          const dxT = (cp1X - TITLE_ZONE.x) / TITLE_ZONE.rx;
+          const dyT = (cp1Y - TITLE_ZONE.y) / TITLE_ZONE.ry;
+          if (dxT * dxT + dyT * dyT < 1.1) {
+            cp1Y = cp1Y < TITLE_ZONE.y ? TITLE_ZONE.y - TITLE_ZONE.ry - 30 : TITLE_ZONE.y + TITLE_ZONE.ry + 30;
+          }
+
+          // 中间控制点2（开始向汇聚点靠拢）
+          const cp2X = 980 + (rand() - 0.5) * 70;
+          const cp2Y = 450 + (startY - 450) * 0.18 + (rand() - 0.5) * 50;
+
+          // 终点前汇入聚集核
+          const endX = FOCUS_NODE.x + (rand() - 0.5) * 12;
+          const endY = FOCUS_NODE.y + (rand() - 0.5) * 12;
+
+          // 采样生成点序列
+          const pts = [];
+          const steps = 60;
+          for (let s = 0; s <= steps; s++) {
+            const t = s / steps;
+            const it = 1 - t;
+            // 三次贝塞尔曲线
+            const px = it*it*it*startX + 3*it*it*t*cp1X + 3*it*t*t*cp2X + t*t*t*endX;
+            const py = it*it*it*startY + 3*it*it*t*cp1Y + 3*it*t*t*cp2Y + t*t*t*endY;
+            pts.push({ x: px, y: py });
+          }
+
+          paths.push({
+            pts,
+            phase: rand(),
+            speed: 0.0003 + rand() * 0.0002,
+            weight: 1.0 + (rand() - 0.5) * 0.4
+          });
+        }
+        return paths;
+      }
+
+      let paths = buildPaths();
+
+      function drawBasePaper(ctx) {
+        ctx.fillStyle = Deck.token("--bg") || "#DCE2DE";
+        ctx.fillRect(0, 0, Deck.W, Deck.H);
+
+        // 微弱的坐标/绘图纸底线，体现量化推演与统计学纸质感
+        ctx.strokeStyle = Deck.rgba("--line", 0.18);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        // 汇聚点主轴水平参考线
+        ctx.moveTo(760, 450);
+        ctx.lineTo(1540, 450);
+        // 几个等步长刻度点
+        for (let x = 800; x <= 1500; x += 100) {
+          ctx.moveTo(x, 444);
+          ctx.lineTo(x, 456);
+        }
+        ctx.stroke();
+      }
+
+      function drawStaticTrajectories(ctx) {
+        // 基学习器冷蓝轨迹
+        const modelColor = Deck.rgb("--model") || [46, 95, 120];
+        for (let i = 0; i < paths.length; i++) {
+          const path = paths[i];
+          ctx.beginPath();
+          ctx.moveTo(path.pts[0].x, path.pts[0].y);
+          for (let k = 1; k < path.pts.length; k++) {
+            ctx.lineTo(path.pts[k].x, path.pts[k].y);
+          }
+          ctx.strokeStyle = `rgba(${modelColor[0]},${modelColor[1]},${modelColor[2]},0.28)`;
+          ctx.lineWidth = path.weight;
+          ctx.stroke();
+
+          // 起始端基学习器输入标记微圆点
+          const startPt = path.pts[0];
+          if (startPt.x > 0) {
+            ctx.fillStyle = `rgba(${modelColor[0]},${modelColor[1]},${modelColor[2]},0.45)`;
+            ctx.beginPath();
+            ctx.arc(startPt.x, startPt.y, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // 汇聚之后的深色厚重结论束（粗共识轨迹）
+        const aggColor = Deck.rgb("--aggregate") || [23, 62, 80];
+        ctx.beginPath();
+        ctx.moveTo(FOCUS_NODE.x, FOCUS_NODE.y);
+        ctx.lineTo(1580, FOCUS_NODE.y);
+        ctx.strokeStyle = `rgba(${aggColor[0]},${aggColor[1]},${aggColor[2]},0.92)`;
+        ctx.lineWidth = 4.8;
+        ctx.lineCap = "round";
+        ctx.stroke();
+
+        // 核心汇聚节点光环与质点
+        ctx.beginPath();
+        ctx.arc(FOCUS_NODE.x, FOCUS_NODE.y, 14, 0, Math.PI * 2);
+        ctx.fillStyle = Deck.rgba("--focus", 0.12);
+        ctx.fill();
+        ctx.strokeStyle = Deck.rgba("--focus", 0.55);
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(FOCUS_NODE.x, FOCUS_NODE.y, 4.5, 0, Math.PI * 2);
+        ctx.fillStyle = Deck.token("--focus") || "#C64B2E";
+        ctx.fill();
+      }
+
+      function drawAnimatedParticles(ctx, time) {
+        const modelColor = Deck.rgb("--model") || [46, 95, 120];
+        for (let i = 0; i < paths.length; i++) {
+          const path = paths[i];
+          const progress = (path.phase + time * path.speed) % 1;
+          const idx = Math.floor(progress * (path.pts.length - 1));
+          const pt = path.pts[idx];
+          if (pt) {
+            ctx.fillStyle = `rgba(${modelColor[0]},${modelColor[1]},${modelColor[2]},0.85)`;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 2.8, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // 聚合输出脉冲
+        const pulseProg = (time * 0.0006) % 1;
+        const pulseX = FOCUS_NODE.x + pulseProg * (1580 - FOCUS_NODE.x);
+        ctx.fillStyle = Deck.rgba("--focus", 0.95);
+        ctx.beginPath();
+        ctx.arc(pulseX, FOCUS_NODE.y, 3.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function render(time) {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, Deck.W, Deck.H);
+        drawBasePaper(ctx);
+        drawStaticTrajectories(ctx);
+        drawAnimatedParticles(ctx, time);
+      }
+
+      Deck.init({ index: 1, total: 26, keys: false });
+
+      function setup() {
+        ctx = Deck.fit(canvas);
+        paths = buildPaths();
+        Deck.loop(render, { still: 1600 });
+      }
+
+      Deck.onResize(() => {
+        ctx = Deck.fit(canvas);
+        render(1600);
+      });
+
+      setup();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      row-gap: 20px;
+      padding: 38px 56px 42px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 14px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    .subtitle {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 860px 1fr;
+      column-gap: 40px;
+      min-height: 0;
+    }
+
+    .viewport {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      row-gap: 12px;
+      min-height: 0;
+    }
+
+    .canvas-wrap {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .canvas-wrap canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+
+    .dash {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding-top: 4px;
+    }
+
+    .panel-group {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 20px;
+    }
+
+    .metric {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .metric .lbl {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .metric .val {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--structure);
+    }
+
+    .metric .val.signal {
+      color: var(--signal);
+    }
+
+    .control-block {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .control-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .control-label {
+      font-size: var(--fs-label);
+      font-weight: 600;
+    }
+
+    .control-val {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--signal);
+    }
+
+    .slider-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      background: var(--rule);
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--signal);
+      cursor: pointer;
+      border: 2px solid var(--bg);
+      box-shadow: 0 0 0 1px var(--signal);
+    }
+
+    .presets {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    button.preset-btn {
+      padding: 7px 0;
+      font-size: var(--fs-label);
+      font-family: inherit;
+      border: 1px solid var(--rule);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all 0.15s ease;
+    }
+
+    button.preset-btn.active,
+    button.preset-btn:hover {
+      border-color: var(--structure);
+      background: var(--structure);
+      color: #fff;
+    }
+
+    .step-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .action-btn {
+      flex: 1;
+      padding: 10px 0;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      font-family: inherit;
+      border: 1px solid var(--structure);
+      background: transparent;
+      color: var(--structure);
+      cursor: pointer;
+      border-radius: 2px;
+    }
+
+    .action-btn.primary {
+      background: var(--structure);
+      color: #fff;
+    }
+
+    .action-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .state-banner {
+      font-size: var(--fs-lead);
+      line-height: 1.4;
+      min-height: 52px;
+      color: var(--text);
+    }
+
+    .state-banner b {
+      color: var(--signal);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .legend-line {
+      width: 18px;
+      height: 2px;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>学习率与训练动力学</h1>
+      <div class="subtitle">调节步长观察参数在损失曲面上的收敛、震荡与发散</div>
+    </header>
+
+    <main class="min0">
+      <div class="viewport min0">
+        <div class="legend-row">
+          <div class="legend-item">
+            <span class="legend-dot" style="background: var(--structure);"></span>
+            <span>当前参数 (w₁, w₂)</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-line" style="background: var(--signal);"></span>
+            <span>梯度更新轨迹</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot" style="background: transparent; border: 1.5px dashed var(--muted);"></span>
+            <span>最优解 (0, 0)</span>
+          </div>
+        </div>
+        <div class="canvas-wrap min0">
+          <canvas id="surfaceCv" class="cv-fill"></canvas>
+        </div>
+      </div>
+
+      <div class="dash">
+        <div class="panel-group">
+          <div class="metric-row">
+            <div class="metric">
+              <span class="lbl">迭代步数</span>
+              <span class="val" id="stepCount">0 / 40</span>
+            </div>
+            <div class="metric">
+              <span class="lbl">当前损失 L</span>
+              <span class="val" id="lossVal">8.500</span>
+            </div>
+            <div class="metric">
+              <span class="lbl">动力学状态</span>
+              <span class="val signal" id="dynamoState">正常收敛</span>
+            </div>
+          </div>
+
+          <div class="control-block">
+            <div class="control-row">
+              <span class="control-label">学习率 η (步长)</span>
+              <span class="control-val" id="lrVal">0.12</span>
+            </div>
+            <div class="slider-wrap">
+              <input type="range" id="lrRange" min="0.01" max="0.30" step="0.01" value="0.12">
+            </div>
+            <div class="presets">
+              <button class="preset-btn" data-lr="0.02">过小 (0.02)</button>
+              <button class="preset-btn active" data-lr="0.12">适中 (0.12)</button>
+              <button class="preset-btn" data-lr="0.22">震荡 (0.22)</button>
+              <button class="preset-btn" data-lr="0.26">发散 (0.26)</button>
+            </div>
+          </div>
+
+          <div class="step-actions">
+            <button class="action-btn" id="singleStep">单步迭代</button>
+            <button class="action-btn primary" id="autoPlay">连续运行</button>
+            <button class="action-btn" id="resetBtn">重置起点</button>
+          </div>
+        </div>
+
+        <div class="state-banner" id="statusDesc">
+          步长适中：参数沿峡谷梯度平稳滑向极小值点。
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    学习率决定了每次参数沿着负梯度方向更新的物理步长。
+    当学习率过小时，每一步位移极小，需要大量轮次才能靠近最优点；
+    当学习率适中时，参数迅速越过平坦区，沿着等高线法线平滑收敛；
+    当学习率偏大时，横向跨度超过曲率允许范围，参数在狭长山谷两侧剧烈震荡跳跃；
+    当步长超过曲率倒数的临界上界时，误差反而一步步放大，最终导致数值爆炸发散。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      // 损失函数: 经典病态峡谷二次型 L(w1, w2) = 0.5 * (w1^2 + 10 * w2^2)
+      // 梯度: dL/dw1 = w1, dL/dw2 = 10 * w2
+      // 临界发散步长: w2 方向曲率为 10，当 eta > 2/10 = 0.20 时 w2 分量震荡不收敛，eta > 0.2 时震荡，> 0.25 迅速发散
+      const cv = document.getElementById('surfaceCv');
+      const stepCountEl = document.getElementById('stepCount');
+      const lossValEl = document.getElementById('lossVal');
+      const dynamoStateEl = document.getElementById('dynamoState');
+      const lrValEl = document.getElementById('lrVal');
+      const lrRange = document.getElementById('lrRange');
+      const singleStepBtn = document.getElementById('singleStep');
+      const autoPlayBtn = document.getElementById('autoPlay');
+      const resetBtn = document.getElementById('resetBtn');
+      const statusDescEl = document.getElementById('statusDesc');
+      const presetBtns = document.querySelectorAll('.preset-btn');
+
+      const MAX_STEPS = 40;
+      const START_POS = [-3.8, 1.2]; // 初始参数 w1, w2
+
+      let state = {
+        lr: 0.12,
+        w: [...START_POS],
+        history: [[...START_POS]],
+        isPlaying: false,
+        status: '适中收敛'
+      };
+
+      function loss(w1, w2) {
+        return 0.5 * (w1 * w1 + 10 * w2 * w2);
+      }
+
+      function grad(w1, w2) {
+        return [w1, 10 * w2];
+      }
+
+      function classifyDynamics(lr, stepsCount, currentLoss) {
+        if (lr >= 0.24) return { label: '数值发散', desc: '步长超过曲率容许上限，跨越谷底后误差几何级膨胀。' };
+        if (lr >= 0.19) return { label: '横向震荡', desc: '陡峭轴上步长过大，反复横跳，收敛效率极低。' };
+        if (lr <= 0.04) return { label: '进展迟缓', desc: '步长过小，参数如蜗牛爬行，耗尽轮次仍远离最优解。' };
+        return { label: '平稳收敛', desc: '步长适中：沿负梯度快速下降并平滑稳定在极小值。' };
+      }
+
+      function stepModel() {
+        if (state.history.length > MAX_STEPS) return;
+        const [w1, w2] = state.w;
+        const [g1, g2] = grad(w1, w2);
+        const nw1 = w1 - state.lr * g1;
+        const nw2 = w2 - state.lr * g2;
+        state.w = [nw1, nw2];
+        state.history.push([nw1, nw2]);
+
+        const l = loss(nw1, nw2);
+        if (l > 1000 || isNaN(l)) {
+          state.isPlaying = false;
+          autoPlayBtn.textContent = '连续运行';
+        }
+      }
+
+      function resetRun() {
+        state.w = [...START_POS];
+        state.history = [[...START_POS]];
+        state.isPlaying = false;
+        autoPlayBtn.textContent = '连续运行';
+        singleStepBtn.disabled = false;
+      }
+
+      // 坐标映射
+      // 范围: w1 in [-4.5, 4.5], w2 in [-2.5, 2.5]
+      function toScreen(w1, w2, width, height) {
+        const cx = width / 2;
+        const cy = height / 2;
+        const sx = width / 9.6;
+        const sy = height / 5.2;
+        return [cx + w1 * sx, cy - w2 * sy];
+      }
+
+      function toWorld(x, y, width, height) {
+        const cx = width / 2;
+        const cy = height / 2;
+        const sx = width / 9.6;
+        const sy = height / 5.2;
+        return [(x - cx) / sx, (cy - y) / sy];
+      }
+
+      function drawSurface(ctx, width, height) {
+        ctx.clearRect(0, 0, width, height);
+
+        // 背景微冷墨线网格
+        ctx.strokeStyle = '#E2E8E5';
+        ctx.lineWidth = 1;
+        const [cx, cy] = toScreen(0, 0, width, height);
+
+        // 绘制十字坐标轴
+        ctx.strokeStyle = '#BAC4BF';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, cy);
+        ctx.lineTo(width, cy);
+        ctx.moveTo(cx, 0);
+        ctx.lineTo(cx, height);
+        ctx.stroke();
+
+        // 轴文字
+        ctx.fillStyle = '#5B6661';
+        ctx.font = '13px sans-serif';
+        ctx.fillText('w₁ (平缓轴)', width - 84, cy - 12);
+        ctx.fillText('w₂ (陡峭轴)', cx + 12, 22);
+
+        // 绘制损失函数等高线: 0.5*(w1^2 + 10*w2^2) = C
+        // 椭圆长轴 a = sqrt(2C), 短轴 b = sqrt(2C / 10)
+        const levels = [0.1, 0.4, 1.0, 2.2, 4.0, 6.5, 10.0, 14.5];
+        ctx.lineWidth = 1.2;
+        levels.forEach((lvl, idx) => {
+          const a = Math.sqrt(2 * lvl);
+          const b = Math.sqrt((2 * lvl) / 10);
+          const [px, py] = toScreen(0, 0, width, height);
+          const rX = a * (width / 9.6);
+          const rY = b * (height / 5.2);
+
+          ctx.strokeStyle = '#C9D4CE';
+          ctx.beginPath();
+          ctx.ellipse(px, py, rX, rY, 0, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // 等高线标值
+          const [lx, ly] = toScreen(a, 0, width, height);
+          if (lx < width - 100) {
+            ctx.fillStyle = '#7C8A84';
+            ctx.font = '12px monospace';
+            ctx.fillText(`L=${lvl.toFixed(1)}`, lx + 4, cy + 16);
+          }
+        });
+
+        // 极小值中心点
+        ctx.strokeStyle = '#5B6661';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 绘制轨迹历史
+        if (state.history.length > 1) {
+          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = '#D43811';
+          ctx.beginPath();
+          const [s0x, s0y] = toScreen(state.history[0][0], state.history[0][1], width, height);
+          ctx.moveTo(s0x, s0y);
+          for (let i = 1; i < state.history.length; i++) {
+            const [hx, hy] = toScreen(state.history[i][0], state.history[i][1], width, height);
+            ctx.lineTo(hx, hy);
+          }
+          ctx.stroke();
+
+          // 绘制轨迹点与步箭头
+          for (let i = 0; i < state.history.length; i++) {
+            const [hx, hy] = toScreen(state.history[i][0], state.history[i][1], width, height);
+            ctx.fillStyle = i === 0 ? '#1C4436' : '#D43811';
+            ctx.beginPath();
+            ctx.arc(hx, hy, i === state.history.length - 1 ? 5.5 : 3.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // 绘制当前参数位置突出显示
+        const curW = state.history[state.history.length - 1];
+        const [curX, curY] = toScreen(curW[0], curW[1], width, height);
+        ctx.fillStyle = '#1C4436';
+        ctx.beginPath();
+        ctx.arc(curX, curY, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      let canvasFit = Deck.autofit(cv, (ctx) => {
+        drawSurface(ctx, cv.width / (window.devicePixelRatio || 1), cv.height / (window.devicePixelRatio || 1));
+      });
+
+      function updateUI() {
+        const curW = state.history[state.history.length - 1];
+        const curLoss = loss(curW[0], curW[1]);
+        const count = state.history.length - 1;
+
+        stepCountEl.textContent = `${count} / ${MAX_STEPS}`;
+        lossValEl.textContent = curLoss > 9999 ? '∞ 发散' : curLoss.toFixed(3);
+
+        const dynamics = classifyDynamics(state.lr, count, curLoss);
+        dynamoStateEl.textContent = dynamics.label;
+        statusDescEl.innerHTML = `<b>${dynamics.label}</b>：${dynamics.desc}`;
+
+        lrValEl.textContent = state.lr.toFixed(2);
+        lrRange.value = state.lr;
+
+        presetBtns.forEach(btn => {
+          btn.classList.toggle('active', Math.abs(parseFloat(btn.dataset.lr) - state.lr) < 0.005);
+        });
+
+        canvasFit.redraw();
+      }
+
+      // 控制与交互
+      lrRange.addEventListener('input', (e) => {
+        state.lr = parseFloat(e.target.value);
+        resetRun();
+        updateUI();
+      });
+
+      presetBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.lr = parseFloat(btn.dataset.lr);
+          resetRun();
+          updateUI();
+        });
+      });
+
+      singleStepBtn.addEventListener('click', () => {
+        stepModel();
+        updateUI();
+      });
+
+      autoPlayBtn.addEventListener('click', () => {
+        state.isPlaying = !state.isPlaying;
+        autoPlayBtn.textContent = state.isPlaying ? '暂停运行' : '连续运行';
+      });
+
+      resetBtn.addEventListener('click', () => {
+        resetRun();
+        updateUI();
+      });
+
+      // 画布点击直接重设当前探索起点
+      cv.addEventListener('click', (e) => {
+        const pt = Deck.pt(cv, e);
+        const rect = cv.getBoundingClientRect();
+        const [nw1, nw2] = toWorld(pt.x, pt.y, rect.width, rect.height);
+        START_POS[0] = Math.max(-4.2, Math.min(4.2, nw1));
+        START_POS[1] = Math.max(-2.2, Math.min(2.2, nw2));
+        resetRun();
+        updateUI();
+      });
+
+      // 动画时钟
+      let lastTime = performance.now();
+      function tick(time) {
+        if (state.isPlaying) {
+          if (time - lastTime > 110) {
+            if (state.history.length - 1 < MAX_STEPS) {
+              stepModel();
+              updateUI();
+            } else {
+              state.isPlaying = false;
+              autoPlayBtn.textContent = '连续运行';
+            }
+            lastTime = time;
+          }
+        }
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <!--
+    构图意图：
+    1. 主对象：三类典型瓶颈任务（高方差过拟合、弱学习器欠拟合、异质互补融合）及其诊断与训练模拟。
+    2. 对象关系：左侧诊断任务选择区与候选集成方案（Bagging/RF、Boosting/GBDT、Stacking），右侧主视区展示训练过程曲线、偏差-方差分解与测试误差检验。
+    3. 说明文字依附在指标图表右侧与检验结论卡片内，实时输出方案是否匹配真实病因。
+  -->
+  <style>
+    :root {
+      --bg: #E8EEF1;
+      --text: #142630;
+      --muted: #50616B;
+      --model: #17628E;
+      --focus: #B83D0B;
+      --rule: #71828B;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans CJK SC", sans-serif;
+      --fs-h1: 34px;
+      --fs-h2: 20px;
+      --fs-lead: 18px;
+      --fs-body: 17px;
+      --fs-sec: 15px;
+      --fs-label: 14px;
+      --fs-tick: 12px;
+      --lh-tight: 1.18;
+      --lh-copy: 1.42;
+      --stroke: 2px;
+      --stroke-strong: 4px;
+      --ease-out: cubic-bezier(.2,.75,.25,1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: 24px 56px 20px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      position: relative;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 10px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    .dek {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 48px;
+      height: 760px;
+    }
+
+    /* 左侧控制区 */
+    .panel-left {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .section-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+
+    .task-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .task-btn {
+      background: transparent;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 12px 14px;
+      text-align: left;
+      cursor: pointer;
+      color: var(--text);
+      font-family: var(--font-sans);
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .task-btn:hover {
+      border-color: var(--model);
+    }
+
+    .task-btn[aria-pressed="true"] {
+      border-color: var(--model);
+      border-width: 2px;
+      padding: 11px 13px;
+      background: rgba(23, 98, 142, 0.08);
+    }
+
+    .task-name {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      display: block;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+
+    .task-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    .method-section {
+      margin-top: 6px;
+    }
+
+    .method-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .method-btn {
+      background: transparent;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 10px 8px;
+      text-align: center;
+      cursor: pointer;
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      transition: all 0.15s;
+    }
+
+    .method-btn:hover {
+      border-color: var(--model);
+    }
+
+    .method-btn[aria-pressed="true"] {
+      border-color: var(--model);
+      background: var(--model);
+      color: #fff;
+    }
+
+    .action-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 4px;
+      align-items: center;
+    }
+
+    .simulate-btn {
+      flex: 1;
+      padding: 12px 18px;
+      background: var(--text);
+      color: var(--bg);
+      border: none;
+      border-radius: 4px;
+      font-size: var(--fs-body);
+      font-weight: 700;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: background 0.15s;
+    }
+
+    .simulate-btn:hover {
+      background: var(--model);
+    }
+
+    .reset-btn {
+      background: transparent;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 11px 16px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--font-sans);
+    }
+
+    .reset-btn:hover {
+      border-color: var(--text);
+      color: var(--text);
+    }
+
+    /* 右侧主视区与图表 */
+    .panel-right {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .view-card {
+      border-top: 2px solid var(--model);
+      padding-top: 14px;
+      position: relative;
+    }
+
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 310px;
+      margin-top: 8px;
+    }
+
+    canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 证据诊断卡 */
+    .verdict-grid {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 24px;
+      border-top: 1px solid var(--rule);
+      padding-top: 16px;
+      margin-top: 4px;
+    }
+
+    .stat-box {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 4px 0;
+      border-bottom: 1px dashed var(--rule);
+    }
+
+    .stat-label {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .stat-val {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .stat-val.good { color: var(--model); }
+    .stat-val.bad { color: var(--focus); }
+
+    .verdict-content {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .verdict-tag {
+      display: inline-block;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+    }
+
+    .verdict-tag.match { color: var(--model); }
+    .verdict-tag.mismatch { color: var(--focus); }
+
+    .verdict-explain {
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+      color: var(--text);
+    }
+
+    .verdict-reason {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 图例 */
+    .chart-legend {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-line {
+      width: 22px;
+      height: 3px;
+    }
+
+    .legend-train { background: var(--rule); }
+    .legend-test { background: var(--model); }
+    .legend-target { border-top: 2px dashed var(--focus); height: 0; }
+  </style>
+</head>
+<body data-page="31" data-total="32">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>集成方案诊断：对症匹配集成范式</h1>
+        <p class="dek">选定数据瓶颈，指派候选机制并运行模拟训练，检验泛化误差与偏差-方差变化</p>
+      </div>
+      <div class="chart-legend">
+        <span class="legend-item"><span class="legend-line legend-train"></span> 训练误差</span>
+        <span class="legend-item"><span class="legend-line legend-test"></span> 测试误差</span>
+        <span class="legend-item"><span class="legend-line legend-target"></span> 单模型基准</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- 左侧：瓶颈任务与集成机制选择 -->
+      <section class="panel-left">
+        <div>
+          <div class="section-title">第一步：选择真实数据瓶颈</div>
+          <div class="task-list" role="radiogroup" aria-label="数据任务病因">
+            <button type="button" class="task-btn" data-task="variance" aria-pressed="true">
+              <span class="task-name">高方差过拟合任务</span>
+              <span class="task-desc">深决策树单模型训练误差 1.2%，测试误差达 24.8%（方差主导）</span>
+            </button>
+            <button type="button" class="task-btn" data-task="bias" aria-pressed="false">
+              <span class="task-name">欠拟合强偏差任务</span>
+              <span class="task-desc">单层浅决策桩训练误差 32.5%，测试误差 34.1%（偏差主导）</span>
+            </button>
+            <button type="button" class="task-btn" data-task="hetero" aria-pressed="false">
+              <span class="task-name">异质模型互补任务</span>
+              <span class="task-desc">包含逻辑回归、SVM、神经网络，各模型局部优势区显著不同</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="method-section">
+          <div class="section-title">第二步：匹配候选集成范式</div>
+          <div class="method-list" role="radiogroup" aria-label="候选集成方法">
+            <button type="button" class="method-btn" data-method="bagging" aria-pressed="true">Bagging / RF</button>
+            <button type="button" class="method-btn" data-method="boosting" aria-pressed="false">Boosting / GBDT</button>
+            <button type="button" class="method-btn" data-method="stacking" aria-pressed="false">Stacking 堆叠</button>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button type="button" class="simulate-btn" id="btnSimulate">模拟训练评估</button>
+          <button type="button" class="reset-btn" id="btnReset">重置初始</button>
+        </div>
+
+        <div class="verdict-reason" id="guidanceText">
+          观察不同基模型规模 M 下泛化曲线收敛与反弹。
+        </div>
+      </section>
+
+      <!-- 右侧：动态学习曲线与指标检验 -->
+      <section class="panel-right">
+        <div class="view-card">
+          <div class="section-title" id="chartHeading">学习曲线：测试误差演变 (M=1...30 基模型)</div>
+          <div class="chart-container">
+            <canvas id="curveCanvas"></canvas>
+          </div>
+        </div>
+
+        <div class="verdict-grid">
+          <div class="stat-box">
+            <div class="stat-row">
+              <span class="stat-label">基模型基准</span>
+              <span class="stat-val" id="valBaseline">24.8%</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">集成测试误差</span>
+              <span class="stat-val good" id="valEnsemble">9.4%</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">方差削减率</span>
+              <span class="stat-val good" id="valVariance">↓ 68%</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">偏差削减率</span>
+              <span class="stat-val" id="valBias">- 0%</span>
+            </div>
+          </div>
+
+          <div class="verdict-content">
+            <span class="verdict-tag match" id="verdictTag">匹配：理论与实验高度吻合</span>
+            <div class="verdict-explain" id="verdictExplain">
+              高方差深决策树具备低偏差特性。Bagging 借助 Bootstrap 重采样与平均投票，大幅削减独立方差而不增加偏差，泛化误差显著下降。
+            </div>
+            <div class="verdict-reason" id="verdictMechanism">
+              机制本质：Var(E) = ρσ² + (1-ρ)σ²/M。降低相关系数 ρ 与增大 M 是泛化提升的关键支撑。
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 预置 3 种任务 × 3 种方法的领域模型数据与诊断评估
+      const SIM_DATA = {
+        variance: {
+          baseline: "24.8%",
+          name: "高方差过拟合任务",
+          bagging: {
+            match: true,
+            title: "学习曲线：Bagging 快速平抑模型扰动与测试方差",
+            trainCurve: [1.2, 1.3, 1.4, 1.5, 1.5, 1.6, 1.6, 1.6, 1.7, 1.7],
+            testCurve: [24.8, 17.5, 13.6, 11.4, 10.5, 9.8, 9.5, 9.4, 9.4, 9.4],
+            ensError: "9.4%",
+            varDrop: "↓ 68%",
+            biasDrop: "- 0%",
+            tag: "对症匹配：有效抑制方差",
+            explain: "深树单模型受扰动大（高方差）。Bagging 用 Bootstrap 采样构建多样化基树，投票平均削减方差项。",
+            mechanism: "机制：Var(E) = ρσ² + (1-ρ)σ²/M。降低相关性 ρ 并增大 M 直接压降方差。"
+          },
+          boosting: {
+            match: false,
+            title: "学习曲线：Boosting 持续强行拟合高方差样本，出现二次过拟合",
+            trainCurve: [1.2, 0.6, 0.2, 0.1, 0.05, 0.02, 0.01, 0.0, 0.0, 0.0],
+            testCurve: [24.8, 23.9, 24.2, 25.1, 26.5, 27.8, 29.0, 30.2, 31.0, 31.8],
+            ensError: "31.8%",
+            varDrop: "↑ 28% (恶化)",
+            biasDrop: "↓ 12%",
+            tag: "误诊警告：偏差降低但方差剧烈恶化",
+            explain: "深树偏差已极低。Boosting 持续对高权重硬样本强化学习，把孤立噪声拟合为虚假规律导致严重过拟合。",
+            mechanism: "机制：Boosting 串行加权专注于降低偏差，施加于高方差模型会放大噪声。"
+          },
+          stacking: {
+            match: false,
+            title: "学习曲线：Stacking 堆叠同质深树，改善受限且存在过拟合风险",
+            trainCurve: [1.2, 1.1, 1.0, 0.9, 0.8, 0.8, 0.7, 0.7, 0.6, 0.6],
+            testCurve: [24.8, 21.2, 19.5, 18.8, 18.2, 18.0, 17.8, 17.5, 17.4, 17.4],
+            ensError: "17.4%",
+            varDrop: "↓ 30%",
+            biasDrop: "- 1%",
+            tag: "次优选择：同质模型下 Stacking 收益受限",
+            explain: "基模型均为同类深决策树时，元学习器难以发现互补边界，且存在二次过拟合风险。",
+            mechanism: "机制：Stacking 依赖异质性决策边界，同质高方差模型无法提供有效元特征。"
+          }
+        },
+        bias: {
+          baseline: "34.1%",
+          name: "欠拟合强偏差任务",
+          bagging: {
+            match: false,
+            title: "学习曲线：Bagging 平均弱桩，测试误差毫无改善",
+            trainCurve: [32.5, 32.4, 32.5, 32.3, 32.4, 32.3, 32.4, 32.4, 32.3, 32.3],
+            testCurve: [34.1, 34.0, 33.9, 33.8, 33.8, 33.7, 33.7, 33.7, 33.6, 33.6],
+            ensError: "33.6%",
+            varDrop: "↓ 14%",
+            biasDrop: "- 1%",
+            tag: "误诊警告：Bagging 无法克服固有偏差",
+            explain: "单层决策桩表达能力受限（高偏差）。多模型简单平均无法改变基模型本身的拟合上限。",
+            mechanism: "机制：E[f_bagging] ≈ E[f_base]，平均化不改变期望偏差，弱模型平均依旧弱。"
+          },
+          boosting: {
+            match: true,
+            title: "学习曲线：Boosting 串行聚焦残差，偏差与测试误差快速下降",
+            trainCurve: [32.5, 24.1, 17.2, 12.0, 8.4, 5.8, 4.1, 3.0, 2.3, 1.8],
+            testCurve: [34.1, 25.6, 18.9, 14.2, 11.3, 9.4, 8.5, 8.0, 7.7, 7.5],
+            ensError: "7.5%",
+            varDrop: "- 2%",
+            biasDrop: "↓ 78%",
+            tag: "对症匹配：串行纠错大幅消除偏差",
+            explain: "弱学习器瓶颈在于偏差。Boosting 逐轮拟合前序残差并调整样本权重，将弱模型升格为强分类器。",
+            mechanism: "机制：加法模型逐轮拟合残差，指数损失下持续降低经验误差与真实偏差。"
+          },
+          stacking: {
+            match: false,
+            title: "学习曲线：元学习器组合弱桩，表达容量受限",
+            trainCurve: [32.5, 30.1, 28.5, 27.2, 26.5, 26.0, 25.8, 25.5, 25.2, 25.0],
+            testCurve: [34.1, 31.8, 30.4, 29.5, 29.0, 28.6, 28.3, 28.1, 28.0, 27.8],
+            ensError: "27.8%",
+            varDrop: "- 0%",
+            biasDrop: "↓ 18%",
+            tag: "次优选择：浅模型提供的一阶特征不足",
+            explain: "基模型特征能力极弱时，生成的新特征空间信息量严重不足，元学习器无法学出有效组合。",
+            mechanism: "机制：元学习器依赖基模型提取的差异化高阶特征，浅模型输入受限。"
+          }
+        },
+        hetero: {
+          baseline: "19.5%",
+          name: "异质模型互补任务",
+          bagging: {
+            match: false,
+            title: "学习曲线：Bagging 无法对异质结构进行统一采样加权",
+            trainCurve: [12.0, 11.8, 11.6, 11.5, 11.4, 11.4, 11.3, 11.3, 11.2, 11.2],
+            testCurve: [19.5, 17.8, 16.9, 16.5, 16.2, 16.0, 15.9, 15.8, 15.8, 15.7],
+            ensError: "15.7%",
+            varDrop: "↓ 19%",
+            biasDrop: "↓ 6%",
+            tag: "局限：简单等权平均未能发挥局部优势",
+            explain: "不同结构模型的置信度分布与校准差异大，简单投票或等权平均无法发挥局部优势。",
+            mechanism: "机制：Bagging 针对同质不稳定基学习器，缺乏自适应分区域加权机制。"
+          },
+          boosting: {
+            match: false,
+            title: "学习曲线：异质模型难以嵌入统一的前向分步加法残差",
+            trainCurve: [12.0, 9.4, 7.8, 6.5, 5.6, 5.0, 4.6, 4.3, 4.1, 4.0],
+            testCurve: [19.5, 17.2, 16.0, 15.2, 14.8, 14.5, 14.3, 14.1, 14.0, 14.0],
+            ensError: "14.0%",
+            varDrop: "↓ 10%",
+            biasDrop: "↓ 18%",
+            tag: "工程受限：异质模型难以形成梯度迭代闭环",
+            explain: "Boosting 依赖统一加法残差迭代，SVM 或神经网络难以嵌入串行树梯度闭环。",
+            mechanism: "机制：GBDT 前向加法迭代强依赖快速树分裂，异质基模型难以统一步长收敛。"
+          },
+          stacking: {
+            match: true,
+            title: "学习曲线：Stacking 元学习器学习非线性互补组合策略",
+            trainCurve: [12.0, 8.2, 6.1, 4.8, 4.0, 3.5, 3.2, 3.0, 2.8, 2.7],
+            testCurve: [19.5, 13.4, 9.8, 7.9, 6.8, 6.2, 5.8, 5.5, 5.4, 5.3],
+            ensError: "5.3%",
+            varDrop: "↓ 42%",
+            biasDrop: "↓ 65%",
+            tag: "对症匹配：异质融合最佳范式",
+            explain: "线性模型、SVM 与神经网络具有正交假设空间。元学习器通过折外预测学习区域最优组合。",
+            mechanism: "机制：异质决策面构成互补特征空间，第二层元模型实现分区域自适应加权。"
+          }
+        }
+      };
+
+      // 状态机
+      let state = {
+        task: "variance",
+        method: "bagging",
+        progress: 1.0, // 0..1 模拟训练绘制进度
+        animating: false
+      };
+
+      const canvas = document.getElementById("curveCanvas");
+      let ctx = null;
+
+      function getResult() {
+        return SIM_DATA[state.task][state.method];
+      }
+
+      function updateUI() {
+        const res = getResult();
+        const taskData = SIM_DATA[state.task];
+
+        // 按钮高亮状态
+        document.querySelectorAll(".task-btn").forEach(btn => {
+          btn.setAttribute("aria-pressed", String(btn.dataset.task === state.task));
+        });
+        document.querySelectorAll(".method-btn").forEach(btn => {
+          btn.setAttribute("aria-pressed", String(btn.dataset.method === state.method));
+        });
+
+        // 标题与指标文本
+        document.getElementById("chartHeading").textContent = res.title;
+        document.getElementById("valBaseline").textContent = taskData.baseline;
+        document.getElementById("valEnsemble").textContent = res.ensError;
+        document.getElementById("valVariance").textContent = res.varDrop;
+        document.getElementById("valBias").textContent = res.biasDrop;
+
+        // 颜色状态
+        const ensembleValEl = document.getElementById("valEnsemble");
+        const varianceValEl = document.getElementById("valVariance");
+        if (res.match) {
+          ensembleValEl.className = "stat-val good";
+          varianceValEl.className = "stat-val good";
+        } else {
+          ensembleValEl.className = "stat-val bad";
+          varianceValEl.className = "stat-val bad";
+        }
+
+        // 诊断总结
+        const tagEl = document.getElementById("verdictTag");
+        tagEl.textContent = res.tag;
+        tagEl.className = "verdict-tag " + (res.match ? "match" : "mismatch");
+
+        document.getElementById("verdictExplain").textContent = res.explain;
+        document.getElementById("verdictMechanism").textContent = res.mechanism;
+
+        drawChart();
+      }
+
+      function drawChart() {
+        if (!ctx) return;
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const padLeft = 70;
+        const padRight = 40;
+        const padTop = 30;
+        const padBottom = 45;
+        const plotW = w - padLeft - padRight;
+        const plotH = h - padTop - padBottom;
+
+        // 坐标系范围：x ∈ [1, 10]，y ∈ [0, 40]%
+        const yMax = 40;
+        const yMin = 0;
+
+        const toX = idx => padLeft + (idx / 9) * plotW;
+        const toY = val => padTop + plotH - ((val - yMin) / (yMax - yMin)) * plotH;
+
+        // 背景刻度网格
+        ctx.strokeStyle = "#71828B33";
+        ctx.lineWidth = 1;
+        ctx.font = "12px 'Noto Sans CJK SC', sans-serif";
+        ctx.fillStyle = "#50616B";
+
+        for (let y = 0; y <= 40; y += 10) {
+          const py = toY(y);
+          ctx.beginPath();
+          ctx.moveTo(padLeft, py);
+          ctx.lineTo(padLeft + plotW, py);
+          ctx.stroke();
+          ctx.fillText(y + "%", padLeft - 38, py + 4);
+        }
+
+        // x 轴刻度
+        const xLabels = ["M=1", "M=3", "M=6", "M=9", "M=12", "M=15", "M=18", "M=21", "M=25", "M=30"];
+        for (let i = 0; i < 10; i++) {
+          const px = toX(i);
+          ctx.beginPath();
+          ctx.moveTo(px, padTop + plotH);
+          ctx.lineTo(px, padTop + plotH + 5);
+          ctx.stroke();
+          ctx.fillText(xLabels[i], px - 14, padTop + plotH + 20);
+        }
+
+        // 基基线 (单基模型基准线)
+        const baseVal = parseFloat(SIM_DATA[state.task].baseline);
+        const baseY = toY(baseVal);
+        ctx.save();
+        ctx.strokeStyle = "#B83D0B";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, baseY);
+        ctx.lineTo(padLeft + plotW, baseY);
+        ctx.stroke();
+        ctx.fillStyle = "#B83D0B";
+        ctx.fillText(`单基模型误差基准 ${baseVal}%`, padLeft + plotW - 140, baseY - 6);
+        ctx.restore();
+
+        const res = getResult();
+        const trainPts = res.trainCurve;
+        const testPts = res.testCurve;
+
+        // 根据 progress 决定画多少点
+        const curCount = Math.max(1, Math.min(10, Math.floor(state.progress * 10)));
+        const partial = (state.progress * 10) - Math.floor(state.progress * 10);
+
+        function drawCurve(pts, color, isStrong) {
+          ctx.beginPath();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = isStrong ? 3 : 2;
+          ctx.lineJoin = "round";
+          ctx.lineCap = "round";
+
+          for (let i = 0; i < curCount; i++) {
+            const px = toX(i);
+            const py = toY(pts[i]);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+
+          if (curCount < 10 && curCount > 0) {
+            const lastIdx = curCount - 1;
+            const nextIdx = curCount;
+            const px = toX(lastIdx) + (toX(nextIdx) - toX(lastIdx)) * partial;
+            const py = toY(pts[lastIdx]) + (toY(pts[nextIdx]) - toY(pts[lastIdx])) * partial;
+            ctx.lineTo(px, py);
+          }
+
+          ctx.stroke();
+
+          // 关键点圆圈
+          for (let i = 0; i < curCount; i++) {
+            ctx.beginPath();
+            ctx.fillStyle = "#E8EEF1";
+            ctx.arc(toX(i), toY(pts[i]), isStrong ? 4.5 : 3.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+        }
+
+        // 绘制训练误差与测试误差
+        drawCurve(trainPts, "#71828B", false);
+        drawCurve(testPts, "#17628E", true);
+      }
+
+      function startSimulation() {
+        if (state.animating) return;
+        state.animating = true;
+        state.progress = 0;
+        const duration = 650; // ms
+        const start = performance.now();
+
+        function step(now) {
+          const elapsed = now - start;
+          const p = Math.min(1.0, elapsed / duration);
+          state.progress = p;
+          drawChart();
+
+          if (p < 1.0) {
+            requestAnimationFrame(step);
+          } else {
+            state.progress = 1.0;
+            state.animating = false;
+            drawChart();
+          }
+        }
+        requestAnimationFrame(step);
+      }
+
+      // 事件绑定
+      document.querySelectorAll(".task-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          state.task = btn.dataset.task;
+          state.progress = 1.0;
+          updateUI();
+        });
+      });
+
+      document.querySelectorAll(".method-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          state.method = btn.dataset.method;
+          state.progress = 1.0;
+          updateUI();
+        });
+      });
+
+      document.getElementById("btnSimulate").addEventListener("click", () => {
+        startSimulation();
+      });
+
+      document.getElementById("btnReset").addEventListener("click", () => {
+        state.task = "variance";
+        state.method = "bagging";
+        state.progress = 1.0;
+        state.animating = false;
+        updateUI();
+      });
+
+      // 初始化画布与尺寸适配
+      function initCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx = canvas.getContext("2d");
+        ctx.scale(dpr, dpr);
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+      }
+
+      window.addEventListener("resize", () => {
+        initCanvas();
+        drawChart();
+      });
+
+      // 启动
+      initCanvas();
+      updateUI();
+      Deck.init({ keys: true, total: 32 });
+    })();
+  </script>
+
+  <aside class="notes" hidden>
+    本页是集成方法的综合诊断与匹配交互实验。
+    真实工程中，盲目套用热门算法往往适得其反。我们设立了三种经典病因任务：
+    第一种是高方差过拟合，常见于深决策树或小样本高维特征。此时 Bagging 和随机森林通过重采样制造差异，平均多树直接平抑方差，是降误差的不二法门；若错误使用 Boosting，算法会强行拟合高方差噪声，测试误差反而上升。
+    第二种是欠拟合强偏差，例如单层弱决策桩。此时 Bagging 无论平均多少弱模型，偏差依然居高不下；而 Boosting 串行重赋权聚焦残差，能将弱学习器升格为强学习器。
+    第三种是异质模型互补，面对逻辑回归、SVM 和神经网络等具有不同归纳偏置的模型，Stacking 借助元学习器学习区域优势划分，才能发挥异质融合的最大价值。
+  </aside>
+</body>
+</html>

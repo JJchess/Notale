@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      color: var(--text);
+      font-family: var(--font-sans);
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    header.deck-head {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .deck-head h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .deck-head .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主工作台：两列布局（左侧交互曲线图，右侧数学分解与推演） */
+    .workspace {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1.28fr 1fr;
+      gap: 20px;
+    }
+
+    .chart-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: var(--line) solid var(--surface-strong);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px 14px;
+      position: relative;
+    }
+
+    .chart-card-head {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .chart-legend {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .legend-swatch {
+      width: 18px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .legend-swatch.rho-active { background: var(--aggregate); }
+    .legend-swatch.rho-zero { background: var(--learner); }
+    .legend-swatch.rho-limit {
+      background: #889bb0;
+      height: 0;
+      border-top: 2px dashed #889bb0;
+    }
+
+    .plot-container {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+    #chartHost {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 交互滑块控制条 */
+    .controls-shelf {
+      margin-top: 10px;
+      padding-top: 12px;
+      border-top: 1px solid var(--surface-strong);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .ctl-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .ctl-label {
+      width: 190px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .ctl-slider-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    input[type="range"] {
+      flex: 1;
+      height: 6px;
+      accent-color: var(--focus);
+      cursor: pointer;
+    }
+    .ctl-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      width: 52px;
+      text-align: right;
+      color: var(--focus);
+    }
+
+    .preset-btns {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-sec);
+    }
+    .preset-btns span {
+      color: var(--muted);
+      margin-right: 4px;
+      font-size: var(--fs-label);
+    }
+    .btn-chip {
+      background: var(--surface-strong);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-size: var(--fs-label);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 500;
+      transition: all var(--dur) var(--ease);
+    }
+    .btn-chip:hover {
+      background: #c7d5df;
+    }
+    .btn-chip.active {
+      background: var(--focus);
+      color: #fff;
+    }
+
+    /* 右侧：数学原理与解析 */
+    .theory-card {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .panel-box {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: var(--line) solid var(--surface-strong);
+      padding: 16px 20px;
+    }
+
+    .formula-banner {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .formula-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .formula-math {
+      font-size: 22px;
+      padding: 6px 0;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 44px;
+    }
+
+    /* 读数仪表板 */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .metric-card {
+      background: #edf3f7;
+      border-radius: 8px;
+      padding: 12px 14px;
+      border-left: 4px solid var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-card.highlight {
+      border-left-color: var(--aggregate);
+      background: #fdf1ee;
+    }
+    .metric-card.blue {
+      border-left-color: var(--learner);
+      background: #eef4fa;
+    }
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+    }
+    .metric-val .unit {
+      font-size: var(--fs-label);
+      font-weight: 500;
+      color: var(--muted);
+      margin-left: 2px;
+    }
+    .metric-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    /* 观察与结论导读 */
+    .takeaway-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      justify-content: center;
+    }
+    .takeaway-head {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .takeaway-head::before {
+      display: none;
+    }
+    .takeaway-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.45;
+      margin: 0;
+      padding-left: 20px;
+    }
+    .takeaway-list li strong {
+      color: var(--text);
+    }
+    .takeaway-list li span.alert {
+      color: var(--aggregate);
+      font-weight: 600;
+    }
+
+    .math-term {
+      font-family: var(--font-num);
+      font-style: italic;
+    }
+  </style>
+</head>
+<body data-page="05" data-total="27">
+  <div id="stage">
+    <header class="deck-head">
+      <h1>多样性是集成收益的来源：数量与相关性共同决定方差</h1>
+      <p class="lead">若基学习器个体方差为 <span class="math-term">σ²</span>、两两误差相关系数为 <span class="math-term">ρ</span>，简单平均集成的方差严格等于两项之和：独立缩减项与不可消除底限。</p>
+    </header>
+
+    <main class="workspace">
+      <!-- 左栏：主图表交互区 -->
+      <section class="chart-card min0">
+        <div class="chart-card-head">
+          <div class="chart-title">集成方差随基学习器数量 <span class="math-term">M</span> 的衰减路径</div>
+          <div class="chart-legend">
+            <span class="legend-item">
+              <span class="legend-swatch rho-active"></span>
+              <span id="legendActiveText">当前相关性 ρ = 0.20</span>
+            </span>
+            <span class="legend-item">
+              <span class="legend-swatch rho-zero"></span>
+              <span>完全独立 ρ = 0</span>
+            </span>
+            <span class="legend-item">
+              <span class="legend-swatch rho-limit"></span>
+              <span id="legendFloorText">底限 ρ·σ² = 0.20</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="plot-container">
+          <div id="chartHost" role="img" aria-label="集成方差随基学习器数量M与相关性变化的函数图像"></div>
+        </div>
+
+        <!-- 交互滑块控制组 -->
+        <div class="controls-shelf">
+          <div class="ctl-row">
+            <label for="rhoRange" class="ctl-label">
+              <span>两两误差相关性</span>
+              <span class="math-term">(ρ)</span>:
+            </label>
+            <div class="ctl-slider-wrap">
+              <input type="range" id="rhoRange" min="0" max="0.9" step="0.05" value="0.2">
+              <span class="ctl-val" id="rhoVal">0.20</span>
+            </div>
+            <div class="preset-btns">
+              <span>预设：</span>
+              <button class="btn-chip" data-rho="0">独立 (0.0)</button>
+              <button class="btn-chip active" data-rho="0.2">弱相关 (0.2)</button>
+              <button class="btn-chip" data-rho="0.6">强相关 (0.6)</button>
+            </div>
+          </div>
+
+          <div class="ctl-row">
+            <label for="mRange" class="ctl-label">
+              <span>当前选定模型数</span>
+              <span class="math-term">(M)</span>:
+            </label>
+            <div class="ctl-slider-wrap">
+              <input type="range" id="mRange" min="1" max="50" step="1" value="10">
+              <span class="ctl-val" id="mVal">10</span>
+            </div>
+            <div class="preset-btns">
+              <span>观测点：</span>
+              <button class="btn-chip" data-m="3">M = 3</button>
+              <button class="btn-chip active" data-m="10">M = 10</button>
+              <button class="btn-chip" data-m="30">M = 30</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：方差分解与定量解读 -->
+      <aside class="theory-card min0">
+        <!-- 方差公式面板 -->
+        <div class="panel-box formula-banner">
+          <div class="formula-title">方差分解公式 (均等权重平均，个体方差 σ² = 1.0)</div>
+          <div class="formula-math" id="formulaKatex"></div>
+        </div>
+
+        <!-- 实时计算指标卡片 -->
+        <div class="metrics-grid">
+          <div class="metric-card highlight">
+            <div class="metric-label">集成实际方差 Var(f_ens)</div>
+            <div class="metric-val" id="calcEnsVar">0.280 <span class="unit">σ²</span></div>
+            <div class="metric-sub" id="calcDropPct">较单个模型下降 72.0%</div>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-label">不可逾越的方差底限 (M→∞)</div>
+            <div class="metric-val" id="calcFloor">0.200 <span class="unit">σ²</span></div>
+            <div class="metric-sub">极限值由相关性 ρ 锁定</div>
+          </div>
+
+          <div class="metric-card blue">
+            <div class="metric-label">独立基准方差 (若 ρ = 0)</div>
+            <div class="metric-val" id="calcIndepVar">0.100 <span class="unit">σ²</span></div>
+            <div class="metric-sub">纯 1/M 衰减目标</div>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-label">多样性缺失惩罚 (多余方差)</div>
+            <div class="metric-val" id="calcPenalty">+0.180 <span class="unit">σ²</span></div>
+            <div class="metric-sub">因预测同质化损失的降幅</div>
+          </div>
+        </div>
+
+        <!-- 教学结论与物理意义 -->
+        <div class="panel-box takeaway-card">
+          <div class="takeaway-head">核心机制与工程启示</div>
+          <ul class="takeaway-list">
+            <li>
+              <strong>边际收益迅速递减：</strong> 当 <span class="math-term">M</span> 超过 15–20 后，曲线快速贴近水平虚线，继续堆叠模型几乎无法进一步压低方差。
+            </li>
+            <li>
+              <strong>相关性决定收益天花板：</strong> 若两两相关 <span class="math-term">ρ > 0</span>，集成的方差永远不可能降到 <span class="alert">ρ·σ²</span> 以下。同质模型的平均毫无意义。
+            </li>
+            <li>
+              <strong>Bagging 算法的真正意图：</strong> 自助采样（Bootstrap）与随机特征选择，根本目的不是为了增加数量，而是为了<strong>把 ρ 往下拉</strong>。
+            </li>
+          </ul>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      var rhoSlider = document.getElementById("rhoRange");
+      var rhoDisplay = document.getElementById("rhoVal");
+      var mSlider = document.getElementById("mRange");
+      var mDisplay = document.getElementById("mVal");
+
+      var legendActiveText = document.getElementById("legendActiveText");
+      var legendFloorText = document.getElementById("legendFloorText");
+
+      var calcEnsVar = document.getElementById("calcEnsVar");
+      var calcDropPct = document.getElementById("calcDropPct");
+      var calcFloor = document.getElementById("calcFloor");
+      var calcIndepVar = document.getElementById("calcIndepVar");
+      var calcPenalty = document.getElementById("calcPenalty");
+
+      var chartHost = document.getElementById("chartHost");
+      var chart = null;
+
+      // 渲染数学公式
+      function renderFormula() {
+        var el = document.getElementById("formulaKatex");
+        if (!el || !window.katex) return;
+        katex.render(
+          "\\text{Var}\\big(\\bar{f}\\big) = \\rho \\sigma^2 + \\frac{1 - \\rho}{M} \\sigma^2",
+          el,
+          { throwOnError: false, displayMode: true }
+        );
+      }
+
+      // 计算给定 M 和 rho 时的方差（设定 sigma^2 = 1）
+      function getVariance(m, rho) {
+        return rho + (1 - rho) / m;
+      }
+
+      // 生成 M = 1..50 的曲线点
+      function generateCurve(rho) {
+        var pts = [];
+        for (var m = 1; m <= 50; m++) {
+          pts.push([m, parseFloat(getVariance(m, rho).toFixed(4))]);
+        }
+        return pts;
+      }
+
+      function initChart() {
+        if (!window.echarts) return;
+        chart = echarts.init(chartHost, null, { renderer: "svg" });
+        updateChart();
+      }
+
+      function updateChart() {
+        if (!chart) return;
+
+        var rho = parseFloat(rhoSlider.value);
+        var currentM = parseInt(mSlider.value, 10);
+
+        var curVar = getVariance(currentM, rho);
+        var indepVar = getVariance(currentM, 0);
+        var floorVal = rho;
+
+        // 更新文本指标
+        rhoDisplay.textContent = rho.toFixed(2);
+        mDisplay.textContent = currentM;
+
+        legendActiveText.textContent = "当前相关性 ρ = " + rho.toFixed(2);
+        legendFloorText.textContent = "极限底限 ρ·σ² = " + rho.toFixed(2);
+
+        calcEnsVar.innerHTML = curVar.toFixed(3) + ' <span class="unit">σ²</span>';
+        var drop = ((1 - curVar) * 100).toFixed(1);
+        calcDropPct.textContent = "较单个模型下降 " + drop + "%";
+
+        calcFloor.innerHTML = floorVal.toFixed(3) + ' <span class="unit">σ²</span>';
+        calcIndepVar.innerHTML = indepVar.toFixed(3) + ' <span class="unit">σ²</span>';
+        calcPenalty.innerHTML = "+" + (curVar - indepVar).toFixed(3) + ' <span class="unit">σ²</span>';
+
+        // 曲线数据
+        var activeCurve = generateCurve(rho);
+        var indepCurve = generateCurve(0);
+
+        var option = {
+          animationDuration: 250,
+          grid: {
+            left: 54,
+            right: 28,
+            top: 24,
+            bottom: 42
+          },
+          tooltip: {
+            trigger: "axis",
+            axisPointer: { type: "line", lineStyle: { color: "#536777", type: "dashed" } },
+            formatter: function(params) {
+              var m = params[0].value[0];
+              var vActive = getVariance(m, rho).toFixed(3);
+              var vIndep = getVariance(m, 0).toFixed(3);
+              return "基学习器数量 M = " + m + "<br/>" +
+                     "当前方差 (ρ=" + rho.toFixed(2) + "): <b>" + vActive + " σ²</b><br/>" +
+                     "独立方差 (ρ=0): <b>" + vIndep + " σ²</b><br/>" +
+                     "渐近底限: <b>" + rho.toFixed(2) + " σ²</b>";
+            }
+          },
+          xAxis: {
+            type: "value",
+            min: 1,
+            max: 50,
+            interval: 5,
+            name: "基学习器数量 M",
+            nameLocation: "middle",
+            nameGap: 26,
+            nameTextStyle: { color: "#536777", fontSize: 13 },
+            axisLine: { lineStyle: { color: "#889bb0", width: 1.5 } },
+            axisTick: { lineStyle: { color: "#889bb0" } },
+            axisLabel: { color: "#536777", fontSize: 13 },
+            splitLine: { show: true, lineStyle: { color: "#e4ebf0", type: "dashed" } }
+          },
+          yAxis: {
+            type: "value",
+            min: 0,
+            max: 1.05,
+            interval: 0.2,
+            name: "集成方差 Var (σ²)",
+            nameTextStyle: { color: "#536777", fontSize: 13, align: "left" },
+            axisLine: { lineStyle: { color: "#889bb0", width: 1.5 } },
+            axisLabel: { color: "#536777", fontSize: 13, formatter: "{value}" },
+            splitLine: { lineStyle: { color: "#e4ebf0" } }
+          },
+          series: [
+            // 独立基准线 (ρ = 0)
+            {
+              name: "完全独立 (ρ=0)",
+              type: "line",
+              smooth: 0.3,
+              showSymbol: false,
+              data: indepCurve,
+              lineStyle: { color: "#275D91", width: 2, type: "dashed" }
+            },
+            // 当前相关系数曲线
+            {
+              name: "当前相关性",
+              type: "line",
+              smooth: 0.3,
+              showSymbol: false,
+              data: activeCurve,
+              lineStyle: { color: "#B63B24", width: 3.5 },
+              markLine: {
+                symbol: "none",
+                silent: true,
+                data: [
+                  {
+                    yAxis: rho,
+                    lineStyle: { color: "#889bb0", width: 2, type: "dashed" },
+                    label: {
+                      show: true,
+                      position: "insideEndTop",
+                      formatter: "渐近底限 ρ·σ² = " + rho.toFixed(2),
+                      color: "#536777",
+                      fontSize: 12
+                    }
+                  }
+                ]
+              },
+              markPoint: {
+                data: [
+                  {
+                    coord: [currentM, curVar],
+                    symbol: "circle",
+                    symbolSize: 12,
+                    itemStyle: { color: "#B63B24", borderColor: "#ffffff", borderWidth: 2.5 },
+                    label: {
+                      show: true,
+                      position: "top",
+                      distance: 8,
+                      formatter: "M=" + currentM + "\n" + curVar.toFixed(3),
+                      color: "#142533",
+                      fontSize: 12,
+                      fontWeight: "bold"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        };
+
+        chart.setOption(option);
+      }
+
+      // 绑定滑块事件
+      rhoSlider.addEventListener("input", function(){
+        updatePresetActive("rho", this.value);
+        updateChart();
+      });
+      mSlider.addEventListener("input", function(){
+        updatePresetActive("m", this.value);
+        updateChart();
+      });
+
+      // 预设按钮事件
+      document.querySelectorAll(".btn-chip[data-rho]").forEach(function(btn){
+        btn.addEventListener("click", function(){
+          var val = this.getAttribute("data-rho");
+          rhoSlider.value = val;
+          updatePresetActive("rho", val);
+          updateChart();
+        });
+      });
+
+      document.querySelectorAll(".btn-chip[data-m]").forEach(function(btn){
+        btn.addEventListener("click", function(){
+          var val = this.getAttribute("data-m");
+          mSlider.value = val;
+          updatePresetActive("m", val);
+          updateChart();
+        });
+      });
+
+      function updatePresetActive(type, val) {
+        var numVal = parseFloat(val);
+        document.querySelectorAll(".btn-chip[data-" + type + "]").forEach(function(b){
+          var targetVal = parseFloat(b.getAttribute("data-" + type));
+          if (Math.abs(targetVal - numVal) < 0.01) {
+            b.classList.add("active");
+          } else {
+            b.classList.remove("active");
+          }
+        });
+      }
+
+      // 初始化底盘
+      Deck.init({ index: 5, total: 27, keys: false });
+      renderFormula();
+      initChart();
+
+      // 窗口重绘适配
+      window.addEventListener("resize", function(){
+        if (chart) chart.resize();
+      });
+
+    })();
+  </script>
+</body>
+</html>

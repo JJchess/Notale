@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>为什么多个模型能胜过单个更强模型</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      background: var(--bg);
+      box-sizing: border-box;
+    }
+
+    .header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .header h1 {
+      font-size: var(--fs-h1);
+      margin: 0;
+      color: var(--text);
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .header p {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .col-left, .col-right {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .panel-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--surface-strong);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+    }
+
+    .card-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
+      flex-shrink: 0;
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-sub {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 样本矩阵对比表 */
+    .matrix-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 0;
+    }
+
+    .matrix-tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .mode-btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: var(--fs-sec);
+      border: 1.5px solid var(--surface-strong);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all var(--dur) var(--ease);
+      font-weight: 600;
+    }
+
+    .mode-btn[aria-pressed="true"] {
+      background: var(--focus);
+      color: #fff;
+      border-color: var(--focus);
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: 80px repeat(3, 1fr) 110px;
+      gap: 6px 8px;
+      align-items: center;
+      font-size: var(--fs-sec);
+    }
+
+    .m-header {
+      font-weight: 700;
+      color: var(--muted);
+      font-size: var(--fs-label);
+      text-align: center;
+      padding-bottom: 4px;
+      border-bottom: 1.5px solid var(--surface-strong);
+    }
+
+    .m-cell {
+      padding: 8px 4px;
+      border-radius: 6px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-weight: 600;
+    }
+
+    .m-row-header {
+      font-weight: 600;
+      color: var(--text);
+      text-align: left;
+      padding-left: 6px;
+      font-size: var(--fs-sec);
+    }
+
+    .cell-ok {
+      background: rgba(46, 106, 69, 0.12);
+      color: var(--correct);
+    }
+
+    .cell-err {
+      background: rgba(182, 59, 36, 0.14);
+      color: var(--aggregate);
+    }
+
+    .cell-ens-ok {
+      background: rgba(46, 106, 69, 0.22);
+      color: var(--correct);
+      font-weight: 700;
+    }
+
+    .cell-ens-err {
+      background: rgba(182, 59, 36, 0.22);
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+
+    .stat-bar {
+      margin-top: 10px;
+      padding: 10px 14px;
+      background: #fff;
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      border: 1px solid var(--surface-strong);
+      font-size: var(--fs-label);
+    }
+
+    .stat-item {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .stat-val {
+      font-family: var(--font-num, sans-serif);
+      font-weight: 700;
+      font-size: var(--fs-h2);
+    }
+
+    /* 右侧理论数学与曲线 */
+    .condorcet-box {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .formula-row {
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px 14px;
+      border: 1px solid var(--surface-strong);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .formula-content {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .formula-content strong {
+      color: var(--learner);
+    }
+
+    .chart-container {
+      flex: 1;
+      min-height: 180px;
+      position: relative;
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+      padding: 12px 16px 8px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chart-svg-wrap {
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+    }
+
+    .chart-svg-wrap svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 底部两根支撑柱 */
+    .conditions-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    .cond-box {
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px 14px;
+      border-left: none;
+      border: 1px solid var(--surface-strong);
+    }
+
+    .cond-box.alt {
+      border-left: none;
+      border: 1px solid var(--surface-strong);
+    }
+
+    .cond-title {
+      font-weight: 700;
+      font-size: var(--fs-sec);
+      margin-bottom: 4px;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .cond-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    /* 控制条 */
+    .ctl-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 4px 0;
+      font-size: var(--fs-label);
+    }
+
+    .ctl-row input[type="range"] {
+      flex: 1;
+      accent-color: var(--focus);
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body data-page="02" data-total="27">
+  <div id="stage">
+    <!-- 头部导引 -->
+    <header class="header">
+      <h1>为什么多个模型能胜过单个更强模型</h1>
+      <p>孔多塞陪审团定理与集成的双重基石：个体必须具备基础精度（胜于随机猜），且错误分布必须具备多样性。</p>
+    </header>
+
+    <!-- 主交互与图解区 -->
+    <main class="main-grid">
+      <!-- 左列：多样性直观矩阵 (互补 vs 相同) -->
+      <section class="panel-card col-left">
+        <div class="card-title-row">
+          <div class="card-title">
+            <span>错误相关性对比</span>
+            <span class="card-sub">3 个准确率同为 66.7% 的基分类器 (多数投票)</span>
+          </div>
+        </div>
+
+        <div class="matrix-tabs">
+          <button class="mode-btn" id="btn-independent" aria-pressed="true">状态 A：错位互补（独立错误）</button>
+          <button class="mode-btn" id="btn-correlated" aria-pressed="false">状态 B：高度趋同（相关错误）</button>
+        </div>
+
+        <div class="matrix-wrapper">
+          <div class="matrix-grid" id="matrix-container">
+            <!-- 动态生成 6 个样本的表头与判定结果 -->
+          </div>
+
+          <div class="stat-bar" id="matrix-stats">
+            <div class="stat-item">
+              <span style="color:var(--muted)">单个基学习器准确率:</span>
+              <span class="stat-val" style="color:var(--learner)" id="stat-single">66.7%</span>
+            </div>
+            <div class="stat-item">
+              <span style="color:var(--muted)">多数投票集成准确率:</span>
+              <span class="stat-val" style="color:var(--aggregate)" id="stat-ens">100.0%</span>
+            </div>
+            <div class="stat-item">
+              <span style="color:var(--muted)">集成增益:</span>
+              <span class="stat-val" style="color:var(--correct)" id="stat-gain">+33.3%</span>
+            </div>
+          </div>
+        </div>
+
+        <p class="cond-desc" id="matrix-desc" style="margin-top: 10px;">
+          当每个基分类器的错误均匀错开（无样本被两个以上模型同时判错）时，多数投票能纠正所有个体偶发失误，达到 100% 准确率。
+        </p>
+      </section>
+
+      <!-- 右列：孔多塞陪审团定理与数量扩展效应 -->
+      <section class="panel-card col-right">
+        <div class="card-title-row">
+          <div class="card-title">
+            <span>孔多塞陪审团定理</span>
+            <span class="card-sub">独立多数投票的极限收敛</span>
+          </div>
+        </div>
+
+        <div class="condorcet-box">
+          <div class="formula-row">
+            <div class="formula-content">
+              设每个基分类器独立且准确率均为 <strong>p</strong>，则 <strong>T</strong> 个分类器多数表决的整体正确率：
+              <div style="font-family: var(--font-num, sans-serif); margin-top:4px; font-weight:600; color:var(--text);">
+                P(集成正确) = ∑<sub>k=⌈(T+1)/2⌉</sub><sup>T</sup> C(T, k) · p<sup>k</sup> (1 - p)<sup>T - k</sup>
+              </div>
+            </div>
+          </div>
+
+          <div class="chart-container">
+            <div class="ctl-row">
+              <label for="p-slider">基学习器单体准确率 <strong>p = <span id="p-val">0.60</span></strong></label>
+              <input type="range" id="p-slider" min="0.30" max="0.80" step="0.02" value="0.60">
+            </div>
+
+            <div class="chart-svg-wrap">
+              <svg id="curve-svg" viewBox="0 0 540 170" preserveAspectRatio="none">
+                <!-- SVG 曲线由脚本绘制 -->
+              </svg>
+            </div>
+          </div>
+
+          <div class="conditions-row">
+            <div class="cond-box">
+              <div class="cond-title">
+                <span>前提一 · 有效性</span>
+                <span style="color:var(--learner)">p &gt; 0.5</span>
+              </div>
+              <p class="cond-desc">
+                基分类器必须优于随机瞎猜。若 p &lt; 0.5，规模 T 越大，多数投票错误率反而越趋近 100%。
+              </p>
+            </div>
+            <div class="cond-box alt">
+              <div class="cond-title">
+                <span>前提二 · 多样性</span>
+                <span style="color:var(--aggregate)">非完全正相关</span>
+              </div>
+              <p class="cond-desc">
+                个体预测之间须有错位。若所有模型在同一批样本上犯错，投票无法产生任何纠错增益。
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      Deck.init({ index: 2, total: 27, keys: false });
+
+      // 1. 矩阵对比数据
+      // 6 个样本
+      // 模式 A：独立错位错误（每个模型错 2 个，且两两不重叠）
+      // M1 错在 S1, S2；M2 错在 S3, S4；M3 错在 S5, S6
+      // 投票：每行都恰好 2 正 1 负，多数投票全对！
+      const dataIndependent = [
+        { sample: '样本 #1', m1: false, m2: true,  m3: true,  ens: true },
+        { sample: '样本 #2', m1: false, m2: true,  m3: true,  ens: true },
+        { sample: '样本 #3', m1: true,  m2: false, m3: true,  ens: true },
+        { sample: '样本 #4', m1: true,  m2: false, m3: true,  ens: true },
+        { sample: '样本 #5', m1: true,  m2: true,  m3: false, ens: true },
+        { sample: '样本 #6', m1: true,  m2: true,  m3: false, ens: true }
+      ];
+
+      // 模式 B：高度趋同错误（每个模型依然错 2 个，但都错在同一批）
+      // M1, M2, M3 均错在 S1, S2
+      // 投票：S1, S2 均为 3 负，集成也错！准确率退化为 66.7%
+      const dataCorrelated = [
+        { sample: '样本 #1', m1: false, m2: false, m3: false, ens: false },
+        { sample: '样本 #2', m1: false, m2: false, m3: false, ens: false },
+        { sample: '样本 #3', m1: true,  m2: true,  m3: true,  ens: true },
+        { sample: '样本 #4', m1: true,  m2: true,  m3: true,  ens: true },
+        { sample: '样本 #5', m1: true,  m2: true,  m3: true,  ens: true },
+        { sample: '样本 #6', m1: true,  m2: true,  m3: true,  ens: true }
+      ];
+
+      let currentMode = 'independent';
+
+      const matrixEl = document.getElementById('matrix-container');
+      const btnIndep = document.getElementById('btn-independent');
+      const btnCorr = document.getElementById('btn-correlated');
+      const statSingle = document.getElementById('stat-single');
+      const statEns = document.getElementById('stat-ens');
+      const statGain = document.getElementById('stat-gain');
+      const matrixDesc = document.getElementById('matrix-desc');
+
+      function renderMatrix(mode) {
+        currentMode = mode;
+        const data = mode === 'independent' ? dataIndependent : dataCorrelated;
+
+        btnIndep.setAttribute('aria-pressed', mode === 'independent');
+        btnCorr.setAttribute('aria-pressed', mode === 'correlated');
+
+        let html = `
+          <div class="m-header" style="text-align:left; padding-left:6px;">样本序列</div>
+          <div class="m-header">模型 h₁</div>
+          <div class="m-header">模型 h₂</div>
+          <div class="m-header">模型 h₃</div>
+          <div class="m-header" style="color:var(--aggregate)">多数投票</div>
+        `;
+
+        data.forEach(row => {
+          html += `
+            <div class="m-row-header">${row.sample}</div>
+            <div class="m-cell ${row.m1 ? 'cell-ok' : 'cell-err'}">${row.m1 ? '✓ 正确' : '✗ 错误'}</div>
+            <div class="m-cell ${row.m2 ? 'cell-ok' : 'cell-err'}">${row.m2 ? '✓ 正确' : '✗ 错误'}</div>
+            <div class="m-cell ${row.m3 ? 'cell-ok' : 'cell-err'}">${row.m3 ? '✓ 正确' : '✗ 错误'}</div>
+            <div class="m-cell ${row.ens ? 'cell-ens-ok' : 'cell-ens-err'}">${row.ens ? '✓ 正确' : '✗ 错误'}</div>
+          `;
+        });
+
+        matrixEl.innerHTML = html;
+
+        if (mode === 'independent') {
+          statSingle.textContent = '66.7%';
+          statEns.textContent = '100.0%';
+          statGain.textContent = '+33.3%';
+          statGain.style.color = 'var(--correct)';
+          matrixDesc.textContent = '独立错位：当各模型的错误错开分布（没有样本被两个以上模型同时判错）时，多数投票能纠正所有个体失误，达到 100% 准确率。';
+        } else {
+          statSingle.textContent = '66.7%';
+          statEns.textContent = '66.7%';
+          statGain.textContent = '0.0%';
+          statGain.style.color = 'var(--muted)';
+          matrixDesc.textContent = '高度趋同：当所有分类器错在相同的样本上时，多数投票无法互相纠偏，集成准确率完全停留在单个模型的 66.7%。';
+        }
+      }
+
+      btnIndep.addEventListener('click', () => renderMatrix('independent'));
+      btnCorr.addEventListener('click', () => renderMatrix('correlated'));
+      renderMatrix('independent');
+
+      // 2. 孔多塞定理曲线计算与绘制
+      function binomCoeff(n, k) {
+        if (k < 0 || k > n) return 0;
+        if (k === 0 || k === n) return 1;
+        let res = 1;
+        for (let i = 1; i <= k; i++) {
+          res = (res * (n - i + 1)) / i;
+        }
+        return res;
+      }
+
+      function ensembleAccuracy(T, p) {
+        const threshold = Math.floor(T / 2) + 1;
+        let sum = 0;
+        for (let k = threshold; k <= T; k++) {
+          sum += binomCoeff(T, k) * Math.pow(p, k) * Math.pow(1 - p, T - k);
+        }
+        return sum;
+      }
+
+      const pSlider = document.getElementById('p-slider');
+      const pValSpan = document.getElementById('p-val');
+      const svgEl = document.getElementById('curve-svg');
+
+      // T 从 1 到 25 的奇数序列
+      const tValues = [1, 3, 5, 7, 9, 11, 15, 19, 23, 27, 31];
+
+      function updateCurve() {
+        const p = parseFloat(pSlider.value);
+        pValSpan.textContent = p.toFixed(2);
+
+        // 画布尺寸 540 x 170
+        const w = 540, h = 170;
+        const padL = 44, padR = 24, padT = 20, padB = 30;
+        const plotW = w - padL - padR;
+        const plotH = h - padT - padB;
+
+        // X: T (1 到 31)
+        // Y: 准确率 (0 到 1.0)
+        function getX(T) {
+          return padL + ((T - 1) / (31 - 1)) * plotW;
+        }
+        function getY(acc) {
+          return padT + (1 - acc) * plotH;
+        }
+
+        // 生成刻度与基准线
+        let svgHtml = '';
+
+        // 50% 水平虚线
+        const y50 = getY(0.5);
+        svgHtml += `<line x1="${padL}" y1="${y50}" x2="${w - padR}" y2="${y50}" stroke="#CBD5E1" stroke-dasharray="4 3" stroke-width="1.5"/>`;
+        svgHtml += `<text x="${padL - 6}" y="${y50 + 4}" font-size="13" fill="var(--muted)" text-anchor="end">50%</text>`;
+
+        // 100% 顶线
+        const y100 = getY(1.0);
+        svgHtml += `<line x1="${padL}" y1="${y100}" x2="${w - padR}" y2="${y100}" stroke="#E2E8F0" stroke-width="1"/>`;
+        svgHtml += `<text x="${padL - 6}" y="${y100 + 4}" font-size="13" fill="var(--muted)" text-anchor="end">100%</text>`;
+
+        // 0% 底线
+        const y0 = getY(0.0);
+        svgHtml += `<line x1="${padL}" y1="${y0}" x2="${w - padR}" y2="${y0}" stroke="#E2E8F0" stroke-width="1"/>`;
+        svgHtml += `<text x="${padL - 6}" y="${y0 + 4}" font-size="13" fill="var(--muted)" text-anchor="end">0%</text>`;
+
+        // X 轴标签
+        [1, 7, 15, 23, 31].forEach(t => {
+          const x = getX(t);
+          svgHtml += `<line x1="${x}" y1="${y0}" x2="${x}" y2="${y0 + 5}" stroke="#94A3B8" stroke-width="1"/>`;
+          svgHtml += `<text x="${x}" y="${y0 + 18}" font-size="13" fill="var(--muted)" text-anchor="middle">T=${t}</text>`;
+        });
+
+        // 曲线点
+        let pts = [];
+        tValues.forEach(t => {
+          const acc = ensembleAccuracy(t, p);
+          pts.push({ t, acc, x: getX(t), y: getY(acc) });
+        });
+
+        // 路径
+        let pathD = `M ${pts[0].x} ${pts[0].y}`;
+        for (let i = 1; i < pts.length; i++) {
+          pathD += ` L ${pts[i].x} ${pts[i].y}`;
+        }
+
+        // 渐变与色彩决策
+        let strokeColor = p >= 0.5 ? 'var(--correct)' : 'var(--aggregate)';
+        if (Math.abs(p - 0.5) < 0.001) strokeColor = 'var(--muted)';
+
+        svgHtml += `<path d="${pathD}" fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linejoin="round"/>`;
+
+        // 数据圆点与最终读数
+        pts.forEach((pt, idx) => {
+          if (idx === 0 || idx === pts.length - 1 || idx % 2 === 0) {
+            svgHtml += `<circle cx="${pt.x}" cy="${pt.y}" r="3.5" fill="#fff" stroke="${strokeColor}" stroke-width="2"/>`;
+          }
+        });
+
+        // 最终点标注
+        const lastPt = pts[pts.length - 1];
+        const endPercent = (lastPt.acc * 100).toFixed(1) + '%';
+        const labelYOffset = p >= 0.5 ? -10 : 18;
+        svgHtml += `<text x="${lastPt.x - 4}" y="${lastPt.y + labelYOffset}" font-size="13" font-weight="700" fill="${strokeColor}" text-anchor="end">
+          T=31 时: ${endPercent}
+        </text>`;
+
+        // X轴说明
+        svgHtml += `<text x="${w - padR}" y="${y0 + 18}" font-size="13" fill="var(--muted)" text-anchor="end">基模型数 T →</text>`;
+
+        svgEl.innerHTML = svgHtml;
+      }
+
+      pSlider.addEventListener('input', updateCurve);
+      updateCurve();
+
+    })();
+  </script>
+</body>
+</html>

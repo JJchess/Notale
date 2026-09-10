@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bootstrap 重采样：从同一训练集构造彼此不同的有放回样本集</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F4F7FB;
+      --surface: #E8EEF5;
+      --text: #13243A;
+      --muted: #53667C;
+      --model: #2457A6;
+      --aggregate: #0F766E;
+      --focus: #C94B00;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: "DIN Alternate", "DIN", system-ui, sans-serif;
+      --fs-h1: 34px;
+      --fs-h2: 22px;
+      --fs-lead: 19px;
+      --fs-body: 18px;
+      --fs-sec: 16px;
+      --fs-label: 15px;
+      --fs-tick: 13px;
+      --radius: 8px;
+      --line: 2px;
+      --pad-x: 56px;
+      --pad-y: 28px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      background: var(--bg);
+      font-family: var(--font-sans);
+      user-select: none;
+    }
+
+    header {
+      flex: none;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      margin-top: 8px;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    main {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .board {
+      flex: 1;
+      min-height: 0;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: var(--line) solid rgba(83, 102, 124, 0.2);
+      position: relative;
+      overflow: hidden;
+    }
+
+    svg.diagram {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 样本点与卡片样式 */
+    .num {
+      font-family: var(--font-numeric);
+      font-weight: 700;
+    }
+
+    /* 下方操作栏与统计指标 */
+    .controls {
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #FFFFFF;
+      border: var(--line) solid rgba(83, 102, 124, 0.25);
+      border-radius: var(--radius);
+      padding: 16px 28px;
+      gap: 32px;
+    }
+
+    .btn-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .btn {
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 10px 22px;
+      border-radius: var(--radius);
+      border: var(--line) solid var(--model);
+      background: #FFFFFF;
+      color: #13243A;
+      cursor: pointer;
+      transition: background 160ms, color 160ms;
+    }
+
+    .btn:hover {
+      background: var(--model);
+      color: #FFFFFF;
+    }
+
+    .btn-primary {
+      background: var(--model);
+      color: #FFFFFF;
+    }
+
+    .btn-primary:hover {
+      background: #1B4588;
+      border-color: #1B4588;
+    }
+
+    .stat-strip {
+      display: flex;
+      align-items: baseline;
+      gap: 40px;
+    }
+
+    .stat-item {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .stat-label {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .stat-val {
+      font-family: var(--font-numeric);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    .stat-math {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    /* SVG 内部元素 */
+    .node-orig {
+      fill: #FFFFFF;
+      stroke: var(--text);
+      stroke-width: 2px;
+    }
+
+    .node-text {
+      font-family: var(--font-numeric);
+      font-size: 16px;
+      font-weight: 700;
+      dominant-baseline: central;
+      text-anchor: middle;
+      fill: var(--text);
+    }
+
+    .sub-box {
+      fill: #FFFFFF;
+      stroke: rgba(83, 102, 124, 0.3);
+      stroke-width: 1.5px;
+      rx: 6px;
+    }
+
+    .sub-title {
+      font-size: 16px;
+      font-weight: 700;
+      fill: var(--model);
+      font-family: var(--font-sans);
+    }
+
+    .tag-oob {
+      font-size: 15px;
+      fill: var(--focus);
+      font-weight: 600;
+      font-family: var(--font-sans);
+    }
+
+    .flow-line {
+      fill: none;
+      stroke: var(--model);
+      stroke-width: 1.5px;
+      opacity: 0.35;
+      transition: opacity 240ms;
+    }
+
+    .flow-line.active {
+      opacity: 0.9;
+      stroke-width: 2px;
+    }
+  </style>
+</head>
+<body data-page="07" data-total="29">
+  <div id="stage">
+    <header>
+      <h1>Bootstrap 重采样：从同一训练集构造彼此不同的有放回样本集</h1>
+      <p class="lead">每次有放回抽取 N 个样本，约 63.2% 被抽中，剩余 36.8% 未被选中形成袋外样本（OOB）。</p>
+    </header>
+
+    <main class="min0">
+      <div class="board min0" id="boardContainer">
+        <svg class="diagram" id="diagramSvg" viewBox="0 0 1488 560"></svg>
+      </div>
+
+      <div class="controls">
+        <div class="btn-group">
+          <button class="btn btn-primary" id="resampleBtn">重新采样</button>
+          <button class="btn" id="toggleLinesBtn">切换连线路径</button>
+        </div>
+
+        <div class="stat-strip">
+          <div class="stat-item">
+            <span class="stat-label">理论未抽中概率</span>
+            <span class="stat-val">36.8%</span>
+            <span class="stat-math">(1 - 1/N)ᴺ → 1/e</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">当前三个子集平均覆盖率</span>
+            <span class="stat-val" id="coverageVal">63.3%</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">袋外样本比例</span>
+            <span class="stat-val" id="oobVal">36.7%</span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    在这一页中，我们要理解 Bagging 的第一步：如何用有限的原始数据培养出一组“各不相同”的模型。
+    如果让所有基分类器在完全相同的样本集上训练，它们的决策就会高度雷同，聚合就无法抵消方差。
+    Bootstrap 的做法是“大小为 N 的有放回抽样”。
+    数学上，一个样本在一次抽取中未被选中的概率是 1 - 1/N。连续抽取 N 次后，依然完全没被抽中的概率为 (1 - 1/N) 的 N 次方。
+    当 N 趋向无穷大时，这个极限恰好是 1/e，约等于 36.8%。
+    这意味着每个重采样集合天然包含约 63.2% 的去重原始样本，并带有多次重复的样本；而剩下的约三分之一样本从未参与该子集的训练，这被称为“袋外样本”（OOB），正好为后续无需额外验证集的无偏自评估提供了基础。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      Deck.init({ index: 7, total: 29 });
+
+      const N = 10;
+      const SVG_W = 1488;
+      const SVG_H = 560;
+
+      // 固定种子或预设采样子集
+      const subsetsData = [
+        { id: 1, name: "子样本集 D₁", color: "#2457A6", samples: [1, 1, 3, 4, 6, 6, 7, 8, 9, 9] },
+        { id: 2, name: "子样本集 D₂", color: "#2457A6", samples: [2, 3, 3, 5, 5, 6, 7, 8, 10, 10] },
+        { id: 3, name: "子样本集 D₃", color: "#2457A6", samples: [1, 2, 4, 4, 5, 7, 8, 8, 9, 10] }
+      ];
+
+      const svg = document.getElementById("diagramSvg");
+      const resampleBtn = document.getElementById("resampleBtn");
+      const toggleLinesBtn = document.getElementById("toggleLinesBtn");
+      const coverageVal = document.getElementById("coverageVal");
+      const oobVal = document.getElementById("oobVal");
+
+      let showLines = false;
+
+      // 原始样本坐标
+      const origY = 90;
+      const origStartX = 380;
+      const origGapX = 94;
+
+      function getOrigPos(idx) {
+        return {
+          x: origStartX + (idx - 1) * origGapX,
+          y: origY
+        };
+      }
+
+      function updateStats() {
+        let totalUnique = 0;
+        subsetsData.forEach(sub => {
+          const uniqueSet = new Set(sub.samples);
+          totalUnique += uniqueSet.size;
+        });
+        const avgCov = (totalUnique / (3 * N)) * 100;
+        const avgOob = 100 - avgCov;
+        coverageVal.textContent = avgCov.toFixed(1) + "%";
+        oobVal.textContent = avgOob.toFixed(1) + "%";
+      }
+
+      function render() {
+        svg.innerHTML = "";
+
+        // 定义箭头 marker
+        const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+        defs.innerHTML = `
+          <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2457A6" opacity="0.6"/>
+          </marker>
+        `;
+        svg.appendChild(defs);
+
+        // 1. 绘制顶层：原始训练集 D (N = 10)
+        const topGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+        // 顶层标题与背景盒
+        const topBox = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        topBox.setAttribute("x", "120");
+        topBox.setAttribute("y", "35");
+        topBox.setAttribute("width", "1248");
+        topBox.setAttribute("height", "110");
+        topBox.setAttribute("rx", "8");
+        topBox.setAttribute("fill", "#FFFFFF");
+        topBox.setAttribute("stroke", "rgba(83, 102, 124, 0.25)");
+        topBox.setAttribute("stroke-width", "1.5");
+        topGroup.appendChild(topBox);
+
+        const topTitle = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        topTitle.setAttribute("x", "150");
+        topTitle.setAttribute("y", "95");
+        topTitle.setAttribute("font-size", "16");
+        topTitle.setAttribute("font-weight", "700");
+        topTitle.setAttribute("fill", "#13243A");
+        topTitle.textContent = "原始集 D (N=10)";
+        topGroup.appendChild(topTitle);
+
+        for (let i = 1; i <= N; i++) {
+          const pos = getOrigPos(i);
+          const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          circle.setAttribute("cx", pos.x);
+          circle.setAttribute("cy", pos.y);
+          circle.setAttribute("r", "20");
+          circle.setAttribute("class", "node-orig");
+          topGroup.appendChild(circle);
+
+          const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          txt.setAttribute("x", pos.x);
+          txt.setAttribute("y", pos.y);
+          txt.setAttribute("class", "node-text");
+          txt.textContent = i;
+          topGroup.appendChild(txt);
+        }
+
+        // 2. 绘制下层三个子集
+        const subGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        const linesGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+        const subCardW = 440;
+        const subCardH = 290;
+        const subCardY = 240;
+        const subCardXs = [54, 524, 994];
+
+        subsetsData.forEach((sub, sIdx) => {
+          const cardX = subCardXs[sIdx];
+
+          // 卡片背景
+          const card = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          card.setAttribute("x", cardX);
+          card.setAttribute("y", subCardY);
+          card.setAttribute("width", subCardW);
+          card.setAttribute("height", subCardH);
+          card.setAttribute("class", "sub-box");
+          subGroup.appendChild(card);
+
+          // 卡片标题
+          const title = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          title.setAttribute("x", cardX + 24);
+          title.setAttribute("y", subCardY + 36);
+          title.setAttribute("class", "sub-title");
+          title.textContent = sub.name;
+          subGroup.appendChild(title);
+
+          // 样本去重统计
+          const counts = {};
+          sub.samples.forEach(x => { counts[x] = (counts[x] || 0) + 1; });
+          const uniqueCount = Object.keys(counts).length;
+          const oobList = [];
+          for (let k = 1; k <= N; k++) {
+            if (!counts[k]) oobList.push(k);
+          }
+
+          const badge = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          badge.setAttribute("x", cardX + 24);
+          badge.setAttribute("y", subCardY + 62);
+          badge.setAttribute("font-size", "15");
+          badge.setAttribute("fill", "#53667C");
+          badge.textContent = `去重样本数: ${uniqueCount} / 10 (${((uniqueCount / 10) * 100).toFixed(0)}%)`;
+          subGroup.appendChild(badge);
+
+          // 样本球排布：两行五列
+          const row1Y = subCardY + 115;
+          const row2Y = subCardY + 185;
+          const startDotX = cardX + 54;
+          const dotGapX = 78;
+
+          sub.samples.forEach((val, dotIdx) => {
+            const row = Math.floor(dotIdx / 5);
+            const col = dotIdx % 5;
+            const cx = startDotX + col * dotGapX;
+            const cy = row === 0 ? row1Y : row2Y;
+
+            // 绘制连线
+            if (showLines) {
+              const origP = getOrigPos(val);
+              const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+              const c1x = origP.x;
+              const c1y = origP.y + 70;
+              const c2x = cx;
+              const c2y = cy - 60;
+              path.setAttribute("d", `M ${origP.x} ${origP.y + 20} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${cx} ${cy - 18}`);
+              path.setAttribute("class", "flow-line");
+              path.setAttribute("marker-end", "url(#arrow)");
+              linesGroup.appendChild(path);
+            }
+
+            // 采样球
+            const isDup = counts[val] > 1;
+            const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            c.setAttribute("cx", cx);
+            c.setAttribute("cy", cy);
+            c.setAttribute("r", "18");
+            c.setAttribute("fill", isDup ? "#EBF2FC" : "#FFFFFF");
+            c.setAttribute("stroke", isDup ? "#2457A6" : "#53667C");
+            c.setAttribute("stroke-width", isDup ? "2.5" : "1.5");
+            subGroup.appendChild(c);
+
+            const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            t.setAttribute("x", cx);
+            t.setAttribute("y", cy);
+            t.setAttribute("class", "node-text");
+            t.setAttribute("fill", isDup ? "#2457A6" : "#13243A");
+            t.textContent = val;
+            subGroup.appendChild(t);
+          });
+
+          // 袋外样本标注条
+          const oobTag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          oobTag.setAttribute("x", cardX + 24);
+          oobTag.setAttribute("y", subCardY + 252);
+          oobTag.setAttribute("font-size", "15");
+          oobTag.setAttribute("class", "tag-oob");
+          oobTag.textContent = `袋外 OOB (未选中): [ ${oobList.join(", ")} ]`;
+          subGroup.appendChild(oobTag);
+        });
+
+        svg.appendChild(linesGroup);
+        svg.appendChild(topGroup);
+        svg.appendChild(subGroup);
+
+        updateStats();
+      }
+
+      function randomizeSamples() {
+        subsetsData.forEach(sub => {
+          const arr = [];
+          for (let i = 0; i < N; i++) {
+            arr.push(Math.floor(Math.random() * N) + 1);
+          }
+          arr.sort((a, b) => a - b);
+          sub.samples = arr;
+        });
+        render();
+      }
+
+      resampleBtn.addEventListener("click", () => {
+        randomizeSamples();
+      });
+
+      toggleLinesBtn.addEventListener("click", () => {
+        showLines = !showLines;
+        render();
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>

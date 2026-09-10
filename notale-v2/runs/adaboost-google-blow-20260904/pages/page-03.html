@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>训练机制：样本权重与分类器权重</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    :root{
+      --bg:#F2F6F8;
+      --text:#14272E;
+      --font-sans:"Noto Sans SC",system-ui,sans-serif;
+    }
+    body{
+      margin:0;
+      background:#0f181c;
+      font-family:var(--font-sans);
+      color:var(--text);
+    }
+    #stage{
+      box-sizing:border-box;
+      padding:var(--pad-y) var(--pad-x);
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
+      overflow:hidden;
+    }
+    header{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      margin-bottom:12px;
+    }
+    .title-wrap h1{
+      margin:0 0 6px 0;
+      font-size:var(--fs-h1);
+      line-height:1.2;
+      color:var(--text);
+      font-weight:700;
+      letter-spacing:-0.02em;
+    }
+    .lead{
+      margin:0;
+      font-size:var(--fs-lead);
+      color:var(--muted);
+      line-height:1.4;
+    }
+    .signature-badge{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 16px;
+      background:var(--surface);
+      border-radius:var(--radius);
+      font-size:var(--fs-label);
+      color:var(--ensemble);
+      font-weight:600;
+    }
+    .signature-badge .vote-mark{
+      display:inline-flex;
+      align-items:flex-end;
+      gap:3px;
+      height:16px;
+    }
+    .signature-badge .vote-mark span{
+      display:inline-block;
+      background:currentColor;
+      border-radius:1px;
+    }
+    .signature-badge .vote-mark span:nth-child(1){ width:3px; height:8px; opacity:0.4; }
+    .signature-badge .vote-mark span:nth-child(2){ width:4px; height:12px; opacity:0.7; }
+    .signature-badge .vote-mark span:nth-child(3){ width:6px; height:16px; opacity:1; }
+
+    /* Main visual stage */
+    .main-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:24px;
+      flex:1;
+      min-height:0;
+      margin-bottom:12px;
+    }
+    .panel{
+      background:var(--surface);
+      border-radius:var(--radius);
+      padding:20px 24px;
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
+      box-sizing:border-box;
+      position:relative;
+    }
+    .panel-header{
+      display:flex;
+      justify-content:space-between;
+      align-items:baseline;
+      margin-bottom:12px;
+    }
+    .panel-title{
+      margin:0;
+      font-size:var(--fs-h2);
+      font-weight:700;
+      color:var(--text);
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .panel-tag{
+      font-size:var(--fs-tick);
+      padding:2px 8px;
+      border-radius:4px;
+      font-weight:600;
+      letter-spacing:0.04em;
+    }
+    .panel-tag.weight{
+      background:rgba(180,58,19,0.12);
+      color:var(--weight);
+    }
+    .panel-tag.ensemble{
+      background:rgba(23,97,123,0.12);
+      color:var(--ensemble);
+    }
+
+    /* Left panel: Sample Weight Update */
+    .scatter-container{
+      position:relative;
+      flex:1;
+      min-height:0;
+      background:#ffffff;
+      border-radius:6px;
+      border:1px solid rgba(20,39,46,0.08);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+    }
+    .scatter-svg{
+      width:100%;
+      height:100%;
+      display:block;
+    }
+    .scatter-legend{
+      position:absolute;
+      top:12px;
+      left:14px;
+      display:flex;
+      gap:14px;
+      font-size:var(--fs-label);
+      color:var(--muted);
+      background:rgba(255,255,255,0.92);
+      padding:4px 10px;
+      border-radius:4px;
+      border:1px solid rgba(0,0,0,0.06);
+    }
+    .scatter-legend-item{
+      display:flex;
+      align-items:center;
+      gap:6px;
+    }
+    .formula-banner{
+      margin-top:12px;
+      padding:10px 14px;
+      background:rgba(255,255,255,0.7);
+      border-radius:6px;
+      font-size:var(--fs-sec);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+    }
+    .formula-text{
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+
+    /* Right panel: Classifier Alpha Function */
+    .curve-container{
+      position:relative;
+      flex:1;
+      min-height:0;
+      background:#ffffff;
+      border-radius:6px;
+      border:1px solid rgba(20,39,46,0.08);
+      overflow:hidden;
+    }
+    .curve-svg{
+      width:100%;
+      height:100%;
+      display:block;
+    }
+    .interactive-slider-box{
+      margin-top:12px;
+      padding:10px 14px;
+      background:rgba(255,255,255,0.7);
+      border-radius:6px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .slider-row{
+      display:flex;
+      align-items:center;
+      gap:12px;
+    }
+    .slider-row label{
+      font-size:var(--fs-label);
+      font-weight:600;
+      color:var(--text);
+      width:110px;
+      flex-shrink:0;
+    }
+    .slider-row input[type="range"]{
+      flex:1;
+      accent-color:var(--ensemble);
+      cursor:pointer;
+    }
+    .slider-metric{
+      font-family:var(--font-num);
+      font-size:var(--fs-sec);
+      font-weight:700;
+      min-width:65px;
+      text-align:right;
+      color:var(--ensemble);
+    }
+    .metric-eval-row{
+      display:flex;
+      justify-content:space-between;
+      font-size:var(--fs-tick);
+      color:var(--muted);
+      padding-top:2px;
+      border-top:1px dashed rgba(20,39,46,0.1);
+    }
+
+    /* Step / Stage toggle controls */
+    .deck-controls{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      background:var(--surface);
+      border-radius:var(--radius);
+      padding:10px 20px;
+      height:54px;
+      box-sizing:border-box;
+    }
+    .step-switchers{
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .step-switchers .label{
+      font-size:var(--fs-label);
+      font-weight:700;
+      color:var(--muted);
+      margin-right:6px;
+    }
+    .step-btn{
+      background:transparent;
+      border:1px solid rgba(20,39,46,0.18);
+      border-radius:6px;
+      padding:6px 14px;
+      font-size:var(--fs-label);
+      color:var(--text);
+      cursor:pointer;
+      font-family:inherit;
+      font-weight:600;
+      transition:all var(--dur) var(--ease);
+    }
+    .step-btn:hover{
+      border-color:var(--focus);
+    }
+    .step-btn.active{
+      background:var(--focus);
+      color:#ffffff;
+      border-color:var(--focus);
+    }
+    .deck-explain{
+      font-size:var(--fs-sec);
+      color:var(--muted);
+      flex:1;
+      margin-left:20px;
+      line-height:1.35;
+      overflow:hidden;
+    }
+    .deck-explain strong{
+      color:var(--text);
+      font-weight:700;
+    }
+  </style>
+</head>
+<body data-page="03" data-total="5">
+  <div id="stage">
+    <header>
+      <div class="title-wrap">
+        <h1>训练机制：样本权重与分类器权重</h1>
+        <p class="lead">样本权重将后续算力精准引向难分点；分类器权重（<span id="leadAlpha"></span>）以错误率严格量化投票发言权。</p>
+      </div>
+      <div class="signature-badge">
+        <div class="vote-mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <span>AdaBoost 权重双轮驱动</span>
+      </div>
+    </header>
+
+    <div class="main-grid">
+      <!-- Left Panel: Sample Weight Transition -->
+      <section class="panel min0" aria-label="样本权重重分布机制">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <span>样本空间与注意力转移</span>
+          </h2>
+          <span class="panel-tag weight" id="stageTag">第 1 轮：初始均等</span>
+        </div>
+
+        <div class="scatter-container min0">
+          <div class="scatter-legend">
+            <div class="scatter-legend-item">
+              <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5" fill="#17617B"/></svg>
+              <span>正类 (+1)</span>
+            </div>
+            <div class="scatter-legend-item">
+              <svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" rx="2" fill="#B43A13"/></svg>
+              <span>负类 (-1)</span>
+            </div>
+            <div class="scatter-legend-item">
+              <svg width="14" height="14" viewBox="0 0 14 14"><line x1="1" y1="7" x2="13" y2="7" stroke="#526A73" stroke-width="2" stroke-dasharray="3 3"/></svg>
+              <span>弱分类边界</span>
+            </div>
+          </div>
+          <svg class="scatter-svg" id="scatterSvg" viewBox="0 0 680 370" preserveAspectRatio="none">
+            <!-- Drawn by JS -->
+          </svg>
+        </div>
+
+        <div class="formula-banner">
+          <div class="formula-text">
+            <span>样本更新：</span>
+            <span id="formulaKatex"></span>
+          </div>
+          <span class="small" id="weightSummary" style="color:var(--weight);font-weight:600;">错分点权重乘 $e^{+\alpha_m}$，正确点乘 $e^{-\alpha_m}$</span>
+        </div>
+      </section>
+
+      <!-- Right Panel: Alpha vs Error Rate Function -->
+      <section class="panel min0" aria-label="分类器权重函数关系">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <span>分类器权重函数</span>
+            <span id="titleAlphaKatex"></span>
+          </h2>
+          <span class="panel-tag ensemble">对数赔率函数</span>
+        </div>
+
+        <div class="curve-container min0">
+          <svg class="curve-svg" id="curveSvg" viewBox="0 0 680 370" preserveAspectRatio="none">
+            <!-- Axes, curve and probe rendered by JS -->
+          </svg>
+        </div>
+
+        <div class="interactive-slider-box">
+          <div class="slider-row">
+            <label for="errorSlider">本轮错误率 <span id="labelEpsKatex"></span></label>
+            <input type="range" id="errorSlider" min="0.05" max="0.95" step="0.01" value="0.30">
+            <span class="slider-metric" id="errorReadout">0.30</span>
+          </div>
+          <div class="metric-eval-row">
+            <span>分类器发言权：<strong id="alphaFormulaVal" style="color:var(--ensemble);font-family:var(--font-num);font-size:16px;">α = 0.424</strong></span>
+            <span id="boundaryRemark">略优于随机（ε &lt; 0.5），具有正向投票权重</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Bottom Interactive Control Bar -->
+    <div class="deck-controls">
+      <div class="step-switchers" role="tablist" aria-label="迭代轮次选择">
+        <span class="label">轮次演进：</span>
+        <button type="button" class="step-btn active" id="btnRound1" role="tab" aria-selected="true">第 1 轮初始</button>
+        <button type="button" class="step-btn" id="btnRound2" role="tab" aria-selected="false">第 1 轮错分放大</button>
+        <button type="button" class="step-btn" id="btnRound3" role="tab" aria-selected="false">第 2 轮针对纠错</button>
+      </div>
+      <div class="deck-explain" id="deckExplain">
+        <strong>第 1 轮初始：</strong> 所有样本等权重 $w_i = 1/10 = 0.100$。基础分类器以直线进行初次划分。
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      // 10 canonical fixed points with known coordinates (range [0, 100])
+      // 5 positive points (class +1), 5 negative points (class -1)
+      var points = [
+        { id: 1, x: 18, y: 35, label: 1,  desc: 'P1' },
+        { id: 2, x: 26, y: 78, label: 1,  desc: 'P2' },
+        { id: 3, x: 38, y: 25, label: 1,  desc: 'P3' },
+        { id: 4, x: 44, y: 50, label: 1,  desc: 'P4' },
+        { id: 5, x: 55, y: 84, label: 1,  desc: 'P5' },
+        { id: 6, x: 62, y: 28, label: -1, desc: 'N1' },
+        { id: 7, x: 68, y: 65, label: -1, desc: 'N2' },
+        { id: 8, x: 78, y: 40, label: -1, desc: 'N3' },
+        { id: 9, x: 88, y: 82, label: -1, desc: 'N4' },
+        { id: 10,x: 35, y: 62, label: -1, desc: 'N5' } // N5 lies deep in positive region (outlier / hard sample)
+      ];
+
+      // Round 1 classifier: split x = 50.
+      // Classifies x < 50 as +1, x >= 50 as -1.
+      // Point 10 (x:35, y:62, label:-1) is misclassified as +1!
+      // Also Point 5 (x:52, y:82, label:+1) is misclassified as -1!
+      // Other 8 points are correct.
+      // Error rate = 2/10 = 0.20.
+      // Alpha_1 = 0.5 * ln((1 - 0.2) / 0.2) = 0.5 * ln(4) = 0.693
+      // For misclassified: weight factor e^(+0.693) = 2.0
+      // For correct: weight factor e^(-0.693) = 0.5
+
+      var currentRound = 1;
+      var errorVal = 0.30;
+
+      var scatterSvg = document.getElementById('scatterSvg');
+      var curveSvg = document.getElementById('curveSvg');
+      var errorSlider = document.getElementById('errorSlider');
+      var errorReadout = document.getElementById('errorReadout');
+      var alphaFormulaVal = document.getElementById('alphaFormulaVal');
+      var boundaryRemark = document.getElementById('boundaryRemark');
+      var stageTag = document.getElementById('stageTag');
+      var deckExplain = document.getElementById('deckExplain');
+      var weightSummary = document.getElementById('weightSummary');
+
+      var btnRound1 = document.getElementById('btnRound1');
+      var btnRound2 = document.getElementById('btnRound2');
+      var btnRound3 = document.getElementById('btnRound3');
+
+      // KaTeX render formula
+      katex.render("w_{m+1,i} = \\frac{w_{m,i}}{Z_m} \\exp(-\\alpha_m y_i G_m(x_i))", document.getElementById('formulaKatex'), { throwOnError: false });
+      katex.render("\\alpha_m", document.getElementById('leadAlpha'), { throwOnError: false });
+      katex.render("\\alpha_m", document.getElementById('titleAlphaKatex'), { throwOnError: false });
+      katex.render("\\epsilon_m", document.getElementById('labelEpsKatex'), { throwOnError: false });
+
+      function calcAlpha(eps) {
+        if (eps <= 0.001) return 3.5;
+        if (eps >= 0.999) return -3.5;
+        return 0.5 * Math.log((1 - eps) / eps);
+      }
+
+      function renderCurve() {
+        var w = 680, h = 370;
+        var padL = 70, padR = 40, padT = 36, padB = 60;
+        var plotW = w - padL - padR;
+        var plotH = h - padT - padB;
+
+        // X: epsilon in [0, 1]
+        // Y: alpha in [-2.5, 2.5]
+        var minA = -2.2, maxA = 2.2;
+
+        function toX(eps) { return padL + eps * plotW; }
+        function toY(a) { return padT + (1 - (a - minA) / (maxA - minA)) * plotH; }
+
+        var zeroY = toY(0);
+        var halfX = toX(0.5);
+
+        var svgHtml = '';
+
+        // Reference shading zones
+        // [0, 0.5] positive weight zone (effective classifiers)
+        svgHtml += '<rect x="' + padL + '" y="' + padT + '" width="' + (halfX - padL) + '" height="' + (zeroY - padT) + '" fill="rgba(23,97,123,0.06)"/>';
+        // [0.5, 1.0] negative weight zone (worse than random)
+        svgHtml += '<rect x="' + halfX + '" y="' + zeroY + '" width="' + (toX(1) - halfX) + '" height="' + (toY(minA) - zeroY) + '" fill="rgba(180,58,19,0.06)"/>';
+
+        // Grid lines
+        for (var ep = 0.1; ep <= 0.9; ep += 0.2) {
+          var gx = toX(ep);
+          svgHtml += '<line x1="' + gx + '" y1="' + padT + '" x2="' + gx + '" y2="' + (h - padB) + '" stroke="#e5edf0" stroke-width="1"/>';
+        }
+        for (var a = -2; a <= 2; a += 1) {
+          var gy = toY(a);
+          svgHtml += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (w - padR) + '" y2="' + gy + '" stroke="#e5edf0" stroke-width="1"/>';
+        }
+
+        // Axes
+        // X axis (alpha = 0)
+        svgHtml += '<line x1="' + padL + '" y1="' + zeroY + '" x2="' + (w - padR + 15) + '" y2="' + zeroY + '" stroke="#526A73" stroke-width="1.5"/>';
+        // Y axis (eps = 0.5)
+        svgHtml += '<line x1="' + halfX + '" y1="' + padT + '" x2="' + halfX + '" y2="' + (h - padB) + '" stroke="#526A73" stroke-width="1.5" stroke-dasharray="4 3"/>';
+
+        // Axis Ticks & Labels
+        [0.1, 0.3, 0.5, 0.7, 0.9].forEach(function (ep) {
+          var tx = toX(ep);
+          svgHtml += '<text x="' + tx + '" y="' + (h - padB + 22) + '" font-size="13" font-family="DIN Alternate, sans-serif" fill="#50656D" text-anchor="middle">' + ep.toFixed(1) + '</text>';
+        });
+        [-2, -1, 0, 1, 2].forEach(function (a) {
+          var ty = toY(a);
+          svgHtml += '<text x="' + (padL - 12) + '" y="' + (ty + 4) + '" font-size="13" font-family="DIN Alternate, sans-serif" fill="#50656D" text-anchor="end">' + (a > 0 ? '+' + a : a) + '</text>';
+        });
+
+        // Axis Titles
+        svgHtml += '<text x="' + (w - padR + 10) + '" y="' + (zeroY - 10) + '" font-size="14" font-weight="600" fill="#14272E" text-anchor="end">错误率 ε_m</text>';
+        svgHtml += '<text x="' + (padL - 10) + '" y="' + (padT - 14) + '" font-size="14" font-weight="600" fill="#17617B" text-anchor="start">分类器权重 α_m = ½ ln((1-ε)/ε)</text>';
+
+        // Key landmark annotations
+        svgHtml += '<text x="' + (halfX + 8) + '" y="' + (zeroY - 10) + '" font-size="13" font-weight="600" fill="#B43A13">ε = 0.5 (随机猜测, α=0)</text>';
+
+        // Curve path
+        var d = '';
+        for (var step = 0.05; step <= 0.95; step += 0.005) {
+          var cx = toX(step);
+          var cy = toY(calcAlpha(step));
+          if (step === 0.05) d += 'M ' + cx.toFixed(1) + ' ' + cy.toFixed(1);
+          else d += ' L ' + cx.toFixed(1) + ' ' + cy.toFixed(1);
+        }
+        svgHtml += '<path d="' + d + '" fill="none" stroke="#17617B" stroke-width="3.5" stroke-linecap="round"/>';
+
+        // Current Interactive Probe Point
+        var curA = calcAlpha(errorVal);
+        var probeX = toX(errorVal);
+        var probeY = toY(curA);
+
+        // Drop lines
+        svgHtml += '<line x1="' + probeX + '" y1="' + zeroY + '" x2="' + probeX + '" y2="' + probeY + '" stroke="#B43A13" stroke-width="2" stroke-dasharray="3 3"/>';
+        svgHtml += '<line x1="' + padL + '" y1="' + probeY + '" x2="' + probeX + '" y2="' + probeY + '" stroke="#B43A13" stroke-width="2" stroke-dasharray="3 3"/>';
+
+        // Point circle
+        svgHtml += '<circle cx="' + probeX + '" cy="' + probeY + '" r="7" fill="#B43A13" stroke="#ffffff" stroke-width="2.5"/>';
+
+        // Label on the point
+        var tagAlign = probeX > w - 180 ? 'end' : 'start';
+        var tagOffsetX = probeX > w - 180 ? -14 : 14;
+        svgHtml += '<g transform="translate(' + (probeX + tagOffsetX) + ',' + (probeY - 12) + ')">';
+        svgHtml += '<rect x="' + (tagAlign === 'end' ? -130 : 0) + '" y="-14" width="130" height="28" rx="4" fill="rgba(20,39,46,0.88)"/>';
+        svgHtml += '<text x="' + (tagAlign === 'end' ? -65 : 65) + '" y="5" fill="#ffffff" font-size="13" font-family="DIN Alternate, sans-serif" font-weight="600" text-anchor="middle">ε=' + errorVal.toFixed(2) + ' → α=' + (curA >= 0 ? '+' : '') + curA.toFixed(3) + '</text>';
+        svgHtml += '</g>';
+
+        curveSvg.innerHTML = svgHtml;
+      }
+
+      function updateSliderReadout() {
+        errorVal = parseFloat(errorSlider.value);
+        var alpha = calcAlpha(errorVal);
+        errorReadout.textContent = errorVal.toFixed(2);
+        alphaFormulaVal.textContent = 'α = ' + (alpha >= 0 ? '+' : '') + alpha.toFixed(3);
+
+        if (errorVal < 0.4) {
+          boundaryRemark.innerHTML = '<span style="color:#2F6B4F;font-weight:600;">显著胜过随机</span>（ε < 0.5），投票获得大幅正向发言权';
+        } else if (errorVal >= 0.4 && errorVal < 0.5) {
+          boundaryRemark.innerHTML = '<span style="color:#17617B;font-weight:600;">弱胜随机</span>（ε 稍低于 0.5），获得温和正向权重';
+        } else if (Math.abs(errorVal - 0.5) < 0.01) {
+          boundaryRemark.innerHTML = '<span style="color:#B43A13;font-weight:600;">等同于抛硬币</span>（ε = 0.5），该弱分类器权重清零（α=0）';
+        } else {
+          boundaryRemark.innerHTML = '<span style="color:#B43A13;font-weight:600;">劣于随机</span>（ε > 0.5），权重为负（反向预测）';
+        }
+
+        renderCurve();
+      }
+
+      function renderScatter() {
+        var w = 680, h = 370;
+        var pad = 40;
+        var plotW = w - pad * 2;
+        var plotH = h - pad * 2;
+
+        function toSx(x) { return pad + (x / 100) * plotW; }
+        function toSy(y) { return pad + (1 - y / 100) * plotH; }
+
+        var svg = '';
+
+        // Background boundary dividing plane
+        if (currentRound === 1 || currentRound === 2) {
+          // Boundary line 1: vertical split x = 50
+          var splitX = toSx(50);
+          svg += '<rect x="' + pad + '" y="' + pad + '" width="' + (splitX - pad) + '" height="' + plotH + '" fill="rgba(23,97,123,0.05)"/>';
+          svg += '<rect x="' + splitX + '" y="' + pad + '" width="' + (w - pad - splitX) + '" height="' + plotH + '" fill="rgba(180,58,19,0.05)"/>';
+          svg += '<line x1="' + splitX + '" y1="' + (pad - 10) + '" x2="' + splitX + '" y2="' + (h - pad + 10) + '" stroke="#526A73" stroke-width="2.5" stroke-dasharray="6 4"/>';
+          svg += '<text x="' + (splitX - 10) + '" y="' + (pad + 18) + '" font-size="14" font-weight="700" fill="#17617B" text-anchor="end">G₁(x) 预测: +1</text>';
+          svg += '<text x="' + (splitX + 10) + '" y="' + (pad + 18) + '" font-size="14" font-weight="700" fill="#B43A13" text-anchor="start">G₁(x) 预测: -1</text>';
+        } else if (currentRound === 3) {
+          // Boundary line 2: horizontal split y = 72 to fix the hard points
+          var splitY = toSy(72);
+          svg += '<rect x="' + pad + '" y="' + pad + '" width="' + plotW + '" height="' + (splitY - pad) + '" fill="rgba(23,97,123,0.05)"/>';
+          svg += '<rect x="' + pad + '" y="' + splitY + '" width="' + plotW + '" height="' + (h - pad - splitY) + '" fill="rgba(180,58,19,0.05)"/>';
+          svg += '<line x1="' + (pad - 10) + '" y1="' + splitY + '" x2="' + (w - pad + 10) + '" y2="' + splitY + '" stroke="#2F6B4F" stroke-width="2.5" stroke-dasharray="6 4"/>';
+          svg += '<text x="' + (pad + 12) + '" y="' + (splitY - 10) + '" font-size="14" font-weight="700" fill="#2F6B4F" text-anchor="start">G₂(x) 边界优先切分难分点</text>';
+        }
+
+        // Draw data points
+        points.forEach(function (pt) {
+          var px = toSx(pt.x);
+          var py = toSy(pt.y);
+
+          // Calculate point weights depending on state
+          // Round 1: all weights = 0.100
+          // Round 2: misclassified (P5 id:5 and N5 id:10) boosted
+          // Round 3: weights retained into second classifier
+          var ptWeight = 0.10;
+          var isMisclassified = (pt.id === 5 || pt.id === 10);
+
+          if (currentRound === 1) {
+            ptWeight = 0.10;
+          } else if (currentRound === 2 || currentRound === 3) {
+            if (isMisclassified) {
+              ptWeight = 0.25; // Boosted by e^alpha
+            } else {
+              ptWeight = 0.0625; // Decreased by e^-alpha
+            }
+          }
+
+          // Radius proportional to weight: base 8px up to 22px
+          var radius = 8 + (ptWeight - 0.0625) / (0.25 - 0.0625) * 16;
+          if (currentRound === 1) radius = 10;
+
+          var color = pt.label === 1 ? '#17617B' : '#B43A13';
+
+          // Halo for misclassified in round 2 & 3
+          if ((currentRound === 2 || currentRound === 3) && isMisclassified) {
+            svg += '<circle cx="' + px + '" cy="' + py + '" r="' + (radius + 8) + '" fill="none" stroke="#B43A13" stroke-width="2" stroke-dasharray="4 3"/>';
+          }
+
+          if (pt.label === 1) {
+            // Circle
+            svg += '<circle cx="' + px + '" cy="' + py + '" r="' + radius + '" fill="' + color + '" stroke="#ffffff" stroke-width="2"/>';
+          } else {
+            // Rounded rect
+            var rw = radius * 1.8;
+            svg += '<rect x="' + (px - rw / 2) + '" y="' + (py - rw / 2) + '" width="' + rw + '" height="' + rw + '" rx="3" fill="' + color + '" stroke="#ffffff" stroke-width="2"/>';
+          }
+
+          // Label text offset to avoid overlapping with boundary headers or neighboring points
+          var tag = pt.desc + ' (w=' + ptWeight.toFixed(3) + ')';
+          var textY = py + radius + 15;
+          if (pt.id === 2 && currentRound === 3) textY = py - radius - 8;
+          if (pt.id === 5) textY = py + radius + 16;
+          if (pt.id === 9) textY = py + radius + 16;
+          svg += '<text x="' + px + '" y="' + textY + '" font-size="12" font-weight="600" fill="#14272E" text-anchor="middle">' + tag + '</text>';
+        });
+
+        scatterSvg.innerHTML = svg;
+      }
+
+      function setRound(r) {
+        currentRound = r;
+        btnRound1.classList.toggle('active', r === 1);
+        btnRound2.classList.toggle('active', r === 2);
+        btnRound3.classList.toggle('active', r === 3);
+
+        btnRound1.setAttribute('aria-selected', r === 1 ? 'true' : 'false');
+        btnRound2.setAttribute('aria-selected', r === 2 ? 'true' : 'false');
+        btnRound3.setAttribute('aria-selected', r === 3 ? 'true' : 'false');
+
+        if (r === 1) {
+          stageTag.textContent = '第 1 轮：初始均等权重';
+          stageTag.className = 'panel-tag ensemble';
+          deckExplain.innerHTML = '<strong>第 1 轮初始：</strong> 所有样本等权重 <i>w<sub>i</sub></i> = 0.100。基础桩分类器 <i>G</i><sub>1</sub> 切分 <i>x</i> = 50，错误率 <i>ε</i><sub>1</sub> = 0.20。';
+          weightSummary.innerHTML = '初始状态：每个样本均分总权重 Σ<i>w<sub>i</sub></i> = 1.00';
+          errorSlider.value = 0.20;
+        } else if (r === 2) {
+          stageTag.textContent = '第 1 轮后：错分样本权重放大';
+          stageTag.className = 'panel-tag weight';
+          deckExplain.innerHTML = '<strong>错分倍增：</strong> 样本 P5 与 N5 分类失误，权重乘 <i>e</i><sup>+<i>α</i><sub>1</sub></sup> ≈ 2.0 放大至 0.25；正确样本乘 <i>e</i><sup>-<i>α</i><sub>1</sub></sup> 缩小。';
+          weightSummary.innerHTML = '难分点权重飙升至 0.25，迫使后续分类器重点关注！';
+          errorSlider.value = 0.20;
+        } else if (r === 3) {
+          stageTag.textContent = '第 2 轮：针对高权重样本定向纠错';
+          stageTag.className = 'panel-tag ensemble';
+          deckExplain.innerHTML = '<strong>定向纠错：</strong> 在加权损失下，新弱分类器 <i>G</i><sub>2</sub> 转向横轴切分（<i>y</i> = 72），成功把高权重样本 P5 与 N5 正确分离。';
+          weightSummary.innerHTML = '重加权机制实现“注意力转移”，模型逐步攻克疑难案例';
+          errorSlider.value = 0.15;
+        }
+
+        updateSliderReadout();
+        renderScatter();
+      }
+
+      btnRound1.addEventListener('click', function () { setRound(1); });
+      btnRound2.addEventListener('click', function () { setRound(2); });
+      btnRound3.addEventListener('click', function () { setRound(3); });
+      errorSlider.addEventListener('input', updateSliderReadout);
+
+      // Keyboard navigation
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowRight' || e.key === '3') {
+          if (currentRound < 3) setRound(currentRound + 1);
+        } else if (e.key === 'ArrowLeft' || e.key === '1') {
+          if (currentRound > 1) setRound(currentRound - 1);
+        } else if (e.key === '2') {
+          setRound(2);
+        }
+      });
+
+      Deck.init({ index: 3, total: 5, keys: false });
+      setRound(1);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+    }
+
+    /* 标题区 */
+    .header-zone {
+      position: absolute;
+      top: 36px;
+      left: 56px;
+      right: 56px;
+      height: 72px;
+    }
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .subtitle {
+      margin-top: 8px;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-tight);
+    }
+
+    /* 主画布与图解区 */
+    .main-grid {
+      position: absolute;
+      top: 136px;
+      left: 56px;
+      width: 1488px;
+      height: 680px;
+      display: grid;
+      grid-template-columns: 880px 560px;
+      gap: 48px;
+    }
+
+    /* 左侧：对比与机制图（SVG） */
+    .diagram-panel {
+      position: relative;
+      width: 880px;
+      height: 680px;
+    }
+
+    .diagram-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 右侧：交互与逐个验证 */
+    .side-panel {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 640px;
+      margin-top: 10px;
+    }
+
+    /* 样本测试卡 */
+    .sample-inspector {
+      border-top: 2px solid var(--rule);
+      padding-top: 16px;
+    }
+
+    .section-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    .selector-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .sample-btn {
+      flex: 1;
+      padding: 10px 8px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      line-height: var(--lh-tight);
+      white-space: nowrap;
+      transition: border-color var(--motion-fast), color var(--motion-fast);
+    }
+    .sample-btn[aria-pressed="true"] {
+      border-color: var(--focus);
+      border-width: 2px;
+      font-weight: bold;
+      color: var(--focus);
+    }
+
+    /* 决策表决展示 */
+    .votes-breakdown {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .vote-item {
+      display: grid;
+      grid-template-columns: 140px 1fr 90px;
+      align-items: center;
+      font-size: var(--fs-body);
+    }
+    .vote-name {
+      color: var(--muted);
+    }
+    .vote-val {
+      font-weight: 500;
+      color: var(--text);
+    }
+    .vote-item.ensemble {
+      border-top: 2px solid var(--model);
+      padding-top: 12px;
+      margin-top: 4px;
+      font-size: var(--fs-lead);
+      font-weight: 600;
+    }
+    .vote-item.ensemble .vote-name {
+      color: var(--model);
+    }
+    .vote-item.ensemble .vote-val {
+      color: var(--model);
+    }
+
+    .status-tag {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      text-align: right;
+    }
+    .status-tag.correct {
+      color: var(--model);
+    }
+    .status-tag.wrong {
+      color: var(--focus);
+    }
+
+    /* 底部结论框 */
+    .summary-card {
+      border-top: 2px solid var(--model);
+      padding-top: 16px;
+    }
+
+    .summary-text {
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+      color: var(--text);
+      margin: 0;
+    }
+
+    .summary-metric {
+      display: flex;
+      gap: 32px;
+      margin-top: 16px;
+    }
+    .metric-col {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-col .num {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      font-weight: 700;
+      line-height: 1;
+      color: var(--model);
+    }
+    .metric-col .num.focus {
+      color: var(--text);
+    }
+    .metric-col .lbl {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body data-page="04" data-total="32">
+  <div id="stage">
+    <header class="header-zone">
+      <h1>多个有差异的模型共同决策可修正局部偏差</h1>
+      <div class="subtitle">单模型边界受限；多数投票通过互补误差拼出综合决策边界</div>
+    </header>
+
+    <main class="main-grid">
+      <!-- 左侧：三个基学习器与其集成边界的几何图解 -->
+      <section class="diagram-panel">
+        <svg class="diagram-svg" viewBox="0 0 880 660" aria-label="基学习器与集成决策边界对比">
+          <defs>
+            <!-- 标记箭头 -->
+            <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#17628E" />
+            </marker>
+          </defs>
+
+          <!-- 三个基学习器小视窗 -->
+          <!-- 基模型 h1 (横向切分偏下) -->
+          <g id="box-h1" transform="translate(10, 20)">
+            <rect x="0" y="0" width="220" height="220" fill="none" stroke="#71828B" stroke-width="1.5" />
+            <!-- 分类底色 (预测区域) -->
+            <rect x="1" y="1" width="218" height="119" fill="#17628E" fill-opacity="0.08" />
+            <!-- 分割线 -->
+            <line x1="0" y1="120" x2="220" y2="120" stroke="#17628E" stroke-width="2" />
+            <text x="12" y="24" font-size="15" font-weight="600" fill="#17628E">基学习器 h₁ (水平切割)</text>
+            <text x="12" y="206" font-size="13" fill="#50616B">训练准确率 70%</text>
+            <!-- 示意数据点 (正负两类) -->
+            <circle cx="50" cy="50" r="4" fill="#17628E" />
+            <circle cx="80" cy="70" r="4" fill="#17628E" />
+            <circle cx="150" cy="60" r="4" fill="#17628E" />
+            <circle cx="170" cy="90" r="4" fill="#17628E" />
+            <!-- 负类 -->
+            <circle cx="40" cy="170" r="4" fill="none" stroke="#71828B" stroke-width="2" />
+            <circle cx="70" cy="180" r="4" fill="none" stroke="#71828B" stroke-width="2" />
+            <circle cx="160" cy="160" r="4" fill="none" stroke="#71828B" stroke-width="2" />
+            <!-- 错误点标记 (由选中的样本点高亮) -->
+            <circle id="h1-probe" cx="170" cy="140" r="7" fill="none" stroke="#B83D0B" stroke-width="3" />
+          </g>
+
+          <!-- 基模型 h2 (纵向切分偏右) -->
+          <g id="box-h2" transform="translate(260, 20)">
+            <rect x="0" y="0" width="220" height="220" fill="none" stroke="#71828B" stroke-width="1.5" />
+            <rect x="1" y="1" width="109" height="218" fill="#17628E" fill-opacity="0.08" />
+            <line x1="110" y1="0" x2="110" y2="220" stroke="#17628E" stroke-width="2" />
+            <text x="12" y="24" font-size="15" font-weight="600" fill="#17628E">基学习器 h₂ (垂直切割)</text>
+            <text x="12" y="206" font-size="13" fill="#50616B">训练准确率 70%</text>
+            <circle cx="50" cy="50" r="4" fill="#17628E" />
+            <circle cx="80" cy="70" r="4" fill="#17628E" />
+            <circle cx="150" cy="60" r="4" fill="#17628E" />
+            <circle cx="170" cy="90" r="4" fill="#17628E" />
+            <circle cx="40" cy="170" r="4" fill="none" stroke="#71828B" stroke-width="2" />
+            <circle cx="70" cy="180" r="4" fill="none" stroke="#71828B" stroke-width="2" />
+            <circle cx="160" cy="160" r="4" fill="none" stroke="#71828B" stroke-width="2" />
+            <circle id="h2-probe" cx="170" cy="140" r="7" fill="none" stroke="#B83D0B" stroke-width="3" />
+          </g>
+
+          <!-- 基模型 h3 (斜向切分) -->
+          <g id="box-h3" transform="translate(510, 20)">
+            <rect x="0" y="0" width="220" height="220" fill="none" stroke="#71828B" stroke-width="1.5" />
+            <polygon points="1,1 219,1 219,60 1,180" fill="#17628E" fill-opacity="0.08" />
+            <line x1="0" y1="180" x2="220" y2="60" stroke="#17628E" stroke-width="2" />
+            <text x="12" y="24" font-size="15" font-weight="600" fill="#17628E">基学习器 h₃ (斜线切割)</text>
+            <text x="12" y="206" font-size="13" fill="#50616B">训练准确率 70%</text>
+            <circle cx="50" cy="50" r="4" fill="#17628E" />
+            <circle cx="80" cy="70" r="4" fill="#17628E" />
+            <circle cx="150" cy="60" r="4" fill="#17628E" />
+            <circle cx="170" cy="90" r="4" fill="#17628E" />
+            <circle cx="40" cy="170" r="4" fill="none" stroke="#71828B" stroke-width="2" />
+            <circle cx="70" cy="180" r="4" fill="none" stroke="#71828B" stroke-width="2" />
+            <circle cx="160" cy="160" r="4" fill="none" stroke="#71828B" stroke-width="2" />
+            <circle id="h3-probe" cx="170" cy="140" r="7" fill="none" stroke="#B83D0B" stroke-width="3" />
+          </g>
+
+          <!-- 聚合路径与机制箭头 (汇聚为一条粗线) -->
+          <path d="M 120 240 L 120 300 Q 120 320 200 320 L 370 320" fill="none" stroke="#17628E" stroke-width="2" />
+          <path d="M 370 240 L 370 320" fill="none" stroke="#17628E" stroke-width="2" />
+          <path d="M 620 240 L 620 300 Q 620 320 540 320 L 370 320" fill="none" stroke="#17628E" stroke-width="2" />
+
+          <!-- 汇聚中枢节点 -->
+          <rect x="300" y="306" width="140" height="28" fill="#E8EEF1" stroke="#17628E" stroke-width="1.5" />
+          <text x="370" y="325" font-size="15" font-weight="600" fill="#17628E" text-anchor="middle">多数投票集成</text>
+
+          <!-- 汇聚后指向最终集成模型的粗线 (4px) -->
+          <line x1="370" y1="334" x2="370" y2="380" stroke="#17628E" stroke-width="4" marker-end="url(#arrow)" />
+
+          <!-- 下方：集成模型 H (大图，380x250) -->
+          <g id="box-ensemble" transform="translate(180, 390)">
+            <rect x="0" y="0" width="380" height="250" fill="none" stroke="#17628E" stroke-width="2" />
+            <!-- 集成决策面：由三个模型投票决定的重叠区域 (多边形) -->
+            <polygon points="1,1 379,1 379,100 240,150 1,150" fill="#17628E" fill-opacity="0.15" />
+            <!-- 集成边界 (折线拼接出的非线性拟合面) -->
+            <polyline points="0,150 240,150 380,100" fill="none" stroke="#17628E" stroke-width="4" />
+
+            <text x="18" y="30" font-size="16" font-weight="700" fill="#17628E">集成模型 H(x) = sign(∑ hᵢ(x))</text>
+            <text x="18" y="54" font-size="15" fill="#50616B">线性基学习器组合出非线性凸包决策边界</text>
+            <text x="18" y="235" font-size="15" font-weight="600" fill="#17628E">集成准确率 90%</text>
+
+            <!-- 完整样本空间 -->
+            <circle cx="80" cy="60" r="5" fill="#17628E" />
+            <circle cx="140" cy="80" r="5" fill="#17628E" />
+            <circle cx="260" cy="70" r="5" fill="#17628E" />
+            <circle cx="300" cy="110" r="5" fill="#17628E" />
+            <circle cx="70" cy="200" r="5" fill="none" stroke="#71828B" stroke-width="2" />
+            <circle cx="130" cy="210" r="5" fill="none" stroke="#71828B" stroke-width="2" />
+            <circle cx="310" cy="190" r="5" fill="none" stroke="#71828B" stroke-width="2" />
+
+            <!-- 测试点探针 -->
+            <circle id="ens-probe" cx="300" cy="165" r="9" fill="none" stroke="#B83D0B" stroke-width="3" />
+            <text id="probe-label" x="315" y="170" font-size="13" font-weight="600" fill="#B83D0B">样本 A</text>
+          </g>
+
+          <!-- 说明性引线指向折线边界 -->
+          <path d="M 600 500 L 440 500 L 410 495" fill="none" stroke="#71828B" stroke-width="1.5" />
+          <text x="610" y="495" font-size="15" font-weight="600" fill="#142630">互补效应</text>
+          <text x="610" y="518" font-size="13" fill="#50616B">单个模型的盲区被另外两个正确判定纠正</text>
+        </svg>
+      </section>
+
+      <!-- 右侧：交互式测试与算术证明 -->
+      <section class="side-panel">
+        <!-- 切换样本点查看模型表决情况 -->
+        <div class="sample-inspector">
+          <div class="section-title">验证测试样本的决策机制</div>
+          <div class="selector-row" role="tablist">
+            <button class="sample-btn" id="btn-a" aria-pressed="true" onclick="selectSample('A')">
+              测试点 A (右侧过渡)
+            </button>
+            <button class="sample-btn" id="btn-b" aria-pressed="false" onclick="selectSample('B')">
+              测试点 B (中心正例)
+            </button>
+            <button class="sample-btn" id="btn-c" aria-pressed="false" onclick="selectSample('C')">
+              测试点 C (下方负例)
+            </button>
+          </div>
+
+          <div class="votes-breakdown">
+            <div class="vote-item">
+              <span class="vote-name">基学习器 h₁:</span>
+              <span class="vote-val" id="val-h1">预测 负类 (-1)</span>
+              <span class="status-tag wrong" id="tag-h1">判定失误</span>
+            </div>
+            <div class="vote-item">
+              <span class="vote-name">基学习器 h₂:</span>
+              <span class="vote-val" id="val-h2">预测 负类 (-1)</span>
+              <span class="status-tag wrong" id="tag-h2">判定失误</span>
+            </div>
+            <div class="vote-item">
+              <span class="vote-name">基学习器 h₃:</span>
+              <span class="vote-val" id="val-h3">预测 负类 (-1)</span>
+              <span class="status-tag correct" id="tag-h3">判定正确</span>
+            </div>
+            <div class="vote-item ensemble">
+              <span class="vote-name">集成判定 H(x):</span>
+              <span class="vote-val" id="val-ens">多数票：负类 (-1)</span>
+              <span class="status-tag correct" id="tag-ens">纠正成功</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 总结机制结论 -->
+        <div class="summary-card">
+          <p class="summary-text" id="summary-desc">
+            当基学习器彼此独立且具备差异时，两模型同时犯错的概率低于单模型犯错率。通过多数表决，局部错误被群体理性吸收。
+          </p>
+          <div class="summary-metric">
+            <div class="metric-col">
+              <span class="num focus">70%</span>
+              <span class="lbl">单基模型平均准确率</span>
+            </div>
+            <div class="metric-col">
+              <span class="num">90%</span>
+              <span class="lbl">多数投票集成后准确率</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，今天我们正式进入集成学习的核心思想——如何让多个模型共同决策。
+    在左侧图中，我们训练了三个基学习器：h1 只能做水平分割，h2 只能做垂直分割，h3 做斜向切分。单个模型的能力是非常有限的，准确率都只有 70% 左右。
+    然而，请注意：它们的错误发生在特征空间的不同区域，也就是说它们具有“差异性”。
+    当我们通过蓝色的汇聚路径，采用多数投票进行集成时，三个线性边界拼接成了一个更加复杂的凸边界，整体准确率直接跃升到 90%。
+    右侧我们可以切换不同的样本点：比如样本 A 处于单模型的盲区，h1 和 h2 都容易误判，但只要多数模型保持互补，最终集体投票就能纠正单个模型的偏倚。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 4, total: 32 });
+
+    const samples = {
+      'A': {
+        name: '样本 A',
+        coordsMini: { x: 170, y: 140 },
+        coordsBig: { x: 295, y: 165 },
+        h1: { text: '预测 正类 (+1)', status: 'wrong', label: '判定失误' },
+        h2: { text: '预测 负类 (-1)', status: 'correct', label: '判定正确' },
+        h3: { text: '预测 负类 (-1)', status: 'correct', label: '判定正确' },
+        ens: { text: '多数票：负类 (-1)', status: 'correct', label: '纠错成功' },
+        desc: '样本 A 落在单模型 h₁ 的误判区域，h₂ 与 h₃ 判定正确，多数投票（2比1）纠正了单个模型的偏差。'
+      },
+      'B': {
+        name: '样本 B',
+        coordsMini: { x: 90, y: 70 },
+        coordsBig: { x: 155, y: 80 },
+        h1: { text: '预测 正类 (+1)', status: 'correct', label: '判定正确' },
+        h2: { text: '预测 正类 (+1)', status: 'correct', label: '判定正确' },
+        h3: { text: '预测 正类 (+1)', status: 'correct', label: '判定正确' },
+        ens: { text: '一致票：正类 (+1)', status: 'correct', label: '全员判定' },
+        desc: '样本 B 处于核心置信区，所有基学习器一致正确预测，集成模型输出高度可信结果。'
+      },
+      'C': {
+        name: '样本 C',
+        coordsMini: { x: 70, y: 190 },
+        coordsBig: { x: 120, y: 220 },
+        h1: { text: '预测 负类 (-1)', status: 'correct', label: '判定正确' },
+        h2: { text: '预测 正类 (+1)', status: 'wrong', label: '判定失误' },
+        h3: { text: '预测 负类 (-1)', status: 'correct', label: '判定正确' },
+        ens: { text: '多数票：负类 (-1)', status: 'correct', label: '纠错成功' },
+        desc: '样本 C 触发了 h₂ 误判，h₁ 与 h₃ 正确覆盖该区域，多数投票再次保障了整体输出的正确。'
+      }
+    };
+
+    function selectSample(key) {
+      const data = samples[key];
+      if (!data) return;
+
+      // 更新按钮状态
+      ['A', 'B', 'C'].forEach(k => {
+        const btn = document.getElementById('btn-' + k.toLowerCase());
+        btn.setAttribute('aria-pressed', k === key ? 'true' : 'false');
+      });
+
+      // 更新 SVG 探针位置
+      ['h1', 'h2', 'h3'].forEach(id => {
+        const probe = document.getElementById(id + '-probe');
+        probe.setAttribute('cx', data.coordsMini.x);
+        probe.setAttribute('cy', data.coordsMini.y);
+      });
+      const ensProbe = document.getElementById('ens-probe');
+      ensProbe.setAttribute('cx', data.coordsBig.x);
+      ensProbe.setAttribute('cy', data.coordsBig.y);
+
+      const probeLabel = document.getElementById('probe-label');
+      probeLabel.setAttribute('x', data.coordsBig.x + 15);
+      probeLabel.setAttribute('y', data.coordsBig.y + 5);
+      probeLabel.textContent = data.name;
+
+      // 更新表决结果
+      const setRow = (id, info) => {
+        const valEl = document.getElementById('val-' + id);
+        const tagEl = document.getElementById('tag-' + id);
+        valEl.textContent = info.text;
+        tagEl.textContent = info.label;
+        tagEl.className = 'status-tag ' + info.status;
+      };
+
+      setRow('h1', data.h1);
+      setRow('h2', data.h2);
+      setRow('h3', data.h3);
+      setRow('ens', data.ens);
+
+      document.getElementById('summary-desc').textContent = data.desc;
+    }
+
+    // 初始化为样本 A
+    selectSample('A');
+  </script>
+</body>
+</html>

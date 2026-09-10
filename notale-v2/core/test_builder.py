@@ -69,13 +69,18 @@ class SampleDefaultsTests(unittest.TestCase):
     def test_cli_supports_explicit_sample_overrides(self):
         for flags, mode, aux in [
             (["--no-aux-samples"], "mini", False),
-            (["--samples", "full", "--no-aux-samples"], "full", False),
             (["--samples", "none"], "none", False),
             (["--samples", "mini", "--aux-samples"], "mini", True),
         ]:
             with self.subTest(flags=flags):
                 args = builder.parse_args(["--label", "test", *flags])
                 self.assertEqual((args.samples, args.aux_samples), (mode, aux))
+
+
+    def test_cli_rejects_retired_full_mode(self):
+        with patch("sys.stderr"), self.assertRaises(SystemExit) as caught:
+            builder.parse_args(["--label", "test", "--samples", "full"])
+        self.assertEqual(caught.exception.code, 2)
 
 
 class PlanningContextTests(unittest.TestCase):
@@ -477,7 +482,7 @@ class AgentLoopTests(unittest.TestCase):
         responses = [
             tool_response(
                 call("Read", file_path=str(skill / "references/composition.md")),
-                call("Read", file_path=str(skill / "samples/bundles/composition/prism-light.full.md")),
+                call("Read", file_path=str(skill / "samples/bundles/composition/prism-light.mini.md")),
                 index=0,
             ),
             tool_response(
@@ -511,7 +516,7 @@ class AgentLoopTests(unittest.TestCase):
         self.assertIn("Patch", surfaces[0])
         self.assertEqual(
             result.reference_reads,
-            ["references/composition.md", "samples/bundles/composition/prism-light.full.md"],
+            ["references/composition.md", "samples/bundles/composition/prism-light.mini.md"],
         )
         self.assertEqual([name for name, _ in events].count("Check"), 1)
 
@@ -574,7 +579,7 @@ class AgentLoopTests(unittest.TestCase):
         responses = [
             tool_response(
                 call("Read", file_path=str(skill / "references/code.md")),
-                call("Read", file_path=str(skill / "samples/bundles/code/code-core-bundle.full.md")),
+                call("Read", file_path=str(skill / "samples/bundles/code/code-core-bundle.one.md")),
                 call("CodeScaffold"),
                 index=0,
             ),
@@ -615,7 +620,7 @@ class AgentLoopTests(unittest.TestCase):
         self.assertNotIn("Patch", surfaces[0])
         self.assertEqual(
             result.reference_reads,
-            ["references/code.md", "samples/bundles/code/code-core-bundle.full.md"],
+            ["references/code.md", "samples/bundles/code/code-core-bundle.one.md"],
         )
 
     def test_text_only_profile_removes_look_and_forces_text_check(self):

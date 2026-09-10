@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Stacking 的数据泄漏与折外预测</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      font-family: var(--font-sans);
+      background: var(--bg);
+      box-sizing: border-box;
+      position: relative;
+    }
+
+    header {
+      margin-bottom: 28px;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0 0 10px 0;
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: var(--lh-tight);
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 56px;
+      height: 570px;
+    }
+
+    .track {
+      position: relative;
+      border-top: 1px solid var(--rule);
+      padding-top: 18px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .track-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 16px;
+    }
+
+    .track-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      margin: 0;
+    }
+
+    .track-status {
+      font-size: var(--fs-sec);
+      font-weight: 500;
+    }
+
+    .status-bad {
+      color: var(--focus);
+    }
+
+    .status-good {
+      color: var(--model);
+    }
+
+    .diag-box {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+
+    .verdict {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--rule);
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .verdict strong {
+      color: var(--text);
+    }
+
+    .verdict-bad strong {
+      color: var(--focus);
+    }
+
+    .verdict-good strong {
+      color: var(--model);
+    }
+
+    .metric-pill {
+      font-family: var(--font-display);
+      font-size: var(--fs-body);
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body data-page="28" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>Stacking 的数据泄漏与折外预测</h1>
+      <p class="lead">用自身训练集生成元特征会产生虚假置信，必须以折外样本喂养元学习器。</p>
+    </header>
+
+    <main class="comparison">
+      <!-- 错误对照：集内预测 -->
+      <section class="track">
+        <div class="track-head">
+          <h2 class="track-title">集内预测</h2>
+          <span class="track-status status-bad">严重过拟合</span>
+        </div>
+        <div class="diag-box">
+          <svg viewBox="0 0 710 440" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- 原始数据 -->
+            <rect x="35" y="24" width="640" height="60" rx="2" stroke="var(--rule)" stroke-width="2" fill="none"/>
+            <text x="355" y="60" font-size="16" fill="var(--text)" font-family="var(--font-sans)" text-anchor="middle">全量训练集</text>
+
+            <!-- 箭头下引 -->
+            <path d="M 355 84 L 355 130" stroke="var(--rule)" stroke-width="2"/>
+            <polygon points="350,130 360,130 355,138" fill="var(--rule)"/>
+
+            <!-- 基学习器 -->
+            <rect x="235" y="138" width="240" height="52" rx="2" stroke="var(--model)" stroke-width="2" fill="none"/>
+            <text x="355" y="170" font-size="16" fill="var(--model)" font-family="var(--font-display)" text-anchor="middle">基模型</text>
+
+            <!-- 泄漏回路箭头 -->
+            <path d="M 355 190 L 355 240" stroke="var(--focus)" stroke-width="2" stroke-dasharray="5 3"/>
+            <polygon points="350,240 360,240 355,248" fill="var(--focus)"/>
+            <text x="366" y="222" font-size="15" fill="var(--focus)" font-family="var(--font-sans)">训练集自推断</text>
+
+            <!-- 伪元特征 -->
+            <rect x="135" y="248" width="440" height="54" rx="2" stroke="var(--focus)" stroke-width="2" fill="none"/>
+            <text x="355" y="281" font-size="15" fill="var(--focus)" font-family="var(--font-sans)" text-anchor="middle">虚假元特征 (精度虚高 ~99%)</text>
+
+            <!-- 元学习器 -->
+            <path d="M 355 302 L 355 348" stroke="var(--rule)" stroke-width="2"/>
+            <polygon points="350,348 360,348 355,356" fill="var(--rule)"/>
+
+            <rect x="195" y="356" width="320" height="54" rx="2" stroke="var(--rule)" stroke-width="2" fill="none"/>
+            <text x="355" y="389" font-size="15" fill="var(--muted)" font-family="var(--font-sans)" text-anchor="middle">元学习器误信过拟合模型</text>
+          </svg>
+        </div>
+        <div class="verdict verdict-bad">
+          <span>泛化受损：<strong>测试误差剧增</strong></span>
+          <span class="metric-pill">测试误差 26.4%</span>
+        </div>
+      </section>
+
+      <!-- 正确解法：K折折外预测 -->
+      <section class="track">
+        <div class="track-head">
+          <h2 class="track-title">折外预测</h2>
+          <span class="track-status status-good">严防泄漏</span>
+        </div>
+        <div class="diag-box">
+          <svg viewBox="0 0 710 440" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- 5 折切分示意条 -->
+            <g transform="translate(35, 24)">
+              <rect x="0" y="0" width="122" height="60" stroke="var(--model)" stroke-width="2" fill="none"/>
+              <text x="61" y="36" font-size="15" fill="var(--model)" text-anchor="middle" font-family="var(--font-sans)">折 1 训</text>
+
+              <rect x="128" y="0" width="122" height="60" stroke="var(--model)" stroke-width="2" fill="none"/>
+              <text x="189" y="36" font-size="15" fill="var(--model)" text-anchor="middle" font-family="var(--font-sans)">折 2 训</text>
+
+              <rect x="256" y="0" width="122" height="60" stroke="var(--model)" stroke-width="2" fill="none"/>
+              <text x="317" y="36" font-size="15" fill="var(--model)" text-anchor="middle" font-family="var(--font-sans)">折 3 训</text>
+
+              <rect x="384" y="0" width="122" height="60" stroke="var(--model)" stroke-width="2" fill="none"/>
+              <text x="445" y="36" font-size="15" fill="var(--model)" text-anchor="middle" font-family="var(--font-sans)">折 4 训</text>
+
+              <!-- Fold 5 (留出折外验证) -->
+              <rect x="514" y="0" width="126" height="60" stroke="var(--focus)" stroke-width="2" fill="none"/>
+              <text x="577" y="36" font-size="15" fill="var(--focus)" font-weight="500" text-anchor="middle" font-family="var(--font-sans)">折 5 留出</text>
+            </g>
+
+            <!-- 训练箭头连接基模型 -->
+            <path d="M 253 84 L 253 130" stroke="var(--model)" stroke-width="2"/>
+            <polygon points="248,130 258,130 253,138" fill="var(--model)"/>
+
+            <rect x="133" y="138" width="240" height="52" rx="2" stroke="var(--model)" stroke-width="2" fill="none"/>
+            <text x="253" y="170" font-size="16" fill="var(--model)" font-family="var(--font-display)" text-anchor="middle">基模型 (4折训练)</text>
+
+            <!-- 预测指向留出折 -->
+            <path d="M 373 164 L 577 164 L 577 240" stroke="var(--model)" stroke-width="2" stroke-dasharray="5 3"/>
+            <polygon points="572,240 582,240 577,248" fill="var(--model)"/>
+            <text x="475" y="154" font-size="15" fill="var(--model)" font-family="var(--font-sans)">留出折预测</text>
+
+            <!-- 拼接真实元特征 -->
+            <rect x="135" y="248" width="440" height="54" rx="2" stroke="var(--model)" stroke-width="2" fill="none"/>
+            <text x="355" y="281" font-size="15" fill="var(--model)" font-family="var(--font-sans)" text-anchor="middle">拼接留出预测，构成真实元特征</text>
+
+            <!-- 元学习器 -->
+            <path d="M 355 302 L 355 348" stroke="var(--model)" stroke-width="4"/>
+            <polygon points="349,348 361,348 355,356" fill="var(--model)"/>
+
+            <rect x="195" y="356" width="320" height="54" rx="2" stroke="var(--model)" stroke-width="2" fill="none"/>
+            <text x="355" y="389" font-size="15" fill="var(--text)" font-family="var(--font-sans)" text-anchor="middle">按真实泛化能力分配组合权重</text>
+          </svg>
+        </div>
+        <div class="verdict verdict-good">
+          <span>真实评估：<strong>实现稳健泛化</strong></span>
+          <span class="metric-pill">测试误差 5.5%</span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看，上一页我们讲了 Stacking 由基模型生成预测特征、再由元学习器学习如何组合。
+    这里隐藏着一个致命的数据泄漏陷阱：如果直接把全部训练集喂给基模型，再让基模型在这批样本上做预测来构建元特征，基模型因为“背诵了答案”，输出的预测特征准确率会异常虚高。
+    元学习器就会产生严重误判，盲目把极大权重分配给死记硬背的复杂基模型。一旦放到真正的测试集上，泛化性能就会当场崩塌。
+    解决的铁律是使用 K 折折外预测（Out-of-Fold Prediction）：每一次基模型只用 K-1 折训练，对剩下的那一折未见样本做出预测；再把 K 个留出折的预测按顺序拼接成完整的元特征矩阵。这样元学习器看到的才是基模型面对未知数据时的真实水平。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 28, total: 32 });
+  </script>
+</body>
+</html>

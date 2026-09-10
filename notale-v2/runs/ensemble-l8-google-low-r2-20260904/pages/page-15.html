@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      padding: var(--pad-y) var(--pad-x);
+      justify-content: space-between;
+    }
+
+    /* 顶部标题与核心主张 */
+    .header-block {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--surface-strong);
+    }
+    .header-left h1 {
+      font-size: var(--fs-h1);
+      color: var(--text);
+      line-height: 1.15;
+      margin: 0 0 6px 0;
+      font-weight: 700;
+    }
+    .header-left .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+    .header-kpi {
+      display: flex;
+      gap: 28px;
+      align-items: center;
+    }
+    .kpi-item {
+      text-align: right;
+    }
+    .kpi-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .kpi-val {
+      font-family: var(--font-num);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* 主舞台：三栏机制展开（样本重权 -> 误差率枢纽 -> 模型投票权） */
+    .mech-stage {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 280px 1fr;
+      gap: 24px;
+      align-items: stretch;
+      margin: 18px 0;
+    }
+
+    .column-panel {
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(18, 38, 52, 0.04);
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-tag {
+      font-size: var(--fs-label);
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    /* 样本分布可视化 */
+    .sample-viz-area {
+      flex: 1;
+      min-height: 220px;
+      position: relative;
+      background: #F9FBFC;
+      border: 1px dashed var(--surface-strong);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 12px;
+    }
+    .sample-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      margin: 8px 0;
+    }
+    .sample-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: all 0.2s var(--ease);
+    }
+    .sample-bubble {
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-family: var(--font-num);
+      color: #fff;
+      transition: all 0.25s var(--ease);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    }
+    .sample-bubble.correct {
+      background: var(--sample);
+    }
+    .sample-bubble.wrong {
+      background: var(--aggregate);
+      box-shadow: 0 0 0 3px rgba(195, 75, 34, 0.25);
+    }
+    .sample-lbl {
+      margin-top: 6px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-num);
+    }
+
+    /* 中间联动枢纽：误差率 ε_m 调节器 */
+    .pivot-panel {
+      background: var(--surface);
+      border-radius: 8px;
+      border: 2px solid var(--surface-strong);
+      padding: 20px 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      text-align: center;
+      box-shadow: 0 4px 14px rgba(18, 38, 52, 0.05);
+    }
+    .pivot-slider-wrap {
+      margin: 16px 0;
+      padding: 10px 0;
+    }
+    .pivot-slider-wrap input[type=range] {
+      width: 100%;
+      cursor: pointer;
+      accent-color: var(--focus);
+    }
+    .pivot-readout {
+      margin: 14px 0;
+      background: #F4F8FA;
+      padding: 12px;
+      border-radius: 6px;
+    }
+    .pivot-val {
+      font-family: var(--font-num);
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .pivot-state-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    .alpha-curve-box {
+      flex: 1;
+      position: relative;
+      min-height: 220px;
+    }
+
+    /* 底部双公式与推演小结 */
+    .footer-summary {
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 32px;
+    }
+    .formula-col {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .formula-badge {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: #E8EFF3;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .formula-render {
+      font-size: 20px;
+      color: var(--text);
+    }
+    .summary-text {
+      flex: 1;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+      border-left: 2px solid var(--surface-strong);
+      padding-left: 20px;
+    }
+  </style>
+</head>
+<body data-page="15" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题与核心主张 -->
+    <header class="header-block">
+      <div class="header-left min0">
+        <h1>AdaBoost 的双重权重：样本重分配与分类器投票权</h1>
+        <p class="lead">误分类样本权重指数级提升，分类误差率越低的弱分类器在最终表决中享有越大话语权。</p>
+      </div>
+      <div class="header-kpi">
+        <div class="kpi-item">
+          <div class="kpi-label">当前轮弱分类器误差率 <span class="math-err"></span></div>
+          <div class="kpi-val" id="kpi-err">0.20</div>
+        </div>
+        <div class="kpi-item">
+          <div class="kpi-label">模型投票权重 <span class="math-alpha"></span></div>
+          <div class="kpi-val" id="kpi-alpha" style="color:var(--model)">0.693</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 主展示区：三栏闭环架构 -->
+    <main class="mech-stage">
+      <!-- 左栏：下一轮样本权重分布变化 (w_{m+1, i}) -->
+      <section class="column-panel min0" aria-label="样本权重分配">
+        <div class="panel-head">
+          <div class="panel-title">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--aggregate)"></span>
+            样本关注度转移
+          </div>
+          <span class="panel-tag" id="sample-status-tag">3 个难分点权重上升</span>
+        </div>
+        <p style="font-size:var(--fs-sec);color:var(--muted);margin:0 0 10px 0;line-height:1.4;">
+          当前弱分类器 <span class="math-gm"></span> 划分后的 10 个训练样本。分错样本（红色）权重乘上 <span class="math-exp-pos"></span>，分对样本（绿色）权重乘上 <span class="math-exp-neg"></span>。
+        </p>
+
+        <div class="sample-viz-area" id="sample-area">
+          <div class="sample-row" id="row-top">
+            <!-- 动态生成 5 个点 -->
+          </div>
+          <div class="sample-row" id="row-bot">
+            <!-- 动态生成 5 个点 -->
+          </div>
+        </div>
+
+        <div style="margin-top:12px;font-size:var(--fs-label);color:var(--muted);display:flex;justify-content:space-between;align-items:center;">
+          <span>难分点相对占比：<strong id="hard-ratio" style="color:var(--aggregate);font-family:var(--font-num);">60.0%</strong></span>
+          <span style="font-size:var(--fs-tick);color:var(--muted);">归一化约束 <span class="math-sum-w"></span></span>
+        </div>
+      </section>
+
+      <!-- 中栏：误差率 ε_m 联动控制枢纽 -->
+      <section class="pivot-panel min0" aria-label="误差率调节">
+        <div>
+          <div class="panel-title" style="justify-content:center;">
+            基分类器性能枢纽
+          </div>
+          <p style="font-size:var(--fs-label);color:var(--muted);margin:6px 0 0 0;">
+            拖动滑块改变弱学习器加权分类误差率 <span class="math-err-pivot"></span>：
+          </p>
+        </div>
+
+        <div class="pivot-slider-wrap">
+          <input type="range" id="err-slider" min="0.05" max="0.48" step="0.01" value="0.20" aria-label="加权误差率滑块">
+          <div style="display:flex;justify-content:space-between;font-size:var(--fs-tick);color:var(--muted);font-family:var(--font-num);margin-top:6px;">
+            <span>0.05 (近乎无错)</span>
+            <span>0.50 (随机猜测)</span>
+          </div>
+        </div>
+
+        <div class="pivot-readout">
+          <div style="font-size:var(--fs-label);color:var(--muted);">分类误差率 <span class="math-err-readout"></span></div>
+          <div class="pivot-val" id="pivot-err-val">0.20</div>
+          <div class="pivot-state-desc" id="pivot-desc">分类准确率 80%，显著优于随机猜测，赋予高决策权重。</div>
+        </div>
+
+        <div class="btns" style="display:flex;gap:8px;justify-content:center;">
+          <button class="btn" id="btn-preset-good" style="font-size:var(--fs-label);padding:5px 10px;">优 (ε=0.10)</button>
+          <button class="btn" id="btn-preset-mid" style="font-size:var(--fs-label);padding:5px 10px;">中 (ε=0.25)</button>
+          <button class="btn" id="btn-preset-poor" style="font-size:var(--fs-label);padding:5px 10px;">弱 (ε=0.45)</button>
+        </div>
+      </section>
+
+      <!-- 右栏：模型表决权 α_m 响应曲线 -->
+      <section class="column-panel min0" aria-label="分类器权重函数">
+        <div class="panel-head">
+          <div class="panel-title">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--model)"></span>
+            模型权重曲线 <span class="math-alpha-curve"></span>
+          </div>
+          <span class="panel-tag" style="background:#E5EFF5;color:var(--model);font-family:var(--font-num);" id="alpha-tag">α = 0.693</span>
+        </div>
+        <p style="font-size:var(--fs-sec);color:var(--muted);margin:0 0 8px 0;line-height:1.4;">
+          当误差率降至 0 时模型权重趋于极大；当误差率达到 0.5（抛硬币随机猜测水平）时，权重精确归零失去表决资格。
+        </p>
+
+        <div class="alpha-curve-box">
+          <canvas id="alpha-canvas" class="cv-fill"></canvas>
+        </div>
+
+        <div style="margin-top:8px;font-size:var(--fs-label);color:var(--muted);display:flex;justify-content:space-between;">
+          <span>当前分类器话语权：<strong id="alpha-desc" style="color:var(--model);font-family:var(--font-num);">主导地位</strong></span>
+          <span>弱分类器阈值：<span class="math-thresh"></span></span>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部双公式与推演小结 -->
+    <footer class="footer-summary">
+      <div class="formula-col min0">
+        <div class="formula-badge">模型权重公式</div>
+        <div class="formula-render" id="katex-alpha"></div>
+      </div>
+      <div class="formula-col min0">
+        <div class="formula-badge">样本更新公式</div>
+        <div class="formula-render" id="katex-weight"></div>
+      </div>
+      <div class="summary-text min0">
+        <strong>机制本质：</strong>每一轮提升都通过改变数据概率分布迫使后继弱模型聚焦于前序模型的盲区，同时用严格对应正确率的对数几率比赋予每个弱模型恰当的投票份额。
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      // 渲染公式
+      katex.render("\\alpha_m = \\frac{1}{2}\\ln\\left(\\frac{1-\\epsilon_m}{\\epsilon_m}\\right)", document.getElementById('katex-alpha'), { throwOnError: false });
+      katex.render("w_{m+1, i} = \\frac{w_{m, i}}{Z_m} \\exp\\big(-\\alpha_m y_i G_m(x_i)\\big)", document.getElementById('katex-weight'), { throwOnError: false });
+
+      // 行内数学记号渲染
+      document.querySelectorAll('.math-err, .math-err-pivot, .math-err-readout').forEach(el => katex.render('\\epsilon_m', el, { throwOnError: false }));
+      document.querySelectorAll('.math-alpha').forEach(el => katex.render('\\alpha_m', el, { throwOnError: false }));
+      document.querySelectorAll('.math-gm').forEach(el => katex.render('G_m(x)', el, { throwOnError: false }));
+      document.querySelectorAll('.math-exp-pos').forEach(el => katex.render('e^{\\alpha_m}', el, { throwOnError: false }));
+      document.querySelectorAll('.math-exp-neg').forEach(el => katex.render('e^{-\\alpha_m}', el, { throwOnError: false }));
+      document.querySelectorAll('.math-sum-w').forEach(el => katex.render('\\sum w_i = 1', el, { throwOnError: false }));
+      document.querySelectorAll('.math-alpha-curve').forEach(el => katex.render('\\alpha_m(\\epsilon_m)', el, { throwOnError: false }));
+      document.querySelectorAll('.math-thresh').forEach(el => katex.render('\\epsilon_m < 0.5', el, { throwOnError: false }));
+
+      const slider = document.getElementById('err-slider');
+      const kpiErr = document.getElementById('kpi-err');
+      const kpiAlpha = document.getElementById('kpi-alpha');
+      const pivotErrVal = document.getElementById('pivot-err-val');
+      const pivotDesc = document.getElementById('pivot-desc');
+      const alphaTag = document.getElementById('alpha-tag');
+      const alphaDesc = document.getElementById('alpha-desc');
+      const hardRatio = document.getElementById('hard-ratio');
+      const sampleStatusTag = document.getElementById('sample-status-tag');
+      const rowTop = document.getElementById('row-top');
+      const rowBot = document.getElementById('row-bot');
+      const canvas = document.getElementById('alpha-canvas');
+
+      // 初始化 10 个样本节点（3个错，7个对）
+      // 0..2 分错（难分点），3..9 分对
+      const samples = [
+        { id: 1, wrong: true, row: 'top' },
+        { id: 2, wrong: false, row: 'top' },
+        { id: 3, wrong: false, row: 'top' },
+        { id: 4, wrong: true, row: 'top' },
+        { id: 5, wrong: false, row: 'top' },
+        { id: 6, wrong: false, row: 'bot' },
+        { id: 7, wrong: true, row: 'bot' },
+        { id: 8, wrong: false, row: 'bot' },
+        { id: 9, wrong: false, row: 'bot' },
+        { id: 10, wrong: false, row: 'bot' }
+      ];
+
+      function initSampleDoms() {
+        rowTop.innerHTML = '';
+        rowBot.innerHTML = '';
+        samples.forEach(s => {
+          const wrap = document.createElement('div');
+          wrap.className = 'sample-node';
+          wrap.id = 'sample-node-' + s.id;
+
+          const bubble = document.createElement('div');
+          bubble.className = 'sample-bubble ' + (s.wrong ? 'wrong' : 'correct');
+          bubble.id = 'bubble-' + s.id;
+          bubble.textContent = s.wrong ? '✕' : '✓';
+
+          const lbl = document.createElement('div');
+          lbl.className = 'sample-lbl';
+          lbl.id = 'lbl-' + s.id;
+          lbl.textContent = '0.100';
+
+          wrap.appendChild(bubble);
+          wrap.appendChild(lbl);
+
+          if (s.row === 'top') rowTop.appendChild(wrap);
+          else rowBot.appendChild(wrap);
+        });
+      }
+      initSampleDoms();
+
+      function calcAlpha(err) {
+        return 0.5 * Math.log((1 - err) / err);
+      }
+
+      function update(err) {
+        const alpha = calcAlpha(err);
+
+        // 更新 KPI 与文本
+        kpiErr.textContent = err.toFixed(2);
+        kpiAlpha.textContent = alpha.toFixed(3);
+        pivotErrVal.textContent = err.toFixed(2);
+        alphaTag.textContent = 'α = ' + alpha.toFixed(3);
+
+        if (err <= 0.15) {
+          pivotDesc.textContent = '分类准确率高达 ' + Math.round((1 - err) * 100) + '%，该弱分类器极其可靠，被赋予主导权重。';
+          alphaDesc.textContent = '极强话语权';
+        } else if (err <= 0.35) {
+          pivotDesc.textContent = '分类准确率 ' + Math.round((1 - err) * 100) + '%，明显优于抛硬币，贡献中等有效票数。';
+          alphaDesc.textContent = '稳健有效票';
+        } else {
+          pivotDesc.textContent = '分类准确率 ' + Math.round((1 - err) * 100) + '%，接近 50% 随机基准，投票权衰减趋近于零。';
+          alphaDesc.textContent = '发言权微弱';
+        }
+
+        // 计算更新后的样本权重
+        // 分错样本乘 exp(alpha) = sqrt((1-err)/err)
+        // 分对样本乘 exp(-alpha) = sqrt(err/(1-err))
+        const multWrong = Math.exp(alpha);
+        const multCorrect = Math.exp(-alpha);
+
+        let unnormalized = samples.map(s => s.wrong ? multWrong : multCorrect);
+        let sumW = unnormalized.reduce((a, b) => a + b, 0);
+        let normalized = unnormalized.map(w => w / sumW);
+
+        let totalHardW = 0;
+        samples.forEach((s, idx) => {
+          const w = normalized[idx];
+          if (s.wrong) totalHardW += w;
+          const bubble = document.getElementById('bubble-' + s.id);
+          const lbl = document.getElementById('lbl-' + s.id);
+
+          // 气泡直径按权重映射：从 28px 到 60px
+          const diam = Math.round(24 + w * 220);
+          bubble.style.width = diam + 'px';
+          bubble.style.height = diam + 'px';
+          bubble.style.fontSize = Math.max(12, Math.round(diam * 0.45)) + 'px';
+          lbl.textContent = w.toFixed(3);
+        });
+
+        hardRatio.textContent = (totalHardW * 100).toFixed(1) + '%';
+        sampleStatusTag.textContent = `3 个错分样本总权重占 ${(totalHardW * 100).toFixed(0)}%`;
+
+        // 重绘曲线
+        drawAlphaCurve(err, alpha);
+      }
+
+      function drawAlphaCurve(curErr, curAlpha) {
+        const ctx = Deck.fit(canvas);
+        const W = canvas.parentElement.offsetWidth;
+        const H = canvas.parentElement.offsetHeight;
+        ctx.clearRect(0, 0, W, H);
+
+        const padLeft = 46;
+        const padRight = 24;
+        const padTop = 20;
+        const padBottom = 34;
+
+        const plotW = W - padLeft - padRight;
+        const plotH = H - padTop - padBottom;
+
+        // 坐标范围：x ∈ [0, 0.5], y ∈ [0, 2.0]
+        const xMin = 0.02, xMax = 0.50;
+        const yMin = 0.0, yMax = 2.0;
+
+        function toX(val) {
+          return padLeft + ((val - 0) / 0.5) * plotW;
+        }
+        function toY(val) {
+          return padTop + plotH - ((val - yMin) / (yMax - yMin)) * plotH;
+        }
+
+        // 网格线与坐标轴
+        ctx.strokeStyle = '#E2EBF0';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let y = 0.5; y <= 2.0; y += 0.5) {
+          const py = toY(y);
+          ctx.moveTo(padLeft, py);
+          ctx.lineTo(W - padRight, py);
+        }
+        for (let x = 0.1; x <= 0.5; x += 0.1) {
+          const px = toX(x);
+          ctx.moveTo(px, padTop);
+          ctx.lineTo(px, padTop + plotH);
+        }
+        ctx.stroke();
+
+        // 轴文字
+        ctx.fillStyle = '#536A78';
+        ctx.font = '12px var(--font-sans)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let x = 0.1; x <= 0.5; x += 0.1) {
+          ctx.fillText(x.toFixed(1), toX(x), padTop + plotH + 6);
+        }
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        for (let y = 0.5; y <= 2.0; y += 0.5) {
+          ctx.fillText(y.toFixed(1), padLeft - 6, toY(y));
+        }
+        ctx.fillText('0', padLeft - 6, toY(0));
+
+        // 轴标题
+        ctx.font = '13px "Noto Sans SC", sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('权重 α_m', padLeft, padTop - 6);
+        ctx.textAlign = 'right';
+        ctx.fillText('误差率 ε_m', W - padRight, padTop + plotH + 28);
+
+        // 随机猜测分界线 ε = 0.5 虚线
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = '#C34B22';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(toX(0.5), padTop);
+        ctx.lineTo(toX(0.5), padTop + plotH);
+        ctx.stroke();
+        ctx.restore();
+
+        // 绘制 α 曲线
+        ctx.save();
+        ctx.strokeStyle = '#27648F';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        let started = false;
+        for (let ex = 0.03; ex <= 0.495; ex += 0.005) {
+          const a = 0.5 * Math.log((1 - ex) / ex);
+          const px = toX(ex);
+          const py = toY(Math.min(yMax, a));
+          if (!started) {
+            ctx.moveTo(px, py);
+            started = true;
+          } else {
+            ctx.lineTo(px, py);
+          }
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 高亮当前点
+        const curX = toX(curErr);
+        const curY = toY(Math.min(yMax, curAlpha));
+
+        // 虚线指引
+        ctx.save();
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = '#122634';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(curX, padTop + plotH);
+        ctx.lineTo(curX, curY);
+        ctx.lineTo(padLeft, curY);
+        ctx.stroke();
+        ctx.restore();
+
+        // 焦点圆点
+        ctx.fillStyle = '#C34B22';
+        ctx.beginPath();
+        ctx.arc(curX, curY, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // 焦点旁注
+        ctx.fillStyle = '#122634';
+        ctx.font = 'bold 13px var(--font-sans)';
+        ctx.textAlign = curErr > 0.35 ? 'right' : 'left';
+        ctx.fillText(`(${curErr.toFixed(2)}, ${curAlpha.toFixed(2)})`, curErr > 0.35 ? curX - 10 : curX + 10, curY - 10);
+      }
+
+      // 事件绑定
+      slider.addEventListener('input', (e) => {
+        update(parseFloat(e.target.value));
+      });
+
+      document.getElementById('btn-preset-good').addEventListener('click', () => {
+        slider.value = 0.10;
+        update(0.10);
+      });
+      document.getElementById('btn-preset-mid').addEventListener('click', () => {
+        slider.value = 0.25;
+        update(0.25);
+      });
+      document.getElementById('btn-preset-poor').addEventListener('click', () => {
+        slider.value = 0.45;
+        update(0.45);
+      });
+
+      window.addEventListener('resize', () => {
+        update(parseFloat(slider.value));
+      });
+
+      Deck.init({ index: 15, total: 27 });
+      update(0.20);
+    })();
+  </script>
+</body>
+</html>

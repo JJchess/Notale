@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>价格上限与短缺</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 48px 64px 40px;
+      color: var(--text, #1E293B);
+      font-family: var(--font-sans);
+      box-sizing: border-box;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 16px;
+    }
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid #E2E8F0;
+      padding-bottom: 12px;
+    }
+    .page-title {
+      font-size: var(--fs-h1, 34px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0;
+      color: #0F172A;
+    }
+    .page-kicker {
+      display: none;
+    }
+    .main-grid {
+      display: grid;
+      grid-template-columns: 820px minmax(0, 1fr);
+      gap: 24px;
+      height: 720px;
+      min-height: 0;
+    }
+    .chart-panel {
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .legend {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-sec, 14px);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-line {
+      width: 18px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .legend-patch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+    .chart-canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+    .side-panel {
+      display: grid;
+      grid-template-rows: auto auto auto 1fr;
+      gap: 14px;
+      min-width: 0;
+    }
+    .bento-card {
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 14px;
+      padding: 16px 18px;
+    }
+    .card-title {
+      font-size: 13px;
+      font-family: var(--font-mono, monospace);
+      color: var(--muted, #64748B);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 6px;
+    }
+    .slider-row input[type="range"] {
+      flex: 1;
+      accent-color: var(--primary, #2563EB);
+      height: 6px;
+      cursor: pointer;
+    }
+    .price-badge {
+      font-family: var(--font-mono, monospace);
+      font-size: 24px;
+      font-weight: 700;
+      color: #0F172A;
+      min-width: 90px;
+      text-align: right;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .metric-box {
+      background: #F8FAFC;
+      border: 1px solid #EDF2F7;
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .metric-lbl {
+      font-size: 12px;
+      color: var(--muted, #64748B);
+      margin-bottom: 4px;
+    }
+    .metric-val {
+      font-family: var(--font-mono, monospace);
+      font-size: 20px;
+      font-weight: 700;
+      color: #0F172A;
+    }
+    .metric-val.alert {
+      color: #DC2626;
+    }
+    .evidence-box {
+      font-size: 15px;
+      line-height: 1.5;
+      color: #334155;
+    }
+    .evidence-box b {
+      color: #0F172A;
+    }
+    .historic-box {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 16px;
+      align-items: center;
+      background: #F8FAFC;
+    }
+    .historic-img {
+      width: 140px;
+      height: 105px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid #CBD5E1;
+    }
+    .historic-text {
+      font-size: 13px;
+      line-height: 1.5;
+      color: #475569;
+    }
+    .preset-btns {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .preset-btn {
+      padding: 5px 12px;
+      font-size: 12px;
+      border: 1px solid #CBD5E1;
+      background: #F8FAFC;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      color: #1E293B;
+    }
+    .preset-btn:hover {
+      background: #E2E8F0;
+    }
+    .preset-btn.active {
+      background: #2563EB;
+      color: #FFFFFF;
+      border-color: #2563EB;
+    }
+  </style>
+</head>
+<body data-page="12" data-total="16">
+  <div id="stage">
+    <header class="header-row">
+      <h1 class="page-title">价格上限：法定限价引发短缺与配给耗散</h1>
+      <span class="page-kicker">MARKET INTERVENTION · PRICE CEILING</span>
+    </header>
+
+    <main class="main-grid">
+      <!-- 供求图表区 -->
+      <section class="chart-panel">
+        <div class="chart-header">
+          <div class="legend">
+            <div class="legend-item">
+              <span class="legend-line" style="background:#DC2626;"></span>
+              <span>需求 (D)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-line" style="background:#0284C7;"></span>
+              <span>供给 (S)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-patch" style="background:rgba(239, 68, 68, 0.25); border:1px dashed #DC2626;"></span>
+              <span>无谓损失 (DWL)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-patch" style="background:rgba(217, 119, 6, 0.2); border:1px dashed #D97706;"></span>
+              <span>非价格配给耗散</span>
+            </div>
+          </div>
+          <span style="font-size:12px; font-family:var(--font-mono); color:#64748B;">P* = ¥60 · Q* = 60</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="cvMarket" class="cv-fill"></canvas>
+        </div>
+      </section>
+
+      <!-- 交互与数据指示栏 -->
+      <aside class="side-panel">
+        <div class="bento-card">
+          <div class="card-title">
+            <span>调节价格上限 (Price Ceiling)</span>
+            <span id="regimeStatus">管制生效</span>
+          </div>
+          <div class="slider-row">
+            <input type="range" id="priceRange" min="20" max="80" step="1" value="40" aria-label="法定最高限价滑块">
+            <div class="price-badge" id="priceDisplay">¥40</div>
+          </div>
+          <div class="preset-btns">
+            <button class="preset-btn" data-val="60">均衡 ¥60</button>
+            <button class="preset-btn active" data-val="40">限价 ¥40</button>
+            <button class="preset-btn" data-val="25">限价 ¥25</button>
+          </div>
+        </div>
+
+        <div class="bento-card">
+          <div class="card-title">供需与效率度量</div>
+          <div class="metrics-grid">
+            <div class="metric-box">
+              <div class="metric-lbl">实际交易量 (Qt)</div>
+              <div class="metric-val" id="qtVal">40</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-lbl">供不应求短缺</div>
+              <div class="metric-val alert" id="shortageVal">40</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-lbl">无谓损失 (DWL)</div>
+              <div class="metric-val" id="dwlVal">¥400</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bento-card evidence-box" id="insightBox"></div>
+
+        <div class="bento-card historic-box">
+          <img src="assets/img/planner-a8325cc4afa6/03.jpg" class="historic-img" alt="1979年加油站排队车流" title="File:Line at a gas station, June 15, 1979.jpg - Wikimedia Commons">
+          <div class="historic-text">
+            <b>1979 年汽油限价实证</b><br>
+            法定最高限价造成数公里车队。买方节约的油费在排队怠速中完全耗散。
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，我们看当政府为了“保护消费者”强行设定低于均衡价格的法定上限时，市场会发生什么。
+    模型设定：均衡价是60元，均衡量是60单位。
+    当你把最高限价拖到40元时，生产者只愿意生产40单位，而消费者想买80单位，市场上出现了40单位的供求缺口。
+    因为交易必须双方自愿，短缺发生时，实际成交量由较小的供给方决定（即Qt=40），导致原本可以实现的20单位互利交易被活活掐灭，产生右侧红色的无谓损失DWL。
+    更致命的是橙色区域：愿意出高价80元的消费者买不到，配给不再由价格信号决定，而是演变成排队、黑市或寻租。省下的金钱往往被无休止的时间排队全部耗散。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      // 经济学模型:
+      // Demand: P = 120 - Q  => Q_d = 120 - P
+      // Supply: P = Q        => Q_s = P
+      // Equilibrium: P* = 60, Q* = 60
+      // Maximum price ceiling: Pc
+      const cv = document.getElementById('cvMarket');
+      const slider = document.getElementById('priceRange');
+      const priceDisplay = document.getElementById('priceDisplay');
+      const regimeStatus = document.getElementById('regimeStatus');
+      const qtVal = document.getElementById('qtVal');
+      const shortageVal = document.getElementById('shortageVal');
+      const dwlVal = document.getElementById('dwlVal');
+      const insightBox = document.getElementById('insightBox');
+      const presetBtns = document.querySelectorAll('.preset-btn');
+
+      let currentPc = 40;
+
+      function updateModel(pc) {
+        currentPc = pc;
+        slider.value = pc;
+        priceDisplay.textContent = '¥' + pc;
+
+        // 计算数值
+        const pe = 60;
+        const qe = 60;
+        let isBinding = pc < pe;
+        let qs = pc;
+        let qd = 120 - pc;
+        let qt = isBinding ? qs : qe;
+        let shortage = isBinding ? (qd - qs) : 0;
+        let dwl = isBinding ? 0.5 * (qe - qt) * ((120 - qt) - qt) : 0;
+        let nonPriceWaste = isBinding ? qt * ((120 - qt) - pc) : 0;
+
+        regimeStatus.textContent = isBinding ? '上限生效 (Binding)' : '非约束上限 (Non-binding)';
+        regimeStatus.style.color = isBinding ? '#DC2626' : '#64748B';
+
+        qtVal.textContent = qt;
+        shortageVal.textContent = shortage;
+        dwlVal.textContent = '¥' + Math.round(dwl);
+
+        if (isBinding) {
+          insightBox.innerHTML = `限价 <b>¥${pc}</b> 低于均衡价 ¥60。供给萎缩至 <b>${qt}</b>，短缺 <b>${shortage}</b>。配给演变为排队耗散（约 ¥${Math.round(nonPriceWaste)}）。`;
+        } else {
+          insightBox.innerHTML = `上限 <b>¥${pc}</b> 高于均衡价 ¥60，管制不起作用。交易量自发稳定在均衡点 (60, 60)，无短缺与耗散。`;
+        }
+
+        presetBtns.forEach(btn => {
+          btn.classList.toggle('active', parseInt(btn.dataset.val, 10) === pc);
+        });
+
+        drawChart();
+      }
+
+      function drawChart() {
+        if (!cv) return;
+        const ctx = Deck.fit(cv);
+        const w = cv.width / (window.devicePixelRatio || 1);
+        const h = cv.height / (window.devicePixelRatio || 1);
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 坐标系定义
+        const padL = 70;
+        const padR = 40;
+        const padT = 32;
+        const padB = 48;
+
+        const plotW = w - padL - padR;
+        const plotH = h - padT - padB;
+
+        // Q 轴范围 0 ~ 120, P 轴范围 0 ~ 120
+        function qToX(q) {
+          return padL + (q / 120) * plotW;
+        }
+        function pToY(p) {
+          return padT + plotH - (p / 120) * plotH;
+        }
+
+        // 绘制坐标轴及网格
+        ctx.strokeStyle = '#E2E8F0';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let v = 20; v <= 100; v += 20) {
+          // 水平线
+          const y = pToY(v);
+          ctx.moveTo(padL, y);
+          ctx.lineTo(w - padR, y);
+          // 垂直线
+          const x = qToX(v);
+          ctx.moveTo(x, padT);
+          ctx.lineTo(x, padT + plotH);
+        }
+        ctx.stroke();
+
+        // 坐标刻度文本
+        ctx.fillStyle = '#64748B';
+        ctx.font = '12px ' + (Deck.token('--font-mono') || 'monospace');
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        for (let p = 0; p <= 120; p += 20) {
+          ctx.fillText('¥' + p, padL - 10, pToY(p));
+        }
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let q = 0; q <= 120; q += 20) {
+          ctx.fillText(q, qToX(q), padT + plotH + 8);
+        }
+
+        // 坐标轴轴线
+        ctx.strokeStyle = '#94A3B8';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(padL, padT);
+        ctx.lineTo(padL, padT + plotH);
+        ctx.lineTo(w - padR, padT + plotH);
+        ctx.stroke();
+
+        // 轴标签
+        ctx.fillStyle = '#1E293B';
+        ctx.font = '600 13px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('价格 P', padL - 50, padT - 20);
+        ctx.textAlign = 'right';
+        ctx.fillText('数量 Q', w - padR, padT + plotH + 30);
+
+        const pe = 60, qe = 60;
+        const pc = currentPc;
+        const isBinding = pc < pe;
+        const qs = pc;
+        const qd = 120 - pc;
+        const qt = isBinding ? qs : qe;
+        const pDemandAtQt = 120 - qt;
+
+        // 如果管制生效，绘制 DWL 和 配给耗散租金
+        if (isBinding) {
+          // 1. 配给耗散 (Rect/Trap between Pc and P_demand up to Qt)
+          ctx.fillStyle = 'rgba(217, 119, 6, 0.15)';
+          ctx.fillRect(qToX(0), pToY(pDemandAtQt), qToX(qt) - qToX(0), pToY(pc) - pToY(pDemandAtQt));
+
+          // 2. DWL (Triangle between Qt and Qe)
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.22)';
+          ctx.beginPath();
+          ctx.moveTo(qToX(qt), pToY(pDemandAtQt));
+          ctx.lineTo(qToX(qe), pToY(pe));
+          ctx.lineTo(qToX(qt), pToY(pc));
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.strokeStyle = '#DC2626';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 4]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // 标注 DWL 文字
+          if (qe - qt >= 10) {
+            ctx.fillStyle = '#DC2626';
+            ctx.font = '700 13px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('DWL', qToX((qt + qe) / 2), pToY(pe) - 14);
+          }
+
+          // 标注耗散文字
+          if (qt >= 15) {
+            ctx.fillStyle = '#B45309';
+            ctx.font = '600 12px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('非价格排队耗散', qToX(qt / 2), (pToY(pDemandAtQt) + pToY(pc)) / 2);
+          }
+        }
+
+        // 绘制需求曲线 D: (0, 120) -> (120, 0)
+        ctx.strokeStyle = '#DC2626';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(qToX(0), pToY(120));
+        ctx.lineTo(qToX(120), pToY(0));
+        ctx.stroke();
+
+        ctx.fillStyle = '#DC2626';
+        ctx.font = '700 14px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('需求 D (P = 120 - Q)', qToX(100), pToY(15));
+
+        // 绘制供给曲线 S: (0, 0) -> (120, 120)
+        ctx.strokeStyle = '#0284C7';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(qToX(0), pToY(0));
+        ctx.lineTo(qToX(120), pToY(120));
+        ctx.stroke();
+
+        ctx.fillStyle = '#0284C7';
+        ctx.fillText('供给 S (P = Q)', qToX(100), pToY(105));
+
+        // 绘制均衡参考虚线
+        ctx.strokeStyle = '#94A3B8';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(qToX(qe), padT + plotH);
+        ctx.lineTo(qToX(qe), pToY(pe));
+        ctx.lineTo(padL, pToY(pe));
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 均衡点圆点
+        ctx.fillStyle = '#1E293B';
+        ctx.beginPath();
+        ctx.arc(qToX(qe), pToY(pe), 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        if (pc !== pe) {
+          ctx.fillStyle = '#475569';
+          ctx.font = '12px system-ui, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText('均衡点 E (60, 60)', qToX(qe) + 8, pToY(pe) - 8);
+        }
+
+        // 绘制价格上限管制红线
+        const yCeil = pToY(pc);
+        ctx.strokeStyle = '#DC2626';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(padL, yCeil);
+        ctx.lineTo(w - padR, yCeil);
+        ctx.stroke();
+
+        // 标牌
+        ctx.fillStyle = '#DC2626';
+        ctx.font = '700 13px system-ui, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText('最高限价 Pc = ¥' + pc, w - padR - 10, yCeil - 8);
+
+        // 如果管制生效，画出供给量 Qs、需求量 Qd 以及短缺距离线
+        if (isBinding) {
+          // Qs 点与垂线
+          ctx.strokeStyle = '#0284C7';
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(qToX(qs), padT + plotH);
+          ctx.lineTo(qToX(qs), yCeil);
+          ctx.stroke();
+
+          ctx.fillStyle = '#0284C7';
+          ctx.beginPath();
+          ctx.arc(qToX(qs), yCeil, 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Qd 点与垂线
+          ctx.strokeStyle = '#DC2626';
+          ctx.beginPath();
+          ctx.moveTo(qToX(qd), padT + plotH);
+          ctx.lineTo(qToX(qd), yCeil);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = '#DC2626';
+          ctx.beginPath();
+          ctx.arc(qToX(qd), yCeil, 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 双向短缺指示箭头
+          const arrowY = yCeil + 22;
+          ctx.strokeStyle = '#DC2626';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(qToX(qs), arrowY);
+          ctx.lineTo(qToX(qd), arrowY);
+          ctx.stroke();
+
+          // 箭头两侧端点
+          ctx.beginPath();
+          ctx.moveTo(qToX(qs) + 6, arrowY - 4);
+          ctx.lineTo(qToX(qs), arrowY);
+          ctx.lineTo(qToX(qs) + 6, arrowY + 4);
+          ctx.moveTo(qToX(qd) - 6, arrowY - 4);
+          ctx.lineTo(qToX(qd), arrowY);
+          ctx.lineTo(qToX(qd) - 6, arrowY + 4);
+          ctx.stroke();
+
+          ctx.fillStyle = '#DC2626';
+          ctx.font = '700 13px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(`市场短缺 = ${qd - qs} 单位`, (qToX(qs) + qToX(qd)) / 2, arrowY + 16);
+        }
+      }
+
+      // 交互绑定
+      slider.addEventListener('input', function(e) {
+        updateModel(parseInt(e.target.value, 10));
+      });
+
+      presetBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+          updateModel(parseInt(this.dataset.val, 10));
+        });
+      });
+
+      Deck.onResize(() => {
+        drawChart();
+      });
+
+      // 初始化
+      updateModel(40);
+    })();
+  </script>
+</body>
+</html>

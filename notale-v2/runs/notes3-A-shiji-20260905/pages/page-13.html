@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F3F5F1;
+      --paper: #FFFFFF;
+      --text: #17231F;
+      --muted: #52635D;
+      --focus: #0A6D8C;
+      --crossref: #246358;
+      --judgment: #9C3528;
+      --selected: #155F83;
+      --correct: #356B45;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Songti SC", "Noto Serif SC", STSong, serif;
+      --font-num: "DIN Alternate", "Trebuchet MS", sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+    }
+
+    /* 顶部标题区 */
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: var(--line) solid #D9DDD6;
+      padding-bottom: 12px;
+    }
+    .page-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      color: var(--text);
+      line-height: 1.15;
+      margin: 0;
+    }
+    .page-subtitle {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .corpus-nav {
+      display: flex;
+      gap: 8px;
+    }
+    .corpus-btn {
+      appearance: none;
+      border: 1px solid #BAC4BE;
+      background: var(--paper);
+      color: var(--muted);
+      padding: 6px 14px;
+      border-radius: var(--radius);
+      font-size: var(--fs-label);
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--ease);
+    }
+    .corpus-btn.active {
+      background: var(--text);
+      color: var(--paper);
+      border-color: var(--text);
+    }
+    .corpus-btn:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    /* 核心模拟训练双栏工作台 */
+    .sim-arena {
+      display: grid;
+      grid-template-columns: 480px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左栏：史事链证据库（读者选配证据输入） */
+    .panel-evidence {
+      background: var(--paper);
+      border: 1px solid #D1D7CE;
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 2px 8px rgba(23, 35, 31, 0.04);
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .panel-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--text);
+      margin: 0;
+    }
+    .panel-badge {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      color: var(--crossref);
+      background: #E8EFEA;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .evidence-hint {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+      margin-bottom: 12px;
+    }
+    .facts-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+      flex: 1;
+      padding-right: 4px;
+    }
+    .fact-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      background: #F7F9F6;
+      border: 1px solid #E1E6DE;
+      cursor: pointer;
+      user-select: none;
+      transition: all var(--ease);
+    }
+    .fact-item:hover {
+      border-color: #B8C4B4;
+      background: #F0F4EE;
+    }
+    .fact-item.selected {
+      border-color: var(--selected);
+      background: #EAF3F7;
+    }
+    .fact-cb {
+      margin-top: 3px;
+      accent-color: var(--selected);
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+    .fact-body {
+      flex: 1;
+    }
+    .fact-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .fact-source {
+      font-weight: 600;
+      color: var(--crossref);
+    }
+    .fact-text {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+      font-family: var(--font-display);
+    }
+    .fact-type-tag {
+      display: inline-block;
+      font-size: var(--fs-tick);
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-top: 4px;
+      font-family: var(--font-sans);
+    }
+    .tag-human {
+      background: #E8EFEA;
+      color: var(--crossref);
+    }
+    .tag-fate {
+      background: #F8EBE9;
+      color: var(--judgment);
+    }
+
+    /* 右栏：双向制约动态模型仪表 */
+    .panel-model {
+      background: var(--paper);
+      border: 1px solid #D1D7CE;
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 2px 8px rgba(23, 35, 31, 0.04);
+    }
+
+    /* 顶部仪表：因果度量计与天命说 vs 人为过失推导 */
+    .metrics-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      background: #FAFBF9;
+      border: 1px solid #E4E9E1;
+      border-radius: var(--radius);
+      padding: 14px 18px;
+    }
+    .metric-card {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      letter-spacing: 0.5px;
+    }
+    .metric-num-wrap {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .metric-num {
+      font-family: var(--font-num);
+      font-size: 32px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .metric-num.human { color: var(--crossref); }
+    .metric-num.fate { color: var(--judgment); }
+    .metric-num.fit { color: var(--selected); }
+    .metric-unit {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .metric-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* 中部：史记原文因果链与太史公曰的张力可视化 */
+    .dialectic-arena {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 12px;
+      align-items: stretch;
+      flex: 1;
+      min-height: 0;
+    }
+    .dialectic-box {
+      border: 1px solid #DEE3DB;
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      background: #FDFEFD;
+    }
+    .box-title {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .title-narrative { color: var(--crossref); }
+    .title-judgment { color: var(--judgment); }
+
+    .narrative-chain {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .chain-node {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      padding: 8px 10px;
+      border-radius: 4px;
+      background: #F4F7F2;
+      border: 1px solid #D6DFD3;
+      color: var(--text);
+    }
+
+    .dialectic-divider {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0 4px;
+      gap: 8px;
+    }
+    .dialectic-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #ECEFEA;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: var(--muted);
+      font-size: var(--fs-label);
+      border: 1px solid #D1D8CE;
+    }
+    .dialectic-vspan {
+      width: 2px;
+      flex: 1;
+      background: #D9DFD5;
+    }
+
+    .judgment-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .quote-box {
+      font-family: var(--font-display);
+      font-size: var(--fs-body);
+      line-height: 1.6;
+      color: #72241A;
+      background: #FAF3F2;
+      border: 1px solid #F0D4CE;
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      position: relative;
+    }
+    .quote-prefix {
+      font-size: var(--fs-tick);
+      color: var(--judgment);
+      font-weight: 700;
+      margin-bottom: 4px;
+      font-family: var(--font-sans);
+      letter-spacing: 0.5px;
+    }
+    .judgment-analysis {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.5;
+      background: #F8FAF7;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      border: 1px solid #E1E6DE;
+      flex: 1;
+    }
+
+    /* 底部结论与控制条 */
+    .consequence-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: #F4F7F2;
+      border-radius: var(--radius);
+      border: 1px solid #D6DED2;
+      gap: 16px;
+    }
+    .consequence-text {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.45;
+      flex: 1;
+    }
+    .consequence-text strong {
+      color: var(--judgment);
+    }
+    .ctl-group {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-action {
+      appearance: none;
+      background: var(--paper);
+      border: 1px solid #BAC4BE;
+      color: var(--text);
+      padding: 7px 14px;
+      border-radius: var(--radius);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--ease);
+    }
+    .btn-action:hover {
+      background: #EAEFE7;
+      border-color: #9EAEA2;
+    }
+    .btn-action:focus-visible {
+      outline: 2px solid var(--focus);
+    }
+  </style>
+</head>
+<body data-page="13" data-total="15">
+  <div id="stage">
+    <!-- 顶部标题栏 -->
+    <header class="page-head">
+      <div class="min0">
+        <h1 class="page-title">史事因果与论赞裁断的双向制约模型</h1>
+        <div class="page-subtitle">太史公曰不是独立布道：实录叙事收紧议论边界，论赞定性反向筛选叙事因果</div>
+      </div>
+      <nav class="corpus-nav" aria-label="案例切换">
+        <button class="corpus-btn active" data-case="xiangyu">案例一：《项羽本纪》</button>
+        <button class="corpus-btn" data-case="boyi">案例二：《伯夷列传》</button>
+      </nav>
+    </header>
+
+    <!-- 交互主体区域 -->
+    <main class="sim-arena">
+      <!-- 左侧：证据选择区 -->
+      <section class="panel-evidence min0">
+        <div class="panel-head">
+          <h2 class="panel-title" id="evidence-panel-title">本纪散布史事（证据库）</h2>
+          <span class="panel-badge" id="evidence-count-badge">已启用 4 / 6 项</span>
+        </div>
+        <p class="evidence-hint">勾选或移除叙事中的关键史实，观察右侧「因果链完整度」与「论赞裁断有效性」如何动态转移：</p>
+        <div class="facts-list" id="factsList" role="group" aria-label="史事证据选择">
+          <!-- JS 动态注入 -->
+        </div>
+      </section>
+
+      <!-- 右侧：动态模型响应区 -->
+      <section class="panel-model min0">
+        <!-- 实时因果指标 -->
+        <div class="metrics-bar">
+          <div class="metric-card">
+            <span class="metric-label" id="label-human">人事过失因果支撑</span>
+            <div class="metric-num-wrap">
+              <span class="metric-num human" id="metricHumanScore">85%</span>
+              <span class="metric-unit">证据度</span>
+            </div>
+            <span class="metric-desc" id="desc-human">放逐义帝、自立分封等实录构成政治自掘坟墓的铁证</span>
+          </div>
+
+          <div class="metric-card">
+            <span class="metric-label" id="label-fate">天命托词可信度</span>
+            <div class="metric-num-wrap">
+              <span class="metric-num fate" id="metricFateScore">15%</span>
+              <span class="metric-unit">可立性</span>
+            </div>
+            <span class="metric-desc" id="desc-fate">被正文巨鹿之战、鸿门宴、分封失策层层瓦解</span>
+          </div>
+
+          <div class="metric-card">
+            <span class="metric-label">论赞命题成立状态</span>
+            <div class="metric-num-wrap">
+              <span class="metric-num fit" id="metricFitStatus">充分闭合</span>
+            </div>
+            <span class="metric-desc" id="desc-fit">论赞中“非天亡我也”拥有坚实正文支撑</span>
+          </div>
+        </div>
+
+        <!-- 史事因果 vs 篇末论赞 制约结构 -->
+        <div class="dialectic-arena">
+          <!-- 叙事正文聚合因果 -->
+          <div class="dialectic-box min0">
+            <div class="box-title title-narrative">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h12v2H2V3zm0 4h12v2H2V7zm0 4h8v2H2v-2z"/></svg>
+              <span>正文沉淀的因果逻辑链</span>
+            </div>
+            <div class="narrative-chain" id="narrativeChain">
+              <!-- JS 动态更新聚合链条 -->
+            </div>
+          </div>
+
+          <!-- 双向制约中轴 -->
+          <div class="dialectic-divider">
+            <div class="dialectic-vspan"></div>
+            <div class="dialectic-icon" title="互为制约">⇄</div>
+            <div class="dialectic-vspan"></div>
+          </div>
+
+          <!-- 篇末论赞裁断 -->
+          <div class="dialectic-box min0">
+            <div class="box-title title-judgment">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 2.5a1.2 1.2 0 110 2.4 1.2 1.2 0 010-2.4zM6.8 7.2h2.4v5.3H6.8V7.2z"/></svg>
+              <span id="judgment-title-label">太史公曰（裁断发声）</span>
+            </div>
+            <div class="judgment-content">
+              <div class="quote-box">
+                <div class="quote-prefix">《项羽本纪》论赞断语</div>
+                <div id="quoteText">“自矜功伐，奋其私智而不师古……乃引‘天亡我，非用兵之罪也’，岂不谬哉！”</div>
+              </div>
+              <div class="judgment-analysis" id="judgmentAnalysis">
+                司马迁的苛酷驳斥不是空穴来风：正是前面实录详尽铺垫了项羽一系列政治误判，篇末的“岂不谬哉”才具有无可辩驳的史家穿透力。
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 交互反馈与结论 -->
+        <div class="consequence-bar">
+          <div class="consequence-text" id="consequenceText">
+            当前叙事因果与作者裁断保持<strong>紧密契合</strong>：叙事实录收紧了赞语的射程，使论赞不流于虚玄道德说教。
+          </div>
+          <div class="ctl-group">
+            <button class="btn-action" id="btnSelectAll">勾选全部证据</button>
+            <button class="btn-action" id="btnFilterHuman">仅留人事证据</button>
+            <button class="btn-action" id="btnReset">复位初始状态</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 两组史记案例的真实数据模型
+      const CASES = {
+        xiangyu: {
+          title: "《项羽本纪》：因果沉淀 vs 破除神话",
+          quotePrefix: "《项羽本纪》论赞断语",
+          quote: "“自矜功伐，奋其私智而不师古……乃引‘天亡我，非用兵之罪也’，岂不谬哉！”",
+          evidenceTitle: "《项羽本纪》关键史实编联",
+          humanLabel: "人事失策实证度",
+          fateLabel: "宿命说合理度",
+          facts: [
+            {
+              id: "x1",
+              chapter: "《项羽本纪》实录",
+              type: "human",
+              text: "坑秦卒二十万人于新安，失尽秦地民心",
+              chain: "坑杀降卒导致关中父老视楚军为仇寇，丧失稳固王业根基",
+              weightHuman: 25,
+              weightFate: -15,
+              defaultActive: true
+            },
+            {
+              id: "x2",
+              chapter: "《项羽本纪》实录",
+              type: "human",
+              text: "鸿门宴放走沛公，范增数目羽而不应",
+              chain: "战略犹豫使汉王脱困，直接埋下日后楚汉成败的最大逆转隐患",
+              weightHuman: 25,
+              weightFate: -20,
+              defaultActive: true
+            },
+            {
+              id: "x3",
+              chapter: "《项羽本纪》实录",
+              type: "human",
+              text: "逐义帝于江南，密令九江王击杀之",
+              chain: "弑主之名使刘邦得以率五诸侯伐楚，在天下道义上陷入绝对被动",
+              weightHuman: 25,
+              weightFate: -15,
+              defaultActive: true
+            },
+            {
+              id: "x4",
+              chapter: "《项羽本纪》实录",
+              type: "human",
+              text: "背关怀楚，放逐义帝而自立，迁诸侯不公",
+              chain: "分封失序导致田荣、陈余立即反叛，楚军疲于奔命无法休养生息",
+              weightHuman: 25,
+              weightFate: -10,
+              defaultActive: true
+            },
+            {
+              id: "x5",
+              chapter: "《项羽本纪》记羽语",
+              type: "fate",
+              text: "项王自度不得脱，谓其骑曰：‘此天之亡我，非战之罪也’",
+              chain: "突围至乌江前将失败全盘归诸超自然‘天亡’，回避战略溃败责任",
+              weightHuman: -10,
+              weightFate: 35,
+              defaultActive: false
+            },
+            {
+              id: "x6",
+              chapter: "《项羽本纪》神异事",
+              type: "fate",
+              text: "楚汉久相持未决，楚军夜闻汉军四面皆楚歌",
+              chain: "渲染楚军兵尽粮绝之绝境，常被误读为宿命骤然降临而非持久战力耗尽",
+              weightHuman: -5,
+              weightFate: 25,
+              defaultActive: false
+            }
+          ]
+        },
+        boyi: {
+          title: "《伯夷列传》：天道无稽 vs 史家立传",
+          quotePrefix: "《伯夷列传》论赞断语",
+          quote: "“若伯夷、叔齐，可谓善人者伯？非邪？余悲商之意……天之报施善人，其何如哉？怨邪？非邪？”",
+          evidenceTitle: "《伯夷列传》及相关史实编联",
+          humanLabel: "善人困顿反诘度",
+          fateLabel: "天道有知公允度",
+          facts: [
+            {
+              id: "b1",
+              chapter: "《伯夷列传》实录",
+              type: "human",
+              text: "伯夷、叔齐不食周粟，隐于首阳山，采薇而食遂饿死",
+              chain: "守义求仁者反而横死荒野，最残酷地挑战了善恶必报的朴素秩序感",
+              weightHuman: 30,
+              weightFate: -20,
+              defaultActive: true
+            },
+            {
+              id: "b2",
+              chapter: "《伯夷列传》征引",
+              type: "human",
+              text: "颜渊独笃礼好学，而屡空，糟糠不厌，而蚤夭",
+              chain: "最得孔子盛赞的贤哲一生穷困早夭，证明道德践履并不能换来现世庇佑",
+              weightHuman: 30,
+              weightFate: -20,
+              defaultActive: true
+            },
+            {
+              id: "b3",
+              chapter: "《伯夷列传》对勘",
+              type: "fate",
+              text: "盗跖日杀不辜，肝人之肉，暴戾聚众数千人，竟以寿终",
+              chain: "穷凶极恶之徒安享长寿，与伯夷颜渊形成无可化解的伦理反差",
+              weightHuman: 30,
+              weightFate: -25,
+              defaultActive: true
+            },
+            {
+              id: "b4",
+              chapter: "《伯夷列传》发问",
+              type: "human",
+              text: "余甚惑焉，傥所谓天道，是邪非邪？",
+              chain: "司马迁直击传统天命观核心，以个人受刑遭难的切肤之痛共振前哲",
+              weightHuman: 20,
+              weightFate: -15,
+              defaultActive: true
+            },
+            {
+              id: "b5",
+              chapter: "《诗经》传统观念",
+              type: "fate",
+              text: "相传古训：‘天道无亲，常与善人’",
+              chain: "传统儒宗宣称天意永远眷顾行善之人，作为正统伦理护符",
+              weightHuman: -15,
+              weightFate: 35,
+              defaultActive: false
+            },
+            {
+              id: "b6",
+              chapter: "《伯夷列传》儒家自洽",
+              type: "fate",
+              text: "孔子曰：‘求仁而得仁，又何怨？’",
+              chain: "将价值锚定于道德自足，试图消除外在境遇与内在德行分裂的怨愤",
+              weightHuman: -10,
+              weightFate: 25,
+              defaultActive: false
+            }
+          ]
+        }
+      };
+
+      // 规范状态
+      let currentCaseKey = "xiangyu";
+      let activeFactIds = new Set(["x1", "x2", "x3", "x4"]);
+
+      // 提取 UI
+      const dom = {
+        corpusBtns: document.querySelectorAll(".corpus-btn"),
+        factsList: document.getElementById("factsList"),
+        evidencePanelTitle: document.getElementById("evidence-panel-title"),
+        evidenceCountBadge: document.getElementById("evidence-count-badge"),
+        metricHumanScore: document.getElementById("metricHumanScore"),
+        metricFateScore: document.getElementById("metricFateScore"),
+        metricFitStatus: document.getElementById("metricFitStatus"),
+        descHuman: document.getElementById("desc-human"),
+        descFate: document.getElementById("desc-fate"),
+        descFit: document.getElementById("desc-fit"),
+        labelHuman: document.getElementById("label-human"),
+        labelFate: document.getElementById("label-fate"),
+        narrativeChain: document.getElementById("narrativeChain"),
+        judgmentTitleLabel: document.getElementById("judgment-title-label"),
+        quoteBox: document.querySelector(".quote-box"),
+        quotePrefix: document.querySelector(".quote-prefix"),
+        quoteText: document.getElementById("quoteText"),
+        judgmentAnalysis: document.getElementById("judgmentAnalysis"),
+        consequenceText: document.getElementById("consequenceText"),
+        btnSelectAll: document.getElementById("btnSelectAll"),
+        btnFilterHuman: document.getElementById("btnFilterHuman"),
+        btnReset: document.getElementById("btnReset")
+      };
+
+      function computeState() {
+        const curCase = CASES[currentCaseKey];
+        let humanScore = 0;
+        let fateScore = 0;
+        let activeFacts = [];
+
+        curCase.facts.forEach(f => {
+          if (activeFactIds.has(f.id)) {
+            activeFacts.push(f);
+            if (f.type === "human") {
+              humanScore += f.weightHuman;
+              fateScore += f.weightFate;
+            } else {
+              fateScore += f.weightFate;
+              humanScore += f.weightHuman;
+            }
+          }
+        });
+
+        // 规范化打分
+        humanScore = Math.max(5, Math.min(98, humanScore));
+        fateScore = Math.max(5, Math.min(95, fateScore));
+
+        return {
+          caseData: curCase,
+          activeFacts,
+          humanScore,
+          fateScore,
+          isBalanced: humanScore > 60 && fateScore < 40,
+          totalAvailable: curCase.facts.length,
+          activeCount: activeFacts.length
+        };
+      }
+
+      function renderFactsList(computed) {
+        dom.factsList.innerHTML = "";
+        computed.caseData.facts.forEach(fact => {
+          const isSelected = activeFactIds.has(fact.id);
+          const item = document.createElement("label");
+          item.className = `fact-item ${isSelected ? "selected" : ""}`;
+          item.setAttribute("data-id", fact.id);
+          
+          item.innerHTML = `
+            <input type="checkbox" class="fact-cb" ${isSelected ? "checked" : ""} aria-label="${fact.text}">
+            <div class="fact-body min0">
+              <div class="fact-meta">
+                <span class="fact-source">${fact.chapter}</span>
+                <span class="fact-type-tag ${fact.type === 'human' ? 'tag-human' : 'tag-fate'}">
+                  ${fact.type === 'human' ? '实录人事因果' : '托词与宿命倾向'}
+                </span>
+              </div>
+              <div class="fact-text">${fact.text}</div>
+            </div>
+          `;
+
+          item.addEventListener("click", (e) => {
+            // 防止 label 双重触发
+            if (e.target.tagName !== "INPUT") {
+              const cb = item.querySelector(".fact-cb");
+              cb.checked = !cb.checked;
+            }
+            toggleFact(fact.id);
+          });
+
+          dom.factsList.appendChild(item);
+        });
+      }
+
+      function renderNarrativeChain(computed) {
+        dom.narrativeChain.innerHTML = "";
+        if (computed.activeFacts.length === 0) {
+          dom.narrativeChain.innerHTML = `
+            <div style="font-size:var(--fs-sec);color:var(--muted);padding:14px;text-align:center;background:#F9FAF7;border-radius:4px;">
+              未激活任何史实。正文叙事因果呈现真空，此时论赞将失去一切立足之基。
+            </div>
+          `;
+          return;
+        }
+
+        computed.activeFacts.forEach(fact => {
+          const node = document.createElement("div");
+          node.className = "chain-node";
+          if (fact.type === "fate") {
+            node.style.borderColor = "var(--judgment)";
+            node.style.background = "#FAF4F3";
+          }
+          node.textContent = fact.chain;
+          dom.narrativeChain.appendChild(node);
+        });
+      }
+
+      function render() {
+        const c = computeState();
+
+        // 标签及标题切换
+        dom.evidencePanelTitle.textContent = c.caseData.evidenceTitle;
+        dom.evidenceCountBadge.textContent = `已启用 ${c.activeCount} / ${c.totalAvailable} 项`;
+        dom.labelHuman.textContent = c.caseData.humanLabel;
+        dom.labelFate.textContent = c.caseData.fateLabel;
+
+        // 度量值渲染
+        dom.metricHumanScore.textContent = `${c.humanScore}%`;
+        dom.metricFateScore.textContent = `${c.fateScore}%`;
+
+        // 论赞文案与分析渲染
+        dom.quotePrefix.textContent = c.caseData.quotePrefix;
+        dom.quoteText.textContent = c.caseData.quote;
+
+        // 判定制约状态
+        if (currentCaseKey === "xiangyu") {
+          if (c.humanScore >= 70 && c.fateScore <= 30) {
+            dom.metricFitStatus.textContent = "充分闭合";
+            dom.metricFitStatus.style.color = "var(--correct)";
+            dom.descHuman.textContent = "放逐义帝、自立分封等实录构成政治自掘坟墓的铁证";
+            dom.descFate.textContent = "被巨鹿之战、鸿门宴、分封失策的因果链层层瓦解";
+            dom.descFit.textContent = "论赞中“非天亡我也”拥有坚实正文证据闭环";
+            dom.judgmentAnalysis.textContent = "司马迁的苛酷驳斥不是空穴来风：正是前面实录详尽铺垫了项羽一系列政治误判，篇末的“岂不谬哉”才具有无可辩驳的史家穿透力。";
+            dom.consequenceText.innerHTML = `当前叙事因果与作者裁断保持<strong>紧密契合</strong>：正文详尽记述的失策锁死了论赞立足点，使篇末反驳牢固不可破。`;
+          } else if (c.fateScore > 50) {
+            dom.metricFitStatus.textContent = "论断失焦";
+            dom.metricFitStatus.style.color = "var(--judgment)";
+            dom.descHuman.textContent = "缺乏足够的人事因果铺垫，无法击穿项羽临终的悲壮自辩";
+            dom.descFate.textContent = "楚歌与绝境被过度凸显，项羽的英雄末路带上浓重悲剧宿命感";
+            dom.descFit.textContent = "若抽去政治失误实录，篇末“岂不谬哉”将显得轻率与不近人情";
+            dom.judgmentAnalysis.textContent = "警惕阅读偏差：若读者只记住垓下悲歌与‘天之亡我’，就会陷入项羽本人的自我粉饰。司马迁必须靠前文详尽事实把神话拉回人间。";
+            dom.consequenceText.innerHTML = `缺少前文人事过失作为支点，太史公篇末的厉声裁断便成了<strong>无源之水</strong>，读者会反向质疑作者偏苛。`;
+          } else {
+            dom.metricFitStatus.textContent = "证据松动";
+            dom.metricFitStatus.style.color = "var(--selected)";
+            dom.descHuman.textContent = "因果链部分断裂，项羽败亡的制度性根源显露不充分";
+            dom.descFate.textContent = "天命与人为过失陷入拉锯，结论尚存辩驳空间";
+            dom.descFit.textContent = "论赞能够成立，但作者裁断与实录叙事的张力被削弱";
+            dom.judgmentAnalysis.textContent = "《史记》实录绝非散漫随记。每一处重大过失的编入，都是为了在篇末为‘人谋不臧’的裁断提供不可推翻的因果网。";
+            dom.consequenceText.innerHTML = `因果链处于<strong>部分闭合</strong>状态：增补更多实录，即可体验司马迁如何用事实编织出严丝合缝的批判力。`;
+          }
+        } else {
+          // 伯夷案例
+          if (c.humanScore >= 70 && c.fateScore <= 35) {
+            dom.metricFitStatus.textContent = "张力迸发";
+            dom.metricFitStatus.style.color = "var(--correct)";
+            dom.descHuman.textContent = "伯夷饿死、颜渊蚤夭、盗跖暴戾横行形成巨大伦理撕裂";
+            dom.descFate.textContent = "传统‘天道无亲常与善人’的虚幻信条被彻底击碎";
+            dom.descFit.textContent = "论赞的痛苦反诘直抵存在困境，拒绝廉价的和解";
+            dom.judgmentAnalysis.textContent = "司马迁没有在论赞里给出一套虚假的善恶大团圆。他用无法调和的残酷事实将天道逼到死角，篇末的‘怨邪非邪’正是史家为历史失语者夺回声名的方式。";
+            dom.consequenceText.innerHTML = `历史叙事实录与作者悲愤裁断形成了<strong>不可调和的崇高张力</strong>：论赞不是给答案，而是向天道发难。`;
+          } else if (c.fateScore > 50) {
+            dom.metricFitStatus.textContent = "被动消解";
+            dom.metricFitStatus.style.color = "var(--judgment)";
+            dom.descHuman.textContent = "现实中的巨大不公被淡化，悲剧性被教条伦理包裹";
+            dom.descFate.textContent = "试图用‘求仁得仁’粉饰太平，消解了历史正义的刺痛感";
+            dom.descFit.textContent = "司马迁身受腐刑的个人血泪无法在此种平庸和解中安放";
+            dom.judgmentAnalysis.textContent = "若将伯夷采薇简化为温良恭俭的道德完人楷模，司马迁在此篇中喷薄而出的千古之冤与历史怀疑就荡然无存。";
+            dom.consequenceText.innerHTML = `若抹平残酷现实，论赞便退化为<strong>流俗的道德劝善</strong>，失去了《史记》独步千古的痛切与反思深度。`;
+          } else {
+            dom.metricFitStatus.textContent = "发问酝酿";
+            dom.metricFitStatus.style.color = "var(--selected)";
+            dom.descHuman.textContent = "善人困厄之迹正在聚集，对天道公正的怀疑逐步建立";
+            dom.descFate.textContent = "传统正统话语仍试图提供温和解释";
+            dom.descFit.textContent = "事实链正在逼近伦理断裂点";
+            dom.judgmentAnalysis.textContent = "作者在列传开篇引入伯夷，正是为了以极端严苛的道德样本检验历史奖惩机制是否真实存在。";
+            dom.consequenceText.innerHTML = `观察善人与恶人的极端对比如何将‘天道’逼入绝境，体会论赞从<strong>历史记录跃升为哲学诘问</strong>的过程。`;
+          }
+        }
+
+        renderFactsList(c);
+        renderNarrativeChain(c);
+      }
+
+      function toggleFact(id) {
+        if (activeFactIds.has(id)) {
+          // 至少保留一项，防止完全归零
+          if (activeFactIds.size > 1) {
+            activeFactIds.delete(id);
+          }
+        } else {
+          activeFactIds.add(id);
+        }
+        render();
+      }
+
+      function switchCase(caseKey) {
+        if (currentCaseKey === caseKey) return;
+        currentCaseKey = caseKey;
+        dom.corpusBtns.forEach(b => {
+          b.classList.toggle("active", b.getAttribute("data-case") === caseKey);
+        });
+
+        // 重置为该案例默认项
+        activeFactIds.clear();
+        CASES[currentCaseKey].facts.forEach(f => {
+          if (f.defaultActive) activeFactIds.add(f.id);
+        });
+        render();
+      }
+
+      // 事件绑定
+      dom.corpusBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          switchCase(btn.getAttribute("data-case"));
+        });
+      });
+
+      dom.btnSelectAll.addEventListener("click", () => {
+        CASES[currentCaseKey].facts.forEach(f => activeFactIds.add(f.id));
+        render();
+      });
+
+      dom.btnFilterHuman.addEventListener("click", () => {
+        activeFactIds.clear();
+        CASES[currentCaseKey].facts.forEach(f => {
+          if (f.type === "human") activeFactIds.add(f.id);
+        });
+        render();
+      });
+
+      dom.btnReset.addEventListener("click", () => {
+        activeFactIds.clear();
+        CASES[currentCaseKey].facts.forEach(f => {
+          if (f.defaultActive) activeFactIds.add(f.id);
+        });
+        render();
+      });
+
+      // 初始化
+      render();
+      Deck.init({ index: 13, total: 15 });
+    })();
+  </script>
+</body>
+</html>

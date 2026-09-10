@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+    .title-wrap h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      color: var(--text);
+    }
+    .title-wrap p {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+    }
+    .mode-switch {
+      display: flex;
+      gap: 8px;
+    }
+    .mode-btn {
+      padding: 6px 18px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      font-family: var(--font-sans);
+      border: 1px solid var(--muted);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all var(--dur) var(--ease);
+    }
+    .mode-btn[aria-pressed="true"] {
+      background: var(--cooling);
+      color: #FFFFFF;
+      border-color: var(--cooling);
+    }
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+    .panel-col {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 16px 20px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 8px;
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .prop-tag {
+      font-size: var(--fs-label);
+      color: var(--text);
+      font-weight: 500;
+      font-family: var(--font-num);
+    }
+    .diagram-wrap {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      border-radius: 4px;
+      background: #F0F4F6;
+      border: 1px solid #E1EAEC;
+      overflow: hidden;
+    }
+    .diagram-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .readout-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      background: var(--surface-strong);
+      padding: 10px 14px;
+      border-radius: 4px;
+    }
+    .readout-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .readout-label {
+      font-size: var(--fs-label);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .readout-val {
+      font-size: var(--fs-body);
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .readout-val.heat { color: var(--heat); }
+    .readout-val.cool { color: var(--cooling); }
+    .readout-val.veg { color: var(--vegetation); }
+    .legend-strip {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 12px;
+      font-size: var(--fs-label);
+      color: var(--text);
+    }
+    .legend-items {
+      display: flex;
+      gap: 20px;
+    }
+    .legend-li {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sw-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+    }
+    .sw-heat { background: var(--heat); }
+    .sw-cool { background: var(--cooling); }
+    .sw-stor { background: var(--text); }
+  </style>
+</head>
+<body data-page="05" data-total="19">
+  <div id="stage">
+    <header>
+      <div class="title-wrap">
+        <h1>材料与水分调控地表能量分配</h1>
+        <p>热容量与蒸散条件的差异，主导白天蓄热深度与夜间释放温差</p>
+      </div>
+      <div class="mode-switch">
+        <button id="btn-day" class="mode-btn" aria-pressed="true" onclick="setPhase('day')">白天：吸热与储热</button>
+        <button id="btn-night" class="mode-btn" aria-pressed="false" onclick="setPhase('night')">夜间：降温与释热</button>
+      </div>
+    </header>
+
+    <div class="comparison-grid">
+      <!-- 城市不透水硬质表面 -->
+      <section class="panel-col">
+        <div class="panel-head">
+          <h2 class="panel-title">沥青与混凝土 (干燥硬质)</h2>
+          <span class="prop-tag">反照率 0.12 · 导热率 1.3 W/(m·K)</span>
+        </div>
+        <div class="diagram-wrap">
+          <svg class="diagram-svg" viewBox="0 0 680 430" id="svg-urban"></svg>
+        </div>
+        <div class="readout-bar" id="urban-readouts">
+          <div class="readout-item">
+            <span class="readout-label" id="u-lbl-1">显热通量 H</span>
+            <span class="readout-val heat" id="u-val-1">360 W/m²</span>
+          </div>
+          <div class="readout-item">
+            <span class="readout-label" id="u-lbl-2">潜热通量 λE</span>
+            <span class="readout-val" id="u-val-2">20 W/m²</span>
+          </div>
+          <div class="readout-item">
+            <span class="readout-label" id="u-lbl-3">地表储热 ΔQs</span>
+            <span class="readout-val heat" id="u-val-3">+180 W/m²</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 郊区湿润植被表面 -->
+      <section class="panel-col">
+        <div class="panel-head">
+          <h2 class="panel-title">土壤与草木 (湿润多孔)</h2>
+          <span class="prop-tag">反照率 0.20 · 土壤含水率 32%</span>
+        </div>
+        <div class="diagram-wrap">
+          <svg class="diagram-svg" viewBox="0 0 680 430" id="svg-rural"></svg>
+        </div>
+        <div class="readout-bar" id="rural-readouts">
+          <div class="readout-item">
+            <span class="readout-label" id="r-lbl-1">显热通量 H</span>
+            <span class="readout-val heat" id="r-val-1">110 W/m²</span>
+          </div>
+          <div class="readout-item">
+            <span class="readout-label" id="r-lbl-2">潜热通量 λE (蒸散)</span>
+            <span class="readout-val cool" id="r-val-2">320 W/m²</span>
+          </div>
+          <div class="readout-item">
+            <span class="readout-label" id="r-lbl-3">地表储热 ΔQs</span>
+            <span class="readout-val" id="r-val-3">+50 W/m²</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 紧凑精简页脚图例与结论 -->
+    <footer class="legend-strip">
+      <div class="legend-items">
+        <div class="legend-li"><span class="sw-dot sw-heat"></span><span>加热空气 H</span></div>
+        <div class="legend-li"><span class="sw-dot sw-cool"></span><span>水分蒸散 λE</span></div>
+        <div class="legend-li"><span class="sw-dot sw-stor"></span><span>基质储热 ΔQs</span></div>
+      </div>
+      <div id="summary-note" style="font-size:var(--fs-sec); font-weight:700; color:var(--text);">
+        白天：干燥硬质材料强储热且显热占优 · 表面温差 17.3°C
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页我们对比典型城市硬质地面与湿润植被郊区的能量去向差异。
+    白天，硬质材料由于缺乏水分，潜热通量极低，大部分净辐射被转化为显热加热近地空气，同时凭借大热容和高导热率向深层大举储热。
+    而植被覆盖区通过根系吸水和叶片蒸腾，将大部分能量消耗在相变潜热中，地表温升有限，向下蓄热也大幅减少。
+    到了夜晚，太阳辐射消失，储存在建筑基质中的热量开始持续向外释放，减缓了城市降温过程，从而筑牢了夜间城市热岛的强度底座。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    let currentPhase = 'day';
+
+    const data = {
+      day: {
+        urban: {
+          val1: '360 W/m²',
+          val2: '20 W/m²',
+          val3: '+180 W/m²',
+          lbl3: '地表储热 ΔQs (蓄热)',
+          surfTemp: '48.5 °C',
+          subTemp: '34.0 °C',
+          fluxHeatH: 140,
+          fluxLatentH: 15,
+          storageArrowDown: true,
+          fluxStorageH: 70,
+          summary: '白天：干燥硬质材料强储热且显热占优 · 表面温差可达 12–15°C'
+        },
+        rural: {
+          val1: '110 W/m²',
+          val2: '320 W/m²',
+          val3: '+50 W/m²',
+          lbl3: '地表储热 ΔQs (微蓄)',
+          surfTemp: '31.2 °C',
+          subTemp: '25.0 °C',
+          fluxHeatH: 45,
+          fluxLatentH: 130,
+          storageArrowDown: true,
+          fluxStorageH: 25,
+          summary: '白天：植被蒸散强力耗热 · 浅层土体蓄热极少'
+        }
+      },
+      night: {
+        urban: {
+          val1: '-45 W/m²',
+          val2: '0 W/m²',
+          val3: '-65 W/m²',
+          lbl3: '地表储热 ΔQs (向外释热)',
+          surfTemp: '24.8 °C',
+          subTemp: '27.5 °C',
+          fluxHeatH: -30,
+          fluxLatentH: 0,
+          storageArrowDown: false,
+          fluxStorageH: 55,
+          summary: '夜间：硬质地层持续向上释热 · 支撑近地气温居高不下'
+        },
+        rural: {
+          val1: '-30 W/m²',
+          val2: '-5 W/m²',
+          val3: '-15 W/m²',
+          lbl3: '地表储热 ΔQs (弱释热)',
+          surfTemp: '19.2 °C',
+          subTemp: '20.5 °C',
+          fluxHeatH: -20,
+          fluxLatentH: -5,
+          storageArrowDown: false,
+          fluxStorageH: 15,
+          summary: '夜间：植被地表迅速辐射降温 · 近地逆温形成'
+        }
+      }
+    };
+
+    function drawUrban(phase) {
+      const isDay = phase === 'day';
+      const d = data[phase].urban;
+      const svg = document.getElementById('svg-urban');
+
+      // Sky background
+      const skyGrad = isDay ? '#DCEEF3' : '#17242B';
+      const groundGrad = '#5A666D';
+      const deepGround = '#3B444A';
+
+      svg.innerHTML = `
+        <defs>
+          <linearGradient id="u-sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${skyGrad}"/>
+            <stop offset="100%" stop-color="${isDay ? '#EAF3F5' : '#1D2F38'}"/>
+          </linearGradient>
+          <linearGradient id="u-ground" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${groundGrad}"/>
+            <stop offset="100%" stop-color="${deepGround}"/>
+          </linearGradient>
+          <marker id="arr-heat" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="var(--heat)"/>
+          </marker>
+          <marker id="arr-cool" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="var(--cooling)"/>
+          </marker>
+          <marker id="arr-stor" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#17282E"/>
+          </marker>
+        </defs>
+
+        <!-- Sky field -->
+        <rect x="0" y="0" width="680" height="250" fill="url(#u-sky)"/>
+
+        <!-- Ground substrate -->
+        <rect x="0" y="250" width="680" height="180" fill="url(#u-ground)"/>
+        <!-- Asphalt surface layer line -->
+        <line x1="0" y1="250" x2="680" y2="250" stroke="#222B2E" stroke-width="4"/>
+
+        <!-- Road aggregate pattern / texture -->
+        <g opacity="0.35" stroke="#FFFFFF" stroke-dasharray="2 12" stroke-width="1.5">
+          <line x1="20" y1="265" x2="660" y2="265"/>
+          <line x1="10" y1="285" x2="670" y2="285"/>
+          <line x1="30" y1="315" x2="650" y2="315"/>
+          <line x1="15" y1="355" x2="665" y2="355"/>
+        </g>
+
+        <!-- Surface Material Label -->
+        <g transform="translate(25, 260)">
+          <rect x="0" y="0" width="140" height="28" rx="4" fill="#F7FAFA" stroke="#17282E" stroke-width="1.5"/>
+          <text x="10" y="19" font-size="13" fill="#17282E" font-weight="700">沥青面层 (干燥硬质)</text>
+        </g>
+
+        <!-- Temperature Badges -->
+        <g transform="translate(480, 216)">
+          <rect x="0" y="0" width="165" height="34" rx="4" fill="#F7FAFA" stroke="#17282E" stroke-width="1.5"/>
+          <text x="12" y="22" font-size="13" font-weight="700" fill="#17282E">地表温度 Ts</text>
+          <text x="96" y="23" font-size="16" font-family="var(--font-num)" font-weight="700" fill="${isDay ? 'var(--heat)' : 'var(--text)'}">${d.surfTemp}</text>
+        </g>
+
+        <g transform="translate(480, 360)">
+          <rect x="0" y="0" width="165" height="34" rx="4" fill="#F7FAFA" stroke="#17282E" stroke-width="1.5"/>
+          <text x="12" y="22" font-size="13" font-weight="700" fill="#17282E">深层温度 Td</text>
+          <text x="96" y="23" font-size="16" font-family="var(--font-num)" font-weight="700" fill="#17282E">${d.subTemp}</text>
+        </g>
+
+        ${isDay ? `
+          <!-- Sun icon and solar insolation -->
+          <circle cx="90" cy="55" r="24" fill="#C63F20"/>
+          <path d="M90 20 L90 8 M90 90 L90 102 M55 55 L43 55 M125 55 L137 55 M65 30 L56 21 M115 80 L124 89 M65 80 L56 89 M115 30 L124 21" stroke="#C63F20" stroke-width="2.5"/>
+          <text x="128" y="60" font-size="15" font-weight="700" fill="var(--heat)">强辐射入射</text>
+
+          <!-- Sensible heat arrow (huge) -->
+          <g transform="translate(230, 240)">
+            <path d="M 0 0 L 0 -130" stroke="var(--heat)" stroke-width="14" stroke-linecap="round" marker-end="url(#arr-heat)"/>
+            <text x="18" y="-70" font-size="15" font-weight="700" fill="var(--heat)">显热通量 H</text>
+            <text x="18" y="-50" font-size="13" font-weight="600" fill="var(--text)">剧烈加热空气</text>
+          </g>
+
+          <!-- Latent heat arrow (almost negligible) -->
+          <g transform="translate(370, 240)">
+            <path d="M 0 0 L 0 -22" stroke="var(--cooling)" stroke-width="3" stroke-linecap="round" marker-end="url(#arr-cool)"/>
+            <text x="12" y="-12" font-size="13" font-weight="700" fill="var(--cooling)">潜热 λE (≈0)</text>
+          </g>
+
+          <!-- Subsurface Storage Arrow (Downwards) -->
+          <g transform="translate(260, 260)">
+            <path d="M 0 0 L 0 75" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" marker-end="url(#arr-stor)"/>
+            <text x="16" y="42" font-size="15" font-weight="700" fill="#FFFFFF">热传导向深层蓄热 ΔQs</text>
+            <text x="16" y="64" font-size="13" font-weight="600" fill="#FFFFFF">大热容 + 高导热</text>
+          </g>
+        ` : `
+          <!-- Night moon -->
+          <path d="M 75 40 A 24 24 0 1 0 105 75 A 28 28 0 1 1 75 40 Z" fill="#E8EFF1"/>
+          <text x="125" y="60" font-size="15" font-weight="700" fill="#E8EFF1">夜间辐射降温</text>
+
+          <!-- Heat release from storage (Upwards) -->
+          <g transform="translate(240, 360)">
+            <path d="M 0 0 L 0 -85" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" marker-end="url(#arr-stor)"/>
+            <text x="16" y="-45" font-size="15" font-weight="700" fill="#FFFFFF">储热持续向地表释放</text>
+            <text x="16" y="-22" font-size="13" font-weight="600" fill="#FFFFFF">-65 W/m² 持续释热</text>
+          </g>
+
+          <!-- Upward sensible heat to maintain canopy air temp -->
+          <g transform="translate(140, 240)">
+            <path d="M 0 0 L 0 -45" stroke="var(--heat)" stroke-width="6" stroke-linecap="round" marker-end="url(#arr-heat)"/>
+            <rect x="14" y="-36" width="105" height="26" rx="3" fill="#F7FAFA" stroke="#17282E" stroke-width="1"/>
+            <text x="20" y="-18" font-size="13" font-weight="700" fill="#17282E">夜间持续供热</text>
+          </g>
+        `}
+      `;
+    }
+
+    function drawRural(phase) {
+      const isDay = phase === 'day';
+      const d = data[phase].rural;
+      const svg = document.getElementById('svg-rural');
+
+      const skyGrad = isDay ? '#DCEEF3' : '#17242B';
+      const groundGrad = '#38583B';
+      const soilGrad = '#554231';
+
+      svg.innerHTML = `
+        <defs>
+          <linearGradient id="r-sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${skyGrad}"/>
+            <stop offset="100%" stop-color="${isDay ? '#EAF3F5' : '#1D2F38'}"/>
+          </linearGradient>
+          <linearGradient id="r-ground" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${soilGrad}"/>
+            <stop offset="100%" stop-color="#34281E"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Sky -->
+        <rect x="0" y="0" width="680" height="250" fill="url(#r-sky)"/>
+
+        <!-- Soil ground -->
+        <rect x="0" y="250" width="680" height="180" fill="url(#r-ground)"/>
+
+        <!-- Grass & vegetation cover -->
+        <rect x="0" y="238" width="680" height="16" fill="${groundGrad}"/>
+        <!-- Tuft grass illustration -->
+        <g stroke="${groundGrad}" stroke-width="3" stroke-linecap="round">
+          <line x1="40" y1="240" x2="35" y2="225"/>
+          <line x1="43" y1="240" x2="47" y2="222"/>
+          <line x1="85" y1="240" x2="80" y2="226"/>
+          <line x1="88" y1="240" x2="94" y2="224"/>
+          <line x1="160" y1="240" x2="155" y2="224"/>
+          <line x1="164" y1="240" x2="169" y2="222"/>
+          <line x1="420" y1="240" x2="415" y2="226"/>
+          <line x1="423" y1="240" x2="428" y2="223"/>
+        </g>
+
+        <!-- Vegetation & moisture indicator -->
+        <g transform="translate(25, 260)">
+          <rect x="0" y="0" width="145" height="28" rx="4" fill="#F7FAFA" stroke="#17282E" stroke-width="1.5"/>
+          <text x="10" y="19" font-size="13" fill="#17282E" font-weight="700">湿润土层 (含水充分)</text>
+        </g>
+
+        <!-- Temperature Badges -->
+        <g transform="translate(480, 216)">
+          <rect x="0" y="0" width="165" height="34" rx="4" fill="#F7FAFA" stroke="#17282E" stroke-width="1.5"/>
+          <text x="12" y="22" font-size="13" font-weight="700" fill="#17282E">地表温度 Ts</text>
+          <text x="96" y="23" font-size="16" font-family="var(--font-num)" font-weight="700" fill="${isDay ? 'var(--cooling)' : 'var(--text)'}">${d.surfTemp}</text>
+        </g>
+
+        <g transform="translate(480, 360)">
+          <rect x="0" y="0" width="165" height="34" rx="4" fill="#F7FAFA" stroke="#17282E" stroke-width="1.5"/>
+          <text x="12" y="22" font-size="13" font-weight="700" fill="#17282E">深层温度 Td</text>
+          <text x="96" y="23" font-size="16" font-family="var(--font-num)" font-weight="700" fill="#17282E">${d.subTemp}</text>
+        </g>
+
+        ${isDay ? `
+          <!-- Tree canopy drawing -->
+          <g transform="translate(80, 140)">
+            <rect x="42" y="55" width="12" height="45" fill="#4A3423"/>
+            <circle cx="48" cy="40" r="38" fill="var(--vegetation)"/>
+            <circle cx="30" cy="30" r="25" fill="#4B8C5E"/>
+            <circle cx="65" cy="32" r="26" fill="#31613F"/>
+          </g>
+
+          <!-- Latent heat (evapotranspiration) massive cooling arrow -->
+          <g transform="translate(230, 230)">
+            <path d="M 0 0 L 0 -125" stroke="var(--cooling)" stroke-width="13" stroke-linecap="round" marker-end="url(#arr-cool)"/>
+            <text x="18" y="-70" font-size="15" font-weight="700" fill="var(--cooling)">潜热通量 λE (蒸散)</text>
+            <text x="18" y="-50" font-size="13" font-weight="600" fill="var(--text)">大量相变消耗热量</text>
+          </g>
+
+          <!-- Sensible heat arrow (moderate) -->
+          <g transform="translate(380, 230)">
+            <path d="M 0 0 L 0 -45" stroke="var(--heat)" stroke-width="5" stroke-linecap="round" marker-end="url(#arr-heat)"/>
+            <text x="14" y="-22" font-size="14" font-weight="700" fill="var(--heat)">显热 H (温和)</text>
+          </g>
+
+          <!-- Small storage arrow -->
+          <g transform="translate(260, 260)">
+            <path d="M 0 0 L 0 32" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" marker-end="url(#arr-stor)"/>
+            <text x="14" y="22" font-size="14" font-weight="700" fill="#FFFFFF">微量蓄热 ΔQs</text>
+          </g>
+        ` : `
+          <!-- Night cooling representation -->
+          <!-- Rapid radiative cooling escaping to atmosphere -->
+          <g transform="translate(260, 210)">
+            <path d="M 0 0 L 0 -60" stroke="#FFFFFF" stroke-width="4" stroke-dasharray="4 4" stroke-linecap="round"/>
+            <rect x="14" y="-42" width="130" height="26" rx="3" fill="#F7FAFA" stroke="#17282E" stroke-width="1"/>
+            <text x="20" y="-24" font-size="13" font-weight="700" fill="#17282E">长波辐射强烈耗散</text>
+          </g>
+
+          <!-- Negligible release from storage -->
+          <g transform="translate(320, 340)">
+            <path d="M 0 0 L 0 -35" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arr-stor)"/>
+            <text x="14" y="-14" font-size="14" font-weight="700" fill="#FFFFFF">浅层弱释热 (-15 W/m²)</text>
+          </g>
+
+          <!-- Surface dew/inversion notes -->
+          <g transform="translate(180, 140)">
+            <rect x="0" y="0" width="180" height="32" rx="3" fill="#F7FAFA" stroke="#17282E" stroke-width="1.5"/>
+            <text x="14" y="21" font-size="13" font-weight="700" fill="#17282E">地表骤冷形成强逆温层</text>
+          </g>
+        `}
+      `;
+    }
+
+    function setPhase(phase) {
+      currentPhase = phase;
+      document.getElementById('btn-day').setAttribute('aria-pressed', phase === 'day');
+      document.getElementById('btn-night').setAttribute('aria-pressed', phase === 'night');
+
+      const u = data[phase].urban;
+      const r = data[phase].rural;
+
+      document.getElementById('u-val-1').textContent = u.val1;
+      document.getElementById('u-val-2').textContent = u.val2;
+      document.getElementById('u-val-3').textContent = u.val3;
+      document.getElementById('u-lbl-3').textContent = u.lbl3;
+
+      document.getElementById('r-val-1').textContent = r.val1;
+      document.getElementById('r-val-2').textContent = r.val2;
+      document.getElementById('r-val-3').textContent = r.val3;
+      document.getElementById('r-lbl-3').textContent = r.lbl3;
+
+      document.getElementById('summary-note').textContent = phase === 'day' 
+        ? '白天：干燥硬质材料强储热且显热占优 · 表面温差 17.3°C' 
+        : '夜间：硬质基质持续释热支撑城市夜温 · 表面温差 5.6°C';
+
+      drawUrban(phase);
+      drawRural(phase);
+    }
+
+    // Initialize
+    Deck.init({ index: 5, total: 19 });
+    setPhase('day');
+  </script>
+</body>
+</html>

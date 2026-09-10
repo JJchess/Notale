@@ -1,0 +1,892 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>随机森林的多样性来源：样本重采样与特征子采样</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 1600x900 布局 */
+    #stage {
+      padding: 24px var(--pad-x);
+      gap: 12px;
+      color: var(--text);
+      font-family: var(--font-sans);
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      height: 900px;
+    }
+
+    .header-block {
+      flex: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+
+    .title-group h1 {
+      margin: 0 0 6px 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .title-group p {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .formula-badge {
+      flex: none;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 15px;
+      color: var(--muted);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .formula-badge code {
+      font-family: monospace;
+      font-weight: 700;
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    /* 主交互区: 左右分栏 */
+    .workbench {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 18px;
+    }
+
+    /* 左栏：控制与单树微观结构 */
+    .control-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .panel-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px 16px;
+      box-shadow: 0 2px 6px rgba(18, 38, 52, 0.04);
+    }
+
+    .card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0 0 12px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--text);
+    }
+    .card-title small {
+      font-size: var(--fs-sec);
+      font-weight: normal;
+      color: var(--muted);
+    }
+
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+    .control-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .control-label .val-tag {
+      font-family: var(--font-num);
+      color: var(--model);
+      font-weight: 700;
+    }
+
+    .btn-toggle-group {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .toggle-btn {
+      padding: 6px 4px;
+      border: 1px solid var(--surface-strong);
+      background: var(--bg);
+      color: var(--muted);
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--duration) var(--ease);
+    }
+    .toggle-btn:hover {
+      border-color: var(--model);
+      color: var(--text);
+    }
+    .toggle-btn.active {
+      background: var(--model);
+      border-color: var(--model);
+      color: #fff;
+    }
+
+    /* 树结构微观卡片 */
+    .inspect-card {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .tree-inspect-wrap {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      justify-content: center;
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 10px 12px;
+      border: 1px dashed var(--surface-strong);
+    }
+
+    .split-node {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 8px;
+      background: var(--surface);
+      border-radius: 4px;
+      border-left: 4px solid var(--model);
+      font-size: var(--fs-tick);
+    }
+    .split-node.strong-lead {
+      border-left-color: var(--aggregate);
+    }
+    .split-node .feature-tag {
+      font-weight: 700;
+      color: var(--text);
+    }
+    .split-node .subset-tag {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: monospace;
+    }
+
+    /* 右栏：矩阵与集成证据场 */
+    .evidence-col {
+      display: grid;
+      grid-template-rows: 250px 1fr;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    /* 上图：树群多样性矩阵 (相关性热图与单树预测曲线) */
+    .forest-sim-panel {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 14px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px 16px;
+      box-shadow: 0 2px 6px rgba(18, 38, 52, 0.04);
+      min-height: 0;
+    }
+
+    .forest-sim-panel h3 {
+      margin: 0 0 6px 0;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .canvas-wrap {
+      position: relative;
+      width: 100%;
+      height: 190px;
+      background: var(--bg);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    /* 指标看板与理论对比卡片 */
+    .metrics-board {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 10px 14px;
+      border: 1px solid var(--surface-strong);
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .metric-item .label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .metric-item .val {
+      font-size: 24px;
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+    }
+    .metric-item .val.highlight {
+      color: var(--aggregate);
+    }
+
+    /* 下图：集成方差随树数量收敛曲线对比图 */
+    .variance-curve-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 2px 6px rgba(18, 38, 52, 0.04);
+      min-height: 0;
+    }
+
+    .variance-canvas-wrap {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      background: var(--bg);
+      border-radius: 6px;
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 18px;
+      font-size: var(--fs-tick);
+      margin-top: 6px;
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+    }
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+    }
+
+    /* 操作提示栏 */
+    .interactive-guide {
+      font-size: 14px;
+      color: var(--muted);
+      padding: 6px 0 0 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .interactive-guide strong {
+      color: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="11" data-total="27">
+  <div id="stage">
+    <!-- 头部导引 -->
+    <header class="header-block">
+      <div class="title-group">
+        <h1>多样性来源：样本重采样与特征子采样</h1>
+        <p>树间相关性 &rho; 决定集成方差收敛的理论底线。观察两层随机性如何打破强特征垄断并稀释树间同步。</p>
+      </div>
+      <div class="formula-badge">
+        <span>理论集成方差极限</span>
+        <code>Var(Forest) = &rho; &sigma;&sup2; + [(1 - &rho;)/B] &sigma;&sup2; &rarr; &rho; &sigma;&sup2;</code>
+      </div>
+    </header>
+
+    <!-- 实验工作台 -->
+    <main class="workbench">
+      <!-- 左栏：交互调节区 -->
+      <section class="control-col">
+        <!-- 控制参数 -->
+        <div class="panel-card">
+          <div class="card-title">
+            <span>超参数配置</span>
+            <small>设定随机注入层级</small>
+          </div>
+
+          <!-- 样本抽样模式 -->
+          <div class="control-row">
+            <div class="control-label">
+              <span>① 样本重采样 (Bootstrap)</span>
+              <span class="val-tag" id="label-sample-mode">Bootstrap 63.2%</span>
+            </div>
+            <div class="btn-toggle-group" id="group-sample">
+              <button type="button" class="toggle-btn" data-val="none">全量样本 (无采样)</button>
+              <button type="button" class="toggle-btn active" data-val="bootstrap">有放回采样 (0.632)</button>
+              <button type="button" class="toggle-btn" data-val="subsample">半数子采样 (0.50)</button>
+            </div>
+          </div>
+
+          <!-- 特征子采样比例 -->
+          <div class="control-row" style="margin-top: 6px;">
+            <div class="control-label">
+              <span>② 节点候选特征数 <i>m</i> (特征总数 <i>p</i>=12)</span>
+              <span class="val-tag" id="label-feat-m">m = &radic;12 &asymp; 3</span>
+            </div>
+            <div class="btn-toggle-group" id="group-feat">
+              <button type="button" class="toggle-btn" data-val="all">全特征 m = 12</button>
+              <button type="button" class="toggle-btn active" data-val="sqrt">常用 m = &radic;p (3)</button>
+              <button type="button" class="toggle-btn" data-val="one">极度随机 m = 1</button>
+            </div>
+          </div>
+
+          <!-- 强特征主导性 -->
+          <div class="control-row" style="margin-top: 6px;">
+            <div class="control-label">
+              <span>数据中强特征的主导权重强度</span>
+              <span class="val-tag" id="label-dominance">中度主导 (65%)</span>
+            </div>
+            <div class="btn-toggle-group" id="group-dominance">
+              <button type="button" class="toggle-btn" data-val="low">弱主导 (分散)</button>
+              <button type="button" class="toggle-btn active" data-val="med">中主导 (常见)</button>
+              <button type="button" class="toggle-btn" data-val="high">极强主导 (垄断)</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 单树节点决策切片模拟 -->
+        <div class="panel-card inspect-card">
+          <div class="card-title">
+            <span>抽样下的单树微观分裂机制</span>
+            <small>以 4 棵典型树的首层分裂为例</small>
+          </div>
+          <div class="tree-inspect-wrap" id="tree-inspect-list">
+            <!-- 由 JS 实时渲染生成 -->
+          </div>
+          <div class="interactive-guide">
+            <strong>核心机制：</strong>当特征子采样生效时，强特征 X₁ 无法出现在每棵树的首分裂中，树形多样性大幅激增。
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：宏观集成方差与树间相关性证据场 -->
+      <section class="evidence-col">
+        <!-- 矩阵区：树间相关性热图与预测轮廓差异 -->
+        <div class="forest-sim-panel">
+          <div>
+            <h3>
+              <span>树间预测相关性矩阵 (随机选取 12 棵基学习器)</span>
+              <span style="font-weight: normal; font-size: 13px; color: var(--muted);">色块越深表示树间越趋同</span>
+            </h3>
+            <div class="canvas-wrap">
+              <canvas id="cv-corr" class="cv-fill"></canvas>
+            </div>
+          </div>
+
+          <!-- 右侧数字看板 -->
+          <div class="metrics-board">
+            <div class="metric-item">
+              <span class="label">平均树间相关系数 &rho;</span>
+              <span class="val highlight" id="metric-rho">0.28</span>
+            </div>
+            <div class="metric-item">
+              <span class="label">单树平均方差 &sigma;&sup2;</span>
+              <span class="val" id="metric-sigma">1.00</span>
+            </div>
+            <div class="metric-item">
+              <span class="label">森林极限方差下界 (&rho;&sigma;&sup2;)</span>
+              <span class="val highlight" id="metric-limit">0.28</span>
+            </div>
+            <div class="metric-item">
+              <span class="label">方差削减比例 ((1-&rho;)/1)</span>
+              <span class="val" id="metric-gain" style="color: var(--sample);">72.0%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 下区：方差随树数量增加的衰减收敛曲线 -->
+        <div class="variance-curve-panel">
+          <div class="card-title" style="margin-bottom: 6px;">
+            <span>森林集成方差随树数量 <i>B</i> 的衰减曲线</span>
+            <small>对比：当前配置（实线）vs 无特征采样的标准 Bagging（虚线）</small>
+          </div>
+          <div class="variance-canvas-wrap">
+            <canvas id="cv-curve" class="cv-fill"></canvas>
+          </div>
+          <div class="legend-row">
+            <div class="legend-item">
+              <div class="legend-color" style="background: var(--aggregate);"></div>
+              <span>当前森林集成方差 Var(Forest)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: var(--model); opacity: 0.6;"></div>
+              <span>纯 Bagging（无特征子采样 m=p）</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: #e65100; border-top: 2px dashed #e65100; height: 0;"></div>
+              <span>理论方差渐近下界 &rho;&sigma;&sup2;</span>
+            </div>
+            <div class="legend-item" style="margin-left: auto; color: var(--text);">
+              <span>切换左侧按钮观察 &rho; 下降如何拉低方差底线</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      // 状态与计算模型
+      const state = {
+        sampleMode: 'bootstrap', // 'none' | 'bootstrap' | 'subsample'
+        featMode: 'sqrt',        // 'all' | 'sqrt' | 'one'
+        dominance: 'med'         // 'low' | 'med' | 'high'
+      };
+
+      // 强特征概率分布与树间相关性仿真算法
+      function computeForestMetrics() {
+        // 基础单树方差归一化为 1.0
+        // 如果样本采样率低，单树偏差稍增但方差基础相近
+        let sigma2 = 1.0;
+
+        // 强特征的主导权重
+        let strongLeadProb = 0.65;
+        if (state.dominance === 'low') strongLeadProb = 0.35;
+        if (state.dominance === 'high') strongLeadProb = 0.90;
+
+        // 节点特征采样对降低强特征出现率的影响
+        // 特征总数 p = 12
+        // 当 m = 12 时，强特征 100% 出现并在分裂中几乎必被选中
+        // 当 m = 3 时，强特征被抽入候选集的概率是 1 - C(11, 3)/C(12, 3) = 1 - 9/12 = 0.25
+        // 当 m = 1 时，强特征被抽入的概率是 1/12 ≈ 0.083
+        let featProbInSubset = 1.0;
+        if (state.featMode === 'sqrt') featProbInSubset = 0.25;
+        if (state.featMode === 'one') featProbInSubset = 0.0833;
+
+        // 强特征实际成为树根分裂特征的概率
+        let rootDominance = strongLeadProb * featProbInSubset;
+
+        // 样本重采样所带来的去相关效应
+        // 无采样: 样本重合度 100% -> 样本相似度 1.0
+        // Bootstrap: 样本重合度 ~63.2% 两两袋子重叠率约 0.632^2 + 0.368^2... 两袋子样本 Jaccard 约 0.46
+        // Subsample (0.5): 两两袋子重合度 0.25
+        let sampleCorrFactor = 1.0;
+        if (state.sampleMode === 'bootstrap') sampleCorrFactor = 0.60;
+        if (state.sampleMode === 'subsample') sampleCorrFactor = 0.42;
+
+        // 总体树间相关系数 rho
+        // rho 受到两个因素乘积与基底的共同作用:
+        // rho = (结构相似性 (由强特征主导引起) + 样本重叠基底)
+        // 经验公式校准：
+        let structuralCorr = 0.15 + 0.70 * rootDominance;
+        let rho = structuralCorr * sampleCorrFactor;
+
+        // 边界保护
+        rho = Math.max(0.05, Math.min(0.92, rho));
+
+        // 对比基准：如果只做 Bagging (m = 12)
+        let baggingRootDom = strongLeadProb * 1.0;
+        let baggingRho = (0.15 + 0.70 * baggingRootDom) * sampleCorrFactor;
+        baggingRho = Math.max(0.08, Math.min(0.95, baggingRho));
+
+        return {
+          rho,
+          baggingRho,
+          sigma2,
+          limit: rho * sigma2,
+          gain: ((1 - rho) / 1.0 * 100).toFixed(1) + '%',
+          featProbInSubset,
+          rootDominance
+        };
+      }
+
+      // 生成伪相关矩阵 (12x12)
+      function generateCorrMatrix(rho) {
+        const n = 12;
+        const mat = [];
+        // 固定随机种子以保证渲染稳定
+        let seed = 42;
+        function rnd() {
+          seed = (seed * 9301 + 49297) % 233280;
+          return seed / 233280;
+        }
+
+        for (let i = 0; i < n; i++) {
+          mat[i] = [];
+          for (let j = 0; j < n; j++) {
+            if (i === j) {
+              mat[i][j] = 1.0;
+            } else {
+              // 波动围绕 rho 展开
+              let noise = (rnd() - 0.5) * 0.18;
+              let val = rho + noise;
+              val = Math.max(0.02, Math.min(0.98, val));
+              mat[i][j] = val;
+            }
+          }
+        }
+        // 对称化
+        for (let i = 0; i < n; i++) {
+          for (let j = i + 1; j < n; j++) {
+            let avg = (mat[i][j] + mat[j][i]) / 2;
+            mat[i][j] = avg;
+            mat[j][i] = avg;
+          }
+        }
+        return mat;
+      }
+
+      // DOM 元素引用
+      const labelSampleMode = document.getElementById('label-sample-mode');
+      const labelFeatM = document.getElementById('label-feat-m');
+      const labelDominance = document.getElementById('label-dominance');
+      const metricRho = document.getElementById('metric-rho');
+      const metricSigma = document.getElementById('metric-sigma');
+      const metricLimit = document.getElementById('metric-limit');
+      const metricGain = document.getElementById('metric-gain');
+      const treeInspectList = document.getElementById('tree-inspect-list');
+
+      const cvCorr = document.getElementById('cv-corr');
+      const cvCurve = document.getElementById('cv-curve');
+
+      // 渲染单树节点微观透视
+      function renderTreeInspection(metrics) {
+        // 模拟4棵代表树
+        const trees = [
+          { id: 1, sampleRate: state.sampleMode === 'none' ? '100% 原始' : (state.sampleMode === 'bootstrap' ? '63% 样本袋' : '50% 子样本') },
+          { id: 2, sampleRate: state.sampleMode === 'none' ? '100% 原始' : (state.sampleMode === 'bootstrap' ? '63% 样本袋' : '50% 子样本') },
+          { id: 3, sampleRate: state.sampleMode === 'none' ? '100% 原始' : (state.sampleMode === 'bootstrap' ? '63% 样本袋' : '50% 子样本') },
+          { id: 4, sampleRate: state.sampleMode === 'none' ? '100% 原始' : (state.sampleMode === 'bootstrap' ? '63% 样本袋' : '50% 子样本') },
+        ];
+
+        // 判定每棵树是否抽到了强特征 X1 (主导特征)
+        // 根据 featProbInSubset 决定
+        const featPool = ['X1 (极强)', 'X2', 'X3', 'X4', 'X5', 'X6', 'X7', 'X8'];
+
+        let html = '';
+        trees.forEach((t, idx) => {
+          let hasStrong = false;
+          if (state.featMode === 'all') {
+            hasStrong = true;
+          } else if (state.featMode === 'sqrt') {
+            hasStrong = (idx === 0); // 4棵树里约1棵抽到强特征 (25%)
+          } else {
+            hasStrong = false; // 8% 几乎抽不到
+          }
+
+          let splitFeat = hasStrong ? '首分裂：X₁ [强特征垄断]' : `首分裂：X${(idx * 2 + 3) % 8 + 2} [替代特征激活]`;
+          let badgeClass = hasStrong ? 'split-node strong-lead' : 'split-node';
+          let candidateDesc = state.featMode === 'all' ? '候选: 全部12个' : (state.featMode === 'sqrt' ? '候选: 随机3个特征' : '候选: 仅1个特征');
+
+          html += `
+            <div class="${badgeClass}">
+              <div>
+                <strong>树 #${t.id}</strong>
+                <span class="subset-tag" style="margin-left:8px;">[${t.sampleRate}]</span>
+              </div>
+              <div>
+                <span class="subset-tag" style="margin-right:10px;">${candidateDesc}</span>
+                <span class="feature-tag" style="color: ${hasStrong ? 'var(--aggregate)' : 'var(--sample)'};">${splitFeat}</span>
+              </div>
+            </div>
+          `;
+        });
+        treeInspectList.innerHTML = html;
+      }
+
+      // 绘制树间相关性热图
+      function drawCorrHeatmap(ctx, mat, rho) {
+        const w = cvCorr.width / (window.devicePixelRatio || 1);
+        const h = cvCorr.height / (window.devicePixelRatio || 1);
+        ctx.clearRect(0, 0, w, h);
+
+        const n = 12;
+        const padding = 16;
+        const matrixSize = Math.min(w - 120, h - padding * 2);
+        const cellSize = matrixSize / n;
+        const startX = 30;
+        const startY = (h - matrixSize) / 2;
+
+        // 绘制格子
+        for (let i = 0; i < n; i++) {
+          for (let j = 0; j < n; j++) {
+            const val = mat[i][j];
+            const x = startX + j * cellSize;
+            const y = startY + i * cellSize;
+
+            // 颜色梯度：从浅灰蓝到深浓红/蓝
+            // val 越大颜色越深
+            let alpha = 0.08 + val * 0.85;
+            if (i === j) {
+              ctx.fillStyle = `rgba(39, 100, 143, 0.95)`;
+            } else {
+              // 混合强调色: 高相关显示红/深棕色，低相关显示清淡灰蓝
+              if (val > 0.6) {
+                ctx.fillStyle = `rgba(195, 75, 34, ${alpha})`;
+              } else {
+                ctx.fillStyle = `rgba(39, 100, 143, ${alpha})`;
+              }
+            }
+            ctx.fillRect(x, y, cellSize - 1, cellSize - 1);
+          }
+        }
+
+        // 刻度标签
+        ctx.fillStyle = '#536A78';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('树 T₁', startX + cellSize / 2, startY - 8);
+        ctx.fillText('树 T₁₂', startX + matrixSize - cellSize / 2, startY - 8);
+
+        // 颜色条图例
+        const barX = startX + matrixSize + 24;
+        const barY = startY;
+        const barW = 14;
+        const barH = matrixSize;
+
+        const grad = ctx.createLinearGradient(0, barY + barH, 0, barY);
+        grad.addColorStop(0, 'rgba(39, 100, 143, 0.15)');
+        grad.addColorStop(0.5, 'rgba(39, 100, 143, 0.65)');
+        grad.addColorStop(1, 'rgba(195, 75, 34, 0.95)');
+
+        ctx.fillStyle = grad;
+        ctx.fillRect(barX, barY, barW, barH);
+        ctx.strokeStyle = '#E2EBF0';
+        ctx.strokeRect(barX, barY, barW, barH);
+
+        ctx.fillStyle = '#536A78';
+        ctx.font = '12px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('1.0', barX + barW + 6, barY + 6);
+        ctx.fillText('0.5', barX + barW + 6, barY + barH / 2);
+        ctx.fillText('0.0', barX + barW + 6, barY + barH - 6);
+      }
+
+      // 绘制集成方差随树数量衰减曲线
+      function drawVarianceCurve(ctx, metrics) {
+        const w = cvCurve.width / (window.devicePixelRatio || 1);
+        const h = cvCurve.height / (window.devicePixelRatio || 1);
+        ctx.clearRect(0, 0, w, h);
+
+        const padLeft = 60;
+        const padRight = 30;
+        const padTop = 24;
+        const padBottom = 34;
+
+        const plotW = w - padLeft - padRight;
+        const plotH = h - padTop - padBottom;
+
+        // 坐标系范围：树数 B 从 1 到 80；方差从 0 到 1.05
+        const maxB = 80;
+        const maxVar = 1.05;
+
+        function getX(b) {
+          return padLeft + ((b - 1) / (maxB - 1)) * plotW;
+        }
+        function getY(v) {
+          return padTop + plotH - (v / maxVar) * plotH;
+        }
+
+        // 网格与坐标轴
+        ctx.strokeStyle = '#E2EBF0';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let v = 0.2; v <= 1.0; v += 0.2) {
+          const y = getY(v);
+          ctx.moveTo(padLeft, y);
+          ctx.lineTo(padLeft + plotW, y);
+        }
+        for (let b = 10; b <= maxB; b += 10) {
+          const x = getX(b);
+          ctx.moveTo(x, padTop);
+          ctx.lineTo(x, padTop + plotH);
+        }
+        ctx.stroke();
+
+        // 轴文字
+        ctx.fillStyle = '#536A78';
+        ctx.font = '12px monospace';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        for (let v = 0.0; v <= 1.0; v += 0.2) {
+          ctx.fillText(v.toFixed(1), padLeft - 8, getY(v));
+        }
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let b = 10; b <= maxB; b += 10) {
+          ctx.fillText(b, getX(b), padTop + plotH + 8);
+        }
+        ctx.fillText('树的数量 (B)', padLeft + plotW / 2, padTop + plotH + 20);
+
+        // 极限水平虚线 (当前配置的 rho)
+        const limitY = getY(metrics.limit);
+        ctx.strokeStyle = '#e65100';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, limitY);
+        ctx.lineTo(padLeft + plotW, limitY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 极限标签
+        ctx.fillStyle = '#e65100';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(`下界 \u03c1\u03c3\u00b2 = ${metrics.limit.toFixed(2)}`, padLeft + plotW - 10, limitY - 8);
+
+        // 绘制对照线：Bagging 曲线 (未做特征子采样)
+        ctx.strokeStyle = '#27648F';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        for (let b = 1; b <= maxB; b++) {
+          const v = metrics.baggingRho * metrics.sigma2 + ((1 - metrics.baggingRho) / b) * metrics.sigma2;
+          const x = getX(b);
+          const y = getY(v);
+          if (b === 1) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 绘制主线：当前随机森林曲线
+        ctx.strokeStyle = '#C34B22';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let b = 1; b <= maxB; b++) {
+          const v = metrics.rho * metrics.sigma2 + ((1 - metrics.rho) / b) * metrics.sigma2;
+          const x = getX(b);
+          const y = getY(v);
+          if (b === 1) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // 终点高亮圆点
+        const endB = maxB;
+        const endV = metrics.rho * metrics.sigma2 + ((1 - metrics.rho) / endB) * metrics.sigma2;
+        ctx.fillStyle = '#C34B22';
+        ctx.beginPath();
+        ctx.arc(getX(endB), getY(endV), 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(getX(endB), getY(endV), 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 更新主渲染流程
+      function update() {
+        const metrics = computeForestMetrics();
+
+        // 更新标签文字
+        labelSampleMode.textContent =
+          state.sampleMode === 'none' ? '全量样本 (无采样 100%)' :
+          state.sampleMode === 'bootstrap' ? 'Bootstrap 抽样 (63.2%)' : '半数子采样 (50.0%)';
+
+        labelFeatM.textContent =
+          state.featMode === 'all' ? 'm = 12 (全特征/无随机)' :
+          state.featMode === 'sqrt' ? 'm = \u221a12 \u2248 3 (推荐)' : 'm = 1 (极度随机)';
+
+        labelDominance.textContent =
+          state.dominance === 'low' ? '弱主导 (分散 35%)' :
+          state.dominance === 'med' ? '中度主导 (常见 65%)' : '极强主导 (垄断 90%)';
+
+        // 更新数值看板
+        metricRho.textContent = metrics.rho.toFixed(2);
+        metricLimit.textContent = metrics.limit.toFixed(2);
+        metricGain.textContent = metrics.gain;
+
+        // 渲染单树节点状态
+        renderTreeInspection(metrics);
+
+        // 渲染热图与曲线
+        const ctxCorr = Deck.fit(cvCorr);
+        const mat = generateCorrMatrix(metrics.rho);
+        drawCorrHeatmap(ctxCorr, mat, metrics.rho);
+
+        const ctxCurve = Deck.fit(cvCurve);
+        drawVarianceCurve(ctxCurve, metrics);
+      }
+
+      // 绑定交互按钮
+      function setupEvents() {
+        // 样本抽样按钮组
+        document.getElementById('group-sample').addEventListener('click', (e) => {
+          const btn = e.target.closest('button');
+          if (!btn) return;
+          document.querySelectorAll('#group-sample button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.sampleMode = btn.dataset.val;
+          update();
+        });
+
+        // 特征抽样按钮组
+        document.getElementById('group-feat').addEventListener('click', (e) => {
+          const btn = e.target.closest('button');
+          if (!btn) return;
+          document.querySelectorAll('#group-feat button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.featMode = btn.dataset.val;
+          update();
+        });
+
+        // 强特征主导按钮组
+        document.getElementById('group-dominance').addEventListener('click', (e) => {
+          const btn = e.target.closest('button');
+          if (!btn) return;
+          document.querySelectorAll('#group-dominance button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.dominance = btn.dataset.val;
+          update();
+        });
+
+        // 响应缩放重新绘图
+        Deck.onResize(() => {
+          update();
+        });
+      }
+
+      // 初始化
+      setupEvents();
+      update();
+      Deck.init({ index: 11, total: 27 });
+    })();
+  </script>
+</body>
+</html>

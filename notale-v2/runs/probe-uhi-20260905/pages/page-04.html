@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: var(--text);
+      background: var(--bg);
+      box-sizing: border-box;
+    }
+
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+      flex-shrink: 0;
+    }
+
+    .kicker-title {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--heat);
+      letter-spacing: 0.04em;
+      margin-bottom: 4px;
+    }
+
+    .page-header h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+
+    .header-formula {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-num);
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text);
+      background: var(--surface);
+      padding: 6px 14px;
+      border-radius: 4px;
+      border: 1px solid rgba(80, 100, 107, 0.25);
+    }
+    .header-formula span.term-rn { color: var(--heat); }
+    .header-formula span.term-qf { color: #b84318; }
+    .header-formula span.term-h  { color: #d0532b; }
+    .header-formula span.term-le { color: var(--cooling); }
+    .header-formula span.term-g  { color: #735f2a; }
+
+    /* 主布局 */
+    .content-grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧图表面板 */
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      background: var(--surface);
+      border: 1px solid rgba(80, 100, 107, 0.2);
+      border-radius: 6px;
+      padding: 16px 20px;
+    }
+
+    .chart-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .scenario-toggle {
+      display: flex;
+      gap: 8px;
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-swatch {
+      width: 14px;
+      height: 10px;
+      border-radius: 2px;
+    }
+    .legend-line {
+      width: 16px;
+      height: 3px;
+      border-radius: 1px;
+    }
+
+    .chart-wrapper {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+    }
+
+    #echarts-host {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      border-top: 1px dashed rgba(80, 100, 107, 0.25);
+      padding-top: 8px;
+      flex-shrink: 0;
+    }
+
+    /* 右侧对比与结论栏 */
+    .sidebar-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid rgba(80, 100, 107, 0.2);
+      border-radius: 6px;
+      padding: 16px;
+    }
+
+    .summary-card h2 {
+      margin: 0 0 8px 0;
+      font-size: var(--fs-h2);
+      color: var(--text);
+    }
+
+    .summary-card p {
+      margin: 0;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    /* 能量通量拆解横条对比 */
+    .breakdown-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .breakdown-card h3 {
+      margin: 0;
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .breakdown-card .time-indicator {
+      font-family: var(--font-num);
+      font-size: 14px;
+      font-weight: normal;
+      color: var(--muted);
+    }
+
+    .flux-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+      justify-content: space-around;
+    }
+
+    .flux-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .flux-item-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+    }
+
+    .flux-label {
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .flux-value {
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: 16px;
+    }
+
+    .flux-bar-track {
+      height: 8px;
+      background: var(--surface-strong);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .flux-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width var(--dur) var(--ease), background var(--dur) var(--ease);
+    }
+
+    .flux-desc {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* 底部署名/推论注记 */
+    .inference-box {
+      background: var(--surface-strong);
+      border-radius: 6px;
+      padding: 14px 16px;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      border: 1px solid rgba(80, 100, 107, 0.25);
+      flex-shrink: 0;
+    }
+    .inference-box strong {
+      color: var(--heat);
+      display: block;
+      margin-bottom: 4px;
+      font-size: var(--fs-h2);
+    }
+  </style>
+</head>
+<body data-page="04" data-total="19">
+  <div id="stage">
+    <header class="page-header">
+      <div>
+        <div class="kicker-title">地表能量平衡骨架</div>
+        <h1>净辐射在显热、潜热、储热与人为热之间的重新分配</h1>
+      </div>
+      <div class="header-formula" title="地表能量平衡方程（考虑人为热）">
+        <span class="term-rn">R<sub>n</sub></span> + <span class="term-qf">Q<sub>f</sub></span> = 
+        <span class="term-h">H</span> + <span class="term-le">LE</span> + <span class="term-g">ΔQ<sub>s</sub></span>
+      </div>
+    </header>
+
+    <main class="content-grid">
+      <!-- 左侧主图表区 -->
+      <section class="chart-panel min0">
+        <div class="chart-controls">
+          <div class="scenario-toggle btns" role="group" aria-label="环境场景选择">
+            <button id="btn-urban" class="btn" aria-pressed="true">典型城市中心（高不透水面）</button>
+            <button id="btn-rural" class="btn" aria-pressed="false">周边乡村郊区（充分植被与土壤）</button>
+          </div>
+          <div class="chart-legend">
+            <div class="legend-item"><span class="legend-line" style="background: var(--heat);"></span> 净辐射 R<sub>n</sub></div>
+            <div class="legend-item"><span class="legend-swatch" style="background: #d0532b;"></span> 显热 H</div>
+            <div class="legend-item"><span class="legend-swatch" style="background: var(--cooling);"></span> 潜热 LE</div>
+            <div class="legend-item"><span class="legend-swatch" style="background: #735f2a;"></span> 储热 ΔQ<sub>s</sub></div>
+            <div class="legend-item"><span class="legend-line" style="background: #b84318; border-bottom: 2px dashed #b84318; height:0;"></span> 人为热 Q<sub>f</sub></div>
+          </div>
+        </div>
+
+        <div class="chart-wrapper">
+          <div id="echarts-host" role="img" aria-label="城市与乡村地表能量通量昼夜变化对比折线图"></div>
+        </div>
+
+        <div class="chart-footer">
+          <span>横轴为全天 24 小时（00:00 至 24:00），正值表示地表向大气输出或吸热，负值表示向地表放热</span>
+          <span>能量单位：W/m² · 典型夏季晴朗天气观测合成通量</span>
+        </div>
+      </section>
+
+      <!-- 右侧解析栏 -->
+      <aside class="sidebar-panel min0">
+        <div class="card summary-card">
+          <h2 id="summary-title">城市：显热与储热主导</h2>
+          <p id="summary-text">不透水下垫面切断水分供给，蒸散潜热极小；输入能量绝大部分被转化为直接加热空气的显热通量，并在高导热建筑材料中蓄积巨大储热。</p>
+        </div>
+
+        <div class="card breakdown-card">
+          <h3>
+            <span>正午 13:00 典型通量配比</span>
+            <span class="time-indicator">峰值时刻拆解</span>
+          </h3>
+
+          <div class="flux-list">
+            <!-- 显热 H -->
+            <div class="flux-item">
+              <div class="flux-item-head">
+                <span class="flux-label" style="color: #d0532b;">显热通量 H (升温气柱)</span>
+                <span class="flux-value" id="val-h" style="color: #d0532b;">310 W/m²</span>
+              </div>
+              <div class="flux-bar-track">
+                <div class="flux-bar-fill" id="bar-h" style="width: 53%; background: #d0532b;"></div>
+              </div>
+              <div class="flux-desc" id="desc-h">占白天主要输入能量的 52%，直接加热近地表空气边界层。</div>
+            </div>
+
+            <!-- 潜热 LE -->
+            <div class="flux-item">
+              <div class="flux-item-head">
+                <span class="flux-label" style="color: var(--cooling);">潜热通量 LE (水分蒸发)</span>
+                <span class="flux-value" id="val-le" style="color: var(--cooling);">65 W/m²</span>
+              </div>
+              <div class="flux-bar-track">
+                <div class="flux-bar-fill" id="bar-le" style="width: 11%; background: var(--cooling);"></div>
+              </div>
+              <div class="flux-desc" id="desc-le">缺乏植被水分，蒸散极低（Bowen比 H/LE ≈ 4.7），相变降温缺失。</div>
+            </div>
+
+            <!-- 储热 ΔQs -->
+            <div class="flux-item">
+              <div class="flux-item-head">
+                <span class="flux-label" style="color: #735f2a;">地表储热 ΔQ<sub>s</sub> (蓄存进材料)</span>
+                <span class="flux-value" id="val-g" style="color: #735f2a;">205 W/m²</span>
+              </div>
+              <div class="flux-bar-track">
+                <div class="flux-bar-fill" id="bar-g" style="width: 35%; background: #735f2a;"></div>
+              </div>
+              <div class="flux-desc" id="desc-g">高热容量与高导热建筑材料蓄积巨大能量，构成巨大蓄热电池。</div>
+            </div>
+
+            <!-- 人为热 Qf -->
+            <div class="flux-item">
+              <div class="flux-item-head">
+                <span class="flux-label" style="color: #b84318;">人为热输入 Q<sub>f</sub> (交通/空调)</span>
+                <span class="flux-value" id="val-qf" style="color: #b84318;">40 W/m²</span>
+              </div>
+              <div class="flux-bar-track">
+                <div class="flux-bar-fill" id="bar-qf" style="width: 7%; background: #b84318;"></div>
+              </div>
+              <div class="flux-desc" id="desc-qf">城市特有的纯人工输入项，机动车与建筑排热全天持续释放。</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="inference-box">
+          <strong id="infer-title">因果骨架：夜间热岛的决定机制</strong>
+          <span id="infer-text">白天蓄入的 205 W/m² 储热，在日落后持续向上逆向释放（夜间 ΔQ<sub>s</sub> 达 -70 W/m²），抵消了晴夜的辐射冷却，构成夜间热岛的主因。</span>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 4, total: 19 });
+
+      // 典型 24 小时能量通量数据 (00:00 - 24:00, 间隔 1 小时, 25 个点)
+      // 单位 W/m^2. 
+      // 约定：净辐射 Rn，显热 H，潜热 LE，储热 G (白天吸热为正，夜间释放为负)，人为热 Qf
+      const hours = Array.from({ length: 25 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
+
+      // 城市情境：高显热、极低潜热、高储热（白天吸、夜间放）、持续人为热
+      const urbanData = {
+        rn: [-45, -45, -43, -40, -30, 20, 110, 230, 360, 470, 550, 590, 580, 520, 420, 300, 170, 50, -35, -50, -52, -50, -48, -46, -45],
+        h:  [ 15,  12,  10,   8,  12, 35,  80, 150, 220, 275, 305, 315, 310, 280, 225, 155,  85, 30,  15,  18,  20,  18,  16,  14,  15],
+        le: [  5,   5,   5,   4,   5, 10,  25,  40,  55,  62,  65,  68,  65,  60,  50,  35,  20, 10,   8,   6,   6,   5,   5,   5,   5],
+        g:  [-65, -62, -58, -52, -47, -25,  5,  40,  85, 133, 180, 207, 205, 180, 145, 110,  65, 10, -58, -74, -78, -73, -69, -65, -65],
+        qf: [ 20,  18,  16,  15,  18, 30,  38,  42,  45,  44,  42,  41,  40,  42,  46,  50,  48, 42,  36,  32,  28,  25,  23,  21,  20]
+      };
+
+      // 乡村情境：潜热为主导（植被蒸散强）、储热小、人为热几乎为零、显热适中
+      const ruralData = {
+        rn: [-55, -53, -50, -48, -35, 25, 125, 250, 380, 490, 570, 610, 600, 540, 440, 315, 180, 55, -40, -58, -60, -58, -56, -54, -55],
+        h:  [-10, -12, -12, -10,  -5, 10,  35,  70, 110, 140, 155, 160, 150, 130,  95,  55,  20, -5, -12, -15, -15, -14, -12, -11, -10],
+        le: [  5,   5,   4,   4,   8, 25,  95, 180, 260, 325, 370, 395, 385, 345, 275, 185, 100, 35,  12,   8,   7,   6,   6,   5,   5],
+        g:  [-50, -46, -42, -42, -38, -10, 15,  40,  55,  65,  85,  95,  95,  85,  70,  55,  40, 10, -40, -51, -52, -50, -50, -48, -50],
+        qf: [  2,   2,   2,   2,   2,  2,   3,   3,   3,   3,   3,   3,   3,   3,   3,   3,   3,  2,   2,   2,   2,   2,   2,   2,   2]
+      };
+
+      const chartDom = document.getElementById('echarts-host');
+      const myChart = echarts.init(chartDom, null, { renderer: 'svg' });
+
+      let currentScenario = 'urban';
+
+      function getChartOption(scenario) {
+        const data = scenario === 'urban' ? urbanData : ruralData;
+
+        return {
+          animationDuration: 400,
+          grid: {
+            left: 54,
+            right: 24,
+            top: 36,
+            bottom: 38
+          },
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'line', lineStyle: { color: '#50646B', type: 'dashed' } },
+            backgroundColor: 'rgba(247, 250, 250, 0.95)',
+            borderColor: '#DCE7EA',
+            textStyle: { color: '#17282E', fontSize: 14 }
+          },
+          xAxis: {
+            type: 'category',
+            data: hours,
+            axisLine: { lineStyle: { color: '#50646B' } },
+            axisTick: { alignWithLabel: true },
+            axisLabel: {
+              color: '#50646B',
+              fontSize: 13,
+              interval: 2
+            }
+          },
+          yAxis: {
+            type: 'value',
+            name: '通量 (W/m²)',
+            nameTextStyle: { color: '#50646B', fontSize: 13, padding: [0, 0, 0, 20] },
+            min: -100,
+            max: 650,
+            interval: 100,
+            axisLine: { show: false },
+            axisTick: { show: false },
+            axisLabel: { color: '#50646B', fontSize: 13 },
+            splitLine: {
+              lineStyle: {
+                color: 'rgba(80, 100, 107, 0.15)',
+                type: 'solid'
+              }
+            }
+          },
+          series: [
+            {
+              name: '净辐射 Rn',
+              type: 'line',
+              data: data.rn,
+              smooth: true,
+              symbol: 'none',
+              lineStyle: { width: 3.5, color: '#C63F20' },
+              itemStyle: { color: '#C63F20' },
+              markLine: {
+                silent: true,
+                symbol: 'none',
+                lineStyle: { color: 'rgba(80,100,107,0.4)', type: 'dashed' },
+                data: [{ yAxis: 0 }]
+              }
+            },
+            {
+              name: '显热通量 H',
+              type: 'line',
+              data: data.h,
+              smooth: true,
+              symbol: 'none',
+              lineStyle: { width: 2.5, color: '#d0532b' },
+              areaStyle: {
+                color: 'rgba(208, 83, 43, 0.18)'
+              },
+              itemStyle: { color: '#d0532b' }
+            },
+            {
+              name: '潜热通量 LE',
+              type: 'line',
+              data: data.le,
+              smooth: true,
+              symbol: 'none',
+              lineStyle: { width: 2.5, color: '#176B82' },
+              areaStyle: {
+                color: 'rgba(23, 107, 130, 0.18)'
+              },
+              itemStyle: { color: '#176B82' }
+            },
+            {
+              name: '储热通量 ΔQs',
+              type: 'line',
+              data: data.g,
+              smooth: true,
+              symbol: 'none',
+              lineStyle: { width: 2.5, color: '#735F2A' },
+              areaStyle: {
+                color: 'rgba(115, 95, 42, 0.15)'
+              },
+              itemStyle: { color: '#735F2A' }
+            },
+            {
+              name: '人为热 Qf',
+              type: 'line',
+              data: data.qf,
+              smooth: true,
+              symbol: 'none',
+              lineStyle: { width: 2, color: '#b84318', type: 'dashed' },
+              itemStyle: { color: '#b84318' }
+            }
+          ]
+        };
+      }
+
+      myChart.setOption(getChartOption('urban'));
+
+      // DOM 读数联动
+      const btnUrban = document.getElementById('btn-urban');
+      const btnRural = document.getElementById('btn-rural');
+
+      const summaryTitle = document.getElementById('summary-title');
+      const summaryText = document.getElementById('summary-text');
+
+      const valH = document.getElementById('val-h');
+      const valLE = document.getElementById('val-le');
+      const valG = document.getElementById('val-g');
+      const valQf = document.getElementById('val-qf');
+
+      const barH = document.getElementById('bar-h');
+      const barLE = document.getElementById('bar-le');
+      const barG = document.getElementById('bar-g');
+      const barQf = document.getElementById('bar-qf');
+
+      const descH = document.getElementById('desc-h');
+      const descLE = document.getElementById('desc-le');
+      const descG = document.getElementById('desc-g');
+      const descQf = document.getElementById('desc-qf');
+
+      const inferTitle = document.getElementById('infer-title');
+      const inferText = document.getElementById('infer-text');
+
+      function updateUI(scenario) {
+        if (scenario === 'urban') {
+          btnUrban.setAttribute('aria-pressed', 'true');
+          btnRural.setAttribute('aria-pressed', 'false');
+
+          summaryTitle.textContent = '城市：显热与储热主导';
+          summaryText.textContent = '不透水下垫面切断水分供给，蒸散潜热极小；输入能量绝大部分被转化为直接加热空气的显热通量，并在高导热建筑材料中蓄积巨大储热。';
+
+          valH.textContent = '310 W/m²';
+          valLE.textContent = '65 W/m²';
+          valG.textContent = '205 W/m²';
+          valQf.textContent = '40 W/m²';
+
+          barH.style.width = '53%';
+          barLE.style.width = '11%';
+          barG.style.width = '35%';
+          barQf.style.width = '7%';
+
+          descH.textContent = '显热占比超 50%，急剧加热近地表空气边界层。';
+          descLE.textContent = '缺少绿化和地表水，蒸发蒸腾极低（Bowen比 H/LE ≈ 4.7）。';
+          descG.textContent = '混凝土、沥青与建筑物吸收并储存大量热量，形成白天蓄热。';
+          descQf.textContent = '机动车与空调排热，属于不受阳光限制的纯人为热量增量。';
+
+          inferTitle.textContent = '因果骨架：夜间热岛的决定机制';
+          inferText.textContent = '白天蓄入的 205 W/m² 储热，在日落后持续向上逆向释放（夜间 ΔQs 达 -70 W/m²），抵消了晴夜的辐射冷却，构成夜间热岛的主因。';
+        } else {
+          btnUrban.setAttribute('aria-pressed', 'false');
+          btnRural.setAttribute('aria-pressed', 'true');
+
+          summaryTitle.textContent = '乡村：潜热主导，水热循环充足';
+          summaryText.textContent = '乡村地表植被茂密、土壤含水丰富。净辐射输入的主要去向是植物蒸腾与水汽蒸发的潜热（LE），显热和土壤储热占比显著偏低。';
+
+          valH.textContent = '150 W/m²';
+          valLE.textContent = '385 W/m²';
+          valG.textContent = '95 W/m²';
+          valQf.textContent = '3 W/m²';
+
+          barH.style.width = '25%';
+          barLE.style.width = '64%';
+          barG.style.width = '16%';
+          barQf.style.width = '1%';
+
+          descH.textContent = '用于加热空气的显热不足城市的一半，空气温升温和。';
+          descLE.textContent = '蒸散潜热消耗近 65% 净辐射，水分子相变大量吸收环境热。';
+          descG.textContent = '天然土壤与草地的导热率和容积热容偏小，白天蓄热较少。';
+          descQf.textContent = '基本无高密度人工能源消耗与密集车辆排放。';
+
+          inferTitle.textContent = '因果对照：乡村夜间快速降温';
+          inferText.textContent = '由于白天蓄热量极小（不到城市的一半），日落后土壤能迅速耗尽残余热量进入有效净辐射冷却，夜间气温大幅下降。';
+        }
+        myChart.setOption(getChartOption(scenario));
+      }
+
+      btnUrban.addEventListener('click', () => {
+        if (currentScenario === 'urban') return;
+        currentScenario = 'urban';
+        updateUI('urban');
+      });
+
+      btnRural.addEventListener('click', () => {
+        if (currentScenario === 'rural') return;
+        currentScenario = 'rural';
+        updateUI('rural');
+      });
+
+      // 视口与缩放适配
+      window.addEventListener('resize', () => {
+        myChart.resize();
+      });
+      Deck.onResize(() => {
+        myChart.resize();
+      });
+    })();
+  </script>
+</body>
+</html>

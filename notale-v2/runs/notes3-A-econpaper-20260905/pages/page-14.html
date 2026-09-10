@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>设计特定诊断的证据边界</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: 38px 48px 30px;
+      box-sizing: border-box;
+      gap: 14px;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* 顶部标题区 */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 24px;
+      flex-shrink: 0;
+    }
+
+    .title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.15;
+      margin: 0;
+      letter-spacing: -0.01em;
+    }
+
+    .page-lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    .tab-nav {
+      display: flex;
+      background: var(--soft);
+      padding: 4px;
+      border-radius: var(--r-md);
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .tab-btn {
+      appearance: none;
+      border: none;
+      background: transparent;
+      padding: 8px 16px;
+      border-radius: var(--r-sm);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all var(--fast) var(--ease);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+    }
+
+    .tab-btn.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 2px 6px rgba(23, 39, 45, 0.08);
+    }
+
+    .tab-btn .badge {
+      font-family: var(--font-mono);
+      font-size: var(--fs-tick);
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(36, 90, 116, 0.1);
+      color: var(--observed);
+    }
+
+    .tab-btn.active .badge {
+      background: var(--observed);
+      color: #fff;
+    }
+
+    /* 主舞台双栏 */
+    .main-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 620px 1fr;
+      gap: 20px;
+      min-height: 0;
+    }
+
+    /* 左侧：诊断图示与数据面板 */
+    .visual-card {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 4px 14px rgba(23, 39, 45, 0.04);
+      border: 1px solid rgba(82, 102, 110, 0.12);
+      min-height: 0;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid rgba(82, 102, 110, 0.12);
+      padding-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    .diag-name {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .diag-metric {
+      font-family: var(--font-mono);
+      font-size: var(--fs-label);
+      color: var(--observed);
+      font-weight: 600;
+    }
+
+    .canvas-wrap {
+      flex: 1;
+      position: relative;
+      background: #fafcfc;
+      border-radius: var(--r-sm);
+      border: 1px solid rgba(82, 102, 110, 0.08);
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .canvas-wrap svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .metric-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--soft);
+      padding: 10px 14px;
+      border-radius: var(--r-sm);
+      font-size: var(--fs-sec);
+      color: var(--text);
+      flex-shrink: 0;
+    }
+
+    .metric-bar b {
+      font-family: var(--font-mono);
+      color: var(--supported);
+    }
+
+    /* 右侧：证据三层透视 (证明了什么 -> 排除了什么 -> 仍然无法排除什么) */
+    .boundary-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .verdict-banner {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      padding: 16px 20px;
+      border: 1px solid rgba(82, 102, 110, 0.12);
+      box-shadow: 0 4px 14px rgba(23, 39, 45, 0.04);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .verdict-left {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .verdict-tag {
+      font-size: var(--fs-tick);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: var(--observed);
+    }
+
+    .verdict-title {
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .pill-status {
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-pass {
+      background: rgba(45, 105, 76, 0.12);
+      color: var(--supported);
+    }
+
+    /* 三列证据层级卡片 */
+    .layers-container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .layer-card {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border: 1px solid rgba(82, 102, 110, 0.12);
+      box-shadow: 0 4px 12px rgba(23, 39, 45, 0.03);
+    }
+
+    .layer-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(82, 102, 110, 0.1);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dot-observed { background: var(--observed); }
+    .dot-supported { background: var(--supported); }
+    .dot-cause { background: var(--cause); }
+
+    .layer-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .layer-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-left: auto;
+    }
+
+    .layer-body {
+      flex: 1;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.52;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .layer-body p {
+      margin: 0;
+    }
+
+    .key-callout {
+      background: var(--soft);
+      padding: 10px 12px;
+      border-radius: var(--r-sm);
+      font-size: var(--fs-sec);
+      color: var(--text);
+      border: 1px solid rgba(82, 102, 110, 0.15);
+    }
+
+    .card-observed .key-callout { border-color: rgba(36, 90, 116, 0.35); background: rgba(36, 90, 116, 0.05); }
+    .card-ruled-out .key-callout { border-color: rgba(45, 105, 76, 0.35); background: rgba(45, 105, 76, 0.05); }
+    .card-threat .key-callout { border-color: rgba(177, 63, 42, 0.35); background: rgba(177, 63, 42, 0.05); }
+
+    /* 底部通用法则提炼栏 */
+    .bottom-rule {
+      background: var(--soft);
+      border-radius: var(--r-md);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-shrink: 0;
+    }
+
+    .rule-statement {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    .rule-statement strong {
+      color: var(--cause);
+    }
+
+    .rule-tip {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      white-space: nowrap;
+      font-family: var(--font-mono);
+    }
+
+    /* 交互切换动效 */
+    .tab-pane {
+      display: none;
+      height: 100%;
+    }
+    .tab-pane.active {
+      display: flex;
+    }
+
+    /* SVG 样式微调 */
+    .axis { stroke: var(--muted); stroke-width: 1.5; }
+    .grid-line { stroke: rgba(82, 102, 110, 0.15); stroke-dasharray: 4 4; }
+    .tick-label { fill: var(--muted); font-size: 13px; font-family: var(--font-mono); }
+    .plot-line { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .ci-band { fill: rgba(36, 90, 116, 0.15); }
+  </style>
+</head>
+<body data-page="14" data-total="24">
+  <main id="stage">
+    <!-- 顶部标题与设计选择切换 -->
+    <header class="top-bar">
+      <div class="title-group">
+        <h1 class="page-title">设计特定诊断的证据边界</h1>
+        <p class="page-lead">诊断检验是识别前提的必要条件而非充分条件：它能排除显性破绽，却无法直接证实核心不可观测假定。</p>
+      </div>
+      <nav class="tab-nav" role="tablist" aria-label="诊断设计选择">
+        <button class="tab-btn active" role="tab" aria-selected="true" data-tab="rct">
+          <span class="badge">RCT</span> 基线平衡检验
+        </button>
+        <button class="tab-btn" role="tab" aria-selected="false" data-tab="iv">
+          <span class="badge">IV</span> 第一阶段关联度
+        </button>
+        <button class="tab-btn" role="tab" aria-selected="false" data-tab="rdd">
+          <span class="badge">RDD</span> 驱动变量断点密度
+        </button>
+        <button class="tab-btn" role="tab" aria-selected="false" data-tab="did">
+          <span class="badge">DID</span> 事件研究事前趋势
+        </button>
+      </nav>
+    </header>
+
+    <!-- 主展示区：左侧交互/视觉图示，右侧边界透视 -->
+    <section class="main-grid">
+      <!-- 左侧：图示与诊断读数 -->
+      <article class="visual-card">
+        <div class="card-header">
+          <h2 class="diag-name" id="vis-title">基线特征平衡表</h2>
+          <span class="diag-metric" id="vis-metric">p-value &gt; 0.10 (Joint F = 0.84)</span>
+        </div>
+
+        <div class="canvas-wrap" id="canvas-container">
+          <!-- 动态装载诊断图形 -->
+          <svg id="diag-svg" viewBox="0 0 520 340">
+            <!-- 初始画 RCT 平衡性 -->
+          </svg>
+        </div>
+
+        <div class="metric-bar">
+          <span id="metric-desc">联合正交性检验：各控制变量对处理组哑变量回归</span>
+          <b id="metric-val">未见系统性差异</b>
+        </div>
+      </article>
+
+      <!-- 右侧：三层证据层级分析 -->
+      <div class="boundary-stack">
+        <div class="verdict-banner">
+          <div class="verdict-left">
+            <span class="verdict-tag" id="verdict-design">RANDOMIZED TRIAL</span>
+            <h3 class="verdict-title" id="verdict-claim">基线均值差异接近于零且统计不显著</h3>
+          </div>
+          <span class="pill-status status-pass" id="verdict-status">检验通过 · 基础证据成立</span>
+        </div>
+
+        <div class="layers-container">
+          <!-- 1. 该检验直接看到了什么 -->
+          <div class="layer-card card-observed">
+            <div class="layer-head">
+              <span class="dot dot-observed"></span>
+              <h4 class="layer-title">诊断直接观测到了什么</h4>
+              <span class="layer-sub">VISIBLE EVIDENCE</span>
+            </div>
+            <div class="layer-body" id="layer-direct">
+              <p>样本在处理实施前，已测量的协变量（年龄、教育年限、基准收入等）在处理组与对照组之间均值接近。</p>
+              <div class="key-callout" id="callout-direct">
+                标准化均值差 &lt; 0.05 个标准差，t 检验 p &gt; 0.10。
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. 能有效排除什么威胁 -->
+          <div class="layer-card card-ruled-out">
+            <div class="layer-head">
+              <span class="dot dot-supported"></span>
+              <h4 class="layer-title">确切排除了什么威胁</h4>
+              <span class="layer-sub">RULED OUT</span>
+            </div>
+            <div class="layer-body" id="layer-ruled">
+              <p>排除了随机分组程序出现严重操作失误、明显选择性样本流失或分组执行阶段的初始偏倚。</p>
+              <div class="key-callout" id="callout-ruled">
+                排除了已收集可观测维度的初始配置差异。
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. 仍然无法排除什么盲区 -->
+          <div class="layer-card card-threat">
+            <div class="layer-head">
+              <span class="dot dot-cause"></span>
+              <h4 class="layer-title">依然无法排除什么</h4>
+              <span class="layer-sub">RESIDUAL THREAT</span>
+            </div>
+            <div class="layer-body" id="layer-residual">
+              <p>未观测变量仍可能因小样本抽样偶然而不平衡；无法排除干预实施后的差异性样本损耗（Attrition）、霍桑效应与溢出效应（SUTVA 违背）。</p>
+              <div class="key-callout" id="callout-residual">
+                平衡表不能保证后续执行期没有内生行为反应。
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 底部：论文阅读法则提炼 -->
+    <footer class="bottom-rule">
+      <p class="rule-statement" id="rule-text">
+        <strong>检验阅读法则：</strong>把诊断通过视为「作者通过了入场初筛」，而不是「识别假设已被完全证实」。真正的识别威胁永远藏在诊断图表无法投射的未观测维度。
+      </p>
+      <span class="rule-tip">DIAGNOSTIC BOUNDARY RULE</span>
+    </footer>
+  </main>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const DIAG_DATA = {
+        rct: {
+          title: "基线特征平衡表（Balance Table）",
+          metric: "p-value > 0.10 (Joint F = 0.84)",
+          metricDesc: "联合正交性检验：控制变量联合预测处理哑变量",
+          metricVal: "未见显著基线偏差",
+          designTag: "RANDOMIZED EXPERIMENT",
+          verdictClaim: "各可观测基准特征在两组间无统计学差异",
+          verdictStatus: "检验通过 · 基础证据成立",
+          direct: {
+            body: "已收集的基准可观测特征（如年龄、家庭规模、基准资产、先验得分）在处理组与对照组间的标准化均值差（Normalized Difference）紧贴 0 线。",
+            callout: "逐项回归系数接近 0，且联合 F 检验无法拒绝系数全为 0 的原假设。"
+          },
+          ruled: {
+            body: "确切排除了分配算法严重失灵、执行人员违规调配分配名单、以及干预前已测变量带来的显性选择偏误。",
+            callout: "证明了至少在已知维度上，两组具有可比的基准起点。"
+          },
+          residual: {
+            body: "无法直接证明未观测变量也平衡（小样本依然存在偶然不平衡）；无法排除实验过程中的选择性失访（Selective Attrition）、霍桑效应（调查让对照组改变行为）或溢出外部性。",
+            callout: "基线平衡绝不等于实验全程满足 SUTVA 假设与无偏留存。"
+          },
+          rule: "<strong>阅读法则：</strong>见到平衡表全绿，只确认了干预前「已知起点平齐」；随后必须立刻翻看 Attrition Rate 表与溢出控制讨论。",
+          draw(svg) {
+            svg.innerHTML = `
+              <!-- 背景网格与基准线 -->
+              <line x1="120" y1="40" x2="500" y2="40" class="grid-line" />
+              <line x1="120" y1="100" x2="500" y2="100" class="grid-line" />
+              <line x1="120" y1="160" x2="500" y2="160" class="grid-line" />
+              <line x1="120" y1="220" x2="500" y2="220" class="grid-line" />
+              <line x1="120" y1="280" x2="500" y2="280" class="grid-line" />
+
+              <!-- 0 轴 (标准化均值差=0) -->
+              <line x1="310" y1="30" x2="310" y2="295" stroke="#245A74" stroke-width="2" />
+              <line x1="120" y1="295" x2="500" y2="295" class="axis" />
+
+              <!-- 刻度与标签 -->
+              <text x="310" y="318" text-anchor="middle" class="tick-label">0.0 (无差异)</text>
+              <text x="215" y="318" text-anchor="middle" class="tick-label">-0.10</text>
+              <text x="405" y="318" text-anchor="middle" class="tick-label">+0.10</text>
+              <text x="120" y="318" text-anchor="middle" class="tick-label">-0.20 SD</text>
+              <text x="500" y="318" text-anchor="middle" class="tick-label">+0.20 SD</text>
+
+              <!-- 安全区间阴影 [-0.05, +0.05] -->
+              <rect x="262" y="30" width="96" height="265" fill="#2D694C" opacity="0.08" />
+              <text x="310" y="24" text-anchor="middle" fill="#2D694C" font-size="13" font-weight="600">±0.05 SD 严格平衡带</text>
+
+              <!-- 变量项 1: 年龄 -->
+              <text x="110" y="65" text-anchor="end" class="tick-label" fill="#17272D" font-weight="600">受访者年龄</text>
+              <line x1="290" y1="60" x2="334" y2="60" stroke="#245A74" stroke-width="2.5" stroke-linecap="round" />
+              <circle cx="312" cy="60" r="4.5" fill="#245A74" />
+
+              <!-- 变量项 2: 受教育年限 -->
+              <text x="110" y="125" text-anchor="end" class="tick-label" fill="#17272D" font-weight="600">受教育年限</text>
+              <line x1="280" y1="120" x2="330" y2="120" stroke="#245A74" stroke-width="2.5" stroke-linecap="round" />
+              <circle cx="305" cy="120" r="4.5" fill="#245A74" />
+
+              <!-- 变量项 3: 基准家庭收入 -->
+              <text x="110" y="185" text-anchor="end" class="tick-label" fill="#17272D" font-weight="600">基准家庭收入</text>
+              <line x1="295" y1="180" x2="345" y2="180" stroke="#245A74" stroke-width="2.5" stroke-linecap="round" />
+              <circle cx="320" cy="180" r="4.5" fill="#245A74" />
+
+              <!-- 变量项 4: 家庭人口规模 -->
+              <text x="110" y="245" text-anchor="end" class="tick-label" fill="#17272D" font-weight="600">家庭常住人口</text>
+              <line x1="285" y1="240" x2="325" y2="240" stroke="#245A74" stroke-width="2.5" stroke-linecap="round" />
+              <circle cx="305" cy="240" r="4.5" fill="#245A74" />
+            `;
+          }
+        },
+        iv: {
+          title: "第一阶段 F 统计量检验（First-Stage F）",
+          metric: "Kleibergen-Paap F = 38.6 (> 104.7 / 10 准则)",
+          metricDesc: "工具变量 Z 预测内生处理变量 D 的偏相关强度",
+          metricVal: "通过强工具变量判定",
+          designTag: "INSTRUMENTAL VARIABLE",
+          verdictClaim: "工具变量与内生处理具有极强统计关联，排除弱工具偏误",
+          verdictStatus: "强工具 · 相关性成立",
+          direct: {
+            body: "在控制所有外生协变量后，工具变量 Z 对内生解释变量 D 的回归系数具有巨大的 t 值，第一阶段有效 F 统计量远超 Lee 等人（2022）的 t 分布临界值（104.7）或传统 Stock-Yogo 临界值（10 或 16.38）。",
+            callout: "第一阶段偏 R² = 0.18，F 统计量高达 38.6，置信区间窄而集中。"
+          },
+          ruled: {
+            body: "确切排除了「弱工具变量」导致的严重有限样本偏倚（弱工具会把 2SLS 估计值推向 OLS 偏倚），排除了 2SLS 估计标准误严重低估导致推断失效的风险。",
+            callout: "排除弱工具偏误，保证估计量的相对偏倚被严格限制在 5% 以内。"
+          },
+          residual: {
+            body: "完全无法排除排他性约束（Exclusion Restriction）的破绽：F 统计量对「Z 是否直接影响 Y」或「Z 是否通过未观测中间渠道影响 Y」没有任何检验能力。相关性检验绝不证明外生性。",
+            callout: "F 值再高，也无法排除工具变量绕过处理直接影响结果的通道。"
+          },
+          rule: "<strong>阅读法则：</strong>高 F 值只代表工具变量有资格起步。千万不要把第一阶段强显著误当成「工具变量外生」的证明；外生性全凭定性制度叙事与证伪检验。",
+          draw(svg) {
+            svg.innerHTML = `
+              <!-- 坐标系 -->
+              <line x1="70" y1="280" x2="480" y2="280" class="axis" />
+              <line x1="70" y1="40" x2="70" y2="280" class="axis" />
+
+              <text x="480" y="305" text-anchor="end" class="tick-label">第一阶段 F 统计量</text>
+              <text x="65" y="35" text-anchor="end" class="tick-label">相对偏倚上界</text>
+
+              <!-- 弱工具危险区 F < 10 -->
+              <rect x="70" y="40" width="130" height="240" fill="#B13F2A" opacity="0.12" />
+              <text x="135" y="70" text-anchor="middle" fill="#B13F2A" font-size="13" font-weight="700">弱工具高危区</text>
+              <text x="135" y="92" text-anchor="middle" fill="#B13F2A" font-size="13">2SLS 估计严重偏向 OLS</text>
+
+              <!-- Stock-Yogo 10 阈值线 -->
+              <line x1="200" y1="40" x2="200" y2="280" stroke="#B13F2A" stroke-width="1.8" stroke-dasharray="4 4" />
+              <text x="200" y="305" text-anchor="middle" class="tick-label" fill="#B13F2A">F = 10 (经验阈值)</text>
+
+              <!-- 强工具安全区 F > 10 -->
+              <rect x="200" y="40" width="280" height="240" fill="#2D694C" opacity="0.06" />
+
+              <!-- 当前论文的 F 值标注 (F=38.6) -->
+              <line x1="370" y1="40" x2="370" y2="280" stroke="#2D694C" stroke-width="2.5" />
+              <circle cx="370" cy="140" r="7" fill="#2D694C" />
+              <text x="370" y="118" text-anchor="middle" fill="#2D694C" font-size="14" font-weight="700">本篇 F = 38.6</text>
+              <text x="370" y="305" text-anchor="middle" class="tick-label" fill="#2D694C" font-weight="700">F = 38.6</text>
+
+              <!-- 偏倚曲线：随 F 上升偏倚骤降 -->
+              <path d="M 85 60 Q 140 180 200 240 T 450 270" fill="none" stroke="#245A74" stroke-width="2.5" />
+              <text x="310" y="235" fill="#245A74" font-size="13" font-weight="600">有限样本偏倚曲线 (随着 F 增加急速收敛)</text>
+            `;
+          }
+        },
+        rdd: {
+          title: "断点密度检验（McCrary Density Test）",
+          metric: "Discontinuity Estimate = 0.042 (SE = 0.055, p = 0.44)",
+          metricDesc: "驱动变量在阈值 c 处的边际概率密度连续性",
+          metricVal: "密度平滑 · 无断崖式跳跃",
+          designTag: "REGRESSION DISCONTINUITY",
+          verdictClaim: "驱动变量分布在门槛两侧平滑连续，未见策略性操纵证据",
+          verdictStatus: "密度检验通过 · 准随机局部成立",
+          direct: {
+            body: "在截断分界点 c 两侧，样本数量在微小区间内的分布密度曲线光滑衔接，左右极限高度差在统计上与 0 无异（p-value > 0.4）。",
+            callout: "McCrary 检验对数高度差估计值 θ = 0.042 (SE = 0.055)，无统计显著跳跃。"
+          },
+          ruled: {
+            body: "排除了个体对驱动变量具备「精确操纵能力」（Precise Manipulation），即个体无法自主且精准地把自己推入处理组阈值上方（例如刚好把考试成绩改到录取线以上 1 分）。",
+            callout: "排除了单向主动囤积在临界值一侧的直接违规操纵行为。"
+          },
+          residual: {
+            body: "排除了「精确操纵」，但不等于排除了「复合处理」（Compound Treatment，即阈值处同时触发了多项其他政策）；也无法排除在阈值处同时发生跳跃的其他不连续机制或局部外生冲击。",
+            callout: "密度连续无法证实「除了本政策外，该阈值处没有别的事情同时发生」。"
+          },
+          rule: "<strong>阅读法则：</strong>McCrary 检验只能保证没人能精准作弊跨线；读者仍需严防门槛处是否「搭车」了其他福利政策或制度规章。",
+          draw(svg) {
+            svg.innerHTML = `
+              <!-- 坐标系 -->
+              <line x1="60" y1="280" x2="480" y2="280" class="axis" />
+              <line x1="60" y1="40" x2="60" y2="280" class="axis" />
+
+              <text x="480" y="305" text-anchor="end" class="tick-label">驱动变量 X (分界线 c = 50)</text>
+              <text x="55" y="35" text-anchor="end" class="tick-label">样本点密度 f(X)</text>
+
+              <!-- 断点虚线 c = 50 -->
+              <line x1="270" y1="40" x2="270" y2="280" stroke="#B13F2A" stroke-width="2" stroke-dasharray="4 4" />
+              <text x="270" y="32" text-anchor="middle" fill="#B13F2A" font-size="13" font-weight="700">阈值 c = 50</text>
+
+              <!-- 左侧直方图条柱与拟合密度线 -->
+              <rect x="90" y="230" width="25" height="50" fill="#E3ECEF" stroke="#245A74" stroke-width="1" />
+              <rect x="120" y="200" width="25" height="80" fill="#E3ECEF" stroke="#245A74" stroke-width="1" />
+              <rect x="150" y="170" width="25" height="110" fill="#E3ECEF" stroke="#245A74" stroke-width="1" />
+              <rect x="180" y="140" width="25" height="140" fill="#E3ECEF" stroke="#245A74" stroke-width="1" />
+              <rect x="210" y="115" width="25" height="165" fill="#E3ECEF" stroke="#245A74" stroke-width="1" />
+              <rect x="240" y="100" width="25" height="180" fill="#E3ECEF" stroke="#245A74" stroke-width="1" />
+
+              <!-- 右侧直方图条柱 -->
+              <rect x="275" y="102" width="25" height="178" fill="#E3ECEF" stroke="#245A74" stroke-width="1" />
+              <rect x="305" y="120" width="25" height="160" fill="#E3ECEF" stroke="#245A74" stroke-width="1" />
+              <rect x="335" y="145" width="25" height="135" fill="#E3ECEF" stroke="#245A74" stroke-width="1" />
+              <rect x="365" y="175" width="25" height="105" fill="#E3ECEF" stroke="#245A74" stroke-width="1" />
+              <rect x="395" y="205" width="25" height="75" fill="#E3ECEF" stroke="#245A74" stroke-width="1" />
+              <rect x="425" y="235" width="25" height="45" fill="#E3ECEF" stroke="#245A74" stroke-width="1" />
+
+              <!-- 平滑曲线：左侧延伸到 c -->
+              <path d="M 85 240 Q 180 150 268 98" fill="none" stroke="#245A74" stroke-width="2.6" />
+              <circle cx="268" cy="98" r="4.5" fill="#245A74" />
+
+              <!-- 平滑曲线：右侧从 c 延伸 -->
+              <path d="M 272 101 Q 360 145 445 245" fill="none" stroke="#245A74" stroke-width="2.6" />
+              <circle cx="272" cy="101" r="4.5" fill="#245A74" />
+
+              <!-- 标注左右两端闭合且平滑衔接 -->
+              <line x1="268" y1="98" x2="272" y2="101" stroke="#2D694C" stroke-width="3" />
+              <text x="270" y="80" text-anchor="middle" fill="#2D694C" font-size="13" font-weight="700">高度差接近 0 (无跳跃断崖)</text>
+            `;
+          }
+        },
+        did: {
+          title: "动态事件研究图（Event Study Plot）",
+          metric: "Pre-trend Coefficients Joint Wald p = 0.62",
+          metricDesc: "干预发生前多期的滞后处理效应估计值及 95% 置信区间",
+          metricVal: "事前平行趋势成立",
+          designTag: "DIFFERENCE-IN-DIFFERENCES",
+          verdictClaim: "干预实施前处理组与对照组轨迹重合，未见预警性分流",
+          verdictStatus: "平行趋势检验通过 · 基准假定可信",
+          direct: {
+            body: "政策落地（t = 0）前所有期数（t = -4, -3, -2）的动态交互项系数全都极小，且 95% 置信区间全部覆盖 0 刻度线，联合检验无法拒绝所有 pre-coefficients 均为 0。",
+            callout: "事前系数在 0 轴上下微小摆动，无单调上升或下降先兆趋势。"
+          },
+          ruled: {
+            body: "确切排除了事前固定维度的差异性线性时间趋势（Differential Pre-trends），排除了两组早已有发散趋势而碰巧在政策期扩大的伪因果可能。",
+            callout: "排除了长期存在的历史固定分流趋势。"
+          },
+          residual: {
+            body: "彻底无法排除干预发生后同时出现的「同期外生冲击」（Concurrent Shock）；也无法保证如果干预未发生，两组在政策之后仍然能保持平行（平行反事实本质不可直接验证）。",
+            callout: "过去平行不等于未来反事实平行；更无法自动排除交错 DID 中的负权重异质性问题。"
+          },
+          rule: "<strong>阅读法则：</strong>事前平行只证明两组「昨天走在一起」，绝不能自动保证「今天不发生外部突发冲击」。必须结合安慰剂时间与控制组稳健性核查。",
+          draw(svg) {
+            svg.innerHTML = `
+              <!-- 坐标系与 0 轴 -->
+              <line x1="75" y1="160" x2="495" y2="160" stroke="#245A74" stroke-width="1.8" />
+              <line x1="75" y1="40" x2="75" y2="280" class="axis" />
+
+              <text x="495" y="152" text-anchor="end" class="tick-label">相对政策发生时间 (期)</text>
+              <text x="75" y="32" text-anchor="start" class="tick-label">效应估计值</text>
+              <text x="68" y="165" text-anchor="end" class="tick-label" font-weight="700">0.0</text>
+
+              <!-- 政策实施期竖线 t = 0 -->
+              <line x1="290" y1="40" x2="290" y2="280" stroke="#B13F2A" stroke-width="2" stroke-dasharray="4 4" />
+              <text x="290" y="32" text-anchor="middle" fill="#B13F2A" font-size="13" font-weight="700">政策落地 (t = 0)</text>
+
+              <!-- 事前区域阴影 [t < 0] -->
+              <rect x="75" y="40" width="215" height="240" fill="#2D694C" opacity="0.05" />
+              <text x="180" y="60" text-anchor="middle" fill="#2D694C" font-size="13" font-weight="700">事前平行检验区 (系数值紧贴 0)</text>
+
+              <!-- 事前点 1: t = -4 (x=115) -->
+              <line x1="115" y1="130" x2="115" y2="190" stroke="#245A74" stroke-width="2" />
+              <circle cx="115" cy="162" r="4.5" fill="#245A74" />
+              <text x="115" y="295" text-anchor="middle" class="tick-label">-4</text>
+
+              <!-- 事前点 2: t = -3 (x=158) -->
+              <line x1="158" y1="135" x2="158" y2="185" stroke="#245A74" stroke-width="2" />
+              <circle cx="158" cy="158" r="4.5" fill="#245A74" />
+              <text x="158" y="295" text-anchor="middle" class="tick-label">-3</text>
+
+              <!-- 事前点 3: t = -2 (x=202) -->
+              <line x1="202" y1="138" x2="202" y2="182" stroke="#245A74" stroke-width="2" />
+              <circle cx="202" cy="161" r="4.5" fill="#245A74" />
+              <text x="202" y="295" text-anchor="middle" class="tick-label">-2</text>
+
+              <!-- 基准期 t = -1 (x=246) -->
+              <circle cx="246" cy="160" r="5" fill="#52666E" />
+              <text x="246" y="295" text-anchor="middle" class="tick-label" fill="#52666E" font-weight="700">-1 (基准)</text>
+
+              <!-- 事后点 1: t = 0 (x=290) -->
+              <line x1="290" y1="100" x2="290" y2="140" stroke="#B13F2A" stroke-width="2" />
+              <circle cx="290" cy="120" r="4.5" fill="#B13F2A" />
+              <text x="290" y="295" text-anchor="middle" class="tick-label" fill="#B13F2A" font-weight="700">0</text>
+
+              <!-- 事后点 2: t = +1 (x=340) -->
+              <line x1="340" y1="70" x2="340" y2="115" stroke="#B13F2A" stroke-width="2" />
+              <circle cx="340" cy="92" r="4.5" fill="#B13F2A" />
+              <text x="340" y="295" text-anchor="middle" class="tick-label">+1</text>
+
+              <!-- 事后点 3: t = +2 (x=390) -->
+              <line x1="390" y1="50" x2="390" y2="98" stroke="#B13F2A" stroke-width="2" />
+              <circle cx="390" cy="74" r="4.5" fill="#B13F2A" />
+              <text x="390" y="295" text-anchor="middle" class="tick-label">+2</text>
+
+              <!-- 事后点 4: t = +3 (x=440) -->
+              <line x1="440" y1="45" x2="440" y2="90" stroke="#B13F2A" stroke-width="2" />
+              <circle cx="440" cy="68" r="4.5" fill="#B13F2A" />
+              <text x="440" y="295" text-anchor="middle" class="tick-label">+3</text>
+
+              <!-- 连线 -->
+              <path d="M 115 162 L 158 158 L 202 161 L 246 160 L 290 120 L 340 92 L 390 74 L 440 68"
+                fill="none" stroke="#245A74" stroke-width="2" stroke-dasharray="2 2" />
+            `;
+          }
+        }
+      };
+
+      const tabs = document.querySelectorAll(".tab-btn");
+      const visTitle = document.getElementById("vis-title");
+      const visMetric = document.getElementById("vis-metric");
+      const metricDesc = document.getElementById("metric-desc");
+      const metricVal = document.getElementById("metric-val");
+      const verdictDesign = document.getElementById("verdict-design");
+      const verdictClaim = document.getElementById("verdict-claim");
+      const verdictStatus = document.getElementById("verdict-status");
+
+      const layerDirect = document.getElementById("layer-direct");
+      const calloutDirect = document.getElementById("callout-direct");
+      const layerRuled = document.getElementById("layer-ruled");
+      const calloutRuled = document.getElementById("callout-ruled");
+      const layerResidual = document.getElementById("layer-residual");
+      const calloutResidual = document.getElementById("callout-residual");
+
+      const ruleText = document.getElementById("rule-text");
+      const svg = document.getElementById("diag-svg");
+
+      function updateView(key) {
+        const d = DIAG_DATA[key];
+        if (!d) return;
+
+        visTitle.textContent = d.title;
+        visMetric.textContent = d.metric;
+        metricDesc.textContent = d.metricDesc;
+        metricVal.textContent = d.metricVal;
+        verdictDesign.textContent = d.designTag;
+        verdictClaim.textContent = d.verdictClaim;
+        verdictStatus.textContent = d.verdictStatus;
+
+        layerDirect.querySelector("p").textContent = d.direct.body;
+        calloutDirect.textContent = d.direct.callout;
+
+        layerRuled.querySelector("p").textContent = d.ruled.body;
+        calloutRuled.textContent = d.ruled.callout;
+
+        layerResidual.querySelector("p").textContent = d.residual.body;
+        calloutResidual.textContent = d.residual.callout;
+
+        ruleText.innerHTML = d.rule;
+
+        d.draw(svg);
+      }
+
+      tabs.forEach(btn => {
+        btn.addEventListener("click", () => {
+          tabs.forEach(t => {
+            t.classList.remove("active");
+            t.setAttribute("aria-selected", "false");
+          });
+          btn.classList.add("active");
+          btn.setAttribute("aria-selected", "true");
+          updateView(btn.dataset.tab);
+        });
+      });
+
+      // 初始化显示 RCT
+      updateView("rct");
+
+      // 支持暴露全局状态检测
+      window.__diagState = {
+        getTab: () => document.querySelector(".tab-btn.active").dataset.tab,
+        switchTab: (tabKey) => {
+          const target = document.querySelector(`.tab-btn[data-tab="${tabKey}"]`);
+          if (target) target.click();
+        }
+      };
+
+      // 初始化底盘
+      Deck.init({ index: 14, total: 24 });
+    })();
+  </script>
+</body>
+</html>

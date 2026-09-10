@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+      padding: 48px 64px;
+      box-sizing: border-box;
+    }
+
+    header {
+      position: absolute;
+      top: 46px;
+      left: 64px;
+      right: 64px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--structure);
+    }
+
+    .subtitle {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    /* 主流程区域 */
+    .flow-stage {
+      position: absolute;
+      top: 126px;
+      left: 64px;
+      width: 1472px;
+      height: 480px;
+    }
+
+    .pipeline-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    .stage-nodes {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .node {
+      position: absolute;
+      top: 10px;
+      width: 220px;
+      text-align: center;
+    }
+
+    .node-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--structure);
+      line-height: 1.2;
+    }
+
+    .node-dim {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      margin-top: 4px;
+    }
+
+    .node-caption {
+      position: absolute;
+      top: 400px;
+      left: 0;
+      right: 0;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .node-caption b {
+      color: var(--structure);
+      font-weight: 600;
+    }
+
+    /* 底部参数对比 */
+    .param-contrast {
+      position: absolute;
+      bottom: 40px;
+      left: 64px;
+      right: 64px;
+      height: 180px;
+      border-top: 1px solid var(--rule);
+      display: grid;
+      grid-template-columns: 310px 1fr 1fr;
+      gap: 36px;
+      align-items: center;
+      padding-top: 10px;
+    }
+
+    .contrast-lead {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .contrast-title {
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      color: var(--structure);
+    }
+
+    .contrast-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .calc-card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .calc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .calc-name {
+      font-size: var(--fs-body);
+      font-weight: 600;
+    }
+
+    .calc-badge {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    .calc-bar-track {
+      width: 100%;
+      height: 14px;
+      background: rgba(186, 196, 191, 0.35);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .calc-bar-fill {
+      height: 100%;
+      background: var(--structure);
+      border-radius: 2px;
+    }
+
+    .calc-bar-fill.highlight {
+      background: var(--signal);
+    }
+
+    .calc-formula {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .calc-stat {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--structure);
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    .calc-stat.mlp-stat {
+      color: var(--signal);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>从像素到语义：LeNet 的特征分层与参数效率</h1>
+      <span class="subtitle">经典手写数字识别架构的逐层表征与参数对比</span>
+    </header>
+
+    <div class="flow-stage">
+      <canvas id="pipeline" class="pipeline-canvas"></canvas>
+
+      <div class="stage-nodes">
+        <!-- 01 输入图像 -->
+        <div class="node" style="left: 10px;">
+          <div class="node-title">输入图像</div>
+          <div class="node-dim">32×32 单通道</div>
+          <div class="node-caption">原始灰度像素</div>
+        </div>
+
+        <!-- 02 卷积特征 -->
+        <div class="node" style="left: 375px;">
+          <div class="node-title">卷积层 (C1)</div>
+          <div class="node-dim">6 通道 · 28×28</div>
+          <div class="node-caption">提取<b>边缘与线段</b>基元</div>
+        </div>
+
+        <!-- 03 池化与深层卷积 -->
+        <div class="node" style="left: 750px;">
+          <div class="node-title">池化与深层 (S2/C3)</div>
+          <div class="node-dim">16 通道 · 10×10</div>
+          <div class="node-caption">组合出<b>圆弧与轮廓</b></div>
+        </div>
+
+        <!-- 04 分类头输出 -->
+        <div class="node" style="left: 1130px;">
+          <div class="node-title">分类向量 (FC)</div>
+          <div class="node-dim">10 类语义分数</div>
+          <div class="node-caption">判定为数字 <b>3</b></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部参数效率对比 -->
+    <div class="param-contrast">
+      <div class="contrast-lead">
+        <div class="contrast-title">参数量断崖式下降</div>
+        <div class="contrast-desc">
+          全连接层破坏空间邻域并引发参数爆炸；卷积以局部连接和权值共享大幅压缩参数。
+        </div>
+      </div>
+
+      <!-- CNN C1 卷积层参数 -->
+      <div class="calc-card">
+        <div class="calc-header">
+          <span class="calc-name">LeNet C1 卷积层</span>
+          <span class="calc-badge">6 × (5×5 + 1)</span>
+        </div>
+        <div class="calc-bar-track">
+          <div class="calc-bar-fill" style="width: 4%;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <span class="calc-stat">156 <span style="font-size: var(--fs-label); font-weight: normal; color: var(--muted);">参数</span></span>
+          <span class="calc-formula">权值共享：6 组核覆盖全局</span>
+        </div>
+      </div>
+
+      <!-- 同等规模全连接层参数 -->
+      <div class="calc-card">
+        <div class="calc-header">
+          <span class="calc-name">等效全连接层</span>
+          <span class="calc-badge">1024 像素 × 4704 节点</span>
+        </div>
+        <div class="calc-bar-track">
+          <div class="calc-bar-fill highlight" style="width: 100%;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <span class="calc-stat mlp-stat">4,821,600 <span style="font-size: var(--fs-label); font-weight: normal; color: var(--muted);">参数</span></span>
+          <span class="calc-formula">参数量相差约 30,000 倍</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    这里展示经典 LeNet-5 结构：从左到右，32×32 输入图像经过 6 个卷积核提取出边缘走向等低级几何基元；随后经过下采样与深层卷积，感受野逐步增大，特征图组合出了圆弧与轮廓；展平后送入分类层，输出 10 个数字类别的置信概率。对比下方的参数量：全连接如果直接映射到等量特征节点，参数会暴增到 480 万，而卷积层仅需 156 个参数。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 17, total: 32 });
+
+      const canvas = document.getElementById("pipeline");
+      const ctx = canvas.getContext("2d");
+
+      // 手写数字 3 点阵
+      const digit3 = [
+        [0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0],
+        [0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0],
+        [0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0],
+        [0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0],
+        [0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0],
+        [0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0],
+        [0,1,1,0,0,0,0,0,0,1,1,1,0,0,0,0],
+        [0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0],
+        [0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ];
+
+      function drawDigit3(context, x, y, size) {
+        const cellSize = size / 16;
+        context.save();
+        context.fillStyle = "#ffffff";
+        context.fillRect(x, y, size, size);
+        context.strokeStyle = "#BAC4BF";
+        context.lineWidth = 1;
+        context.strokeRect(x, y, size, size);
+
+        for (let r = 0; r < 16; r++) {
+          for (let c = 0; c < 16; c++) {
+            if (digit3[r][c]) {
+              context.fillStyle = "#1C4436";
+              context.fillRect(x + c * cellSize, y + r * cellSize, cellSize, cellSize);
+            }
+          }
+        }
+        context.restore();
+      }
+
+      function drawFeatureMaps(context, startX, startY, count, mapW, mapH, offsetX, offsetY, type) {
+        context.save();
+        for (let i = 0; i < count; i++) {
+          const cx = startX + i * offsetX;
+          const cy = startY + i * offsetY;
+
+          context.fillStyle = "#ffffff";
+          context.strokeStyle = i === count - 1 ? "#1C4436" : "rgba(28, 68, 54, 0.4)";
+          context.lineWidth = i === count - 1 ? 1.5 : 1;
+
+          context.beginPath();
+          context.rect(cx, cy, mapW, mapH);
+          context.fill();
+          context.stroke();
+
+          if (type === "c1" && (i === count - 1 || i === count - 2)) {
+            context.strokeStyle = "#1C4436";
+            context.lineWidth = 2.5;
+            context.beginPath();
+            if (i % 2 === 0) {
+              context.moveTo(cx + 20, cy + 32);
+              context.lineTo(cx + mapW - 20, cy + 32);
+              context.moveTo(cx + 25, cy + 70);
+              context.lineTo(cx + mapW - 22, cy + 70);
+            } else {
+              context.moveTo(cx + mapW - 30, cy + 22);
+              context.lineTo(cx + mapW - 30, cy + mapH - 26);
+            }
+            context.stroke();
+          } else if (type === "c3" && i === count - 1) {
+            context.strokeStyle = "#1C4436";
+            context.lineWidth = 3;
+            context.beginPath();
+            context.arc(cx + mapW / 2 + 5, cy + mapH / 2 - 12, 16, -Math.PI / 2, Math.PI / 2);
+            context.arc(cx + mapW / 2 + 5, cy + mapH / 2 + 16, 18, -Math.PI / 2, Math.PI / 2);
+            context.stroke();
+          }
+        }
+        context.restore();
+      }
+
+      function drawClassificationVector(context, x, y, width) {
+        context.save();
+        const scores = [0.01, 0.02, 0.04, 0.88, 0.01, 0.01, 0.01, 0.01, 0.01, 0.0];
+        const barH = 16;
+        const gap = 5;
+
+        for (let i = 0; i < 10; i++) {
+          const cy = y + i * (barH + gap);
+          const score = scores[i];
+          const isTarget = i === 3;
+
+          context.font = isTarget ? "bold 15px sans-serif" : "13px sans-serif";
+          context.fillStyle = isTarget ? "#D43811" : "#5B6661";
+          context.textAlign = "right";
+          context.textBaseline = "middle";
+          context.fillText(i.toString(), x + 18, cy + barH / 2);
+
+          context.fillStyle = "rgba(186, 196, 191, 0.25)";
+          context.fillRect(x + 30, cy, width - 85, barH);
+
+          const fillW = (width - 85) * score;
+          context.fillStyle = isTarget ? "#D43811" : "#1C4436";
+          context.fillRect(x + 30, cy, fillW, barH);
+
+          context.font = isTarget ? "bold 13px tabular-nums" : "13px tabular-nums";
+          context.fillStyle = isTarget ? "#D43811" : "#5B6661";
+          context.textAlign = "left";
+          context.fillText((score * 100).toFixed(0) + "%", x + width - 48, cy + barH / 2);
+        }
+        context.restore();
+      }
+
+      function drawConesAndArrows(context) {
+        context.save();
+
+        // 1. 输入图 -> C1 卷积投影锥体
+        context.fillStyle = "rgba(28, 68, 54, 0.07)";
+        context.strokeStyle = "rgba(28, 68, 54, 0.35)";
+        context.lineWidth = 1;
+        context.setLineDash([4, 4]);
+
+        const kx = 42 + 75, ky = 160 + 35, kw = 32, kh = 32;
+        context.strokeRect(kx, ky, kw, kh);
+
+        const px = 405 + 65, py = 150 + 40;
+        context.beginPath();
+        context.moveTo(kx + kw, ky);
+        context.lineTo(px, py);
+        context.lineTo(kx + kw, ky + kh);
+        context.closePath();
+        context.fill();
+        context.stroke();
+
+        // 2. C1 -> C3 箭头
+        context.setLineDash([]);
+        context.strokeStyle = "rgba(28, 68, 54, 0.6)";
+        context.lineWidth = 2;
+        context.beginPath();
+        context.moveTo(605, 240);
+        context.lineTo(750, 240);
+        context.stroke();
+        context.beginPath();
+        context.fillStyle = "rgba(28, 68, 54, 0.6)";
+        context.moveTo(750, 240);
+        context.lineTo(740, 234);
+        context.lineTo(740, 246);
+        context.closePath();
+        context.fill();
+
+        // 3. C3 -> 全连接展开 箭头
+        context.beginPath();
+        context.moveTo(980, 240);
+        context.lineTo(1125, 240);
+        context.stroke();
+        context.beginPath();
+        context.moveTo(1125, 240);
+        context.lineTo(1115, 234);
+        context.lineTo(1115, 246);
+        context.closePath();
+        context.fill();
+
+        // 运算标签
+        context.font = "15px var(--font-sans, sans-serif)";
+        context.fillStyle = "#5B6661";
+        context.textAlign = "center";
+        context.fillText("5×5 卷积核滑动", 305, 205);
+        context.fillText("池化下采样 + 级联卷积", 675, 225);
+        context.fillText("Flatten 展平", 1050, 225);
+
+        context.restore();
+      }
+
+      function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 1. 输入手写数字 3
+        drawDigit3(ctx, 42, 140, 160);
+
+        // 2. C1 特征图
+        drawFeatureMaps(ctx, 390, 130, 6, 130, 130, 15, 15, "c1");
+
+        // 3. C3 特征图
+        drawFeatureMaps(ctx, 770, 140, 8, 96, 96, 11, 11, "c3");
+
+        // 4. FC 分类输出
+        drawClassificationVector(ctx, 1135, 120, 210);
+
+        // 5. 投影与箭头
+        drawConesAndArrows(ctx);
+      }
+
+      Deck.autofit(canvas, render);
+    })();
+  </script>
+</body>
+</html>

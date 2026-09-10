@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>AdaBoost 的样本权重与模型权重</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.25;
+      margin: 0;
+    }
+    .page-subtitle {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    /* 主工作台：左右双柱结构，揭示样本权重与模型权重的双重调节机制 */
+    .main-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 20px;
+      min-height: 0;
+    }
+
+    /* 左右卡片面板 */
+    .card-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+      box-shadow: 0 2px 8px rgba(18, 38, 52, 0.04);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 8px;
+    }
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+    }
+    .panel-badge {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-sans);
+    }
+
+    /* 样本演进舞台 */
+    .samples-flow-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .round-stage {
+      background: #fafcfd;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .round-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .round-title {
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* 样本点行 */
+    .sample-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 48px;
+      padding: 0 8px;
+      background: var(--surface);
+      border-radius: 4px;
+      border: 1px dashed var(--surface-strong);
+      position: relative;
+    }
+
+    .sample-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      position: relative;
+      transition: all var(--duration) var(--ease);
+    }
+
+    .sample-glyph {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      font-family: var(--font-num);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      transition: all var(--duration) var(--ease);
+    }
+
+    /* 样本标签分类 */
+    .glyph-pos {
+      background: rgba(39, 100, 143, 0.12);
+      border: 2px solid var(--model);
+      color: var(--model);
+    }
+    .glyph-neg {
+      background: rgba(195, 75, 34, 0.12);
+      border: 2px solid var(--aggregate);
+      color: var(--aggregate);
+    }
+
+    /* 误分状态高亮标记 */
+    .sample-item.misclassified .sample-glyph {
+      box-shadow: 0 0 0 3px rgba(195, 75, 34, 0.25);
+    }
+    .mis-tag {
+      position: absolute;
+      top: -14px;
+      background: var(--aggregate);
+      color: #fff;
+      font-size: 11px;
+      padding: 0 4px;
+      border-radius: 2px;
+      line-height: 14px;
+      font-weight: 600;
+    }
+
+    .weight-label {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      color: var(--muted);
+    }
+
+    /* 演进过渡带 */
+    .transition-arrow-lane {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      background: var(--surface-strong);
+      border-radius: 4px;
+      height: 38px;
+    }
+    .rule-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: var(--fs-label);
+    }
+    .rule-chip strong {
+      color: var(--text);
+    }
+
+    /* 底部机制公式解析条 */
+    .mechanism-strip {
+      background: #f8fafc;
+      border-radius: 6px;
+      border-left: 3px solid var(--sample);
+      padding: 10px 14px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    /* 右侧模型权重区 */
+    .alpha-chart-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .math-formula-box {
+      background: #f8fafc;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+    }
+
+    .chart-canvas-box {
+      flex: 1;
+      position: relative;
+      background: #fafcfd;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      min-height: 180px;
+    }
+
+    /* 交互与观察状态指示 */
+    .interactive-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #fff;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 14px;
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .slider-label {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      min-width: 140px;
+    }
+    .slider-input {
+      flex: 1;
+      cursor: pointer;
+      accent-color: var(--aggregate);
+    }
+    .slider-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      min-width: 48px;
+      text-align: right;
+    }
+
+    .status-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .stat-pill {
+      background: #f8fafc;
+      border: 1px solid var(--surface-strong);
+      border-radius: 4px;
+      padding: 6px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .stat-title {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .stat-desc {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      font-family: var(--font-num);
+    }
+
+    /* 底部集成投票公式条 */
+    .ensemble-decision-bar {
+      background: rgba(39, 100, 143, 0.06);
+      border: 1px solid rgba(39, 100, 143, 0.15);
+      border-radius: 6px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+    }
+  </style>
+</head>
+<body data-page="15" data-total="27">
+  <div id="stage">
+    <!-- 标题与导语 -->
+    <div class="header-block">
+      <h1 class="page-title">AdaBoost 的两套权重：样本注视度与模型话语权</h1>
+      <p class="page-subtitle">序列提升的核心是差异化分配精力：上一轮犯错的样本在下一轮被放大，分类误差越小的模型在最终决议中拥有更高投票权。</p>
+    </div>
+
+    <!-- 主展示区：左右双向推导 -->
+    <div class="main-grid">
+      <!-- 左栏：样本权重更新机制（从等权到焦点强化） -->
+      <div class="card-panel min0">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--sample);"></span>
+            样本分布权重 <span class="math-inline" data-math="w_{m,i}"></span>：难分样本获得焦点
+          </h2>
+          <span class="panel-badge">样本集 <span class="math-inline" data-math="N=6"></span></span>
+        </div>
+
+        <div class="samples-flow-container min0">
+          <!-- 第 1 轮状态 -->
+          <div class="round-stage">
+            <div class="round-header">
+              <span class="round-title">基学习器 <span class="math-inline" data-math="h_1"></span> 训练：均匀初始化</span>
+              <span>基准分布 <span class="math-inline" data-math="w_i = \frac{1}{6} \approx 0.167"></span></span>
+            </div>
+            <div class="sample-row" id="row-round1">
+              <!-- 6个样本初始状态 -->
+              <div class="sample-item" style="left: 0%;">
+                <div class="sample-glyph glyph-pos" style="width:28px; height:28px;">+</div>
+                <div class="weight-label">w=0.17</div>
+              </div>
+              <div class="sample-item" style="left: 0%;">
+                <div class="sample-glyph glyph-pos" style="width:28px; height:28px;">+</div>
+                <div class="weight-label">w=0.17</div>
+              </div>
+              <div class="sample-item misclassified" style="left: 0%;">
+                <span class="mis-tag">误判</span>
+                <div class="sample-glyph glyph-pos" style="width:28px; height:28px; border-color:var(--aggregate);">+</div>
+                <div class="weight-label">w=0.17</div>
+              </div>
+              <div class="sample-item" style="left: 0%;">
+                <div class="sample-glyph glyph-neg" style="width:28px; height:28px;">-</div>
+                <div class="weight-label">w=0.17</div>
+              </div>
+              <div class="sample-item misclassified" style="left: 0%;">
+                <span class="mis-tag">误判</span>
+                <div class="sample-glyph glyph-neg" style="width:28px; height:28px; border-color:var(--aggregate);">-</div>
+                <div class="weight-label">w=0.17</div>
+              </div>
+              <div class="sample-item" style="left: 0%;">
+                <div class="sample-glyph glyph-neg" style="width:28px; height:28px;">-</div>
+                <div class="weight-label">w=0.17</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 权重调整规则条 -->
+          <div class="transition-arrow-lane">
+            <div class="rule-chip">
+              <span style="color:var(--aggregate); font-weight:700;">↑ 放大权重</span>
+              <span>分类错误：乘 <span class="math-inline" data-math="e^{\alpha_m}"></span></span>
+            </div>
+            <div style="font-size:var(--fs-label); color:var(--muted); font-weight:600;">归一化重新加权</div>
+            <div class="rule-chip">
+              <span style="color:var(--sample); font-weight:700;">↓ 缩小权重</span>
+              <span>分类正确：乘 <span class="math-inline" data-math="e^{-\alpha_m}"></span></span>
+            </div>
+          </div>
+
+          <!-- 第 2 轮状态 -->
+          <div class="round-stage">
+            <div class="round-header">
+              <span class="round-title">基学习器 <span class="math-inline" data-math="h_2"></span> 训练：焦点转移</span>
+              <span>焦点向第 3、5 号难分样本倾斜</span>
+            </div>
+            <div class="sample-row" id="row-round2">
+              <div class="sample-item">
+                <div class="sample-glyph glyph-pos" style="width:20px; height:20px; font-size:11px;">+</div>
+                <div class="weight-label">w=0.08</div>
+              </div>
+              <div class="sample-item">
+                <div class="sample-glyph glyph-pos" style="width:20px; height:20px; font-size:11px;">+</div>
+                <div class="weight-label">w=0.08</div>
+              </div>
+              <div class="sample-item" style="transform: translateY(-2px);">
+                <div class="sample-glyph glyph-pos" style="width:42px; height:42px; font-size:18px; border-width:3px; background:rgba(39, 100, 143, 0.25);">+</div>
+                <div class="weight-label" style="font-weight:700; color:var(--text);">w=0.34</div>
+              </div>
+              <div class="sample-item">
+                <div class="sample-glyph glyph-neg" style="width:20px; height:20px; font-size:11px;">-</div>
+                <div class="weight-label">w=0.08</div>
+              </div>
+              <div class="sample-item" style="transform: translateY(-2px);">
+                <div class="sample-glyph glyph-neg" style="width:42px; height:42px; font-size:18px; border-width:3px; background:rgba(195, 75, 34, 0.25);">+</div>
+                <div class="weight-label" style="font-weight:700; color:var(--aggregate);">w=0.34</div>
+              </div>
+              <div class="sample-item">
+                <div class="sample-glyph glyph-neg" style="width:20px; height:20px; font-size:11px;">-</div>
+                <div class="weight-label">w=0.08</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mechanism-strip">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <strong>更新机制：</strong>
+            <span>若弱学习器误差率为 <span class="math-inline" data-math="\epsilon_m"></span>，样本更新为</span>
+            <span class="math-inline" data-math="w_{m+1, i} = \frac{w_{m, i}}{Z_m} \exp\left(-\alpha_m y_i h_m(x_i)\right)"></span>
+          </div>
+          <div style="color:var(--muted); font-size:var(--fs-label);">
+            当预测错误时 <span class="math-inline" data-math="y_i h_m(x_i) = -1"></span>，指数为正 <span class="math-inline" data-math="e^{+\alpha_m}"></span>，权重剧增；第 2 轮分类器为最小化加权误差，必须优先拟合 3、5 号样本。
+          </div>
+        </div>
+      </div>
+
+      <!-- 右栏：模型话语权函数 α_m 及其与误差率的关系 -->
+      <div class="card-panel min0">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--aggregate);"></span>
+            模型权重 <span class="math-inline" data-math="\alpha_m"></span>：按准确度分配表决票数
+          </h2>
+          <span class="panel-badge">加权投票系数</span>
+        </div>
+
+        <div class="alpha-chart-panel min0">
+          <div class="math-formula-box">
+            <div id="katex-alpha-formula"></div>
+          </div>
+
+          <!-- 交互调节滑块：探究 ε_m 与 α_m 的映射 -->
+          <div class="interactive-controls">
+            <div class="slider-row">
+              <span class="slider-label" id="label-slider">弱分类器误差率 <span class="math-inline" data-math="\epsilon_m"></span>:</span>
+              <input type="range" id="err-slider" class="slider-input" min="0.05" max="0.95" step="0.01" value="0.25">
+              <span class="slider-val" id="val-err">0.25</span>
+            </div>
+            <div class="status-summary">
+              <div class="stat-pill">
+                <span class="stat-title">模型投票话语权 <span class="math-inline" data-math="\alpha_m"></span></span>
+                <span class="stat-desc" id="val-alpha" style="color:var(--aggregate);">+0.55</span>
+              </div>
+              <div class="stat-pill">
+                <span class="stat-title">集成决策影响性质</span>
+                <span class="stat-desc" id="val-role" style="color:var(--sample);">强正向信任投票</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 动态函数曲线绘制区 -->
+          <div class="chart-canvas-box cvbox">
+            <canvas id="alpha-canvas" class="cv-fill"></canvas>
+          </div>
+        </div>
+
+        <!-- 强分类器集成公式注记 -->
+        <div class="ensemble-decision-bar">
+          <div id="katex-ensemble-formula"></div>
+          <div style="font-size:var(--fs-tick); color:var(--muted);">误差越低权重成对数级增长；<span class="math-inline" data-math="\epsilon_m=0.5"></span> 时无分类能力，对应 <span class="math-inline" data-math="\alpha_m=0"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 15, total: 27 });
+
+    // 公式渲染
+    document.querySelectorAll('.math-inline').forEach(el => {
+      katex.render(el.dataset.math, el, { throwOnError: false, displayMode: false });
+    });
+
+    katex.render("\\alpha_m = \\frac{1}{2} \\ln\\left(\\frac{1 - \\epsilon_m}{\\epsilon_m}\\right)", document.getElementById('katex-alpha-formula'), {
+      throwOnError: false,
+      displayMode: true
+    });
+
+    katex.render("H(x) = \\text{sign}\\left( \\sum_{m=1}^{M} \\alpha_m h_m(x) \\right)", document.getElementById('katex-ensemble-formula'), {
+      throwOnError: false,
+      displayMode: false
+    });
+
+    // 交互逻辑与曲线绘制
+    const slider = document.getElementById('err-slider');
+    const valErr = document.getElementById('val-err');
+    const valAlpha = document.getElementById('val-alpha');
+    const valRole = document.getElementById('val-role');
+    const canvas = document.getElementById('alpha-canvas');
+
+    let currentErr = 0.25;
+
+    function calcAlpha(eps) {
+      if (eps <= 0.001) return 3.5;
+      if (eps >= 0.999) return -3.5;
+      return 0.5 * Math.log((1 - eps) / eps);
+    }
+
+    function updateAlphaReadout(eps) {
+      currentErr = eps;
+      valErr.textContent = eps.toFixed(2);
+      const a = calcAlpha(eps);
+      valAlpha.textContent = (a >= 0 ? '+' : '') + a.toFixed(2);
+
+      if (eps < 0.2) {
+        valRole.textContent = "极高权威票 (精准)";
+        valRole.style.color = "var(--answer)";
+      } else if (eps < 0.45) {
+        valRole.textContent = "正向有效票 (显著优于随机)";
+        valRole.style.color = "var(--sample)";
+      } else if (eps <= 0.55) {
+        valRole.textContent = "弃权/接近随机猜想 (α≈0)";
+        valRole.style.color = "var(--muted)";
+      } else {
+        valRole.textContent = "反转投票 (反向采纳)";
+        valRole.style.color = "var(--aggregate)";
+      }
+      drawCurve();
+    }
+
+    slider.addEventListener('input', (e) => {
+      updateAlphaReadout(parseFloat(e.target.value));
+    });
+
+    // 绘制 α_m(ε_m) 曲线
+    function drawCurve() {
+      const ctx = Deck.fit(canvas);
+      const w = canvas.parentElement.offsetWidth;
+      const h = canvas.parentElement.offsetHeight;
+      ctx.clearRect(0, 0, w, h);
+
+      // 坐标轴边距
+      const padLeft = 45;
+      const padRight = 25;
+      const padTop = 20;
+      const padBottom = 30;
+
+      const plotW = w - padLeft - padRight;
+      const plotH = h - padTop - padBottom;
+
+      // 映射函数
+      // x: 0 -> 1
+      // y: -2.5 -> +2.5
+      const minAlpha = -2.5;
+      const maxAlpha = 2.5;
+
+      const toX = (eps) => padLeft + eps * plotW;
+      const toY = (alpha) => padTop + (maxAlpha - alpha) / (maxAlpha - minAlpha) * plotH;
+
+      // 绘制网格与基准线
+      ctx.strokeStyle = '#e2ebf0';
+      ctx.lineWidth = 1;
+
+      // 水平 α=0 轴
+      const zeroY = toY(0);
+      ctx.beginPath();
+      ctx.moveTo(padLeft, zeroY);
+      ctx.lineTo(padLeft + plotW, zeroY);
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.stroke();
+
+      // 垂直 ε=0.5 轴 (随机猜测线)
+      const halfX = toX(0.5);
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      ctx.moveTo(halfX, padTop);
+      ctx.lineTo(halfX, padTop + plotH);
+      ctx.strokeStyle = '#94a3b8';
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 坐标轴刻度文字
+      ctx.fillStyle = '#64748b';
+      ctx.font = '12px "Noto Sans SC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText('0', padLeft, padTop + plotH + 6);
+      ctx.fillText('0.5 (随机)', halfX, padTop + plotH + 6);
+      ctx.fillText('1.0', padLeft + plotW, padTop + plotH + 6);
+
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('+2', padLeft - 6, toY(2));
+      ctx.fillText('α=0', padLeft - 6, zeroY);
+      ctx.fillText('-2', padLeft - 6, toY(-2));
+
+      // 绘制 Alpha 函数曲线
+      ctx.beginPath();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = Deck.token('--model') || '#27648F';
+
+      let started = false;
+      for (let xPix = 0; xPix <= plotW; xPix += 2) {
+        const eps = (xPix / plotW);
+        if (eps <= 0.04 || eps >= 0.96) continue; // 避免奇点无穷大
+        const a = calcAlpha(eps);
+        const yPix = toY(Math.max(minAlpha, Math.min(maxAlpha, a)));
+        if (!started) {
+          ctx.moveTo(padLeft + xPix, yPix);
+          started = true;
+        } else {
+          ctx.lineTo(padLeft + xPix, yPix);
+        }
+      }
+      ctx.stroke();
+
+      // 绘制当前选中点
+      const curX = toX(currentErr);
+      const curA = calcAlpha(currentErr);
+      const curY = toY(Math.max(minAlpha, Math.min(maxAlpha, curA)));
+
+      // 引导垂线和横线
+      ctx.setLineDash([2, 2]);
+      ctx.strokeStyle = 'rgba(195, 75, 34, 0.6)';
+      ctx.beginPath();
+      ctx.moveTo(curX, zeroY);
+      ctx.lineTo(curX, curY);
+      ctx.lineTo(padLeft, curY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 当前点圆圈
+      ctx.beginPath();
+      ctx.arc(curX, curY, 6, 0, Math.PI * 2);
+      ctx.fillStyle = Deck.token('--aggregate') || '#C34B22';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // 点位文字气泡标注
+      ctx.font = 'bold 12px "Noto Sans SC", sans-serif';
+      ctx.fillStyle = Deck.token('--text') || '#122634';
+      ctx.textAlign = currentErr > 0.5 ? 'right' : 'left';
+      ctx.textBaseline = 'bottom';
+      const labelText = `ε=${currentErr.toFixed(2)}, α=${(curA>=0?'+':'')+curA.toFixed(2)}`;
+      ctx.fillText(labelText, curX + (currentErr > 0.5 ? -10 : 10), curY - 4);
+    }
+
+    // 初始化重绘
+    Deck.autofit(canvas, drawCurve);
+    updateAlphaReadout(0.25);
+  </script>
+</body>
+</html>

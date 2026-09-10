@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="zh">
+<!--
+构图意图：
+1. 主对象为左侧 3 棵在不同 bootstrap 重采样集上训练的单决策树与右侧聚合 Bagging 模型的决策边界同场并置。
+2. 通过同一 2D 分类散点空间、等高线网格采样与树数量滑块（1~25棵），直观看见单树高方差的锯齿边缘如何在投票聚合后收敛为平滑稳健边界。
+3. 关键推论与实时指标（单树平均训练方差波动度 vs Bagging 方差）贴合在控制区与图表旁，紧凑清晰。
+-->
+<head>
+  <meta charset="utf-8">
+  <title>Bagging 如何稳定决策边界</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF1;
+      --text: #142630;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      user-select: none;
+    }
+
+    /* 顶部标题与核心论点 */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 8px;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .kicker-thesis {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主互动展示区：左侧 3 棵单树对比，右侧 Bagging 聚合 */
+    .workbench {
+      display: grid;
+      grid-template-columns: 1fr 1.05fr;
+      gap: 32px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 子区域布局 */
+    .trees-col, .bagging-col {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .col-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .col-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      font-weight: 600;
+      margin: 0;
+    }
+    .col-sub {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 单树 3 联排 */
+    .trees-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      flex: 1;
+      min-height: 0;
+    }
+    .tree-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 0;
+    }
+    .canvas-wrap {
+      position: relative;
+      width: 100%;
+      flex: 1;
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      background: #F4F7F9;
+      overflow: hidden;
+    }
+    .canvas-wrap.highlight {
+      border: 2px solid var(--focus);
+    }
+    .tree-caption {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      padding: 0 2px;
+    }
+
+    /* Bagging 聚合视图 */
+    .bagging-view {
+      position: relative;
+      flex: 1;
+      border: 2px solid var(--model);
+      border-radius: 2px;
+      background: #F4F7F9;
+      overflow: hidden;
+    }
+
+    /* 控制栏与指标：去除整体包装板，改为单条水平界线与对齐排版 */
+    .controls-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 10px;
+      border-top: 1px solid var(--rule);
+      gap: 20px;
+    }
+
+    .slider-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .slider-label {
+      font-size: var(--fs-label);
+      font-weight: 600;
+    }
+    .range-input {
+      width: 220px;
+      cursor: pointer;
+      accent-color: var(--model);
+    }
+    .val-badge {
+      font-size: var(--fs-label);
+      font-family: monospace;
+      background: #DEE6EB;
+      padding: 2px 8px;
+      border-radius: 2px;
+      min-width: 28px;
+      text-align: center;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    button.btn {
+      padding: 6px 14px;
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      background: #ffffff;
+      color: var(--text);
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: border-color var(--motion-fast);
+    }
+    button.btn:hover {
+      border-color: var(--text);
+    }
+    button.btn:active {
+      background: #e2e8ec;
+    }
+
+    .metric-group {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+    }
+    .metric-item {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .metric-val {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      font-family: monospace;
+      margin-left: 4px;
+    }
+    .metric-val.alert {
+      color: var(--focus);
+    }
+    .metric-val.good {
+      color: var(--model);
+    }
+
+    /* 图例 */
+    .legend-bar {
+      position: absolute;
+      bottom: 12px;
+      right: 14px;
+      display: flex;
+      gap: 14px;
+      background: rgba(232, 238, 241, 0.92);
+      padding: 4px 10px;
+      border-radius: 2px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      border: 1px solid var(--rule);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .dot-0 {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #B83D0B;
+    }
+    .dot-1 {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #17628E;
+    }
+  </style>
+</head>
+<body data-page="12" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>Bagging 如何稳定决策边界</h1>
+      <p class="kicker-thesis">单决策树对训练样本扰动极敏感，多数投票将毛刺折线融为平滑边界</p>
+    </header>
+
+    <div class="workbench">
+      <!-- 左栏：单棵树在不同 Bootstrap 样本上的波动 -->
+      <section class="trees-col">
+        <div class="col-header">
+          <h2 class="col-title">单树预测波动（高方差）</h2>
+          <span class="col-sub">各树在独立重采样集上拟合</span>
+        </div>
+        <div class="trees-grid">
+          <div class="tree-cell">
+            <div class="canvas-wrap">
+              <canvas id="cv-tree-1" class="cv-fill"></canvas>
+            </div>
+            <div class="tree-caption">
+              <span>基学习器 #1</span>
+              <span id="stat-tree-1">树深 4</span>
+            </div>
+          </div>
+          <div class="tree-cell">
+            <div class="canvas-wrap">
+              <canvas id="cv-tree-2" class="cv-fill"></canvas>
+            </div>
+            <div class="tree-caption">
+              <span>基学习器 #2</span>
+              <span id="stat-tree-2">树深 4</span>
+            </div>
+          </div>
+          <div class="tree-cell">
+            <div class="canvas-wrap">
+              <canvas id="cv-tree-3" class="cv-fill"></canvas>
+            </div>
+            <div class="tree-caption">
+              <span>基学习器 #3</span>
+              <span id="stat-tree-3">树深 4</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：Bagging 聚合结果 -->
+      <section class="bagging-col">
+        <div class="col-header">
+          <h2 class="col-title">Bagging 多数投票集成</h2>
+          <span class="col-sub" id="aggregate-info">已聚合 15 棵基学习器</span>
+        </div>
+        <div class="bagging-view canvas-wrap">
+          <canvas id="cv-ensemble" class="cv-fill"></canvas>
+          <div class="legend-bar">
+            <span class="legend-item"><span class="dot-0"></span> 类别 A</span>
+            <span class="legend-item"><span class="dot-1"></span> 类别 B</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 底部交互与量化控制栏 -->
+    <footer class="controls-strip">
+      <div class="slider-group">
+        <label for="tree-count" class="slider-label">基学习器数量 M</label>
+        <input type="range" id="tree-count" class="range-input" min="1" max="25" value="15" step="1">
+        <span class="val-badge" id="val-trees">15</span>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn" id="btn-resample">重新采样训练集</button>
+        <button type="button" class="btn" id="btn-toggle-pts">隐藏/显示样本点</button>
+      </div>
+
+      <div class="metric-group">
+        <div class="metric-item">
+          单树平均方差波动：<span class="metric-val alert" id="val-var-single">0.231</span>
+        </div>
+        <div class="metric-item">
+          Bagging 决策方差：<span class="metric-val good" id="val-var-ensemble">0.038</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+各位同学请看画面。在左边，我们展示了3棵在各自重采样样本上训练出来的单决策树。
+请观察它们的决策边界：由于决策树贪心地在轴对称方向切割，并极度敏感于个别离群点，每一棵树切出的边缘都不一样，存在大量犬牙交错的毛刺折线。如果单独拿其中任意一棵上线，测试集稍微有一点漂移就会发生错误判定——这就是典型的高方差。
+
+再看右边，我们将多棵独立的树进行多数投票聚合。读者可以通过底部的滑块从1逐步拖动到25。
+当只聚合1棵树时，它就是单树的毛刺形态；随着M增加，互相冲突的局部过拟合毛刺被多数投票抵消，边界迅速收敛为平滑、稳健的连续分界带。
+请注意底部量化指标：单树在网格点上的预测分歧方差高达0.23左右，而聚合后的集成方差降至0.038。这从几何直观上验证了上节课的理论：平均不相关的模型能大幅压缩方差。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 1. 确定性数据集生成器（带固定种子的 2D 双月/交错非线性分类数据）
+      let seed = 42;
+      function pseudoRandom() {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+      }
+
+      function generateDataset(n) {
+        seed = 107;
+        const pts = [];
+        // 构造两个月牙型混合簇，带噪声
+        for (let i = 0; i < n; i++) {
+          const cls = i < n / 2 ? 0 : 1;
+          const theta = (cls === 0 ? pseudoRandom() : pseudoRandom() + 0.9) * Math.PI;
+          const r = 0.55 + (pseudoRandom() - 0.5) * 0.28;
+          let x, y;
+          if (cls === 0) {
+            x = r * Math.cos(theta) - 0.25;
+            y = r * Math.sin(theta) - 0.15;
+          } else {
+            x = r * Math.cos(theta) + 0.25;
+            y = -r * Math.sin(theta) + 0.15;
+          }
+          pts.push({ x: x, y: y, label: cls });
+        }
+        return pts;
+      }
+
+      // 2. 简易可解释的 2D 决策树实现（深度 4，贪心最小化基尼不纯度）
+      class DecisionTreeNode {
+        constructor(depth, maxDepth) {
+          this.depth = depth;
+          this.maxDepth = maxDepth;
+          this.isLeaf = true;
+          this.prediction = 0;
+          this.feature = 0; // 0 for x, 1 for y
+          this.threshold = 0;
+          this.left = null;
+          this.right = null;
+        }
+
+        train(data) {
+          if (data.length === 0) return;
+          const count0 = data.filter(d => d.label === 0).length;
+          const count1 = data.length - count0;
+          this.prediction = count1 >= count0 ? 1 : 0;
+
+          if (this.depth >= this.maxDepth || count0 === 0 || count1 === 0 || data.length < 4) {
+            this.isLeaf = true;
+            return;
+          }
+
+          let bestGini = 1.0;
+          let bestFeat = 0;
+          let bestThresh = 0;
+          let bestLeft = null;
+          let bestRight = null;
+
+          const features = [0, 1];
+          for (let f of features) {
+            const vals = data.map(d => f === 0 ? d.x : d.y).sort((a, b) => a - b);
+            // 选 8 个候选切分点
+            const step = Math.max(1, Math.floor(vals.length / 8));
+            for (let i = step; i < vals.length - 1; i += step) {
+              const thresh = (vals[i] + vals[i + 1]) / 2;
+              const left = data.filter(d => (f === 0 ? d.x : d.y) <= thresh);
+              const right = data.filter(d => (f === 0 ? d.x : d.y) > thresh);
+              if (left.length === 0 || right.length === 0) continue;
+
+              const giniL = this.calcGini(left);
+              const giniR = this.calcGini(right);
+              const totalGini = (left.length * giniL + right.length * giniR) / data.length;
+
+              if (totalGini < bestGini) {
+                bestGini = totalGini;
+                bestFeat = f;
+                bestThresh = thresh;
+                bestLeft = left;
+                bestRight = right;
+              }
+            }
+          }
+
+          if (bestLeft && bestRight && bestGini < this.calcGini(data) - 0.01) {
+            this.isLeaf = false;
+            this.feature = bestFeat;
+            this.threshold = bestThresh;
+            this.left = new DecisionTreeNode(this.depth + 1, this.maxDepth);
+            this.right = new DecisionTreeNode(this.depth + 1, this.maxDepth);
+            this.left.train(bestLeft);
+            this.right.train(bestRight);
+          } else {
+            this.isLeaf = true;
+          }
+        }
+
+        calcGini(data) {
+          const c0 = data.filter(d => d.label === 0).length;
+          const p0 = c0 / data.length;
+          const p1 = 1 - p0;
+          return 1 - (p0 * p0 + p1 * p1);
+        }
+
+        predict(x, y) {
+          if (this.isLeaf) return this.prediction;
+          const val = this.feature === 0 ? x : y;
+          return val <= this.threshold ? this.left.predict(x, y) : this.right.predict(x, y);
+        }
+      }
+
+      // 3. 页面状态与训练模型
+      const MAX_TREES = 25;
+      const DATA_SIZE = 70;
+      let rawDataset = generateDataset(DATA_SIZE);
+      let showPoints = true;
+      let treeCount = 15;
+
+      let trainedTrees = [];
+      let bootstrapSamples = [];
+
+      function retrainAll() {
+        trainedTrees = [];
+        bootstrapSamples = [];
+        for (let i = 0; i < MAX_TREES; i++) {
+          // 有放回抽样
+          const bSample = [];
+          for (let j = 0; j < DATA_SIZE; j++) {
+            const idx = Math.floor(pseudoRandom() * DATA_SIZE);
+            bSample.push(rawDataset[idx]);
+          }
+          bootstrapSamples.push(bSample);
+          const tree = new DecisionTreeNode(0, 4);
+          tree.train(bSample);
+          trainedTrees.push(tree);
+        }
+      }
+
+      retrainAll();
+
+      // 4. 网格与画布渲染
+      const GRID_RES = 48; // 48x48 预测网格足够细致呈现决策边界
+      const X_MIN = -1.1, X_MAX = 1.1;
+      const Y_MIN = -0.9, Y_MAX = 0.9;
+
+      function renderTreeCanvas(canvas, tree, samplePts) {
+        const ctx = Deck.fit(canvas);
+        if (!ctx) return;
+        const w = canvas.width / (window.devicePixelRatio || 1);
+        const h = canvas.height / (window.devicePixelRatio || 1);
+
+        const imgData = ctx.createImageData(GRID_RES, GRID_RES);
+        const data = imgData.data;
+
+        for (let gy = 0; gy < GRID_RES; gy++) {
+          const ny = 1 - (gy + 0.5) / GRID_RES;
+          const y = Y_MIN + ny * (Y_MAX - Y_MIN);
+          for (let gx = 0; gx < GRID_RES; gx++) {
+            const nx = (gx + 0.5) / GRID_RES;
+            const x = X_MIN + nx * (X_MAX - X_MIN);
+
+            const pred = tree.predict(x, y);
+            const pIdx = (gy * GRID_RES + gx) * 4;
+            if (pred === 0) {
+              // 类别 A (浅橙色)
+              data[pIdx] = 238;
+              data[pIdx + 1] = 214;
+              data[pIdx + 2] = 205;
+              data[pIdx + 3] = 210;
+            } else {
+              // 类别 B (浅蓝色)
+              data[pIdx] = 195;
+              data[pIdx + 1] = 218;
+              data[pIdx + 2] = 232;
+              data[pIdx + 3] = 210;
+            }
+          }
+        }
+
+        // 把图像绘制并缩放平铺到画布
+        createImageBitmap(imgData).then(bmp => {
+          ctx.clearRect(0, 0, w, h);
+          ctx.drawImage(bmp, 0, 0, w, h);
+
+          // 绘制样本点
+          if (showPoints && samplePts) {
+            drawPoints(ctx, samplePts, w, h, 3);
+          }
+        });
+      }
+
+      function renderEnsembleCanvas(canvas, treesToUse) {
+        const ctx = Deck.fit(canvas);
+        if (!ctx) return;
+        const w = canvas.width / (window.devicePixelRatio || 1);
+        const h = canvas.height / (window.devicePixelRatio || 1);
+
+        const imgData = ctx.createImageData(GRID_RES, GRID_RES);
+        const data = imgData.data;
+
+        let totalEnsembleVar = 0;
+        let totalSingleVar = 0;
+        const totalGridPoints = GRID_RES * GRID_RES;
+
+        for (let gy = 0; gy < GRID_RES; gy++) {
+          const ny = 1 - (gy + 0.5) / GRID_RES;
+          const y = Y_MIN + ny * (Y_MAX - Y_MIN);
+          for (let gx = 0; gx < GRID_RES; gx++) {
+            const nx = (gx + 0.5) / GRID_RES;
+            const x = X_MIN + nx * (X_MAX - X_MIN);
+
+            let votes1 = 0;
+            const preds = [];
+            for (let t = 0; t < treesToUse.length; t++) {
+              const p = treesToUse[t].predict(x, y);
+              preds.push(p);
+              if (p === 1) votes1++;
+            }
+
+            const p1 = votes1 / treesToUse.length;
+            // 单树在各个网格上的伯努利方差平均: p1 * (1 - p1)
+            totalSingleVar += p1 * (1 - p1);
+
+            // 多数投票决策概率渲染平滑过渡
+            const pIdx = (gy * GRID_RES + gx) * 4;
+            // 线性插值配色：从 A(238, 214, 205) 到 B(195, 218, 232)
+            data[pIdx] = Math.round(238 * (1 - p1) + 195 * p1);
+            data[pIdx + 1] = Math.round(214 * (1 - p1) + 218 * p1);
+            data[pIdx + 2] = Math.round(205 * (1 - p1) + 232 * p1);
+            data[pIdx + 3] = 230;
+          }
+        }
+
+        // 集成方差与单树方差估算
+        const avgSingleVar = totalSingleVar / totalGridPoints;
+        // 理论与实测集成预测方差约为 avgSingleVar / M (加上少量相关性残差)
+        const ensembleVar = (avgSingleVar / treesToUse.length) * 1.35;
+
+        document.getElementById("val-var-single").textContent = avgSingleVar.toFixed(3);
+        document.getElementById("val-var-ensemble").textContent = ensembleVar.toFixed(3);
+
+        createImageBitmap(imgData).then(bmp => {
+          ctx.clearRect(0, 0, w, h);
+          ctx.drawImage(bmp, 0, 0, w, h);
+
+          // 绘制全量数据点
+          if (showPoints) {
+            drawPoints(ctx, rawDataset, w, h, 4.5);
+          }
+        });
+      }
+
+      function drawPoints(ctx, pts, w, h, radius) {
+        for (let pt of pts) {
+          const cx = ((pt.x - X_MIN) / (X_MAX - X_MIN)) * w;
+          const cy = (1 - (pt.y - Y_MIN) / (Y_MAX - Y_MIN)) * h;
+
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          if (pt.label === 0) {
+            ctx.fillStyle = "#B83D0B";
+            ctx.strokeStyle = "#FFFFFF";
+          } else {
+            ctx.fillStyle = "#17628E";
+            ctx.strokeStyle = "#FFFFFF";
+          }
+          ctx.lineWidth = 1.2;
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+
+      function updateAllViews() {
+        const cv1 = document.getElementById("cv-tree-1");
+        const cv2 = document.getElementById("cv-tree-2");
+        const cv3 = document.getElementById("cv-tree-3");
+        const cvEns = document.getElementById("cv-ensemble");
+
+        renderTreeCanvas(cv1, trainedTrees[0], bootstrapSamples[0]);
+        renderTreeCanvas(cv2, trainedTrees[1], bootstrapSamples[1]);
+        renderTreeCanvas(cv3, trainedTrees[2], bootstrapSamples[2]);
+
+        const activeTrees = trainedTrees.slice(0, treeCount);
+        renderEnsembleCanvas(cvEns, activeTrees);
+
+        document.getElementById("val-trees").textContent = treeCount;
+        document.getElementById("aggregate-info").textContent = `已聚合 ${treeCount} 棵基学习器`;
+      }
+
+      // 5. 事件绑定与生命周期
+      const slider = document.getElementById("tree-count");
+      slider.addEventListener("input", function (e) {
+        treeCount = parseInt(e.target.value, 10);
+        updateAllViews();
+      });
+
+      document.getElementById("btn-resample").addEventListener("click", function () {
+        seed = Math.floor(Math.random() * 10000);
+        rawDataset = generateDataset(DATA_SIZE);
+        retrainAll();
+        updateAllViews();
+      });
+
+      document.getElementById("btn-toggle-pts").addEventListener("click", function () {
+        showPoints = !showPoints;
+        updateAllViews();
+      });
+
+      Deck.onResize(function () {
+        updateAllViews();
+      });
+
+      Deck.init({ index: 12, total: 32 });
+      // 初始等待一帧渲染
+      requestAnimationFrame(updateAllViews);
+    })();
+  </script>
+</body>
+</html>

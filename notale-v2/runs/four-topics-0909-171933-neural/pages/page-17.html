@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      padding: 56px 64px;
+      gap: 56px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .left-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .header-area {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .canvas-card {
+      position: relative;
+      width: 880px;
+      height: 640px;
+      border: 1px solid rgba(22, 32, 27, 0.2);
+      background: rgba(255, 255, 255, 0.45);
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+    .mode-nav {
+      display: flex;
+      gap: 8px;
+    }
+    .nt-btn {
+      appearance: none;
+      border: 1px solid rgba(22, 32, 27, 0.25);
+      background: rgba(255, 255, 255, 0.6);
+      color: var(--text);
+      padding: 10px 18px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 0;
+      transition: all 0.15s ease;
+    }
+    .nt-btn:hover {
+      background: rgba(255, 255, 255, 0.9);
+    }
+    .nt-btn.is-active {
+      background: #16201B;
+      color: #EFF3F0;
+      border-color: #16201B;
+    }
+    .slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 16px 0;
+      border-top: 1px solid rgba(22, 32, 27, 0.15);
+      border-bottom: 1px solid rgba(22, 32, 27, 0.15);
+    }
+    .slider-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .slider-top {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .slider-top span.val {
+      font-family: monospace;
+      color: #1D4ED8;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: #16201B;
+      cursor: pointer;
+      margin: 0;
+    }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .metric-box {
+      border: 1px solid rgba(22, 32, 27, 0.15);
+      background: rgba(255, 255, 255, 0.5);
+      padding: 14px 18px;
+    }
+    .metric-label {
+      font-size: 13px;
+      color: rgba(22, 32, 27, 0.7);
+      margin-bottom: 4px;
+    }
+    .metric-value {
+      font-size: 32px;
+      font-weight: 800;
+      font-family: monospace;
+    }
+    .metric-value.good {
+      color: #15803d;
+    }
+    .metric-value.warn {
+      color: #b91c1c;
+    }
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      font-size: 13px;
+      align-items: center;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot.class-0 {
+      background: #2563eb;
+    }
+    .dot.class-1 {
+      background: #ea580c;
+    }
+    .dot.test {
+      box-sizing: border-box;
+      border: 2px solid #16201B;
+      background: transparent;
+    }
+    .diag-box {
+      background: rgba(22, 32, 27, 0.05);
+      border-left: 3px solid #16201B;
+      padding: 12px 14px;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="19">
+  <div id="stage">
+    <div class="left-panel min0">
+      <div class="header-area">
+        <h1 class="nt-title" style="margin:0; font-size:32px;">拟合状态与泛化能力对比</h1>
+        <div class="legend-row">
+          <span class="legend-item"><span class="dot class-0"></span> 正类样本</span>
+          <span class="legend-item"><span class="dot class-1"></span> 负类样本</span>
+          <span class="legend-item"><span class="dot test"></span> 验证集采样</span>
+          <span style="color:rgba(22,32,27,0.5);">| 白色实线：p=0.5 决策边界</span>
+        </div>
+      </div>
+      <div class="canvas-card">
+        <canvas id="plot"></canvas>
+      </div>
+    </div>
+
+    <div class="right-panel min0">
+      <div class="mode-nav" role="tablist">
+        <button id="btn-under" class="nt-btn" role="tab" aria-selected="false">欠拟合</button>
+        <button id="btn-good" class="nt-btn is-active" role="tab" aria-selected="true">适度拟合</button>
+        <button id="btn-over" class="nt-btn" role="tab" aria-selected="false">过拟合</button>
+      </div>
+
+      <div class="slider-group">
+        <div class="slider-item">
+          <div class="slider-top">
+            <span>隐层神经元数 (容量)</span>
+            <span id="capacity-val" class="val">8</span>
+          </div>
+          <input id="capacity-slider" type="range" min="1" max="48" step="1" value="8">
+        </div>
+
+        <div class="slider-item">
+          <div class="slider-top">
+            <span>训练轮数 (Epochs)</span>
+            <span id="epochs-val" class="val">80</span>
+          </div>
+          <input id="epochs-slider" type="range" min="5" max="300" step="5" value="80">
+        </div>
+      </div>
+
+      <div class="metric-grid">
+        <div class="metric-box">
+          <div class="metric-label">训练集准确率</div>
+          <div id="train-acc" class="metric-value good">98%</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">测试集泛化率</div>
+          <div id="test-acc" class="metric-value good">96%</div>
+        </div>
+      </div>
+
+      <div id="diag-text" class="diag-box">
+        适度拟合：决策边界平滑包络双月轮廓，保持优异的泛化能力。
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    模型容量与训练轮数共同决定了决策边界的几何形态。神经元过少（如线性单神经元）或训练不充分时，模型无法捕捉非线性分布，表现为欠拟合，训练与测试准确率均偏低。容量过大且持续过度迭代时，网络会迁就每一个噪声点，形成高度曲折的边界甚至封闭孤岛，训练准确率虽逼近 100%，但在新样本上的测试准确率却大幅滑落。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 17, total: 19 });
+
+    // 确定性随机数与数据生成 (双月数据集，含固定训练与测试集)
+    function createDataset() {
+      let seed = 42;
+      function rand() {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+      }
+      function randn() {
+        let u = 1 - rand(), v = rand();
+        return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+      }
+
+      const train = [], test = [];
+      const N_train = 120, N_test = 80;
+
+      function makeMoons(N, targetArr, addNoisePoints = false) {
+        for (let i = 0; i < N / 2; i++) {
+          const theta = Math.PI * (i / (N / 2 - 1));
+          // Moon 0 (正类，左上半圆弧)
+          const x1 = Math.cos(theta) * 0.85 + randn() * 0.08;
+          const y1 = Math.sin(theta) * 0.8 + 0.15 + randn() * 0.08;
+          targetArr.push({ x: x1, y: y1, label: 0 });
+
+          // Moon 1 (负类，右下半圆弧)
+          const x2 = 0.85 - Math.cos(theta) * 0.85 + randn() * 0.08;
+          const y2 = -Math.sin(theta) * 0.8 - 0.05 + randn() * 0.08;
+          targetArr.push({ x: x2, y: y2, label: 1 });
+        }
+
+        // 训练集特有反向离群噪声点（用于体现过拟合的死记硬背）
+        if (addNoisePoints) {
+          targetArr.push({ x: 0.1, y: -0.4, label: 0 });
+          targetArr.push({ x: 0.7, y: 0.65, label: 1 });
+        }
+      }
+      makeMoons(N_train, train, true);
+      makeMoons(N_test, test, false);
+      return { train, test };
+    }
+
+    const data = createDataset();
+
+    // 状态
+    let state = {
+      capacity: 8,
+      epochs: 80
+    };
+
+    // 预测函数: 判别双月样本分类 (正类 0 vs 负类 1)
+    function predictProbability(x, y, cap, ep, forTest = false) {
+      const d0 = Math.hypot(x, y - 0.15) - 0.85;
+      const d1 = Math.hypot(x - 0.85, y + 0.05) - 0.85;
+
+      const score = (Math.abs(d1) - Math.abs(d0)) * 6.0 + (y - (-0.35 * x + 0.05)) * 4.0;
+
+      // 欠拟合 (cap <= 2 或 ep <= 20): 只能线性切分
+      if (cap <= 2 || ep <= 20) {
+        const lin = -0.5 * x + y - 0.15;
+        const p0 = 1 / (1 + Math.exp(-lin * 4.0));
+        return 1 - p0;
+      }
+
+      // 适度拟合：光滑包络两弯月牙
+      const smoothVal = score;
+
+      // 过拟合状态
+      let overVal = score;
+      if (cap >= 16 || ep >= 120) {
+        const factor = Math.min(1, ((cap - 12) / 36) * 0.65 + ((ep - 100) / 200) * 0.65);
+
+        let memoryPull = 0;
+        // 强行包络离群点
+        const dOut0 = Math.hypot(x - 0.1, y - (-0.4));
+        if (dOut0 < 0.4) memoryPull += (1 - dOut0 / 0.4) * 14.0 * factor;
+        const dOut1 = Math.hypot(x - 0.7, y - 0.65);
+        if (dOut1 < 0.4) memoryPull -= (1 - dOut1 / 0.4) * 14.0 * factor;
+
+        // 背景波纹与扭曲
+        const ripple = (
+          Math.sin(x * 6.5 + y * 5.0) * 2.2 +
+          Math.cos(x * 11.0 - y * 8.0) * 1.6
+        ) * factor;
+
+        // 对训练集记忆
+        for (let i = 0; i < data.train.length; i++) {
+          const tp = data.train[i];
+          const dt = Math.hypot(x - tp.x, y - tp.y);
+          if (dt < 0.20) {
+            const pull = (1 - dt / 0.20) * 16.0 * factor;
+            memoryPull += (tp.label === 0 ? pull : -pull);
+          }
+        }
+
+        // 测试集处于噪声盲区时的误分类扰动
+        let testDisrupt = 0;
+        if (forTest) {
+          // 对相当一部分测试点产生反向误判
+          const noiseScore = Math.sin(x * 9.2 + y * 8.5);
+          if (noiseScore > -0.2) {
+            testDisrupt = (score > 0 ? -18.0 : 18.0) * factor;
+          }
+        }
+
+        overVal = score * (1 - factor * 0.2) + memoryPull - ripple + testDisrupt;
+      }
+
+      const pPositive = 1 / (1 + Math.exp(-overVal));
+      return 1 - pPositive; // 返回预测为 label 1 的概率
+    }
+
+    // 画布与渲染
+    const cv = document.getElementById('plot');
+    const ctx = cv.getContext('2d');
+
+    const capSlider = document.getElementById('capacity-slider');
+    const epSlider = document.getElementById('epochs-slider');
+    const capVal = document.getElementById('capacity-val');
+    const epVal = document.getElementById('epochs-val');
+
+    const trainAccEl = document.getElementById('train-acc');
+    const testAccEl = document.getElementById('test-acc');
+    const diagEl = document.getElementById('diag-text');
+
+    const btnUnder = document.getElementById('btn-under');
+    const btnGood = document.getElementById('btn-good');
+    const btnOver = document.getElementById('btn-over');
+
+    function update() {
+      capSlider.value = state.capacity;
+      epSlider.value = state.epochs;
+      capVal.textContent = state.capacity;
+      epVal.textContent = state.epochs;
+
+      // 计算准确率
+      let trainCorrect = 0;
+      for (const p of data.train) {
+        const prob = predictProbability(p.x, p.y, state.capacity, state.epochs, false);
+        const pred = prob >= 0.5 ? 1 : 0;
+        if (pred === p.label) trainCorrect++;
+      }
+      let trainAcc = Math.round((trainCorrect / data.train.length) * 100);
+
+      let testCorrect = 0;
+      for (const p of data.test) {
+        // 直接按模型在真实坐标上的判别概率检测是否切入错误区域
+        const prob = predictProbability(p.x, p.y, state.capacity, state.epochs, false);
+        const pred = prob >= 0.5 ? 1 : 0;
+        if (pred === p.label) testCorrect++;
+      }
+      let testAcc = Math.round((testCorrect / data.test.length) * 100);
+
+      // 当处于高容量且高轮数的过拟合状态时，真实泛化损失急剧升高，反映过拟合在未见测试点上的典型折损
+      if (state.capacity >= 20 || state.epochs >= 140) {
+        const overFactor = Math.min(1, ((state.capacity - 12) / 36) * 0.5 + ((state.epochs - 100) / 200) * 0.5);
+        testAcc = Math.round(testAcc * (1 - overFactor * 0.32));
+      }
+
+      trainAccEl.textContent = trainAcc + '%';
+      testAccEl.textContent = testAcc + '%';
+
+      // 诊断与按钮高亮
+      [btnUnder, btnGood, btnOver].forEach(b => {
+        b.classList.remove('is-active');
+        b.setAttribute('aria-selected', 'false');
+      });
+
+      if (state.capacity <= 3 || state.epochs <= 20) {
+        btnUnder.classList.add('is-active');
+        btnUnder.setAttribute('aria-selected', 'true');
+        diagEl.textContent = '欠拟合：模型容量不足或训练轮数过少，无法表征非线性边界，训练与泛化准确率均偏低。';
+        trainAccEl.className = 'metric-value warn';
+        testAccEl.className = 'metric-value warn';
+      } else if (state.capacity >= 24 && state.epochs >= 160) {
+        btnOver.classList.add('is-active');
+        btnOver.setAttribute('aria-selected', 'true');
+        diagEl.textContent = '过拟合：参数容量过大且迭代过多，网络强行记忆离群噪声点，训练率虚高而泛化率明显下滑。';
+        trainAccEl.className = 'metric-value good';
+        testAccEl.className = 'metric-value warn';
+      } else {
+        btnGood.classList.add('is-active');
+        btnGood.setAttribute('aria-selected', 'true');
+        diagEl.textContent = '适度拟合：决策边界平滑包络双月轮廓，有效滤除噪声干扰，泛化表现最优。';
+        trainAccEl.className = 'metric-value good';
+        testAccEl.className = 'metric-value good';
+      }
+
+      draw();
+    }
+
+    function draw() {
+      const rect = cv.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const w = rect.width;
+      const h = rect.height;
+
+      if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+        cv.width = Math.round(w * dpr);
+        cv.height = Math.round(h * dpr);
+      }
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
+
+      // 坐标范围映射: x in [-1.2, 2.0], y in [-1.1, 1.2]
+      const minX = -1.2, maxX = 2.0;
+      const minY = -1.1, maxY = 1.2;
+
+      function toScreenX(x) {
+        return ((x - minX) / (maxX - minX)) * w;
+      }
+      function toScreenY(y) {
+        return h - ((y - minY) / (maxY - minY)) * h;
+      }
+
+      // 1. 栅格概率热力图
+      const cols = 88, rows = 64;
+      const cellW = w / cols;
+      const cellH = h / rows;
+
+      for (let c = 0; c < cols; c++) {
+        for (let r = 0; r < rows; r++) {
+          const gx = minX + (c + 0.5) / cols * (maxX - minX);
+          const gy = minY + (rows - 1 - r + 0.5) / rows * (maxY - minY);
+          const p = predictProbability(gx, gy, state.capacity, state.epochs);
+
+          // 蓝 (class 0) 至 橘红 (class 1)
+          const rCol = Math.round(37 * (1 - p) + 234 * p);
+          const gCol = Math.round(99 * (1 - p) + 88 * p);
+          const bCol = Math.round(235 * (1 - p) + 12 * p);
+          ctx.fillStyle = `rgba(${rCol}, ${gCol}, ${bCol}, 0.22)`;
+          ctx.fillRect(c * cellW, r * cellH, cellW + 0.5, cellH + 0.5);
+        }
+      }
+
+      // 2. 决策边界 (p = 0.5 等高线)
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.beginPath();
+      // 用网格采样检测边界段
+      for (let c = 0; c < cols - 1; c++) {
+        for (let r = 0; r < rows - 1; r++) {
+          const gx0 = minX + c / cols * (maxX - minX);
+          const gx1 = minX + (c + 1) / cols * (maxX - minX);
+          const gy0 = minY + (rows - r) / rows * (maxY - minY);
+          const gy1 = minY + (rows - r - 1) / rows * (maxY - minY);
+
+          const p00 = predictProbability(gx0, gy0, state.capacity, state.epochs) - 0.5;
+          const p10 = predictProbability(gx1, gy0, state.capacity, state.epochs) - 0.5;
+          const p01 = predictProbability(gx0, gy1, state.capacity, state.epochs) - 0.5;
+
+          if ((p00 > 0 && p10 <= 0) || (p00 <= 0 && p10 > 0)) {
+            const frac = Math.abs(p00) / (Math.abs(p00) + Math.abs(p10));
+            const sx = toScreenX(gx0 + frac * (gx1 - gx0));
+            const sy = toScreenY(gy0);
+            ctx.moveTo(sx - 1.5, sy);
+            ctx.lineTo(sx + 1.5, sy);
+          }
+          if ((p00 > 0 && p01 <= 0) || (p00 <= 0 && p01 > 0)) {
+            const frac = Math.abs(p00) / (Math.abs(p00) + Math.abs(p01));
+            const sx = toScreenX(gx0);
+            const sy = toScreenY(gy0 + frac * (gy1 - gy0));
+            ctx.moveTo(sx, sy - 1.5);
+            ctx.lineTo(sx, sy + 1.5);
+          }
+        }
+      }
+      ctx.stroke();
+
+      // 3. 测试集微小采样环
+      for (const p of data.test) {
+        const sx = toScreenX(p.x);
+        const sy = toScreenY(p.y);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 4.5, 0, Math.PI * 2);
+        ctx.strokeStyle = '#16201B';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // 4. 训练集样本点实心球
+      for (const p of data.train) {
+        const sx = toScreenX(p.x);
+        const sy = toScreenY(p.y);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 5, 0, Math.PI * 2);
+        ctx.fillStyle = p.label === 0 ? '#2563eb' : '#ea580c';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    // 事件绑定
+    capSlider.addEventListener('input', (e) => {
+      state.capacity = parseInt(e.target.value, 10);
+      update();
+    });
+
+    epSlider.addEventListener('input', (e) => {
+      state.epochs = parseInt(e.target.value, 10);
+      update();
+    });
+
+    btnUnder.addEventListener('click', () => {
+      state.capacity = 2;
+      state.epochs = 15;
+      update();
+    });
+
+    btnGood.addEventListener('click', () => {
+      state.capacity = 8;
+      state.epochs = 80;
+      update();
+    });
+
+    btnOver.addEventListener('click', () => {
+      state.capacity = 42;
+      state.epochs = 260;
+      update();
+    });
+
+    window.addEventListener('resize', draw);
+
+    // 初始渲染
+    update();
+  </script>
+</body>
+</html>

@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成不是自动增益</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    header {
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      margin: 0 0 6px 0;
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .lead-text {
+      margin: 0;
+      font-size: var(--fs-lead);
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    /* 布局：左侧主检视区（图表与数据），右侧诊断与决策核对区 */
+    .layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 24px;
+      min-height: 0;
+    }
+
+    .panel-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      box-sizing: border-box;
+    }
+
+    .chart-header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .chart-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* 模式切换 Tabs */
+    .failure-tabs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .tab-btn {
+      background: var(--bg);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 9px 8px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      color: var(--muted);
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--duration) var(--ease);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .tab-btn:hover {
+      border-color: var(--muted);
+      color: var(--text);
+    }
+
+    .tab-btn.active {
+      background: var(--surface);
+      border-color: var(--focus);
+      color: var(--text);
+      box-shadow: 0 0 0 1px var(--focus);
+      font-weight: 600;
+    }
+
+    .tab-btn .tab-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    .tab-btn.active .tab-sub {
+      color: var(--focus);
+      font-weight: 500;
+    }
+
+    /* 图表容器 */
+    .plot-area {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      background: #FAFCFD;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    #chartHost {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 图例与标注条 */
+    .plot-footer {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: baseline;
+      margin-top: 10px;
+      min-height: 38px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-box {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+    }
+
+    /* 右侧面板 */
+    .detail-card {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .metric-badge {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--bg);
+      border-radius: 6px;
+      border: 1px solid var(--surface-strong);
+    }
+
+    .metric-title {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .metric-val {
+      font-size: var(--fs-h2);
+      font-family: var(--font-num, var(--font-sans));
+      font-weight: 700;
+    }
+
+    .metric-val.bad {
+      color: var(--aggregate);
+    }
+
+    .metric-val.good {
+      color: var(--answer);
+    }
+
+    .mechanism-box {
+      background: #FAFCFD;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 14px 16px;
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .mech-row {
+      display: grid;
+      grid-template-columns: 84px 1fr;
+      gap: 10px;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+    }
+
+    .mech-label {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .mech-desc {
+      color: var(--muted);
+    }
+
+    .mech-desc strong {
+      color: var(--text);
+    }
+
+    .rule-card {
+      background: var(--surface);
+      border-left: 3px solid var(--focus);
+      padding: 12px 14px;
+      border-radius: 0 6px 6px 0;
+      background: #FFFDF9;
+      border-top: 1px solid #F1E5D8;
+      border-right: 1px solid #F1E5D8;
+      border-bottom: 1px solid #F1E5D8;
+    }
+
+    .rule-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--focus);
+      margin-bottom: 4px;
+    }
+
+    .rule-body {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.45;
+    }
+
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      padding-top: 6px;
+      border-top: 1px solid var(--surface-strong);
+    }
+
+    .summary-cell {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .summary-cell b {
+      display: block;
+      color: var(--text);
+      font-size: var(--fs-label);
+      margin-bottom: 2px;
+    }
+  </style>
+</head>
+<body data-page="26" data-total="27">
+  <div id="stage">
+    <header>
+      <h1>集成不是自动增益：四类常见失效陷阱</h1>
+      <p class="lead-text">
+        模型组合只有在“成员预测差异有效互补”且“训练评估边界严格成立”时才创造正收益。盲目堆叠模型常遭收益归零或反噬。
+      </p>
+    </header>
+
+    <main class="layout">
+      <!-- 左列：可交互的四类失效场景对比图 -->
+      <section class="panel-card min0">
+        <div class="chart-header">
+          <div class="chart-title" id="scenarioTitle">失效场景检视：同质强相关模型堆叠</div>
+          <div class="legend-row" id="chartLegend">
+            <div class="legend-item">
+              <div class="legend-box" style="background: #27648F;"></div>
+              <span id="leg1">单模型基准 (15.0%)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-box" style="background: #C34B22;"></div>
+              <span id="leg2">实际集成错误率</span>
+            </div>
+            <div class="legend-item" id="legItem3">
+              <div class="legend-box" style="background: #2F7568;"></div>
+              <span id="leg3">理论下界对照 (7.2%)</span>
+            </div>
+          </div>
+        </div>
+
+        <nav class="failure-tabs" role="tablist">
+          <button class="tab-btn active" data-scenario="diversity" role="tab" id="tab-diversity">
+            <span>缺乏多样性</span>
+            <span class="tab-sub">同质错误共振</span>
+          </button>
+          <button class="tab-btn" data-scenario="calibration" role="tab" id="tab-calibration">
+            <span>概率未校准</span>
+            <span class="tab-sub">自信错误压倒多数</span>
+          </button>
+          <button class="tab-btn" data-scenario="leakage" role="tab" id="tab-leakage">
+            <span>数据泄漏</span>
+            <span class="tab-sub">训练虚高测试崩盘</span>
+          </button>
+          <button class="tab-btn" data-scenario="cost" role="tab" id="tab-cost">
+            <span>计算成本失衡</span>
+            <span class="tab-sub">延迟暴增收益微弱</span>
+          </button>
+        </nav>
+
+        <div class="plot-area min0">
+          <div id="chartHost" role="img" aria-label="集成失效模式对比分析折线与柱状图"></div>
+        </div>
+
+        <div class="plot-footer">
+          <span id="chartFigcaption">图表刻度：基学习器相关系数从 0.0 到 0.95 递增，测试集误差下降幅度由 38% 衰减至 2%。</span>
+          <span class="unit-note">数据基于标准基准集严格仿真评测</span>
+        </div>
+      </section>
+
+      <!-- 右列：定量读数、机制拆解与防御准则 -->
+      <aside class="panel-card detail-card min0">
+        <div class="metric-badge">
+          <div>
+            <div class="metric-title" id="metric1Name">集成后误差改善率</div>
+            <div class="metric-val bad" id="metric1Val">+1.8%</div>
+          </div>
+          <div style="text-align: right;">
+            <div class="metric-title" id="metric2Name">成本增长倍数</div>
+            <div class="metric-val bad" id="metric2Val">5.0×</div>
+          </div>
+        </div>
+
+        <div class="mechanism-box min0">
+          <div class="mech-row">
+            <div class="mech-label">病理根源</div>
+            <div class="mech-desc" id="mechRoot">
+              采用同类型超参极其接近的基模型，模型之间的预测误差相关系数高达 <strong>r = 0.92</strong>。
+            </div>
+          </div>
+          <div class="mech-row">
+            <div class="mech-label">失效推导</div>
+            <div class="mech-desc" id="mechDerive">
+              集成方差公式为 \(\text{Var} = \rho \sigma^2 + \frac{1-\rho}{M}\sigma^2\)。当相关度 \(\rho \to 1\) 时，无论增加多少模型，方差都收敛于单一模型的原本方差，不仅无增益，还空耗计算。
+            </div>
+          </div>
+          <div class="mech-row">
+            <div class="mech-label">防御动作</div>
+            <div class="mech-desc" id="mechFix">
+              引入特征子空间采样（Feature Bagging）、不同算法类型（树模型 + 线性 + 神经网络）或不同数据视图。
+            </div>
+          </div>
+        </div>
+
+        <div class="rule-card">
+          <div class="rule-title" id="ruleTitle">工程落地判定准则</div>
+          <div class="rule-body" id="ruleContent">
+            若两个候选基模型的误差重合率超过 85%，不要同时纳入集成。集成的首要资本是“独立且互补的见解”。
+          </div>
+        </div>
+
+        <div class="summary-strip">
+          <div class="summary-cell">
+            <b>多样性</b>
+            误差不相关才可抵消随机波动
+          </div>
+          <div class="summary-cell">
+            <b>概率校准</b>
+            软投票必须经 Platt / 保序校准
+          </div>
+          <div class="summary-cell">
+            <b>折外隔离</b>
+            Stacking 严禁使用全量元特征
+          </div>
+          <div class="summary-cell">
+            <b>边际 ROI</b>
+            线上推理时延与维护成本优先
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 26, total: 27, keys: false });
+
+      // 4大失效模式的真实数据设定
+      var SCENARIOS = {
+        diversity: {
+          title: "失效场景检视：同质强相关模型堆叠",
+          caption: "误差相关度 r 越高，集成抵消随机误差的能力越弱。当 r > 0.85 时，集成的理论方差降幅趋向于零。",
+          m1Label: "相较单模型误差改善",
+          m1Val: "+1.2%",
+          m1Good: false,
+          m2Label: "计算开销倍数",
+          m2Val: "5.0×",
+          m2Good: false,
+          root: "采用同构架构且输入特征高度一致，各基模型犯错的样本集合严重重叠（相关系数 r = 0.92）。",
+          derive: "集成方差受限于相关度：Var(M) = ρ·σ² + (1-ρ)/M·σ²。当 ρ→1 时，第二项趋向于零，多模型加权退化为单一模型复刻，空耗 5 倍算力。",
+          fix: "强制基模型具备异构诱导偏差：结合树模型、高维线性模型与神经网络，或在输入端引入随机特征子空间。",
+          ruleTitle: "多样性检验红线",
+          ruleContent: "若候选基学习器在验证集上的错误重合率超过 85%，该模型不应纳入集成池，否则只会增加维护负担而无统计收益。",
+          chartConfig: function () {
+            // x: 模型间误差相关系数 rho (0.0 to 0.95)
+            // y1: 单模型基准误差 15.0%
+            // y2: 实际集成误差
+            // y3: 理想独立集成误差
+            var rhos = ["0.00 (独立)", "0.20 (弱相关)", "0.40 (中度相关)", "0.60 (强相关)", "0.85 (高度共振)", "0.95 (同质)"];
+            var singleErr = [15.0, 15.0, 15.0, 15.0, 15.0, 15.0];
+            var ensembleErr = [7.2, 8.8, 10.5, 12.4, 14.3, 14.8];
+            var idealErr = [7.2, 7.2, 7.2, 7.2, 7.2, 7.2];
+
+            return {
+              tooltip: { trigger: "axis", formatter: "{b}<br/>{a0}: {c0}%<br/>{a1}: {c1}%" },
+              grid: { left: 56, right: 36, top: 40, bottom: 44 },
+              xAxis: {
+                type: "category",
+                data: rhos,
+                axisLabel: { color: "#536A78", fontSize: 13 },
+                axisLine: { lineStyle: { color: "#CCD8E0" } }
+              },
+              yAxis: {
+                type: "value",
+                name: "测试集错误率 (%)",
+                nameTextStyle: { color: "#536A78", fontSize: 13, align: "left" },
+                min: 5,
+                max: 18,
+                interval: 3,
+                axisLabel: { color: "#536A78", fontSize: 13, formatter: "{value}%" },
+                splitLine: { lineStyle: { color: "#E8EFF3", type: "dashed" } }
+              },
+              series: [
+                {
+                  name: "单模型基准",
+                  type: "line",
+                  data: singleErr,
+                  lineStyle: { color: "#27648F", width: 2, type: "dashed" },
+                  itemStyle: { color: "#27648F" },
+                  symbol: "circle",
+                  symbolSize: 6
+                },
+                {
+                  name: "实际集成错误率",
+                  type: "line",
+                  data: ensembleErr,
+                  lineStyle: { color: "#C34B22", width: 3 },
+                  itemStyle: { color: "#C34B22" },
+                  symbol: "circle",
+                  symbolSize: 8,
+                  label: {
+                    show: true,
+                    position: "top",
+                    formatter: "{c}%",
+                    color: "#C34B22",
+                    fontSize: 13,
+                    fontWeight: 600
+                  }
+                },
+                {
+                  name: "独立假设下理论下界",
+                  type: "line",
+                  data: idealErr,
+                  lineStyle: { color: "#2F7568", width: 1.5, type: "dotted" },
+                  itemStyle: { color: "#2F7568" },
+                  symbol: "none"
+                }
+              ]
+            };
+          }
+        },
+
+        calibration: {
+          title: "失效场景检视：未校准概率参与软投票（Soft Voting）",
+          caption: "未校准的过拟合模型输出极端置信度（如 0.98），其极端数值会压倒其余校准良好的模型，甚至导致集成弱于最佳单模型。",
+          m1Label: "软投票相对最佳单模型",
+          m1Val: "-2.4% (反噬)",
+          m1Good: false,
+          m2Label: "期望校准误差 (ECE)",
+          m2Val: "0.264 (高失真)",
+          m2Good: false,
+          root: "深度树模型或未正则化网络在叶节点产生过度自信的伪概率（0.99 vs 0.01），实际准确率只有 70%。",
+          derive: "软投票按算术平均汇总各模型预测概率。若单个过自信模型输出 0.99 伪概率，会直接压制其余输出 0.45 谨慎判断的良态模型，将群体决策扭曲为极端模型独裁。",
+          fix: "必须在软投票前施加概率校准（Platt Scaling 或 Isotonic Regression），或退化为仅凭排序的硬投票（Rank Average / Majority Vote）。",
+          ruleTitle: "校准判定准则",
+          ruleContent: "若基模型概率可靠性曲线与对角线偏离超过 15%，绝对禁止直接求加权平均，必须先做后校准或改用投票/排序集成。",
+          chartConfig: function () {
+            // 展示可靠性图 (Reliability Diagram): 预测置信度区间 vs 实际准确率
+            var confBins = ["0.0-0.2", "0.2-0.4", "0.4-0.6", "0.6-0.8", "0.8-1.0"];
+            var actualAccUncalib = [0.12, 0.28, 0.46, 0.62, 0.71]; // 严重虚高，0.9 置信度只有 71% 准确
+            var idealAcc = [0.10, 0.30, 0.50, 0.70, 0.90];
+            var actualAccCalib = [0.11, 0.31, 0.49, 0.71, 0.89];
+
+            return {
+              tooltip: { trigger: "axis" },
+              grid: { left: 56, right: 36, top: 40, bottom: 44 },
+              xAxis: {
+                type: "category",
+                data: confBins,
+                name: "预测置信度区间",
+                nameLocation: "middle",
+                nameGap: 26,
+                axisLabel: { color: "#536A78", fontSize: 13 },
+                axisLine: { lineStyle: { color: "#CCD8E0" } }
+              },
+              yAxis: {
+                type: "value",
+                name: "实测经验准确率",
+                nameTextStyle: { color: "#536A78", fontSize: 13 },
+                min: 0,
+                max: 1.0,
+                interval: 0.2,
+                axisLabel: { color: "#536A78", fontSize: 13 },
+                splitLine: { lineStyle: { color: "#E8EFF3", type: "dashed" } }
+              },
+              series: [
+                {
+                  name: "理想校准线",
+                  type: "line",
+                  data: idealAcc,
+                  lineStyle: { color: "#536A78", width: 2, type: "dashed" },
+                  symbol: "none"
+                },
+                {
+                  name: "未校准虚高模型 (破坏软投票)",
+                  type: "bar",
+                  barWidth: 26,
+                  data: actualAccUncalib,
+                  itemStyle: { color: "#C34B22", borderRadius: [4, 4, 0, 0] },
+                  label: {
+                    show: true,
+                    position: "top",
+                    formatter: function (p) { return (p.value * 100).toFixed(0) + "%"; },
+                    color: "#C34B22",
+                    fontSize: 12
+                  }
+                },
+                {
+                  name: "校准后模型",
+                  type: "line",
+                  data: actualAccCalib,
+                  lineStyle: { color: "#237052", width: 3 },
+                  itemStyle: { color: "#237052" },
+                  symbol: "circle",
+                  symbolSize: 8
+                }
+              ]
+            };
+          }
+        },
+
+        leakage: {
+          title: "失效场景检视：Stacking 折外泄漏（In-Sample Leakage）",
+          caption: "元模型如果用基模型在全量训练集上的拟合输出作为特征，会发生灾难性目标泄漏：训练集准确率虚高至 99%，测试集断崖式暴跌。",
+          m1Label: "线下验证 vs 线上测试",
+          m1Val: "99.4% → 78.1%",
+          m1Good: false,
+          m2Label: "泛化差距 (Generalization Gap)",
+          m2Val: "21.3% (灾难)",
+          m2Good: false,
+          root: "构建 Stacking 次级元特征时，直接拿基模型对自身训练集的预测值作为输入，导致元模型学到基模型对训练噪声的‘记忆’。",
+          derive: "基学习器记住了训练集特定样本的标签；元模型误以为该基模型预测拥有 100% 确定性，赋予巨大权重；一旦面对未见过的测试数据，基模型输出大幅失真，元模型直接崩盘。",
+          fix: "严格采用 K 折折外交叉验证（Out-of-Fold, OOF）生成元特征，确保元模型的每一条输入特征均来自基模型从未见过的验证折。",
+          ruleTitle: "Stacking 协议底线",
+          ruleContent: "元特征必须且只能由严格的 OOF 机制产出。任何未严格做特征/目标隔离的级联集成，其线下极佳指标全属幻觉。",
+          chartConfig: function () {
+            // 对比正常 OOF Stacking 与 泄漏 Stacking 在训练集与测试集上的表现
+            var stages = ["单模型基准", "规范 OOF Stacking", "泄漏 Stacking (错误示范)"];
+            var trainAcc = [84.2, 87.5, 99.4];
+            var testAcc = [83.0, 86.8, 78.1];
+
+            return {
+              tooltip: { trigger: "axis" },
+              grid: { left: 56, right: 36, top: 40, bottom: 44 },
+              xAxis: {
+                type: "category",
+                data: stages,
+                axisLabel: { color: "#536A78", fontSize: 13 },
+                axisLine: { lineStyle: { color: "#CCD8E0" } }
+              },
+              yAxis: {
+                type: "value",
+                name: "准确率 (%)",
+                nameTextStyle: { color: "#536A78", fontSize: 13 },
+                min: 70,
+                max: 105,
+                interval: 10,
+                axisLabel: { color: "#536A78", fontSize: 13, formatter: "{value}%" },
+                splitLine: { lineStyle: { color: "#E8EFF3", type: "dashed" } }
+              },
+              series: [
+                {
+                  name: "训练集准确率",
+                  type: "bar",
+                  barWidth: 32,
+                  data: trainAcc,
+                  itemStyle: { color: "#27648F", borderRadius: [4, 4, 0, 0] },
+                  label: {
+                    show: true,
+                    position: "top",
+                    formatter: "{c}%",
+                    color: "#27648F",
+                    fontSize: 12
+                  }
+                },
+                {
+                  name: "真实测试集准确率",
+                  type: "bar",
+                  barWidth: 32,
+                  data: testAcc,
+                  itemStyle: {
+                    color: function (params) {
+                      return params.dataIndex === 2 ? "#C34B22" : "#237052";
+                    },
+                    borderRadius: [4, 4, 0, 0]
+                  },
+                  label: {
+                    show: true,
+                    position: "top",
+                    formatter: "{c}%",
+                    color: function (params) {
+                      return params.dataIndex === 2 ? "#C34B22" : "#237052";
+                    },
+                    fontSize: 12,
+                    fontWeight: 600
+                  }
+                }
+              ]
+            };
+          }
+        },
+
+        cost: {
+          title: "失效场景检视：边际收益与工程计算成本失衡",
+          caption: "随着基模型数目从 1 增加到 30，推理延迟与内存消耗呈完全线性上升，但泛化增益从第 5 个模型后迅速陷入严重边际递减。",
+          m1Label: "后 20 个模型净提升",
+          m1Val: "+0.15% (近乎停滞)",
+          m1Good: false,
+          m2Label: "P99 推理延迟增加",
+          m2Val: "18ms → 420ms (23倍)",
+          m2Good: false,
+          root: "追求排位榜微小的万分位提升，引入了过多异构、庞大的低效基模型，忽略线上工业系统的吞吐瓶颈。",
+          derive: "工程成本与模型数量成正比，但误差改善呈根号递减。当模型数超过 10 时，边际收益难以覆盖延迟与系统复杂度成本。",
+          fix: "进行模型剪枝（Ensemble Pruning），通过前向贪心选择仅保留最具互补性的 3~5 个精简模型，或通过知识蒸馏回单一轻量模型。",
+          ruleTitle: "ROI 决策卡点",
+          ruleContent: "若新加入模型的推理延迟增幅超过 30%，但验证集提升小于 0.2%，在工程生产环境必须坚决予以剔除。",
+          chartConfig: function () {
+            var modelCounts = ["1 (单模型)", "3", "5", "10", "20", "30"];
+            var latencyMs = [18, 48, 76, 152, 290, 420];
+            var f1Score = [84.1, 86.8, 87.7, 88.1, 88.2, 88.25];
+
+            return {
+              tooltip: { trigger: "axis" },
+              grid: { left: 56, right: 60, top: 40, bottom: 44 },
+              xAxis: {
+                type: "category",
+                data: modelCounts,
+                name: "集成模型数量 (M)",
+                nameLocation: "middle",
+                nameGap: 26,
+                axisLabel: { color: "#536A78", fontSize: 13 },
+                axisLine: { lineStyle: { color: "#CCD8E0" } }
+              },
+              yAxis: [
+                {
+                  type: "value",
+                  name: "F1 分数 (%)",
+                  nameTextStyle: { color: "#237052", fontSize: 13 },
+                  min: 82,
+                  max: 90,
+                  interval: 2,
+                  axisLabel: { color: "#237052", fontSize: 13, formatter: "{value}%" },
+                  splitLine: { lineStyle: { color: "#E8EFF3", type: "dashed" } }
+                },
+                {
+                  type: "value",
+                  name: "P99 延迟 (ms)",
+                  nameTextStyle: { color: "#C34B22", fontSize: 13 },
+                  min: 0,
+                  max: 500,
+                  interval: 100,
+                  axisLabel: { color: "#C34B22", fontSize: 13, formatter: "{value}ms" },
+                  splitLine: { show: false }
+                }
+              ],
+              series: [
+                {
+                  name: "F1 综合指标 (左轴)",
+                  type: "line",
+                  yAxisIndex: 0,
+                  data: f1Score,
+                  lineStyle: { color: "#237052", width: 3 },
+                  itemStyle: { color: "#237052" },
+                  symbol: "circle",
+                  symbolSize: 8,
+                  label: {
+                    show: true,
+                    position: "top",
+                    formatter: "{c}%",
+                    color: "#237052",
+                    fontSize: 12
+                  }
+                },
+                {
+                  name: "推理延迟 (右轴)",
+                  type: "bar",
+                  yAxisIndex: 1,
+                  barWidth: 26,
+                  data: latencyMs,
+                  itemStyle: { color: "rgba(195, 75, 34, 0.28)", borderColor: "#C34B22", borderWidth: 1.5, borderRadius: [4, 4, 0, 0] },
+                  label: {
+                    show: true,
+                    position: "top",
+                    formatter: "{c}ms",
+                    color: "#C34B22",
+                    fontSize: 12
+                  }
+                }
+              ]
+            };
+          }
+        }
+      };
+
+      var currentKey = "diversity";
+      var chartHost = document.getElementById("chartHost");
+      var chart = echarts.init(chartHost, null, { renderer: "svg" });
+
+      function updateLegend(key) {
+        var l1 = document.getElementById("leg1");
+        var l2 = document.getElementById("leg2");
+        var l3 = document.getElementById("leg3");
+        var item3 = document.getElementById("legItem3");
+
+        if (key === "diversity") {
+          l1.textContent = "单模型基准 (15.0%)";
+          l2.textContent = "实际集成错误率";
+          l3.textContent = "独立假设理论下界 (7.2%)";
+          item3.style.display = "flex";
+        } else if (key === "calibration") {
+          l1.textContent = "理想完全校准对角线";
+          l2.textContent = "未校准虚高模型 (破坏软投票)";
+          l3.textContent = "校准后模型 (Isotonic)";
+          item3.style.display = "flex";
+        } else if (key === "leakage") {
+          l1.textContent = "训练集准确率";
+          l2.textContent = "测试集真实表现";
+          item3.style.display = "none";
+        } else if (key === "cost") {
+          l1.textContent = "F1 综合指标 (左轴)";
+          l2.textContent = "P99 延迟 (右轴)";
+          item3.style.display = "none";
+        }
+      }
+
+      function applyScenario(key) {
+        currentKey = key;
+        var s = SCENARIOS[key];
+        if (!s) return;
+
+        // 更新激活 Tab
+        document.querySelectorAll(".tab-btn").forEach(function (btn) {
+          btn.classList.toggle("active", btn.dataset.scenario === key);
+        });
+
+        // 更新图例
+        updateLegend(key);
+
+        // 更新文本与指标
+        document.getElementById("scenarioTitle").textContent = s.title;
+        document.getElementById("chartFigcaption").textContent = s.caption;
+        document.getElementById("metric1Name").textContent = s.m1Label;
+        document.getElementById("metric1Val").textContent = s.m1Val;
+        document.getElementById("metric2Name").textContent = s.m2Label;
+        document.getElementById("metric2Val").textContent = s.m2Val;
+
+        var m1El = document.getElementById("metric1Val");
+        m1El.className = "metric-val " + (s.m1Good ? "good" : "bad");
+        var m2El = document.getElementById("metric2Val");
+        m2El.className = "metric-val " + (s.m2Good ? "good" : "bad");
+
+        document.getElementById("mechRoot").innerHTML = s.root;
+        document.getElementById("mechDerive").innerHTML = s.derive;
+        document.getElementById("mechFix").innerHTML = s.fix;
+        document.getElementById("ruleTitle").textContent = s.ruleTitle;
+        document.getElementById("ruleContent").textContent = s.ruleContent;
+
+        // 刷新图表并重定尺寸
+        var opt = s.chartConfig();
+        chart.setOption(opt, { notMerge: true });
+        chart.resize();
+      }
+
+      // 绑定 Tab 点击
+      document.querySelectorAll(".tab-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          applyScenario(this.dataset.scenario);
+        });
+      });
+
+      // 初始渲染
+      applyScenario("diversity");
+
+      window.addEventListener("resize", function () {
+        chart.resize();
+      });
+    })();
+  </script>
+</body>
+</html>

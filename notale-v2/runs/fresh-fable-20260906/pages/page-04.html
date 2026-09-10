@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>04 · 自助抽样</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/deck.css">
+<link rel="stylesheet" href="assets/lib/katex.min.css">
+<style>
+  .board{ position:absolute; left:64px; top:196px; width:980px; height:580px; }
+  .board .top{ display:flex; justify-content:space-between; align-items:center; height:40px; }
+  .board .top .row{ display:flex; gap:10px; }
+  .board .top .lg{ display:flex; gap:16px; font-size:14px; color:var(--muted); align-items:center; }
+  .board .top .lg i{ display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:-1px; }
+  .lane{ position:absolute; left:0; right:0; top:62px; height:56px; display:grid; grid-template-columns:repeat(24,1fr); gap:6px; }
+  .lane .s{ display:grid; place-items:center; height:36px; border-radius:50%; aspect-ratio:1; margin:auto; width:36px; background:var(--paper); border:2px solid var(--single); color:var(--single); font-family:var(--font-num); font-size:14px; font-weight:600; transition:all .3s; }
+  .lane .s.oob{ border-color:var(--rule); color:var(--quiet); background:transparent; border-style:dashed; }
+  .lane .s.hit{ border-color:var(--bag); color:var(--paper); background:var(--bag); }
+  .lane .title{ position:absolute; left:0; top:-20px; font-size:13px; color:var(--muted); }
+  .stack{ position:absolute; left:0; right:0; top:140px; height:250px; display:grid; grid-template-columns:repeat(24,1fr); gap:6px; align-items:start; }
+  .stack .col{ display:flex; flex-direction:column; gap:4px; align-items:center; }
+  .stack .col i{ display:block; width:22px; height:22px; border-radius:6px; background:var(--bag); opacity:0; transform:translateY(-8px); transition:opacity .25s, transform .25s; }
+  .stack .col i.on{ opacity:1; transform:none; }
+  .stack .col i.dup{ background:var(--bag-lt); }
+  .stack .n{ font-family:var(--font-num); font-size:13px; color:var(--muted); margin-top:4px; height:16px; }
+  .brace{ position:absolute; left:0; right:0; top:126px; border-top:1px dashed var(--rule); }
+  .brace span{ position:absolute; left:0; top:-10px; background:var(--bg); padding-right:8px; font-size:13px; color:var(--muted); }
+  .hist{ position:absolute; left:0; right:0; bottom:0; height:150px; display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+  .hist .panel{ padding:16px 20px; display:grid; grid-template-columns:1fr auto; gap:10px 16px; align-content:start; }
+  .hist h3{ font-size:15px; font-weight:700; grid-column:1/-1; }
+  .hist .bars{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; align-items:end; height:64px; grid-column:1/-1; }
+  .hist .bar{ position:relative; height:100%; border-bottom:1px solid var(--rule); }
+  .hist .bar b{ position:absolute; left:0; right:0; bottom:0; background:var(--bag); border-radius:3px 3px 0 0; transition:height .3s; }
+  .hist .bar u{ position:absolute; left:-4px; right:-4px; border-top:2px solid var(--boost); text-decoration:none; }
+  .hist .bar .lb{ position:absolute; left:0; right:0; top:100%; margin-top:4px; text-align:center; font-family:var(--font-num); font-size:12px; color:var(--muted); }
+  .side{ position:absolute; left:1084px; top:196px; width:452px; height:580px; display:grid; grid-template-rows:auto auto 1fr; gap:16px; }
+  .side .panel{ padding:22px 24px; }
+  .side .kv .v{ font-size:34px; }
+  .side .math{ text-align:center; margin:8px 0 4px; font-size:22px; }
+  .side .why{ display:grid; gap:10px; }
+  .side .why p{ font-size:15px; line-height:1.6; padding-left:14px; border-left:3px solid var(--bag-lt); }
+</style>
+</head>
+<body>
+<main id="stage">
+  <header class="hd">
+    <div class="kicker"><b>02 · Bagging</b>BOOTSTRAP = BOOTSTRAP AGGREGATING</div>
+    <h1>没有第二份数据，就<em class="bag">有放回地</em>再抽一份出来</h1>
+    <p class="lede">上一页每棵树用的是「重新采集」的数据，现实里只有一份。自助抽样：从 n 个样本里有放回地抽 n 次。有的样本被抽到好几回，<b>约三分之一的样本一次也没被抽到</b>。</p>
+  </header>
+
+  <figure class="board" aria-label="24 个样本的自助抽样演示">
+    <div class="top">
+      <div class="row"><button class="btn bag" id="once">再抽一份</button><button class="btn ghost" id="many">连抽 200 份</button><button class="btn ghost" id="reset">重置</button></div>
+      <div class="lg"><span><i style="background:var(--bag)"></i>被抽中</span><span><i style="border:2px dashed var(--rule)"></i>本份没抽到（袋外 · OOB）</span></div>
+    </div>
+    <div class="lane" id="lane"><span class="title">原始训练集 · n = 24</span></div>
+    <div class="brace"><span>这一份自助样本里每个样本出现的次数</span></div>
+    <div class="stack" id="stack"></div>
+    <div class="hist">
+      <div class="panel">
+        <h3>一个样本被抽到 k 次的频率 <span style="color:var(--muted);font-weight:400">· 红线 = 理论值 e⁻¹/k!</span></h3>
+        <div class="bars" id="bars"></div>
+      </div>
+      <div class="panel" style="grid-template-columns:1fr">
+        <h3>本份样本里</h3>
+        <div class="kv" style="grid-template-columns:1fr 1fr 1fr">
+          <div><div class="k">不同样本数</div><div class="v bag" id="uniq">–</div></div>
+          <div><div class="k">重复出现的</div><div class="v" id="dup">–</div></div>
+          <div><div class="k">袋外样本</div><div class="v single" id="oob">–</div></div>
+        </div>
+      </div>
+    </div>
+  </figure>
+
+  <aside class="side">
+    <div class="panel">
+      <div class="kv">
+        <div><div class="k">已抽份数</div><div class="v" id="runs">0</div></div>
+        <div><div class="k">袋外比例 · 累计平均</div><div class="v single" id="oobavg">–</div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="k" style="font-size:13px;color:var(--muted)">为什么恰好是三分之一</div>
+      <div class="math" id="m1"></div>
+      <p style="font-size:14px;color:var(--muted);text-align:center">n = 24 时 = 0.360；n → ∞ 时 → 0.368</p>
+    </div>
+    <div class="panel why">
+      <h2 style="font-size:18px">袋外样本不是浪费</h2>
+      <p>每棵树都有约 <b>1/3</b> 的样本从没见过——它们就是这棵树<b>免费的验证集</b>。</p>
+      <p>把每个样本交给「没见过它」的那些树去预测，汇总起来叫 <b>袋外误差（OOB error）</b>，不必再单独划验证集。</p>
+    </div>
+  </aside>
+</main>
+<script src="assets/base.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/katex.min.js"></script>
+<script src="assets/ens.js"></script>
+<script>
+Ens.footer(4);
+katex.render('P(\\text{某样本一次都没被抽到}) = \\Big(1-\\tfrac{1}{n}\\Big)^{n} \\;\\longrightarrow\\; e^{-1}\\approx 0.368', document.getElementById('m1'), { throwOnError: false, displayMode: false });
+var n = 24, r = Ens.rng('boot-04'), lane = document.getElementById('lane'), stack = document.getElementById('stack'), bars = document.getElementById('bars');
+for (var i = 0; i < n; i++) {
+  var s = document.createElement('div'); s.className = 's'; s.textContent = i + 1; lane.appendChild(s);
+  var c = document.createElement('div'); c.className = 'col'; for (var j = 0; j < 8; j++) c.appendChild(document.createElement('i')); var nn = document.createElement('div'); nn.className = 'n'; c.appendChild(nn); stack.appendChild(c);
+}
+var theo = [0.3679, 0.3679, 0.1839, 0.0803]; // k=0,1,2,≥3
+['0 次', '1 次', '2 次', '≥3 次'].forEach(function (l, k) {
+  var b = document.createElement('div'); b.className = 'bar'; b.innerHTML = '<b style="height:0"></b><u style="bottom:' + (theo[k] / 0.45 * 100) + '%"></u><span class="lb">' + l + '</span>'; bars.appendChild(b);
+});
+var runs = 0, oobSum = 0, kcount = [0, 0, 0, 0], timer = null, gen = 0;
+function drawOnce(animate) {
+  var g = ++gen;
+  var cnt = new Array(n).fill(0), idx = Ens.bootstrap(n, r);
+  idx.forEach(function (i) { cnt[i]++; });
+  var uniq = 0, dup = 0, oob = 0;
+  for (var i = 0; i < n; i++) {
+    var cell = lane.children[i + 1], col = stack.children[i];
+    if (cnt[i] === 0) { oob++; cell.className = 's oob'; } else { uniq++; cell.className = 's hit'; if (cnt[i] > 1) dup++; }
+    kcount[Math.min(3, cnt[i])]++;
+    for (var j = 0; j < 8; j++) { var blk = col.children[j]; var on = j < cnt[i]; blk.className = (on ? 'on' : '') + (j > 0 && on ? ' dup' : ''); if (animate && on) { blk.classList.remove('on'); (function (b, d) { setTimeout(function () { if (g === gen) b.classList.add('on'); }, d); })(blk, 120 + j * 90 + i * 8); } }
+    col.lastChild.textContent = cnt[i] ? '×' + cnt[i] : '';
+  }
+  runs++; oobSum += oob / n;
+  document.getElementById('uniq').textContent = uniq; document.getElementById('dup').textContent = dup; document.getElementById('oob').innerHTML = oob + '<small>/24</small>';
+  document.getElementById('runs').textContent = runs; document.getElementById('oobavg').innerHTML = (oobSum / runs * 100).toFixed(1) + '<small>%</small>';
+  var tot = runs * n; bars.querySelectorAll('.bar b').forEach(function (b, k) { b.style.height = (kcount[k] / tot / 0.45 * 100) + '%'; });
+}
+document.getElementById('once').addEventListener('click', function () { drawOnce(true); });
+document.getElementById('many').addEventListener('click', function () { if (timer) return; var k = 0; timer = setInterval(function () { drawOnce(false); if (++k >= 200) { clearInterval(timer); timer = null; } }, 12); });
+document.getElementById('reset').addEventListener('click', function () {
+  runs = 0; oobSum = 0; kcount = [0, 0, 0, 0]; r = Ens.rng('boot-04');
+  for (var i = 0; i < n; i++) { lane.children[i + 1].className = 's'; var col = stack.children[i]; for (var j = 0; j < 8; j++) col.children[j].className = ''; col.lastChild.textContent = ''; }
+  ['uniq', 'dup', 'oob', 'oobavg'].forEach(function (id) { document.getElementById(id).textContent = '–'; }); document.getElementById('runs').textContent = 0;
+  bars.querySelectorAll('.bar b').forEach(function (b) { b.style.height = 0; });
+});
+drawOnce(true);
+</script>
+</body>
+</html>

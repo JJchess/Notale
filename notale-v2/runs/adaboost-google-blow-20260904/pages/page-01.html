@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>AdaBoosting 算法</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #E3EBEF;
+      --text: #14272E;
+      --muted: #50656D;
+      --focus: #9B3217;
+      --weak: #526A73;
+      --weight: #B43A13;
+      --ensemble: #17617B;
+      --confirmed: #2F6B4F;
+      --font-sans: "Source Han Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-num: "DIN Alternate", -apple-system, sans-serif;
+      --ease-out: cubic-bezier(.16, 1, .3, 1);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      margin: 0;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      overflow: hidden;
+      box-sizing: border-box;
+      background: var(--bg);
+      isolation: isolate;
+    }
+
+    /* 背景微弱技术坐标线阵 */
+    .bg-grid {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.45;
+      background-image:
+        linear-gradient(to right, rgba(80, 101, 109, 0.08) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(80, 101, 109, 0.08) 1px, transparent 1px);
+      background-size: 80px 80px;
+      z-index: 1;
+    }
+
+    /* 左侧排版区：标题与核心概念断言 */
+    .cover-copy {
+      position: absolute;
+      left: 80px;
+      top: 110px;
+      width: 660px;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .topic-mark {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .vote-mark-hero {
+      display: flex;
+      align-items: flex-end;
+      gap: 5px;
+      height: 28px;
+    }
+
+    .vote-mark-hero span {
+      display: block;
+      background: var(--weak);
+      border-radius: 2px;
+    }
+
+    .vote-mark-hero span:nth-child(1) { width: 5px; height: 16px; opacity: 0.6; }
+    .vote-mark-hero span:nth-child(2) { width: 7px; height: 22px; opacity: 0.8; }
+    .vote-mark-hero span:nth-child(3) { width: 10px; height: 28px; background: var(--ensemble); }
+
+    .topic-meta {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--ensemble);
+      text-transform: uppercase;
+    }
+
+    .cover-title {
+      margin: 0;
+      font-size: 58px;
+      line-height: 1.15;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      color: var(--text);
+    }
+
+    .cover-title .highlight {
+      color: var(--ensemble);
+      position: relative;
+      display: inline-block;
+    }
+
+    .cover-lead {
+      margin: 28px 0 0 0;
+      font-size: 21px;
+      line-height: 1.6;
+      color: var(--muted);
+      font-weight: 400;
+      max-width: 580px;
+    }
+
+    .cover-lead strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    /* 机制指标条：弱分类器 -> 权重放大 -> 加权集成 */
+    .concept-trio {
+      display: flex;
+      gap: 16px;
+      margin-top: 56px;
+    }
+
+    .concept-card {
+      background: rgba(227, 235, 239, 0.7);
+      border: 1px solid rgba(80, 101, 109, 0.18);
+      border-radius: 8px;
+      padding: 16px 18px;
+      width: 195px;
+      box-sizing: border-box;
+    }
+
+    .concept-card[data-kind="weak"] { border-top: 3px solid var(--weak); }
+    .concept-card[data-kind="weight"] { border-top: 3px solid var(--weight); }
+    .concept-card[data-kind="ensemble"] { border-top: 3px solid var(--ensemble); }
+
+    .concept-card .title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .concept-card .val {
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    .concept-card .note {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* 右侧图解系统：SVG 视觉主体 */
+    .scene-svg {
+      position: absolute;
+      right: 56px;
+      top: 55px;
+      width: 860px;
+      height: 780px;
+      z-index: 4;
+    }
+
+    /* 动画编排 */
+    .is-entering .cover-copy { animation: copy-settle 900ms var(--ease-out) both; }
+    .is-entering .weak-group-1 { animation: step-fade 800ms 150ms var(--ease-out) both; }
+    .is-entering .weak-group-2 { animation: step-fade 800ms 320ms var(--ease-out) both; }
+    .is-entering .weak-group-3 { animation: step-fade 800ms 480ms var(--ease-out) both; }
+    .is-entering .ensemble-group { animation: step-fade 950ms 650ms var(--ease-out) both; }
+    .is-entering .flow-links { animation: link-draw 1100ms 400ms var(--ease-out) both; }
+
+    @keyframes copy-settle {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes step-fade {
+      from { opacity: 0; transform: translateY(12px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes link-draw {
+      from { opacity: 0; stroke-dashoffset: 40; }
+      to { opacity: 1; stroke-dashoffset: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .is-entering .cover-copy,
+      .is-entering .weak-group-1,
+      .is-entering .weak-group-2,
+      .is-entering .weak-group-3,
+      .is-entering .ensemble-group,
+      .is-entering .flow-links {
+        animation: none !important;
+        opacity: 1;
+        transform: none;
+      }
+    }
+  </style>
+</head>
+<body data-page="01" data-total="5">
+  <div id="stage">
+    <div class="bg-grid" aria-hidden="true"></div>
+
+    <!-- 主文案区 -->
+    <header class="cover-copy">
+      <div class="topic-mark" aria-hidden="true">
+        <div class="vote-mark-hero">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <span class="topic-meta">Boosting Ensemble Architecture</span>
+      </div>
+
+      <h1 class="cover-title">
+        AdaBoosting 算法<br>
+        <span class="highlight">弱分类器</span>迭代成为<span class="highlight">强分类器</span>
+      </h1>
+
+      <p class="cover-lead">
+        单层决策树仅略胜随机猜测（50% 上下）。AdaBoost 通过<strong>逐轮提升错分样本权重</strong>，强迫后续分类器专攻失误盲区，最终以<strong>可信度加权表决</strong>拼合出精准可靠的复杂边界。
+      </p>
+
+      <div class="concept-trio">
+        <div class="concept-card" data-kind="weak">
+          <div class="title">弱基学习器</div>
+          <div class="val">单轴树桩</div>
+          <div class="note">误差率略低于 50%</div>
+        </div>
+        <div class="concept-card" data-kind="weight">
+          <div class="title">样本重加权</div>
+          <div class="val">关注失误点</div>
+          <div class="note">错分点在下轮放大</div>
+        </div>
+        <div class="concept-card" data-kind="ensemble">
+          <div class="title">最终表决权</div>
+          <div class="val">α 加权判决</div>
+          <div class="note">高精度模型拥更高票权</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 视觉构图主体：三轮弱分类器纠错演进与右侧强分类器聚合 -->
+    <svg class="scene-svg" viewBox="0 0 860 780" fill="none" role="img" aria-label="AdaBoost 串行纠错与加权表决形成强分类器的图解系统">
+      <defs>
+        <!-- 阴影 -->
+        <filter id="panel-shadow" x="-8%" y="-8%" width="120%" height="120%" color-interpolation-filters="sRGB">
+          <feDropShadow dx="0" dy="6" stdDeviation="9" flood-color="#14272E" flood-opacity="0.07"/>
+        </filter>
+        <filter id="hero-shadow" x="-8%" y="-8%" width="124%" height="124%" color-interpolation-filters="sRGB">
+          <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#17617B" flood-opacity="0.14"/>
+        </filter>
+        <!-- 箭头标记 -->
+        <marker id="arrow-flow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+          <path d="M1 1 L7 4 L1 7 Z" fill="#526A73"/>
+        </marker>
+        <marker id="arrow-ensemble" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M1 1 L8 4.5 L1 8 Z" fill="#17617B"/>
+        </marker>
+      </defs>
+
+      <!-- 连接流线群 -->
+      <g class="flow-links" stroke="#526A73" stroke-width="2" stroke-dasharray="4 4" fill="none" opacity="0.6">
+        <!-- 轮次 1 到 轮次 2 权重传递 -->
+        <path d="M 215 195 C 215 225, 215 225, 215 240" marker-end="url(#arrow-flow)"/>
+        <!-- 轮次 2 到 轮次 3 权重传递 -->
+        <path d="M 215 440 C 215 470, 215 470, 215 485" marker-end="url(#arrow-flow)"/>
+
+        <!-- 三个弱分类器向右汇聚到强分类器 -->
+        <path d="M 370 120 C 440 120, 460 360, 480 375" stroke="#17617B" stroke-width="2.5" stroke-dasharray="none" marker-end="url(#arrow-ensemble)"/>
+        <path d="M 370 365 L 480 385" stroke="#17617B" stroke-width="2.5" stroke-dasharray="none" marker-end="url(#arrow-ensemble)"/>
+        <path d="M 370 610 C 440 610, 460 410, 480 395" stroke="#17617B" stroke-width="2.5" stroke-dasharray="none" marker-end="url(#arrow-ensemble)"/>
+      </g>
+
+      <!-- 弱分类器 1：Round 1 简单垂直分割 -->
+      <g class="weak-group-1" filter="url(#panel-shadow)">
+        <!-- 底板面板 -->
+        <rect x="60" y="45" width="310" height="150" rx="8" fill="#E3EBEF" stroke="#CAD6DC" stroke-width="1.5"/>
+        <rect x="60" y="45" width="310" height="34" rx="8" fill="#D6E2E8"/>
+        <text x="76" y="68" fill="#14272E" font-size="14" font-weight="700" font-family="var(--font-sans)">基学习器 h₁(x)</text>
+        <text x="280" y="68" fill="#526A73" font-size="13" font-weight="700" font-family="var(--font-num)">α₁ = 0.42</text>
+
+        <!-- 特征二维图框 -->
+        <rect x="76" y="90" width="130" height="92" rx="4" fill="#FFFFFF" stroke="#CAD6DC" stroke-width="1"/>
+        <!-- 垂直决策树桩边界 x = 2.5 -->
+        <line x1="125" y1="90" x2="125" y2="182" stroke="#526A73" stroke-width="2.5" stroke-dasharray="3 2"/>
+        <!-- 区域着色 -->
+        <rect x="76" y="90" width="49" height="92" rx="4" fill="#17617B" fill-opacity="0.08"/>
+        <rect x="125" y="90" width="81" height="92" rx="4" fill="#B43A13" fill-opacity="0.08"/>
+
+        <!-- 均匀权重样本点 (第一轮) -->
+        <!-- 正类 (蓝色圈) -->
+        <circle cx="95" cy="115" r="4.5" fill="#17617B"/>
+        <circle cx="108" cy="148" r="4.5" fill="#17617B"/>
+        <circle cx="92" cy="165" r="4.5" fill="#17617B"/>
+        <!-- 错分的正类 (落在右边，将在下轮放大) -->
+        <circle cx="145" cy="118" r="5" fill="#B43A13" stroke="#B43A13" stroke-width="1.5"/>
+        <circle cx="150" cy="155" r="5" fill="#B43A13" stroke="#B43A13" stroke-width="1.5"/>
+
+        <!-- 负类 (橙色叉或实心) -->
+        <circle cx="178" cy="125" r="4.5" fill="#B43A13" fill-opacity="0.75"/>
+        <circle cx="188" cy="158" r="4.5" fill="#B43A13" fill-opacity="0.75"/>
+        <circle cx="168" cy="168" r="4.5" fill="#B43A13" fill-opacity="0.75"/>
+
+        <!-- 说明小字 -->
+        <text x="218" y="116" fill="#14272E" font-size="14" font-weight="700" font-family="var(--font-sans)">第一轮：均权初始化</text>
+        <text x="218" y="138" fill="#50656D" font-size="13" font-family="var(--font-sans)">初始所有样本 w = 1/N</text>
+        <text x="218" y="158" fill="#B43A13" font-size="13" font-weight="700" font-family="var(--font-sans)">错分 2 点 → 提高权重</text>
+      </g>
+
+      <!-- 弱分类器 2：Round 2 样本放大后水平分割 -->
+      <g class="weak-group-2" filter="url(#panel-shadow)">
+        <rect x="60" y="290" width="310" height="150" rx="8" fill="#E3EBEF" stroke="#CAD6DC" stroke-width="1.5"/>
+        <rect x="60" y="290" width="310" height="34" rx="8" fill="#D6E2E8"/>
+        <text x="76" y="313" fill="#14272E" font-size="14" font-weight="700" font-family="var(--font-sans)">基学习器 h₂(x)</text>
+        <text x="280" y="313" fill="#526A73" font-size="13" font-weight="700" font-family="var(--font-num)">α₂ = 0.65</text>
+
+        <!-- 特征二维图框 -->
+        <rect x="76" y="335" width="130" height="92" rx="4" fill="#FFFFFF" stroke="#CAD6DC" stroke-width="1"/>
+        <!-- 水平决策树桩边界 y = 4.2 -->
+        <line x1="76" y1="375" x2="206" y2="375" stroke="#526A73" stroke-width="2.5" stroke-dasharray="3 2"/>
+        <rect x="76" y="335" width="130" height="40" fill="#B43A13" fill-opacity="0.08"/>
+        <rect x="76" y="375" width="130" height="52" fill="#17617B" fill-opacity="0.08"/>
+
+        <!-- 样本分布：上轮错分点显著放大 -->
+        <circle cx="95" cy="360" r="4" fill="#17617B" opacity="0.6"/>
+        <circle cx="108" cy="393" r="4" fill="#17617B"/>
+        <circle cx="92" cy="410" r="4" fill="#17617B"/>
+        <!-- 被放大的关键正样本（醒目红圈） -->
+        <circle cx="145" cy="363" r="9" fill="#17617B" stroke="#B43A13" stroke-width="2.5"/>
+        <circle cx="150" cy="400" r="9" fill="#17617B" stroke="#B43A13" stroke-width="2.5"/>
+
+        <!-- 负类 -->
+        <circle cx="178" cy="370" r="4" fill="#B43A13" fill-opacity="0.75"/>
+        <circle cx="188" cy="403" r="4" fill="#B43A13" fill-opacity="0.75"/>
+        <circle cx="168" cy="413" r="4" fill="#B43A13" fill-opacity="0.75"/>
+
+        <!-- 说明小字 -->
+        <text x="218" y="361" fill="#14272E" font-size="14" font-weight="700" font-family="var(--font-sans)">第二轮：重心聚焦</text>
+        <text x="218" y="383" fill="#B43A13" font-size="13" font-weight="700" font-family="var(--font-sans)">错分点权重成倍膨胀</text>
+        <text x="218" y="403" fill="#50656D" font-size="13" font-family="var(--font-sans)">迫使新边界改变方向切分</text>
+      </g>
+
+      <!-- 弱分类器 3：Round 3 垂直分割补充边缘 -->
+      <g class="weak-group-3" filter="url(#panel-shadow)">
+        <rect x="60" y="535" width="310" height="150" rx="8" fill="#E3EBEF" stroke="#CAD6DC" stroke-width="1.5"/>
+        <rect x="60" y="535" width="310" height="34" rx="8" fill="#D6E2E8"/>
+        <text x="76" y="558" fill="#14272E" font-size="14" font-weight="700" font-family="var(--font-sans)">基学习器 h₃(x)</text>
+        <text x="280" y="558" fill="#526A73" font-size="13" font-weight="700" font-family="var(--font-num)">α₃ = 0.92</text>
+
+        <!-- 特征二维图框 -->
+        <rect x="76" y="580" width="130" height="92" rx="4" fill="#FFFFFF" stroke="#CAD6DC" stroke-width="1"/>
+        <!-- 第三轮垂直边界截断右侧负例 -->
+        <line x1="162" y1="580" x2="162" y2="672" stroke="#526A73" stroke-width="2.5" stroke-dasharray="3 2"/>
+        <rect x="76" y="580" width="86" height="92" fill="#17617B" fill-opacity="0.08"/>
+        <rect x="162" y="580" width="44" height="92" fill="#B43A13" fill-opacity="0.08"/>
+
+        <!-- 样本分布 -->
+        <circle cx="95" cy="605" r="4.5" fill="#17617B"/>
+        <circle cx="108" cy="638" r="4.5" fill="#17617B"/>
+        <circle cx="92" cy="655" r="4.5" fill="#17617B"/>
+        <circle cx="145" cy="608" r="7" fill="#17617B"/>
+        <circle cx="150" cy="645" r="7" fill="#17617B"/>
+
+        <circle cx="178" cy="615" r="8" fill="#B43A13" stroke="#B43A13" stroke-width="2"/>
+        <circle cx="188" cy="648" r="5" fill="#B43A13"/>
+        <circle cx="168" cy="658" r="5" fill="#B43A13"/>
+
+        <!-- 说明小字 -->
+        <text x="218" y="606" fill="#14272E" font-size="14" font-weight="700" font-family="var(--font-sans)">第三轮：精细修补</text>
+        <text x="218" y="628" fill="#50656D" font-size="13" font-family="var(--font-sans)">消除前序分类死角</text>
+        <text x="218" y="648" fill="#17617B" font-size="13" font-weight="700" font-family="var(--font-sans)">赋予更高表决权重 α</text>
+      </g>
+
+      <!-- 强分类器主面板：Ensemble 汇聚融合形成折线复合边界 -->
+      <g class="ensemble-group" filter="url(#hero-shadow)">
+        <rect x="490" y="115" width="340" height="550" rx="10" fill="#FFFFFF" stroke="#17617B" stroke-width="2"/>
+        <!-- 强分类器顶部标识栏 -->
+        <rect x="490" y="115" width="340" height="56" rx="10" fill="#17617B"/>
+        <text x="514" y="149" fill="#FFFFFF" font-size="18" font-weight="700" font-family="var(--font-sans)">强分类器 H(x) = sign( Σ αₘ hₘ )</text>
+
+        <!-- 聚合画布主图 -->
+        <g transform="translate(514, 195)">
+          <rect x="0" y="0" width="292" height="292" rx="6" fill="#F8FAFC" stroke="#CAD6DC" stroke-width="1.5"/>
+
+          <!-- 复杂组合形成的最终非线性决策边界多边形 -->
+          <!-- 区域 1：属于正类的复合多边形 -->
+          <path d="M 0 0 L 140 0 L 140 180 L 220 180 L 220 292 L 0 292 Z" fill="#17617B" fill-opacity="0.14"/>
+          <!-- 区域 2：属于负类的区域 -->
+          <path d="M 140 0 L 292 0 L 292 292 L 220 292 L 220 180 L 140 180 Z" fill="#B43A13" fill-opacity="0.12"/>
+
+          <!-- 最终三段加权表决形成的粗折线边界 -->
+          <path d="M 140 0 L 140 180 L 220 180 L 220 292" stroke="#17617B" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M 140 0 L 140 180 L 220 180 L 220 292" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 3"/>
+
+          <!-- 所有样本在强分类器下的最终分类状态 -->
+          <!-- 正类簇：均被完美包围在蓝色边界内 -->
+          <circle cx="50" cy="55" r="6" fill="#17617B"/>
+          <circle cx="95" cy="85" r="6" fill="#17617B"/>
+          <circle cx="45" cy="140" r="6" fill="#17617B"/>
+          <circle cx="80" cy="190" r="6" fill="#17617B"/>
+          <circle cx="55" cy="245" r="6" fill="#17617B"/>
+          <circle cx="110" cy="230" r="6" fill="#17617B"/>
+          <circle cx="170" cy="225" r="7.5" fill="#17617B"/>
+          <circle cx="185" cy="265" r="7.5" fill="#17617B"/>
+
+          <!-- 负类簇：均在橙色边界内 -->
+          <circle cx="175" cy="60" r="6" fill="#B43A13"/>
+          <circle cx="230" cy="45" r="6" fill="#B43A13"/>
+          <circle cx="255" cy="105" r="6" fill="#B43A13"/>
+          <circle cx="190" cy="120" r="6" fill="#B43A13"/>
+          <circle cx="260" cy="195" r="6" fill="#B43A13"/>
+          <circle cx="245" cy="260" r="7.5" fill="#B43A13"/>
+
+          <!-- 标注文字在图表内部 -->
+          <rect x="12" y="14" width="76" height="24" rx="4" fill="#FFFFFF" fill-opacity="0.85"/>
+          <text x="18" y="31" fill="#17617B" font-size="12" font-weight="700" font-family="var(--font-sans)">正类判定区</text>
+
+          <rect x="204" y="14" width="76" height="24" rx="4" fill="#FFFFFF" fill-opacity="0.85"/>
+          <text x="210" y="31" fill="#B43A13" font-size="12" font-weight="700" font-family="var(--font-sans)">负类判定区</text>
+        </g>
+
+        <!-- 聚合效果分析与结论 -->
+        <g transform="translate(514, 508)">
+          <line x1="0" y1="0" x2="292" y2="0" stroke="#CAD6DC" stroke-width="1"/>
+          <text x="0" y="24" fill="#14272E" font-size="15" font-weight="700" font-family="var(--font-sans)">加权聚合效果：</text>
+          <text x="0" y="47" fill="#50656D" font-size="13" font-family="var(--font-sans)">• 单一弱分类器准确率仅 65%–70%</text>
+          <text x="0" y="69" fill="#17617B" font-size="13" font-weight="700" font-family="var(--font-sans)">• 3 轮串行纠错与加权表决后准确率达 100%</text>
+          <text x="0" y="91" fill="#50656D" font-size="13" font-family="var(--font-sans)">• 多个简单线性割平面拼合成高阶决策曲面</text>
+        </g>
+      </g>
+    </svg>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      'use strict';
+      var stage = document.getElementById('stage');
+      var motionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+      var settleTimer = 0;
+      var disposed = false;
+
+      function reduced() {
+        return motionQuery ? motionQuery.matches : Deck.reduced();
+      }
+
+      function settle() {
+        if (disposed) return;
+        stage.classList.remove('is-entering');
+        stage.classList.add('is-settled');
+      }
+
+      function syncMotion() {
+        stage.classList.toggle('is-reduced', reduced());
+        if (reduced()) {
+          clearTimeout(settleTimer);
+          settle();
+        }
+      }
+
+      function replay() {
+        if (disposed) return;
+        clearTimeout(settleTimer);
+        stage.classList.remove('is-entering', 'is-settled');
+        void stage.offsetWidth;
+
+        if (reduced()) {
+          stage.classList.add('is-settled');
+          return;
+        }
+
+        stage.classList.add('is-entering');
+        settleTimer = setTimeout(settle, 1400);
+      }
+
+      function onKeydown(event) {
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        var key = event.key;
+        if (key === 'r' || key === 'R' || key === 'Home' || ((key === 'Enter' || key === ' ') && event.target === stage)) {
+          event.preventDefault();
+          replay();
+        }
+      }
+
+      function onVisibility() {
+        stage.classList.toggle('is-paused', document.hidden);
+      }
+
+      function dispose() {
+        if (disposed) return;
+        disposed = true;
+        clearTimeout(settleTimer);
+        document.removeEventListener('keydown', onKeydown);
+        document.removeEventListener('visibilitychange', onVisibility);
+        if (motionQuery) {
+          if (motionQuery.removeEventListener) motionQuery.removeEventListener('change', syncMotion);
+          else if (motionQuery.removeListener) motionQuery.removeListener(syncMotion);
+        }
+      }
+
+      document.addEventListener('keydown', onKeydown);
+      document.addEventListener('visibilitychange', onVisibility);
+      if (motionQuery) {
+        if (motionQuery.addEventListener) motionQuery.addEventListener('change', syncMotion);
+        else if (motionQuery.addListener) motionQuery.addListener(syncMotion);
+      }
+      window.addEventListener('pagehide', dispose, { once: true });
+
+      syncMotion();
+      replay();
+
+      Deck.init({ index: 1, total: 5 });
+    })();
+  </script>
+</body>
+</html>

@@ -13,8 +13,10 @@ This is a scoped, runnable sample extracted from the original work, not the comp
 
 Mini preserves the full sample’s 1996 opening, kitchen and tasting sequence, all 25 hotspots, four-ingredient progression, original layered images, typewriter/Canvas transitions and generated music. It removes dialogue and soundtrack lookup entries for later chapters that this standalone page never presents (the page links to the original story for those). Active scene records and music patterns remain exact; all original media and full provenance are retained.
 
-Reduced-motion freezes the original opening/tasting Canvas sketch after its source image loads. Canvas resizes with the viewport. Text measurement and delayed notes are cancelled on teardown. Normal motion and music retain the original algorithms.
+Reduced-motion freezes the original opening/tasting Canvas sketch after its source image loads. This mini is fitted to the accepted 1600×900 stage; the original responsive sources are retained separately. Chapter text timers are cancelled on restart, and the page owns the audio engine for its lifetime. Normal motion and music retain the original algorithms.
 
 The original opening begins on black. In reduced-motion mode, advancing a paragraph redraws a still using 40 synchronous iterations of the original sketch, preserving that narrative order without a continuous animation loop.
 
 At 1600×900 the full room uses its native responsive dimensions in a 1080px scene beside persistent introduction/chapter controls. Sound, object selection, opening, tasting and ending remain on one screen; no source scene or chapter content is removed.
+
+The size-budget version runs all author HTML, CSS and JavaScript from `index.html` (15,409 characters). `assets/mini-copy.json` retains the original active dialogue, layers and score plus plain UI copy, font references and fixed layer metadata. Original `copy.json`, Svelte sources, images and provenance remain unchanged. p5.js 1.6.0 and Tone.js 14.7.77 are unmodified third-party libraries, with their licenses stored beside them.

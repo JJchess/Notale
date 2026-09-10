@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成学习全景图</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶栏标题区 */
+    .header-zone {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 2px solid var(--surface-strong);
+      padding-bottom: 12px;
+      flex-shrink: 0;
+    }
+    .header-left h1 {
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      margin: 0 0 6px 0;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .header-left p {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    /* 交互切换控制区 */
+    .view-switch {
+      display: flex;
+      gap: 8px;
+      background: var(--surface-strong);
+      padding: 4px;
+      border-radius: var(--radius);
+    }
+    .view-btn {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+    .view-btn[aria-pressed="true"] {
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 700;
+      box-shadow: 0 2px 6px rgba(20,37,51,0.08);
+    }
+
+    /* 主舞台区：三流并置架构 */
+    .panorama-stage {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    /* 三大流派面板 */
+    .branch-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: var(--line) solid var(--surface-strong);
+      display: flex;
+      flex-direction: column;
+      padding: 20px 22px;
+      box-sizing: border-box;
+      transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), opacity var(--dur) var(--ease);
+      position: relative;
+    }
+    .branch-card.active {
+      border-color: var(--learner);
+      box-shadow: 0 8px 24px rgba(39,93,145,0.09);
+    }
+    .branch-card.dimmed {
+      opacity: 0.45;
+    }
+
+    /* 分支头部 */
+    .branch-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+    .branch-name-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .branch-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .branch-sub {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .paradigm-tag {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 6px;
+      background: var(--surface-strong);
+      color: var(--text);
+    }
+    .paradigm-tag.parallel { color: var(--learner); background: rgba(39,93,145,0.12); }
+    .paradigm-tag.sequential { color: var(--aggregate); background: rgba(182,59,36,0.12); }
+    .paradigm-tag.stacked { color: #006B72; background: rgba(0,107,114,0.12); }
+
+    /* 核心误差机制读数卡 */
+    .mechanism-strip {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      border: 1px solid var(--surface-strong);
+    }
+
+    .mech-text {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .math-pill {
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--text);
+      letter-spacing: 0.02em;
+    }
+
+    /* 拓扑示意视口 (SVG) */
+    .diagram-view {
+      flex: 1;
+      min-height: 250px;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+    }
+    .diagram-view svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 底部特征对比表单 */
+    .branch-specs {
+      margin-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-top: 1px solid var(--surface-strong);
+      padding-top: 12px;
+    }
+    .spec-row {
+      display: flex;
+      font-size: var(--fs-label);
+      line-height: 1.4;
+    }
+    .spec-k {
+      width: 100px;
+      flex-shrink: 0;
+      color: var(--muted);
+      font-size: var(--fs-label);
+    }
+    .spec-v {
+      flex: 1;
+      color: var(--text);
+      font-weight: 500;
+      font-size: var(--fs-label);
+    }
+
+    /* 底部收束脚手架 */
+    .footer-summary {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--surface-strong);
+      padding: 14px 22px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 24px;
+      flex-shrink: 0;
+    }
+    .summary-claim {
+      font-size: var(--fs-body);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      line-height: 1.45;
+    }
+    .summary-claim strong {
+      color: var(--aggregate);
+      font-weight: 700;
+    }
+    .nav-hints {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      display: flex;
+      gap: 16px;
+      white-space: nowrap;
+    }
+    .nav-hints span {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* SVG 矢量样式 */
+    .svg-node-box {
+      stroke-width: 1.5px;
+      rx: 6px;
+      transition: all var(--dur) var(--ease);
+    }
+    .svg-node-text {
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      text-anchor: middle;
+      dominant-baseline: central;
+      font-weight: 600;
+      fill: var(--text);
+    }
+    .svg-sub-text {
+      font-family: var(--font-sans);
+      font-size: var(--fs-tick);
+      text-anchor: middle;
+      dominant-baseline: central;
+      fill: var(--muted);
+    }
+    .svg-flow-path {
+      fill: none;
+      stroke-width: 2px;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .pulse-dot {
+      transition: opacity var(--dur) var(--ease);
+    }
+  </style>
+</head>
+<body data-page="03" data-total="27">
+  <div id="stage">
+    <!-- 顶栏 -->
+    <header class="header-zone">
+      <div class="header-left">
+        <h1>集成学习的全景图：三种误差拆解范式</h1>
+        <p>集成并非单一范式，而是依据对个体偏差与方差的诊断，通过空间拓扑与信息传递来重组误差结构。</p>
+      </div>
+      <div class="view-switch" role="group" aria-label="拓扑聚焦模式">
+        <button class="view-btn" id="btn-all" aria-pressed="true" onclick="selectParadigm('all')">全景并览</button>
+        <button class="view-btn" id="btn-bagging" aria-pressed="false" onclick="selectParadigm('bagging')">Bagging (并行)</button>
+        <button class="view-btn" id="btn-boosting" aria-pressed="false" onclick="selectParadigm('boosting')">Boosting (串行)</button>
+        <button class="view-btn" id="btn-stacking" aria-pressed="false" onclick="selectParadigm('stacking')">Stacking (二层)</button>
+      </div>
+    </header>
+
+    <!-- 三大分支主区 -->
+    <main class="panorama-stage" id="stage-grid">
+      <!-- 1. Bagging -->
+      <article class="branch-card active" data-branch="bagging" tabindex="0">
+        <div class="branch-head">
+          <div class="branch-name-wrap">
+            <h2 class="branch-title">Bagging 体系</h2>
+            <span class="branch-sub">Bootstrap Aggregating / 随机森林</span>
+          </div>
+          <span class="paradigm-tag parallel">并行独立 · 均值化</span>
+        </div>
+
+        <div class="mechanism-strip">
+          <span class="mech-text">目标：强行打碎方差 (Var)</span>
+          <span class="math-pill">Var(f̄) ≈ ρσ² + (1-ρ)σ²/T</span>
+        </div>
+
+        <div class="diagram-view" aria-label="Bagging 拓扑示意图">
+          <svg viewBox="0 0 440 260">
+            <defs>
+              <marker id="arr-bagging" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 1 1 L 9 5 L 1 9 z" fill="#275D91"/>
+              </marker>
+              <marker id="arr-agg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 1 1 L 9 5 L 1 9 z" fill="#B63B24"/>
+              </marker>
+            </defs>
+
+            <!-- 原始数据集 -->
+            <rect x="20" y="90" width="76" height="80" rx="8" fill="#F7FAFC" stroke="#536777" stroke-width="1.5"/>
+            <text x="58" y="122" class="svg-node-text">训练集 D</text>
+            <text x="58" y="142" class="svg-sub-text">总样本 N</text>
+
+            <!-- 分流连线 -->
+            <path d="M 96 110 C 120 110, 130 50, 150 50" class="svg-flow-path" stroke="#275D91" marker-end="url(#arr-bagging)"/>
+            <path d="M 96 130 L 150 130" class="svg-flow-path" stroke="#275D91" marker-end="url(#arr-bagging)"/>
+            <path d="M 96 150 C 120 150, 130 210, 150 210" class="svg-flow-path" stroke="#275D91" marker-end="url(#arr-bagging)"/>
+
+            <!-- 子采样标签 -->
+            <text x="120" y="38" class="svg-sub-text">放回抽样</text>
+            <text x="120" y="120" class="svg-sub-text">自主采样</text>
+            <text x="120" y="222" class="svg-sub-text">属性扰动</text>
+
+            <!-- 并行学习器 (高方差复杂树) -->
+            <g transform="translate(155, 25)">
+              <rect width="105" height="50" class="svg-node-box" fill="#E8EEF2" stroke="#275D91"/>
+              <text x="52" y="20" class="svg-node-text" fill="#275D91">树 h₁(x)</text>
+              <text x="52" y="36" class="svg-sub-text">低偏差·高方差</text>
+            </g>
+
+            <g transform="translate(155, 105)">
+              <rect width="105" height="50" class="svg-node-box" fill="#E8EEF2" stroke="#275D91"/>
+              <text x="52" y="20" class="svg-node-text" fill="#275D91">树 h₂(x)</text>
+              <text x="52" y="36" class="svg-sub-text">独立生长</text>
+            </g>
+
+            <g transform="translate(155, 185)">
+              <rect width="105" height="50" class="svg-node-box" fill="#E8EEF2" stroke="#275D91"/>
+              <text x="52" y="20" class="svg-node-text" fill="#275D91">树 h_T(x)</text>
+              <text x="52" y="36" class="svg-sub-text">低相关性 ρ↓</text>
+            </g>
+
+            <!-- 汇流连线 -->
+            <path d="M 260 50 C 285 50, 295 110, 318 122" class="svg-flow-path" stroke="#B63B24" marker-end="url(#arr-agg)"/>
+            <path d="M 260 130 L 318 130" class="svg-flow-path" stroke="#B63B24" marker-end="url(#arr-agg)"/>
+            <path d="M 260 210 C 285 210, 295 150, 318 138" class="svg-flow-path" stroke="#B63B24" marker-end="url(#arr-agg)"/>
+
+            <!-- 决策输出聚合 -->
+            <g transform="translate(325, 95)">
+              <rect width="95" height="70" class="svg-node-box" fill="#F7FAFC" stroke="#B63B24" stroke-width="2"/>
+              <text x="47" y="26" class="svg-node-text" fill="#B63B24">简单表决</text>
+              <text x="47" y="44" class="svg-sub-text">多数/等权平均</text>
+              <text x="47" y="58" class="svg-sub-text" font-weight="700">方差收敛</text>
+            </g>
+          </svg>
+        </div>
+
+        <div class="branch-specs">
+          <div class="spec-row">
+            <span class="spec-k">基学习器要求</span>
+            <span class="spec-v">高方差强模型（深层决策树）</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-k">多样性构造</span>
+            <span class="spec-v">Bootstrap 样本扰动 + 随机特征切分</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-k">工业界代表</span>
+            <span class="spec-v">Random Forest, Extra Trees</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- 2. Boosting -->
+      <article class="branch-card active" data-branch="boosting" tabindex="0">
+        <div class="branch-head">
+          <div class="branch-name-wrap">
+            <h2 class="branch-title">Boosting 体系</h2>
+            <span class="branch-sub">AdaBoost / GBDT / XGBoost</span>
+          </div>
+          <span class="paradigm-tag sequential">串行接力 · 残差拟合</span>
+        </div>
+
+        <div class="mechanism-strip">
+          <span class="mech-text">目标：逐步削减偏差 (Bias)</span>
+          <span class="math-pill">F_m(x) = F_{m-1}(x) + γ_m h_m(x)</span>
+        </div>
+
+        <div class="diagram-view" aria-label="Boosting 拓扑示意图">
+          <svg viewBox="0 0 440 260">
+            <defs>
+              <marker id="arr-boost-seq" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 1 1 L 9 5 L 1 9 z" fill="#B63B24"/>
+              </marker>
+              <marker id="arr-boost-fwd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 1 1 L 9 5 L 1 9 z" fill="#275D91"/>
+              </marker>
+            </defs>
+
+            <!-- 基学习器 1 (树桩) -->
+            <g transform="translate(18, 50)">
+              <rect width="105" height="68" class="svg-node-box" fill="#E8EEF2" stroke="#275D91"/>
+              <text x="52" y="24" class="svg-node-text" fill="#275D91">弱基学习器 h₁</text>
+              <text x="52" y="42" class="svg-sub-text">高偏差·低方差</text>
+              <text x="52" y="56" class="svg-sub-text">初设均匀权重</text>
+            </g>
+
+            <!-- 误差与权重传递 (串行反馈) -->
+            <path d="M 123 84 L 160 84" class="svg-flow-path" stroke="#B63B24" marker-end="url(#arr-boost-seq)"/>
+            <text x="142" y="74" class="svg-sub-text" fill="#B63B24" font-weight="700">残差 r₁</text>
+
+            <!-- 基学习器 2 (聚焦错题) -->
+            <g transform="translate(166, 50)">
+              <rect width="105" height="68" class="svg-node-box" fill="#E8EEF2" stroke="#B63B24"/>
+              <text x="52" y="24" class="svg-node-text" fill="#B63B24">纠错基学习器 h₂</text>
+              <text x="52" y="42" class="svg-sub-text">放大错题权重</text>
+              <text x="52" y="56" class="svg-sub-text">拟合负梯度</text>
+            </g>
+
+            <!-- 误差继续传递 -->
+            <path d="M 271 84 L 308 84" class="svg-flow-path" stroke="#B63B24" marker-end="url(#arr-boost-seq)"/>
+            <text x="290" y="74" class="svg-sub-text" fill="#B63B24" font-weight="700">残差 r₂</text>
+
+            <!-- 基学习器 M -->
+            <g transform="translate(314, 50)">
+              <rect width="105" height="68" class="svg-node-box" fill="#E8EEF2" stroke="#275D91"/>
+              <text x="52" y="24" class="svg-node-text" fill="#275D91">补偿学习器 h_M</text>
+              <text x="52" y="42" class="svg-sub-text">逼近极低偏差</text>
+              <text x="52" y="56" class="svg-sub-text">渐进收敛</text>
+            </g>
+
+            <!-- 各级加权贡献到最终模型 -->
+            <path d="M 70 118 L 70 175 C 70 195, 180 195, 190 195" class="svg-flow-path" stroke="#275D91"/>
+            <path d="M 218 118 L 218 185" class="svg-flow-path" stroke="#275D91"/>
+            <path d="M 366 118 L 366 175 C 366 195, 260 195, 246 195" class="svg-flow-path" stroke="#275D91"/>
+
+            <!-- 线性加权累加器 -->
+            <g transform="translate(145, 180)">
+              <rect width="150" height="62" class="svg-node-box" fill="#F7FAFC" stroke="#B63B24" stroke-width="2"/>
+              <text x="75" y="24" class="svg-node-text" fill="#B63B24">加权累加求和</text>
+              <text x="75" y="44" class="svg-sub-text">F(x) = Σ α_m h_m(x)</text>
+            </g>
+          </svg>
+        </div>
+
+        <div class="branch-specs">
+          <div class="spec-row">
+            <span class="spec-k">基学习器要求</span>
+            <span class="spec-v">高偏差弱模型（单层决策树桩/浅层树）</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-k">核心演进逻辑</span>
+            <span class="spec-v">前后强依赖；后继专攻前序错误样本或负梯度</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-k">工业界代表</span>
+            <span class="spec-v">LightGBM, XGBoost, CatBoost</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- 3. Stacking -->
+      <article class="branch-card active" data-branch="stacking" tabindex="0">
+        <div class="branch-head">
+          <div class="branch-name-wrap">
+            <h2 class="branch-title">Stacking 体系</h2>
+            <span class="branch-sub">Stacked Generalization / 二层融合</span>
+          </div>
+          <span class="paradigm-tag stacked">分层异质 · 元学习</span>
+        </div>
+
+        <div class="mechanism-strip">
+          <span class="mech-text">目标：多视角互补</span>
+          <span class="math-pill">ŷ = g(h₁(x), h₂(x), h₃(x))</span>
+        </div>
+
+        <div class="diagram-view" aria-label="Stacking 拓扑示意图">
+          <svg viewBox="0 0 440 260">
+            <defs>
+              <marker id="arr-meta" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 1 1 L 9 5 L 1 9 z" fill="#006B72"/>
+              </marker>
+            </defs>
+
+            <!-- 初级初学者 (不同家族异质模型) -->
+            <g transform="translate(20, 20)">
+              <rect width="110" height="46" class="svg-node-box" fill="#E8EEF2" stroke="#536777"/>
+              <text x="55" y="18" class="svg-node-text">初级基模型 1</text>
+              <text x="55" y="32" class="svg-sub-text">支持向量机 SVM</text>
+            </g>
+
+            <g transform="translate(20, 78)">
+              <rect width="110" height="46" class="svg-node-box" fill="#E8EEF2" stroke="#536777"/>
+              <text x="55" y="18" class="svg-node-text">初级基模型 2</text>
+              <text x="55" y="32" class="svg-sub-text">随机森林 RF</text>
+            </g>
+
+            <g transform="translate(20, 136)">
+              <rect width="110" height="46" class="svg-node-box" fill="#E8EEF2" stroke="#536777"/>
+              <text x="55" y="18" class="svg-node-text">初级基模型 3</text>
+              <text x="55" y="32" class="svg-sub-text">神经网络 NN</text>
+            </g>
+
+            <g transform="translate(20, 194)">
+              <rect width="110" height="46" class="svg-node-box" fill="#E8EEF2" stroke="#536777"/>
+              <text x="55" y="18" class="svg-node-text">初级基模型 4</text>
+              <text x="55" y="32" class="svg-sub-text">LightGBM</text>
+            </g>
+
+            <!-- 预测向量交叉组合并防止过拟合 (K-fold OOF) -->
+            <path d="M 130 43 L 178 95" class="svg-flow-path" stroke="#006B72"/>
+            <path d="M 130 101 L 178 115" class="svg-flow-path" stroke="#006B72"/>
+            <path d="M 130 159 L 178 135" class="svg-flow-path" stroke="#006B72"/>
+            <path d="M 130 217 L 178 155" class="svg-flow-path" stroke="#006B72"/>
+
+            <!-- 次级特征矩阵 (Out-of-Fold 预测) -->
+            <g transform="translate(182, 85)">
+              <rect width="105" height="85" class="svg-node-box" fill="#F7FAFC" stroke="#006B72" stroke-dasharray="3 2"/>
+              <text x="52" y="24" class="svg-node-text" fill="#006B72">次级元特征</text>
+              <text x="52" y="44" class="svg-sub-text">K 折交叉验证</text>
+              <text x="52" y="60" class="svg-sub-text">防数据泄露</text>
+              <text x="52" y="74" class="svg-sub-text font-num">[ŷ₁, ŷ₂, ŷ₃, ŷ₄]</text>
+            </g>
+
+            <path d="M 287 127 L 318 127" class="svg-flow-path" stroke="#006B72" marker-end="url(#arr-meta)"/>
+
+            <!-- 元学习器 (Meta Learner) -->
+            <g transform="translate(325, 95)">
+              <rect width="95" height="65" class="svg-node-box" fill="#F7FAFC" stroke="#006B72" stroke-width="2"/>
+              <text x="47" y="24" class="svg-node-text" fill="#006B72">元学习器</text>
+              <text x="47" y="42" class="svg-sub-text">Logistic/Ridge</text>
+              <text x="47" y="56" class="svg-sub-text font-weight-700">自适应加权</text>
+            </g>
+          </svg>
+        </div>
+
+        <div class="branch-specs">
+          <div class="spec-row">
+            <span class="spec-k">基学习器要求</span>
+            <span class="spec-v">异质多元体系（保证假设空间互补）</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-k">结合策略</span>
+            <span class="spec-v">次级模型学习如何对初级预测赋权（非人工固定）</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-k">工业界代表</span>
+            <span class="spec-v">Kaggle/天池竞技冲榜、AutoML 自动集成</span>
+          </div>
+        </div>
+      </article>
+    </main>
+
+    <!-- 底部全讲收束 -->
+    <footer class="footer-summary">
+      <div class="summary-claim">
+        <span class="paradigm-tag" style="background:#142533;color:#F7FAFC">本质共性</span>
+        <span>集成的灵魂是<strong>“多样性与互补性”</strong>：Bagging 用随机性换低相关性，Boosting 用递进残差逼近真实分布，Stacking 用二层元学习调度专家模型。</span>
+      </div>
+      <div class="nav-hints">
+        <span>按键盘 1/2/3 切换聚焦</span>
+        <span>按 0 恢复全景并览</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      Deck.init({ index: 3, total: 27 });
+
+      const cards = document.querySelectorAll('.branch-card');
+      const buttons = {
+        all: document.getElementById('btn-all'),
+        bagging: document.getElementById('btn-bagging'),
+        boosting: document.getElementById('btn-boosting'),
+        stacking: document.getElementById('btn-stacking')
+      };
+
+      window.selectParadigm = function(mode) {
+        // 更新按钮状态
+        Object.keys(buttons).forEach(key => {
+          buttons[key].setAttribute('aria-pressed', key === mode ? 'true' : 'false');
+        });
+
+        // 更新卡片激活态
+        cards.forEach(card => {
+          const branch = card.getAttribute('data-branch');
+          if (mode === 'all') {
+            card.classList.remove('dimmed');
+            card.classList.add('active');
+          } else {
+            if (branch === mode) {
+              card.classList.remove('dimmed');
+              card.classList.add('active');
+            } else {
+              card.classList.remove('active');
+              card.classList.add('dimmed');
+            }
+          }
+        });
+      };
+
+      // 键盘快捷响应
+      window.addEventListener('keydown', function(e) {
+        if (e.key === '0') {
+          selectParadigm('all');
+        } else if (e.key === '1') {
+          selectParadigm('bagging');
+        } else if (e.key === '2') {
+          selectParadigm('boosting');
+        } else if (e.key === '3') {
+          selectParadigm('stacking');
+        }
+      });
+
+      // 支持直接点击卡片聚焦
+      cards.forEach(card => {
+        card.addEventListener('click', function() {
+          const branch = this.getAttribute('data-branch');
+          selectParadigm(branch);
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh" data-variant="lab">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{padding:40px 76px 34px;display:flex;flex-direction:column}
+.head{display:flex;justify-content:space-between;align-items:baseline;gap:40px}
+.head h1{margin:0}
+.head .nt-kicker{margin-bottom:4px}
+main{display:grid;grid-template-columns:1fr 430px;gap:48px;margin-top:16px;flex:1;min-height:0;align-items:start}
+.chart-col{min-width:0;display:flex;flex-direction:column}
+.chart-col .nt-note{margin-top:14px}
+svg.nt-chart{width:100%;height:360px;overflow:visible}
+.side{display:flex;flex-direction:column;gap:12px;min-width:0}
+.formula-box{padding-bottom:12px;border-bottom:1px solid var(--muted)}
+.formula-box .nt-formula{margin:8px 0 0}
+.result{display:flex;flex-direction:column;gap:2px}
+.result .nt-label{color:var(--muted)}
+.result .value-row{display:flex;align-items:baseline;gap:10px}
+.result .nt-number{font-size:48px;line-height:1}
+.result .unit{font-size:18px;color:var(--muted)}
+.delta{font-size:14px;color:var(--muted)}
+.nt-controls{padding-top:6px;border-top:1px solid var(--muted)}
+.nt-range-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.nt-range-value{font-family:var(--font-numeric);font-size:24px}
+input[type="range"]{width:100%;accent-color:var(--accent);height:24px}
+.nt-range-bounds{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-top:2px}
+.presets{display:flex;gap:8px;margin-top:10px}
+.preset-btn{flex:1;padding:6px 0;border:1px solid var(--muted);background:transparent;font-family:var(--font-sans);font-size:14px;color:var(--text);cursor:pointer;border-radius:3px}
+.preset-btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.nt-button{margin-top:4px;padding:8px 0}
+table.nt-data-table{width:100%;font-size:13px;margin-top:6px}
+table.nt-data-table th, table.nt-data-table td{padding:2px 6px;text-align:right}
+table.nt-data-table th:first-child, table.nt-data-table td:first-child{text-align:left}
+</style>
+</head>
+<body data-page="03" data-total="3">
+<div id="stage">
+  <div class="head">
+    <div>
+      <div class="nt-kicker">03 · How rate shapes the future</div>
+      <h1 class="nt-title"><span lang="zh">增长率如何改变未来</span></h1>
+    </div>
+    <p class="nt-lead" style="max-width:460px;margin:0;text-align:right">
+      <span lang="zh">本金 100，拖动增长率 r，看 0—5 年的曲线怎么被重新画出。</span>
+    </p>
+  </div>
+
+  <main>
+    <div class="chart-col">
+      <svg class="nt-chart" id="chart" viewBox="0 0 1080 360" role="img" aria-label="0到5年本金增长曲线"></svg>
+      <p class="nt-note" id="note"><span lang="zh">曲线随 r 实时重画；灰色虚线是 r=20% 的参照曲线，方便对比涨跌。</span></p>
+    </div>
+
+    <aside class="side">
+      <div class="formula-box">
+        <div class="nt-label"><span lang="zh">公式</span> · A(n) = 100 × (1+r)ⁿ</div>
+        <div class="nt-formula" id="formulaLine">A(5) = 100 × (1.20)⁵</div>
+      </div>
+
+      <div class="result">
+        <div class="nt-label"><span lang="zh">第 5 年金额</span> · Year-5 amount</div>
+        <div class="value-row">
+          <span class="nt-number" id="amount">248.83</span>
+          <span class="unit">元</span>
+        </div>
+        <div class="delta" id="delta">比本金 100 多 148.83</div>
+      </div>
+
+      <div class="nt-controls">
+        <div class="nt-range-row">
+          <span class="nt-label"><span lang="zh">增长率</span> r</span>
+          <span class="nt-range-value" id="rateValue">20%</span>
+        </div>
+        <input type="range" id="rate" min="0" max="50" step="1" value="20" aria-label="增长率 r，0到50百分之">
+        <div class="nt-range-bounds"><span>0%</span><span>50%</span></div>
+        <div class="presets">
+          <button class="preset-btn" data-preset="0" type="button">0%</button>
+          <button class="preset-btn" data-preset="20" type="button" aria-pressed="true">20%</button>
+          <button class="preset-btn" data-preset="50" type="button">50%</button>
+        </div>
+        <button class="nt-button" id="reset" type="button" style="width:100%">重置为 20%</button>
+      </div>
+
+    </aside>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  const YEARS = [0,1,2,3,4,5];
+  const PRINCIPAL = 100;
+  const DEFAULT_RATE = 20;
+  const MAX_AMOUNT_AT_50 = PRINCIPAL * Math.pow(1.5, 5); // 759.375...
+
+  const svg = document.getElementById('chart');
+  const rateInput = document.getElementById('rate');
+  const rateValue = document.getElementById('rateValue');
+  const amountEl = document.getElementById('amount');
+  const deltaEl = document.getElementById('delta');
+  const formulaLine = document.getElementById('formulaLine');
+  const tbody = document.getElementById('tbody');
+  const presetBtns = document.querySelectorAll('.preset-btn');
+  const resetBtn = document.getElementById('reset');
+
+  const PAD = { l: 70, r: 30, t: 22, b: 40 };
+  const W = 1080, H = 360;
+  const plotW = W - PAD.l - PAD.r;
+  const plotH = H - PAD.t - PAD.b;
+
+  function seriesFor(ratePct){
+    const r = ratePct / 100;
+    return YEARS.map(n => PRINCIPAL * Math.pow(1 + r, n));
+  }
+
+  const REFERENCE = seriesFor(DEFAULT_RATE);
+  const yMax = MAX_AMOUNT_AT_50 * 1.06;
+
+  function xAt(n){ return PAD.l + (n / 5) * plotW; }
+  function yAt(v){ return PAD.t + plotH - (v / yMax) * plotH; }
+
+  function pathFor(values){
+    return values.map((v,i) => (i===0?'M':'L') + xAt(YEARS[i]).toFixed(1) + ',' + yAt(v).toFixed(1)).join(' ');
+  }
+
+  function buildStatic(){
+    let s = '';
+    // grid lines (horizontal, 5 divisions)
+    const gridSteps = 5;
+    for(let i=0;i<=gridSteps;i++){
+      const v = yMax * i / gridSteps;
+      const y = yAt(v);
+      s += `<line class="nt-grid-line" x1="${PAD.l}" y1="${y.toFixed(1)}" x2="${W-PAD.r}" y2="${y.toFixed(1)}"></line>`;
+      s += `<text class="nt-axis-label" x="${PAD.l-14}" y="${(y+4).toFixed(1)}" text-anchor="end">${Math.round(v)}</text>`;
+    }
+    // axis lines
+    s += `<line class="nt-axis-line" x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}"></line>`;
+    s += `<line class="nt-axis-line" x1="${PAD.l}" y1="${H-PAD.b}" x2="${W-PAD.r}" y2="${H-PAD.b}"></line>`;
+    // x labels
+    YEARS.forEach(n => {
+      s += `<text class="nt-axis-label" x="${xAt(n).toFixed(1)}" y="${H-PAD.b+28}" text-anchor="middle">${n}年</text>`;
+    });
+    // reference dashed curve at 20%
+    s += `<path d="${pathFor(REFERENCE)}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="5,5"></path>`;
+    return s;
+  }
+
+  let dynamicGroup;
+
+  function initChart(){
+    svg.innerHTML = buildStatic() + '<g id="dynamicGroup"></g>';
+    dynamicGroup = document.getElementById('dynamicGroup');
+  }
+
+  function render(ratePct){
+    const values = seriesFor(ratePct);
+    const amount5 = values[5];
+
+    // dynamic curve + points + labels
+    let s = `<path class="nt-series--compound" d="${pathFor(values)}" fill="none"></path>`;
+    values.forEach((v,i) => {
+      const x = xAt(YEARS[i]), y = yAt(v);
+      s += `<circle class="nt-point--compound" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6"></circle>`;
+      const anchor = i===0 ? 'start' : 'middle';
+      const lx = i===0 ? x + 8 : x;
+      s += `<text class="nt-value-label" x="${lx.toFixed(1)}" y="${(y-14).toFixed(1)}" text-anchor="${anchor}">${v.toFixed(2)}</text>`;
+    });
+    s += `<text class="nt-series-label--compound" x="${(xAt(5)+14).toFixed(1)}" y="${(yAt(amount5)+4).toFixed(1)}">r=${ratePct}%</text>`;
+    dynamicGroup.innerHTML = s;
+
+    // side panel
+    rateValue.textContent = ratePct + '%';
+    amountEl.textContent = amount5.toFixed(2);
+    deltaEl.textContent = `比本金 100 多 ${(amount5 - PRINCIPAL).toFixed(2)}`;
+    const rDisplay = (ratePct/100).toFixed(2);
+    formulaLine.textContent = `A(5) = 100 × (1${ratePct>=0?'+':''}${rDisplay})⁵ = ${amount5.toFixed(2)}`;
+
+    // table removed; values shown on chart labels
+
+    // preset button states
+    presetBtns.forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.preset) === ratePct)));
+
+    rateInput.value = ratePct;
+  }
+
+  initChart();
+  render(DEFAULT_RATE);
+
+  rateInput.addEventListener('input', () => render(Number(rateInput.value)));
+  presetBtns.forEach(b => b.addEventListener('click', () => render(Number(b.dataset.preset))));
+  resetBtn.addEventListener('click', () => render(DEFAULT_RATE));
+
+  Deck.init({ index: 3, total: 3 });
+})();
+</script>
+</body>
+</html>

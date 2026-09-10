@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{position:relative;overflow:hidden}
+
+.kicker{position:absolute;left:70px;top:52px;}
+h1.title{position:absolute;left:70px;top:88px;width:1120px;}
+.formula-box{position:absolute;right:70px;top:56px;text-align:right}
+
+.rule{position:absolute;left:70px;right:70px;top:180px;border-top:1px solid var(--line)}
+
+/* three side-by-side columns, each a self-contained window-count demonstration */
+.cols{position:absolute;left:70px;right:70px;top:206px;bottom:206px;display:grid;grid-template-columns:1fr 1fr 1fr;column-gap:44px}
+.col{position:relative;display:flex;flex-direction:column;min-height:0}
+.col + .col{border-left:1px solid var(--line);padding-left:44px}
+.col .name{display:block}
+.col .note{display:block;margin-top:6px;margin-bottom:18px}
+.col .stage-wrap{position:relative;flex:1;min-height:0}
+.col svg{position:absolute;inset:0;width:100%;height:100%}
+
+.count-line{display:flex;align-items:baseline;gap:10px;margin-top:14px}
+.count-line .num{font-variant-numeric:tabular-nums}
+.count-line .cap{color:var(--muted)}
+
+.derive{position:absolute;left:70px;top:706px;right:70px;border-top:1px solid var(--line);padding-top:18px;
+  display:grid;grid-template-columns:1.15fr 1fr 1fr;column-gap:48px;align-items:start}
+.derive .step .k{display:block}
+.derive .step .v{display:block;margin-top:6px}
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+
+  <p class="nt-kicker kicker">卷积输出尺寸</p>
+  <h1 class="nt-title title">stride、padding、卷积核大小共同决定输出尺寸</h1>
+  <div class="formula-box">
+    <span class="nt-equation" id="formulaTag">O = (I − K + 2P) / S + 1</span>
+  </div>
+
+  <div class="rule"></div>
+
+  <div class="cols">
+    <div class="col" id="col0">
+      <span class="nt-label name" style="color:var(--text)">基础：核 3，步幅 1，无填充</span>
+      <span class="nt-note note">输入 7 格，核宽 3，每次挪 1 格。</span>
+      <div class="stage-wrap"><svg viewBox="0 0 460 420" preserveAspectRatio="xMinYMin meet"></svg></div>
+      <div class="count-line"><span class="nt-equation num" id="num0"></span><span class="nt-label cap">个可放位置 = 输出尺寸</span></div>
+    </div>
+    <div class="col" id="col1">
+      <span class="nt-label name" style="color:var(--text)">加填充：核 3，步幅 1，填充 1</span>
+      <span class="nt-note note">两端各补 1 格，窗口能多停 2 次。</span>
+      <div class="stage-wrap"><svg viewBox="0 0 460 420" preserveAspectRatio="xMinYMin meet"></svg></div>
+      <div class="count-line"><span class="nt-equation num" id="num1"></span><span class="nt-label cap">个可放位置 = 输出尺寸</span></div>
+    </div>
+    <div class="col" id="col2">
+      <span class="nt-label name" style="color:var(--text)">改步幅：核 3，步幅 2，无填充</span>
+      <span class="nt-note note">每次跳 2 格，能停的位置随之变少。</span>
+      <div class="stage-wrap"><svg viewBox="0 0 460 420" preserveAspectRatio="xMinYMin meet"></svg></div>
+      <div class="count-line"><span class="nt-equation num" id="num2"></span><span class="nt-label cap">个可放位置 = 输出尺寸</span></div>
+    </div>
+  </div>
+
+  <div class="derive">
+    <div class="step">
+      <span class="nt-label k">窗口起点最右能到哪</span>
+      <span class="nt-equation v">I + 2P − K</span>
+    </div>
+    <div class="step">
+      <span class="nt-label k">除以步幅得到能跳几步</span>
+      <span class="nt-equation v">(I + 2P − K) / S</span>
+    </div>
+    <div class="step">
+      <span class="nt-label k">加上起点本身这一步</span>
+      <span class="nt-equation v">O = (I + 2P − K) / S + 1</span>
+    </div>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  const ns = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs){
+    const n = document.createElementNS(ns, tag);
+    for(const k in attrs) n.setAttribute(k, attrs[k]);
+    return n;
+  }
+
+  // configs: I=input length, K=kernel, S=stride, P=padding
+  const configs = [
+    {I:7, K:3, S:1, P:0, col:'col0', num:'num0'},
+    {I:7, K:3, S:1, P:1, col:'col1', num:'num1'},
+    {I:7, K:3, S:2, P:0, col:'col2', num:'num2'}
+  ];
+
+  function outputSize(cfg){
+    return Math.floor((cfg.I + 2*cfg.P - cfg.K) / cfg.S) + 1;
+  }
+
+  const cell = 44, gap = 4;
+  const winRowH = 24, winGap = 4;
+
+  function buildCol(cfg){
+    const svg = document.querySelector('#'+cfg.col+' svg');
+    const totalCells = cfg.I + 2*cfg.P;
+    const inputW = totalCells*cell + (totalCells-1)*gap;
+    const startX = 0;
+    const inputY = 0;
+
+    // input cells (including padding)
+    for(let i=0;i<totalCells;i++){
+      const isPad = i < cfg.P || i >= cfg.P + cfg.I;
+      const x = startX + i*(cell+gap);
+      const rect = el('rect', {
+        x, y:inputY, width:cell, height:cell,
+        fill: isPad ? 'none' : 'var(--bg)',
+        stroke: isPad ? 'var(--muted)' : 'var(--text)',
+        'stroke-dasharray': isPad ? '4 4' : 'none',
+        'stroke-width': 1.4
+      });
+      svg.appendChild(rect);
+      if(!isPad){
+        const idx = i - cfg.P;
+        const t = el('text', {x:x+cell/2, y:inputY+cell/2+5, class:'nt-tick', 'text-anchor':'middle', fill:'var(--muted)'});
+        t.textContent = idx+1;
+        svg.appendChild(t);
+      }
+    }
+
+    // sliding window positions stacked vertically beneath the input row: row count IS the output count
+    const O = outputSize(cfg);
+    const winTop = inputY + cell + 16;
+    for(let p=0; p<O; p++){
+      const startCell = p*cfg.S;
+      const x = startX + startCell*(cell+gap);
+      const w = cfg.K*cell + (cfg.K-1)*gap;
+      const y = winTop + p*(winRowH+winGap);
+      const guide = el('rect', {x, y:inputY, width:w, height:cell, fill:'none', stroke:'var(--accent)', 'stroke-width':1, 'stroke-dasharray':'2 3', opacity:0.3});
+      svg.appendChild(guide);
+      const rect = el('rect', {
+        x, y, width:w, height:winRowH,
+        fill:'var(--accent)', 'fill-opacity':'0.12', stroke:'var(--accent)', 'stroke-width':2, rx:3
+      });
+      svg.appendChild(rect);
+      const tick = el('text', {x:x+8, y: y+winRowH/2+4.5, class:'nt-tick', fill:'var(--accent)', 'font-weight':'600'});
+      tick.textContent = '第' + (p+1) + '步';
+      svg.appendChild(tick);
+    }
+
+    const totalH = winTop + O*(winRowH+winGap);
+    svg.setAttribute('viewBox', '0 0 ' + inputW + ' ' + totalH);
+    document.getElementById(cfg.num).textContent = O;
+  }
+
+  configs.forEach(buildCol);
+
+  Deck.init({index:21, total:44});
+})();
+</script>
+</body>
+</html>

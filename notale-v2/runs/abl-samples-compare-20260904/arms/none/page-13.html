@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Boosting：按顺序纠正错误</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --text: #122634;
+      --font-sans: "Noto Sans SC", system-ui, -apple-system, sans-serif;
+    }
+
+    #stage {
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* 背景微妙坐标网格刻线 - 体现序列迭代与测量仪特质 */
+    .bg-grid {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.35;
+      background-image: 
+        linear-gradient(to right, rgba(83, 106, 120, 0.08) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(83, 106, 120, 0.08) 1px, transparent 1px);
+      background-size: 80px 80px;
+    }
+
+    .cover-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 500px 1fr;
+      gap: 64px;
+      align-items: center;
+      position: relative;
+      z-index: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：标题区与核心概念锚点 */
+    .title-field {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding-right: 20px;
+    }
+
+    .chapter-mark {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chapter-mark::after {
+      content: "";
+      display: inline-block;
+      width: 36px;
+      height: 2px;
+      background: var(--muted);
+      opacity: 0.4;
+    }
+
+    .page-title {
+      font-size: 54px;
+      line-height: 1.15;
+      font-weight: 900;
+      color: var(--text);
+      margin: 0 0 24px 0;
+      letter-spacing: -0.02em;
+    }
+
+    .page-title .accent {
+      color: var(--aggregate);
+      display: block;
+      margin-top: 8px;
+    }
+
+    .page-subtitle {
+      font-size: var(--fs-lead);
+      line-height: 1.6;
+      color: var(--muted);
+      margin: 0 0 36px 0;
+      max-width: 440px;
+    }
+
+    .meta-metrics {
+      display: flex;
+      gap: 28px;
+      border-top: 1px solid rgba(83, 106, 120, 0.2);
+      padding-top: 24px;
+    }
+
+    .metric-col {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .metric-col .num {
+      font-family: var(--font-num, monospace);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+    }
+
+    .metric-col .lbl {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    /* 右侧主角：四阶段序列递推视觉场 */
+    .visual-stage {
+      position: relative;
+      height: 100%;
+      max-height: 700px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .sequence-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 文本细节 */
+    .svg-title {
+      font-size: 16px;
+      font-weight: 700;
+      fill: var(--text);
+      letter-spacing: 0.02em;
+    }
+
+    .svg-caption {
+      font-size: 13px;
+      fill: var(--muted);
+    }
+
+    .svg-step-badge {
+      font-family: var(--font-num, monospace);
+      font-size: 13px;
+      font-weight: 700;
+      fill: var(--muted);
+    }
+  </style>
+</head>
+<body data-page="13" data-total="27">
+  <div id="stage">
+    <div class="bg-grid"></div>
+    <main class="cover-layout">
+      <!-- 标题与叙事进入区 -->
+      <header class="title-field min0">
+        <div class="chapter-mark">第三单元 · 序列集成</div>
+        <h1 class="page-title">
+          Boosting
+          <span class="accent">按顺序纠正错误</span>
+        </h1>
+        <p class="page-subtitle">
+          不再让模型独立投票。后一个弱学习器始终针对前序成员遗留的偏差与残差定向学习，将一系列简单规则逐次提升为强判断。
+        </p>
+
+        <div class="meta-metrics">
+          <div class="metric-col">
+            <span class="num">Sequential</span>
+            <span class="lbl">串行推进模式</span>
+          </div>
+          <div class="metric-col">
+            <span class="num" style="color: var(--aggregate);">Bias ↓</span>
+            <span class="lbl">主攻偏差缩减</span>
+          </div>
+          <div class="metric-col">
+            <span class="num" style="color: var(--model);">Adaptive</span>
+            <span class="lbl">动态重权聚焦</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- 视觉主角：纠错序列的演进图解 -->
+      <section class="visual-stage min0" aria-label="Boosting序列纠错演变机制图">
+        <svg class="sequence-svg" viewBox="0 0 920 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arrow-muted" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#536A78" opacity="0.6" />
+            </marker>
+            <marker id="arrow-aggregate" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#C34B22" />
+            </marker>
+            <filter id="shadow" x="-8%" y="-6%" width="120%" height="124%" filterUnits="userSpaceOnUse">
+              <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#122634" flood-opacity="0.06" />
+            </filter>
+            <filter id="glow-agg" x="-20%" y="-20%" width="140%" height="140%" filterUnits="userSpaceOnUse">
+              <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#C34B22" flood-opacity="0.15" />
+            </filter>
+          </defs>
+
+          <!-- 背景引导流线：横跨迭代轴 -->
+          <path d="M 120 180 C 230 180, 230 480, 360 480 C 470 480, 480 200, 590 200 C 690 200, 710 330, 760 330" 
+                stroke="#536A78" stroke-width="2" stroke-dasharray="4 6" opacity="0.25" />
+
+          <!-- ==================== 阶段 1: 弱学习器 1 (初始均匀样本) ==================== -->
+          <g transform="translate(10, 80)">
+            <rect width="210" height="230" rx="8" fill="#FFFFFF" stroke="#E2EBF0" stroke-width="2" filter="url(#shadow)" />
+            <text x="18" y="32" class="svg-step-badge">STAGE 01</text>
+            <text x="18" y="56" class="svg-title">基学习器 h₁(x)</text>
+            <text x="18" y="76" class="svg-caption">初次划分 · 样本同权</text>
+
+            <!-- 坐标模拟框 -->
+            <rect x="18" y="92" width="174" height="120" rx="4" fill="#F8FAFB" stroke="#E2EBF0" stroke-width="1" />
+            <!-- 分割线 1 -->
+            <line x1="105" y1="92" x2="105" y2="212" stroke="#27648F" stroke-width="2" stroke-dasharray="3 3" />
+            <text x="110" y="108" font-size="12" fill="#27648F" font-weight="700">阈值 d₁</text>
+
+            <!-- 样本点：均匀大小 -->
+            <circle cx="50" cy="125" r="5" fill="#2F7568" />
+            <circle cx="75" cy="140" r="5" fill="#2F7568" />
+            <circle cx="60" cy="180" r="5" fill="#2F7568" />
+
+            <!-- 右侧样本点（正类） -->
+            <circle cx="150" cy="120" r="5" fill="#27648F" />
+            <circle cx="165" cy="175" r="5" fill="#27648F" />
+
+            <!-- 误分类样本（用醒目的深橙色圆圈标出） -->
+            <circle cx="130" cy="150" r="5" fill="#2F7568" stroke="#C34B22" stroke-width="2" />
+            <circle cx="140" cy="185" r="5" fill="#2F7568" stroke="#C34B22" stroke-width="2" />
+            <text x="110" y="205" font-size="12" fill="#C34B22" font-weight="700">错误样本</text>
+          </g>
+
+          <!-- 连接箭头 1 -> 2 -->
+          <g transform="translate(230, 240)">
+            <path d="M 0 0 C 35 0, 35 120, 65 120" fill="none" stroke="#C34B22" stroke-width="2" marker-end="url(#arrow-aggregate)" />
+            <rect x="4" y="45" width="76" height="24" rx="4" fill="#FFFFFF" stroke="#E2EBF0" />
+            <text x="10" y="62" font-size="12" fill="#C34B22" font-weight="700">权重提升 ↑</text>
+          </g>
+
+          <!-- ==================== 阶段 2: 弱学习器 2 (聚焦上一轮错误) ==================== -->
+          <g transform="translate(305, 250)">
+            <rect width="210" height="230" rx="8" fill="#FFFFFF" stroke="#E2EBF0" stroke-width="2" filter="url(#shadow)" />
+            <text x="18" y="32" class="svg-step-badge">STAGE 02</text>
+            <text x="18" y="56" class="svg-title">基学习器 h₂(x)</text>
+            <text x="18" y="76" class="svg-caption">难分样本权重放大</text>
+
+            <!-- 坐标模拟框 -->
+            <rect x="18" y="92" width="174" height="120" rx="4" fill="#F8FAFB" stroke="#E2EBF0" stroke-width="1" />
+            <!-- 水平分割线 2 针对上一轮漏掉的区域切分 -->
+            <line x1="18" y1="165" x2="192" y2="165" stroke="#27648F" stroke-width="2" stroke-dasharray="3 3" />
+            <text x="24" y="156" font-size="12" fill="#27648F" font-weight="700">阈值 d₂</text>
+
+            <!-- 样本点：被放大的错误样本 -->
+            <circle cx="50" cy="125" r="4" fill="#2F7568" opacity="0.6" />
+            <circle cx="75" cy="140" r="4" fill="#2F7568" opacity="0.6" />
+            <circle cx="60" cy="180" r="4" fill="#2F7568" opacity="0.6" />
+
+            <circle cx="150" cy="120" r="4" fill="#27648F" opacity="0.6" />
+            <circle cx="165" cy="185" r="4" fill="#27648F" opacity="0.6" />
+
+            <!-- 上轮误分类点：显著放大，成为本轮主导 -->
+            <circle cx="130" cy="140" r="11" fill="none" stroke="#C34B22" stroke-width="2" />
+            <circle cx="130" cy="140" r="6" fill="#2F7568" />
+            <circle cx="150" cy="155" r="11" fill="none" stroke="#C34B22" stroke-width="2" />
+            <circle cx="150" cy="155" r="6" fill="#2F7568" />
+
+            <!-- 本轮新遗留的残差/微小偏差 -->
+            <circle cx="85" cy="190" r="4" fill="#27648F" stroke="#C34B22" stroke-width="1.5" />
+          </g>
+
+          <!-- 连接箭头 2 -> 3 -->
+          <g transform="translate(525, 330)">
+            <path d="M 0 0 C 35 0, 35 -140, 65 -140" fill="none" stroke="#C34B22" stroke-width="2" marker-end="url(#arrow-aggregate)" />
+            <rect x="4" y="-85" width="76" height="24" rx="4" fill="#FFFFFF" stroke="#E2EBF0" />
+            <text x="10" y="-68" font-size="12" fill="#C34B22" font-weight="700">拟合残差 ↑</text>
+          </g>
+
+          <!-- ==================== 阶段 3: 弱学习器 3 (微调残余边界) ==================== -->
+          <g transform="translate(600, 70)">
+            <rect width="200" height="220" rx="8" fill="#FFFFFF" stroke="#E2EBF0" stroke-width="2" filter="url(#shadow)" />
+            <text x="18" y="30" class="svg-step-badge">STAGE 03</text>
+            <text x="18" y="52" class="svg-title">基学习器 h₃(x)</text>
+            <text x="18" y="70" class="svg-caption">纠正剩余细微边缘</text>
+
+            <rect x="18" y="84" width="164" height="114" rx="4" fill="#F8FAFB" stroke="#E2EBF0" stroke-width="1" />
+            <line x1="75" y1="84" x2="145" y2="198" stroke="#27648F" stroke-width="2" stroke-dasharray="3 3" />
+            <text x="106" y="104" font-size="12" fill="#27648F" font-weight="700">斜向补偿</text>
+
+            <!-- 聚集在边界附近的微调点群 -->
+            <circle cx="45" cy="130" r="4" fill="#2F7568" opacity="0.4" />
+            <circle cx="140" cy="115" r="4" fill="#27648F" opacity="0.4" />
+            <circle cx="85" cy="175" r="8" fill="none" stroke="#C34B22" stroke-width="2" />
+            <circle cx="85" cy="175" r="4.5" fill="#27648F" />
+          </g>
+
+          <!-- ==================== 汇聚终态：最终强学习器 H(x) ==================== -->
+          <!-- 汇聚分支线汇入强分类器 -->
+          <path d="M 220 195 C 450 195, 450 490, 680 490" fill="none" stroke="#27648F" stroke-width="2" opacity="0.4" />
+          <path d="M 515 365 C 580 365, 590 490, 680 490" fill="none" stroke="#27648F" stroke-width="2" opacity="0.5" />
+          <path d="M 700 290 C 700 370, 710 420, 720 440" fill="none" stroke="#27648F" stroke-width="2" opacity="0.6" marker-end="url(#arrow-muted)" />
+
+          <g transform="translate(560, 440)">
+            <rect width="340" height="170" rx="10" fill="#FFFFFF" stroke="#C34B22" stroke-width="2.5" filter="url(#glow-agg)" />
+            <rect x="0" y="0" width="8" height="170" rx="4" fill="#C34B22" />
+            
+            <text x="24" y="32" class="svg-step-badge" fill="#C34B22">FINAL ENSEMBLE</text>
+            <text x="24" y="60" class="svg-title" style="font-size: 20px; fill: #122634;">强学习器 H(x) = sign(∑ αₜ hₜ(x))</text>
+            <text x="24" y="82" class="svg-caption">线性加权组合 · 非线性复杂真实边界形成</text>
+
+            <!-- 组合后的非线性边界微缩图 -->
+            <g transform="translate(24, 96)">
+              <rect width="292" height="56" rx="4" fill="#F2F6F8" stroke="#E2EBF0" stroke-width="1" />
+              <!-- 复合台阶边界 -->
+              <path d="M 12 42 L 85 42 L 85 24 L 180 24 L 180 12 L 280 12" fill="none" stroke="#C34B22" stroke-width="2.5" />
+              
+              <!-- 两侧完美分开的样本簇 -->
+              <circle cx="40" cy="22" r="4.5" fill="#2F7568" />
+              <circle cx="65" cy="18" r="4.5" fill="#2F7568" />
+              <circle cx="120" cy="12" r="4.5" fill="#2F7568" />
+              <circle cx="150" cy="10" r="4.5" fill="#2F7568" />
+
+              <circle cx="110" cy="42" r="4.5" fill="#27648F" />
+              <circle cx="140" cy="40" r="4.5" fill="#27648F" />
+              <circle cx="210" cy="36" r="4.5" fill="#27648F" />
+              <circle cx="250" cy="26" r="4.5" fill="#27648F" />
+
+              <text x="195" y="48" font-size="12" fill="#237052" font-weight="700">准确率跃升</text>
+            </g>
+          </g>
+
+          <!-- 底部序列流向注释条 -->
+          <g transform="translate(20, 560)">
+            <rect width="480" height="50" rx="6" fill="#FFFFFF" stroke="#E2EBF0" stroke-width="1" />
+            <circle cx="24" cy="25" r="4" fill="#C34B22" />
+            <text x="38" y="22" font-size="13" font-weight="700" fill="#122634">序列依赖 (Sequential Dependency)</text>
+            <text x="38" y="39" font-size="12" fill="#536A78">每一轮训练都依赖上一轮的评估反馈，弱模型串行生成、定向纠偏</text>
+          </g>
+        </svg>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 13, total: 27 });
+  </script>
+</body>
+</html>

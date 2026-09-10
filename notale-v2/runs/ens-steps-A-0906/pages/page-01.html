@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    #field {
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .cover-content {
+      position: absolute;
+      z-index: 3;
+      left: 112px;
+      top: 260px;
+      width: 680px;
+      pointer-events: none;
+    }
+
+    .kicker {
+      font-family: var(--font-sans);
+      font-size: var(--fs-sec);
+      font-weight: var(--weight-medium);
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0 0 20px 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    .lead {
+      margin: 0;
+      font-family: var(--font-sans);
+      font-size: var(--fs-h2);
+      line-height: 1.5;
+      color: var(--muted);
+      max-width: 580px;
+    }
+
+    /* 讲稿区域 */
+    .notes {
+      display: none;
+    }
+  </style>
+</head>
+<body data-page="01" data-total="26">
+  <div id="stage">
+    <canvas id="field" class="cv-fill" aria-hidden="true"></canvas>
+
+    <div class="cover-content">
+      <div class="kicker">机器学习概论 · 第八讲</div>
+      <h1>集成学习</h1>
+      <p class="lead">多模型协同与决策聚合</p>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们好，今天我们进入第八讲——集成学习。
+    在之前的课程中，我们学习了决策树、支持向量机、神经网络等单模型算法。
+    但是在实际工程中，最强大、最稳定的表现往往不是来自单个精密设计的“超级模型”，
+    而是来自将多个相对简单或各有千秋的基模型组合在一起。
+    正如大家在背景中看到的推演：众多基学习器的预测轨迹各有差异与扰动，
+    但当它们经过科学的投票或加权收拢汇聚时，最终凝练成一条稳健、低方差的强决策路径。
+    这就是集成学习的核心思想。本讲我们将从多人决策直觉出发，系统解构 Bagging、Boosting 与 Stacking 三大流派。
+  </aside>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const W = 1600;
+      const H = 900;
+      const SEED = "ensemble-learning-lecture-08";
+      const REPRESENTATIVE_TIME = 2800;
+
+      const canvas = document.getElementById("field");
+      if (!canvas) return;
+
+      let ctx = Deck.fit(canvas);
+      let disposed = false;
+      let stopLoop = () => {};
+
+      // 标题避让区域与收敛焦点
+      // 标题区域在左侧 (x: 100~780, y: 220~540)
+      // 轨迹由左上/左侧出发，绕过标题区后，在右侧 (x: 1220, y: 460) 汇聚
+      const CONVERGENCE = { x: 1220, y: 460 };
+      const TITLE_BOX = { x: 90, y: 220, w: 680, h: 320 };
+
+      // 读取主题配色
+      const colBg = Deck.rgb("bg") || [220, 226, 222];
+      const colModel = Deck.rgb("model") || [46, 95, 120];
+      const colAggregate = Deck.rgb("aggregate") || [23, 62, 80];
+      const colFocus = Deck.rgb("focus") || [198, 75, 46];
+      const colUncertain = Deck.rgb("uncertain") || [139, 105, 65];
+
+      function rgba(rgb, alpha) {
+        return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
+      }
+
+      function buildPaths() {
+        const rng = new Math.seedrandom(SEED);
+        const paths = [];
+        const numPaths = 38;
+
+        for (let i = 0; i < numPaths; i++) {
+          const t = i / (numPaths - 1); // 0 ~ 1
+          // 起始点：分布在左侧上下或左边缘外
+          // 为了避开标题中心，大部分从上方、左下方或左上角进入
+          let startX, startY;
+          if (t < 0.45) {
+            // 上侧边缘进入
+            startX = 120 + t * 1400 * 0.7;
+            startY = 40 + (rng() - 0.5) * 50;
+          } else if (t > 0.8) {
+            // 底部进入
+            startX = 200 + (t - 0.8) * 1200;
+            startY = 840 + (rng() - 0.5) * 60;
+          } else {
+            // 左下侧进入，绕过标题
+            startX = 60 + (rng() - 0.5) * 40;
+            startY = 620 + (t - 0.45) * 400;
+          }
+
+          // 中间控制点（加入多样性扰动与弱模型分歧）
+          const midX1 = startX + (CONVERGENCE.x - startX) * 0.35 + (rng() - 0.5) * 120;
+          let midY1 = startY + (CONVERGENCE.y - startY) * 0.35 + (rng() - 0.5) * 160;
+
+          // 标题避让推力
+          if (midX1 > TITLE_BOX.x && midX1 < TITLE_BOX.x + TITLE_BOX.w &&
+              midY1 > TITLE_BOX.y && midY1 < TITLE_BOX.y + TITLE_BOX.h) {
+            midY1 = midY1 < (TITLE_BOX.y + TITLE_BOX.h / 2) ? TITLE_BOX.y - 40 : TITLE_BOX.y + TITLE_BOX.h + 40;
+          }
+
+          const midX2 = startX + (CONVERGENCE.x - startX) * 0.75 + (rng() - 0.5) * 70;
+          const midY2 = startY + (CONVERGENCE.y - startY) * 0.75 + (rng() - 0.5) * 90;
+
+          // 生成三次贝塞尔采样点
+          const pts = [];
+          const steps = 60;
+          for (let s = 0; s <= steps; s++) {
+            const u = s / steps;
+            const u2 = u * u;
+            const u3 = u2 * u;
+            const inv = 1 - u;
+            const inv2 = inv * inv;
+            const inv3 = inv2 * inv;
+
+            const px = inv3 * startX + 3 * inv2 * u * midX1 + 3 * inv * u2 * midX2 + u3 * CONVERGENCE.x;
+            const py = inv3 * startY + 3 * inv2 * u * midY1 + 3 * inv * u2 * midY2 + u3 * CONVERGENCE.y;
+            pts.push({ x: px, y: py });
+          }
+
+          // 汇聚后继续延展成最终决策输出
+          const extSteps = 24;
+          const extEndX = 1540;
+          const extEndY = CONVERGENCE.y + (rng() - 0.5) * 4; // 汇聚后极其紧致
+          for (let s = 1; s <= extSteps; s++) {
+            const u = s / extSteps;
+            const px = CONVERGENCE.x + u * (extEndX - CONVERGENCE.x);
+            const py = CONVERGENCE.y + u * (extEndY - CONVERGENCE.y);
+            pts.push({ x: px, y: py });
+          }
+
+          paths.push({
+            pts,
+            alpha: 0.16 + rng() * 0.22,
+            width: 1.1 + rng() * 1.2,
+            speed: 0.75 + rng() * 0.5,
+            offset: rng()
+          });
+        }
+
+        return paths;
+      }
+
+      let modelPaths = buildPaths();
+
+      // 静态底纹缓存
+      const staticBuffer = document.createElement("canvas");
+      let staticCtx = null;
+
+      function renderStatic() {
+        staticBuffer.width = canvas.width;
+        staticBuffer.height = canvas.height;
+        staticCtx = staticBuffer.getContext("2d");
+        if (!staticCtx) return;
+
+        const ratio = canvas.__r || 1;
+        staticCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+        staticCtx.fillStyle = rgba(colBg, 1);
+        staticCtx.fillRect(0, 0, W, H);
+
+        // 绘制坐标与推演结构细线
+        staticCtx.strokeStyle = rgba(colModel, 0.08);
+        staticCtx.lineWidth = 1;
+
+        // 细格网点
+        for (let gx = 100; gx < W - 60; gx += 80) {
+          for (let gy = 60; gy < H - 40; gy += 80) {
+            staticCtx.fillStyle = rgba(colModel, 0.12);
+            staticCtx.fillRect(gx, gy, 1.5, 1.5);
+          }
+        }
+
+        // 绘制基模型微弱轨迹流
+        for (const p of modelPaths) {
+          staticCtx.beginPath();
+          staticCtx.moveTo(p.pts[0].x, p.pts[0].y);
+          for (let i = 1; i < p.pts.length; i++) {
+            staticCtx.lineTo(p.pts[i].x, p.pts[i].y);
+          }
+          staticCtx.strokeStyle = rgba(colModel, p.alpha);
+          staticCtx.lineWidth = p.width;
+          staticCtx.stroke();
+        }
+
+        // 绘制汇聚后的强聚合决策带 (Aggregate Path)
+        staticCtx.beginPath();
+        staticCtx.moveTo(CONVERGENCE.x, CONVERGENCE.y);
+        staticCtx.lineTo(1540, CONVERGENCE.y);
+        staticCtx.strokeStyle = rgba(colAggregate, 0.85);
+        staticCtx.lineWidth = 6;
+        staticCtx.lineCap = "round";
+        staticCtx.stroke();
+
+        // 汇聚点光晕与环
+        staticCtx.beginPath();
+        staticCtx.arc(CONVERGENCE.x, CONVERGENCE.y, 7, 0, Math.PI * 2);
+        staticCtx.fillStyle = rgba(colFocus, 0.9);
+        staticCtx.fill();
+
+        staticCtx.beginPath();
+        staticCtx.arc(CONVERGENCE.x, CONVERGENCE.y, 16, 0, Math.PI * 2);
+        staticCtx.strokeStyle = rgba(colFocus, 0.4);
+        staticCtx.lineWidth = 1.5;
+        staticCtx.stroke();
+
+        // 标注文案标签 (高对比且克制)
+        staticCtx.font = "500 15px 'Noto Sans CJK SC', sans-serif";
+        staticCtx.fillStyle = rgba(colAggregate, 0.85);
+        staticCtx.fillText("集成决策聚合", CONVERGENCE.x + 28, CONVERGENCE.y - 14);
+
+        staticCtx.font = "400 15px 'Noto Sans CJK SC', sans-serif";
+        staticCtx.fillStyle = rgba(colModel, 0.75);
+        staticCtx.fillText("多样性基学习器预测轨迹", 840, 240);
+      }
+
+      function draw(time) {
+        if (!ctx || disposed) return;
+
+        ctx.clearRect(0, 0, W, H);
+        if (staticBuffer.width > 0) {
+          ctx.drawImage(staticBuffer, 0, 0, W, H);
+        }
+
+        // 绘制动态脉冲光点沿路径向汇聚点流淌
+        const numActive = 18;
+        ctx.lineCap = "round";
+
+        for (let i = 0; i < numActive; i++) {
+          const p = modelPaths[i * 2 % modelPaths.length];
+          const progress = ((time * 0.0004 * p.speed) + p.offset) % 1;
+          const idx = Math.floor(progress * (p.pts.length - 1));
+          const pt = p.pts[idx];
+
+          if (pt) {
+            // 光斑
+            const isNearConvergence = pt.x >= CONVERGENCE.x - 40;
+            const ptColor = isNearConvergence ? colFocus : colModel;
+            const alpha = isNearConvergence ? 0.85 : 0.6;
+            const radius = isNearConvergence ? 3.5 : 2.2;
+
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = rgba(ptColor, alpha);
+            ctx.fill();
+          }
+        }
+      }
+
+      function rebuild() {
+        ctx = Deck.fit(canvas);
+        if (!ctx) return;
+        modelPaths = buildPaths();
+        renderStatic();
+        draw(REPRESENTATIVE_TIME);
+      }
+
+      rebuild();
+
+      stopLoop = Deck.loop(time => {
+        draw(time);
+      }, { still: REPRESENTATIVE_TIME });
+
+      Deck.onResize(() => {
+        rebuild();
+      });
+
+      Deck.init({ index: 1, total: 26, keys: false });
+    })();
+  </script>
+</body>
+</html>

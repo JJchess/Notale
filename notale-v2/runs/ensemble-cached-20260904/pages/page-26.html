@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成不是自动增益</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "SF Pro Text", "DIN Alternate", "Roboto Mono", monospace;
+      --fs-h1: 32px;
+      --fs-h2: 20px;
+      --fs-lead: 18px;
+      --fs-body: 16px;
+      --fs-sec: 15px;
+      --fs-label: 14px;
+      --fs-tick: 12px;
+      --pad-x: 56px;
+      --pad-y: 28px;
+    }
+
+    * { box-sizing: border-box; }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* 顶部标题与导语 */
+    .header {
+      flex: 0 0 auto;
+      margin-bottom: 20px;
+    }
+    .header h1 {
+      margin: 0 0 6px;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .header p {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    /* 主舞台：分左右两大区块 */
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 24px;
+    }
+
+    /* 左侧：四项典型陷阱导航与诊断卡 */
+    .trap-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      height: 100%;
+    }
+    .trap-item {
+      padding: 16px 18px;
+      background: var(--surface);
+      border: 1.5px solid var(--surface-strong);
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: left;
+      transition: all var(--duration) var(--ease);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .trap-item:hover {
+      border-color: var(--muted);
+      background: #fafcfe;
+    }
+    .trap-item[aria-selected="true"] {
+      border-color: var(--aggregate);
+      background: #FFFFFF;
+      box-shadow: 0 4px 14px rgba(195, 75, 34, 0.12);
+    }
+    .trap-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .trap-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .trap-item[aria-selected="true"] .trap-title {
+      color: var(--aggregate);
+    }
+    .trap-tag {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .trap-desc {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    /* 左侧底部简短总结 */
+    .rule-box {
+      margin-top: auto;
+      padding: 14px 16px;
+      background: #ECE6E2;
+      border-radius: 6px;
+      border-left: 3px solid var(--aggregate);
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.45;
+    }
+    .rule-box strong {
+      color: var(--aggregate);
+    }
+
+    /* 右侧：失效机理与对照实验舞台 */
+    .stage-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 10px;
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-shadow: 0 4px 20px rgba(18, 38, 52, 0.03);
+    }
+
+    /* 顶部机制标题与假定 vs 现实对照说明 */
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 16px;
+    }
+    .panel-titles h2 {
+      margin: 0 0 6px;
+      font-size: var(--fs-h2);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .panel-titles p {
+      margin: 0;
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.45;
+      max-width: 780px;
+    }
+    .status-badge {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+    }
+    .badge-metric {
+      font-family: var(--font-num);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--aggregate);
+      line-height: 1;
+    }
+    .badge-label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    /* 交互图表与实物机理区 */
+    .mechanism-body {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    /* 对比卡片：天真假定 vs 现实失效 */
+    .compare-card {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid #E1E8EC;
+    }
+    .compare-card.danger {
+      border-color: #F1D3C8;
+      background: #FDF9F7;
+    }
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .card-title .side-tag {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .ideal-tag { background: #DDE8F0; color: var(--model); }
+    .fail-tag { background: #FDE8E1; color: var(--aggregate); }
+
+    .card-canvas-wrap {
+      flex: 1;
+      min-height: 240px;
+      position: relative;
+      background: var(--surface);
+      border-radius: 6px;
+      border: 1px solid #E5ECF0;
+      overflow: hidden;
+    }
+
+    .card-footer {
+      margin-top: 12px;
+      font-size: 14px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+    .card-footer strong {
+      color: var(--text);
+    }
+
+    /* 底部操作与联动滑块栏 */
+    .control-strip {
+      flex: 0 0 auto;
+      padding: 14px 20px;
+      background: #F8FAFB;
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .slider-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex: 1;
+    }
+    .slider-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .slider-ctl {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .slider-ctl input[type="range"] {
+      flex: 1;
+      accent-color: var(--aggregate);
+      cursor: pointer;
+      height: 6px;
+    }
+    .slider-val {
+      font-family: var(--font-num);
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      width: 70px;
+      text-align: right;
+    }
+    .diagnostic-tip {
+      font-size: 14px;
+      color: var(--muted);
+      border-left: 1px solid var(--surface-strong);
+      padding-left: 20px;
+      white-space: nowrap;
+    }
+    .diagnostic-tip strong {
+      color: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="26" data-total="27">
+  <main id="stage" role="main">
+    <header class="header min0">
+      <h1>集成不是自动增益：抵消收益的四种现实陷阱</h1>
+      <p>多数理论假设基学习器误差相互独立、概率绝对可信且训练评估严格干净。一旦条件受损，集成往往沦为单纯的计算浪费甚至负收益。</p>
+    </header>
+
+    <div class="main-grid min0">
+      <!-- 陷阱导航列表 -->
+      <nav class="trap-nav min0" aria-label="常见陷阱列表">
+        <button class="trap-item" id="btn-trap-0" role="tab" aria-selected="true" onclick="selectTrap(0)">
+          <div class="trap-head">
+            <span class="trap-title">1. 缺乏多样性</span>
+            <span class="trap-tag">相关性 &rho; &rarr; 1</span>
+          </div>
+          <p class="trap-desc">同质模型犯相同错误，多数投票无法抵消方差，50 棵树效果等同一棵树。</p>
+        </button>
+
+        <button class="trap-item" id="btn-trap-1" role="tab" aria-selected="false" onclick="selectTrap(1)">
+          <div class="trap-head">
+            <span class="trap-title">2. 概率未校准</span>
+            <span class="trap-tag">过自信虚高</span>
+          </div>
+          <p class="trap-desc">单模型输出极度自负的错误置信度（如 0.99），直接绑架软投票最终判断。</p>
+        </button>
+
+        <button class="trap-item" id="btn-trap-2" role="tab" aria-selected="false" onclick="selectTrap(2)">
+          <div class="trap-head">
+            <span class="trap-title">3. Stacking 数据泄漏</span>
+            <span class="trap-tag">特征泄漏假象</span>
+          </div>
+          <p class="trap-desc">元模型用同批训练集学权重导致虚高过拟合，上线后测试误差严重崩塌。</p>
+        </button>
+
+        <button class="trap-item" id="btn-trap-3" role="tab" aria-selected="false" onclick="selectTrap(3)">
+          <div class="trap-head">
+            <span class="trap-title">4. 边际成本失衡</span>
+            <span class="trap-tag">成本暴增 10&times;</span>
+          </div>
+          <p class="trap-desc">模型数量从 10 增至 100，测试指标提升仅 0.002，却带来十倍推理延迟与维护黑洞。</p>
+        </button>
+
+        <div class="rule-box min0">
+          <strong>工程决策准则：</strong>盲目堆叠模型前，务必排查基模型误差相关系数是否 &lt; 0.6、元模型是否使用严密 OOF 折外预测，以及上线时延 SLA。
+        </div>
+      </nav>
+
+      <!-- 诊断与可视化实验台 -->
+      <section class="stage-panel min0" aria-live="polite">
+        <div class="panel-header min0">
+          <div class="panel-titles">
+            <h2 id="trapHeading">缺乏多样性：误差高度相关时的集成无效化</h2>
+            <p id="trapSub">理论上方差衰减公式为 Var = &rho;&sigma;&sup2; + (1-&rho;)/M &middot; &sigma;&sup2;。当相关系数 &rho; 趋近 1 时，无论增加多少基模型，方差都停留在 &rho;&sigma;&sup2;，集成增益归零。</p>
+          </div>
+          <div class="status-badge">
+            <span class="badge-metric" id="statusMetric">0.78 &sigma;&sup2;</span>
+            <span class="badge-label" id="statusLabel">当前集成残余方差</span>
+          </div>
+        </div>
+
+        <div class="mechanism-body min0">
+          <!-- 左侧理想预期图 -->
+          <div class="compare-card min0">
+            <div class="card-title">
+              <span>理论预期（假定条件成立）</span>
+              <span class="side-tag ideal-tag" id="idealTag">理想假设</span>
+            </div>
+            <div class="card-canvas-wrap">
+              <canvas id="cvIdeal" class="cv-fill"></canvas>
+            </div>
+            <div class="card-footer" id="idealFooter">
+              基模型互相独立（&rho; = 0），方差随模型数 M 呈反比快速衰减到 0。
+            </div>
+          </div>
+
+          <!-- 右侧现实失效图 -->
+          <div class="compare-card danger min0">
+            <div class="card-title">
+              <span>现实失效（陷阱触发）</span>
+              <span class="side-tag fail-tag" id="failTag">致命失控</span>
+            </div>
+            <div class="card-canvas-wrap">
+              <canvas id="cvReal" class="cv-fill"></canvas>
+            </div>
+            <div class="card-footer" id="realFooter">
+              当模型同质（&rho; = 0.75），无论增加再多基模型，方差下限恒为 0.75&sigma;&sup2;。
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部交互控制 -->
+        <div class="control-strip min0">
+          <div class="slider-group">
+            <span class="slider-label" id="sliderLabel">调节基模型误差相关性 &rho;：</span>
+            <div class="slider-ctl">
+              <input type="range" id="paramSlider" min="0" max="1" step="0.05" value="0.75" oninput="updateParam(this.value)">
+              <span class="slider-val" id="paramVal">&rho; = 0.75</span>
+            </div>
+          </div>
+          <div class="diagnostic-tip" id="diagnosticTip">
+            实测诊断：<strong>增益被相关性抹去 75%</strong>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 陷阱情景定义
+    const TRAPS = [
+      {
+        id: 0,
+        title: "缺乏多样性：误差高度相关时的集成无效化",
+        sub: "理论上方差衰减公式为 Var = ρσ² + (1-ρ)/M · σ²。当相关系数 ρ 趋近 1 时，无论增加多少基模型，方差都停留在 ρσ²，集成增益归零。",
+        metric: "0.78 σ²",
+        metricLabel: "当前集成残余方差",
+        idealTag: "完全独立 (ρ=0)",
+        failTag: "同质模型群",
+        idealFooter: "若基模型完全独立，方差随模型数 M 呈 1/M 迅速衰减到 0。",
+        realFooter: "真实工业场景中若模型结构和数据同质，ρ 常在 0.7 以上，集成收益被彻底封死。",
+        sliderLabel: "调节基模型误差相关系数 ρ：",
+        sliderMin: 0,
+        sliderMax: 1,
+        sliderStep: 0.05,
+        sliderDefault: 0.75,
+        valPrefix: "ρ = ",
+        tip: (v) => `残余方差底线为 <strong>${(v * 100).toFixed(0)}% σ²</strong>，堆叠更多模型毫无意义`
+      },
+      {
+        id: 1,
+        title: "概率未校准：过度自信的单模型劫持投票",
+        sub: "现代深层树模型或高方差网络极易对错例输出高达 0.99 的极端预测概率。软投票加权时，一个未校准的错误预测直接碾压其余校准良好的微弱多数票。",
+        metric: "错判胜出",
+        metricLabel: "集成输出结果",
+        idealTag: "已校准概率 (Platt/Isotonic)",
+        failTag: "未校准虚高自信",
+        idealFooter: "良好校准的模型输出贴合真实后验概率，多数正确投票有效纠偏。",
+        realFooter: "未校准模型输出 P=0.99 错例，即便另外 4 个模型各给出 P=0.45 正确偏向，平均仍被拉至错误方向。",
+        sliderLabel: "调节未校准模型极端置信度 P(错)：",
+        sliderMin: 0.5,
+        sliderMax: 1.0,
+        sliderStep: 0.01,
+        sliderDefault: 0.98,
+        valPrefix: "P = ",
+        tip: (v) => v > 0.85 ? `<strong>1 票绑架 4 票</strong>：虚假自信破坏民主投票` : `已在安全范围：多数投票机制正常生效`
+      },
+      {
+        id: 2,
+        title: "Stacking 数据泄漏：元模型将虚假特征视作全知",
+        sub: "若不用 Out-Of-Fold (折外预测) 生成元特征，基模型在训练集上的拟合概率(近乎100%正确)直接泄露给元模型，元模型退化为纯记忆机器，上线必崩塌。",
+        metric: "验证落差 42%",
+        metricLabel: "线上测试误差飙升",
+        idealTag: "严格 K-折 OOF 生成",
+        failTag: "同集训练直接复用",
+        idealFooter: "使用折外预测生成的元特征保留了泛化不确定性，元模型学到真实的基模型互补权重。",
+        realFooter: "训练集直接预测导致元模型在训练阶段 AUC 达 0.999，但测试阶段断崖跌至 0.58。",
+        sliderLabel: "调节元特征训练数据泄漏比例：",
+        sliderMin: 0,
+        sliderMax: 1,
+        sliderStep: 0.1,
+        sliderDefault: 1.0,
+        valPrefix: "泄漏率 = ",
+        tip: (v) => v > 0.3 ? `严重过拟合：<strong>测试集泛化鸿沟激增</strong>` : `严密 OOF：训练集与测试集表现一致`
+      },
+      {
+        id: 3,
+        title: "边际成本失衡：千分之二的提升换来十倍时延与黑洞",
+        sub: "从 5 个基模型增至 100 个，测试集准确率仅从 92.4% 爬升至 92.7%，但推理延迟从 12ms 飙升至 240ms，内存与维护成本呈指数膨胀。",
+        metric: "20× 耗时",
+        metricLabel: "时延成本相比单模型",
+        idealTag: "高效性价比拐点 (M≈10~15)",
+        failTag: "过饱和冗余区 (M=100)",
+        idealFooter: "前 10~15 棵树获得 90% 的集成增益，边际收益高，线上 SLA 完全可控。",
+        realFooter: "强行追求最后 0.2% 榜单精度堆叠百模，线上吞吐量骤降 95%，灾备与运维复杂度剧增。",
+        sliderLabel: "调节集成基模型总数量 M：",
+        sliderMin: 1,
+        sliderMax: 100,
+        sliderStep: 1,
+        sliderDefault: 60,
+        valPrefix: "M = ",
+        tip: (v) => v > 30 ? `<strong>严重冗余</strong>：增加 ${v-20} 个模型仅换得微乎其微收益` : `健康区间：计算资源与收益保持均衡`
+      }
+    ];
+
+    let currentTrap = 0;
+    let paramVal = TRAPS[0].sliderDefault;
+
+    const cvIdeal = document.getElementById('cvIdeal');
+    const cvReal = document.getElementById('cvReal');
+
+    function selectTrap(idx) {
+      currentTrap = idx;
+      const t = TRAPS[idx];
+      for (let i = 0; i < 4; i++) {
+        const btn = document.getElementById(`btn-trap-${i}`);
+        btn.setAttribute('aria-selected', i === idx ? 'true' : 'false');
+      }
+      document.getElementById('trapHeading').textContent = t.title;
+      document.getElementById('trapSub').textContent = t.sub;
+      document.getElementById('idealTag').textContent = t.idealTag;
+      document.getElementById('failTag').textContent = t.failTag;
+      document.getElementById('idealFooter').textContent = t.idealFooter;
+      document.getElementById('realFooter').textContent = t.realFooter;
+      
+      const slider = document.getElementById('paramSlider');
+      slider.min = t.sliderMin;
+      slider.max = t.sliderMax;
+      slider.step = t.sliderStep;
+      slider.value = t.sliderDefault;
+      paramVal = t.sliderDefault;
+
+      document.getElementById('sliderLabel').textContent = t.sliderLabel;
+      updateParam(paramVal);
+    }
+
+    function updateParam(val) {
+      paramVal = parseFloat(val);
+      const t = TRAPS[currentTrap];
+      document.getElementById('paramVal').textContent = t.valPrefix + (t.sliderStep < 1 ? paramVal.toFixed(2) : paramVal);
+      document.getElementById('diagnosticTip').innerHTML = "实测诊断：" + t.tip(paramVal);
+      
+      // 更新指标卡
+      if (currentTrap === 0) {
+        const varRes = (paramVal + (1 - paramVal)/20).toFixed(2);
+        document.getElementById('statusMetric').textContent = `${varRes} σ²`;
+        document.getElementById('statusLabel').textContent = "M=20 残余方差下限";
+      } else if (currentTrap === 1) {
+        // 4个0.45，1个paramVal
+        const avg = ((4 * 0.45 + paramVal) / 5).toFixed(2);
+        const wrongWins = avg > 0.5;
+        document.getElementById('statusMetric').textContent = wrongWins ? `P=${avg} (错)` : `P=${(1-avg).toFixed(2)} (对)`;
+        document.getElementById('statusMetric').style.color = wrongWins ? "var(--aggregate)" : "var(--answer)";
+        document.getElementById('statusLabel').textContent = wrongWins ? "软投票被错例反转" : "多数纠错成功";
+      } else if (currentTrap === 2) {
+        const gap = (paramVal * 42).toFixed(0);
+        document.getElementById('statusMetric').textContent = `误差落差 +${gap}%`;
+        document.getElementById('statusLabel').textContent = paramVal > 0.1 ? "元模型泛化灾难" : "严格 OOF 泛化可信";
+      } else if (currentTrap === 3) {
+        const timeMult = Math.round(paramVal * 0.25 + 1);
+        document.getElementById('statusMetric').textContent = `${timeMult}× 延时`;
+        document.getElementById('statusLabel').textContent = `耗时达 ${(paramVal*2.4 + 10).toFixed(0)} ms`;
+      }
+
+      draw();
+    }
+
+    function draw() {
+      drawIdeal();
+      drawReal();
+    }
+
+    // 绘制理想预期图
+    function drawIdeal() {
+      const ctx = Deck.fit(cvIdeal);
+      const w = cvIdeal.width / (window.devicePixelRatio || 1);
+      const h = cvIdeal.height / (window.devicePixelRatio || 1);
+      ctx.clearRect(0, 0, w, h);
+
+      const padX = 54, padY = 32, plotW = w - padX * 2, plotH = h - padY * 2 - 10;
+
+      // 画坐标轴
+      ctx.strokeStyle = "#D1DDE5";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(padX, padY);
+      ctx.lineTo(padX, h - padY);
+      ctx.lineTo(w - padX + 15, h - padY);
+      ctx.stroke();
+
+      ctx.fillStyle = "#536A78";
+      ctx.font = "12px sans-serif";
+
+      if (currentTrap === 0) {
+        // 理想方差衰减
+        ctx.fillText("残余方差 Var", padX + 5, padY + 12);
+        ctx.fillText("基模型数量 M →", w - padX - 85, h - padY + 14);
+
+        ctx.strokeStyle = "#27648F";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let m = 1; m <= 30; m++) {
+          const x = padX + ((m - 1) / 29) * plotW;
+          const y = (h - padY) - (1 / m) * (plotH - 24);
+          if (m === 1) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        ctx.fillStyle = "#27648F";
+        ctx.font = "13px sans-serif";
+        ctx.fillText("完全独立：Var = 1/M · σ² → 0", padX + 30, padY + 45);
+      } else if (currentTrap === 1) {
+        // 理想概率分布 (可靠已校准)
+        ctx.fillText("预测后验概率 P(y=1)", padX + 5, padY + 12);
+        ctx.fillText("样本排布 →", w - padX - 50, h - padY + 18);
+
+        // 阈值线 0.5
+        const midY = (h - padY) - 0.5 * plotH;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "#A4B5C1";
+        ctx.beginPath();
+        ctx.moveTo(padX, midY);
+        ctx.lineTo(w - padX, midY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillText("0.5 决策面", w - padX - 65, midY - 6);
+
+        // 5个模型的概率散点（4个在0.45，1个在0.55轻微犹豫）
+        const models = [
+          { name: "模型1", p: 0.45 },
+          { name: "模型2", p: 0.42 },
+          { name: "模型3", p: 0.44 },
+          { name: "模型4", p: 0.46 },
+          { name: "模型5 (轻微误判)", p: 0.58 }
+        ];
+
+        let sumP = 0;
+        models.forEach((m, i) => {
+          sumP += m.p;
+          const x = padX + 40 + i * (plotW - 80) / 4;
+          const y = (h - padY) - m.p * plotH;
+          ctx.fillStyle = m.p > 0.5 ? "#C34B22" : "#27648F";
+          ctx.beginPath();
+          ctx.arc(x, y, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.font = "11px sans-serif";
+          ctx.fillText(`M${i+1}:${m.p}`, x - 18, y - 10);
+        });
+
+        const meanP = sumP / 5;
+        const meanY = (h - padY) - meanP * plotH;
+        ctx.strokeStyle = "#237052";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(padX + 20, meanY);
+        ctx.lineTo(w - padX, meanY);
+        ctx.stroke();
+        ctx.fillStyle = "#237052";
+        ctx.font = "13px sans-serif";
+        ctx.fillText(`集成均值 P=${meanP.toFixed(2)} ≤ 0.5 (纠偏成功)`, padX + 30, meanY + 20);
+      } else if (currentTrap === 2) {
+        // 理想 OOF
+        ctx.fillText("准确率 / 泛化指标", padX + 5, padY + 12);
+        
+        // 柱状对比：训练 vs 测试
+        const bw = 60;
+        const x1 = padX + plotW * 0.3 - bw/2;
+        const x2 = padX + plotW * 0.7 - bw/2;
+        const hTrain = plotH * 0.88;
+        const hTest = plotH * 0.86;
+
+        ctx.fillStyle = "#27648F";
+        ctx.fillRect(x1, (h - padY) - hTrain, bw, hTrain);
+        ctx.fillStyle = "#2F7568";
+        ctx.fillRect(x2, (h - padY) - hTest, bw, hTest);
+
+        ctx.fillStyle = "#122634";
+        ctx.font = "13px sans-serif";
+        ctx.fillText("OOF 训练", x1 + 4, h - padY + 18);
+        ctx.fillText("测试集泛化", x2, h - padY + 18);
+
+        ctx.fillText("88.2%", x1 + 10, (h - padY) - hTrain - 8);
+        ctx.fillText("86.5%", x2 + 10, (h - padY) - hTest - 8);
+
+        ctx.fillStyle = "#237052";
+        ctx.fillText("泛化差距仅 1.7%（严密折外评估）", padX + 35, padY + 40);
+      } else if (currentTrap === 3) {
+        // 理想 ROI 曲线
+        ctx.fillText("测试准确率 Accuracy", padX + 5, padY + 12);
+        ctx.fillText("基模型数量 M →", w - padX - 70, h - padY + 18);
+
+        ctx.strokeStyle = "#2F7568";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let m = 1; m <= 30; m++) {
+          const x = padX + ((m - 1) / 29) * plotW;
+          const acc = 0.80 + 0.12 * (1 - Math.exp(-m / 4));
+          const y = (h - padY) - ((acc - 0.75) / 0.25) * plotH;
+          if (m === 1) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // 标出推荐拐点
+        const optM = 12;
+        const optX = padX + ((optM - 1) / 29) * plotW;
+        const optY = (h - padY) - ((0.80 + 0.12 * (1 - Math.exp(-optM / 4)) - 0.75) / 0.25) * plotH;
+        ctx.fillStyle = "#C34B22";
+        ctx.beginPath();
+        ctx.arc(optX, optY, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillText("黄金性价比拐点 (M≈12)", optX - 50, optY - 14);
+      }
+    }
+
+    // 绘制现实失效图
+    function drawReal() {
+      const ctx = Deck.fit(cvReal);
+      const w = cvReal.width / (window.devicePixelRatio || 1);
+      const h = cvReal.height / (window.devicePixelRatio || 1);
+      ctx.clearRect(0, 0, w, h);
+
+      const padX = 54, padY = 32, plotW = w - padX * 2, plotH = h - padY * 2 - 10;
+
+      ctx.strokeStyle = "#EAD1C7";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(padX, padY);
+      ctx.lineTo(padX, h - padY);
+      ctx.lineTo(w - padX + 15, h - padY);
+      ctx.stroke();
+
+      ctx.fillStyle = "#536A78";
+      ctx.font = "12px sans-serif";
+
+      if (currentTrap === 0) {
+        ctx.fillText("残余方差 Var", padX + 5, padY + 12);
+        ctx.fillText("基模型数量 M →", w - padX - 85, h - padY + 14);
+
+        const rho = paramVal;
+        const floorY = (h - padY) - rho * (plotH - 24);
+
+        // 渐近极限底线
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "#C34B22";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(padX, floorY);
+        ctx.lineTo(w - padX, floorY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#C34B22";
+        ctx.font = "12px sans-serif";
+        ctx.fillText(`下限底线 ρσ² = ${(rho).toFixed(2)}`, w - padX - 120, floorY - 6);
+
+        // 真实衰减曲线
+        ctx.strokeStyle = "#C34B22";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let m = 1; m <= 30; m++) {
+          const x = padX + ((m - 1) / 29) * plotW;
+          const v = rho + (1 - rho) / m;
+          const y = (h - padY) - v * (plotH - 24);
+          if (m === 1) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        ctx.fillStyle = "#C34B22";
+        ctx.font = "13px sans-serif";
+        ctx.fillText("同质模型群：方差无法降穿 ρσ²", padX + 30, padY + 45);
+      } else if (currentTrap === 1) {
+        ctx.fillText("极端未校准输出 P(y=1)", padX + 5, padY + 12);
+        ctx.fillText("样本排布 →", w - padX - 50, h - padY + 18);
+
+        const midY = (h - padY) - 0.5 * plotH;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = "#A4B5C1";
+        ctx.beginPath();
+        ctx.moveTo(padX, midY);
+        ctx.lineTo(w - padX, midY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillText("0.5 决策面", w - padX - 65, midY - 6);
+
+        // 4个0.45，1个paramVal(虚高)
+        const models = [
+          { name: "模型1", p: 0.45 },
+          { name: "模型2", p: 0.45 },
+          { name: "模型3", p: 0.44 },
+          { name: "模型4", p: 0.46 },
+          { name: "未校准巨头", p: paramVal }
+        ];
+
+        let sumP = 0;
+        models.forEach((m, i) => {
+          sumP += m.p;
+          const x = padX + 40 + i * (plotW - 80) / 4;
+          const y = (h - padY) - m.p * plotH;
+          ctx.fillStyle = i === 4 ? "#C34B22" : "#27648F";
+          ctx.beginPath();
+          ctx.arc(x, y, i === 4 ? 8 : 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.font = i === 4 ? "bold 12px sans-serif" : "11px sans-serif";
+          ctx.fillText(i === 4 ? `极端未校准:${m.p}` : `M${i+1}:${m.p}`, x - 26, y - (i === 4 ? 12 : 8));
+        });
+
+        const meanP = sumP / 5;
+        const meanY = (h - padY) - meanP * plotH;
+        ctx.strokeStyle = meanP > 0.5 ? "#C34B22" : "#237052";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(padX + 20, meanY);
+        ctx.lineTo(w - padX, meanY);
+        ctx.stroke();
+        ctx.fillStyle = meanP > 0.5 ? "#C34B22" : "#237052";
+        ctx.font = "bold 13px sans-serif";
+        ctx.fillText(meanP > 0.5 ? `投票沦陷！均值被拉到 ${meanP.toFixed(2)} > 0.5` : `均值仍控制在 ${meanP.toFixed(2)}`, padX + 30, meanY - 10);
+      } else if (currentTrap === 2) {
+        ctx.fillText("准确率 / 泛化指标", padX + 5, padY + 12);
+
+        const leak = paramVal;
+        const bw = 60;
+        const x1 = padX + plotW * 0.3 - bw/2;
+        const x2 = padX + plotW * 0.7 - bw/2;
+        const hTrain = plotH * (0.85 + 0.14 * leak);
+        const hTest = plotH * (0.85 - 0.30 * leak);
+
+        ctx.fillStyle = "#27648F";
+        ctx.fillRect(x1, (h - padY) - hTrain, bw, hTrain);
+        ctx.fillStyle = "#C34B22";
+        ctx.fillRect(x2, (h - padY) - hTest, bw, hTest);
+
+        ctx.fillStyle = "#122634";
+        ctx.font = "13px sans-serif";
+        ctx.fillText("泄漏训练集", x1 + 2, h - padY + 18);
+        ctx.fillText("线上真实测试", x2 - 5, h - padY + 18);
+
+        ctx.fillText(`${((0.85 + 0.14 * leak)*100).toFixed(1)}%`, x1 + 8, (h - padY) - hTrain - 8);
+        ctx.fillText(`${((0.85 - 0.30 * leak)*100).toFixed(1)}%`, x2 + 8, (h - padY) - hTest - 8);
+
+        ctx.fillStyle = "#C34B22";
+        ctx.font = "bold 13px sans-serif";
+        ctx.fillText(`落差断崖：${((0.44 * leak)*100).toFixed(1)}% (严重过拟合)`, padX + 35, padY + 40);
+      } else if (currentTrap === 3) {
+        ctx.fillText("推理延迟 (ms) vs 提升 (Accuracy)", padX + 5, padY + 12);
+        ctx.fillText("模型总数 M →", w - padX - 60, h - padY + 18);
+
+        // 延迟曲线（线性剧增）
+        ctx.strokeStyle = "#C34B22";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        for (let m = 1; m <= 100; m++) {
+          const x = padX + ((m - 1) / 99) * plotW;
+          const lat = m * 2.4; // 240ms at 100
+          const y = (h - padY) - (lat / 250) * plotH;
+          if (m === 1) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.fillStyle = "#C34B22";
+        ctx.fillText("推理延迟呈线性剧增 (240ms)", w - padX - 160, padY + 50);
+
+        // 当前参数标点
+        const curM = paramVal;
+        const curX = padX + ((curM - 1) / 99) * plotW;
+        const curY = (h - padY) - (curM * 2.4 / 250) * plotH;
+        ctx.beginPath();
+        ctx.arc(curX, curY, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillText(`当前 M=${curM}: ${(curM*2.4).toFixed(0)}ms`, curX - 30, curY - 12);
+      }
+    }
+
+    // 初始化
+    window.addEventListener('load', () => {
+      Deck.init({ index: 26, total: 27 });
+      selectTrap(0);
+      Deck.onResize(draw);
+    });
+  </script>
+</body>
+</html>

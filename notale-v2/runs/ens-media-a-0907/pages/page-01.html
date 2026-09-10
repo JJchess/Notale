@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>机器学习概论第八讲：集成学习</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 标题区域与文字层级 */
+    .hero {
+      position: absolute;
+      top: 240px;
+      left: var(--pad-x);
+      z-index: 10;
+      max-width: 520px;
+      pointer-events: none;
+    }
+
+    .chapter-tag {
+      display: block;
+      font-size: var(--fs-sec);
+      font-weight: 500;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    .hero-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 24px 0;
+    }
+
+    .hero-lead {
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 构图主对象：多路径向最终决断汇聚的教学图解 */
+    .scene {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* 蓝图式坐标与刻度标签 */
+    .blueprint-axis {
+      stroke: var(--rule);
+      stroke-width: 1.5px;
+      stroke-dasharray: 4 4;
+      opacity: 0.35;
+    }
+
+    .blueprint-header {
+      font-family: var(--font-sans);
+      font-size: var(--fs-sec);
+      fill: var(--text);
+      font-weight: 500;
+    }
+
+    .blueprint-text {
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      fill: var(--muted);
+    }
+
+    .convergence-label {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      fill: var(--text);
+    }
+
+    .convergence-sub {
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      fill: var(--focus);
+      font-weight: 600;
+    }
+
+    /* 路径动态 */
+    .path-base {
+      stroke: var(--model);
+      stroke-width: var(--stroke);
+      fill: none;
+      opacity: 0.75;
+    }
+
+    .path-converged {
+      stroke: var(--model);
+      stroke-width: var(--stroke-strong);
+      fill: none;
+    }
+
+    .point-dot {
+      fill: var(--bg);
+      stroke: var(--model);
+      stroke-width: 2px;
+    }
+
+    .point-final {
+      fill: var(--bg);
+      stroke: var(--focus);
+      stroke-width: 3.5px;
+    }
+
+    /* 初始加载动画 */
+    .entering .path-base {
+      stroke-dasharray: 600;
+      stroke-dashoffset: 600;
+      animation: drawLine 1000ms var(--ease-out) forwards;
+    }
+    .entering .path-converged {
+      stroke-dasharray: 350;
+      stroke-dashoffset: 350;
+      animation: drawLine 750ms 600ms var(--ease-out) forwards;
+    }
+    .entering .point-final,
+    .entering .converge-group {
+      opacity: 0;
+      animation: fadeIn 450ms 950ms var(--ease-out) forwards;
+    }
+
+    @keyframes drawLine {
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+
+    @keyframes fadeIn {
+      to {
+        opacity: 1;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .entering .path-base,
+      .entering .path-converged,
+      .entering .point-final,
+      .entering .converge-group {
+        animation: none !important;
+        stroke-dashoffset: 0 !important;
+        opacity: 1 !important;
+      }
+    }
+  </style>
+</head>
+<body data-page="01" data-total="25">
+  <div id="stage" class="entering">
+    <header class="hero">
+      <span class="chapter-tag">机器学习概论 · 第八讲</span>
+      <h1 class="hero-title">集成学习</h1>
+      <p class="hero-lead">从多样性弱假设到强泛化判决：Bagging、Boosting 与多模型融合原理</p>
+    </header>
+
+    <svg class="scene" viewBox="0 0 1600 900" aria-hidden="true">
+      <!-- 蓝图网格基准线 -->
+      <line x1="620" y1="120" x2="620" y2="780" class="blueprint-axis" />
+      <line x1="980" y1="120" x2="980" y2="780" class="blueprint-axis" />
+      <line x1="1280" y1="120" x2="1280" y2="780" class="blueprint-axis" />
+
+      <!-- 阶段刻度标签 -->
+      <text x="620" y="98" class="blueprint-header" text-anchor="middle">基学习器观测</text>
+      <text x="980" y="98" class="blueprint-header" text-anchor="middle">组合与权重约束</text>
+      <text x="1280" y="98" class="blueprint-header" text-anchor="middle">集成强判决</text>
+
+      <!-- 5 个基学习器独立轨迹 -->
+      <path d="M 620 190 C 740 190, 850 330, 980 430" class="path-base" />
+      <circle cx="620" cy="190" r="5" class="point-dot" />
+      <text x="595" y="195" class="blueprint-text" text-anchor="end">h₁(x)</text>
+
+      <path d="M 620 320 C 750 310, 860 395, 980 440" class="path-base" />
+      <circle cx="620" cy="320" r="5" class="point-dot" />
+      <text x="595" y="325" class="blueprint-text" text-anchor="end">h₂(x)</text>
+
+      <path d="M 620 450 C 740 465, 860 450, 980 450" class="path-base" />
+      <circle cx="620" cy="450" r="5" class="point-dot" />
+      <text x="595" y="455" class="blueprint-text" text-anchor="end">h₃(x)</text>
+
+      <path d="M 620 580 C 750 595, 860 505, 980 460" class="path-base" />
+      <circle cx="620" cy="580" r="5" class="point-dot" />
+      <text x="595" y="585" class="blueprint-text" text-anchor="end">h₄(x)</text>
+
+      <path d="M 620 710 C 740 715, 850 575, 980 470" class="path-base" />
+      <circle cx="620" cy="710" r="5" class="point-dot" />
+      <text x="595" y="715" class="blueprint-text" text-anchor="end">h₅(x)</text>
+
+      <!-- 汇聚点群 -->
+      <circle cx="980" cy="430" r="3.5" fill="var(--model)" opacity="0.85" />
+      <circle cx="980" cy="440" r="3.5" fill="var(--model)" opacity="0.85" />
+      <circle cx="980" cy="450" r="4" fill="var(--model)" />
+      <circle cx="980" cy="460" r="3.5" fill="var(--model)" opacity="0.85" />
+      <circle cx="980" cy="470" r="3.5" fill="var(--model)" opacity="0.85" />
+
+      <!-- 收束为粗线的集成决策核心 (4px) -->
+      <path d="M 980 450 C 1080 450, 1180 450, 1280 450" class="path-converged" />
+      <circle cx="1280" cy="450" r="8" class="point-final" />
+
+      <!-- 最终集成公式与状态 -->
+      <g class="converge-group">
+        <text x="1308" y="443" class="convergence-label">H(x) = sign(∑ αₜ hₜ)</text>
+        <text x="1308" y="470" class="convergence-sub">低方差 · 强泛化</text>
+      </g>
+    </svg>
+  </div>
+
+  <aside class="notes" hidden>
+    欢迎来到《机器学习概论》第八讲：集成学习。
+    在前面的章节中，我们学习了决策树、支持向量机等单一模型。集成学习的核心思想，是将多个弱学习器组合成一个强学习器。
+    画面右侧展示了集成学习的核心机理：单个基学习器也许会受到样本扰动或高方差的影响，但通过多样性构造与加权汇聚，群体的智慧能够有效抵消误差，收敛到稳定且高精度的判决面。
+    本讲我们将系统展开 Bagging、Boosting 以及 Stacking 三大范式。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 1, total: 25 });
+  </script>
+</body>
+</html>

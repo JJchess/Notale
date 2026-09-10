@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{ background:var(--bg); color:var(--text); font-family:var(--font-sans); overflow:hidden; }
+
+.kicker{ position:absolute; left:70px; top:46px; }
+h1.title{ position:absolute; left:70px; top:82px; width:1250px; }
+
+.row{ position:absolute; left:70px; width:1460px; }
+.row-cnn{ top:210px; }
+.row-rnn{ top:400px; }
+.row-attn{ top:590px; }
+
+.row-label{ position:absolute; left:0; top:6px; width:230px; }
+.row-name{ font-size:var(--fs-sec); font-weight:700; line-height:1.25; }
+.row-note{ margin-top:6px; }
+
+.row-canvas{ position:absolute; left:260px; top:0; width:1200px; height:150px; }
+
+.bottom{ position:absolute; left:70px; top:800px; width:1460px; }
+
+svg text{ font-family:var(--font-sans); fill:var(--text); }
+.pos-label{ font-size:var(--fs-tick); fill:var(--muted); text-anchor:middle; }
+.pos-dot{ fill:var(--text); }
+.pos-dot.q{ fill:var(--accent); }
+
+.edge{ fill:none; stroke:var(--stable); stroke-width:var(--diagram-line-width); }
+.edge.active{ stroke:var(--accent); }
+.win-box{ fill:var(--accent); fill-opacity:.08; stroke:var(--accent); stroke-width:1.5; }
+.recur{ fill:none; stroke:var(--stable); stroke-width:var(--diagram-line-width); }
+.recur.active{ stroke:var(--accent); }
+.attn-edge{ fill:none; stroke:var(--accent); }
+</style>
+</head>
+<body data-page="NN" data-total="44">
+<div id="stage">
+
+  <p class="nt-kicker kicker">归纳偏置 · 对照</p>
+  <h1 class="nt-title title">同一组位置，三种连接规则：局部窗口、递推链、内容寻址</h1>
+
+  <!-- CNN row -->
+  <div class="row row-cnn" data-step="1">
+    <div class="row-label">
+      <div class="row-name">CNN</div>
+      <p class="nt-body row-note">卷积核只看固定宽度的邻居窗口，窗口滑过整个序列，参数处处共享。</p>
+    </div>
+    <div class="row-canvas"><svg id="svg-cnn" viewBox="0 0 1250 150" width="100%" height="100%"></svg></div>
+  </div>
+
+  <!-- RNN row -->
+  <div class="row row-rnn" data-step="2">
+    <div class="row-label">
+      <div class="row-name">RNN</div>
+      <p class="nt-body row-note">每一步只把上一步的隐藏状态和当前输入合并，历史被压缩进一个向量再往前传。</p>
+    </div>
+    <div class="row-canvas"><svg id="svg-rnn" viewBox="0 0 1250 150" width="100%" height="100%"></svg></div>
+  </div>
+
+  <!-- Attention row -->
+  <div class="row row-attn" data-step="3">
+    <div class="row-label">
+      <div class="row-name">注意力</div>
+      <p class="nt-body row-note">查询直接与所有位置比较相关性，距离不再决定谁能连上谁。</p>
+    </div>
+    <div class="row-canvas"><svg id="svg-attn" viewBox="0 0 1250 150" width="100%" height="100%"></svg></div>
+  </div>
+
+  <p class="nt-note bottom" data-step="3">六个位置不变：CNN 的连接范围由核宽固定，逐层堆叠才能间接覆盖更远位置；RNN 的连接范围随距离线性增长，但都要经过中间状态转述；注意力对每个位置都开一条直达边，权重由内容而非位置决定。</p>
+
+</div>
+<script src="assets/base.js"></script>
+<script>
+Deck.init({ index: 39, total: 44 });
+
+const N = 6;
+const X0 = 40, X1 = 1160, Y = 78;
+const xs = Array.from({length:N}, (_,i)=> X0 + (X1-X0)*i/(N-1));
+
+function axis(svg, activeIdx){
+  let s = "";
+  xs.forEach((x,i)=>{
+    const isQ = activeIdx!=null && i===activeIdx;
+    s += `<circle class="pos-dot ${isQ?'q':''}" cx="${x}" cy="${Y}" r="6"></circle>`;
+    s += `<text class="pos-label" x="${x}" y="${Y+34}">t${i+1}</text>`;
+  });
+  svg.insertAdjacentHTML("beforeend", s);
+}
+
+// ---- CNN: sliding window of width 3, show window at position 3 (index 2, 0-based) covering 1,2,3
+(function(){
+  const svg = document.getElementById("svg-cnn");
+  const win = 3, center = 2; // 0-based center index (t3)
+  const lo = center - 1, hi = center + 1;
+  const boxX = xs[lo] - 24, boxW = (xs[hi]-xs[lo]) + 48;
+  let s = `<rect class="win-box" x="${boxX}" y="${Y-34}" width="${boxW}" height="68" rx="8"></rect>`;
+  for(let i=lo; i<=hi; i++){
+    s += `<path class="edge active" d="M ${xs[i]} ${Y} Q ${(xs[i]+xs[center])/2} ${Y+58} ${xs[center]} ${Y+2}"></path>`;
+  }
+  // faint window at another position to hint sliding
+  const lo2=3, hi2=5, c2=4;
+  const box2X = xs[lo2]-24, box2W=(xs[hi2]-xs[lo2])+48;
+  s += `<rect class="win-box" x="${box2X}" y="${Y-34}" width="${box2W}" height="68" rx="8" opacity="0.35"></rect>`;
+  svg.insertAdjacentHTML("beforeend", s);
+  axis(svg, center);
+})();
+
+// ---- RNN: chain h1->h2->...->h6, curved recurrence path below
+(function(){
+  const svg = document.getElementById("svg-rnn");
+  let s = "";
+  for(let i=0;i<N-1;i++){
+    const active = i>=2; // highlight later portion reaching t6 to show chain length
+    s += `<path class="recur ${active?'active':''}" d="M ${xs[i]} ${Y} Q ${(xs[i]+xs[i+1])/2} ${Y+64} ${xs[i+1]} ${Y}" marker-end="url(#arrow-rnn)"></path>`;
+  }
+  svg.insertAdjacentHTML("beforeend", `
+  <defs><marker id="arrow-rnn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="var(--stable)"></path></marker></defs>`);
+  svg.insertAdjacentHTML("beforeend", s);
+  axis(svg, N-1);
+})();
+
+// ---- Attention: query at t5 (index 4), direct edges to all positions, width by a toy weight
+(function(){
+  const svg = document.getElementById("svg-attn");
+  const q = 4;
+  // toy fixed weights (not real training result), sum normalized for illustration
+  const raw = [0.05, 0.08, 0.12, 0.10, 1.00, 0.35];
+  const maxW = Math.max(...raw);
+  let s = "";
+  xs.forEach((x,i)=>{
+    if(i===q) return;
+    const w = raw[i]/maxW;
+    const sw = 1 + w*7;
+    const op = 0.25 + w*0.6;
+    s += `<path class="attn-edge" style="stroke-width:${sw};opacity:${op}" d="M ${x} ${Y} Q ${(x+xs[q])/2} ${Y+56} ${xs[q]} ${Y+2}"></path>`;
+  });
+  svg.insertAdjacentHTML("beforeend", s);
+  axis(svg, q);
+})();
+
+Deck.onStep(function(step, max){
+  // step 0: nothing extra beyond CSS-controlled data-step reveal; rows fade in via data-step
+}, 3);
+</script>
+</body>
+</html>

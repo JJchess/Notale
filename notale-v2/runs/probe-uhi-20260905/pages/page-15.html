@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>缓解：把降温机制与目标尺度对应起来</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EFF1;
+      --text: #17282E;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    body {
+      background: #0b0e14;
+      margin: 0;
+    }
+
+    #stage {
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* 底层生成式流场画布 */
+    #flow-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* 前景编辑层 */
+    .cover-content {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .cover-header {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-width: 980px;
+    }
+
+    .section-kicker {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--cooling);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .section-kicker::before {
+      content: "";
+      display: inline-block;
+      width: 24px;
+      height: 2px;
+      background: var(--cooling);
+    }
+
+    .cover-title {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.22;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .cover-lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      line-height: 1.5;
+      color: var(--muted);
+      max-width: 820px;
+    }
+
+    /* 中部留白保留给流场，右侧放置清晰的尺度机制指示器 */
+    .scale-spectrum {
+      position: absolute;
+      right: 0;
+      top: 190px;
+      width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      pointer-events: auto;
+    }
+
+    .scale-card {
+      background: rgba(247, 250, 250, 0.88);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(80, 100, 107, 0.18);
+      border-radius: 4px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(23, 40, 46, 0.04);
+      transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease);
+    }
+
+    .scale-card:hover {
+      border-color: var(--cooling);
+      transform: translateX(-4px);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+
+    .scale-level {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .scale-range {
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .scale-mechanisms {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    .mechanism-tags {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    /* 底部章节概览 */
+    .cover-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding-top: 24px;
+      border-top: 1px solid rgba(80, 100, 107, 0.2);
+    }
+
+    .toc-preview {
+      display: flex;
+      gap: 36px;
+    }
+
+    .toc-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-width: 320px;
+    }
+
+    .toc-scope {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--cooling);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .toc-desc {
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .system-status {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 4px;
+      white-space: nowrap;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: var(--fs-label);
+      white-space: nowrap;
+    }
+
+    .sw-line {
+      width: 18px;
+      height: 3px;
+      border-radius: 1px;
+    }
+  </style>
+</head>
+<body data-page="15" data-total="19">
+  <div id="stage">
+    <!-- 生成式冷却平流与等温热场模拟背景 -->
+    <canvas id="flow-canvas" class="cv-fill"></canvas>
+
+    <div class="cover-content min0">
+      <header class="cover-header">
+        <div class="section-kicker">第 4 章 · 降温干预</div>
+        <h1 class="cover-title">缓解：把降温机制与目标尺度对应起来</h1>
+        <p class="cover-lead">
+          降温干预并非普遍适用的单点工程。遮阴、辐射反射、蒸散与风道输送各自遵循不同的物理机制，并在微观表面、街谷、公园斑块乃至城市通风走廊中拥有明确的有效作用半径。
+        </p>
+      </header>
+
+      <!-- 右侧悬浮：尺度与物理机制层级 -->
+      <aside class="scale-spectrum" aria-label="尺度与机制对照">
+        <article class="scale-card">
+          <div class="card-top">
+            <span class="scale-level">微观街谷尺度</span>
+            <span class="scale-range">1 m – 100 m</span>
+          </div>
+          <div class="scale-mechanisms">
+            树冠直接遮蔽短波辐射，透水冷铺面减弱显热积蓄，直接改善行人热舒适（PET/UTCI）。
+          </div>
+          <div class="mechanism-tags">
+            <span class="tag" data-kind="vegetation">辐射遮蔽</span>
+            <span class="tag" data-kind="cooling">显热通量抑制</span>
+          </div>
+        </article>
+
+        <article class="scale-card">
+          <div class="card-top">
+            <span class="scale-level">街区与绿地斑块</span>
+            <span class="scale-range">100 m – 1 km</span>
+          </div>
+          <div class="scale-mechanisms">
+            高反射屋面群降低街区热负荷；公园通过潜热蒸散形成冷岛（PCI），顺风冷空气平流渗入周边。
+          </div>
+          <div class="mechanism-tags">
+            <span class="tag" data-kind="cooling">潜热蒸散</span>
+            <span class="tag" data-kind="observed">冷岛外延 (PCI)</span>
+          </div>
+        </article>
+
+        <article class="scale-card">
+          <div class="card-top">
+            <span class="scale-level">城市级通风走廊</span>
+            <span class="scale-range">&gt; 1 km</span>
+          </div>
+          <div class="scale-mechanisms">
+            结合盛行风向控制建筑迎风截面与开敞通道，引导冷湿气流穿透热核，实现区域热量排散。
+          </div>
+          <div class="mechanism-tags">
+            <span class="tag" data-kind="cooling">动力通风</span>
+            <span class="tag" data-kind="uncertain">边界层换气</span>
+          </div>
+        </article>
+      </aside>
+
+      <!-- 底部章节导航预览 -->
+      <footer class="cover-footer">
+        <div class="toc-preview">
+          <div class="toc-item">
+            <span class="toc-scope">16 · 树冠与绿地</span>
+            <p class="toc-desc">遮阴与蒸散双重降温，受水分、配置与养护边界约束</p>
+          </div>
+          <div class="toc-item">
+            <span class="toc-scope">17 · 铺面与形态</span>
+            <p class="toc-desc">高反射屋面、透水铺面与风道排散的尺度权衡</p>
+          </div>
+          <div class="toc-item">
+            <span class="toc-scope">18 · 组合权衡模拟</span>
+            <p class="toc-desc">多目标约束下的空间配置、降温收益与协同代价评估</p>
+          </div>
+          <div class="toc-item">
+            <span class="toc-scope">19 · 观测与行动闭环</span>
+            <p class="toc-desc">结合热暴露与脆弱性指标，用同尺度观测检验缓解实效</p>
+          </div>
+        </div>
+
+        <div class="system-status">
+          <div class="legend-row">
+            <div class="legend-item"><span class="sw-line" style="background:#176B82;"></span><span>冷平流轨迹</span></div>
+            <div class="legend-item"><span class="sw-line" style="background:#C63F20; opacity:0.6;"></span><span>热核心等温环</span></div>
+          </div>
+          <span>城市微气候扩散系统 · 确定性平流场</span>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const SEED = "uhi-mitigation-scale-15";
+      const WIDTH = 1600;
+      const HEIGHT = 900;
+      const canvas = document.getElementById("flow-canvas");
+
+      Deck.init({ index: 15, total: 19, keys: false });
+
+      // 标题与右侧信息卡片的禁行区（保证文字极佳的可读性）
+      const EXCLUSIONS = [
+        { x: 56, y: 28, w: 960, h: 210 }, // 标题区
+        { x: 1040, y: 170, w: 520, h: 540 }, // 右侧卡片区
+        { x: 56, y: 730, w: 1488, h: 140 }  // 底部导航区
+      ];
+
+      // 降温源（冷岛/公园斑块）与热汇/热岛源
+      const COOLING_SOURCES = [
+        { x: 320, y: 450, radius: 150, strength: 1.8, kind: 'cooling' },
+        { x: 800, y: 530, radius: 130, strength: 1.5, kind: 'cooling' }
+      ];
+
+      const HEAT_CORE = { x: 580, y: 340, radius: 210 };
+
+      function insideExclusion(x, y, pad = 12) {
+        for (const box of EXCLUSIONS) {
+          if (x >= box.x - pad && x <= box.x + box.w + pad &&
+              y >= box.y - pad && y <= box.y + box.h + pad) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      // 生成式物理场模型构建
+      let streamlines = [];
+      let isotherms = [];
+      let particles = [];
+      let ctx = null;
+      let staticBuffer = null;
+
+      function initModel() {
+        const rng = new Math.seedrandom(SEED);
+
+        // 1. 等温线闭合/半闭合轮廓（围绕热核与冷源交汇带）
+        isotherms = [];
+        const isoRadii = [60, 110, 160, 220, 290, 370];
+        isoRadii.forEach((r, idx) => {
+          const pts = [];
+          const stepCount = 64;
+          for (let i = 0; i <= stepCount; i++) {
+            const angle = (i / stepCount) * Math.PI * 2;
+            // 依据冷源吸引产生形变
+            let dist = r;
+            const px = HEAT_CORE.x + Math.cos(angle) * dist;
+            const py = HEAT_CORE.y + Math.sin(angle) * dist;
+            
+            // 扰动
+            const noise = (rng() - 0.5) * 8;
+            pts.push({
+              x: px + noise,
+              y: py + noise
+            });
+          }
+          isotherms.push({
+            pts,
+            temp: 34 - idx * 1.8,
+            alpha: 0.18 + (idx % 2) * 0.12
+          });
+        });
+
+        // 2. 流线积分：从冷源（公园斑块）顺风平流扩散的降温轨迹
+        streamlines = [];
+        const lineCount = 72;
+        for (let i = 0; i < lineCount; i++) {
+          // 起始于冷源周边
+          const src = COOLING_SOURCES[i % COOLING_SOURCES.length];
+          const angle = (rng() * 0.7 - 0.35) * Math.PI + (src.x > 500 ? 0.2 : 0.4);
+          const rad = (rng() * 0.7 + 0.3) * src.radius;
+          let curX = src.x + Math.cos(angle) * rad;
+          let curY = src.y + Math.sin(angle) * rad;
+
+          const path = [];
+          let valid = true;
+          for (let s = 0; s < 180; s++) {
+            path.push({ x: curX, y: curY });
+
+            // 矢量速度：向右上方及向右平流（风向走廊 35°），受热核排斥与上升气流影响
+            let vx = 2.4 + (rng() - 0.5) * 0.3;
+            let vy = -0.7 + Math.sin(curX * 0.005) * 0.8;
+
+            // 绕过热核偏转
+            const dx = curX - HEAT_CORE.x;
+            const dy = curY - HEAT_CORE.y;
+            const distHeat = Math.hypot(dx, dy);
+            if (distHeat < HEAT_CORE.radius + 80) {
+              const repel = (HEAT_CORE.radius + 80 - distHeat) * 0.015;
+              vx += (dx / distHeat) * repel * 2;
+              vy += (dy / distHeat) * repel * 2;
+            }
+
+            curX += vx;
+            curY += vy;
+
+            if (curX > WIDTH + 40 || curY < -40 || curY > HEIGHT + 40) break;
+          }
+
+          if (path.length > 20) {
+            streamlines.push({
+              path,
+              alpha: 0.12 + rng() * 0.22,
+              width: 0.75 + rng() * 0.85,
+              speed: 0.0004 + rng() * 0.0003,
+              phase: rng()
+            });
+          }
+        }
+
+        // 3. 动态平流粒子
+        particles = [];
+        for (let i = 0; i < streamlines.length; i++) {
+          particles.push({
+            lineIndex: i,
+            progress: rng(),
+            speed: streamlines[i].speed,
+            size: 1.5 + rng() * 1.5
+          });
+        }
+
+        renderStaticBuffer();
+      }
+
+      function renderStaticBuffer() {
+        if (!staticBuffer) {
+          staticBuffer = document.createElement("canvas");
+        }
+        staticBuffer.width = WIDTH;
+        staticBuffer.height = HEIGHT;
+        const sctx = staticBuffer.getContext("2d");
+
+        sctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+        // 绘制等温线簇（热岛核心背景）
+        sctx.save();
+        isotherms.forEach(iso => {
+          sctx.beginPath();
+          let started = false;
+          iso.pts.forEach(p => {
+            if (insideExclusion(p.x, p.y)) {
+              started = false;
+            } else {
+              if (!started) {
+                sctx.moveTo(p.x, p.y);
+                started = true;
+              } else {
+                sctx.lineTo(p.x, p.y);
+              }
+            }
+          });
+          sctx.strokeStyle = `rgba(198, 63, 32, ${iso.alpha * 0.35})`;
+          sctx.lineWidth = 1;
+          sctx.setLineDash([4, 4]);
+          sctx.stroke();
+        });
+        sctx.restore();
+
+        // 绘制冷斑块示意圆环
+        COOLING_SOURCES.forEach(src => {
+          sctx.save();
+          // 外延环
+          sctx.beginPath();
+          sctx.arc(src.x, src.y, src.radius, 0, Math.PI * 2);
+          sctx.strokeStyle = "rgba(57, 112, 74, 0.22)";
+          sctx.lineWidth = 1.2;
+          sctx.stroke();
+
+          // 核心浅填色
+          const grad = sctx.createRadialGradient(src.x, src.y, 10, src.x, src.y, src.radius);
+          grad.addColorStop(0, "rgba(57, 112, 74, 0.12)");
+          grad.addColorStop(0.7, "rgba(23, 107, 130, 0.06)");
+          grad.addColorStop(1, "rgba(23, 107, 130, 0)");
+          sctx.fillStyle = grad;
+          sctx.beginPath();
+          sctx.arc(src.x, src.y, src.radius, 0, Math.PI * 2);
+          sctx.fill();
+
+          // 中心标注
+          sctx.fillStyle = "rgba(57, 112, 74, 0.65)";
+          sctx.font = "600 13px 'Noto Sans SC'";
+          sctx.fillText("冷岛源 · 潜热蒸散斑块", src.x - 60, src.y + 4);
+          sctx.restore();
+        });
+
+        // 绘制静态冷流线
+        sctx.save();
+        streamlines.forEach(sl => {
+          sctx.beginPath();
+          let started = false;
+          for (let pt of sl.path) {
+            if (insideExclusion(pt.x, pt.y)) {
+              started = false;
+            } else {
+              if (!started) {
+                sctx.moveTo(pt.x, pt.y);
+                started = true;
+              } else {
+                sctx.lineTo(pt.x, pt.y);
+              }
+            }
+          }
+          sctx.strokeStyle = `rgba(23, 107, 130, ${sl.alpha})`;
+          sctx.lineWidth = sl.width;
+          sctx.stroke();
+        });
+        sctx.restore();
+      }
+
+      function drawFrame(timestamp) {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+        // 贴上离屏绘制好的静态底纹与冷流网络
+        if (staticBuffer) {
+          ctx.drawImage(staticBuffer, 0, 0, WIDTH, HEIGHT);
+        }
+
+        // 动态：冷气流粒子随流场滑移
+        ctx.save();
+        particles.forEach(p => {
+          p.progress += p.speed * 16;
+          if (p.progress >= 1) p.progress -= 1;
+
+          const line = streamlines[p.lineIndex];
+          if (!line || line.path.length < 2) return;
+
+          const idxFloat = p.progress * (line.path.length - 1);
+          const i0 = Math.floor(idxFloat);
+          const i1 = Math.min(i0 + 1, line.path.length - 1);
+          const t = idxFloat - i0;
+
+          const x = line.path[i0].x * (1 - t) + line.path[i1].x * t;
+          const y = line.path[i0].y * (1 - t) + line.path[i1].y * t;
+
+          if (!insideExclusion(x, y)) {
+            ctx.beginPath();
+            ctx.arc(x, y, p.size, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(23, 107, 130, 0.75)";
+            ctx.fill();
+          }
+        });
+        ctx.restore();
+      }
+
+      function setupCanvas() {
+        ctx = Deck.fit(canvas);
+        initModel();
+      }
+
+      setupCanvas();
+      Deck.onResize(setupCanvas);
+
+      // 启动确定性动效
+      let stopLoop = () => {};
+      if (!Deck.reduced()) {
+        stopLoop = Deck.loop(time => {
+          drawFrame(time);
+        }, { still: 2400 });
+      } else {
+        drawFrame(2400);
+      }
+
+      window.addEventListener("pagehide", () => {
+        stopLoop();
+      }, { once: true });
+
+    })();
+  </script>
+</body>
+</html>

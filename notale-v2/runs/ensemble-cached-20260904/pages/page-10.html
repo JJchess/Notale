@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>随机森林的额外随机性：特征子采样降低强特征造成的树间相关性</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: 28px 56px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    .header-zone {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 32px;
+    }
+
+    .title-wrap h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    .title-wrap p {
+      margin: 8px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.45;
+      max-width: 1040px;
+    }
+
+    .stat-badge-group {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .stat-chip {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 8px 16px;
+      text-align: right;
+    }
+
+    .stat-chip .val {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: var(--font-num);
+      color: var(--aggregate);
+      display: block;
+      line-height: 1.1;
+    }
+
+    .stat-chip .lbl {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* 主舞台双栏机制对比 */
+    .comparison-stage {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .column-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      position: relative;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+      flex: 0 0 auto;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .panel-subtitle {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .canvas-container {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      border-radius: 8px;
+      background: #FAFCFD;
+      overflow: hidden;
+    }
+
+    /* 底部结论与互动步进栏 */
+    .bottom-bar {
+      flex: 0 0 auto;
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 12px;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .stepper-nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .step-btn {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      color: var(--muted);
+      font-size: var(--fs-label);
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: all var(--duration) var(--ease);
+    }
+
+    .step-btn:hover {
+      border-color: var(--model);
+      color: var(--text);
+    }
+
+    .step-btn.active {
+      background: var(--surface-strong);
+      color: var(--text);
+      font-weight: 700;
+      border-color: var(--model);
+    }
+
+    .narrative-box {
+      flex: 1;
+      min-width: 0;
+      padding-left: 20px;
+      border-left: 1px solid var(--surface-strong);
+    }
+
+    .narrative-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+
+    .narrative-desc {
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      font-size: 13px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body data-page="10" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题与说明 -->
+    <header class="header-zone">
+      <div class="title-wrap">
+        <h1>特征子采样打破强特征垄断，压低树间相关性</h1>
+        <p>若数据集存在决定性强特征，普通 Bagging 的每棵树均会在顶层优先选用它切分，造成各树形态雷同；随机森林在每次分裂时仅候选子集特征，迫使树群探索不同预测路径。</p>
+      </div>
+      <div class="stat-badge-group">
+        <div class="stat-chip">
+          <span class="val" id="bagging-rho">0.78</span>
+          <span class="lbl">Bagging 树间相关性 ρ</span>
+        </div>
+        <div class="stat-chip">
+          <span class="val" id="rf-rho" style="color:var(--sample);">0.28</span>
+          <span class="lbl">随机森林 树间相关性 ρ</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 双栏机制比对视窗 -->
+    <main class="comparison-stage">
+      <!-- 左栏：普通 Bagging -->
+      <section class="column-panel min0" aria-label="标准 Bagging">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>标准 Bagging</span>
+          </div>
+          <div class="panel-subtitle">每个分裂节点考察全部 p 个特征</div>
+        </div>
+        <div class="canvas-container min0">
+          <canvas id="cv-bagging" class="cv-fill"></canvas>
+        </div>
+      </section>
+
+      <!-- 右栏：随机森林 -->
+      <section class="column-panel min0" aria-label="随机森林">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>随机森林 (Random Forest)</span>
+          </div>
+          <div class="panel-subtitle">每个分裂节点仅随机抽取 m ≈ √p 个候选特征</div>
+        </div>
+        <div class="canvas-container min0">
+          <canvas id="cv-rf" class="cv-fill"></canvas>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部步进式解析 -->
+    <footer class="bottom-bar">
+      <nav class="stepper-nav" aria-label="推导阶段">
+        <button class="step-btn active" data-step="0">1. 特征候选池</button>
+        <button class="step-btn" data-step="1">2. 节点切分抉择</button>
+        <button class="step-btn" data-step="2">3. 树群形态差异</button>
+        <button class="step-btn" data-step="3">4. 方差极限与收益</button>
+      </nav>
+
+      <div class="narrative-box">
+        <div class="narrative-title" id="step-title">阶段 1：特征候选池对照</div>
+        <p class="narrative-desc" id="step-desc">
+          特征总数 p=6，其中 X₁ 为信息增益极高的主导强特征（如房屋面积）。Bagging 无论建多少棵树，节点切分时均对全部 6 个特征开放；随机森林则在每个节点仅随机抽取 m=2 个特征供其选择。
+        </p>
+      </div>
+
+      <div class="legend-row">
+        <div class="legend-item">
+          <span class="swatch" style="background:#C34B22;"></span>
+          <span>强特征 X₁</span>
+        </div>
+        <div class="legend-item">
+          <span class="swatch" style="background:#27648F;"></span>
+          <span>次要特征 X₂~X₆</span>
+        </div>
+        <div class="legend-item">
+          <span class="swatch" style="background:#E2EBF0; border:1px dashed #536A78;"></span>
+          <span>未被抽中特征</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      Deck.init({ index: 10, total: 27 });
+
+      const steps = [
+        {
+          title: "阶段 1：节点分裂候选池设定",
+          desc: "特征总数 p=6，其中 X₁ 为强特征。Bagging 树在所有切分点均能看到全部特征；随机森林每次分裂仅随机抽取 m=2 (≈√6) 个候选特征，X₁ 只有 33% 概率进入候选池。",
+          baggingRho: 0.78,
+          rfRho: 0.28
+        },
+        {
+          title: "阶段 2：根节点贪心切分决策",
+          desc: "Bagging 拥有全量视野，所有基学习树因贪心原则必选增益最大的 X₁，造成首层完全同质化；随机森林在近 2/3 的树中排除了 X₁，迫使模型发掘 X₂~X₆ 的非线性组合。",
+          baggingRho: 0.78,
+          rfRho: 0.28
+        },
+        {
+          title: "阶段 3：树群拓扑结构的多样性",
+          desc: "Bagging 各树结构高度雷同，预测误差高度同步；随机森林各树切分路径分散，不仅根节点各异，各深度的分裂点亦极具互补性，树间预测相关性 ρ 从 0.78 剧降至 0.28。",
+          baggingRho: 0.78,
+          rfRho: 0.28
+        },
+        {
+          title: "阶段 4：集成方差下限突破 Var = ρσ² + (1-ρ)σ²/B",
+          desc: "根据方差收敛公式，当树数 B→∞ 时，集成方差收敛于 ρσ²。Bagging 被高相关性锁死在 0.78σ² 的高位；随机森林将相关下限打到 0.28σ²，大幅提升泛化稳定性。",
+          baggingRho: 0.78,
+          rfRho: 0.28
+        }
+      ];
+
+      let currentStep = 0;
+
+      const cvBagging = document.getElementById('cv-bagging');
+      const cvRf = document.getElementById('cv-rf');
+      const stepButtons = document.querySelectorAll('.step-btn');
+      const stepTitle = document.getElementById('step-title');
+      const stepDesc = document.getElementById('step-desc');
+      const bRhoBadge = document.getElementById('bagging-rho');
+      const rfRhoBadge = document.getElementById('rf-rho');
+
+      function updateStep(idx) {
+        currentStep = idx;
+        stepButtons.forEach((btn, i) => {
+          if (i === idx) btn.classList.add('active');
+          else btn.classList.remove('active');
+        });
+        const data = steps[idx];
+        stepTitle.textContent = data.title;
+        stepDesc.textContent = data.desc;
+        bRhoBadge.textContent = data.baggingRho.toFixed(2);
+        rfRhoBadge.textContent = data.rfRho.toFixed(2);
+
+        drawBagging();
+        drawRf();
+      }
+
+      stepButtons.forEach((btn, i) => {
+        btn.addEventListener('click', () => updateStep(i));
+      });
+
+      // 绘制阶段 2 特征增益条形图对比
+      function drawGainBars(ctx, x, y, activeFeatures, chosenFeature, gains, isRf) {
+        const feats = ['X₁ (强)', 'X₂', 'X₃', 'X₄', 'X₅', 'X₆'];
+        const barW = 76;
+        const maxH = 50;
+        const gap = 14;
+        const totalW = feats.length * (barW + gap) - gap;
+        const startX = x - totalW / 2;
+
+        ctx.save();
+        // 增益基准线
+        ctx.strokeStyle = '#CCD8E0';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(startX - 10, y);
+        ctx.lineTo(startX + totalW + 10, y);
+        ctx.stroke();
+
+        feats.forEach((f, i) => {
+          const bx = startX + i * (barW + gap);
+          const gain = gains[i];
+          const isAvail = activeFeatures.includes(i);
+          const isChosen = (i === chosenFeature);
+          const bh = gain * maxH;
+
+          if (isAvail) {
+            // 柱子
+            ctx.fillStyle = isChosen ? ((i === 0) ? '#C34B22' : '#27648F') : '#BACCD9';
+            Deck.rr(ctx, bx + 12, y - bh, barW - 24, bh, 3);
+            ctx.fill();
+
+            // 增益数值
+            ctx.fillStyle = isChosen ? ((i === 0) ? '#C34B22' : '#27648F') : '#536A78';
+            ctx.font = '700 12px "Noto Sans SC", system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(gain.toFixed(2), bx + barW / 2, y - bh - 6);
+          } else {
+            // 未抽中特征，柱子画虚线轮廓
+            ctx.strokeStyle = '#CCD8E0';
+            ctx.setLineDash([2, 2]);
+            ctx.strokeRect(bx + 12, y - bh, barW - 24, bh);
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#9EB3C2';
+            ctx.font = '11px "Noto Sans SC", system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('未抽中', bx + barW / 2, y - 6);
+          }
+
+          // 特征标签
+          ctx.fillStyle = isChosen ? '#122634' : (isAvail ? '#536A78' : '#9EB3C2');
+          ctx.font = isChosen ? '700 12px "Noto Sans SC", system-ui, sans-serif' : '12px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(f, bx + barW / 2, y + 16);
+
+          if (isChosen) {
+            ctx.fillStyle = '#C34B22';
+            ctx.font = '700 11px "Noto Sans SC", system-ui, sans-serif';
+            ctx.fillText('最大增益胜出', bx + barW / 2, y + 30);
+          }
+        });
+        ctx.restore();
+      }
+
+      // 绘制辅助函数
+      function drawFeaturePills(ctx, x, y, activeFeatures, chosenFeature, isRf) {
+        const feats = ['X₁ (强)', 'X₂', 'X₃', 'X₄', 'X₅', 'X₆'];
+        const pWidth = 84;
+        const pHeight = 28;
+        const gap = 10;
+        const startX = x - ((feats.length * (pWidth + gap) - gap) / 2);
+
+        feats.forEach((f, i) => {
+          const fx = startX + i * (pWidth + gap);
+          const fy = y;
+          const isAvailable = activeFeatures.includes(i);
+          const isChosen = (i === chosenFeature);
+
+          ctx.save();
+          if (isChosen) {
+            ctx.fillStyle = (i === 0) ? '#C34B22' : '#27648F';
+            ctx.strokeStyle = '#122634';
+            ctx.lineWidth = 2;
+          } else if (isAvailable) {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.strokeStyle = (i === 0) ? '#C34B22' : '#536A78';
+            ctx.lineWidth = 1.5;
+          } else {
+            ctx.fillStyle = '#F2F6F8';
+            ctx.strokeStyle = '#CCD8E0';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+          }
+
+          Deck.rr(ctx, fx, fy, pWidth, pHeight, 6);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = isChosen ? '#FFFFFF' : (isAvailable ? '#122634' : '#9EB3C2');
+          ctx.font = '600 13px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(f, fx + pWidth / 2, fy + pHeight / 2);
+
+          if (isChosen) {
+            ctx.fillStyle = '#C34B22';
+            ctx.font = '700 11px "Noto Sans SC", system-ui, sans-serif';
+            ctx.fillText('选中切分', fx + pWidth / 2, fy - 8);
+          }
+          ctx.restore();
+        });
+      }
+
+      // 绘制树结构
+      function drawMiniTree(ctx, ox, oy, rootFeat, leftFeat, rightFeat, w, h, treeLabel, similarity) {
+        ctx.save();
+        // 节点坐标
+        const nx0 = ox + w / 2, ny0 = oy + 24;
+        const nx1 = ox + w * 0.28, ny1 = oy + 76;
+        const nx2 = ox + w * 0.72, ny2 = oy + 76;
+        const nx11 = ox + w * 0.14, ny11 = oy + 128;
+        const nx12 = ox + w * 0.42, ny12 = oy + 128;
+        const nx21 = ox + w * 0.58, ny21 = oy + 128;
+        const nx22 = ox + w * 0.86, ny22 = oy + 128;
+
+        // 连线
+        ctx.strokeStyle = '#9EB3C2';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(nx0, ny0); ctx.lineTo(nx1, ny1);
+        ctx.moveTo(nx0, ny0); ctx.lineTo(nx2, ny2);
+        ctx.moveTo(nx1, ny1); ctx.lineTo(nx11, ny11);
+        ctx.moveTo(nx1, ny1); ctx.lineTo(nx12, ny12);
+        ctx.moveTo(nx2, ny2); ctx.lineTo(nx21, ny21);
+        ctx.moveTo(nx2, ny2); ctx.lineTo(nx22, ny22);
+        ctx.stroke();
+
+        // 节点绘制函数
+        function node(x, y, label, isStrong, isLeaf) {
+          ctx.save();
+          if (isLeaf) {
+            ctx.fillStyle = '#E2EBF0';
+            ctx.strokeStyle = '#536A78';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(x, y, 7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          } else {
+            const nw = 48, nh = 22;
+            Deck.rr(ctx, x - nw / 2, y - nh / 2, nw, nh, 4);
+            ctx.fillStyle = isStrong ? '#C34B22' : '#27648F';
+            ctx.fill();
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = '700 11px "Noto Sans SC", system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, x, y);
+          }
+          ctx.restore();
+        }
+
+        // 叶子
+        node(nx11, ny11, '', false, true);
+        node(nx12, ny12, '', false, true);
+        node(nx21, ny21, '', false, true);
+        node(nx22, ny22, '', false, true);
+
+        // 分裂节点
+        node(nx1, ny1, leftFeat, leftFeat === 'X₁', false);
+        node(nx2, ny2, rightFeat, rightFeat === 'X₁', false);
+        node(nx0, ny0, rootFeat, rootFeat === 'X₁', false);
+
+        // 树标签
+        ctx.fillStyle = '#122634';
+        ctx.font = '600 13px "Noto Sans SC", system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(treeLabel, ox + w / 2, oy + h - 8);
+
+        // 相似度指示
+        if (similarity) {
+          ctx.font = '12px "Noto Sans SC", system-ui, sans-serif';
+          ctx.fillStyle = similarity.includes('高度同质') ? '#C34B22' : '#2F7568';
+          ctx.fillText(similarity, ox + w / 2, oy + h + 10);
+        }
+
+        ctx.restore();
+      }
+
+      // 方差分解图
+      function drawVarianceConvergence(ctx, w, h, rho, label, isRf) {
+        ctx.save();
+        const padX = 72, padY = 32;
+        const chartW = w - padX * 2;
+        const chartH = h - padY * 2 - 24;
+        const ox = padX, oy = padY + 16;
+
+        // Y 轴刻度
+        const yTicks = [0, 0.25, 0.5, 0.75, 1.0];
+        ctx.strokeStyle = '#EBF0F4';
+        ctx.lineWidth = 1;
+        yTicks.forEach(tick => {
+          const ty = oy + chartH - tick * chartH;
+          ctx.beginPath();
+          ctx.moveTo(ox, ty);
+          ctx.lineTo(ox + chartW, ty);
+          ctx.stroke();
+
+          ctx.fillStyle = '#536A78';
+          ctx.font = '11px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'right';
+          ctx.fillText(tick === 1 ? '1.0σ²' : tick === 0 ? '0' : `${tick.toFixed(2)}σ²`, ox - 8, ty + 4);
+        });
+
+        // 坐标轴
+        ctx.strokeStyle = '#CCD8E0';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(ox, oy);
+        ctx.lineTo(ox, oy + chartH);
+        ctx.lineTo(ox + chartW, oy + chartH);
+        ctx.stroke();
+
+        ctx.fillStyle = '#536A78';
+        ctx.font = '12px "Noto Sans SC", system-ui, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText('方差 Var', ox - 8, oy - 6);
+        ctx.textAlign = 'center';
+        ctx.fillText('集成树数目 B (1 → 60)', ox + chartW / 2, oy + chartH + 30);
+
+        // 渐近线 rho * sigma^2 (假设 sigma^2 = 1)
+        const asymptoteY = oy + chartH - (rho * chartH);
+        ctx.strokeStyle = isRf ? '#2F7568' : '#C34B22';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(ox, asymptoteY);
+        ctx.lineTo(ox + chartW, asymptoteY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 渐近线标注
+        ctx.fillStyle = isRf ? '#2F7568' : '#C34B22';
+        ctx.font = '700 13px "Noto Sans SC", system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`理论下限 ρσ² = ${rho.toFixed(2)}σ²`, ox + 14, asymptoteY - 8);
+
+        // 实际曲线 Var = rho*sigma^2 + (1-rho)/B * sigma^2
+        ctx.beginPath();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = isRf ? '#2F7568' : '#C34B22';
+        for (let b = 1; b <= 60; b++) {
+          const varVal = rho + (1 - rho) / b;
+          const px = ox + ((b - 1) / 59) * chartW;
+          const py = oy + chartH - (varVal * chartH);
+          if (b === 1) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // 标注初态与终态
+        const initY = oy + chartH - chartH; // B=1, Var=1.0
+        ctx.fillStyle = '#122634';
+        ctx.beginPath();
+        ctx.arc(ox, initY, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.font = '12px "Noto Sans SC", system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('单树方差 (B=1)', ox + 8, initY + 16);
+
+        const endY = oy + chartH - ((rho + (1 - rho) / 60) * chartH);
+        ctx.fillStyle = isRf ? '#2F7568' : '#C34B22';
+        ctx.beginPath();
+        ctx.arc(ox + chartW, endY, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = '700 13px "Noto Sans SC", system-ui, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(label, ox + chartW - 10, endY - 14);
+
+        ctx.restore();
+      }
+
+      function drawBagging() {
+        const ctx = Deck.fit(cvBagging);
+        const w = cvBagging.clientWidth;
+        const h = cvBagging.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        if (currentStep === 0) {
+          // 特征池说明
+          ctx.fillStyle = '#122634';
+          ctx.font = '700 15px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('节点候选池：全量 6 个特征均参与竞争', w / 2, 30);
+
+          drawFeaturePills(ctx, w / 2, 54, [0, 1, 2, 3, 4, 5], 0, false);
+
+          ctx.fillStyle = '#536A78';
+          ctx.font = '14px "Noto Sans SC", system-ui, sans-serif';
+          ctx.fillText('3 棵来自不同 Bootstrap 样本的决策树在根节点的决策：', w / 2, 130);
+
+          const treeW = (w - 60) / 3;
+          drawMiniTree(ctx, 20, 154, 'X₁', 'X₂', 'X₃', treeW, 170, '树 1 (根切分: X₁)', '强特征必选中');
+          drawMiniTree(ctx, 20 + treeW + 10, 154, 'X₁', 'X₄', 'X₂', treeW, 170, '树 2 (根切分: X₁)', '强特征必选中');
+          drawMiniTree(ctx, 20 + (treeW + 10) * 2, 154, 'X₁', 'X₃', 'X₅', treeW, 170, '树 3 (根切分: X₁)', '强特征必选中');
+
+          // 警告结论
+          ctx.save();
+          Deck.rr(ctx, 30, h - 50, w - 60, 36, 6);
+          ctx.fillStyle = '#FCEAE6';
+          ctx.fill();
+          ctx.strokeStyle = '#C34B22';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          ctx.fillStyle = '#C34B22';
+          ctx.font = '700 13px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('结果：由于 X₁ 增益压倒全局，每棵树根节点全选 X₁，树形高度雷同！', w / 2, h - 32);
+          ctx.restore();
+
+        } else if (currentStep === 1) {
+          // 阶段 2：贪心切分决策（信息增益对比）
+          ctx.fillStyle = '#122634';
+          ctx.font = '700 15px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('分裂依据：全量 6 个特征的信息增益（基尼不纯度下降）对比', w / 2, 30);
+
+          const gains = [0.86, 0.34, 0.38, 0.26, 0.22, 0.31];
+          drawGainBars(ctx, w / 2, 110, [0, 1, 2, 3, 4, 5], 0, gains, false);
+
+          const treeW = (w - 60) / 3;
+          drawMiniTree(ctx, 20, 154, 'X₁', 'X₂', 'X₃', treeW, 170, '树 1 (根切分: X₁)', '增益 0.86 独占榜首');
+          drawMiniTree(ctx, 20 + treeW + 10, 154, 'X₁', 'X₄', 'X₂', treeW, 170, '树 2 (根切分: X₁)', '增益 0.86 独占榜首');
+          drawMiniTree(ctx, 20 + (treeW + 10) * 2, 154, 'X₁', 'X₃', 'X₅', treeW, 170, '树 3 (根切分: X₁)', '增益 0.86 独占榜首');
+
+          ctx.save();
+          Deck.rr(ctx, 30, h - 50, w - 60, 36, 6);
+          ctx.fillStyle = '#FCEAE6';
+          ctx.fill();
+          ctx.strokeStyle = '#C34B22';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          ctx.fillStyle = '#C34B22';
+          ctx.font = '700 13px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('垄断效应：X₁ 增益 0.86 远超次优特征(0.38)，在全候选集下毫无悬念被连续选中。', w / 2, h - 32);
+          ctx.restore();
+
+        } else if (currentStep === 2) {
+          // 树群形态展示
+          ctx.fillStyle = '#122634';
+          ctx.font = '700 15px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Bagging 森林形态：结构雷同（首层全为 X₁）', w / 2, 30);
+
+          const treeW = (w - 60) / 3;
+          drawMiniTree(ctx, 20, 70, 'X₁', 'X₂', 'X₃', treeW, 180, '树 1', '结构高度同质');
+          drawMiniTree(ctx, 20 + treeW + 10, 70, 'X₁', 'X₂', 'X₄', treeW, 180, '树 2', '结构高度同质');
+          drawMiniTree(ctx, 20 + (treeW + 10) * 2, 70, 'X₁', 'X₃', 'X₂', treeW, 180, '树 3', '结构高度同质');
+
+          // 下方树间相关性矩阵展示
+          ctx.save();
+          const mxY = 290;
+          ctx.fillStyle = '#536A78';
+          ctx.font = '14px "Noto Sans SC", system-ui, sans-serif';
+          ctx.fillText('两两树间预测误差相关系数矩阵 (ρ 均值 = 0.78)', w / 2, mxY);
+
+          // 简易热力图表格
+          const cells = [
+            ['1.00', '0.79', '0.77'],
+            ['0.79', '1.00', '0.78'],
+            ['0.77', '0.78', '1.00']
+          ];
+          const cSize = 42;
+          const sX = w / 2 - (3 * cSize) / 2;
+          for (let r = 0; r < 3; r++) {
+            for (let c = 0; c < 3; c++) {
+              ctx.fillStyle = (r === c) ? '#E2EBF0' : '#FCEAE6';
+              ctx.fillRect(sX + c * cSize, mxY + 16 + r * cSize, cSize - 2, cSize - 2);
+              ctx.fillStyle = (r === c) ? '#536A78' : '#C34B22';
+              ctx.font = '700 12px "Noto Sans SC", system-ui, sans-serif';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(cells[r][c], sX + c * cSize + cSize / 2, mxY + 16 + r * cSize + cSize / 2);
+            }
+          }
+          ctx.restore();
+
+        } else if (currentStep === 3) {
+          // 方差衰减曲线
+          ctx.fillStyle = '#122634';
+          ctx.font = '700 15px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Bagging 方差随树数目 B 的衰减曲线', w / 2, 24);
+
+          drawVarianceConvergence(ctx, w, h - 20, 0.78, 'Bagging 极限: 0.78σ²', false);
+        }
+      }
+
+      function drawRf() {
+        const ctx = Deck.fit(cvRf);
+        const w = cvRf.clientWidth;
+        const h = cvRf.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        if (currentStep === 0) {
+          // 特征池说明
+          ctx.fillStyle = '#122634';
+          ctx.font = '700 15px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('节点候选池：随机抽取 m=2 个候选特征 (虚线为未抽中)', w / 2, 30);
+
+          drawFeaturePills(ctx, w / 2, 54, [2, 4], 2, true);
+
+          ctx.fillStyle = '#536A78';
+          ctx.font = '14px "Noto Sans SC", system-ui, sans-serif';
+          ctx.fillText('3 棵树根节点各自随机抽选的特征子集与最佳分裂点：', w / 2, 130);
+
+          const treeW = (w - 60) / 3;
+          drawMiniTree(ctx, 20, 154, 'X₃', 'X₁', 'X₅', treeW, 170, '树 1 (候选: X₃, X₅)', 'X₁ 未入选，发掘 X₃');
+          drawMiniTree(ctx, 20 + treeW + 10, 154, 'X₁', 'X₄', 'X₆', treeW, 170, '树 2 (候选: X₁, X₂)', 'X₁ 恰好入选');
+          drawMiniTree(ctx, 20 + (treeW + 10) * 2, 154, 'X₄', 'X₂', 'X₃', treeW, 170, '树 3 (候选: X₄, X₆)', 'X₁ 未入选，发掘 X₄');
+
+          // 优势结论
+          ctx.save();
+          Deck.rr(ctx, 30, h - 50, w - 60, 36, 6);
+          ctx.fillStyle = '#E8F3EE';
+          ctx.fill();
+          ctx.strokeStyle = '#2F7568';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          ctx.fillStyle = '#237052';
+          ctx.font = '700 13px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('机制：强特征 X₁ 在多数分裂点被随机排除，迫使树群学习次优特征！', w / 2, h - 32);
+          ctx.restore();
+
+        } else if (currentStep === 1) {
+          // 阶段 2：贪心切分决策（在抽中子集内竞争）
+          ctx.fillStyle = '#122634';
+          ctx.font = '700 15px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('分裂依据：仅在抽中候选特征 {X₃, X₅} 之间比拼增益', w / 2, 30);
+
+          const gains = [0.86, 0.34, 0.38, 0.26, 0.22, 0.31];
+          drawGainBars(ctx, w / 2, 110, [2, 4], 2, gains, true);
+
+          const treeW = (w - 60) / 3;
+          drawMiniTree(ctx, 20, 154, 'X₃', 'X₁', 'X₅', treeW, 170, '树 1 (候选: X₃, X₅)', 'X₃ 增益 0.38 胜出');
+          drawMiniTree(ctx, 20 + treeW + 10, 154, 'X₁', 'X₄', 'X₆', treeW, 170, '树 2 (候选: X₁, X₂)', 'X₁ 增益 0.86 胜出');
+          drawMiniTree(ctx, 20 + (treeW + 10) * 2, 154, 'X₄', 'X₂', 'X₃', treeW, 170, '树 3 (候选: X₄, X₆)', 'X₄ 增益 0.26 胜出');
+
+          ctx.save();
+          Deck.rr(ctx, 30, h - 50, w - 60, 36, 6);
+          ctx.fillStyle = '#E8F3EE';
+          ctx.fill();
+          ctx.strokeStyle = '#2F7568';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          ctx.fillStyle = '#237052';
+          ctx.font = '700 13px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('破局效应：X₁ 缺席时，次优特征 X₃ (0.38) 获得出头机会，树结构自然分化！', w / 2, h - 32);
+          ctx.restore();
+
+        } else if (currentStep === 2) {
+          // 树群形态展示
+          ctx.fillStyle = '#122634';
+          ctx.font = '700 15px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('随机森林形态：各树首层与内部形态各异，极具互补性', w / 2, 30);
+
+          const treeW = (w - 60) / 3;
+          drawMiniTree(ctx, 20, 70, 'X₃', 'X₅', 'X₂', treeW, 180, '树 1', '探索 X₃-X₅ 交互');
+          drawMiniTree(ctx, 20 + treeW + 10, 70, 'X₁', 'X₄', 'X₆', treeW, 180, '树 2', '保留强特征 X₁');
+          drawMiniTree(ctx, 20 + (treeW + 10) * 2, 70, 'X₄', 'X₂', 'X₅', treeW, 180, '树 3', '探索 X₄-X₂ 交互');
+
+          // 下方树间相关性矩阵展示
+          ctx.save();
+          const mxY = 290;
+          ctx.fillStyle = '#536A78';
+          ctx.font = '14px "Noto Sans SC", system-ui, sans-serif';
+          ctx.fillText('两两树间预测误差相关系数矩阵 (ρ 均值 = 0.28)', w / 2, mxY);
+
+          const cells = [
+            ['1.00', '0.29', '0.26'],
+            ['0.29', '1.00', '0.30'],
+            ['0.26', '0.30', '1.00']
+          ];
+          const cSize = 42;
+          const sX = w / 2 - (3 * cSize) / 2;
+          for (let r = 0; r < 3; r++) {
+            for (let c = 0; c < 3; c++) {
+              ctx.fillStyle = (r === c) ? '#E2EBF0' : '#E8F3EE';
+              ctx.fillRect(sX + c * cSize, mxY + 16 + r * cSize, cSize - 2, cSize - 2);
+              ctx.fillStyle = (r === c) ? '#536A78' : '#2F7568';
+              ctx.font = '700 12px "Noto Sans SC", system-ui, sans-serif';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(cells[r][c], sX + c * cSize + cSize / 2, mxY + 16 + r * cSize + cSize / 2);
+            }
+          }
+          ctx.restore();
+
+        } else if (currentStep === 3) {
+          // 方差衰减曲线
+          ctx.fillStyle = '#122634';
+          ctx.font = '700 15px "Noto Sans SC", system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('随机森林方差随树数目 B 的衰减曲线', w / 2, 24);
+
+          drawVarianceConvergence(ctx, w, h - 20, 0.28, '随机森林极限: 0.28σ²', true);
+        }
+      }
+
+      Deck.autofit(cvBagging, drawBagging);
+      Deck.autofit(cvRf, drawRf);
+
+      updateStep(0);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans CJK SC", sans-serif;
+    }
+    #stage {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      user-select: none;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      letter-spacing: -0.02em;
+    }
+
+    .lead-claim {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--model);
+      font-weight: 500;
+    }
+
+    .canvas-box {
+      position: relative;
+      width: 100%;
+      height: 648px;
+    }
+
+    .step-hud {
+      position: absolute;
+      top: 14px;
+      right: 18px;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      font-size: var(--fs-sec);
+      color: var(--text);
+      pointer-events: none;
+    }
+
+    .step-hud strong {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--focus);
+    }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 12px;
+      border-top: 1px solid var(--rule);
+      font-size: var(--fs-sec);
+      color: var(--text);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 28px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .step-bar {
+      display: flex;
+      gap: 10px;
+    }
+
+    .step-pill {
+      font-size: var(--fs-sec);
+      padding: 5px 14px;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      cursor: pointer;
+      background: transparent;
+      transition: all var(--motion-fast) var(--ease-out);
+    }
+
+    .step-pill[aria-current="true"] {
+      border-color: var(--focus);
+      color: var(--focus);
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body data-page="09" data-total="25">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>光系统与能量跃迁</h1>
+      </div>
+      <p class="lead-claim" id="claim-desc">共振能量转移：数百个天线色素以 >90% 效率将光能级联汇聚至反应中心</p>
+    </header>
+
+    <div class="canvas-box">
+      <canvas id="ps-canvas" class="cv-fill no-pan"></canvas>
+      <div class="step-hud">
+        <span id="step-name">第 1 步：光子捕获</span>
+        <span id="step-counter"><strong id="curr-step">1</strong> / 3</span>
+      </div>
+    </div>
+
+    <footer>
+      <div class="legend-row">
+        <div class="legend-item"><span class="dot" style="background:#2A9D8F"></span><span>天线叶绿素 (FRET 汇聚网络)</span></div>
+        <div class="legend-item"><span class="dot" style="background:#17628E"></span><span>反应中心特殊对 (P680)</span></div>
+        <div class="legend-item"><span class="dot" style="background:#B83D0B"></span><span>初级电子受体 (电荷分离脱出)</span></div>
+      </div>
+      <div class="step-bar">
+        <span class="step-pill" data-step="1">2. 级联共振</span>
+        <span class="step-pill" data-step="2">3. 电荷分离</span>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看，光系统不是单一的分子，而是一个庞大精巧的蛋白质复合体。
+    第一步：外围的天线色素吸收光子，外层电子发生能量跃迁进入激发态。
+    第二步：能量通过荧光共振能量转移（FRET），像多米诺骨牌一样在叶绿素分子间超快级联传递，耗时仅几皮秒，能量损耗极低，直奔中心。
+    第三步：当能量最终汇聚到反应中心特殊对 P680 时，P680 被激发并交出一个高能电子给初级电子受体——光能在此彻底转化为电能，完成了光反应最关键的瞬间。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const canvas = document.getElementById("ps-canvas");
+      const ctx = canvas.getContext("2d");
+      const stepName = document.getElementById("step-name");
+      const currStep = document.getElementById("curr-step");
+      const claimDesc = document.getElementById("claim-desc");
+      const pills = document.querySelectorAll(".step-pill");
+
+      const STEP_DATA = [
+        {
+          name: "第 1 步：光子捕获与激发",
+          claim: "外围天线色素捕获入射光子，电子跃迁至激发态（~1 fs）"
+        },
+        {
+          name: "第 2 步：共振能量汇聚 (FRET)",
+          claim: "无辐射偶极共振传递，能量沿能级梯度流向核心（~100 ps，效率 >90%）"
+        },
+        {
+          name: "第 3 步：反应中心电荷分离",
+          claim: "P680 跃迁释放高能电子至初级电子受体，光能转化为电能（~3 ps）"
+        }
+      ];
+
+      let currentStep = 0;
+      let animTime = 0;
+
+      // 几何中心
+      const CX = 744;
+      const CY = 314;
+      const P680 = { x: CX, y: CY, r: 24, label: "P680" };
+      const ACCEPTOR = { x: CX + 165, y: CY - 92, r: 18, label: "Pheo" };
+
+      // 生成天线色素节点
+      const ANTENNA_NODES = [];
+      const rings = [
+        { r: 76, count: 6, role: "inner" },
+        { r: 152, count: 12, role: "mid" },
+        { r: 232, count: 18, role: "outer" },
+        { r: 312, count: 24, role: "periphery" }
+      ];
+
+      rings.forEach((ring, rIdx) => {
+        for (let i = 0; i < ring.count; i++) {
+          const angle = (i / ring.count) * Math.PI * 2 + (rIdx * 0.28);
+          const deg = (angle * 180 / Math.PI + 360) % 360;
+          // 避开受体 Pheo 及其连线通道
+          if (deg > 300 || deg < 25) {
+            if (ring.r < 190) continue;
+          }
+          const jitterR = ring.r + ((i % 2 === 0 ? 8 : -8));
+          ANTENNA_NODES.push({
+            x: CX + Math.cos(angle) * jitterR,
+            y: CY + Math.sin(angle) * jitterR,
+            r: ring.role === "periphery" ? 11 : (ring.role === "outer" ? 12 : 13),
+            ringIdx: rIdx,
+            angle: angle,
+            dist: ring.r
+          });
+        }
+      });
+
+      // 建立传递网络边
+      const EDGES = [];
+      ANTENNA_NODES.forEach((node, i) => {
+        ANTENNA_NODES.forEach((other, j) => {
+          if (i !== j && other.dist < node.dist) {
+            const d = Math.hypot(node.x - other.x, node.y - other.y);
+            if (d < 110) {
+              EDGES.push({ from: node, to: other, len: d });
+            }
+          }
+        });
+        if (node.dist <= 85) {
+          EDGES.push({ from: node, to: P680, len: Math.hypot(node.x - P680.x, node.y - P680.y) });
+        }
+      });
+
+      // 静态重绘函数（无 rAF 污染，保证相同 step 渲染出的像素完全一致）
+      function drawFrame(step) {
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const colorText = Deck.token("--text") || "#142630";
+        const colorMuted = Deck.token("--muted") || "#50616B";
+        const colorModel = Deck.token("--model") || "#17628E";
+        const colorFocus = Deck.token("--focus") || "#B83D0B";
+        const colorRule = Deck.token("--rule") || "#71828B";
+
+        // 1. 同心能级梯度辅助虚线
+        ctx.save();
+        ctx.strokeStyle = "rgba(113, 130, 139, 0.22)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 6]);
+        [76, 152, 232, 312].forEach(r => {
+          ctx.beginPath();
+          ctx.arc(CX, CY, r, 0, Math.PI * 2);
+          ctx.stroke();
+        });
+        ctx.restore();
+
+        // 2. 传递连线
+        EDGES.forEach(edge => {
+          ctx.beginPath();
+          ctx.moveTo(edge.from.x, edge.from.y);
+          ctx.lineTo(edge.to.x, edge.to.y);
+          if (step >= 1) {
+            ctx.strokeStyle = "rgba(23, 98, 142, 0.35)";
+            ctx.lineWidth = 1.5;
+          } else {
+            ctx.strokeStyle = "rgba(113, 130, 139, 0.18)";
+            ctx.lineWidth = 1;
+          }
+          ctx.stroke();
+        });
+
+        // 3. 静态示意标记
+        if (step === 0) {
+          // 入射光子流向外围天线色素
+          const photonCount = 6;
+          for (let p = 0; p < photonCount; p++) {
+            const target = ANTENNA_NODES[(p * 8) % ANTENNA_NODES.length];
+            const startX = target.x - 70;
+            const startY = target.y - 85;
+
+            ctx.beginPath();
+            ctx.arc(target.x - 20, target.y - 25, 4.5, 0, Math.PI * 2);
+            ctx.fillStyle = colorFocus;
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(target.x - 20, target.y - 25);
+            ctx.strokeStyle = "rgba(184, 61, 11, 0.55)";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+        } else if (step === 1) {
+          // FRET 能量包汇聚示意
+          const packetCount = 8;
+          for (let k = 0; k < packetCount; k++) {
+            const curR = 110;
+            const baseAngle = k * (Math.PI * 2 / packetCount);
+            const px = CX + Math.cos(baseAngle) * curR;
+            const py = CY + Math.sin(baseAngle) * curR;
+
+            ctx.beginPath();
+            ctx.arc(px, py, 5, 0, Math.PI * 2);
+            ctx.fillStyle = "#2A9D8F";
+            ctx.fill();
+          }
+        } else if (step === 2) {
+          // 电荷分离：电子跃迁脱出
+          const ex = (P680.x + ACCEPTOR.x) / 2;
+          const ey = (P680.y + ACCEPTOR.y) / 2;
+
+          ctx.beginPath();
+          ctx.moveTo(P680.x, P680.y);
+          ctx.lineTo(ACCEPTOR.x, ACCEPTOR.y);
+          ctx.strokeStyle = "rgba(184, 61, 11, 0.4)";
+          ctx.lineWidth = 4;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(ex, ey, 7, 0, Math.PI * 2);
+          ctx.fillStyle = colorFocus;
+          ctx.fill();
+
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 11px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("e⁻", ex, ey);
+        }
+
+        // 4. 绘制天线色素节点
+        ANTENNA_NODES.forEach((node) => {
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
+          if (step === 0 && node.ringIdx >= 2) {
+            ctx.fillStyle = "#2A9D8F";
+            ctx.strokeStyle = colorFocus;
+            ctx.lineWidth = 2;
+          } else if (step === 1) {
+            ctx.fillStyle = "#2A9D8F";
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1.5;
+          } else {
+            ctx.fillStyle = "#388E3C";
+            ctx.strokeStyle = "rgba(255,255,255,0.7)";
+            ctx.lineWidth = 1;
+          }
+          ctx.fill();
+          ctx.stroke();
+        });
+
+        // 5. 反应中心特殊对 (P680)
+        ctx.beginPath();
+        ctx.arc(P680.x, P680.y, P680.r, 0, Math.PI * 2);
+        ctx.fillStyle = step === 2 ? colorFocus : colorModel;
+        ctx.fill();
+        ctx.lineWidth = step === 2 ? 4 : 2;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 15px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(step === 2 ? "P680*" : "P680", P680.x, P680.y);
+
+        // 6. 初级电子受体 (Pheo)
+        ctx.beginPath();
+        ctx.arc(ACCEPTOR.x, ACCEPTOR.y, ACCEPTOR.r, 0, Math.PI * 2);
+        ctx.fillStyle = step === 2 ? "#B83D0B" : "rgba(113, 130, 139, 0.4)";
+        ctx.fill();
+        ctx.strokeStyle = step === 2 ? "#ffffff" : colorRule;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = step === 2 ? "#ffffff" : colorText;
+        ctx.font = "14px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("Pheo", ACCEPTOR.x, ACCEPTOR.y);
+
+        // 7. 标注说明
+        ctx.font = "16px sans-serif";
+        ctx.textAlign = "left";
+
+        // 天线复合体说明
+        ctx.fillStyle = colorText;
+        ctx.fillText("捕光天线系统（LHCII 复合体）", CX - 500, CY - 240);
+        ctx.beginPath();
+        ctx.moveTo(CX - 310, CY - 235);
+        ctx.lineTo(CX - 225, CY - 180);
+        ctx.strokeStyle = colorRule;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // 反应中心说明
+        ctx.fillText("反应中心特殊对（能量阱）", CX - 500, CY + 240);
+        ctx.beginPath();
+        ctx.moveTo(CX - 310, CY + 235);
+        ctx.lineTo(P680.x - 32, P680.y + 10);
+        ctx.strokeStyle = colorRule;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // 受体说明
+        ctx.fillText("初级电子受体脱出电子", ACCEPTOR.x + 50, ACCEPTOR.y - 30);
+        ctx.beginPath();
+        ctx.moveTo(ACCEPTOR.x + 45, ACCEPTOR.y - 25);
+        ctx.lineTo(ACCEPTOR.x + 18, ACCEPTOR.y - 8);
+        ctx.strokeStyle = colorRule;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      function applyStepState(step) {
+        currentStep = Deck.clamp(step, 0, 2);
+        const data = STEP_DATA[currentStep];
+        stepName.textContent = data.name;
+        currStep.textContent = currentStep + 1;
+        claimDesc.textContent = data.claim;
+
+        pills.forEach((p, idx) => {
+          p.setAttribute("aria-current", idx === currentStep ? "true" : "false");
+        });
+      }
+
+      pills.forEach(pill => {
+        pill.addEventListener("click", () => {
+          const s = parseInt(pill.getAttribute("data-step"), 10);
+          applyStepState(s);
+          draw(currentStep);
+        });
+      });
+
+      Deck.init({ index: 9, total: 25 });
+      Deck.autofit(canvas, () => drawFrame(currentStep));
+
+      // 注册底盘分步：按步数完整重绘，支持回退到任意步
+      Deck.onStep(function (step) {
+        applyStepState(step);
+        drawFrame(currentStep);
+      }, 3);
+
+    })();
+  </script>
+</body>
+</html>

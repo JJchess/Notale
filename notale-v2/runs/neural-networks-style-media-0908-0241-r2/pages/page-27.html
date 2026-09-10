@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>注意力权重与动态加权</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F1F4F2;
+      --text: #151A18;
+      --muted: #5B6661;
+      --rule: #BAC4BF;
+      --structure: #1C4436;
+      --signal: #D43811;
+      --card-line: #CDD5D1;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #stage {
+      width: 1600px;
+      height: 900px;
+      box-sizing: border-box;
+      padding: 40px 56px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      user-select: none;
+    }
+
+    /* 顶部标题栏 */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 2px solid var(--structure);
+      padding-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    .formula-badge {
+      font-size: var(--fs-lead);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: var(--structure);
+      font-weight: 700;
+    }
+
+    /* 主布局 */
+    main {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 60px;
+      align-items: stretch;
+      flex: 1;
+      padding: 26px 0 16px;
+      min-height: 0;
+    }
+
+    /* 左侧：输入序列与动态权重 */
+    .source-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--structure);
+    }
+
+    .presets {
+      display: flex;
+      gap: 10px;
+    }
+
+    .preset-btn {
+      appearance: none;
+      background: transparent;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .preset-btn:hover {
+      border-color: var(--structure);
+      color: var(--structure);
+    }
+
+    .preset-btn.active {
+      background: var(--structure);
+      border-color: var(--structure);
+      color: #fff;
+    }
+
+    .tokens-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      flex: 1;
+      justify-content: center;
+    }
+
+    .token-row {
+      display: grid;
+      grid-template-columns: 140px 140px 1fr 64px;
+      align-items: center;
+      gap: 20px;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--card-line);
+      transition: border-color 0.15s ease;
+    }
+
+    .token-row.focused {
+      border-bottom-color: var(--signal);
+    }
+
+    .token-id {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .token-word {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .token-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+    }
+
+    .vector-pill {
+      font-family: ui-monospace, monospace;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--structure);
+      letter-spacing: -0.02em;
+    }
+
+    .slider-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .weight-slider {
+      width: 100%;
+      accent-color: var(--structure);
+      cursor: pointer;
+      margin: 0;
+    }
+
+    .slider-scale {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+    }
+
+    .weight-val {
+      font-family: ui-monospace, monospace;
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      text-align: right;
+      color: var(--structure);
+    }
+
+    .weight-val.peak {
+      color: var(--signal);
+    }
+
+    .source-hint {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+      padding-top: 10px;
+    }
+
+    /* 右侧：上下文向量读取与诊断 */
+    .target-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-left: 2px dashed var(--rule);
+      padding-left: 48px;
+    }
+
+    .target-box {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .result-vector-card {
+      padding: 16px 0;
+      border-bottom: 2px solid var(--structure);
+    }
+
+    .result-tag {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .result-vector {
+      font-family: ui-monospace, monospace;
+      font-size: var(--fs-h1);
+      font-weight: 800;
+      color: var(--structure);
+      margin: 6px 0 10px;
+    }
+
+    .result-bars {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .dim-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .dim-name {
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .dim-gauge {
+      height: 8px;
+      background: #D9E0DC;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .dim-fill {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      background: var(--structure);
+      transition: width 0.1s ease;
+    }
+
+    .dim-fill.negative {
+      background: var(--signal);
+    }
+
+    /* 说明与对比 */
+    .insight-card {
+      padding: 12px 0;
+    }
+
+    .insight-title {
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      color: var(--structure);
+      margin-bottom: 6px;
+    }
+
+    .insight-desc {
+      font-size: var(--fs-body);
+      line-height: 1.5;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .insight-desc strong {
+      color: var(--signal);
+    }
+
+    /* 底部条 */
+    footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 14px;
+      border-top: 1px solid var(--rule);
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .math-sum {
+      font-family: ui-monospace, monospace;
+      font-weight: 700;
+      color: var(--structure);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <!-- 顶部标题与核心公式 -->
+    <header>
+      <h1>注意力权重与动态加权</h1>
+      <div class="formula-badge">c = Σ αᵢ · vᵢ &nbsp; (Σ αᵢ = 1.0)</div>
+    </header>
+
+    <!-- 主工作区 -->
+    <main>
+      <!-- 左侧：输入序列词向量与交互滑块 -->
+      <section class="source-panel">
+        <div class="panel-head">
+          <div class="panel-title">输入词向量 vᵢ 与注意力权重 αᵢ</div>
+          <div class="presets">
+            <button class="preset-btn active" data-preset="bank">查询: 银行</button>
+            <button class="preset-btn" data-preset="river">查询: 河岸</button>
+            <button class="preset-btn" data-preset="uniform">均等分摊</button>
+          </div>
+        </div>
+
+        <div class="tokens-container" id="tokens-list">
+          <!-- 动态注入 4 个 token -->
+        </div>
+
+        <div class="source-hint">
+          拖动任意词权重观察右侧上下文向量 c 变化。系统保持归一化。
+        </div>
+      </section>
+
+      <!-- 右侧：动态合成上下文向量与分析 -->
+      <section class="target-panel">
+        <div class="target-box">
+          <div class="panel-title">加权汇聚结果：上下文向量 c</div>
+
+          <div class="result-vector-card">
+            <div class="result-tag">
+              <span style="color: var(--signal);">动态读出向量 c</span>
+              <span id="semantic-tag">金融语义主导</span>
+            </div>
+            <div class="result-vector" id="context-vector">[ +0.81, +0.01, +0.62 ]</div>
+
+            <div class="result-bars" id="dim-bars">
+              <!-- 维度可视化 -->
+            </div>
+          </div>
+
+          <div class="insight-card">
+            <div class="insight-title" id="insight-head">内容寻址与多义词消歧</div>
+            <p class="insight-desc" id="insight-text">
+              权重聚焦于<strong>存钱</strong>时，c 呈现高金融激活；切换至<strong>河堤</strong>时，同一多义词直接转向水系表征。
+            </p>
+          </div>
+        </div>
+
+        <div class="insight-card">
+          <div class="insight-title" style="color: var(--signal);">打破固定隐状态瓶颈</div>
+          <p class="insight-desc">
+            RNN 必须把全部历史压缩进单个向量；注意力机制允许解码端向所有历史位置<strong>动态分配权重并直接求和</strong>提取。
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部状态条 -->
+    <footer>
+      <div>
+        <span>权重归一化校验：</span>
+        <span class="math-sum" id="sum-display">α₁ + α₂ + α₃ + α₄ = 1.000</span>
+      </div>
+      <div>
+        <span>复杂度与序列长度呈二次关系 O(N²)，换取无损直达通道。</span>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    欢迎进入注意力机制的交互工作台。在上一页中，我们指出了 RNN 的固定隐状态信息瓶颈：无论前文多长，都必须压缩进一个固定长度的隐向量中，导致长程信息衰减严重。
+    注意力机制的核心构思是：为什么不保留每一个历史位置的表征，在需要的时候按相关性直接动态加权提取？
+    请大家看屏幕左侧，这里有四个词的向量嵌入，分别代表序列中的不同语义特征。右侧则是依据注意力权重 α 加权合成的上下文向量 c。
+    当我们把注意力集中在“存钱”和“银行”时，金融语义维度被极大增强；而当我们把注意力切换到“河堤”时，同一单词“bank”词义立刻偏向自然地理特征。
+    这意味着网络不再依赖单一递归路径慢慢遗忘，而是通过动态权重实现了瞬时的全序列内容寻址。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 词表与特征定义 (3维特征: [金融相关度, 自然水系, 动作强度])
+    const TOKENS = [
+      { word: "我", label: "v₁", vec: [0.05, 0.02, 0.20] },
+      { word: "在", label: "v₂", vec: [0.01, 0.01, 0.10] },
+      { word: "河堤", label: "v₃", vec: [-0.10, 0.92, 0.15] },
+      { word: "存钱", label: "v₄", vec: [0.95, -0.05, 0.70] }
+    ];
+
+    const PRESETS = {
+      bank: {
+        weights: [0.05, 0.05, 0.05, 0.85],
+        tag: "金融语义主导",
+        head: "金融上下文激活",
+        desc: "绝大部分注意力汇聚在存钱 (α₄=0.85)，输出向量 c 强力表现出金融与交易特征。"
+      },
+      river: {
+        weights: [0.05, 0.05, 0.85, 0.05],
+        tag: "水系地理主导",
+        head: "地理上下文激活",
+        desc: "注意力锁定在河堤 (α₃=0.85)，水系特征激增至 0.78 以上，直接读取地表环境信息。"
+      },
+      uniform: {
+        weights: [0.25, 0.25, 0.25, 0.25],
+        tag: "多重语义混合 (未聚焦)",
+        head: "均匀分布退化为全局平均",
+        desc: "当所有 α 均等为 0.25 时，注意力退化为无差别平均池化，各位置语义互相冲淡。"
+      }
+    };
+
+    let currentWeights = [0.05, 0.05, 0.05, 0.85];
+
+    const tokensListEl = document.getElementById('tokens-list');
+    const contextVectorEl = document.getElementById('context-vector');
+    const dimBarsEl = document.getElementById('dim-bars');
+    const semanticTagEl = document.getElementById('semantic-tag');
+    const insightHeadEl = document.getElementById('insight-head');
+    const insightTextEl = document.getElementById('insight-text');
+    const sumDisplayEl = document.getElementById('sum-display');
+
+    // 初始化渲染词行
+    function renderTokens() {
+      tokensListEl.innerHTML = TOKENS.map((token, idx) => {
+        const vStr = `[${token.vec.map(v => (v >= 0 ? '+' : '') + v.toFixed(2)).join(', ')}]`;
+        return `
+          <div class="token-row" id="row-${idx}">
+            <div class="token-id">
+              <span class="token-word">${token.word}</span>
+              <span class="token-label">${token.label} 位置 t=${idx + 1}</span>
+            </div>
+            <div class="vector-pill">${vStr}</div>
+            <div class="slider-wrap">
+              <input type="range" class="weight-slider" min="0" max="100" value="${Math.round(currentWeights[idx] * 100)}" data-idx="${idx}">
+              <div class="slider-scale">
+                <span>0.0</span>
+                <span>权重 α${idx + 1}</span>
+                <span>1.0</span>
+              </div>
+            </div>
+            <div class="weight-val" id="wval-${idx}">${currentWeights[idx].toFixed(2)}</div>
+          </div>
+        `;
+      }).join('');
+
+      // 绑定滑块事件
+      const sliders = tokensListEl.querySelectorAll('.weight-slider');
+      sliders.forEach(slider => {
+        slider.addEventListener('input', (e) => {
+          const changedIdx = parseInt(e.target.dataset.idx, 10);
+          const newVal = parseFloat(e.target.value) / 100;
+          adjustWeights(changedIdx, newVal);
+          clearPresetActive();
+          updateUI();
+        });
+      });
+    }
+
+    // 维持权重和为 1.0 的平滑分配
+    function adjustWeights(targetIdx, targetVal) {
+      targetVal = Math.max(0, Math.min(1, targetVal));
+      const oldVal = currentWeights[targetIdx];
+      const delta = targetVal - oldVal;
+      currentWeights[targetIdx] = targetVal;
+
+      const remainingIndices = [0, 1, 2, 3].filter(i => i !== targetIdx);
+      const remainingSum = remainingIndices.reduce((sum, i) => sum + currentWeights[i], 0);
+
+      if (remainingSum > 0.0001) {
+        remainingIndices.forEach(i => {
+          currentWeights[i] -= delta * (currentWeights[i] / remainingSum);
+          currentWeights[i] = Math.max(0, currentWeights[i]);
+        });
+      } else {
+        const share = (1 - targetVal) / remainingIndices.length;
+        remainingIndices.forEach(i => currentWeights[i] = Math.max(0, share));
+      }
+
+      // 二次精确归一化
+      const finalSum = currentWeights.reduce((a, b) => a + b, 0);
+      if (finalSum > 0) {
+        currentWeights = currentWeights.map(w => w / finalSum);
+      }
+    }
+
+    // 计算上下文向量 c = Σ αᵢ · vᵢ
+    function computeContext() {
+      const c = [0, 0, 0];
+      for (let d = 0; d < 3; d++) {
+        for (let i = 0; i < 4; i++) {
+          c[d] += currentWeights[i] * TOKENS[i].vec[d];
+        }
+      }
+      return c;
+    }
+
+    // 更新界面
+    function updateUI() {
+      const c = computeContext();
+      const maxWeightIdx = currentWeights.indexOf(Math.max(...currentWeights));
+
+      // 更新滑块与数值
+      currentWeights.forEach((w, i) => {
+        const slider = tokensListEl.querySelector(`input[data-idx="${i}"]`);
+        if (slider && document.activeElement !== slider) {
+          slider.value = Math.round(w * 100);
+        }
+        const valEl = document.getElementById(`wval-${i}`);
+        if (valEl) {
+          valEl.textContent = w.toFixed(2);
+          valEl.classList.toggle('peak', i === maxWeightIdx && w >= 0.4);
+        }
+        const rowEl = document.getElementById(`row-${i}`);
+        if (rowEl) {
+          rowEl.classList.toggle('focused', i === maxWeightIdx && w >= 0.4);
+        }
+      });
+
+      // 更新上下文向量
+      contextVectorEl.textContent = `[ ${c.map(v => (v >= 0 ? '+' : '') + v.toFixed(2)).join(', ')} ]`;
+
+      // 维度柱状图
+      const dimNames = ['金融属性', '水系属性', '动作强度'];
+      dimBarsEl.innerHTML = c.map((val, d) => {
+        const absVal = Math.min(1, Math.abs(val));
+        const pct = (absVal * 100).toFixed(1);
+        const isNeg = val < 0;
+        return `
+          <div class="dim-cell">
+            <div class="dim-name">${dimNames[d]} (${(val >= 0 ? '+' : '') + val.toFixed(2)})</div>
+            <div class="dim-gauge">
+              <div class="dim-fill ${isNeg ? 'negative' : ''}" style="width: ${pct}%"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // 判定语义倾向
+      if (c[0] > 0.45) {
+        semanticTagEl.textContent = "金融语义主导";
+        semanticTagEl.style.color = "var(--structure)";
+      } else if (c[1] > 0.45) {
+        semanticTagEl.textContent = "水系语义主导";
+        semanticTagEl.style.color = "var(--structure)";
+      } else if (Math.max(...currentWeights) < 0.35) {
+        semanticTagEl.textContent = "多重语义混合 (未聚焦)";
+        semanticTagEl.style.color = "var(--muted)";
+      } else {
+        semanticTagEl.textContent = "动态混合表征";
+        semanticTagEl.style.color = "var(--signal)";
+      }
+
+      // 归一化和显示
+      const sum = currentWeights.reduce((a, b) => a + b, 0);
+      sumDisplayEl.textContent = `α₁ + α₂ + α₃ + α₄ = ${sum.toFixed(3)}`;
+    }
+
+    function clearPresetActive() {
+      document.querySelectorAll('.preset-btn').forEach(btn => btn.classList.remove('active'));
+    }
+
+    // 预设按钮事件
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        clearPresetActive();
+        btn.classList.add('active');
+        const key = btn.dataset.preset;
+        const p = PRESETS[key];
+        currentWeights = [...p.weights];
+        insightHeadEl.textContent = p.head;
+        insightTextEl.textContent = p.desc;
+        updateUI();
+      });
+    });
+
+    // 初始化运行
+    renderTokens();
+    updateUI();
+    Deck.init({ index: 27, total: 32 });
+  </script>
+</body>
+</html>

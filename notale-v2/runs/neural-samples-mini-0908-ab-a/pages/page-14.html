@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>单步卷积与特征提取：核对乘加运算与边界填充</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F1F4F2;
+      --text: #151A18;
+      --muted: #5B6661;
+      --rule: #BAC4BF;
+      --structure: #1C4436;
+      --signal: #D43811;
+      --pad-bg: #E3E9E5;
+      --pad-text: #7A8881;
+    }
+
+    #stage {
+      padding: 44px 56px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    .lead-text {
+      margin-top: 6px;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .top-controls {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .btn-group {
+      display: inline-flex;
+      border: 1px solid var(--structure);
+      border-radius: 4px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .btn-group button {
+      background: transparent;
+      border: none;
+      padding: 8px 14px;
+      font-size: var(--fs-label);
+      font-family: inherit;
+      color: var(--structure);
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .btn-group button + button {
+      border-left: 1px solid var(--structure);
+    }
+
+    .btn-group button[aria-pressed="true"] {
+      background: var(--structure);
+      color: #fff;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 460px 240px 360px 1fr;
+      gap: 28px;
+      align-items: center;
+      margin-top: 10px;
+      margin-bottom: 8px;
+    }
+
+    .panel-col {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .col-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--structure);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .col-title .dim {
+      font-weight: 400;
+      color: var(--muted);
+      font-size: var(--fs-tick);
+    }
+
+    .grid-board {
+      display: grid;
+      position: relative;
+      background: #fff;
+      border: 1px solid var(--rule);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      position: relative;
+      transition: background 0.12s, color 0.12s;
+    }
+
+    .cell.padding-cell {
+      background: var(--pad-bg);
+      color: var(--pad-text);
+      font-weight: 400;
+    }
+
+    .cell.window-active {
+      background: rgba(212, 56, 17, 0.12);
+      color: var(--signal);
+    }
+
+    .cell.window-active.padding-cell {
+      background: rgba(212, 56, 17, 0.18);
+      color: var(--signal);
+    }
+
+    /* 卷积核叠加指示框 */
+    #kernelHighlight {
+      position: absolute;
+      border: 3px solid var(--signal);
+      box-sizing: border-box;
+      pointer-events: none;
+      transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.4, 1);
+      z-index: 2;
+    }
+
+    /* 输出特征图格 */
+    .out-cell {
+      cursor: pointer;
+      border: 1px solid rgba(0,0,0,0.04);
+    }
+
+    .out-cell:hover {
+      outline: 2px solid var(--signal);
+      z-index: 1;
+    }
+
+    .out-cell.active {
+      background: var(--signal) !important;
+      color: #fff !important;
+      font-weight: 700;
+    }
+
+    /* 中间卷积核展示 */
+    .kernel-card {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .kernel-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 56px);
+      grid-template-rows: repeat(3, 56px);
+      gap: 3px;
+      background: #fff;
+      padding: 6px;
+      border: 1px solid var(--structure);
+    }
+
+    .k-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      color: var(--structure);
+      font-weight: 700;
+      font-family: monospace;
+      font-size: var(--fs-label);
+    }
+
+    /* 计算过程追踪区 */
+    .inspect-col {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      justify-content: center;
+    }
+
+    .inspect-box {
+      border-left: 3px solid var(--signal);
+      padding-left: 20px;
+    }
+
+    .sum-expr {
+      font-family: monospace;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.8;
+      word-break: break-all;
+    }
+
+    .sum-term {
+      display: inline-block;
+      white-space: nowrap;
+    }
+
+    .sum-term.nonzero {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .result-display {
+      margin-top: 14px;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .result-val {
+      font-size: var(--fs-h1);
+      font-weight: 800;
+      font-family: monospace;
+      color: var(--signal);
+      line-height: 1;
+    }
+
+    .result-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    /* 底部条与键盘提示 */
+    footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid var(--rule);
+      padding-top: 12px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .kbd-nav {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    kbd {
+      background: #fff;
+      border: 1px solid var(--rule);
+      border-radius: 3px;
+      padding: 2px 7px;
+      font-size: var(--fs-tick);
+      font-family: monospace;
+      color: var(--text);
+      box-shadow: 0 1px 0 rgba(0,0,0,0.15);
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>单步卷积与特征提取</h1>
+        <div class="lead-text">滑动核窗口对齐像素点积求和；改变填充观察边界扩展与尺寸保持。</div>
+      </div>
+      <div class="top-controls">
+        <div style="font-size: var(--fs-label); color: var(--muted); font-weight: 600;">边界填充 (Padding)：</div>
+        <div class="btn-group" role="group" aria-label="填充模式选择">
+          <button id="btnPadNone" aria-pressed="true">None (Valid: 3×3)</button>
+          <button id="btnPadSame" aria-pressed="false">Zero-Padding (Same: 5×5)</button>
+        </div>
+        <div style="font-size: var(--fs-label); color: var(--muted); font-weight: 600; margin-left: 8px;">卷积核：</div>
+        <div class="btn-group" role="group" aria-label="卷积核选择">
+          <button id="btnKernelEdge" aria-pressed="true">垂直边缘</button>
+          <button id="btnKernelSharpen" aria-pressed="false">中心增强</button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- 输入矩阵 (带滑动指示) -->
+      <div class="panel-col">
+        <div class="col-title">
+          <span>输入特征图 X</span>
+          <span class="dim" id="inputDimLabel">5×5</span>
+        </div>
+        <div id="inputGrid" class="grid-board">
+          <div id="kernelHighlight"></div>
+        </div>
+      </div>
+
+      <!-- 卷积核 -->
+      <div class="panel-col" style="align-items: center;">
+        <div class="col-title">
+          <span>卷积核 W (3×3)</span>
+        </div>
+        <div class="kernel-card">
+          <div id="kernelGrid" class="kernel-grid"></div>
+        </div>
+        <div style="margin-top: 14px; font-size: var(--fs-label); color: var(--muted); text-align: center;">
+          权重共享：同组 9 个参数遍历整图
+        </div>
+      </div>
+
+      <!-- 输出特征图 -->
+      <div class="panel-col">
+        <div class="col-title">
+          <span>输出特征图 Y</span>
+          <span class="dim" id="outputDimLabel">3×3 (点击任一格定位)</span>
+        </div>
+        <div id="outputGrid" class="grid-board"></div>
+      </div>
+
+      <!-- 实时乘加与内积检查 -->
+      <div class="panel-col inspect-col">
+        <div class="col-title">
+          <span>局部乘加推导</span>
+        </div>
+        <div class="inspect-box">
+          <div style="font-size: var(--fs-sec); color: var(--structure); font-weight: 700; margin-bottom: 6px;">
+            当前输出位置 Y[<span id="posRow">0</span>, <span id="posCol">0</span>] = ∑(X ⊙ W)
+          </div>
+          <div id="sumBreakdown" class="sum-expr"></div>
+          <div class="result-display">
+            <div id="resVal" class="result-val">0</div>
+            <div id="resDesc" class="result-desc">垂直明暗跃迁响应显著</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <div class="kbd-nav">
+        <span>核移动：</span>
+        <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd>
+        <span style="margin-left: 8px;">或点选输出特征图定位</span>
+      </div>
+      <div>输出尺寸：(H + 2P - K) / S + 1</div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    单步卷积的核心在于“局部连接”和“权重共享”。
+    大家看左侧输入图，这是一个 5×5 的图像块，中间有清晰的纵向明暗对比。
+    当我们用一个 3×3 的垂直边缘检测核在上面滑动时，每一步其实只做两件事：
+    第一，抽出核覆盖的 9 个像素；第二，与核中对应的 9 个权重逐点相乘并累加。
+    当我们在输出特征图上移动时，大家可以清楚看到点积展开式：
+    当窗口落在明暗交界处时，核正负列恰好对齐跃迁，累加值达到最大，这就是边缘被激活的数学本质。
+    切换到 Zero-Padding 模式，边界周围补了一圈零，使得输出图恢复到与原图相同的 5×5，有效保留了边缘位置的特征。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 原始 5x5 输入图像：带有鲜明的垂直明暗边界 (左侧暗0/1，中间跃迁，右侧亮8/9)
+      const BASE_IMAGE = [
+        [1, 2, 8, 9, 8],
+        [1, 1, 9, 8, 9],
+        [0, 2, 8, 9, 7],
+        [1, 1, 8, 8, 8],
+        [2, 0, 9, 8, 9]
+      ];
+
+      // 预设卷积核 (3x3)
+      const KERNELS = {
+        edge: {
+          name: "垂直边缘检测",
+          weights: [
+            [-1, 0, 1],
+            [-2, 0, 2],
+            [-1, 0, 1]
+          ]
+        },
+        sharpen: {
+          name: "中心增强",
+          weights: [
+            [ 0, -1,  0],
+            [-1,  5, -1],
+            [ 0, -1,  0]
+          ]
+        }
+      };
+
+      // 状态模型
+      const state = {
+        padding: 0, // 0: None (Valid), 1: Zero-Padding (Same)
+        kernelType: 'edge',
+        cursorRow: 0,
+        cursorCol: 0
+      };
+
+      // DOM 元素
+      const ui = {
+        inputGrid: document.getElementById('inputGrid'),
+        kernelGrid: document.getElementById('kernelGrid'),
+        outputGrid: document.getElementById('outputGrid'),
+        kernelHighlight: document.getElementById('kernelHighlight'),
+        btnPadNone: document.getElementById('btnPadNone'),
+        btnPadSame: document.getElementById('btnPadSame'),
+        btnKernelEdge: document.getElementById('btnKernelEdge'),
+        btnKernelSharpen: document.getElementById('btnKernelSharpen'),
+        inputDimLabel: document.getElementById('inputDimLabel'),
+        outputDimLabel: document.getElementById('outputDimLabel'),
+        posRow: document.getElementById('posRow'),
+        posCol: document.getElementById('posCol'),
+        sumBreakdown: document.getElementById('sumBreakdown'),
+        resVal: document.getElementById('resVal'),
+        resDesc: document.getElementById('resDesc')
+      };
+
+      // 计算当前填充后的输入矩阵
+      function getPaddedInput() {
+        const p = state.padding;
+        const H = 5, W = 5;
+        const paddedH = H + 2 * p;
+        const paddedW = W + 2 * p;
+        const grid = [];
+
+        for (let r = 0; r < paddedH; r++) {
+          const row = [];
+          for (let c = 0; c < paddedW; c++) {
+            const inOrigR = r - p;
+            const inOrigC = c - p;
+            if (inOrigR >= 0 && inOrigR < H && inOrigC >= 0 && inOrigC < W) {
+              row.push({ val: BASE_IMAGE[inOrigR][inOrigC], isPad: false });
+            } else {
+              row.push({ val: 0, isPad: true });
+            }
+          }
+          grid.push(row);
+        }
+        return grid;
+      }
+
+      // 获取当前卷积核权重
+      function getKernelWeights() {
+        return KERNELS[state.kernelType].weights;
+      }
+
+      // 计算输出特征图矩阵及尺寸
+      function computeOutput() {
+        const padded = getPaddedInput();
+        const K = 3;
+        const outH = padded.length - K + 1;
+        const outW = padded[0].length - K + 1;
+        const weights = getKernelWeights();
+        const outGrid = [];
+
+        for (let r = 0; r < outH; r++) {
+          const row = [];
+          for (let c = 0; c < outW; c++) {
+            let sum = 0;
+            const terms = [];
+            for (let kr = 0; kr < K; kr++) {
+              for (let kc = 0; kc < K; kc++) {
+                const inVal = padded[r + kr][c + kc].val;
+                const wVal = weights[kr][kc];
+                const prod = inVal * wVal;
+                sum += prod;
+                terms.push({ inVal, wVal, prod });
+              }
+            }
+            row.push({ val: sum, terms });
+          }
+          outGrid.push(row);
+        }
+        return { outH, outW, outGrid };
+      }
+
+      // 渲染卷积核 3x3 视图
+      function renderKernelView() {
+        const weights = getKernelWeights();
+        ui.kernelGrid.innerHTML = '';
+        for (let r = 0; r < 3; r++) {
+          for (let c = 0; c < 3; c++) {
+            const d = document.createElement('div');
+            d.className = 'k-cell';
+            const v = weights[r][c];
+            d.textContent = v > 0 ? `+${v}` : `${v}`;
+            ui.kernelGrid.appendChild(d);
+          }
+        }
+      }
+
+      // 渲染主世界
+      function render() {
+        const padded = getPaddedInput();
+        const { outH, outW, outGrid } = computeOutput();
+        const weights = getKernelWeights();
+
+        // 约束当前游标边界
+        if (state.cursorRow >= outH) state.cursorRow = outH - 1;
+        if (state.cursorCol >= outW) state.cursorCol = outW - 1;
+        const curR = state.cursorRow;
+        const curC = state.cursorCol;
+
+        // 1. 渲染输入网格
+        const inRows = padded.length;
+        const inCols = padded[0].length;
+        const cellSize = inRows === 7 ? 58 : 78;
+
+        ui.inputDimLabel.textContent = `${inRows}×${inCols}` + (state.padding ? ` (原图5×5 + Padding 1)` : ` (无填充)`);
+        ui.inputGrid.style.gridTemplateColumns = `repeat(${inCols}, ${cellSize}px)`;
+        ui.inputGrid.style.gridTemplateRows = `repeat(${inRows}, ${cellSize}px)`;
+        ui.inputGrid.innerHTML = '';
+        ui.inputGrid.appendChild(ui.kernelHighlight);
+
+        for (let r = 0; r < inRows; r++) {
+          for (let c = 0; c < inCols; c++) {
+            const cellData = padded[r][c];
+            const div = document.createElement('div');
+            div.className = 'cell' + (cellData.isPad ? ' padding-cell' : '');
+
+            // 判断是否在当前滑动窗口内核范围
+            const inWindow = (r >= curR && r < curR + 3 && c >= curC && c < curC + 3);
+            if (inWindow) div.classList.add('window-active');
+
+            div.textContent = cellData.val;
+            ui.inputGrid.appendChild(div);
+          }
+        }
+
+        // 定位高亮框
+        ui.kernelHighlight.style.width = `${cellSize * 3}px`;
+        ui.kernelHighlight.style.height = `${cellSize * 3}px`;
+        ui.kernelHighlight.style.transform = `translate(${curC * cellSize}px, ${curR * cellSize}px)`;
+
+        // 2. 渲染输出特征图
+        const outCellSize = outH === 5 ? 64 : 100;
+        ui.outputDimLabel.textContent = `${outH}×${outW}` + (state.padding ? ` (Same 填充保持全尺寸)` : ` (Valid 尺寸收缩)`);
+        ui.outputGrid.style.gridTemplateColumns = `repeat(${outW}, ${outCellSize}px)`;
+        ui.outputGrid.style.gridTemplateRows = `repeat(${outH}, ${outCellSize}px)`;
+        ui.outputGrid.innerHTML = '';
+
+        // 计算最大绝对值用于背景灰度微调
+        let maxAbs = 1;
+        outGrid.forEach(row => row.forEach(c => {
+          if (Math.abs(c.val) > maxAbs) maxAbs = Math.abs(c.val);
+        }));
+
+        for (let r = 0; r < outH; r++) {
+          for (let c = 0; c < outW; c++) {
+            const item = outGrid[r][c];
+            const btn = document.createElement('button');
+            btn.className = 'cell out-cell' + (r === curR && c === curC ? ' active' : '');
+            btn.textContent = item.val;
+            
+            // 灰度映射增强特征感
+            if (!(r === curR && c === curC)) {
+              const intensity = Math.min(1, Math.abs(item.val) / maxAbs);
+              if (item.val > 0) {
+                btn.style.backgroundColor = `rgba(28, 68, 54, ${0.05 + intensity * 0.25})`;
+                btn.style.color = intensity > 0.6 ? '#0E2820' : 'var(--text)';
+              } else if (item.val < 0) {
+                btn.style.backgroundColor = `rgba(212, 56, 17, ${0.05 + intensity * 0.15})`;
+                btn.style.color = 'var(--text)';
+              }
+            }
+
+            btn.setAttribute('aria-label', `输出特征 [${r}, ${c}] 值为 ${item.val}`);
+            btn.onclick = () => {
+              state.cursorRow = r;
+              state.cursorCol = c;
+              render();
+            };
+            ui.outputGrid.appendChild(btn);
+          }
+        }
+
+        // 3. 渲染右侧点积展开与因果解析
+        ui.posRow.textContent = curR;
+        ui.posCol.textContent = curC;
+
+        const currentCell = outGrid[curR][curC];
+        ui.resVal.textContent = currentCell.val;
+
+        // 乘加项展开
+        const termStrs = currentCell.terms.map(t => {
+          const wStr = t.wVal < 0 ? `(${t.wVal})` : `${t.wVal}`;
+          const isNonzero = t.prod !== 0;
+          return `<span class="sum-term ${isNonzero ? 'nonzero' : ''}">${t.inVal}×${wStr}</span>`;
+        });
+        ui.sumBreakdown.innerHTML = termStrs.join(' + ');
+
+        // 因果判断
+        if (state.kernelType === 'edge') {
+          if (currentCell.val > 15) {
+            ui.resDesc.textContent = '强正响应：窗口正对自暗到亮的强垂直突变边缘';
+          } else if (currentCell.val < -15) {
+            ui.resDesc.textContent = '强负响应：窗口正对自亮到暗的反向垂直边缘';
+          } else {
+            ui.resDesc.textContent = '弱响应：平坦区域或平缓渐变，正负抵消接近 0';
+          }
+        } else {
+          if (currentCell.val > 20) {
+            ui.resDesc.textContent = '中心亮斑响应：中心像素明显高于四周邻域';
+          } else {
+            ui.resDesc.textContent = '均一平滑响应：邻域平缓或中心无显著突起';
+          }
+        }
+
+        // 控件按钮状态
+        ui.btnPadNone.setAttribute('aria-pressed', state.padding === 0 ? 'true' : 'false');
+        ui.btnPadSame.setAttribute('aria-pressed', state.padding === 1 ? 'true' : 'false');
+        ui.btnKernelEdge.setAttribute('aria-pressed', state.kernelType === 'edge' ? 'true' : 'false');
+        ui.btnKernelSharpen.setAttribute('aria-pressed', state.kernelType === 'sharpen' ? 'true' : 'false');
+      }
+
+      // 事件监听
+      ui.btnPadNone.onclick = () => {
+        state.padding = 0;
+        render();
+      };
+      ui.btnPadSame.onclick = () => {
+        state.padding = 1;
+        render();
+      };
+
+      ui.btnKernelEdge.onclick = () => {
+        state.kernelType = 'edge';
+        renderKernelView();
+        render();
+      };
+      ui.btnKernelSharpen.onclick = () => {
+        state.kernelType = 'sharpen';
+        renderKernelView();
+        render();
+      };
+
+      window.addEventListener('keydown', (e) => {
+        const { outH, outW } = computeOutput();
+        let handled = false;
+        if (e.key === 'ArrowUp') {
+          if (state.cursorRow > 0) { state.cursorRow--; handled = true; }
+        } else if (e.key === 'ArrowDown') {
+          if (state.cursorRow < outH - 1) { state.cursorRow++; handled = true; }
+        } else if (e.key === 'ArrowLeft') {
+          if (state.cursorCol > 0) { state.cursorCol--; handled = true; }
+        } else if (e.key === 'ArrowRight') {
+          if (state.cursorCol < outW - 1) { state.cursorCol++; handled = true; }
+        }
+        if (handled) {
+          e.preventDefault();
+          render();
+        }
+      });
+
+      // 初始化
+      Deck.init({ index: 14, total: 32 });
+      renderKernelView();
+      render();
+    })();
+  </script>
+</body>
+</html>

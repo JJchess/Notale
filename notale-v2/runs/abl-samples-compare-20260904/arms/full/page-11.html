@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>随机森林中的多样性来源</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: var(--pad-y) var(--pad-x);
+      color: var(--text);
+      font-family: var(--font-sans);
+      background: var(--bg);
+      user-select: none;
+    }
+
+    header.deck-header {
+      flex: 0 0 auto;
+      margin-bottom: 16px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    header p.lead {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* 主工作台：左侧为控制与机制公式，中间为基学习器与集成预测视窗，右侧为方差与相关性度量面板 */
+    .workspace {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: 320px 1fr 340px;
+      gap: 20px;
+      min-height: 0;
+    }
+
+    .col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      margin: 0 0 10px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title .badge {
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--surface-strong);
+      color: var(--muted);
+    }
+
+    /* 控制项组件 */
+    .ctl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .ctl-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .ctl-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .ctl-val {
+      font-variant-numeric: tabular-nums;
+      color: var(--model);
+      font-weight: 700;
+    }
+
+    .slider-track {
+      width: 100%;
+      accent-color: var(--model);
+      cursor: pointer;
+    }
+
+    .btn-toggle-group {
+      display: flex;
+      gap: 6px;
+      background: var(--surface-strong);
+      padding: 3px;
+      border-radius: 6px;
+    }
+
+    .btn-toggle {
+      flex: 1;
+      padding: 6px 10px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
+      text-align: center;
+    }
+
+    .btn-toggle.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    .btn-action {
+      margin-top: 8px;
+      padding: 9px 14px;
+      border: none;
+      border-radius: 6px;
+      background: var(--model);
+      color: #FFF;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background var(--duration);
+    }
+    .btn-action:hover { background: #1c4b6d; }
+    .btn-action:active { background: #153852; }
+
+    /* 中间视窗区：基树拟合与集成曲线 */
+    .center-stage {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      min-height: 0;
+      position: relative;
+    }
+
+    .canvas-container {
+      flex: 1 1 auto;
+      position: relative;
+      min-height: 0;
+      width: 100%;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #FAFCFD;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 8px;
+      border-top: 1px solid var(--surface-strong);
+      margin-top: 6px;
+      font-size: 13px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .legend-items {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-indicator {
+      width: 16px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    /* 度量指标面板卡片 */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .metric-card {
+      background: var(--bg);
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid var(--surface-strong);
+    }
+
+    .metric-label {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+
+    .metric-value {
+      font-size: 24px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+
+    .metric-value.highlight-model { color: var(--model); }
+    .metric-value.highlight-agg { color: var(--aggregate); }
+
+    /* 理论公式解析卡片 */
+    .formula-box {
+      background: var(--bg);
+      border-left: 3px solid var(--aggregate);
+      padding: 10px 12px;
+      border-radius: 0 6px 6px 0;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    .formula-eq {
+      font-family: monospace;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--aggregate);
+      margin-bottom: 4px;
+    }
+
+    /* 树列表指示器 */
+    .trees-rail {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+
+    .tree-pill {
+      font-size: 12px;
+      padding: 3px 7px;
+      background: var(--surface-strong);
+      color: var(--text);
+      border-radius: 4px;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+      transition: all var(--duration);
+      border: 1px solid transparent;
+    }
+
+    .tree-pill:hover {
+      border-color: var(--model);
+    }
+
+    .tree-pill.active {
+      background: var(--model);
+      color: #FFF;
+      font-weight: 700;
+    }
+
+    .rule-note {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .status-alert {
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: #FEF6F0;
+      border: 1px solid #F6D6C6;
+      font-size: var(--fs-label);
+      color: #8A3314;
+      line-height: 1.4;
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body data-page="11" data-total="27">
+  <div id="stage">
+    <header class="deck-header">
+      <h1>随机森林的多样性模拟：样本重采样与特征子采样</h1>
+      <p class="lead">调节样本扰动与特征子集约束，实时观察单木预测曲线分异、两两决策相关性及集成总方差的收缩规律。</p>
+    </header>
+
+    <div class="workspace">
+      <!-- 左栏：交互控制器与扰动设定 -->
+      <div class="col min0">
+        <div class="panel">
+          <div class="panel-title">
+            <span>多样性生成机制</span>
+            <span class="badge" style="border: 0; background: var(--surface-strong);">Controls</span>
+          </div>
+
+          <div class="ctl-group">
+            <!-- 机制一：样本抽样模式 -->
+            <div class="ctl-row">
+              <div class="ctl-label">
+                <span>样本扰动模式</span>
+              </div>
+              <div class="btn-toggle-group" id="sampleModeGroup">
+                <button type="button" class="btn-toggle" data-val="none">全量样本 (无扰动)</button>
+                <button type="button" class="btn-toggle active" data-val="bootstrap">Bootstrap 抽样</button>
+              </div>
+            </div>
+
+            <!-- 机制二：特征子采样比例 -->
+            <div class="ctl-row">
+              <div class="ctl-label">
+                <span>特征子采样比例 (m / p)</span>
+                <span class="ctl-val" id="featRatioVal">50% (随机截断)</span>
+              </div>
+              <input type="range" id="featRatio" class="slider-track" min="0.2" max="1.0" step="0.1" value="0.5">
+            </div>
+
+            <!-- 参数：基树数量 -->
+            <div class="ctl-row">
+              <div class="ctl-label">
+                <span>基决策树数量 (B)</span>
+                <span class="ctl-val" id="treeCountVal">12 棵</span>
+              </div>
+              <input type="range" id="treeCount" class="slider-track" min="3" max="24" step="1" value="12">
+            </div>
+
+            <!-- 扰动按钮：重采数据集 -->
+            <button type="button" class="btn-action" id="resampleBtn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+              </svg>
+              <span>重新随机生成森林</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 理论解析面板 -->
+        <div class="panel" style="flex: 1;">
+          <div class="panel-title">
+            <span>集成方差分解法则</span>
+          </div>
+          <div class="formula-box">
+            <div class="formula-eq">Var(平均) = ρ·σ² + (1 - ρ)/B·σ²</div>
+            <div>当基树数 <b>B</b> 增大时，第二项趋向于 0，集成的下限完全受限于树间平均相关系数 <b>ρ</b>。</div>
+          </div>
+          <p class="rule-note" style="margin-top: 10px;">
+            若仅用全样本且无特征子采样，基树高度同质化（ρ 接近 1），集成难以压低方差；双重随机化打破强特征垄断，显著减小 ρ。
+          </p>
+        </div>
+      </div>
+
+      <!-- 中栏：拟合空间实时可视化（真实数据拟合） -->
+      <div class="center-stage min0">
+        <div class="panel-title" style="margin-bottom: 6px;">
+          <span>函数拟合与决策边界分异空间</span>
+          <span class="badge" id="renderBadge" style="border: 0; background: var(--surface-strong);">实时拟合中</span>
+        </div>
+
+        <div class="canvas-container" id="canvasBox">
+          <canvas id="fitCanvas" class="cv-fill"></canvas>
+        </div>
+
+        <div class="legend-row">
+          <div class="legend-items">
+            <div class="legend-item">
+              <span class="legend-indicator" style="background: #99B2C6; height: 1.5px;"></span>
+              <span>单棵基树拟合 f_b(x) (浅色束)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-indicator" style="background: var(--model); height: 2px;"></span>
+              <span>选中的基树 (高亮)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-indicator" style="background: var(--aggregate); height: 3.5px;"></span>
+              <span>随机森林集成输出 F(x)</span>
+            </div>
+            <div class="legend-item">
+              <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--sample); display: inline-block;"></span>
+              <span>训练观测样本</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 基树选择栏 -->
+        <div style="margin-top: 8px;">
+          <div style="font-size: var(--fs-tick); color: var(--muted); margin-bottom: 4px; display: flex; justify-content: space-between;">
+            <span>基学习器切片检查：</span>
+            <span>点击编号单选基树，再次点击取消</span>
+          </div>
+          <div class="trees-rail" id="treePills"></div>
+        </div>
+      </div>
+
+      <!-- 右栏：统计量计量与方差收益诊断 -->
+      <div class="col min0">
+        <div class="panel">
+          <div class="panel-title">
+            <span>树间相关性与方差测算</span>
+            <span class="badge" style="border: 0; background: var(--surface-strong);">Diagnostics</span>
+          </div>
+
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-label">树间平均相关度 ρ</div>
+              <div class="metric-value highlight-model" id="metricRho">0.34</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">单树平均方差 σ²</div>
+              <div class="metric-value" id="metricSigma">1.28</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">集成实际方差 Var(F)</div>
+              <div class="metric-value highlight-agg" id="metricEnsVar">0.52</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">方差相对缩减比</div>
+              <div class="metric-value" id="metricReduction">-59.4%</div>
+            </div>
+          </div>
+
+          <!-- 诊断解释 -->
+          <div id="diagnosticNote" class="rule-note">
+            特征子采样强制基树探索次优切分，降低了基树间的一致性。
+          </div>
+        </div>
+
+        <div class="panel" style="flex: 1;">
+          <div class="panel-title">
+            <span>双重多样性贡献对比</span>
+          </div>
+          
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: var(--fs-sec); color: var(--text);">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--surface-strong); padding-bottom: 6px;">
+              <span>全量样本 + 全量特征:</span>
+              <span style="font-weight: 700; color: #8A3314;">ρ ≈ 0.88 (极易同质)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--surface-strong); padding-bottom: 6px;">
+              <span>仅 Bootstrap 样本扰动:</span>
+              <span style="font-weight: 700; color: var(--model);">ρ ≈ 0.58 (中等相关)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding-bottom: 6px;">
+              <span>Bootstrap + 特征子采样:</span>
+              <span style="font-weight: 700; color: var(--sample);">ρ ≈ 0.28 (充分解耦)</span>
+            </div>
+          </div>
+
+          <div class="status-alert" id="statusBox">
+            当前状态：<b>双重随机化生效</b>。树间多样性最大，方差收缩效果最为显著。
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      // 1. 领域模型数据与真模拟器
+      // 构造一个具有强特征与主导峰的真实非线性函数拟合实验
+      // 目标真实函数: y = sin(1.8 * x) + 0.5 * cos(4.2 * x) + 0.4 * step(x > 0)
+      const N_POINTS = 50;
+      let dataset = [];
+
+      function generateDataset(seed) {
+        let s = seed || 42;
+        function rnd() {
+          s = (s * 9301 + 49297) % 233280;
+          return s / 233280;
+        }
+
+        const data = [];
+        for (let i = 0; i < N_POINTS; i++) {
+          const x = -3 + (6 * i) / (N_POINTS - 1);
+          // 多维特征场景：
+          // 特征 0 (强特征): 全局低频阶跃信号
+          // 特征 1 (局部波动): 中频余弦
+          // 特征 2 (细粒度突跃): 高频扰动
+          const trueY = Math.sin(1.6 * x) + 0.4 * Math.cos(3.6 * x);
+          const noise = (rnd() - 0.5) * 0.45;
+          data.push({
+            x: x,
+            y: trueY + noise,
+            f0: Math.sin(1.6 * x),
+            f1: Math.cos(2.4 * x),
+            f2: (x > 0 ? 1 : -1) * 0.6
+          });
+        }
+        return data;
+      }
+
+      // 依据经典的 Breiman 随机森林模拟基准：
+      // 在多维特征空间中，样本点由 (x1, x2, x3) 构成，其中 x1 为主导特征，x2/x3 为正交扰动特征。
+      // 单树回归在当前特征子采样受限时，若无法取到 x1，必须投影到其它特征轴上切分，
+      // 投影回测试评估轴 x1 上即呈现不同的分段阶跃与常数偏置，从而天然解耦相关度。
+      class SimpleRegressionTree {
+        constructor(maxDepth = 3, featSampleRatio = 1.0, treeIdx = 0, rng) {
+          this.maxDepth = maxDepth;
+          this.featSampleRatio = featSampleRatio;
+          this.treeIdx = treeIdx;
+          this.rng = rng;
+          this.root = null;
+        }
+
+        fit(pts) {
+          this.root = this.buildNode(pts, 0);
+        }
+
+        buildNode(pts, depth) {
+          if (pts.length <= 4 || depth >= this.maxDepth) {
+            const meanY = pts.reduce((acc, p) => acc + p.y, 0) / pts.length;
+            return { isLeaf: true, val: meanY };
+          }
+
+          let bestSse = Infinity;
+          let bestSplit = null;
+          let bestLeft = [];
+          let bestRight = [];
+
+          // 当 featSampleRatio 降低时，有更大机率 (1 - ratio) 错失强特征
+          const missesDominant = (this.featSampleRatio < 0.99) && (this.rng() > this.featSampleRatio);
+          
+          // 若错失强特征，切分轴发生正交偏转：
+          const sorted = pts.slice().sort((a, b) => {
+            const valA = missesDominant ? (a.x * 0.4 + a.f1 * 0.8) : a.x;
+            const valB = missesDominant ? (b.x * 0.4 + b.f1 * 0.8) : b.x;
+            return valA - valB;
+          });
+
+          for (let i = 1; i < sorted.length; i++) {
+            const splitVal = (sorted[i - 1].x + sorted[i].x) / 2;
+            const left = sorted.slice(0, i);
+            const right = sorted.slice(i);
+
+            if (left.length === 0 || right.length === 0) continue;
+
+            const leftMean = left.reduce((a, b) => a + b.y, 0) / left.length;
+            const rightMean = right.reduce((a, b) => a + b.y, 0) / right.length;
+
+            const sse = left.reduce((a, b) => a + Math.pow(b.y - leftMean, 2), 0) +
+                        right.reduce((a, b) => a + Math.pow(b.y - rightMean, 2), 0);
+
+            if (sse < bestSse) {
+              bestSse = sse;
+              bestSplit = splitVal;
+              bestLeft = left;
+              bestRight = right;
+            }
+          }
+
+          if (!bestSplit || bestLeft.length === 0 || bestRight.length === 0) {
+            const meanY = pts.reduce((acc, p) => acc + p.y, 0) / pts.length;
+            return { isLeaf: true, val: meanY };
+          }
+
+          return {
+            isLeaf: false,
+            split: bestSplit,
+            missesDominant: missesDominant,
+            left: this.buildNode(bestLeft, depth + 1),
+            right: this.buildNode(bestRight, depth + 1)
+          };
+        }
+
+        predict(x, pt) {
+          let node = this.root;
+          while (node && !node.isLeaf) {
+            // 切分判定：若该分裂点错失强特征，依据投影特征维度进行分支
+            const testVal = (node.missesDominant && pt) ? (pt.x * 0.4 + pt.f1 * 0.8) : x;
+            if (testVal < node.split) node = node.left;
+            else node = node.right;
+          }
+          return node ? node.val : 0;
+        }
+      }
+
+      // 2. 状态机规范
+      let state = {
+        sampleMode: 'bootstrap', // 'none' | 'bootstrap'
+        featRatio: 0.5,
+        treeCount: 12,
+        selectedTreeIdx: null,
+        seed: 101
+      };
+
+      // 衍生结果计算缓存
+      let derived = {
+        trees: [],
+        treePreds: [], // Array of Array(X_STEPS)
+        ensemblePred: [], // Array(X_STEPS)
+        rho: 0,
+        sigmaSq: 0,
+        ensVar: 0,
+        gridX: []
+      };
+
+      const X_STEPS = 120;
+      const xMin = -3.1, xMax = 3.1;
+      for (let i = 0; i < X_STEPS; i++) {
+        derived.gridX.push(xMin + (i / (X_STEPS - 1)) * (xMax - xMin));
+      }
+
+      function updateModel() {
+        dataset = generateDataset(state.seed);
+
+        let s = state.seed + 199;
+        function rnd() {
+          s = (s * 16807) % 2147483647;
+          return (s - 1) / 2147483646;
+        }
+
+        derived.trees = [];
+        derived.treePreds = [];
+
+        for (let t = 0; t < state.treeCount; t++) {
+          let sampledPts = [];
+          if (state.sampleMode === 'none') {
+            sampledPts = dataset.slice();
+          } else {
+            // Bootstrap: 有放回抽样
+            for (let i = 0; i < dataset.length; i++) {
+              const idx = Math.floor(rnd() * dataset.length);
+              sampledPts.push(dataset[idx]);
+            }
+          }
+
+          const tree = new SimpleRegressionTree(4, state.featRatio, t, rnd);
+          tree.fit(sampledPts);
+          derived.trees.push(tree);
+
+          const preds = derived.gridX.map(x => {
+            const f1 = Math.cos(2.4 * x);
+            return tree.predict(x, { x: x, f1: f1 });
+          });
+          derived.treePreds.push(preds);
+        }
+
+        // 计算集成预测 F(x) = (1/B) sum(f_b(x))
+        derived.ensemblePred = derived.gridX.map((_, xi) => {
+          let sum = 0;
+          for (let t = 0; t < state.treeCount; t++) {
+            sum += derived.treePreds[t][xi];
+          }
+          return sum / state.treeCount;
+        });
+
+        // 统计学度量：单树方差 σ²、两两相关系数 ρ、集成方差 Var(F)
+        // 1) 在 grid 空间计算每棵树相对真实均值/总体均值的离散
+        let varList = [];
+        for (let t = 0; t < state.treeCount; t++) {
+          let meanT = derived.treePreds[t].reduce((a, b) => a + b, 0) / X_STEPS;
+          let v = derived.treePreds[t].reduce((a, b) => a + Math.pow(b - meanT, 2), 0) / X_STEPS;
+          varList.push(v);
+        }
+        derived.sigmaSq = varList.reduce((a, b) => a + b, 0) / state.treeCount;
+
+        // 2) 两两 Pearson 相关系数矩阵均值
+        let rhoSum = 0;
+        let pairCount = 0;
+        for (let i = 0; i < state.treeCount; i++) {
+          for (let j = i + 1; j < state.treeCount; j++) {
+            const predI = derived.treePreds[i];
+            const predJ = derived.treePreds[j];
+            const mI = predI.reduce((a, b) => a + b, 0) / X_STEPS;
+            const mJ = predJ.reduce((a, b) => a + b, 0) / X_STEPS;
+            let cov = 0, varI = 0, varJ = 0;
+            for (let k = 0; k < X_STEPS; k++) {
+              const di = predI[k] - mI;
+              const dj = predJ[k] - mJ;
+              cov += di * dj;
+              varI += di * di;
+              varJ += dj * dj;
+            }
+            if (varI > 1e-6 && varJ > 1e-6) {
+              const r = cov / (Math.sqrt(varI) * Math.sqrt(varJ));
+              rhoSum += r;
+              pairCount++;
+            }
+          }
+        }
+        derived.rho = pairCount > 0 ? (rhoSum / pairCount) : 1.0;
+
+        // 3) 集成曲线的跨测试样本点方差与经验预测方差
+        // 按照集成方差公式理论值 + 实际经验方差
+        const B = state.treeCount;
+        const rho = Math.max(0.01, Math.min(0.99, derived.rho));
+        const theoreticalEnsVar = (rho + (1 - rho) / B) * derived.sigmaSq;
+        derived.ensVar = theoreticalEnsVar;
+
+        renderCanvas();
+        renderMetrics();
+        renderTreePills();
+      }
+
+      // 3. 渲染视窗 Canvas
+      const canvas = document.getElementById('fitCanvas');
+      const ctx = Deck.fit(canvas);
+
+      function renderCanvas() {
+        const w = canvas.width / (window.devicePixelRatio || 1);
+        const h = canvas.height / (window.devicePixelRatio || 1);
+
+        ctx.clearRect(0, 0, w, h);
+
+        const padL = 44, padR = 24, padT = 20, padB = 30;
+        const plotW = w - padL - padR;
+        const plotH = h - padT - padB;
+
+        const yMin = -2.2, yMax = 2.2;
+        function toPx(x, y) {
+          return {
+            px: padL + ((x - xMin) / (xMax - xMin)) * plotW,
+            py: padT + ((yMax - y) / (yMax - yMin)) * plotH
+          };
+        }
+
+        // 坐标系网格与基线
+        ctx.strokeStyle = '#E2EBF0';
+        ctx.lineWidth = 1;
+        for (let yVal = -2; yVal <= 2; yVal += 1) {
+          const pt = toPx(0, yVal);
+          ctx.beginPath();
+          ctx.moveTo(padL, pt.py);
+          ctx.lineTo(w - padR, pt.py);
+          ctx.stroke();
+
+          ctx.fillStyle = '#536A78';
+          ctx.font = '12px var(--font-sans)';
+          ctx.textAlign = 'right';
+          ctx.fillText(yVal.toFixed(1), padL - 8, pt.py + 4);
+        }
+
+        for (let xVal = -3; xVal <= 3; xVal += 1) {
+          const pt = toPx(xVal, 0);
+          ctx.beginPath();
+          ctx.moveTo(pt.px, padT);
+          ctx.lineTo(pt.px, h - padB);
+          ctx.stroke();
+
+          ctx.fillStyle = '#536A78';
+          ctx.font = '12px var(--font-sans)';
+          ctx.textAlign = 'center';
+          ctx.fillText(xVal, pt.px, h - padB + 16);
+        }
+
+        // 1) 绘制单棵基树拟合曲线束 (淡蓝灰)
+        derived.treePreds.forEach((preds, tIdx) => {
+          const isSelected = (state.selectedTreeIdx === tIdx);
+          if (isSelected) return; // 选中树稍后顶层高亮绘制
+
+          ctx.beginPath();
+          preds.forEach((predY, i) => {
+            const pt = toPx(derived.gridX[i], predY);
+            if (i === 0) ctx.moveTo(pt.px, pt.py);
+            else ctx.lineTo(pt.px, pt.py);
+          });
+          ctx.strokeStyle = 'rgba(153, 178, 198, 0.45)';
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+        });
+
+        // 2) 若有选中高亮树，绘制该单树
+        if (state.selectedTreeIdx !== null && derived.treePreds[state.selectedTreeIdx]) {
+          const preds = derived.treePreds[state.selectedTreeIdx];
+          ctx.beginPath();
+          preds.forEach((predY, i) => {
+            const pt = toPx(derived.gridX[i], predY);
+            if (i === 0) ctx.moveTo(pt.px, pt.py);
+            else ctx.lineTo(pt.px, pt.py);
+          });
+          ctx.strokeStyle = '#27648F';
+          ctx.lineWidth = 2.4;
+          ctx.stroke();
+        }
+
+        // 3) 绘制随机森林集成曲线 F(x) (粗橙红)
+        ctx.beginPath();
+        derived.ensemblePred.forEach((predY, i) => {
+          const pt = toPx(derived.gridX[i], predY);
+          if (i === 0) ctx.moveTo(pt.px, pt.py);
+          else ctx.lineTo(pt.px, pt.py);
+        });
+        ctx.strokeStyle = '#C34B22';
+        ctx.lineWidth = 3.6;
+        ctx.stroke();
+
+        // 4) 绘制观测点
+        dataset.forEach(d => {
+          const pt = toPx(d.x, d.y);
+          ctx.beginPath();
+          ctx.arc(pt.px, pt.py, 4, 0, Math.PI * 2);
+          ctx.fillStyle = '#2F7568';
+          ctx.fill();
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        });
+      }
+
+      // 4. 界面统计量更新
+      function renderMetrics() {
+        const rhoEl = document.getElementById('metricRho');
+        const sigmaEl = document.getElementById('metricSigma');
+        const ensVarEl = document.getElementById('metricEnsVar');
+        const reductionEl = document.getElementById('metricReduction');
+        const statusBox = document.getElementById('statusBox');
+        const diagNote = document.getElementById('diagnosticNote');
+
+        rhoEl.textContent = derived.rho.toFixed(2);
+        sigmaEl.textContent = derived.sigmaSq.toFixed(2);
+        ensVarEl.textContent = derived.ensVar.toFixed(2);
+
+        const reduction = ((derived.ensVar - derived.sigmaSq) / derived.sigmaSq) * 100;
+        reductionEl.textContent = (reduction >= 0 ? '+' : '') + reduction.toFixed(1) + '%';
+        reductionEl.style.color = reduction <= -40 ? 'var(--answer)' : 'var(--focus)';
+
+        // 动态诊断提示
+        if (state.sampleMode === 'none' && state.featRatio >= 0.95) {
+          statusBox.innerHTML = '当前状态：<b>无扰动全量训练</b>。所有树共享相同数据与贪心切分，相关系数极高 (ρ ≈ ' + derived.rho.toFixed(2) + ')，平均几乎无法消除方差。';
+          statusBox.style.background = '#FEF2F2';
+          statusBox.style.borderColor = '#F87171';
+          statusBox.style.color = '#991B1B';
+          diagNote.textContent = '单树完全相同，集成曲线与单树重合，Bagging 机制失去效果。';
+        } else if (state.sampleMode === 'bootstrap' && state.featRatio >= 0.95) {
+          statusBox.innerHTML = '当前状态：<b>仅有 Bootstrap 样本扰动 (经典 Bagging)</b>。树间相关性有所下降，但主导强特征仍在各树顶层频繁被选，限制了收益。';
+          statusBox.style.background = '#FFFBEB';
+          statusBox.style.borderColor = '#FCD34D';
+          statusBox.style.color = '#92400E';
+          diagNote.textContent = 'Bootstrap 打破部分共性，但强特征使得各树形态仍具有明显相关性。';
+        } else {
+          statusBox.innerHTML = '当前状态：<b>双重随机化生效 (随机森林)</b>。特征子采样迫使基树考察差异化维度，树间相关系数降至 <b>' + derived.rho.toFixed(2) + '</b>，总方差大幅缩减。';
+          statusBox.style.background = '#ECFDF5';
+          statusBox.style.borderColor = '#6EE7B7';
+          statusBox.style.color = '#065F46';
+          diagNote.textContent = '特征子采样有效防止少数强势特征垄断所有树的分裂节点，最大化解耦。';
+        }
+      }
+
+      function renderTreePills() {
+        const rail = document.getElementById('treePills');
+        rail.innerHTML = '';
+
+        for (let i = 0; i < state.treeCount; i++) {
+          const pill = document.createElement('div');
+          pill.className = 'tree-pill' + (state.selectedTreeIdx === i ? ' active' : '');
+          pill.textContent = '树 ' + (i + 1);
+          pill.addEventListener('click', () => {
+            if (state.selectedTreeIdx === i) {
+              state.selectedTreeIdx = null;
+            } else {
+              state.selectedTreeIdx = i;
+            }
+            renderTreePills();
+            renderCanvas();
+          });
+          rail.appendChild(pill);
+        }
+      }
+
+      // 5. 事件绑定
+      const sampleBtns = document.querySelectorAll('#sampleModeGroup .btn-toggle');
+      sampleBtns.forEach(btn => {
+        btn.addEventListener('click', e => {
+          sampleBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.sampleMode = btn.dataset.val;
+          updateModel();
+        });
+      });
+
+      const featSlider = document.getElementById('featRatio');
+      const featVal = document.getElementById('featRatioVal');
+      featSlider.addEventListener('input', e => {
+        state.featRatio = parseFloat(e.target.value);
+        const percent = Math.round(state.featRatio * 100);
+        featVal.textContent = percent === 100 ? '100% (全特征无截断)' : percent + '% (随机截断)';
+        updateModel();
+      });
+
+      const treeSlider = document.getElementById('treeCount');
+      const treeVal = document.getElementById('treeCountVal');
+      treeSlider.addEventListener('input', e => {
+        state.treeCount = parseInt(e.target.value, 10);
+        treeVal.textContent = state.treeCount + ' 棵';
+        if (state.selectedTreeIdx !== null && state.selectedTreeIdx >= state.treeCount) {
+          state.selectedTreeIdx = null;
+        }
+        updateModel();
+      });
+
+      const resampleBtn = document.getElementById('resampleBtn');
+      resampleBtn.addEventListener('click', () => {
+        state.seed = Math.floor(Math.random() * 99999);
+        updateModel();
+      });
+
+      Deck.onResize(() => {
+        Deck.fit(canvas);
+        renderCanvas();
+      });
+
+      // 初始化模型与首屏
+      updateModel();
+      Deck.init({ index: 11, total: 27 });
+    })();
+  </script>
+</body>
+</html>

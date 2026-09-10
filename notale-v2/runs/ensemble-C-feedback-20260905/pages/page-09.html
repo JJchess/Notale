@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bagging 的并行流程：独立训练基学习器，再以投票或平均汇总预测</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF2;
+      --text: #142533;
+      --muted: #536777;
+      --surface: #F7FAFC;
+      --surface-strong: #D7E1E8;
+      --learner: #275D91;
+      --aggregate: #B63B24;
+      --correct: #2E6A45;
+      --focus: #006B72;
+      --font-sans: "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+      --font-num: "DIN Alternate", Bahnschrift, system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: 1.18;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .lead-text {
+      margin: 0;
+      font-size: var(--fs-lead);
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    /* 顶部机制对比条：并行独立 vs 串行依赖 */
+    .top-contrast {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .contrast-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--surface-strong);
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .contrast-card.active {
+      border: var(--line) solid var(--learner);
+      background: #FFFFFF;
+      box-shadow: 0 4px 14px rgba(39, 93, 145, 0.08);
+    }
+
+    .contrast-badge {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    .contrast-card.active .contrast-badge {
+      background: rgba(39, 93, 145, 0.12);
+      color: var(--learner);
+    }
+
+    .contrast-card.dim .contrast-badge {
+      background: rgba(83, 103, 119, 0.12);
+      color: var(--muted);
+    }
+
+    .contrast-desc {
+      font-size: var(--fs-sec);
+      line-height: 1.42;
+      color: var(--text);
+      margin: 0;
+    }
+
+    /* 主舞台双栏 */
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 20px;
+    }
+
+    /* 左侧流程交互舞台 */
+    .stage-panel {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--surface-strong);
+      padding: 16px 20px 14px 20px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .stage-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .mode-pills {
+      display: flex;
+      gap: 6px;
+      background: var(--surface-strong);
+      padding: 3px;
+      border-radius: 8px;
+    }
+
+    .mode-btn {
+      border: none;
+      background: transparent;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      color: var(--muted);
+      padding: 5px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all var(--dur) var(--ease);
+    }
+
+    .mode-btn[aria-pressed="true"] {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    }
+
+    .flow-svg {
+      width: 100%;
+      height: 460px;
+      display: block;
+    }
+
+    /* 右侧控制与数据卡片 */
+    .detail-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--surface-strong);
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card h2 {
+      margin: 0;
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .step-stepper {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .step-btn {
+      background: var(--surface-strong);
+      border: 1px solid transparent;
+      padding: 8px 4px;
+      border-radius: 8px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--dur) var(--ease);
+    }
+
+    .step-btn:hover {
+      background: #c5d4df;
+    }
+
+    .step-btn[aria-pressed="true"] {
+      background: var(--learner);
+      color: #FFFFFF;
+      border-color: var(--learner);
+    }
+
+    .readout-box {
+      background: #FFFFFF;
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .readout-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--learner);
+      margin: 0;
+    }
+
+    .readout-desc {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .calc-box {
+      margin-top: 4px;
+      padding: 10px 12px;
+      background: var(--bg);
+      border-radius: 6px;
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .calc-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .calc-highlight {
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    .formula-tag {
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .key-takeaway {
+      background: rgba(39, 93, 145, 0.07);
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: var(--fs-sec);
+      line-height: 1.44;
+      color: var(--text);
+    }
+
+    .key-takeaway strong {
+      color: var(--learner);
+    }
+
+    /* SVG 节点状态动画与细节 */
+    .node-rect {
+      transition: stroke 0.2s, stroke-width 0.2s, fill 0.2s;
+    }
+    .flow-line {
+      transition: stroke-dashoffset 0.5s ease, opacity 0.3s;
+    }
+  </style>
+</head>
+<body data-page="09" data-total="27">
+  <main id="stage">
+    <header>
+      <h1>Bagging 的并行流程：独立训练基学习器，再以投票或平均汇总预测</h1>
+      <p class="lead-text">各个基学习器拥有相互独立的训练集，学习过程无时序依赖；汇总时依据任务类型施加硬投票或数值平均。</p>
+    </header>
+
+    <!-- 顶部横幅：显式对比并行与串行机制 -->
+    <section class="top-contrast" aria-label="训练架构对比">
+      <div class="contrast-card active">
+        <span class="contrast-badge">Bagging（并行机制）</span>
+        <p class="contrast-desc">样本独立抽样，m 个基学习器<strong>并行互不干涉</strong>；降低方差（Variance），不改变单个模型的偏差基线。</p>
+      </div>
+      <div class="contrast-card dim">
+        <span class="contrast-badge">Boosting（串行机制·第14页）</span>
+        <p class="contrast-desc">下一个模型必须等待上一个模型预测出误差并调权后才能训练；强时序依赖，专注攻坚难分样本降低偏差。</p>
+      </div>
+    </section>
+
+    <!-- 主展示区 -->
+    <div class="main-grid">
+      <!-- 流程结构 SVG 画布 -->
+      <section class="stage-panel min0" aria-label="Bagging 流程推演图">
+        <div class="stage-toolbar">
+          <div style="font-size: var(--fs-sec); font-weight: 700; color: var(--text);">流程结构示意图</div>
+          <div class="mode-pills" role="group" aria-label="任务预测模式">
+            <button id="modeClf" class="mode-btn" aria-pressed="true">分类任务（投票法）</button>
+            <button id="modeReg" class="mode-btn" aria-pressed="false">回归任务（平均法）</button>
+          </div>
+        </div>
+
+        <svg class="flow-svg min0" viewBox="0 0 840 460" fill="none">
+          <defs>
+            <marker id="arrow-learner" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M1 1 L7 4 L1 7 Z" fill="#275D91"/>
+            </marker>
+            <marker id="arrow-agg" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M1 1 L7 4 L1 7 Z" fill="#B63B24"/>
+            </marker>
+            <marker id="arrow-muted" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M1 1 L7 4 L1 7 Z" fill="#536777"/>
+            </marker>
+          </defs>
+
+          <!-- 阶段引导虚线分区 -->
+          <g stroke="#D7E1E8" stroke-dasharray="4 4" stroke-width="1.5">
+            <line x1="170" y1="15" x2="170" y2="445" />
+            <line x1="390" y1="15" x2="390" y2="445" />
+            <line x1="640" y1="15" x2="640" y2="445" />
+          </g>
+          <!-- 阶段表头 -->
+          <text x="85" y="32" text-anchor="middle" font-size="13" fill="#536777" font-weight="700">1. 重采样数据集</text>
+          <text x="280" y="32" text-anchor="middle" font-size="13" fill="#536777" font-weight="700">2. 并行拟合基学习器</text>
+          <text x="515" y="32" text-anchor="middle" font-size="13" fill="#536777" font-weight="700">3. 预测输出向量</text>
+          <text x="735" y="32" text-anchor="middle" font-size="13" fill="#536777" font-weight="700">4. 汇总决断</text>
+
+          <!-- 原始数据总池 -->
+          <g id="node-orig" transform="translate(18, 175)">
+            <rect width="134" height="110" rx="10" fill="#FFFFFF" stroke="#275D91" stroke-width="2" class="node-rect"/>
+            <text x="67" y="34" text-anchor="middle" font-size="15" font-weight="700" fill="#142533">原始训练集 D</text>
+            <text x="67" y="58" text-anchor="middle" font-size="13" fill="#536777">样本总量 N = 1000</text>
+            <rect x="22" y="72" width="90" height="24" rx="4" fill="#E8EEF2" />
+            <text x="67" y="88" text-anchor="middle" font-size="13" fill="#275D91" font-weight="600">独立放回抽样</text>
+          </g>
+
+          <!-- 连线：原始集到 Bootstrap 子集 -->
+          <path d="M152 200 C 180 200, 180 100, 208 100" stroke="#275D91" stroke-width="2" fill="none" marker-end="url(#arrow-learner)" class="flow-line" id="line-bs-1"/>
+          <path d="M152 230 C 180 230, 180 230, 208 230" stroke="#275D91" stroke-width="2" fill="none" marker-end="url(#arrow-learner)" class="flow-line" id="line-bs-2"/>
+          <path d="M152 260 C 180 260, 180 360, 208 360" stroke="#275D91" stroke-width="2" fill="none" marker-end="url(#arrow-learner)" class="flow-line" id="line-bs-3"/>
+
+          <!-- 3 个 Bootstrap 子集 -->
+          <g transform="translate(210, 68)" id="node-bs-1">
+            <rect width="140" height="64" rx="8" fill="#FFFFFF" stroke="#536777" stroke-width="1.5" class="node-rect"/>
+            <text x="70" y="27" text-anchor="middle" font-size="15" font-weight="700" fill="#142533">子样本集 D₁</text>
+            <text x="70" y="49" text-anchor="middle" font-size="13" fill="#536777">含约 63.2% 原样本</text>
+          </g>
+          <g transform="translate(210, 198)" id="node-bs-2">
+            <rect width="140" height="64" rx="8" fill="#FFFFFF" stroke="#536777" stroke-width="1.5" class="node-rect"/>
+            <text x="70" y="27" text-anchor="middle" font-size="15" font-weight="700" fill="#142533">子样本集 D₂</text>
+            <text x="70" y="49" text-anchor="middle" font-size="13" fill="#536777">含约 63.2% 原样本</text>
+          </g>
+          <g transform="translate(210, 328)" id="node-bs-3">
+            <rect width="140" height="64" rx="8" fill="#FFFFFF" stroke="#536777" stroke-width="1.5" class="node-rect"/>
+            <text x="70" y="27" text-anchor="middle" font-size="15" font-weight="700" fill="#142533">子样本集 D₃</text>
+            <text x="70" y="49" text-anchor="middle" font-size="13" fill="#536777">含约 63.2% 原样本</text>
+          </g>
+
+          <!-- 连线：子集到基学习器 -->
+          <path d="M350 100 L398 100" stroke="#275D91" stroke-width="2" fill="none" marker-end="url(#arrow-learner)" id="line-lr-1"/>
+          <path d="M350 230 L398 230" stroke="#275D91" stroke-width="2" fill="none" marker-end="url(#arrow-learner)" id="line-lr-2"/>
+          <path d="M350 360 L398 360" stroke="#275D91" stroke-width="2" fill="none" marker-end="url(#arrow-learner)" id="line-lr-3"/>
+
+          <!-- 3 个基学习器 -->
+          <g transform="translate(400, 68)" id="node-lr-1">
+            <rect width="146" height="64" rx="8" fill="#F7FAFC" stroke="#275D91" stroke-width="2" class="node-rect"/>
+            <text x="73" y="27" text-anchor="middle" font-size="15" font-weight="700" fill="#275D91">基学习器 h₁(x)</text>
+            <text x="73" y="49" text-anchor="middle" font-size="13" fill="#536777">决策树·独立拟合</text>
+          </g>
+          <g transform="translate(400, 198)" id="node-lr-2">
+            <rect width="146" height="64" rx="8" fill="#F7FAFC" stroke="#275D91" stroke-width="2" class="node-rect"/>
+            <text x="73" y="27" text-anchor="middle" font-size="15" font-weight="700" fill="#275D91">基学习器 h₂(x)</text>
+            <text x="73" y="49" text-anchor="middle" font-size="13" fill="#536777">决策树·独立拟合</text>
+          </g>
+          <g transform="translate(400, 328)" id="node-lr-3">
+            <rect width="146" height="64" rx="8" fill="#F7FAFC" stroke="#275D91" stroke-width="2" class="node-rect"/>
+            <text x="73" y="27" text-anchor="middle" font-size="15" font-weight="700" fill="#275D91">基学习器 h₃(x)</text>
+            <text x="73" y="49" text-anchor="middle" font-size="13" fill="#536777">决策树·独立拟合</text>
+          </g>
+
+          <!-- 连线：基学习器到预测读数 -->
+          <path d="M546 100 L578 100" stroke="#536777" stroke-width="1.5" fill="none" marker-end="url(#arrow-muted)"/>
+          <path d="M546 230 L578 230" stroke="#536777" stroke-width="1.5" fill="none" marker-end="url(#arrow-muted)"/>
+          <path d="M546 360 L578 360" stroke="#536777" stroke-width="1.5" fill="none" marker-end="url(#arrow-muted)"/>
+
+          <!-- 3 个预测值徽标 -->
+          <g transform="translate(580, 75)" id="pred-1">
+            <rect width="66" height="50" rx="6" fill="#FFFFFF" stroke="#D7E1E8" stroke-width="1.5"/>
+            <text x="33" y="23" text-anchor="middle" font-size="13" fill="#536777">预测 1</text>
+            <text x="33" y="42" text-anchor="middle" font-size="16" font-family="var(--font-num)" font-weight="700" fill="#275D91" id="val-1">+1</text>
+          </g>
+          <g transform="translate(580, 205)" id="pred-2">
+            <rect width="66" height="50" rx="6" fill="#FFFFFF" stroke="#D7E1E8" stroke-width="1.5"/>
+            <text x="33" y="23" text-anchor="middle" font-size="13" fill="#536777">预测 2</text>
+            <text x="33" y="42" text-anchor="middle" font-size="16" font-family="var(--font-num)" font-weight="700" fill="#275D91" id="val-2">+1</text>
+          </g>
+          <g transform="translate(580, 335)" id="pred-3">
+            <rect width="66" height="50" rx="6" fill="#FFFFFF" stroke="#D7E1E8" stroke-width="1.5"/>
+            <text x="33" y="23" text-anchor="middle" font-size="13" fill="#536777">预测 3</text>
+            <text x="33" y="42" text-anchor="middle" font-size="16" font-family="var(--font-num)" font-weight="700" fill="#275D91" id="val-3">-1</text>
+          </g>
+
+          <!-- 连线：预测汇聚到集成汇总器 -->
+          <path d="M646 100 C 665 100, 665 200, 684 215" stroke="#B63B24" stroke-width="2" fill="none" marker-end="url(#arrow-agg)" id="line-agg-1"/>
+          <path d="M646 230 L 684 230" stroke="#B63B24" stroke-width="2" fill="none" marker-end="url(#arrow-agg)" id="line-agg-2"/>
+          <path d="M646 360 C 665 360, 665 260, 684 245" stroke="#B63B24" stroke-width="2" fill="none" marker-end="url(#arrow-agg)" id="line-agg-3"/>
+
+          <!-- 最终集成决断节点 -->
+          <g transform="translate(686, 175)" id="node-agg">
+            <rect width="138" height="110" rx="10" fill="#FFFFFF" stroke="#B63B24" stroke-width="2.5" class="node-rect"/>
+            <text x="69" y="32" text-anchor="middle" font-size="15" font-weight="700" fill="#B63B24" id="agg-title">多数投票 (Voting)</text>
+            <text x="69" y="54" text-anchor="middle" font-size="13" fill="#536777" id="agg-sub">票数: 2票(+1) vs 1票(-1)</text>
+            <rect x="22" y="66" width="94" height="32" rx="6" fill="#FFF2EE" stroke="#B63B24" stroke-width="1"/>
+            <text x="69" y="88" text-anchor="middle" font-size="18" font-family="var(--font-num)" font-weight="700" fill="#B63B24" id="agg-result">+1 (通过)</text>
+          </g>
+        </svg>
+      </section>
+
+      <!-- 右侧说明与交互控制 -->
+      <section class="detail-panel min0" aria-label="流程环节说明与计算公式">
+        <!-- 阶段切换控制 -->
+        <div class="card">
+          <h2>
+            <span>执行流程分步解构</span>
+            <span style="font-size: var(--fs-tick); color: var(--muted); font-weight: normal;">点击高亮对应层级</span>
+          </h2>
+          <div class="step-stepper" role="tablist">
+            <button class="step-btn" id="step-0" aria-pressed="false">① 抽样</button>
+            <button class="step-btn" id="step-1" aria-pressed="false">② 训练</button>
+            <button class="step-btn" id="step-2" aria-pressed="false">③ 预测</button>
+            <button class="step-btn" id="step-3" aria-pressed="true">④ 汇总</button>
+          </div>
+          <div class="readout-box">
+            <div class="readout-title" id="stepTitle">步骤 4：汇总基模型结论（Voting / Averaging）</div>
+            <p class="readout-desc" id="stepDesc">基学习器完成各自推理后，集成器无需反思训练历史，直接施加无偏汇总规则。分类取绝对多数票，回归取算术平均值。</p>
+          </div>
+        </div>
+
+        <!-- 聚合计算示例卡 -->
+        <div class="card">
+          <h2>
+            <span id="calcTitle">分类模式：绝对多数投票公式</span>
+            <span class="formula-tag" id="mathTag">arg max Σ I(hᵢ(x)=c)</span>
+          </h2>
+          <div class="calc-box">
+            <div class="calc-row">
+              <span style="color: var(--muted);" id="row-k1">基学习器 1 预测:</span>
+              <span id="calcVal1" style="font-weight: 600;">+1（正类）</span>
+            </div>
+            <div class="calc-row">
+              <span style="color: var(--muted);" id="row-k2">基学习器 2 预测:</span>
+              <span id="calcVal2" style="font-weight: 600;">+1（正类）</span>
+            </div>
+            <div class="calc-row">
+              <span style="color: var(--muted);" id="row-k3">基学习器 3 预测:</span>
+              <span id="calcVal3" style="font-weight: 600;">-1（负类）</span>
+            </div>
+            <div style="border-top: 1px dashed #c0cbd3; margin: 4px 0;"></div>
+            <div class="calc-row">
+              <span style="font-weight: 700; color: var(--text);" id="row-res-label">集成判定 H(x):</span>
+              <span class="calc-highlight" id="calcRes">多数票: +1 (2票 vs 1票)</span>
+            </div>
+          </div>
+          <div class="key-takeaway" id="takeawayText">
+            <strong>并行的本质：</strong>基学习器之间没有数据传递和误差依赖。训练复杂度为 O(N·log N)/m（在多核下呈线性加速），极大节约了工程训练耗时。
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      // 状态与配置
+      const state = {
+        mode: "clf", // "clf" | "reg"
+        step: 3       // 0: 抽样, 1: 训练, 2: 预测, 3: 汇总
+      };
+
+      // 文本与公式库
+      const STEP_DATA = [
+        {
+          title: "步骤 1：Bootstrap 自助抽样",
+          desc: "从原始总集 D 中以有放回方式独立抽取 m 组等规模子集。每个基学习器各拿一组，抽样过程完全并行，无须排队互斥。"
+        },
+        {
+          title: "步骤 2：独立并行训练基学习器",
+          desc: "m 个基模型（如 CART 决策树）在各自的子集上独立拟合。因为相互完全解耦，可直接分发到不同 CPU/GPU 核心同时训练。"
+        },
+        {
+          title: "步骤 3：并行生成待测样本预测值",
+          desc: "对输入的新样本 x，所有基模型同时计算其预测输出。基模型彼此不知晓对方结果，各自做出独立推理。"
+        },
+        {
+          title: "步骤 4：无偏汇总决断（Voting / Averaging）",
+          desc: "集成层对所有预测进行汇聚。若为分类任务，统计各类别票数胜出者；若为回归任务，直接求算术平均降低单模型方差。"
+        }
+      ];
+
+      const MODE_DATA = {
+        clf: {
+          val1: "+1",
+          val2: "+1",
+          val3: "-1",
+          title: "多数投票 (Voting)",
+          sub: "票数: 2票(+1) vs 1票(-1)",
+          res: "+1 (通过)",
+          calcTitle: "分类模式：绝对多数投票公式",
+          mathTag: "H(x) = argmax_c Σ I(h_i(x)=c)",
+          row1: "+1（类别 A）",
+          row2: "+1（类别 A）",
+          row3: "-1（类别 B）",
+          resLabel: "集成判定 H(x):",
+          resText: "多数类别: +1 (2票胜出)",
+          takeaway: "<strong>并行的本质：</strong>基学习器之间完全解耦。投票机制以简单民主制平抑了单棵树的过拟合与偶发误判。"
+        },
+        reg: {
+          val1: "42.0",
+          val2: "45.0",
+          val3: "39.0",
+          title: "算术平均 (Averaging)",
+          sub: "(42.0 + 45.0 + 39.0) / 3",
+          res: "42.0 (输出)",
+          calcTitle: "回归模式：简单算术平均公式",
+          mathTag: "H(x) = (1/m) Σ h_i(x)",
+          row1: "42.0",
+          row2: "45.0",
+          row3: "39.0",
+          resLabel: "集成输出 H(x):",
+          resText: "平均值: (42 + 45 + 39) / 3 = 42.0",
+          takeaway: "<strong>方差削减：</strong>若各基模型预测相互独立且方差为 σ²，则平均后的集成方差降为 σ²/m，大幅平滑预测震荡。"
+        }
+      };
+
+      // DOM 元素引用
+      const modeClfBtn = document.getElementById("modeClf");
+      const modeRegBtn = document.getElementById("modeReg");
+      const stepBtns = [0, 1, 2, 3].map(i => document.getElementById("step-" + i));
+
+      const stepTitle = document.getElementById("stepTitle");
+      const stepDesc = document.getElementById("stepDesc");
+      const calcTitle = document.getElementById("calcTitle");
+      const mathTag = document.getElementById("mathTag");
+      const calcVal1 = document.getElementById("calcVal1");
+      const calcVal2 = document.getElementById("calcVal2");
+      const calcVal3 = document.getElementById("calcVal3");
+      const rowResLabel = document.getElementById("rowResLabel");
+      const calcRes = document.getElementById("calcRes");
+      const takeawayText = document.getElementById("takeawayText");
+
+      // SVG 元素引用
+      const val1 = document.getElementById("val-1");
+      const val2 = document.getElementById("val-2");
+      const val3 = document.getElementById("val-3");
+      const aggTitle = document.getElementById("agg-title");
+      const aggSub = document.getElementById("agg-sub");
+      const aggResult = document.getElementById("agg-result");
+
+      const nodeOrig = document.getElementById("node-orig").querySelector("rect");
+      const nodeBsList = [1, 2, 3].map(i => document.getElementById("node-bs-" + i).querySelector("rect"));
+      const nodeLrList = [1, 2, 3].map(i => document.getElementById("node-lr-" + i).querySelector("rect"));
+      const predList = [1, 2, 3].map(i => document.getElementById("pred-" + i).querySelector("rect"));
+      const nodeAgg = document.getElementById("node-agg").querySelector("rect");
+
+      function updateMode() {
+        const d = MODE_DATA[state.mode];
+        modeClfBtn.setAttribute("aria-pressed", state.mode === "clf");
+        modeRegBtn.setAttribute("aria-pressed", state.mode === "reg");
+
+        val1.textContent = d.val1;
+        val2.textContent = d.val2;
+        val3.textContent = d.val3;
+        aggTitle.textContent = d.title;
+        aggSub.textContent = d.sub;
+        aggResult.textContent = d.res;
+
+        calcTitle.textContent = d.calcTitle;
+        mathTag.textContent = d.mathTag;
+        calcVal1.textContent = d.row1;
+        calcVal2.textContent = d.row2;
+        calcVal3.textContent = d.row3;
+        calcRes.textContent = d.resText;
+        takeawayText.innerHTML = d.takeaway;
+      }
+
+      function updateStep() {
+        stepBtns.forEach((btn, idx) => {
+          btn.setAttribute("aria-pressed", idx === state.step);
+        });
+
+        stepTitle.textContent = STEP_DATA[state.step].title;
+        stepDesc.textContent = STEP_DATA[state.step].desc;
+
+        // 高亮对应 SVG 节点
+        // reset styles
+        nodeOrig.setAttribute("stroke", "#275D91");
+        nodeOrig.setAttribute("stroke-width", "2");
+        nodeBsList.forEach(r => { r.setAttribute("stroke", "#536777"); r.setAttribute("stroke-width", "1.5"); });
+        nodeLrList.forEach(r => { r.setAttribute("stroke", "#275D91"); r.setAttribute("stroke-width", "2"); });
+        predList.forEach(r => { r.setAttribute("stroke", "#D7E1E8"); r.setAttribute("stroke-width", "1.5"); });
+        nodeAgg.setAttribute("stroke", "#B63B24");
+        nodeAgg.setAttribute("stroke-width", "2.5");
+
+        if (state.step === 0) {
+          nodeOrig.setAttribute("stroke", "#006B72");
+          nodeOrig.setAttribute("stroke-width", "3.5");
+          nodeBsList.forEach(r => {
+            r.setAttribute("stroke", "#006B72");
+            r.setAttribute("stroke-width", "2.5");
+          });
+        } else if (state.step === 1) {
+          nodeLrList.forEach(r => {
+            r.setAttribute("stroke", "#006B72");
+            r.setAttribute("stroke-width", "3.5");
+          });
+        } else if (state.step === 2) {
+          predList.forEach(r => {
+            r.setAttribute("stroke", "#006B72");
+            r.setAttribute("stroke-width", "3");
+          });
+        } else if (state.step === 3) {
+          nodeAgg.setAttribute("stroke", "#B63B24");
+          nodeAgg.setAttribute("stroke-width", "4");
+        }
+      }
+
+      // 事件绑定
+      modeClfBtn.addEventListener("click", () => {
+        state.mode = "clf";
+        updateMode();
+      });
+
+      modeRegBtn.addEventListener("click", () => {
+        state.mode = "reg";
+        updateMode();
+      });
+
+      stepBtns.forEach((btn, idx) => {
+        btn.addEventListener("click", () => {
+          state.step = idx;
+          updateStep();
+        });
+      });
+
+      Deck.init({ index: 9, total: 27 });
+      updateMode();
+      updateStep();
+    })();
+  </script>
+</body>
+</html>

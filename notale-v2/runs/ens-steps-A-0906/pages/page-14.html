@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      isolation: isolate;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      padding: var(--pad-y) var(--pad-x);
+    }
+
+    #field {
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .cover-copy {
+      position: absolute;
+      z-index: 5;
+      left: 104px;
+      top: 156px;
+      width: 620px;
+      pointer-events: none;
+    }
+
+    .kicker {
+      font-size: var(--fs-label);
+      font-weight: var(--weight-medium);
+      color: var(--model);
+      letter-spacing: 0.12em;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    .lead {
+      margin: 24px 0 0 0;
+      font-size: var(--fs-lead);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      max-width: 480px;
+    }
+
+    .lead strong {
+      color: var(--model);
+      font-weight: var(--weight-medium);
+    }
+
+    .iter-legend {
+      position: absolute;
+      z-index: 5;
+      left: 104px;
+      bottom: 72px;
+      display: flex;
+      align-items: center;
+      gap: 36px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dot-sample {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--focus);
+      display: inline-block;
+    }
+
+    .line-sample {
+      width: 28px;
+      height: 2px;
+      background: var(--model);
+      display: inline-block;
+    }
+
+    .line-agg {
+      width: 32px;
+      height: 4px;
+      background: var(--aggregate);
+      display: inline-block;
+    }
+  </style>
+</head>
+<body data-page="14" data-total="26">
+  <div id="stage">
+    <canvas id="field" class="cv-fill" aria-hidden="true"></canvas>
+
+    <header class="cover-copy">
+      <div class="kicker">第 03 单元 · 串行提升</div>
+      <h1>Boosting 与 AdaBoost</h1>
+      <p class="lead">从前序错误中重赋权，将一系列<strong>弱分类器</strong>加权聚合成高精度判决。</p>
+    </header>
+
+    <div class="iter-legend">
+      <span class="legend-item"><span class="dot-sample"></span>错分加权样本点</span>
+      <span class="legend-item"><span class="line-sample"></span>弱分类器基准切分</span>
+      <span class="legend-item"><span class="line-agg"></span>强分类器聚合曲面</span>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学好，从这一页开始，我们进入集成学习的第二个核心家族：Boosting。
+    前一节我们看到的 Bagging 是并行的、相互独立的采样与投票；而 Boosting 则是串行的自适应纠错过程。
+    每次训练出一个弱分类器后，算法会重点关注那些被错分的困难样本，提升它们的权重，逼迫下一个弱分类器专攻这些难点。
+    最终，我们把所有弱分类器按各自的置信度加权表决，合成一个判决边界极其精准的强分类器。
+  </aside>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      Deck.init({ index: 14, total: 26 });
+
+      const W = 1600;
+      const H = 900;
+      const canvas = document.getElementById("field");
+      let ctx = Deck.fit(canvas);
+
+      // Title exclusion boundary in logical coordinates
+      const TITLE_ZONE = { x: 60, y: 110, w: 680, h: 520 };
+
+      function insideTitle(x, y, margin = 20) {
+        return (
+          x >= TITLE_ZONE.x - margin &&
+          x <= TITLE_ZONE.x + TITLE_ZONE.w + margin &&
+          y >= TITLE_ZONE.y - margin &&
+          y <= TITLE_ZONE.y + TITLE_ZONE.h + margin
+        );
+      }
+
+      // Procedural data points on the right field
+      // Represents 2 classes of points with varying weights
+      const SEED = "adaboost-field-seed-01";
+      const rng = new Math.seedrandom(SEED);
+
+      const points = [];
+      const N_POINTS = 90;
+
+      // Class 0 center around (1020, 360), Class 1 center around (1280, 560)
+      for (let i = 0; i < N_POINTS; i++) {
+        const cls = i % 2;
+        const cx = cls === 0 ? 1040 : 1240;
+        const cy = cls === 0 ? 360 : 540;
+        const spread = 160;
+        const x = cx + (rng() - 0.5) * spread * 2 + (rng() - 0.5) * 60;
+        const y = cy + (rng() - 0.5) * spread * 1.8 + (rng() - 0.5) * 60;
+
+        // Some boundary points are misclassified and get boosted weight
+        const distToCenter = Math.hypot(x - 1140, y - 450);
+        const isHard = distToCenter < 110 && rng() > 0.35;
+        const weight = isHard ? 2.8 + rng() * 1.8 : 0.8 + rng() * 0.6;
+
+        points.push({ x, y, cls, isHard, weight });
+      }
+
+      // Weak classifiers: a series of cut lines and directional vectors
+      const WEAK_STUMPS = [
+        { x1: 820, y1: 180, x2: 1200, y2: 780, alpha: 0.35, t: 0 },
+        { x1: 960, y1: 140, x2: 1420, y2: 740, alpha: 0.38, t: 0.33 },
+        { x1: 900, y1: 720, x2: 1460, y2: 240, alpha: 0.32, t: 0.66 }
+      ];
+
+      // Strong ensemble curve points
+      const AGGREGATE_PATH = [];
+      for (let s = 0; s <= 40; s++) {
+        const t = s / 40;
+        const px = 860 + t * 620;
+        // Non-linear boundary created by weighted vote
+        const py = 450 + Math.sin(t * Math.PI * 1.6) * 160 - Math.cos(t * Math.PI * 2.8) * 35;
+        AGGREGATE_PATH.push({ x: px, y: py });
+      }
+
+      function draw(time = 0) {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, W, H);
+
+        const colBg = Deck.token("--bg");
+        const colModel = Deck.rgb("model");
+        const colAgg = Deck.rgb("aggregate");
+        const colFocus = Deck.rgb("focus");
+        const colLine = Deck.rgb("line");
+
+        // 1. Weak stumps (sequential partitions)
+        for (let i = 0; i < WEAK_STUMPS.length; i++) {
+          const stump = WEAK_STUMPS[i];
+          const pulse = Math.sin((time * 0.0012) + stump.t * Math.PI * 2) * 0.08;
+          ctx.strokeStyle = `rgba(${colModel.join(",")},${Math.max(0.15, stump.alpha + pulse)})`;
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([8, 8]);
+          ctx.beginPath();
+          ctx.moveTo(stump.x1, stump.y1);
+          ctx.lineTo(stump.x2, stump.y2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        // 2. Strong ensemble decision boundary (solid thick curve)
+        ctx.strokeStyle = `rgba(${colAgg.join(",")}, 0.95)`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        for (let i = 0; i < AGGREGATE_PATH.length; i++) {
+          const pt = AGGREGATE_PATH[i];
+          if (i === 0) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+        }
+        ctx.stroke();
+
+        // 3. Margin bands around strong boundary
+        ctx.strokeStyle = `rgba(${colAgg.join(",")}, 0.18)`;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        for (let i = 0; i < AGGREGATE_PATH.length; i++) {
+          const pt = AGGREGATE_PATH[i];
+          if (i === 0) ctx.moveTo(pt.x, pt.y - 42);
+          else ctx.lineTo(pt.x, pt.y - 42);
+        }
+        ctx.stroke();
+
+        ctx.beginPath();
+        for (let i = 0; i < AGGREGATE_PATH.length; i++) {
+          const pt = AGGREGATE_PATH[i];
+          if (i === 0) ctx.moveTo(pt.x, pt.y + 42);
+          else ctx.lineTo(pt.x, pt.y + 42);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 4. Sample points with adaptive sizes (weights)
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i];
+          const r = p.isHard ? 6.5 * p.weight * 0.55 : 4.2 * p.weight;
+
+          if (p.isHard) {
+            // Hard sample: focus halo and solid core
+            ctx.fillStyle = `rgba(${colFocus.join(",")}, 0.18)`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, r * 1.7, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = `rgba(${colFocus.join(",")}, 0.9)`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            // Standard points in blue tones
+            const isC0 = p.cls === 0;
+            ctx.fillStyle = isC0
+              ? `rgba(${colModel.join(",")}, 0.7)`
+              : `rgba(${colAgg.join(",")}, 0.7)`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      Deck.onResize(() => {
+        ctx = Deck.fit(canvas);
+        draw(0);
+      });
+
+      // Still frame for reduced motion or initialization
+      draw(0);
+
+      // Controlled subtle loop for living breathing cover
+      const stop = Deck.loop(time => {
+        draw(time);
+      }, { still: 1600 });
+
+      window.addEventListener("pagehide", stop, { once: true });
+    })();
+  </script>
+</body>
+</html>

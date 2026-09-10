@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>折外预测是关键：避免元学习器的数据泄漏</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --leak-warn: #BC3825;
+      --leak-bg: #FDEDEA;
+      --clean-bg: #EAF4EE;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* 顶部标题与导语 */
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .page-title {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.15;
+      margin: 0;
+    }
+    .page-lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    /* 主对比工作区：左右两栏对称架构 */
+    .comparison-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px;
+      min-height: 0;
+    }
+
+    .pipeline-card {
+      background: var(--surface);
+      border-radius: 12px;
+      border: 1px solid var(--surface-strong);
+      box-shadow: 0 4px 18px rgba(18, 38, 52, 0.04);
+      display: flex;
+      flex-direction: column;
+      padding: 18px 20px;
+      gap: 14px;
+      position: relative;
+    }
+
+    .pipeline-card.leak {
+      border-top: 4px solid var(--leak-warn);
+    }
+    .pipeline-card.clean {
+      border-top: 4px solid var(--sample);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 10px;
+    }
+    .card-heading {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-status-badge {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 6px;
+    }
+    .badge-leak {
+      background: var(--leak-bg);
+      color: var(--leak-warn);
+      border: 1px solid rgba(188, 56, 37, 0.2);
+    }
+    .badge-clean {
+      background: var(--clean-bg);
+      color: var(--sample);
+      border: 1px solid rgba(47, 117, 104, 0.2);
+    }
+
+    /* 内部流向图与步骤展示 */
+    .diagram-area {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    /* 步骤容器 */
+    .step-box {
+      background: #FAFCFD;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* 真实样本量化对比微徽章 */
+    .sample-stats {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: var(--fs-label);
+    }
+    .stat-label {
+      color: var(--muted);
+    }
+    .stat-val {
+      font-weight: 700;
+      font-family: var(--font-num, sans-serif);
+    }
+    .stat-val.leak { color: var(--leak-warn); }
+    .stat-val.clean { color: var(--sample); }
+
+    .step-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .step-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.35;
+      margin: 0;
+    }
+
+    /* 样本块可视化排布 */
+    .fold-strip {
+      display: flex;
+      gap: 5px;
+      margin: 4px 0;
+      align-items: center;
+    }
+    .fold-block {
+      flex: 1;
+      height: 30px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease);
+    }
+    .fold-train {
+      background: #E5EFF5;
+      color: var(--model);
+      border: 1px solid #C4D9E6;
+    }
+    .fold-val {
+      background: #FFF3DE;
+      color: #9E5B00;
+      border: 1px dashed #DDB468;
+    }
+    .fold-leak {
+      background: #FEEBEA;
+      color: var(--leak-warn);
+      border: 1px solid #F5B8B2;
+    }
+    .fold-clean {
+      background: #E8F5EE;
+      color: var(--sample);
+      border: 1px solid #B4DEC6;
+    }
+
+    /* 箭头连线指示器 */
+    .flow-connector {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: var(--fs-label);
+      font-weight: 500;
+      padding: 2px 0;
+    }
+    .flow-connector svg {
+      width: 14px;
+      height: 14px;
+      fill: currentColor;
+    }
+
+    /* 最终结果卡片 */
+    .consequence-box {
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .consequence-leak {
+      background: var(--leak-bg);
+      border: 1px solid rgba(188, 56, 37, 0.25);
+    }
+    .consequence-clean {
+      background: var(--clean-bg);
+      border: 1px solid rgba(47, 117, 104, 0.25);
+    }
+    .consequence-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .consequence-leak .consequence-title { color: var(--leak-warn); }
+    .consequence-clean .consequence-title { color: var(--answer); }
+    .consequence-body {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    /* 底部收束条：机制总结 */
+    .bottom-summary {
+      background: var(--surface);
+      border-radius: 10px;
+      border: 1px solid var(--surface-strong);
+      padding: 12px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 32px;
+    }
+    .summary-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+    }
+    .summary-tag {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+      white-space: nowrap;
+      background: var(--surface-strong);
+      color: var(--text);
+    }
+    .summary-text {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.35;
+      margin: 0;
+    }
+    .summary-text strong {
+      color: var(--aggregate);
+    }
+
+    /* 交互切换按纽：允许读者高亮具体折数 */
+    .interactive-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4px;
+    }
+    .fold-selector {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .fold-btn {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: 600;
+      transition: all var(--duration) var(--ease);
+    }
+    .fold-btn:hover {
+      border-color: var(--model);
+      color: var(--model);
+    }
+    .fold-btn.active {
+      background: var(--model);
+      color: #FFF;
+      border-color: var(--model);
+    }
+    .fold-legend {
+      display: flex;
+      gap: 14px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+  </style>
+</head>
+<body data-page="22" data-total="27">
+  <div id="stage">
+    <!-- 头部说明 -->
+    <header class="header-block">
+      <h1 class="page-title">折外预测是关键：元学习器必须在未见样本上训练</h1>
+      <p class="page-lead">
+        若直接用基模型的样本内预测作为元特征，过拟合记忆会被当作「极度可信」的依据，元学习器在真实测试集上将彻底失效。
+      </p>
+    </header>
+
+    <!-- 交互切换：观察折外分割与样本内预测的本质差异 -->
+    <div class="interactive-bar">
+      <div class="fold-selector">
+        <span style="font-size: var(--fs-label); font-weight: 600; color: var(--text);">观察折外划分：</span>
+        <button class="fold-btn active" data-fold="1">第 1 折验证</button>
+        <button class="fold-btn" data-fold="2">第 2 折验证</button>
+        <button class="fold-btn" data-fold="3">第 3 折验证</button>
+        <button class="fold-btn" data-fold="4">第 4 折验证</button>
+        <button class="fold-btn" data-fold="5">第 5 折验证</button>
+      </div>
+      <div class="fold-legend">
+        <span><span class="legend-dot" style="background:#C4D9E6; border:1px solid var(--model);"></span> 当前训练子集</span>
+        <span><span class="legend-dot" style="background:#FFF3DE; border:1px dashed #DDB468;"></span> 当前保留验证折</span>
+        <span><span class="legend-dot" style="background:#B4DEC6; border:1px solid var(--sample);"></span> 合法折外预测</span>
+      </div>
+    </div>
+
+    <!-- 左右对比工作区 -->
+    <div class="comparison-grid">
+      <!-- 左栏：错误做法（样本内预测导致泄漏） -->
+      <section class="pipeline-card leak">
+        <div class="card-top">
+          <div class="card-heading">
+            <span>错误做法：同源样本内预测（In-Sample）</span>
+          </div>
+          <span class="card-status-badge badge-leak">严重数据泄漏</span>
+        </div>
+
+        <div class="diagram-area">
+          <div class="step-box">
+            <div class="step-header">
+              <span>步骤 1 · 基模型训练</span>
+              <span style="font-size: var(--fs-tick); color: var(--muted);">全部样本参与</span>
+            </div>
+            <p class="step-desc">基模型在全量训练集（含高方差决策树）上直接拟合，训练集上准确率虚高（甚至接近 100%）。</p>
+            <div class="fold-strip">
+              <div class="fold-block fold-train">Fold 1 训练</div>
+              <div class="fold-block fold-train">Fold 2 训练</div>
+              <div class="fold-block fold-train">Fold 3 训练</div>
+              <div class="fold-block fold-train">Fold 4 训练</div>
+              <div class="fold-block fold-train">Fold 5 训练</div>
+            </div>
+          </div>
+
+          <div class="flow-connector">
+            <svg viewBox="0 0 16 16"><path d="M8 12l-5-5 1.4-1.4L7 8.2V2h2v6.2l2.6-2.6L13 7z"/></svg>
+            <span>直接生成全量训练预测</span>
+          </div>
+
+          <div class="step-box">
+            <div class="step-header">
+              <span>步骤 2 · 元特征生成</span>
+              <span style="font-size: var(--fs-tick); color: var(--leak-warn); font-weight:700;">携带过拟合记忆</span>
+            </div>
+            <p class="step-desc">基模型对已见过的样本给出极其自信且准确的预测，掩盖了它在未知数据上的真实误差分布。</p>
+            <div class="fold-strip">
+              <div class="fold-block fold-leak">虚高预测 1</div>
+              <div class="fold-block fold-leak">虚高预测 2</div>
+              <div class="fold-block fold-leak">虚高预测 3</div>
+              <div class="fold-block fold-leak">虚高预测 4</div>
+              <div class="fold-block fold-leak">虚高预测 5</div>
+            </div>
+            <div class="sample-stats">
+              <span class="stat-label">深树模型表现评估：</span>
+              <span class="stat-label">表观误差 <strong class="stat-val leak">0.8%</strong></span>
+              <span style="color:var(--surface-strong)">|</span>
+              <span class="stat-label">真实外推误差 <strong class="stat-val leak">14.6%</strong></span>
+              <span style="color:var(--muted); font-size:var(--fs-tick); margin-left:auto;">(严重失真)</span>
+            </div>
+          </div>
+
+          <div class="flow-connector">
+            <svg viewBox="0 0 16 16"><path d="M8 12l-5-5 1.4-1.4L7 8.2V2h2v6.2l2.6-2.6L13 7z"/></svg>
+            <span>元学习器被虚假置信度误导</span>
+          </div>
+
+          <div class="consequence-box consequence-leak">
+            <div class="consequence-title">
+              <span>后果：元模型过度信赖过拟合基模型</span>
+            </div>
+            <p class="consequence-body">
+              元模型学到的组合规则倾向于给「死记硬背型」复杂模型分配极大权重；一旦面对独立测试集，整体泛化性能发生断崖式下跌。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：正确做法（K 折外预测生成干净元特征） -->
+      <section class="pipeline-card clean">
+        <div class="card-top">
+          <div class="card-heading">
+            <span>正确做法：K 折折外预测（Out-of-Fold）</span>
+          </div>
+          <span class="card-status-badge badge-clean">严格无泄漏标准</span>
+        </div>
+
+        <div class="diagram-area">
+          <div class="step-box">
+            <div class="step-header">
+              <span id="cleanStep1Label">步骤 1 · K 折拆分训练（当前第 1 折）</span>
+              <span style="font-size: var(--fs-tick); color: var(--muted);" id="splitStatus">4 折训练 / 1 折验证</span>
+            </div>
+            <p class="step-desc" id="cleanStep1Desc">每次仅在 K-1 个子集上训练基模型，保留独立的验证折用于生成真正未见过的测试预测。</p>
+            <div class="fold-strip" id="oofFoldStrip">
+              <div class="fold-block fold-val" id="fb1">Fold 1 验证</div>
+              <div class="fold-block fold-train" id="fb2">Fold 2 训练</div>
+              <div class="fold-block fold-train" id="fb3">Fold 3 训练</div>
+              <div class="fold-block fold-train" id="fb4">Fold 4 训练</div>
+              <div class="fold-block fold-train" id="fb5">Fold 5 训练</div>
+            </div>
+          </div>
+
+          <div class="flow-connector">
+            <svg viewBox="0 0 16 16"><path d="M8 12l-5-5 1.4-1.4L7 8.2V2h2v6.2l2.6-2.6L13 7z"/></svg>
+            <span>各折验证结果横向拼接，拼齐完整训练集</span>
+          </div>
+
+          <div class="step-box">
+            <div class="step-header">
+              <span>步骤 2 · 组装纯净元特征</span>
+              <span style="font-size: var(--fs-tick); color: var(--sample); font-weight:700;">反映真实泛化水平</span>
+            </div>
+            <p class="step-desc">拼接后的每个样本预测，均来自于「未见过该样本」的模型；真实反映了基模型在未见样本上的误差分布。</p>
+            <div class="fold-strip">
+              <div class="fold-block fold-clean" id="pred1">OOF 预测 1</div>
+              <div class="fold-block fold-clean" id="pred2">OOF 预测 2</div>
+              <div class="fold-block fold-clean" id="pred3">OOF 预测 3</div>
+              <div class="fold-block fold-clean" id="pred4">OOF 预测 4</div>
+              <div class="fold-block fold-clean" id="pred5">OOF 预测 5</div>
+            </div>
+            <div class="sample-stats">
+              <span class="stat-label">深树模型表现评估：</span>
+              <span class="stat-label">折外实测误差 <strong class="stat-val clean">14.2%</strong></span>
+              <span style="color:var(--surface-strong)">|</span>
+              <span class="stat-label">真实外推误差 <strong class="stat-val clean">14.6%</strong></span>
+              <span style="color:var(--sample); font-size:var(--fs-tick); margin-left:auto;">(严密一致)</span>
+            </div>
+          </div>
+
+          <div class="flow-connector">
+            <svg viewBox="0 0 16 16"><path d="M8 12l-5-5 1.4-1.4L7 8.2V2h2v6.2l2.6-2.6L13 7z"/></svg>
+            <span>元学习器在真实误差规律上学习</span>
+          </div>
+
+          <div class="consequence-box consequence-clean">
+            <div class="consequence-title">
+              <span>成效：元模型精准识别各基模型短板</span>
+            </div>
+            <p class="consequence-body">
+              元模型客观发现「哪个基模型在哪些特征区间容易犯错」，合理调配各模型的互补优势，实现稳健的泛化提升。
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 底部收束条：机制总结 -->
+    <footer class="bottom-summary">
+      <div class="summary-item">
+        <span class="summary-tag">核心铁律</span>
+        <p class="summary-text">
+          元学习器的训练集来自<strong>基模型未曾见过的样本（折外预测）</strong>，绝不能来自基模型的训练集记忆。
+        </p>
+      </div>
+      <div class="summary-item">
+        <span class="summary-tag">预测期对应</span>
+        <p class="summary-text">
+          推理测试时，所有基模型需在<strong>全量数据上重新训练</strong>，元学习器以其输出作为真实特征执行最终预测。
+        </p>
+      </div>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 22, total: 27, keys: false });
+
+      const buttons = document.querySelectorAll('.fold-btn');
+      const cleanStep1Label = document.getElementById('cleanStep1Label');
+      const cleanStep1Desc = document.getElementById('cleanStep1Desc');
+      const foldBlocks = [
+        document.getElementById('fb1'),
+        document.getElementById('fb2'),
+        document.getElementById('fb3'),
+        document.getElementById('fb4'),
+        document.getElementById('fb5')
+      ];
+      const predBlocks = [
+        document.getElementById('pred1'),
+        document.getElementById('pred2'),
+        document.getElementById('pred3'),
+        document.getElementById('pred4'),
+        document.getElementById('pred5')
+      ];
+
+      function selectFold(foldIndex) {
+        buttons.forEach((btn, idx) => {
+          btn.classList.toggle('active', idx === foldIndex - 1);
+        });
+
+        cleanStep1Label.textContent = `步骤 1 · K 折拆分训练（当前聚焦第 ${foldIndex} 折）`;
+        cleanStep1Desc.textContent = `使用 Fold ${[1,2,3,4,5].filter(f => f !== foldIndex).join('、')} 联合训练基模型，仅对 Fold ${foldIndex} 做独立验证预测。`;
+
+        foldBlocks.forEach((block, idx) => {
+          if (idx === foldIndex - 1) {
+            block.className = 'fold-block fold-val';
+            block.textContent = `Fold ${idx + 1} 验证`;
+            block.style.transform = 'scale(1.04)';
+          } else {
+            block.className = 'fold-block fold-train';
+            block.textContent = `Fold ${idx + 1} 训练`;
+            block.style.transform = 'none';
+          }
+        });
+
+        predBlocks.forEach((block, idx) => {
+          if (idx === foldIndex - 1) {
+            block.style.background = '#C5EAD4';
+            block.style.borderColor = 'var(--sample)';
+            block.style.fontWeight = '700';
+          } else {
+            block.style.background = '#E8F5EE';
+            block.style.borderColor = '#B4DEC6';
+            block.style.fontWeight = '600';
+          }
+        });
+      }
+
+      buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const fold = parseInt(btn.getAttribute('data-fold'), 10);
+          selectFold(fold);
+        });
+      });
+
+      // 初始化显示第 1 折
+      selectFold(1);
+    })();
+  </script>
+</body>
+</html>

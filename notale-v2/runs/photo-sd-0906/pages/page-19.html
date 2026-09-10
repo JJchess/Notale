@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #D7E4DC;
+      --surface: #EDF3EF;
+      --text: #16271F;
+      --muted: #506359;
+      --rule: #758A7E;
+      --model: #245E43;
+      --model-soft: #A9C5B4;
+      --focus: #D97A0B;
+      --on-model: #F5F8F6;
+      --on-focus: #1D241F;
+      --font-display: "Noto Sans CJK SC Medium", "WenQuanYi Zen Hei", sans-serif;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+      --font-numeric: "Noto Sans Mono", "文泉驿等宽正黑", monospace;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    header {
+      position: absolute;
+      top: 40px;
+      left: 64px;
+      right: 64px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: var(--line-hair) solid var(--rule);
+      padding-bottom: 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .carbon-tally {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-sec);
+      color: var(--model);
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+
+    /* 主可视化视窗 */
+    #view-wrap {
+      position: absolute;
+      top: 120px;
+      left: 64px;
+      width: 1472px;
+      height: 560px;
+      background: var(--surface);
+      border-radius: 8px;
+      border: var(--line-hair) solid var(--model-soft);
+    }
+
+    #visual {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 底部解说与控制栏 */
+    footer {
+      position: absolute;
+      top: 704px;
+      left: 64px;
+      right: 64px;
+      height: 146px;
+      display: grid;
+      grid-template-columns: 820px 1fr;
+      align-items: center;
+      gap: 40px;
+      border-top: var(--line-hair) solid var(--rule);
+      padding-top: 14px;
+    }
+
+    .claim-block {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .claim-title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--model);
+      font-weight: 600;
+    }
+
+    .claim-copy {
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .controls-block {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .nav-btn {
+      padding: 10px 22px;
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      font-weight: 500;
+      border-radius: 4px;
+      cursor: pointer;
+      border: 1px solid var(--rule);
+      background: var(--surface);
+      color: var(--text);
+      transition: all 0.2s ease;
+    }
+
+    .nav-btn:hover {
+      background: var(--model-soft);
+      color: var(--text);
+    }
+
+    .nav-btn.active {
+      background: var(--focus);
+      border-color: var(--focus);
+      color: var(--on-focus);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body data-page="19" data-total="25">
+  <div id="stage">
+    <header>
+      <h1>每生成 6 分子 G3P，需消耗 5 分子恢复 3 分子 RuBP</h1>
+      <div class="carbon-tally">碳守恒：5 × C₃ (15C) + 3 ATP ➔ 3 × C₅ (15C)</div>
+    </header>
+
+    <div id="view-wrap">
+      <canvas id="visual" width="1472" height="560"></canvas>
+    </div>
+
+    <footer>
+      <div class="claim-block">
+        <div class="claim-title" id="phase-title">阶段分配：5/6 回归再生，1/6 净产出</div>
+        <p class="claim-copy" id="phase-desc">暗反应并非将所有生成的三碳糖外运，而必须保留大部分三碳骨架用于重建二氧化碳受体，维持卡尔文循环持续运转。</p>
+      </div>
+      <div class="controls-block">
+        <button class="nav-btn active" id="btn-0">1. 产物分流 (5:1)</button>
+        <button class="nav-btn" id="btn-1">2. 骨架重排与加能</button>
+        <button class="nav-btn" id="btn-2">3. 受体 RuBP 闭环</button>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    卡尔文循环要持续运转，二氧化碳的受体 RuBP 就必须不断再生。
+    固定 3 分子二氧化碳后，系统产出 6 分子三碳糖磷酸 G3P。
+    其中仅有 1 分子 G3P 真正脱离循环用于合成糖类等有机物；其余 5 个 G3P 携带的全部 15 个碳原子，在消耗 3 分子 ATP 的驱动下重新排列，重组为 3 分子五碳化合物 RuBP，回到循环的起点。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const canvas = document.getElementById("visual");
+      const ctx = canvas.getContext("2d");
+      const titleEl = document.getElementById("phase-title");
+      const descEl = document.getElementById("phase-desc");
+      const buttons = [
+        document.getElementById("btn-0"),
+        document.getElementById("btn-1"),
+        document.getElementById("btn-2")
+      ];
+
+      const STAGES = [
+        {
+          title: "产物分流：5/6 回流再生，1/6 离开循环",
+          desc: "固定 3 分子 CO₂ 还原得到的 6 个 G3P 中，仅 1 个离开循环，其余 5 个直接送入再生途径。",
+          t: 0
+        },
+        {
+          title: "骨架重排与 ATP 磷酸化：15C 的五碳重组",
+          desc: "复杂的碳骨架重排将 5 个三碳化合物拼接并切分为五碳单体，再经 3 ATP 磷酸化补充高能磷酸基。",
+          t: 1
+        },
+        {
+          title: "受体就位：3 分子 RuBP 恢复循环起点",
+          desc: "再生的 3 分子双磷酸核酮糖 (RuBP) 返回循环起点，重新等待与 3 分子新进入的 CO₂ 结合。",
+          t: 2
+        }
+      ];
+
+      let currentStep = 0;
+      let targetProgress = 0;
+      let animProgress = 0;
+      let animId = null;
+
+      function ease(x) {
+        return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+      }
+
+      function lerp(a, b, p) {
+        return a + (b - a) * p;
+      }
+
+      // 绘制原子点阵和碳分子
+      function drawCarbon(x, y, r, color, label) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = "#16271F";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        if (label) {
+          ctx.fillStyle = "#F5F8F6";
+          ctx.font = "bold 11px monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(label, x, y);
+        }
+        ctx.restore();
+      }
+
+      function drawMoleculeC3(x, y, scale = 1, isExport = false) {
+        // C3: 3 carbons in a horizontal line
+        const r = 10 * scale;
+        const gap = 24 * scale;
+        const col = isExport ? "#D97A0B" : "#245E43";
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x - gap, y);
+        ctx.lineTo(x + gap, y);
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 4 * scale;
+        ctx.stroke();
+        for (let i = -1; i <= 1; i++) {
+          drawCarbon(x + i * gap, y, r, col, "C");
+        }
+        ctx.restore();
+      }
+
+      function drawMoleculeC5(x, y, scale = 1, hasP = true) {
+        // C5: 5 carbons in pentagonal arch
+        const r = 10 * scale;
+        const col = "#245E43";
+        const gap = 22 * scale;
+        ctx.save();
+        ctx.beginPath();
+        for (let i = -2; i <= 2; i++) {
+          const cx = x + i * gap;
+          const cy = y - Math.abs(i) * 5 * scale;
+          if (i === -2) ctx.moveTo(cx, cy);
+          else ctx.lineTo(cx, cy);
+        }
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 4 * scale;
+        ctx.stroke();
+
+        for (let i = -2; i <= 2; i++) {
+          const cx = x + i * gap;
+          const cy = y - Math.abs(i) * 5 * scale;
+          drawCarbon(cx, cy, r, col, "C");
+        }
+
+        if (hasP) {
+          // 磷酸基团标记
+          const pLeftX = x - 2 * gap - 16 * scale;
+          const pLeftY = y - 10 * scale;
+          const pRightX = x + 2 * gap + 16 * scale;
+          const pRightY = y - 10 * scale;
+          drawPhosphate(pLeftX, pLeftY, scale);
+          drawPhosphate(pRightX, pRightY, scale);
+        }
+        ctx.restore();
+      }
+
+      function drawPhosphate(x, y, scale = 1) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, 9 * scale, 0, Math.PI * 2);
+        ctx.fillStyle = "#D97A0B";
+        ctx.fill();
+        ctx.strokeStyle = "#16271F";
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.fillStyle = "#1D241F";
+        ctx.font = "bold 10px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("P", x, y);
+        ctx.restore();
+      }
+
+      function render(p) {
+        ctx.clearRect(0, 0, 1472, 560);
+
+        // 阶段进度分配
+        // p in [0, 1]: step 0 to 1
+        // p in [1, 2]: step 1 to 2
+        const subP01 = Math.min(Math.max(p, 0), 1);
+        const subP12 = Math.min(Math.max(p - 1, 0), 1);
+
+        // 绘制分区背景卡片
+        // 左区：输入总池 (6 × G3P)
+        // 右区：受体再生与净产出
+        ctx.fillStyle = "#E4EDE7";
+        ctx.fillRect(40, 30, 380, 500);
+        ctx.strokeStyle = "#A9C5B4";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(40, 30, 380, 500);
+
+        // 中区：重排与能量驱动通道
+        ctx.fillStyle = "#E7EFEA";
+        ctx.fillRect(460, 30, 540, 500);
+        ctx.strokeRect(460, 30, 540, 500);
+
+        // 右区：受体产出 (3 × RuBP) 与 外运产物
+        ctx.fillStyle = "#E4EDE7";
+        ctx.fillRect(1040, 30, 390, 500);
+        ctx.strokeRect(1040, 30, 390, 500);
+
+        // 标题与标签
+        ctx.font = "bold 19px var(--font-display)";
+        ctx.fillStyle = "#245E43";
+        ctx.textAlign = "left";
+        ctx.fillText("还原产物输入库", 64, 68);
+        ctx.font = "15px var(--font-sans)";
+        ctx.fillStyle = "#506359";
+        ctx.fillText("共 6 个三碳分子 (18C)", 64, 94);
+
+        ctx.font = "bold 19px var(--font-display)";
+        ctx.fillStyle = "#245E43";
+        ctx.fillText("复杂骨架重组与能量注入", 484, 68);
+        ctx.font = "15px var(--font-sans)";
+        ctx.fillStyle = "#506359";
+        ctx.fillText("15C 骨架拆分与再组合 + 3 ATP", 484, 94);
+
+        ctx.font = "bold 19px var(--font-display)";
+        ctx.fillStyle = "#245E43";
+        ctx.fillText("受体再生与循环闭环", 1064, 68);
+        ctx.font = "15px var(--font-sans)";
+        ctx.fillStyle = "#506359";
+        ctx.fillText("3 个五碳分子 (RuBP) 重新就位", 1064, 94);
+
+        // 1. 绘制 6 个 G3P 的状态
+        // 5 个 G3P 用于再生（绿色），1 个 G3P 外运（橙色）
+        const g3pCoords = [
+          { x: 230, y: 160 },
+          { x: 230, y: 225 },
+          { x: 230, y: 290 },
+          { x: 230, y: 355 },
+          { x: 230, y: 420 },
+          { x: 230, y: 485 } // 第6个，外运
+        ];
+
+        // 绘制 5 个再生产物的流动路径
+        for (let i = 0; i < 5; i++) {
+          const start = g3pCoords[i];
+          // 目标移动：在 step 0-1 移动到中间通道
+          const midX = 540 + (i % 2) * 160;
+          const midY = 160 + Math.floor(i / 2) * 100;
+          const curX = lerp(start.x, midX, ease(subP01));
+          const curY = lerp(start.y, midY, ease(subP01));
+
+          // 连线导引
+          ctx.beginPath();
+          ctx.moveTo(start.x + 40, start.y);
+          ctx.lineTo(midX - 30, midY);
+          ctx.strokeStyle = "rgba(36, 94, 67, 0.25)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          drawMoleculeC3(curX, curY, 0.9, false);
+
+          // 标签（保持在分子左侧固定安静区域，不随分子飞出左区）
+          ctx.font = "14px monospace";
+          ctx.fillStyle = "#245E43";
+          ctx.textAlign = "left";
+          ctx.fillText(`G3P #${i + 1}`, 64, start.y + 4);
+        }
+
+        // 绘制第 6 个外运产物
+        const exportStart = g3pCoords[5];
+        const exportDestX = 1140;
+        const exportDestY = 485;
+        const curExpX = lerp(exportStart.x, exportDestX, ease(Math.min(p * 0.8, 1)));
+        const curExpY = lerp(exportStart.y, exportDestY, ease(Math.min(p * 0.8, 1)));
+
+        // 虚线路径表示离开循环
+        ctx.save();
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(exportStart.x + 40, exportStart.y);
+        ctx.lineTo(exportDestX - 45, exportDestY);
+        ctx.strokeStyle = "#D97A0B";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.restore();
+
+        drawMoleculeC3(curExpX, curExpY, 1.0, true);
+        ctx.font = "bold 14px var(--font-sans)";
+        ctx.fillStyle = "#D97A0B";
+        ctx.textAlign = "left";
+        const expLabelX = Math.min(curExpX + 45, 1260);
+        ctx.fillText("净产出：离开循环", expLabelX, curExpY + 5);
+
+        // 中间反应区的 ATP 注入
+        if (p > 0.4) {
+          const atpAlpha = Math.min((p - 0.4) / 0.6, 1);
+          ctx.save();
+          ctx.globalAlpha = atpAlpha;
+
+          // ATP 注入徽章与箭头
+          const atpX = 730;
+          const atpY = 380;
+          ctx.fillStyle = "#D97A0B";
+          ctx.beginPath();
+          ctx.arc(atpX, atpY, 32, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "#16271F";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          ctx.fillStyle = "#1D241F";
+          ctx.font = "bold 15px monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("3 ATP", atpX, atpY - 5);
+          ctx.font = "11px monospace";
+          ctx.fillText("➔ 3 ADP", atpX, atpY + 12);
+
+          // 注入箭头
+          ctx.beginPath();
+          ctx.moveTo(atpX, atpY - 40);
+          ctx.lineTo(atpX, atpY - 80);
+          ctx.strokeStyle = "#D97A0B";
+          ctx.lineWidth = 4;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.moveTo(atpX - 10, atpY - 70);
+          ctx.lineTo(atpX, atpY - 88);
+          ctx.lineTo(atpX + 10, atpY - 70);
+          ctx.fillStyle = "#D97A0B";
+          ctx.fill();
+
+          ctx.font = "14px var(--font-sans)";
+          ctx.fillStyle = "#16271F";
+          ctx.textAlign = "center";
+          ctx.fillText("磷酸基团转移", atpX, atpY - 100);
+
+          ctx.restore();
+        }
+
+        // 2. 右侧 3 分子 RuBP 的生成与就位
+        // 在 step 1-2 期间，从中间重组形态凝聚成 3 个 C5-RuBP
+        const rubpDest = [
+          { x: 1200, y: 160 },
+          { x: 1200, y: 260 },
+          { x: 1200, y: 360 }
+        ];
+
+        for (let j = 0; j < 3; j++) {
+          const dest = rubpDest[j];
+          const originX = 820;
+          const originY = 160 + j * 90;
+
+          const cx = lerp(originX, dest.x, ease(subP12));
+          const cy = lerp(originY, dest.y, ease(subP12));
+          const alpha = ease(subP12);
+
+          if (subP12 > 0.05) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+
+            // 导引箭头
+            ctx.beginPath();
+            ctx.moveTo(originX + 30, originY);
+            ctx.lineTo(dest.x - 70, dest.y);
+            ctx.strokeStyle = "rgba(36, 94, 67, 0.4)";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            drawMoleculeC5(cx, cy, 0.95, true);
+
+            ctx.font = "bold 14px monospace";
+            ctx.fillStyle = "#245E43";
+            ctx.textAlign = "left";
+            ctx.fillText(`RuBP #${j + 1} (5C)`, dest.x + 75, dest.y + 5);
+
+            ctx.restore();
+          }
+        }
+
+        // 汇总标签 (下部通栏指示)
+        ctx.fillStyle = "#16271F";
+        ctx.font = "16px var(--font-sans)";
+        ctx.textAlign = "center";
+        ctx.fillText("5 × C₃ (15 碳)   经过 10 步酶促反应拆分与拼接   ➔   3 × C₅ (15 碳) RuBP", 736, 526);
+      }
+
+      function updateUI() {
+        titleEl.textContent = STAGES[currentStep].title;
+        descEl.textContent = STAGES[currentStep].desc;
+        buttons.forEach((btn, idx) => {
+          btn.classList.toggle("active", idx === currentStep);
+        });
+      }
+
+      function goTo(step) {
+        currentStep = Math.max(0, Math.min(2, step));
+        targetProgress = STAGES[currentStep].t;
+        updateUI();
+
+        if (animId) cancelAnimationFrame(animId);
+        const startP = animProgress;
+        const startTime = performance.now();
+        const duration = 600;
+
+        function animate(now) {
+          const elapsed = now - startTime;
+          const factor = Math.min(elapsed / duration, 1);
+          animProgress = lerp(startP, targetProgress, factor);
+          render(animProgress);
+          if (factor < 1) {
+            animId = requestAnimationFrame(animate);
+          } else {
+            animProgress = targetProgress;
+            render(animProgress);
+          }
+        }
+        animId = requestAnimationFrame(animate);
+      }
+
+      buttons.forEach((btn, idx) => {
+        btn.addEventListener("click", () => goTo(idx));
+      });
+
+      // 初始化初态
+      render(0);
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

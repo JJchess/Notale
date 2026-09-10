@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>AdaBoost 逐轮成形</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F9;
+      --text: #172A3A;
+      --muted: #536575;
+      --paper: #FFFFFF;
+      --model: #245FA6;
+      --aggregate: #C94F2D;
+      --diversity: #28785E;
+      --focus: #A63D21;
+      --font-sans: "Avenir Next","PingFang SC","Microsoft YaHei",sans-serif;
+      --font-num: "DIN Alternate","Avenir Next Condensed","PingFang SC",sans-serif;
+    }
+
+    #stage {
+      padding: 36px 56px;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 860px 1fr;
+      gap: 32px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .board-card {
+      background: var(--paper);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 16px rgba(23, 42, 58, 0.06);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px;
+      position: relative;
+    }
+
+    .board-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .board-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot-pos {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--aggregate);
+    }
+
+    .dot-neg {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--model);
+    }
+
+    .boundary-legend {
+      width: 18px;
+      height: 3px;
+      background: var(--aggregate);
+    }
+
+    .canvas-wrap {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #FAFCFD;
+      border: 1px solid #E1E8ED;
+    }
+
+    .side-card {
+      background: var(--paper);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 16px rgba(23, 42, 58, 0.06);
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .stat-block {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid #EDF2F6;
+      padding-bottom: 8px;
+    }
+
+    .stat-label {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .stat-val {
+      font-family: var(--font-num);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .val-highlight {
+      color: var(--aggregate);
+    }
+
+    .stumps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .stump-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: #F4F8FA;
+      font-size: var(--fs-label);
+      border: 1px solid transparent;
+      transition: all var(--dur) var(--ease);
+    }
+
+    .stump-item.active {
+      border-color: var(--model);
+      background: #EBF3FB;
+    }
+
+    .stump-tag {
+      font-weight: 600;
+      color: var(--model);
+    }
+
+    .stump-weight {
+      font-family: var(--font-num);
+      font-weight: 600;
+    }
+
+    .action-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 12px;
+    }
+
+    button {
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      padding: 10px 18px;
+      border-radius: 6px;
+      border: 1px solid #D0DCE5;
+      background: #FFFFFF;
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+
+    button:hover:not(:disabled) {
+      border-color: var(--model);
+      color: var(--model);
+      background: #F8FBFE;
+    }
+
+    button.primary {
+      background: var(--model);
+      border-color: var(--model);
+      color: #FFFFFF;
+      flex: 1;
+    }
+
+    button.primary:hover:not(:disabled) {
+      background: #1B4E8C;
+      border-color: #1B4E8C;
+      color: #FFFFFF;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .step-indicator {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      justify-content: center;
+      margin-top: 4px;
+    }
+
+    .step-pill {
+      height: 6px;
+      flex: 1;
+      background: #D9E4EC;
+      border-radius: 3px;
+      transition: background var(--dur) var(--ease);
+    }
+
+    .step-pill.done {
+      background: var(--model);
+    }
+
+    .step-pill.current {
+      background: var(--aggregate);
+    }
+  </style>
+</head>
+<body data-page="19" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>AdaBoost 逐轮成形</h1>
+      <p class="lead">误分类样本权重提升，推动后继桩分类器修补边缘</p>
+    </header>
+
+    <main>
+      <section class="board-card min0">
+        <div class="board-header">
+          <div class="board-title" id="stageTitle">第 1 轮：基基准桩分类器</div>
+          <div class="legend-row">
+            <div class="legend-item"><span class="dot-pos"></span>类别 +1</div>
+            <div class="legend-item"><span class="dot-neg"></span>类别 −1</div>
+            <div class="legend-item"><span class="boundary-legend"></span>集成决策场</div>
+          </div>
+        </div>
+
+        <div class="canvas-wrap min0" id="canvasWrap">
+          <canvas id="cv" class="cv-fill"></canvas>
+        </div>
+      </section>
+
+      <section class="side-card min0">
+        <div class="stat-block">
+          <div class="stat-row">
+            <span class="stat-label">当前训练轮数</span>
+            <span class="stat-val" id="valRound">1 / 4</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">本轮加权错误率 ε</span>
+            <span class="stat-val" id="valErr">0.300</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">基分类器权重 α</span>
+            <span class="stat-val val-highlight" id="valAlpha">0.424</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">集成误分类样本数</span>
+            <span class="stat-val" id="valMis">3 / 10</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="stat-label" style="margin-bottom: 8px;">已构建弱分类器库</div>
+          <div class="stumps-list" id="stumpList">
+            <!-- 动态生成 -->
+          </div>
+        </div>
+
+        <div class="action-panel">
+          <div class="step-indicator" id="stepPills">
+            <span class="step-pill current"></span>
+            <span class="step-pill"></span>
+            <span class="step-pill"></span>
+            <span class="step-pill"></span>
+          </div>
+          <div class="btn-group">
+            <button id="btnPrev" disabled>上一轮</button>
+            <button id="btnNext" class="primary">下一轮迭代</button>
+            <button id="btnReset">重置</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页我们通过直观的 2D 数据集演示 AdaBoost 的迭代过程。
+    请观察圆圈尺寸——它代表样本当前的权重。
+    每一轮被当前弱分类器切错的样本，权重都会显著增加，促使下一轮弱分类器全力分割这部分困难样本。
+    当多轮迭代完成后，加权投票生成的非线性集成边界能够将所有样本准确分开。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 10个经典 2D 数据点 (x: 0..10, y: 0..10)
+      const SAMPLES = [
+        { id: 0, x: 1.5, y: 7.5, yLabel: 1 },
+        { id: 1, x: 1.5, y: 3.5, yLabel: 1 },
+        { id: 2, x: 2.8, y: 6.0, yLabel: 1 },
+        { id: 3, x: 4.2, y: 8.2, yLabel: -1 },
+        { id: 4, x: 4.8, y: 5.5, yLabel: -1 },
+        { id: 5, x: 5.5, y: 2.8, yLabel: -1 },
+        { id: 6, x: 7.2, y: 7.2, yLabel: 1 },
+        { id: 7, x: 7.8, y: 3.8, yLabel: 1 },
+        { id: 8, x: 8.8, y: 8.5, yLabel: -1 },
+        { id: 9, x: 8.8, y: 1.8, yLabel: -1 }
+      ];
+
+      // 预先精确计算的 4 轮 AdaBoost 桩 (决策桩: 维度, 阈值, 方向)
+      // rule: if feature <= thresh return dir else return -dir
+      const STAGES = [
+        {
+          round: 1,
+          stump: { feat: 'x', thresh: 3.5, dir: 1, desc: "x ≤ 3.5 → +1" },
+          err: 0.200,
+          alpha: 0.693,
+          weights: [0.100, 0.100, 0.100, 0.100, 0.100, 0.100, 0.100, 0.100, 0.100, 0.100]
+        },
+        {
+          round: 2,
+          stump: { feat: 'x', thresh: 8.2, dir: 1, desc: "x ≤ 8.2 → +1" },
+          err: 0.214,
+          alpha: 0.650,
+          weights: [0.063, 0.063, 0.063, 0.063, 0.063, 0.063, 0.250, 0.250, 0.063, 0.063]
+        },
+        {
+          round: 3,
+          stump: { feat: 'y', thresh: 4.8, dir: -1, desc: "y > 4.8 → +1" },
+          err: 0.148,
+          alpha: 0.875,
+          weights: [0.040, 0.160, 0.040, 0.040, 0.040, 0.160, 0.160, 0.160, 0.100, 0.100]
+        },
+        {
+          round: 4,
+          stump: { feat: 'y', thresh: 2.2, dir: 1, desc: "y ≤ 2.2 → -1" },
+          err: 0.000,
+          alpha: 1.350,
+          weights: [0.035, 0.070, 0.035, 0.085, 0.085, 0.070, 0.070, 0.070, 0.240, 0.240]
+        }
+      ];
+
+      let currentRound = 1;
+      const cv = document.getElementById('cv');
+      let fitCtx;
+
+      function evalStump(stump, pt) {
+        const val = stump.feat === 'x' ? pt.x : pt.y;
+        return val <= stump.thresh ? stump.dir : -stump.dir;
+      }
+
+      function ensemblePredict(x, y, roundLimit) {
+        let sum = 0;
+        for (let i = 0; i < roundLimit; i++) {
+          const s = STAGES[i];
+          const pred = evalStump(s.stump, { x, y });
+          sum += s.alpha * pred;
+        }
+        return sum;
+      }
+
+      function draw(ctx) {
+        const w = cv.parentElement.clientWidth;
+        const h = cv.parentElement.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const pad = 48;
+        const gw = w - pad * 2;
+        const gh = h - pad * 2;
+
+        function toScreen(x, y) {
+          return {
+            sx: pad + (x / 10) * gw,
+            sy: pad + ((10 - y) / 10) * gh
+          };
+        }
+
+        // 1. 绘制网格背景预测场（集成边界决策面）
+        const step = 8;
+        const cols = Math.ceil(gw / step);
+        const rows = Math.ceil(gh / step);
+
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const x = (c * step / gw) * 10;
+            const y = 10 - ((r * step / gh) * 10);
+            const score = ensemblePredict(x, y, currentRound);
+            const sx = pad + c * step;
+            const sy = pad + r * step;
+
+            if (score > 0) {
+              ctx.fillStyle = `rgba(201, 79, 45, ${Math.min(0.25, Math.abs(score) * 0.12)})`;
+            } else {
+              ctx.fillStyle = `rgba(36, 95, 166, ${Math.min(0.25, Math.abs(score) * 0.12)})`;
+            }
+            ctx.fillRect(sx, sy, step, step);
+          }
+        }
+
+        // 2. 绘制坐标轴
+        ctx.strokeStyle = "#CBD5E1";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(pad, pad, gw, gh);
+
+        // 3. 绘制当前所有基分类器的分割线
+        for (let i = 0; i < currentRound; i++) {
+          const st = STAGES[i].stump;
+          const isLatest = (i === currentRound - 1);
+          ctx.save();
+          ctx.strokeStyle = isLatest ? "#172A3A" : "rgba(83, 101, 117, 0.4)";
+          ctx.lineWidth = isLatest ? 3 : 1.5;
+          if (isLatest) {
+            ctx.setLineDash([6, 6]);
+          }
+
+          ctx.beginPath();
+          if (st.feat === 'x') {
+            const sx = pad + (st.thresh / 10) * gw;
+            ctx.moveTo(sx, pad);
+            ctx.lineTo(sx, pad + gh);
+          } else {
+            const sy = pad + ((10 - st.thresh) / 10) * gh;
+            ctx.moveTo(pad, sy);
+            ctx.lineTo(pad + gw, sy);
+          }
+          ctx.stroke();
+
+          // 标注分类器标签
+          ctx.fillStyle = isLatest ? "#172A3A" : "rgba(83, 101, 117, 0.7)";
+          ctx.font = "bold 13px 'DIN Alternate', sans-serif";
+          if (st.feat === 'x') {
+            const sx = pad + (st.thresh / 10) * gw;
+            ctx.fillText(`h${i + 1}`, sx + 6, pad + 20);
+          } else {
+            const sy = pad + ((10 - st.thresh) / 10) * gh;
+            ctx.fillText(`h${i + 1}`, pad + 10, sy - 6);
+          }
+          ctx.restore();
+        }
+
+        // 4. 绘制样本点 (半径反映权重)
+        const stageData = STAGES[currentRound - 1];
+        SAMPLES.forEach((pt, idx) => {
+          const { sx, sy } = toScreen(pt.x, pt.y);
+          const weight = stageData.weights[idx];
+          // 基础半径 10, 最大随权重增大
+          const r = Math.max(9, Math.sqrt(weight * 10) * 16);
+
+          // 判断集成是否错分
+          const ensPred = ensemblePredict(pt.x, pt.y, currentRound);
+          const isEnsError = (ensPred > 0 ? 1 : -1) !== pt.yLabel;
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(sx, sy, r, 0, Math.PI * 2);
+          ctx.fillStyle = pt.yLabel === 1 ? "#C94F2D" : "#245FA6";
+          ctx.fill();
+
+          if (isEnsError) {
+            ctx.strokeStyle = "#D32F2F";
+            ctx.lineWidth = 4;
+            ctx.stroke();
+          } else {
+            ctx.strokeStyle = "#FFFFFF";
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          }
+
+          // 内部符号
+          ctx.fillStyle = "#FFFFFF";
+          ctx.font = "bold 15px 'DIN Alternate', sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(pt.yLabel === 1 ? "+" : "−", sx, sy);
+
+          // 权重数值
+          ctx.fillStyle = "#172A3A";
+          ctx.font = "600 13px 'DIN Alternate', sans-serif";
+          ctx.fillText(weight.toFixed(3), sx, sy + r + 13);
+          ctx.restore();
+        });
+      }
+
+      function updateUI() {
+        const s = STAGES[currentRound - 1];
+        document.getElementById('stageTitle').textContent = `第 ${currentRound} 轮：基分类器 h${currentRound} (${s.stump.desc})`;
+        document.getElementById('valRound').textContent = `${currentRound} / 4`;
+        document.getElementById('valErr').textContent = s.err.toFixed(3);
+        document.getElementById('valAlpha').textContent = s.alpha.toFixed(3);
+
+        // 计算集成错误数
+        let misCount = 0;
+        SAMPLES.forEach(pt => {
+          const pred = ensemblePredict(pt.x, pt.y, currentRound);
+          if ((pred > 0 ? 1 : -1) !== pt.yLabel) misCount++;
+        });
+        document.getElementById('valMis').textContent = `${misCount} / 10`;
+
+        // 更新按钮
+        document.getElementById('btnPrev').disabled = currentRound === 1;
+        document.getElementById('btnNext').disabled = currentRound === 4;
+
+        // 更新进度条
+        const pills = document.querySelectorAll('.step-pill');
+        pills.forEach((p, idx) => {
+          p.className = 'step-pill';
+          if (idx + 1 < currentRound) p.classList.add('done');
+          else if (idx + 1 === currentRound) p.classList.add('current');
+        });
+
+        // 渲染弱分类器列表
+        const list = document.getElementById('stumpList');
+        list.innerHTML = '';
+        for (let i = 0; i < currentRound; i++) {
+          const item = document.createElement('div');
+          item.className = `stump-item ${i === currentRound - 1 ? 'active' : ''}`;
+          item.innerHTML = `
+            <div>
+              <span class="stump-tag">h${i + 1}</span>
+              <span style="color: var(--text); margin-left: 8px;">${STAGES[i].stump.desc}</span>
+            </div>
+            <div class="stump-weight">α = ${STAGES[i].alpha.toFixed(3)}</div>
+          `;
+          list.appendChild(item);
+        }
+
+        if (fitCtx) fitCtx.redraw();
+      }
+
+      fitCtx = Deck.autofit(cv, draw);
+
+      document.getElementById('btnNext').addEventListener('click', () => {
+        if (currentRound < 4) {
+          currentRound++;
+          updateUI();
+        }
+      });
+
+      document.getElementById('btnPrev').addEventListener('click', () => {
+        if (currentRound > 1) {
+          currentRound--;
+          updateUI();
+        }
+      });
+
+      document.getElementById('btnReset').addEventListener('click', () => {
+        currentRound = 1;
+        updateUI();
+      });
+
+      Deck.init({ index: 19, total: 26 });
+      updateUI();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,361 @@
+<!--
+构图意图：
+1. 主对象为 Bootstrap 自助抽样机制：原始样本池 D 与由此放回抽样派生的多组子集 D₁、D₂、D₃。
+2. 对象关系通过空间连线与样本重现度呈现：从顶部原始池垂下抽样轨迹，每份子集以不同高亮与重复计数展示，右侧直观归纳约 63.2% 覆盖与 36.8% 袋外率。
+3. 说明文字与数学依据依附在各个抽样流向与概率收敛推导旁边，形成由上至下、由局部到整体的清晰认知线。
+-->
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <script src="assets/lib/katex.min.js"></script>
+  <style>
+    :root {
+      --sample-dot: 38px;
+    }
+    #stage {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+    }
+
+    header {
+      position: absolute;
+      left: 56px;
+      top: 36px;
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      font-weight: var(--weight-bold);
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: var(--lh-copy);
+    }
+
+    /* 主可视化舞台 */
+    .stage-content {
+      position: absolute;
+      left: 56px;
+      top: 140px;
+      width: 1488px;
+      height: 700px;
+      display: grid;
+      grid-template-columns: 880px 520px;
+      gap: 88px;
+    }
+
+    /* 左侧：抽样流程图 */
+    .flow-area {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .source-panel {
+      position: absolute;
+      left: 120px;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .panel-tag {
+      font-size: var(--fs-label);
+      font-weight: var(--weight-medium);
+      color: var(--text);
+    }
+
+    .dot-row {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+    .sample-node {
+      width: var(--sample-dot);
+      height: var(--sample-dot);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-numeric);
+      font-size: var(--fs-body);
+      font-weight: var(--weight-medium);
+      box-sizing: border-box;
+    }
+    .sample-node.source {
+      background: var(--text);
+      color: var(--bg);
+    }
+
+    /* 抽样连线 SVG 区域 */
+    .links-svg {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 880px;
+      height: 650px;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* 派生子集列表 */
+    .subsets-container {
+      position: absolute;
+      left: 0;
+      top: 360px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      z-index: 2;
+    }
+
+    .subset-row {
+      display: grid;
+      grid-template-columns: 104px 1fr 120px;
+      align-items: center;
+      gap: 16px;
+    }
+    .subset-title {
+      font-family: var(--font-sans);
+      font-size: var(--fs-body);
+      font-weight: var(--weight-medium);
+      color: var(--model);
+    }
+    .subset-nodes {
+      display: flex;
+      gap: 14px;
+    }
+    .sample-node.sampled {
+      background: var(--model);
+      color: #fff;
+    }
+    .sample-node.repeated {
+      background: var(--focus);
+      color: #fff;
+      box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus);
+    }
+    .subset-stat {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      font-family: var(--font-numeric);
+    }
+
+    /* 右侧：统计与极限推导卡片 */
+    .math-column {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 40px;
+      padding-top: 24px;
+    }
+
+    .stat-card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .stat-num {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: 1;
+      color: var(--aggregate);
+    }
+    .stat-num.oob {
+      color: var(--uncertain);
+    }
+    .stat-desc {
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--text);
+    }
+
+    .formula-box {
+      border-left: 2px solid var(--line);
+      padding-left: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .formula-line {
+      font-size: var(--fs-body);
+      line-height: var(--lh-tight);
+    }
+    .formula-note {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+  </style>
+</head>
+<body data-page="06" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>Bootstrap 自助采样：有放回抽样构造多样性</h1>
+      <div class="lead">从 m 个样本的集合中独立重复抽取 m 次，使各个基训练集产生可控差异</div>
+    </header>
+
+    <div class="stage-content">
+      <!-- 左侧抽样流程可视化 -->
+      <div class="flow-area">
+        <!-- 原始数据集 -->
+        <div class="source-panel">
+          <div class="panel-tag">原始训练集 D (m = 10)</div>
+          <div class="dot-row" id="sourceRow">
+            <!-- 动态生成的原始 10 个样本点 -->
+          </div>
+        </div>
+
+        <!-- 连线 SVG -->
+        <svg class="links-svg" id="linksSvg"></svg>
+
+        <!-- 派生的 3 组 Bootstrap 集 -->
+        <div class="subsets-container" id="subsetsList">
+          <!-- 3 个子集行由脚本统一渲染保持对齐 -->
+        </div>
+      </div>
+
+      <!-- 右侧极限与统计推导 -->
+      <div class="math-column">
+        <div class="stat-card">
+          <div class="stat-num">~63.2%</div>
+          <div class="stat-desc">子集包含原数据集的不同样本比例（平均覆盖率）</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-num oob">~36.8%</div>
+          <div class="stat-desc">从未被抽中的袋外样本（OOB），可直接用作验证集</div>
+        </div>
+
+        <div class="formula-box">
+          <div class="formula-line" id="mathLimit"></div>
+          <div class="formula-note">单样本单次未入选概率为 1 - 1/m，m 次抽样后趋近于 1/e。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    在 Bagging 中，我们希望基学习器之间存在多样性，但现实中通常只有一个固定的训练集。
+    Bootstrap 自助抽样通过“有放回抽样”完美解决了这个问题：对包含 m 个样本的数据集，每次随机抽取一个样本放入子集并放回，重复抽取 m 次。
+    数学极限证明，当 m 充分大时，每个子集平均覆盖原数据集中 63.2% 的不同样本，而剩余 36.8% 的样本从未入选，称为袋外样本（OOB），后续可直接用于评估泛化性能。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    // 渲染数学公式
+    katex.render("\\lim_{m \\to \\infty} \\left(1 - \\frac{1}{m}\\right)^m = \\frac{1}{e} \\approx 0.368", document.getElementById("mathLimit"), {
+      throwOnError: false
+    });
+
+    // 原始样本集定义
+    const M = 10;
+    const sourceEl = document.getElementById("sourceRow");
+    for (let i = 1; i <= M; i++) {
+      const dot = document.createElement("div");
+      dot.className = "sample-node source";
+      dot.textContent = i;
+      dot.id = `src-${i}`;
+      sourceEl.appendChild(dot);
+    }
+
+    // 预设 3 组确定的伪随机采样（种子保证不变），长度均为 10
+    // 重复样本会以高亮标识体现“有放回”
+    const subsetsData = [
+      { name: "D₁", samples: [1, 2, 2, 4, 5, 7, 7, 8, 9, 10] },
+      { name: "D₂", samples: [1, 3, 3, 3, 5, 6, 8, 9, 10, 10] },
+      { name: "D₃", samples: [2, 4, 4, 5, 6, 6, 7, 8, 9, 1] }
+    ];
+
+    const subsetsContainer = document.getElementById("subsetsList");
+    subsetsData.forEach((sub, sIdx) => {
+      const row = document.createElement("div");
+      row.className = "subset-row";
+
+      const title = document.createElement("div");
+      title.className = "subset-title";
+      title.textContent = `子集 ${sub.name}`;
+
+      const nodes = document.createElement("div");
+      nodes.className = "subset-nodes";
+
+      // 计数重复
+      const counts = {};
+      sub.samples.forEach(v => counts[v] = (counts[v] || 0) + 1);
+
+      const seen = {};
+      sub.samples.forEach((v, idx) => {
+        const d = document.createElement("div");
+        seen[v] = (seen[v] || 0) + 1;
+        d.className = `sample-node ${seen[v] > 1 ? "repeated" : "sampled"}`;
+        d.textContent = v;
+        d.id = `sub-${sIdx}-${idx}`;
+        nodes.appendChild(d);
+      });
+
+      const uniqueCount = Object.keys(counts).length;
+      const stat = document.createElement("div");
+      stat.className = "subset-stat";
+      stat.textContent = `去重 ${uniqueCount}/${M}`;
+
+      row.appendChild(title);
+      row.appendChild(nodes);
+      row.appendChild(stat);
+      subsetsContainer.appendChild(row);
+    });
+
+    // 绘制抽样流向连线（展示有放回抽样的映射关系：每个抽样位置均有来源线，重复抽样用焦点色标出）
+    function drawLinks() {
+      const svg = document.getElementById("linksSvg");
+      svg.innerHTML = "";
+
+      const flowArea = document.querySelector(".flow-area").getBoundingClientRect();
+      const sIdx = 0; // 以 D1 为例完整展示各样本的抽样路径
+
+      subsetsData[sIdx].samples.forEach((val, idx) => {
+        const srcDot = document.getElementById(`src-${val}`);
+        const dstDot = document.getElementById(`sub-${sIdx}-${idx}`);
+        if (!srcDot || !dstDot) return;
+
+        const srcRect = srcDot.getBoundingClientRect();
+        const dstRect = dstDot.getBoundingClientRect();
+
+        const x1 = (srcRect.left + srcRect.right) / 2 - flowArea.left;
+        const y1 = srcRect.bottom - flowArea.top + 2;
+        const x2 = (dstRect.left + dstRect.right) / 2 - flowArea.left;
+        const y2 = dstRect.top - flowArea.top - 2;
+
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        const cy1 = y1 + 100;
+        const cy2 = y2 - 100;
+        path.setAttribute("d", `M ${x1} ${y1} C ${x1} ${cy1}, ${x2} ${cy2}, ${x2} ${y2}`);
+        path.setAttribute("fill", "none");
+
+        const isRepeated = subsetsData[sIdx].samples.filter(x => x === val).length > 1;
+        path.setAttribute("stroke", isRepeated ? "var(--focus)" : "var(--line)");
+        path.setAttribute("stroke-width", isRepeated ? "2" : "1.2");
+        path.setAttribute("stroke-opacity", isRepeated ? "0.85" : "0.35");
+        svg.appendChild(path);
+      });
+    }
+
+    window.addEventListener("DOMContentLoaded", drawLinks);
+    window.addEventListener("load", drawLinks);
+    Deck.onResize(drawLinks);
+  </script>
+</body>
+</html>

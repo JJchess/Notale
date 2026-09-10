@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>缓冲作用的粒子机制</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 44px 56px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid rgba(82, 105, 112, 0.25);
+      padding-bottom: 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .subtitle {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .branch-card {
+      background: var(--paper);
+      border-radius: 8px;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+      display: flex;
+      flex-direction: column;
+      padding: 24px 28px 20px;
+      gap: 16px;
+      position: relative;
+    }
+
+    .branch-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .branch-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .branch-title.acid { color: var(--acid); }
+    .branch-title.base { color: var(--base); }
+
+    .tag-role {
+      font-size: var(--fs-label);
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .tag-role.acid-role { background: rgba(180, 63, 43, 0.12); color: var(--acid); }
+    .tag-role.base-role { background: rgba(35, 98, 154, 0.12); color: var(--base); }
+
+    .formula-bar {
+      font-family: var(--font-num), var(--font-sans);
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 12px 18px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+    }
+
+    .spec-chem {
+      font-weight: 700;
+    }
+    .c-acid { color: var(--acid); }
+    .c-base { color: var(--base); }
+    .c-buf  { color: var(--buffer); }
+
+    .viz-box {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      background: #fafcfc;
+      border: 1px dashed rgba(82, 105, 112, 0.28);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .viz-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .bar-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      background: var(--bg);
+      padding: 14px 18px;
+      border-radius: 6px;
+      align-items: center;
+    }
+
+    .stat-pair {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .stat-lbl {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .stat-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .stat-val .delta {
+      font-size: var(--fs-label);
+      font-weight: 600;
+    }
+    .delta.down { color: var(--acid); }
+    .delta.up { color: var(--base); }
+    .delta.stable { color: var(--buffer); }
+
+    .interactive-dock {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 4px;
+      border-top: 1px solid rgba(82, 105, 112, 0.15);
+    }
+
+    .interactive-dock .ctl-btn {
+      appearance: none;
+      border: 1px solid var(--muted);
+      background: var(--paper);
+      color: var(--text);
+      font-size: var(--fs-label);
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.15s ease;
+    }
+    .interactive-dock .ctl-btn:hover {
+      background: var(--selected);
+      border-color: var(--buffer);
+    }
+    .interactive-dock .ctl-btn.active {
+      background: var(--buffer);
+      color: #fff;
+      border-color: var(--buffer);
+    }
+
+    .status-note {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body data-page="04" data-total="17">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>缓冲作用的粒子机制</h1>
+      </div>
+      <p class="subtitle">CH₃COOH / CH₃COO⁻ 体系的协同承接</p>
+    </header>
+
+    <div class="main-grid">
+      <!-- 支线 1：加入外加酸 -->
+      <section class="branch-card acid-mode" id="cardAcid">
+        <div class="branch-header">
+          <div class="branch-title acid">
+            <span>外加强酸 H⁺</span>
+            <span class="tag-role acid-role">共轭碱承接</span>
+          </div>
+          <div class="status-note" id="acidStateText">承接前：A⁻ 与 HA 保持平衡</div>
+        </div>
+
+        <div class="formula-bar">
+          <span><span class="c-acid">H⁺</span> + <span class="c-base">CH₃COO⁻</span> <span style="margin:0 6px;">→</span> <span class="c-buf">CH₃COOH</span></span>
+          <span style="font-size:var(--fs-label); color:var(--muted);">游离 H⁺ 被转化结合</span>
+        </div>
+
+        <div class="viz-box">
+          <svg class="viz-svg" viewBox="0 0 680 280" id="svgAcid">
+            <!-- 网格底与通道 -->
+            <rect x="30" y="20" width="280" height="240" rx="8" fill="#F2F7F8" stroke="#DCECEF" stroke-width="1.5"/>
+            <text x="170" y="46" text-anchor="middle" font-size="15" fill="#526970" font-weight="600">受扰前体系粒子</text>
+            
+            <rect x="370" y="20" width="280" height="240" rx="8" fill="#F2F7F8" stroke="#DCECEF" stroke-width="1.5"/>
+            <text x="510" y="46" text-anchor="middle" font-size="15" fill="#526970" font-weight="600">承接后稳态</text>
+
+            <!-- 箭头 -->
+            <path d="M 320 140 L 360 140" stroke="#B43F2B" stroke-width="2.5" fill="none" marker-end="url(#arrowAcid)"/>
+            <text x="340" y="125" text-anchor="middle" font-size="13" fill="#B43F2B" font-weight="700">+ 1.0 mmol H⁺</text>
+
+            <defs>
+              <marker id="arrowAcid" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M 1 1 L 7 4 L 1 7 Z" fill="#B43F2B"/>
+              </marker>
+              <marker id="arrowBase" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M 1 1 L 7 4 L 1 7 Z" fill="#23629A"/>
+              </marker>
+            </defs>
+
+            <!-- 左侧粒子群 (HA=5, A-=5) -->
+            <g id="acidLeftGroup">
+              <!-- A- 粒子 5 个 蓝色 -->
+              <g transform="translate(60, 70)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+              <g transform="translate(60, 110)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+              <g transform="translate(60, 150)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+              <g transform="translate(60, 190)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+              <g transform="translate(185, 70)" id="acidTargetA">
+                <rect width="95" height="30" rx="4" fill="#23629A" stroke="#B43F2B" stroke-width="2"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+
+              <!-- HA 粒子 5 个 浅青绿 -->
+              <g transform="translate(185, 110)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+              <g transform="translate(185, 150)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+              <g transform="translate(185, 190)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+            </g>
+
+            <!-- 右侧粒子群 (HA=6, A-=4) -->
+            <g id="acidRightGroup">
+              <!-- A- 剩 4 个 -->
+              <g transform="translate(400, 70)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+              <g transform="translate(400, 110)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+              <g transform="translate(400, 150)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+              <g transform="translate(400, 190)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+
+              <!-- HA 变 6 个 (含新转化生成的 HA) -->
+              <g transform="translate(525, 70)">
+                <rect width="95" height="30" rx="4" fill="#08746E" stroke="#B43F2B" stroke-width="2"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH*</text>
+              </g>
+              <g transform="translate(525, 110)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+              <g transform="translate(525, 150)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+              <g transform="translate(525, 190)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+            </g>
+          </svg>
+        </div>
+
+        <div class="bar-summary">
+          <div class="stat-pair">
+            <span class="stat-lbl">共轭碱消耗量 [A⁻]</span>
+            <span class="stat-val" id="acidAVal">5.00 <span class="delta down" id="acidADelta">-1.00 mmol</span></span>
+          </div>
+          <div class="stat-pair">
+            <span class="stat-lbl">弱酸生成量 [HA]</span>
+            <span class="stat-val" id="acidHAVal">5.00 <span class="delta up" id="acidHADelta">+1.00 mmol</span></span>
+          </div>
+        </div>
+
+        <div class="interactive-dock">
+          <div class="stat-pair">
+            <span class="stat-lbl">溶液 pH 变化响应</span>
+            <span class="stat-val" style="font-size: var(--fs-sec); color: var(--buffer);" id="acidPHText">4.76 → 4.58 (仅微降 0.18)</span>
+          </div>
+          <button class="ctl-btn" id="btnStepAcid" type="button">演练承接反应</button>
+        </div>
+      </section>
+
+      <!-- 支线 2：加入外加碱 -->
+      <section class="branch-card base-mode" id="cardBase">
+        <div class="branch-header">
+          <div class="branch-title base">
+            <span>外加强碱 OH⁻</span>
+            <span class="tag-role base-role">弱酸电离补偿</span>
+          </div>
+          <div class="status-note" id="baseStateText">中和前：HA 与 A⁻ 保持平衡</div>
+        </div>
+
+        <div class="formula-bar">
+          <span><span class="c-base">OH⁻</span> + <span class="c-buf">CH₃COOH</span> <span style="margin:0 6px;">→</span> <span class="c-base">CH₃COO⁻</span> + H₂O</span>
+          <span style="font-size:var(--fs-label); color:var(--muted);">游离 OH⁻ 被质子中和</span>
+        </div>
+
+        <div class="viz-box">
+          <svg class="viz-svg" viewBox="0 0 680 280" id="svgBase">
+            <!-- 网格底与通道 -->
+            <rect x="30" y="20" width="280" height="240" rx="8" fill="#F2F7F8" stroke="#DCECEF" stroke-width="1.5"/>
+            <text x="170" y="46" text-anchor="middle" font-size="15" fill="#526970" font-weight="600">受扰前体系粒子</text>
+            
+            <rect x="370" y="20" width="280" height="240" rx="8" fill="#F2F7F8" stroke="#DCECEF" stroke-width="1.5"/>
+            <text x="510" y="46" text-anchor="middle" font-size="15" fill="#526970" font-weight="600">中和后稳态</text>
+
+            <!-- 箭头 -->
+            <path d="M 320 140 L 360 140" stroke="#23629A" stroke-width="2.5" fill="none" marker-end="url(#arrowBase)"/>
+            <text x="340" y="125" text-anchor="middle" font-size="13" fill="#23629A" font-weight="700">+ 1.0 mmol OH⁻</text>
+
+            <!-- 左侧粒子群 (HA=5, A-=5) -->
+            <g id="baseLeftGroup">
+              <!-- HA 粒子 5 个 绿色 -->
+              <g transform="translate(60, 70)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+              <g transform="translate(60, 110)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+              <g transform="translate(60, 150)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+              <g transform="translate(60, 190)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+              <g transform="translate(185, 70)" id="baseTargetHA">
+                <rect width="95" height="30" rx="4" fill="#08746E" stroke="#23629A" stroke-width="2"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+
+              <!-- A- 粒子 5 个 蓝色 -->
+              <g transform="translate(185, 110)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+              <g transform="translate(185, 150)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+              <g transform="translate(185, 190)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+            </g>
+
+            <!-- 右侧粒子群 (HA=4, A-=6) -->
+            <g id="baseRightGroup">
+              <!-- HA 剩 4 个 -->
+              <g transform="translate(400, 70)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+              <g transform="translate(400, 110)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+              <g transform="translate(400, 150)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+              <g transform="translate(400, 190)">
+                <rect width="95" height="30" rx="4" fill="#08746E" opacity="0.85"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COOH</text>
+              </g>
+
+              <!-- A- 变 6 个 (含新转化生成的 A-) -->
+              <g transform="translate(525, 70)">
+                <rect width="95" height="30" rx="4" fill="#23629A" stroke="#23629A" stroke-width="2"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻*</text>
+              </g>
+              <g transform="translate(525, 110)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+              <g transform="translate(525, 150)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+              <g transform="translate(525, 190)">
+                <rect width="95" height="30" rx="4" fill="#23629A" opacity="0.9"/>
+                <text x="47" y="20" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">CH₃COO⁻</text>
+              </g>
+            </g>
+          </svg>
+        </div>
+
+        <div class="bar-summary">
+          <div class="stat-pair">
+            <span class="stat-lbl">弱酸消耗量 [HA]</span>
+            <span class="stat-val" id="baseHAVal">5.00 <span class="delta down" id="baseHADelta">-1.00 mmol</span></span>
+          </div>
+          <div class="stat-pair">
+            <span class="stat-lbl">共轭碱生成量 [A⁻]</span>
+            <span class="stat-val" id="baseAVal">5.00 <span class="delta up" id="baseADelta">+1.00 mmol</span></span>
+          </div>
+        </div>
+
+        <div class="interactive-dock">
+          <div class="stat-pair">
+            <span class="stat-lbl">溶液 pH 变化响应</span>
+            <span class="stat-val" style="font-size: var(--fs-sec); color: var(--buffer);" id="basePHText">4.76 → 4.94 (仅微升 0.18)</span>
+          </div>
+          <button class="ctl-btn" id="btnStepBase" type="button">演练中和反应</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    缓冲溶液能够抵抗外加酸碱扰动的根源，在于其内部同时存在足够浓度的弱酸和共轭碱两种有效微粒。
+    当我们向溶液中加入少量强酸 H⁺ 时，游离的 H⁺ 并不在溶液中累积，而是立即被体系中富集的共轭碱 CH₃COO⁻ 结合，转化为解离度极低的弱酸分子 CH₃COOH；
+    反之，当我们加入少量强碱 OH⁻ 时，游离的 OH⁻ 会迅速被富集的弱酸分子 CH₃COOH 释放的质子中和生成水，自身转化为共轭碱。
+    外加的酸碱扰动因此被完全转化为弱酸与共轭碱之间的轻微比例波动，溶液中的游离氢离子和氢氧根离子浓度保持几乎恒定。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 4, total: 17 });
+
+      // 交互逻辑
+      const btnAcid = document.getElementById("btnAcid");
+      const btnStepAcid = document.getElementById("btnStepAcid");
+      const acidStateText = document.getElementById("acidStateText");
+      const acidAVal = document.getElementById("acidAVal");
+      const acidHAVal = document.getElementById("acidHAVal");
+      const acidPHText = document.getElementById("acidPHText");
+      const acidRightGroup = document.getElementById("acidRightGroup");
+
+      const btnStepBase = document.getElementById("btnStepBase");
+      const baseStateText = document.getElementById("baseStateText");
+      const baseHAVal = document.getElementById("baseHAVal");
+      const baseAVal = document.getElementById("baseAVal");
+      const basePHText = document.getElementById("basePHText");
+      const baseRightGroup = document.getElementById("baseRightGroup");
+
+      let acidActive = false;
+      let baseActive = false;
+
+      function updateAcid() {
+        if (acidActive) {
+          acidStateText.textContent = "已承接：H⁺ 转化为 CH₃COOH";
+          acidAVal.innerHTML = '4.00 <span class="delta down">-1.00 mmol</span>';
+          acidHAVal.innerHTML = '6.00 <span class="delta up">+1.00 mmol</span>';
+          acidPHText.textContent = "4.76 → 4.58 (ΔpH = -0.18)";
+          acidRightGroup.style.opacity = "1";
+          btnStepAcid.classList.add("active");
+          btnStepAcid.textContent = "重置初始平衡";
+        } else {
+          acidStateText.textContent = "承接前：A⁻ 与 HA 保持平衡";
+          acidAVal.innerHTML = '5.00 <span class="delta stable">初始量</span>';
+          acidHAVal.innerHTML = '5.00 <span class="delta stable">初始量</span>';
+          acidPHText.textContent = "平衡稳态 pH = 4.76";
+          acidRightGroup.style.opacity = "0.2";
+          btnStepAcid.classList.remove("active");
+          btnStepAcid.textContent = "演练承接反应";
+        }
+      }
+
+      function updateBase() {
+        if (baseActive) {
+          baseStateText.textContent = "已中和：OH⁻ 被质子化为 H₂O";
+          baseHAVal.innerHTML = '4.00 <span class="delta down">-1.00 mmol</span>';
+          baseAVal.innerHTML = '6.00 <span class="delta up">+1.00 mmol</span>';
+          basePHText.textContent = "4.76 → 4.94 (ΔpH = +0.18)";
+          baseRightGroup.style.opacity = "1";
+          btnStepBase.classList.add("active");
+          btnStepBase.textContent = "重置初始平衡";
+        } else {
+          baseStateText.textContent = "中和前：HA 与 A⁻ 保持平衡";
+          baseHAVal.innerHTML = '5.00 <span class="delta stable">初始量</span>';
+          baseAVal.innerHTML = '5.00 <span class="delta stable">初始量</span>';
+          basePHText.textContent = "平衡稳态 pH = 4.76";
+          baseRightGroup.style.opacity = "0.2";
+          btnStepBase.classList.remove("active");
+          btnStepBase.textContent = "演练中和反应";
+        }
+      }
+
+      btnStepAcid.addEventListener("click", function () {
+        acidActive = !acidActive;
+        updateAcid();
+      });
+
+      btnStepBase.addEventListener("click", function () {
+        baseActive = !baseActive;
+        updateBase();
+      });
+
+      // 初始化显示
+      acidActive = true;
+      baseActive = true;
+      updateAcid();
+      updateBase();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,346 @@
+<!doctype html>
+<!--
+  构图意图：
+  1. 主对象：多个基学习器的离散预测流在空间中穿行演化，并在汇聚点由弱变强收束为一条决定性预测主干。
+  2. 关系表现：左侧留出克制的标题区，右侧及横贯中下部的确定性生成流线群从分散的浅蓝细线（个体学习器）汇聚至焦点的亮蓝与汇聚束。
+  3. 说明依附：副标题与课程讲次紧贴主标题下缘，图形纯粹呈现“弱学习器汇集成强学习器”的几何形态。
+-->
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成学习——机器学习概论第八讲</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF1;
+      --text: #142630;
+      --muted: #50616B;
+      --model: #17628E;
+      --focus: #B83D0B;
+      --rule: #71828B;
+      --font-sans: "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans CJK SC", sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      contain: layout paint;
+    }
+
+    .cover-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .header-block {
+      position: absolute;
+      z-index: 5;
+      left: 112px;
+      top: 290px;
+      width: 760px;
+      pointer-events: auto;
+    }
+
+    .chapter-tag {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      margin-bottom: 20px;
+      line-height: var(--lh-tight);
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 68px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      margin: 28px 0 0 0;
+      font-size: var(--fs-h2);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+      font-weight: 400;
+    }
+
+    .subtitle strong {
+      color: var(--model);
+      font-weight: 600;
+    }
+
+    .legend-indicator {
+      position: absolute;
+      z-index: 5;
+      right: 112px;
+      bottom: 72px;
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .legend-line {
+      width: 28px;
+      height: 2px;
+      background: var(--model);
+      opacity: 0.45;
+    }
+
+    .legend-line.thick {
+      height: 4px;
+      background: var(--model);
+      opacity: 1;
+    }
+
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="01" data-total="32">
+  <main id="stage">
+    <canvas id="ensemble-canvas" class="cv-fill cover-layer"></canvas>
+
+    <header class="header-block">
+      <div class="chapter-tag">机器学习概论 · 第八讲</div>
+      <h1>集成学习</h1>
+      <p class="subtitle">汇聚多个基学习器，构建<strong>泛化能力更强</strong>的组合模型</p>
+    </header>
+
+    <div class="legend-indicator">
+      <span class="legend-item"><span class="legend-line"></span>基学习器路径</span>
+      <span class="legend-item"><span class="legend-line thick"></span>集成收束主干</span>
+      <span class="legend-item"><span class="legend-dot"></span>决策焦点</span>
+    </div>
+  </main>
+
+  <aside class="notes" hidden>
+    各位同学好，今天我们进入第八讲：集成学习。
+    在前面的课程中，我们已经学习了决策树、支持向量机和逻辑回归等经典单一模型。
+    集成学习的核心思想非常质朴：三个臭皮匠，顶个诸葛亮。
+    它通过将多个弱学习器以特定的策略结合起来，从而显著提升整体预测精度与泛化能力。
+    这一讲我们将详细拆解 Bagging、随机森林、Boosting 以及 Stacking 等核心算法家族。
+  </aside>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const WIDTH = 1600;
+      const HEIGHT = 900;
+      const SEED = "ensemble-learning-lecture-08";
+      const canvas = document.getElementById("ensemble-canvas");
+
+      // 标题安全排斥区域，防止背景细线干扰文字辨识
+      const TITLE_ZONE = { left: 90, right: 860, top: 250, bottom: 490 };
+
+      function insideTitle(x, y, pad = 12) {
+        return (
+          x >= TITLE_ZONE.left - pad &&
+          x <= TITLE_ZONE.right + pad &&
+          y >= TITLE_ZONE.top - pad &&
+          y <= TITLE_ZONE.bottom + pad
+        );
+      }
+
+      function buildModel() {
+        const rng = new Math.seedrandom(SEED);
+        const learners = [];
+        const numLearners = 48;
+
+        // 集成汇聚目标点
+        const convergencePoint = { x: 1380, y: 450 };
+        const focalDecisionPoint = { x: 1470, y: 450 };
+
+        for (let i = 0; i < numLearners; i++) {
+          const startZone = rng();
+          let startX, startY;
+
+          if (startZone < 0.4) {
+            // 上侧平缓扇形流入
+            startX = 820 + rng() * 640;
+            startY = 70 + rng() * 160;
+          } else if (startZone < 0.8) {
+            // 下侧平缓扇形流入
+            startX = 820 + rng() * 640;
+            startY = 680 + rng() * 150;
+          } else {
+            // 中远端
+            startX = 1120 + rng() * 340;
+            startY = 280 + rng() * 340;
+          }
+
+          // 生成带有特征扰动的插值路径，代表不同个体学习器的预测轨迹
+          const points = [];
+          const steps = 48;
+          // 控制点往中线平缓倾斜，消除锐角尖刺
+          const midX = startX * 0.45 + convergencePoint.x * 0.55 + (rng() - 0.5) * 50;
+          const midY = startY * 0.6 + convergencePoint.y * 0.4 + (rng() - 0.5) * 60;
+
+          // 平滑特征摆动参数
+          const phase = rng() * Math.PI * 2;
+          const freq = 1.8 + rng() * 1.5;
+
+          for (let step = 0; step <= steps; step++) {
+            const t = step / steps;
+            const inv = 1 - t;
+            let px = inv * inv * startX + 2 * inv * t * midX + t * t * convergencePoint.x;
+            let py = inv * inv * startY + 2 * inv * t * midY + t * t * convergencePoint.y;
+
+            // 平滑正弦扰动替代高频白噪声，随汇聚收束衰减至 0
+            const amp = Math.sin(t * Math.PI) * (1 - t) * 14;
+            py += Math.sin(t * Math.PI * freq + phase) * amp;
+
+            points.push({ x: px, y: py });
+          }
+
+          learners.push({
+            points,
+            width: 1.2 + rng() * 0.9,
+            alpha: 0.18 + rng() * 0.22
+          });
+        }
+
+        // 最终收束出的强预测主干线（从汇聚点至最终决策点，粗且锐利）
+        const ensembleSpine = [
+          { x: convergencePoint.x, y: convergencePoint.y },
+          { x: convergencePoint.x + 40, y: convergencePoint.y },
+          { x: focalDecisionPoint.x, y: focalDecisionPoint.y }
+        ];
+
+        return {
+          learners,
+          convergencePoint,
+          focalDecisionPoint,
+          ensembleSpine
+        };
+      }
+
+      let model = null;
+
+      function draw(ctx) {
+        if (!model) return;
+
+        ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+        const modelColor = Deck.rgb("model") || [23, 98, 142];
+        const focusColor = Deck.rgb("focus") || [184, 61, 11];
+        const ruleColor = Deck.rgb("rule") || [113, 130, 139];
+
+        // 1. 绘制极淡的坐标参考格网（蓝图材质风格，仅在右侧图区隐现）
+        ctx.strokeStyle = `rgba(${ruleColor.join(",")}, 0.12)`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let x = 860; x <= 1520; x += 110) {
+          ctx.moveTo(x, 100);
+          ctx.lineTo(x, 800);
+        }
+        for (let y = 160; y <= 760; y += 100) {
+          ctx.moveTo(860, y);
+          ctx.lineTo(1520, y);
+        }
+        ctx.stroke();
+
+        // 2. 绘制各个基学习器的预测轨迹
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        for (const learner of model.learners) {
+          ctx.strokeStyle = `rgba(${modelColor.join(",")}, ${learner.alpha})`;
+          ctx.lineWidth = learner.width;
+          ctx.beginPath();
+
+          let drawing = false;
+          for (let i = 0; i < learner.points.length; i++) {
+            const pt = learner.points[i];
+            if (insideTitle(pt.x, pt.y)) {
+              drawing = false;
+              continue;
+            }
+            if (!drawing) {
+              ctx.moveTo(pt.x, pt.y);
+              drawing = true;
+            } else {
+              ctx.lineTo(pt.x, pt.y);
+            }
+          }
+          ctx.stroke();
+
+          // 在部分学习器起点标上轻微小节点
+          const startPt = learner.points[0];
+          if (!insideTitle(startPt.x, startPt.y)) {
+            ctx.fillStyle = `rgba(${modelColor.join(",")}, ${learner.alpha * 0.9})`;
+            ctx.beginPath();
+            ctx.arc(startPt.x, startPt.y, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // 3. 绘制汇聚光晕与收束点
+        const cp = model.convergencePoint;
+        const fp = model.focalDecisionPoint;
+
+        // 汇聚交点轻微环形标记
+        ctx.strokeStyle = `rgba(${modelColor.join(",")}, 0.35)`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(cp.x, cp.y, 14, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = `rgba(${modelColor.join(",")}, 0.8)`;
+        ctx.beginPath();
+        ctx.arc(cp.x, cp.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 4. 集成后的主干决策线（签名动作：4px 主蓝粗线收束）
+        ctx.strokeStyle = `rgb(${modelColor.join(",")})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(model.ensembleSpine[0].x, model.ensembleSpine[0].y);
+        for (let i = 1; i < model.ensembleSpine.length; i++) {
+          ctx.lineTo(model.ensembleSpine[i].x, model.ensembleSpine[i].y);
+        }
+        ctx.stroke();
+
+        // 5. 焦点决定点（唯一点缀焦点的橙色，符合不超过5%且具语义指向）
+        ctx.fillStyle = `rgb(${focusColor.join(",")})`;
+        ctx.beginPath();
+        ctx.arc(fp.x, fp.y, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = `rgba(${focusColor.join(",")}, 0.3)`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(fp.x, fp.y, 11, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      Deck.init({ title: "集成学习——机器学习概论第八讲", keys: false });
+      model = buildModel();
+      Deck.autofit(canvas, draw);
+    })();
+  </script>
+</body>
+</html>

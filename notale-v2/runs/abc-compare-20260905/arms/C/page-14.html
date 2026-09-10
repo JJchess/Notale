@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Boosting：让后续模型修正前序不足</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    #field {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .cover-header {
+      position: relative;
+      z-index: 2;
+      max-width: 900px;
+      margin-top: 36px;
+    }
+
+    .series-tag {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--learner);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    h1.page-title {
+      font-size: var(--fs-h1);
+      line-height: 1.2;
+      font-weight: 800;
+      color: var(--text);
+      margin: 0 0 18px 0;
+      letter-spacing: -0.01em;
+    }
+
+    h1.page-title .accent {
+      color: var(--aggregate);
+    }
+
+    p.lead-statement {
+      font-size: var(--fs-lead);
+      line-height: 1.6;
+      color: var(--muted);
+      max-width: 580px;
+      margin: 0 0 28px 0;
+    }
+
+    .key-mechanisms {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-width: 560px;
+    }
+
+    .mech-card {
+      background: rgba(247, 250, 252, 0.9);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      box-shadow: 0 4px 12px rgba(20, 37, 51, 0.03);
+    }
+
+    .mech-idx {
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: var(--fs-label);
+      color: var(--learner);
+      background: var(--surface-strong);
+      padding: 2px 8px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .mech-content .mech-tit {
+      font-size: var(--fs-body);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .mech-content .mech-desc {
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    .stage-canvas-overlay {
+      position: absolute;
+      right: 72px;
+      bottom: 48px;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: flex-end;
+      pointer-events: none;
+    }
+
+    .metric-panel {
+      background: rgba(247, 250, 252, 0.92);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 22px;
+      box-shadow: 0 6px 18px rgba(20, 37, 51, 0.05);
+      backdrop-filter: blur(8px);
+      width: 320px;
+    }
+
+    .metric-title {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .round-track {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .round-step {
+      flex: 1;
+      height: 6px;
+      background: var(--surface-strong);
+      border-radius: 3px;
+      transition: background var(--dur) var(--ease);
+    }
+
+    .round-step.active {
+      background: var(--aggregate);
+    }
+
+    .round-step.passed {
+      background: var(--learner);
+    }
+
+    .metric-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .stat-box .lbl {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    .stat-box .val {
+      font-family: var(--font-num);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .stat-box.residual .val {
+      color: var(--aggregate);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+      background: rgba(247, 250, 252, 0.85);
+      padding: 10px 18px;
+      border-radius: var(--radius);
+      border: 1px solid var(--surface-strong);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot.learner { background: var(--learner); }
+    .dot.hard { background: var(--aggregate); }
+    .dot.fitted { background: var(--correct); }
+
+    .bottom-note {
+      position: relative;
+      z-index: 2;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .bottom-note .badge {
+      font-family: var(--font-num);
+      font-weight: 700;
+      background: var(--surface-strong);
+      padding: 3px 8px;
+      border-radius: 4px;
+      color: var(--text);
+      font-size: var(--fs-tick);
+    }
+  </style>
+</head>
+<body data-page="14" data-total="27">
+  <div id="stage">
+    <canvas id="field" class="cv-fill no-pan" aria-hidden="true"></canvas>
+
+    <header class="cover-header">
+      <div class="series-tag">第三部分 · 串行迭代</div>
+      <h1 class="page-title">Boosting：让后续模型<br><span class="accent">修正前序不足</span></h1>
+      <p class="lead-statement">
+        不同于 Bagging 的并行独立采样，Boosting 采用前向加法迭代。
+        每一轮弱学习器专门聚焦于先前模型尚未解决的残差与错分样本，逐步收紧误差上界。
+      </p>
+
+      <div class="key-mechanisms">
+        <div class="mech-card">
+          <div class="mech-idx">01</div>
+          <div class="mech-content">
+            <div class="mech-tit">样本权值自适应重构</div>
+            <div class="mech-desc">AdaBoost 根据前一轮各样本的预测误差放大错分权重，迫使下一轮基学习器全力攻坚难分点。</div>
+          </div>
+        </div>
+        <div class="mech-card">
+          <div class="mech-idx">02</div>
+          <div class="mech-content">
+            <div class="mech-tit">函数空间负梯度拟合</div>
+            <div class="mech-desc">梯度提升树（GBDT）在每一轮将弱回归树直接拟合为当前损失函数的负梯度方向，稳步降低整体残差。</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="stage-canvas-overlay">
+      <div class="metric-panel">
+        <div class="metric-title">
+          <span>串行迭代演进 (Round t)</span>
+          <span id="readout-round" style="font-family:var(--font-num); color:var(--learner);">t = 3 / 3</span>
+        </div>
+        <div class="round-track">
+          <div id="step-1" class="round-step passed"></div>
+          <div id="step-2" class="round-step passed"></div>
+          <div id="step-3" class="round-step active"></div>
+        </div>
+        <div class="metric-stats">
+          <div class="stat-box">
+            <div class="lbl">基学习器权重 α_t</div>
+            <div id="readout-alpha" class="val">1.24</div>
+          </div>
+          <div class="stat-box residual">
+            <div class="lbl">未解决残差加权范数</div>
+            <div id="readout-residual" class="val">0.14</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend-row">
+        <div class="legend-item">
+          <span class="dot learner"></span>
+          <span>弱分类切分边界 h_t</span>
+        </div>
+        <div class="legend-item">
+          <span class="dot hard"></span>
+          <span>高加权难样本 (关注焦点)</span>
+        </div>
+        <div class="legend-item">
+          <span class="dot fitted"></span>
+          <span>已收敛样本</span>
+        </div>
+      </div>
+    </div>
+
+    <footer class="bottom-note">
+      <span class="badge">SECTION 03</span>
+      <span>从单棵弱分类树到强学习器：样本权值重分配与残差拟合机制</span>
+    </footer>
+  </div>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("field");
+      let ctx = Deck.fit(canvas);
+      if (!ctx) return;
+
+      const W = 1600;
+      const H = 900;
+      const SEED = 42;
+      const rng = new Math.seedrandom(SEED);
+
+      // Title exclusion zone in logical coordinates
+      const TITLE_ZONE = { x: 0, y: 0, w: 740, h: 680 };
+      const OVERLAY_ZONE = { x: 1140, y: 560, w: 440, h: 320 };
+
+      function isExcluded(x, y) {
+        if (x < TITLE_ZONE.w && y < TITLE_ZONE.h) return true;
+        if (x > OVERLAY_ZONE.x && y > OVERLAY_ZONE.y) return true;
+        return false;
+      }
+
+      // 1. Generate synthetic 2D data points for AdaBoost / Boosting visualization
+      // Two interleaved clusters in the center-right area
+      const POINTS = [];
+      const N = 72;
+      for (let i = 0; i < N; i++) {
+        // cluster center
+        const cls = i % 2 === 0 ? 1 : -1;
+        const cx = cls === 1 ? 920 + (rng() - 0.5) * 280 : 1220 + (rng() - 0.5) * 280;
+        const cy = cls === 1 ? 320 + (rng() - 0.5) * 240 : 440 + (rng() - 0.5) * 260;
+        
+        // Base hard points (near decision boundary)
+        const distToMargin = Math.hypot(cx - 1080, cy - 380);
+        const isHard = distToMargin < 120 && rng() > 0.35;
+
+        POINTS.push({
+          x: cx,
+          y: cy,
+          cls: cls,
+          hard: isHard,
+          // weight evolution across rounds 1, 2, 3
+          w1: 1.0 / N,
+          w2: isHard ? 0.045 : 0.008,
+          w3: isHard ? 0.082 : 0.003
+        });
+      }
+
+      // Three weak learners' decision boundaries (represented as oriented lines/curves)
+      // Round 1: vertical split x = 1040
+      // Round 2: tilted split y - 0.6x = -260
+      // Round 3: focused non-linear curve or secondary slice focusing on the overlap
+      const BOUNDARIES = [
+        {
+          round: 1,
+          color: "rgba(39, 93, 145, 0.45)",
+          draw: (c) => {
+            c.beginPath();
+            c.moveTo(1030, 80);
+            c.lineTo(1050, 780);
+            c.lineWidth = 2.5;
+            c.setLineDash([8, 6]);
+            c.strokeStyle = Deck.token("--learner");
+            c.stroke();
+            c.setLineDash([]);
+          }
+        },
+        {
+          round: 2,
+          color: "rgba(39, 93, 145, 0.65)",
+          draw: (c) => {
+            c.beginPath();
+            c.moveTo(760, 240);
+            c.lineTo(1420, 520);
+            c.lineWidth = 2.5;
+            c.setLineDash([8, 6]);
+            c.strokeStyle = Deck.token("--learner");
+            c.stroke();
+            c.setLineDash([]);
+          }
+        },
+        {
+          round: 3,
+          color: "rgba(182, 59, 36, 0.85)",
+          draw: (c) => {
+            // Ensemble aggregated consensus boundary - curved separating line
+            c.beginPath();
+            c.moveTo(820, 150);
+            c.bezierCurveTo(1010, 260, 1060, 480, 1380, 580);
+            c.lineWidth = 4;
+            c.strokeStyle = Deck.token("--aggregate");
+            c.stroke();
+          }
+        }
+      ];
+
+      // Streamlines / Vector field showing gradient correction direction
+      // Residual force pushes towards misclassified instances
+      const FLOW_LINES = [];
+      for (let i = 0; i < 38; i++) {
+        const sx = 720 + rng() * 780;
+        const sy = 120 + rng() * 660;
+        if (!isExcluded(sx, sy)) {
+          FLOW_LINES.push({
+            x: sx,
+            y: sy,
+            len: 40 + rng() * 60,
+            ang: Math.PI * 0.15 + (rng() - 0.5) * 0.4,
+            speed: 0.6 + rng() * 0.6,
+            phase: rng() * Math.PI * 2
+          });
+        }
+      }
+
+      // Static background canvas buffer
+      const bgCanvas = document.createElement("canvas");
+      let bgCtx = null;
+
+      function renderStaticBg() {
+        bgCanvas.width = W;
+        bgCanvas.height = H;
+        bgCtx = bgCanvas.getContext("2d");
+        if (!bgCtx) return;
+
+        bgCtx.fillStyle = Deck.token("--bg");
+        bgCtx.fillRect(0, 0, W, H);
+
+        // Draw coordinate subtle grid
+        bgCtx.strokeStyle = "rgba(83, 103, 119, 0.08)";
+        bgCtx.lineWidth = 1;
+        const STEP = 50;
+        for (let x = 0; x < W; x += STEP) {
+          bgCtx.beginPath();
+          bgCtx.moveTo(x, 0);
+          bgCtx.lineTo(x, H);
+          bgCtx.stroke();
+        }
+        for (let y = 0; y < H; y += STEP) {
+          bgCtx.beginPath();
+          bgCtx.moveTo(0, y);
+          bgCtx.lineTo(W, y);
+          bgCtx.stroke();
+        }
+
+        // Subdued decision territory shading for t=3 consensus
+        const grad = bgCtx.createRadialGradient(1120, 400, 40, 1120, 400, 450);
+        grad.addColorStop(0, "rgba(39, 93, 145, 0.06)");
+        grad.addColorStop(0.7, "rgba(182, 59, 36, 0.04)");
+        grad.addColorStop(1, "transparent");
+        bgCtx.fillStyle = grad;
+        bgCtx.fillRect(650, 60, 900, 760);
+
+        // Draw boundaries from sequential rounds
+        BOUNDARIES.forEach(b => b.draw(bgCtx));
+
+        // Draw base boundary labels
+        bgCtx.font = "600 13px " + Deck.token("--font-sans");
+        bgCtx.fillStyle = Deck.token("--muted");
+        bgCtx.fillText("h₁(x) 垂直基切分", 1060, 110);
+        bgCtx.fillText("h₂(x) 倾斜再切分", 1350, 480);
+        bgCtx.fillStyle = Deck.token("--aggregate");
+        bgCtx.font = "700 15px " + Deck.token("--font-sans");
+        bgCtx.fillText("H(x) = sign(∑ α_t h_t) 强分类器", 1080, 260);
+      }
+
+      function draw(time) {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, W, H);
+
+        // 1. Static base
+        if (bgCanvas.width > 0) {
+          ctx.drawImage(bgCanvas, 0, 0);
+        }
+
+        // 2. Dynamic residual flow rays (representing error gradient vectors)
+        const tSec = time / 1000;
+        ctx.lineWidth = 1.5;
+        for (const fl of FLOW_LINES) {
+          const osc = Math.sin(tSec * 2 + fl.phase) * 6;
+          const ex = fl.x + Math.cos(fl.ang) * (fl.len + osc);
+          const ey = fl.y + Math.sin(fl.ang) * (fl.len + osc);
+
+          const flowGrad = ctx.createLinearGradient(fl.x, fl.y, ex, ey);
+          flowGrad.addColorStop(0, "rgba(83, 103, 119, 0)");
+          flowGrad.addColorStop(0.5, "rgba(39, 93, 145, 0.22)");
+          flowGrad.addColorStop(1, "rgba(182, 59, 36, 0.45)");
+
+          ctx.strokeStyle = flowGrad;
+          ctx.beginPath();
+          ctx.moveTo(fl.x, fl.y);
+          ctx.lineTo(ex, ey);
+          ctx.stroke();
+
+          // Arrow tip
+          ctx.fillStyle = "rgba(182, 59, 36, 0.5)";
+          ctx.beginPath();
+          ctx.arc(ex, ey, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 3. Draw sample points with AdaBoost weight visualization
+        // Hard points breathe subtly to indicate focal attention in boosting
+        const pulse = Math.sin(tSec * 3) * 1.5;
+
+        for (const pt of POINTS) {
+          const isHard = pt.hard;
+          // Radius proportional to sample weight w_t
+          const baseRadius = isHard ? 12 : 5;
+          const r = Math.max(3, baseRadius + (isHard ? pulse : 0));
+
+          // Color based on class and difficulty
+          let fill, stroke;
+          if (isHard) {
+            fill = "rgba(182, 59, 36, 0.88)";
+            stroke = "#FFFFFF";
+          } else if (pt.cls === 1) {
+            fill = "rgba(46, 106, 69, 0.82)";
+            stroke = "#FFFFFF";
+          } else {
+            fill = "rgba(39, 93, 145, 0.82)";
+            stroke = "#FFFFFF";
+          }
+
+          // Aura for heavily weighted samples
+          if (isHard) {
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, r + 7 + pulse, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(182, 59, 36, 0.18)";
+            ctx.fill();
+          }
+
+          // Sample core
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = fill;
+          ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = stroke;
+          ctx.stroke();
+
+          // Inner cross or mark
+          if (isHard) {
+            ctx.fillStyle = "#FFFFFF";
+            ctx.font = "bold 11px " + Deck.token("--font-sans");
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("!", pt.x, pt.y);
+          }
+        }
+
+        // Reset text alignments
+        ctx.textAlign = "start";
+        ctx.textBaseline = "alphabetic";
+      }
+
+      renderStaticBg();
+
+      const stop = Deck.loop((time) => {
+        draw(time);
+      }, { still: 1600 });
+
+      Deck.onResize(() => {
+        ctx = Deck.fit(canvas);
+        renderStaticBg();
+        draw(1600);
+      });
+
+      window.addEventListener("pagehide", () => {
+        stop();
+      }, { once: true });
+    })();
+  </script>
+</body>
+</html>

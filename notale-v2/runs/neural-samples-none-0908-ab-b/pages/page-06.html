@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+    }
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+      padding: 36px 56px;
+      box-sizing: border-box;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    header {
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1, 34px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 56px;
+      height: 730px;
+    }
+
+    /* 左侧几何空间 */
+    .visual-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .planes-container {
+      display: grid;
+      grid-template-columns: 420px 420px;
+      gap: 40px;
+      height: 420px;
+    }
+    .plane-box {
+      display: flex;
+      flex-direction: column;
+    }
+    .plane-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+    .plane-title {
+      font-size: var(--fs-h2, 22px);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .plane-title sub {
+      font-size: 16px;
+      vertical-align: sub;
+    }
+    .plane-hint {
+      font-size: var(--fs-tick, 13px);
+      color: var(--muted);
+    }
+    .canvas-wrap {
+      position: relative;
+      width: 420px;
+      height: 380px;
+      border: 1.5px solid var(--rule);
+      background: #fafcfb;
+      box-sizing: border-box;
+    }
+    .canvas-wrap canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+
+    /* 探针数值信息 */
+    .probe-bar {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 10px 0;
+      font-size: var(--fs-body, 18px);
+      font-variant-numeric: tabular-nums;
+      border-bottom: 1.5px solid var(--rule);
+    }
+    .probe-tag {
+      font-weight: 700;
+      color: var(--structure);
+    }
+    .probe-val {
+      font-family: monospace;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* 结论判断 */
+    .verdict-box {
+      font-size: var(--fs-lead, 19px);
+      line-height: 1.45;
+      color: var(--text);
+      min-height: 56px;
+    }
+    .verdict-strong {
+      font-weight: 700;
+      color: var(--signal);
+    }
+
+    /* 图例 */
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-label, 15px);
+      color: var(--muted);
+      align-items: center;
+      margin-top: auto;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot-0 { width: 12px; height: 12px; border-radius: 50%; border: 2.5px solid var(--structure); background: #fff; box-sizing: border-box; }
+    .dot-1 { width: 12px; height: 12px; border-radius: 50%; background: var(--signal); }
+
+    /* 右侧控制区 */
+    .control-col {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .section-title {
+      font-size: var(--fs-h2, 22px);
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: var(--text);
+    }
+
+    /* 模式切换按钮 */
+    .view-modes {
+      display: flex;
+      gap: 10px;
+    }
+    .mode-btn {
+      flex: 1;
+      padding: 10px 0;
+      background: transparent;
+      border: 1.5px solid var(--rule);
+      color: var(--text);
+      font-size: var(--fs-label, 15px);
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s ease;
+    }
+    .mode-btn.active {
+      background: var(--structure);
+      border-color: var(--structure);
+      color: #fff;
+    }
+
+    /* 网络状态解构 */
+    .calc-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      border-top: 1.5px solid var(--rule);
+      border-bottom: 1.5px solid var(--rule);
+      padding: 16px 0;
+    }
+    .node-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .node-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-body, 18px);
+      font-weight: 600;
+    }
+    .node-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .node-pill {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .pill-h1 { background: var(--structure); }
+    .pill-h2 { background: #3b7360; }
+    .pill-out { background: var(--signal); }
+
+    .node-formula {
+      font-size: var(--fs-sec, 16px);
+      color: var(--muted);
+      font-family: monospace;
+    }
+    .node-math {
+      font-size: var(--fs-body, 18px);
+      color: var(--structure);
+      font-weight: 700;
+      font-family: monospace;
+    }
+
+    /* 样本跳转按钮 */
+    .presets-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .preset-btn {
+      flex: 1;
+      padding: 10px 0;
+      background: transparent;
+      border: 1.5px solid var(--rule);
+      font-size: var(--fs-label, 15px);
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+    }
+    .preset-btn:hover {
+      background: #e4ebe7;
+    }
+
+    .bottom-insight {
+      font-size: var(--fs-body, 18px);
+      color: var(--text);
+      line-height: 1.45;
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>两层网络决策边界：非线性激活如何折叠空间并解开 XOR</h1>
+    </header>
+
+    <div class="layout">
+      <!-- 左侧：两块协同响应的几何平面 -->
+      <div class="visual-col">
+        <div class="planes-container">
+          <!-- 原始输入空间 -->
+          <div class="plane-box">
+            <div class="plane-header">
+              <span class="plane-title">输入空间 (x<sub>1</sub>, x<sub>2</sub>)</span>
+              <span class="plane-hint">拖拽探针探查局部响应</span>
+            </div>
+            <div class="canvas-wrap">
+              <canvas id="cv-input" class="no-pan"></canvas>
+            </div>
+          </div>
+
+          <!-- 隐藏层特征空间 -->
+          <div class="plane-box">
+            <div class="plane-header">
+              <span class="plane-title">隐藏特征空间 (h<sub>1</sub>, h<sub>2</sub>)</span>
+              <span class="plane-hint">ReLU 激活映射坐标</span>
+            </div>
+            <div class="canvas-wrap">
+              <canvas id="cv-hidden" class="no-pan"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- 探针状态栏 -->
+        <div class="probe-bar">
+          <span class="probe-tag">探针状态</span>
+          <span>输入: <span id="val-x" class="probe-val">(0.50, 0.50)</span></span>
+          <span>隐藏特征: <span id="val-h" class="probe-val">[0.00, 0.00]</span></span>
+          <span>网络输出: <span id="val-y" class="probe-val">0.00</span> (<span id="val-class" style="font-weight:700;">类别 0</span>)</span>
+        </div>
+
+        <!-- 结论判断 -->
+        <div class="verdict-box" id="verdict-text">
+          在输入空间中，单条直线无法将对角的四个 XOR 样本切分；隐藏层将 (0,1) 与 (1,0) 折叠合并，使其在特征空间中变为<span class="verdict-strong">严格线性可分</span>。
+        </div>
+
+        <div class="legend-row">
+          <div class="legend-item"><span class="dot-0"></span> 类别 0</div>
+          <div class="legend-item"><span class="dot-1"></span> 类别 1</div>
+          <div class="legend-item" style="margin-left:auto;">深墨绿/浅墨绿：神经元切分面；朱红直线：输出决策边界</div>
+        </div>
+      </div>
+
+      <!-- 右侧：结构视点解构与数值计算 -->
+      <div class="control-col">
+        <div>
+          <div class="section-title">观察视角</div>
+          <div class="view-modes">
+            <button class="mode-btn active" data-mode="full">完整网络决策</button>
+            <button class="mode-btn" data-mode="h1">神经元 h₁ 边界</button>
+            <button class="mode-btn" data-mode="h2">神经元 h₂ 边界</button>
+            <button class="mode-btn" data-mode="linear">若无激活函数</button>
+          </div>
+        </div>
+
+        <div class="calc-list">
+          <!-- 隐藏节点 1 -->
+          <div class="node-row">
+            <div class="node-header">
+              <span class="node-title"><span class="node-pill pill-h1"></span>隐藏神经元 h₁</span>
+              <span id="stat-h1" class="node-math">z₁ = 0.50 → h₁ = 0.50</span>
+            </div>
+            <div class="node-formula">z₁ = 1·x₁ + 1·x₂ - 0.5 | h₁ = max(0, z₁)</div>
+          </div>
+
+          <!-- 隐藏节点 2 -->
+          <div class="node-row">
+            <div class="node-header">
+              <span class="node-title"><span class="node-pill pill-h2"></span>隐藏神经元 h₂</span>
+              <span id="stat-h2" class="node-math">z₂ = -0.50 → h₂ = 0.00</span>
+            </div>
+            <div class="node-formula">z₂ = 1·x₁ + 1·x₂ - 1.5 | h₂ = max(0, z₂)</div>
+          </div>
+
+          <!-- 输出层节点 -->
+          <div class="node-row">
+            <div class="node-header">
+              <span class="node-title"><span class="node-pill pill-out"></span>输出神经元 ŷ</span>
+              <span id="stat-out" class="node-math">ŷ = 0.50</span>
+            </div>
+            <div class="node-formula">ŷ = 1·h₁ - 2·h₂ | 判定: ŷ &gt; 0.5 预测为类 1</div>
+          </div>
+        </div>
+
+        <!-- 快速跳转探针至样本点 -->
+        <div>
+          <div class="section-title" style="font-size: var(--fs-label, 15px); font-weight:600; margin-bottom:8px;">放置探针至 XOR 样本：</div>
+          <div class="presets-row">
+            <button class="preset-btn" data-pt="0,0">(0, 0) 类0</button>
+            <button class="preset-btn" data-pt="0,1">(0, 1) 类1</button>
+            <button class="preset-btn" data-pt="1,0">(1, 0) 类1</button>
+            <button class="preset-btn" data-pt="1,1">(1, 1) 类0</button>
+          </div>
+        </div>
+
+        <div class="bottom-insight">
+          <strong>几何洞见：</strong>单个线性神经元只能划出一条超平面。若不经非线性激活，多层线性变换复合依然是线性变换，无论叠加多少层都无法划分异或。ReLU 将负半区压平到零，使几何空间发生折叠，从而解开线性不可分。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    本页通过经典异或（XOR）问题解释两层神经网络与非线性激活函数的本质作用。
+    左侧展示了两个协同空间：左边是输入空间 (x1, x2)，右边是经第一层神经元映射后的隐藏特征空间 (h1, h2)。
+    学生可以直接在左侧拖拽探针，实时观察该点在两个空间中的坐标移动，以及右侧前向传播公式的实际数值变化。
+    点击右上方的不同观察视角，可以逐一拆解第一个神经元、第二个神经元各自的分割带，或者切换到“无激活函数”状态，直观验证多层线性叠加为何彻底失效。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    const STATE = {
+      probe: { x1: 0.5, x2: 0.5 },
+      mode: 'full',
+      samples: [
+        { x1: 0, x2: 0, label: 0, name: '(0,0)' },
+        { x1: 1, x2: 0, label: 1, name: '(1,0)' },
+        { x1: 0, x2: 1, label: 1, name: '(0,1)' },
+        { x1: 1, x2: 1, label: 0, name: '(1,1)' }
+      ]
+    };
+
+    function forward(x1, x2, mode = STATE.mode) {
+      if (mode === 'linear') {
+        const z1 = 1 * x1 + 1 * x2 - 0.5;
+        const z2 = 1 * x1 + 1 * x2 - 1.5;
+        const yHat = 1 * z1 - 1 * z2;
+        const pred = (1 * x1 + 1 * x2 - 1.0) > 0 ? 1 : 0;
+        return { z1, h1: z1, z2, h2: z2, yHat, pred };
+      }
+
+      const z1 = 1 * x1 + 1 * x2 - 0.5;
+      const h1 = Math.max(0, z1);
+
+      const z2 = 1 * x1 + 1 * x2 - 1.5;
+      const h2 = Math.max(0, z2);
+
+      const yHat = 1 * h1 - 2 * h2;
+      const pred = yHat > 0.5 ? 1 : 0;
+
+      return { z1, h1, z2, h2, yHat, pred };
+    }
+
+    const cvInput = document.getElementById('cv-input');
+    const cvHidden = document.getElementById('cv-hidden');
+
+    const valX = document.getElementById('val-x');
+    const valH = document.getElementById('val-h');
+    const valY = document.getElementById('val-y');
+    const valClass = document.getElementById('val-class');
+    const statH1 = document.getElementById('stat-h1');
+    const statH2 = document.getElementById('stat-h2');
+    const statOut = document.getElementById('stat-out');
+    const verdictText = document.getElementById('verdict-text');
+
+    const IN_BOUNDS = { minX: -0.3, maxX: 1.3, minY: -0.3, maxY: 1.3 };
+    const HID_BOUNDS = { minX: -0.2, maxX: 1.8, minY: -0.2, maxY: 1.8 };
+
+    function toScreen(x, y, bounds, width, height) {
+      const sx = ((x - bounds.minX) / (bounds.maxX - bounds.minX)) * width;
+      const sy = height - ((y - bounds.minY) / (bounds.maxY - bounds.minY)) * height;
+      return { sx, sy };
+    }
+
+    function toWorld(sx, sy, bounds, width, height) {
+      const x = bounds.minX + (sx / width) * (bounds.maxX - bounds.minX);
+      const y = bounds.minY + ((height - sy) / height) * (bounds.maxY - bounds.minY);
+      return { x, y };
+    }
+
+    function drawInputPlane() {
+      const ctx = Deck.fit(cvInput);
+      const w = cvInput.offsetWidth;
+      const h = cvInput.offsetHeight;
+      ctx.clearRect(0, 0, w, h);
+
+      // 决策区域着色
+      const step = 4;
+      const imgData = ctx.createImageData(w, h);
+      const data = imgData.data;
+
+      for (let py = 0; py < h; py += step) {
+        for (let px = 0; px < w; px += step) {
+          const pt = toWorld(px + step/2, py + step/2, IN_BOUNDS, w, h);
+          const res = forward(pt.x, pt.y);
+
+          let active = false;
+          if (STATE.mode === 'full') {
+            active = res.pred === 1;
+          } else if (STATE.mode === 'h1') {
+            active = res.h1 > 0;
+          } else if (STATE.mode === 'h2') {
+            active = res.h2 > 0;
+          } else if (STATE.mode === 'linear') {
+            active = res.pred === 1;
+          }
+
+          const r = active ? 212 : 241;
+          const g = active ? 56 : 244;
+          const b = active ? 17 : 242;
+          const alpha = active ? 32 : 0;
+
+          for (let dy = 0; dy < step && py + dy < h; dy++) {
+            for (let dx = 0; dx < step && px + dx < w; dx++) {
+              const idx = ((py + dy) * w + (px + dx)) * 4;
+              data[idx] = r;
+              data[idx + 1] = g;
+              data[idx + 2] = b;
+              data[idx + 3] = alpha;
+            }
+          }
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+
+      // 坐标轴
+      ctx.strokeStyle = '#BAC4BF';
+      ctx.lineWidth = 1;
+      const o = toScreen(0, 0, IN_BOUNDS, w, h);
+      ctx.beginPath();
+      ctx.moveTo(o.sx, 0); ctx.lineTo(o.sx, h);
+      ctx.moveTo(0, o.sy); ctx.lineTo(w, o.sy);
+      ctx.stroke();
+
+      ctx.fillStyle = '#5B6661';
+      ctx.font = '13px var(--font-sans)';
+      ctx.textAlign = 'center';
+      const p0 = toScreen(0, 0, IN_BOUNDS, w, h);
+      const p1 = toScreen(1, 0, IN_BOUNDS, w, h);
+      const py1 = toScreen(0, 1, IN_BOUNDS, w, h);
+      ctx.fillText('0', p0.sx - 8, p0.sy + 14);
+      ctx.fillText('1', p1.sx, p1.sy + 14);
+      ctx.fillText('1', py1.sx - 12, py1.sy + 4);
+      ctx.fillText('x₁', w - 16, p0.sy - 8);
+      ctx.fillText('x₂', p0.sx + 14, 16);
+
+      // 神经元分割线
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#1C4436';
+      let l1a = toScreen(-0.3, 0.8, IN_BOUNDS, w, h);
+      let l1b = toScreen(0.8, -0.3, IN_BOUNDS, w, h);
+      ctx.beginPath();
+      ctx.moveTo(l1a.sx, l1a.sy);
+      ctx.lineTo(l1b.sx, l1b.sy);
+      ctx.stroke();
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#3b7360';
+      let l2a = toScreen(0.2, 1.3, IN_BOUNDS, w, h);
+      let l2b = toScreen(1.3, 0.2, IN_BOUNDS, w, h);
+      ctx.beginPath();
+      ctx.moveTo(l2a.sx, l2a.sy);
+      ctx.lineTo(l2b.sx, l2b.sy);
+      ctx.stroke();
+
+      // 四个样本点
+      STATE.samples.forEach(s => {
+        const pt = toScreen(s.x1, s.x2, IN_BOUNDS, w, h);
+        ctx.beginPath();
+        ctx.arc(pt.sx, pt.sy, 6, 0, Math.PI * 2);
+        if (s.label === 1) {
+          ctx.fillStyle = '#D43811';
+          ctx.fill();
+        } else {
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.strokeStyle = '#1C4436';
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+        }
+        ctx.fillStyle = '#151A18';
+        ctx.font = '13px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(s.name, pt.sx + 9, pt.sy - 8);
+      });
+
+      // 探针
+      const probePt = toScreen(STATE.probe.x1, STATE.probe.x2, IN_BOUNDS, w, h);
+      ctx.beginPath();
+      ctx.arc(probePt.sx, probePt.sy, 8, 0, Math.PI * 2);
+      ctx.fillStyle = '#151A18';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = 'rgba(21, 26, 24, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(probePt.sx, 0); ctx.lineTo(probePt.sx, h);
+      ctx.moveTo(0, probePt.sy); ctx.lineTo(w, probePt.sy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    function drawHiddenPlane() {
+      const ctx = Deck.fit(cvHidden);
+      const w = cvHidden.offsetWidth;
+      const h = cvHidden.offsetHeight;
+      ctx.clearRect(0, 0, w, h);
+
+      // 决策区域
+      const step = 4;
+      const imgData = ctx.createImageData(w, h);
+      const data = imgData.data;
+
+      for (let py = 0; py < h; py += step) {
+        for (let px = 0; px < w; px += step) {
+          const pt = toWorld(px + step/2, py + step/2, HID_BOUNDS, w, h);
+          const yHat = 1 * pt.x - 2 * pt.y;
+          const active = yHat > 0.5;
+
+          const r = active ? 212 : 241;
+          const g = active ? 56 : 244;
+          const b = active ? 17 : 242;
+          const alpha = active ? 32 : 0;
+
+          for (let dy = 0; dy < step && py + dy < h; dy++) {
+            for (let dx = 0; dx < step && px + dx < w; dx++) {
+              const idx = ((py + dy) * w + (px + dx)) * 4;
+              data[idx] = r;
+              data[idx + 1] = g;
+              data[idx + 2] = b;
+              data[idx + 3] = alpha;
+            }
+          }
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+
+      // 坐标轴
+      ctx.strokeStyle = '#BAC4BF';
+      ctx.lineWidth = 1;
+      const o = toScreen(0, 0, HID_BOUNDS, w, h);
+      ctx.beginPath();
+      ctx.moveTo(o.sx, 0); ctx.lineTo(o.sx, h);
+      ctx.moveTo(0, o.sy); ctx.lineTo(w, o.sy);
+      ctx.stroke();
+
+      ctx.fillStyle = '#5B6661';
+      ctx.font = '13px var(--font-sans)';
+      ctx.textAlign = 'center';
+      const p0 = toScreen(0, 0, HID_BOUNDS, w, h);
+      const p1 = toScreen(1, 0, HID_BOUNDS, w, h);
+      const py1 = toScreen(0, 1, HID_BOUNDS, w, h);
+      ctx.fillText('0', p0.sx - 8, p0.sy + 14);
+      ctx.fillText('1', p1.sx, p1.sy + 14);
+      ctx.fillText('1', py1.sx - 12, py1.sy + 4);
+      ctx.fillText('h₁', w - 16, p0.sy - 8);
+      ctx.fillText('h₂', p0.sx + 14, 16);
+
+      // 输出层分割直线: h1 - 2*h2 = 0.5
+      if (STATE.mode !== 'linear') {
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = '#D43811';
+        const ptL1 = toScreen(0.5, 0, HID_BOUNDS, w, h);
+        const ptL2 = toScreen(1.7, 0.6, HID_BOUNDS, w, h);
+        ctx.beginPath();
+        ctx.moveTo(ptL1.sx, ptL1.sy);
+        ctx.lineTo(ptL2.sx, ptL2.sy);
+        ctx.stroke();
+
+        ctx.fillStyle = '#D43811';
+        ctx.font = '13px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('h₁ - 2h₂ = 0.5', ptL2.sx - 110, ptL2.sy - 10);
+      }
+
+      // 映射后的样本点
+      STATE.samples.forEach(s => {
+        const res = forward(s.x1, s.x2, STATE.mode);
+        const pt = toScreen(res.h1, res.h2, HID_BOUNDS, w, h);
+
+        ctx.beginPath();
+        ctx.arc(pt.sx, pt.sy, 6, 0, Math.PI * 2);
+        if (s.label === 1) {
+          ctx.fillStyle = '#D43811';
+          ctx.fill();
+        } else {
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.strokeStyle = '#1C4436';
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+        }
+      });
+
+      const pt00 = toScreen(0, 0, HID_BOUNDS, w, h);
+      const ptCol = toScreen(0.5, 0, HID_BOUNDS, w, h);
+      const pt11 = toScreen(1.5, 0.5, HID_BOUNDS, w, h);
+
+      if (STATE.mode !== 'linear') {
+        ctx.fillStyle = '#151A18';
+        ctx.font = '13px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('(0,0)', pt00.sx + 8, pt00.sy - 8);
+        ctx.fillText('(0,1) & (1,0) 重合', ptCol.sx - 20, ptCol.sy + 20);
+        ctx.fillText('(1,1)', pt11.sx + 8, pt11.sy - 8);
+      } else {
+        STATE.samples.forEach(s => {
+          const res = forward(s.x1, s.x2, 'linear');
+          const pt = toScreen(res.h1, res.h2, HID_BOUNDS, w, h);
+          ctx.fillStyle = '#151A18';
+          ctx.font = '13px monospace';
+          ctx.textAlign = 'left';
+          ctx.fillText(s.name, pt.sx + 8, pt.sy - 8);
+        });
+      }
+
+      // 探针
+      const curRes = forward(STATE.probe.x1, STATE.probe.x2);
+      const probePt = toScreen(curRes.h1, curRes.h2, HID_BOUNDS, w, h);
+      ctx.beginPath();
+      ctx.arc(probePt.sx, probePt.sy, 8, 0, Math.PI * 2);
+      ctx.fillStyle = '#151A18';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = 'rgba(21, 26, 24, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(probePt.sx, 0); ctx.lineTo(probePt.sx, h);
+      ctx.moveTo(0, probePt.sy); ctx.lineTo(w, probePt.sy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    function updateUI() {
+      const { x1, x2 } = STATE.probe;
+      const res = forward(x1, x2);
+
+      valX.textContent = `(${x1.toFixed(2)}, ${x2.toFixed(2)})`;
+      valH.textContent = `[${res.h1.toFixed(2)}, ${res.h2.toFixed(2)}]`;
+      valY.textContent = res.yHat.toFixed(2);
+      valClass.textContent = res.pred === 1 ? '类别 1' : '类别 0';
+      valClass.style.color = res.pred === 1 ? 'var(--signal)' : 'var(--structure)';
+
+      statH1.textContent = `z₁ = ${res.z1.toFixed(2)} → h₁ = ${res.h1.toFixed(2)}`;
+      statH2.textContent = `z₂ = ${res.z2.toFixed(2)} → h₂ = ${res.h2.toFixed(2)}`;
+      statOut.textContent = `ŷ = ${res.yHat.toFixed(2)}`;
+
+      if (STATE.mode === 'full') {
+        verdictText.innerHTML = `在输入空间中，单条直线无法将对角的四个 XOR 样本切分；隐藏层将 (0,1) 与 (1,0) 折叠合并，使其在特征空间中变为<span class="verdict-strong">严格线性可分</span>。`;
+      } else if (STATE.mode === 'h1') {
+        verdictText.innerHTML = `神经元 h₁ 构建第一道阈值：切除左下角 (0,0)；此时 (0,1)、(1,0)、(1,1) 全部被激活。`;
+      } else if (STATE.mode === 'h2') {
+        verdictText.innerHTML = `神经元 h₂ 构建第二道阈值：仅当输入和大于 1.5 时激活，捕获右上角 (1,1)。`;
+      } else if (STATE.mode === 'linear') {
+        verdictText.innerHTML = `<span class="verdict-strong">若去掉非线性激活：</span>两层线性权重相乘仍为线性变换，等价于单层感知机，在几何上无法划分异或。`;
+      }
+
+      drawInputPlane();
+      drawHiddenPlane();
+    }
+
+    let dragging = false;
+
+    function handlePointer(e) {
+      const pt = Deck.pt(cvInput, e);
+      const w = cvInput.offsetWidth;
+      const h = cvInput.offsetHeight;
+      const world = toWorld(pt.x, pt.y, IN_BOUNDS, w, h);
+
+      STATE.probe.x1 = Deck.clamp(world.x, -0.2, 1.2);
+      STATE.probe.x2 = Deck.clamp(world.y, -0.2, 1.2);
+      updateUI();
+    }
+
+    cvInput.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      cvInput.setPointerCapture(e.pointerId);
+      handlePointer(e);
+    });
+
+    cvInput.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      handlePointer(e);
+    });
+
+    cvInput.addEventListener('pointerup', (e) => {
+      dragging = false;
+      try { cvInput.releasePointerCapture(e.pointerId); } catch(err) {}
+    });
+
+    cvInput.addEventListener('pointercancel', (e) => {
+      dragging = false;
+    });
+
+    const modeBtns = document.querySelectorAll('.mode-btn');
+    modeBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        modeBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        STATE.mode = btn.dataset.mode;
+        updateUI();
+      });
+    });
+
+    const presetBtns = document.querySelectorAll('.preset-btn');
+    presetBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const [x, y] = btn.dataset.pt.split(',').map(Number);
+        STATE.probe.x1 = x;
+        STATE.probe.x2 = y;
+        updateUI();
+      });
+    });
+
+    Deck.onResize(() => {
+      updateUI();
+    });
+
+    updateUI();
+  </script>
+</body>
+</html>

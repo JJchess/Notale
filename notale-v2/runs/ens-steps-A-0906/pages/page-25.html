@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 14px;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      line-height: var(--lh-tight);
+      font-weight: var(--weight-bold);
+      letter-spacing: -0.02em;
+    }
+    .header p {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+    .score-banner {
+      display: flex;
+      gap: 20px;
+      font-family: var(--font-numeric);
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .score-banner strong {
+      font-size: var(--fs-h2);
+      color: var(--aggregate);
+      margin-left: 4px;
+    }
+
+    /* Layout */
+    .arena {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 32px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* Scenario List */
+    .scenario-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .scenario-card {
+      background: rgba(255,255,255,0.45);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 14px 16px;
+      cursor: pointer;
+      text-align: left;
+      transition: all var(--duration-fast) var(--ease-join);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      color: inherit;
+    }
+    .scenario-card:hover {
+      background: rgba(255,255,255,0.75);
+    }
+    .scenario-card.active {
+      border-color: var(--aggregate);
+      background: #fff;
+      box-shadow: 0 0 0 2px var(--aggregate);
+    }
+    .scenario-card.resolved {
+      opacity: 0.9;
+      background: rgba(235, 242, 237, 0.7);
+    }
+    .sc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sc-title {
+      font-size: var(--fs-sec);
+      font-weight: var(--weight-bold);
+      color: var(--text);
+    }
+    .sc-status {
+      font-size: var(--fs-tick);
+      font-family: var(--font-numeric);
+      color: var(--muted);
+    }
+    .sc-status.matched {
+      color: #1a6b41;
+      font-weight: var(--weight-medium);
+    }
+    .sc-status.mismatched {
+      color: var(--focus);
+      font-weight: var(--weight-medium);
+    }
+    .sc-tags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tag {
+      font-size: var(--fs-tick);
+      padding: 2px 6px;
+      border-radius: 2px;
+      background: rgba(116, 129, 124, 0.18);
+      color: var(--muted);
+      font-family: var(--font-numeric);
+    }
+    .tag.alert {
+      background: rgba(198, 75, 46, 0.15);
+      color: var(--focus);
+      font-weight: var(--weight-medium);
+    }
+
+    /* Simulation & Workbench */
+    .bench-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: rgba(255, 255, 255, 0.35);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 20px 24px;
+      min-width: 0;
+    }
+
+    .bench-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .bench-desc {
+      max-width: 720px;
+    }
+    .bench-desc h2 {
+      margin: 0;
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      font-weight: var(--weight-bold);
+      color: var(--aggregate);
+    }
+    .bench-desc p {
+      margin: 6px 0 0 0;
+      font-size: var(--fs-body);
+      line-height: var(--lh-copy);
+      color: var(--text);
+    }
+
+    /* Strategy selector buttons */
+    .strategy-pills {
+      display: flex;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .strat-btn {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.6);
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: var(--fs-body);
+      font-family: var(--font-display);
+      font-weight: var(--weight-medium);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      transition: all var(--duration-fast);
+    }
+    .strat-btn span {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-sans);
+      font-weight: var(--weight-regular);
+    }
+    .strat-btn:hover {
+      background: #fff;
+    }
+    .strat-btn.selected {
+      border-color: var(--aggregate);
+      background: #fff;
+      box-shadow: 0 0 0 2px var(--aggregate);
+      color: var(--aggregate);
+    }
+
+    /* Simulation stage */
+    .sim-panel {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 20px;
+      background: rgba(255,255,255,0.7);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 16px;
+      flex: 1;
+      min-height: 0;
+      align-items: stretch;
+    }
+
+    .canvas-wrap {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 250px;
+      background: #FAFBF9;
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    #simCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .telemetry {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .metric-card {
+      background: rgba(220, 226, 222, 0.4);
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      padding: 10px 14px;
+    }
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .metric-val {
+      font-family: var(--font-numeric);
+      font-size: 24px;
+      font-weight: var(--weight-bold);
+      color: var(--text);
+      margin-top: 4px;
+    }
+    .metric-val.bad {
+      color: var(--focus);
+    }
+    .metric-val.good {
+      color: #1a6b41;
+    }
+
+    .verdict-box {
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      padding: 10px 14px;
+      background: rgba(23, 62, 80, 0.06);
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+    }
+    .verdict-box.error {
+      border-color: var(--focus);
+      background: rgba(198, 75, 46, 0.08);
+    }
+    .verdict-box.success {
+      border-color: #1a6b41;
+      background: rgba(26, 107, 65, 0.08);
+    }
+    .verdict-title {
+      font-weight: var(--weight-bold);
+      margin-bottom: 3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-apply {
+      align-self: flex-start;
+      background: var(--aggregate);
+      color: #fff;
+      border: none;
+      padding: 10px 22px;
+      border-radius: 3px;
+      font-size: var(--fs-body);
+      font-weight: var(--weight-medium);
+      cursor: pointer;
+      transition: opacity var(--duration-fast);
+    }
+    .btn-apply:hover {
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body data-page="25" data-total="26">
+  <div id="stage">
+    <header class="header">
+      <div>
+        <h1>策略匹配沙盒：为场景选择集成方案</h1>
+        <p>方差过大、偏差欠拟合、含噪标签与算力约束，决定了模型的选择边界。</p>
+      </div>
+      <div class="score-banner">
+        <span>场景完成度: <strong id="progressText">0 / 4</strong></span>
+      </div>
+    </header>
+
+    <main class="arena">
+      <!-- Scenario Selector -->
+      <section class="scenario-col" id="scenarioList" aria-label="待评估场景列表"></section>
+
+      <!-- Workbench -->
+      <section class="bench-col">
+        <div class="bench-top">
+          <div class="bench-desc">
+            <h2 id="scName">场景加载中...</h2>
+            <p id="scDetail"></p>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:var(--fs-label); font-weight:var(--weight-medium); color:var(--muted);">选择应试策略</div>
+          <div class="strategy-pills" id="stratGroup">
+            <button type="button" class="strat-btn" data-strat="bagging">
+              Bagging / 随机森林
+              <span>并行抽样 · 主攻降方差</span>
+            </button>
+            <button type="button" class="strat-btn" data-strat="boosting">
+              Boosting / GBDT
+              <span>残差串行 · 强力纠偏差</span>
+            </button>
+            <button type="button" class="strat-btn" data-strat="stacking">
+              Stacking 异构集成
+              <span>折外融合 · 跨架构互补</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="sim-panel">
+          <div class="canvas-wrap">
+            <canvas id="simCanvas" class="cv-fill"></canvas>
+          </div>
+          <div class="telemetry">
+            <div class="metrics-grid">
+              <div class="metric-card">
+                <div class="metric-label">泛化误差 <span>(Test Loss)</span></div>
+                <div class="metric-val" id="lossVal">--</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">训练耗时 <span>(Wall Time)</span></div>
+                <div class="metric-val" id="timeVal">--</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">偏差程度 <span>(Bias)</span></div>
+                <div class="metric-val" id="biasVal">--</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">方差敏感 <span>(Variance)</span></div>
+                <div class="metric-val" id="varVal">--</div>
+              </div>
+            </div>
+
+            <div class="verdict-box" id="verdictBox">
+              <div class="verdict-title" id="verdictTitle">状态推演</div>
+              <div id="verdictMsg">请为当前场景指定集成策略，检验泛化性能与指标平衡。</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    这一页是一个综合策略推演沙盒。我们设置了工业界最典型的四种极端约束：高维稀疏但树深过深导致的严重高方差、弱学习器拟合不足的欠拟合场景、存在大量误标翻转的含噪数据、以及多核心但严苛延迟约束的生产集群。
+    学生可以为每个场景切换不同的集成方案并观察实时的边界收敛和损失反馈。比如在含噪场景下，串行聚焦错误样本的 Boosting 会给噪声极高权重导致过拟合崩溃，而 Bagging 依靠平均多数表决对离群点稳健得多。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const SCENARIOS = [
+        {
+          id: "high-variance",
+          title: "深决策树与高方差样本",
+          tags: ["方差过大", "单模型不稳定"],
+          desc: "特征维度高且树深过大，单模型对扰动极敏感，训练过拟合但验证集剧烈抖动。",
+          optimal: "bagging",
+          dataDist: "wiggle",
+          outcomes: {
+            bagging: {
+              loss: "0.14", time: "1.2s", bias: "低", variance: "大幅平抑",
+              status: "success", title: "匹配成功：Bagging 显著平抑方差",
+              msg: "子采样平滑了过拟合毛刺，集成后决策分界平滑且泛化误差最小。"
+            },
+            boosting: {
+              loss: "0.38", time: "3.4s", bias: "极低", variance: "持续放大",
+              status: "error", title: "匹配不佳：Boosting 容易放大局部扰动",
+              msg: "基学习器已严重过拟合，残差迭代进一步拟合边缘波动，方差无法缩减。"
+            },
+            stacking: {
+              loss: "0.22", time: "4.8s", bias: "低", variance: "中度平抑",
+              status: "neutral", title: "可用但次优：训练成本过高",
+              msg: "折外预测能够约束过拟合，但在同质高方差基模型下，调优与计算成本显著高于随机森林。"
+            }
+          }
+        },
+        {
+          id: "underfitting",
+          title: "浅层基模型严重欠拟合",
+          tags: ["高偏差", "单模型容量不足"],
+          desc: "基分类器能力偏弱（如单层决策桩），无法刻画非线性流形，训练与测试误差均偏高。",
+          optimal: "boosting",
+          dataDist: "moons",
+          outcomes: {
+            bagging: {
+              loss: "0.45", time: "0.9s", bias: "居高不下", variance: "极低",
+              status: "error", title: "匹配失败：Bagging 无法降低模型偏差",
+              msg: "弱分类器平均仍欠拟合，Bagging 无法凭空提升系统表征容量。"
+            },
+            boosting: {
+              loss: "0.08", time: "2.1s", bias: "强力降低", variance: "可控",
+              status: "success", title: "匹配成功：Boosting 逐轮纠偏提升容量",
+              msg: "后续基学习器聚焦错分样本，逐步刻画出非线性边界。"
+            },
+            stacking: {
+              loss: "0.31", time: "3.9s", bias: "轻度降低", variance: "低",
+              status: "neutral", title: "效果平平：依赖更强单模基底",
+              msg: "元学习器仅能做线性和浅层加权，难以凭空弥补底层所有模型都表达不出的特征空间。"
+            }
+          }
+        },
+        {
+          id: "noisy-labels",
+          title: "含噪翻转与离群伪标签",
+          tags: ["30% 翻转噪声", "离群值"],
+          desc: "生产采集的数据中存在约 30% 的错误标注和极端离群点。算法需抵御伪样本诱导的结构扭曲。",
+          optimal: "bagging",
+          dataDist: "noisy",
+          outcomes: {
+            bagging: {
+              loss: "0.19", time: "1.1s", bias: "低", variance: "稳健抑制",
+              status: "success", title: "匹配成功：随机抽样稀释伪标签干扰",
+              msg: "折外子集稀释噪声，多数表决抵消了翻转对主决策面的扭曲。"
+            },
+            boosting: {
+              loss: "0.62", time: "3.2s", bias: "被噪声绑架", variance: "剧烈发散",
+              status: "error", title: "严重过拟合：Boosting 被噪声误导",
+              msg: "Boosting 会给误标样本过大权重，导致后续树全在迁就噪声。"
+            },
+            stacking: {
+              loss: "0.34", time: "4.5s", bias: "中", variance: "中",
+              status: "neutral", title: "鲁棒性受元模型设计影响",
+              msg: "若未做稳健损失函数修正，第一层折外预测仍会向元学习器传递被污染的概率信号。"
+            }
+          }
+        },
+        {
+          id: "compute-limit",
+          title: "多核并行但延迟严格受限",
+          tags: ["多核集群", "严苛时延上限"],
+          desc: "线上准实时重训系统，具备 16 物理核，要求 2 秒内完成全量训练与推演部署。",
+          optimal: "bagging",
+          dataDist: "clusters",
+          outcomes: {
+            bagging: {
+              loss: "0.12", time: "0.4s", bias: "平衡", variance: "低",
+              status: "success", title: "匹配成功：天生并行，耗时逼近理论极值",
+              msg: "子树完全独立，16 进程并行跑满吞吐，符合时延要求。"
+            },
+            boosting: {
+              loss: "0.11", time: "3.6s", bias: "低", variance: "极低",
+              status: "error", title: "超时违约：串行依赖锁死多核加速",
+              msg: "第 t 棵树必须等第 t-1 棵输出残差，串行锁死无法利用多核。"
+            },
+            stacking: {
+              loss: "0.10", time: "5.1s", bias: "极低", variance: "极低",
+              status: "error", title: "开销过大：K折交叉验证开销倍增",
+              msg: "折外数据切分与二级元模型带来多轮数据穿梭，在严格延迟限制下不可行。"
+            }
+          }
+        }
+      ];
+
+      // State
+      let curScenarioIdx = 0;
+      let selectedStrat = "bagging";
+      const scenarioProgress = new Map(); // id -> boolean
+
+      // Elements
+      const scListEl = document.getElementById("scenarioList");
+      const scNameEl = document.getElementById("scName");
+      const scDetailEl = document.getElementById("scDetail");
+      const stratGroupEl = document.getElementById("stratGroup");
+      const progressTextEl = document.getElementById("progressText");
+      const lossValEl = document.getElementById("lossVal");
+      const timeValEl = document.getElementById("timeVal");
+      const biasValEl = document.getElementById("biasVal");
+      const varValEl = document.getElementById("varVal");
+      const verdictBoxEl = document.getElementById("verdictBox");
+      const verdictTitleEl = document.getElementById("verdictTitle");
+      const verdictMsgEl = document.getElementById("verdictMsg");
+      const canvas = document.getElementById("simCanvas");
+      let ctx = null;
+
+      function renderScenarioList() {
+        scListEl.innerHTML = "";
+        SCENARIOS.forEach((sc, idx) => {
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className = "scenario-card" + (idx === curScenarioIdx ? " active" : "");
+          const isResolved = scenarioProgress.get(sc.id);
+          if (isResolved) card.classList.add("resolved");
+
+          const tagsHtml = sc.tags.map(t => `<span class="tag ${t.includes('高') || t.includes('噪') || t.includes('限') ? 'alert' : ''}">${t}</span>`).join("");
+          const statusText = isResolved === true ? '<span class="sc-status matched">已掌握</span>' 
+                            : (isResolved === false ? '<span class="sc-status mismatched">策略失配</span>' : '<span class="sc-status">待测</span>');
+
+          card.innerHTML = `
+            <div class="sc-header">
+              <span class="sc-title">${sc.title}</span>
+              ${statusText}
+            </div>
+            <div class="sc-tags">${tagsHtml}</div>
+          `;
+          card.onclick = () => {
+            curScenarioIdx = idx;
+            renderAll();
+          };
+          scListEl.appendChild(card);
+        });
+
+        // Update progress count
+        let count = 0;
+        SCENARIOS.forEach(sc => {
+          if (scenarioProgress.get(sc.id) === true) count++;
+        });
+        progressTextEl.textContent = `${count} / ${SCENARIOS.length}`;
+      }
+
+      function updateStrategyButtons() {
+        stratGroupEl.querySelectorAll(".strat-btn").forEach(btn => {
+          const strat = btn.dataset.strat;
+          btn.classList.toggle("selected", strat === selectedStrat);
+        });
+      }
+
+      function drawSimulation(sc, strat) {
+        if (!ctx) return;
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        // Draw coordinate grid
+        ctx.strokeStyle = "#E2E7E4";
+        ctx.lineWidth = 1;
+        for (let x = 30; x < w; x += 30) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+        }
+        for (let y = 30; y < h; y += 30) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+        }
+
+        // Fixed pseudo-random points per scenario
+        const points = [];
+        const seedPoints = (dist) => {
+          if (dist === "wiggle" || dist === "clusters") {
+            for (let i = 0; i < 40; i++) {
+              const x = 50 + (i * 9.5) % (w - 100);
+              const baseCenterY = h / 2 + Math.sin(x * 0.02) * 50;
+              const offset = ((i * 17) % 55) - 27;
+              const y = baseCenterY + offset;
+              const label = offset > 0 ? 1 : -1;
+              points.push({ x, y, label });
+            }
+          } else if (dist === "moons") {
+            for (let i = 0; i < 40; i++) {
+              const theta = (i / 20) * Math.PI;
+              const r = 80;
+              if (i < 20) {
+                points.push({ x: w / 2 - 40 + Math.cos(theta) * r, y: h / 2 - 20 - Math.sin(theta) * r, label: 1 });
+              } else {
+                points.push({ x: w / 2 + 40 - Math.cos(theta) * r, y: h / 2 + 20 + Math.sin(theta) * r, label: -1 });
+              }
+            }
+          } else { // noisy
+            for (let i = 0; i < 40; i++) {
+              const x = 40 + (i * 10) % (w - 80);
+              const y = 30 + ((i * 23) % (h - 60));
+              let label = x > w / 2 ? 1 : -1;
+              if (i % 3 === 0) label = -label; // 33% noise
+              points.push({ x, y, label, isNoise: i % 3 === 0 });
+            }
+          }
+        };
+        seedPoints(sc.dataDist);
+
+        // Draw decision boundary based on strat & scenario
+        ctx.beginPath();
+        ctx.lineWidth = 3.5;
+        if (sc.optimal === strat) {
+          ctx.strokeStyle = "#1a6b41"; // success
+        } else if (strat === "boosting" && sc.id === "noisy-labels") {
+          ctx.strokeStyle = "#C64B2E"; // disastrous wiggle
+        } else {
+          ctx.strokeStyle = "#2E5F78"; // standard
+        }
+
+        if (strat === "bagging") {
+          // Smooth stable boundary
+          ctx.moveTo(30, h / 2);
+          for (let x = 30; x <= w - 30; x += 15) {
+            const y = h / 2 + Math.sin(x * 0.015) * 35;
+            ctx.lineTo(x, y);
+          }
+        } else if (strat === "boosting") {
+          if (sc.id === "underfitting") {
+            // Adaptive well-fitted boundary
+            ctx.moveTo(40, h / 2 - 30);
+            for (let x = 40; x <= w - 40; x += 10) {
+              const y = h / 2 + Math.sin(x * 0.025) * 55 + Math.cos(x * 0.01) * 15;
+              ctx.lineTo(x, y);
+            }
+          } else if (sc.id === "noisy-labels") {
+            // Overfitted erratic boundary wrapping every noisy point
+            ctx.moveTo(30, 40);
+            for (let x = 30; x <= w - 30; x += 8) {
+              const spike = Math.sin(x * 0.15) * 70;
+              ctx.lineTo(x, h / 2 + spike);
+            }
+          } else {
+            // Standard progressive boundary
+            ctx.moveTo(30, h / 2 - 10);
+            for (let x = 30; x <= w - 30; x += 12) {
+              const y = h / 2 + Math.sin(x * 0.02) * 45;
+              ctx.lineTo(x, y);
+            }
+          }
+        } else { // stacking
+          ctx.moveTo(30, h / 2);
+          for (let x = 30; x <= w - 30; x += 12) {
+            const y = h / 2 + Math.sin(x * 0.018) * 38;
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+
+        // Draw points
+        points.forEach(pt => {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 5.5, 0, Math.PI * 2);
+          if (pt.label === 1) {
+            ctx.fillStyle = pt.isNoise ? "#C64B2E" : "#2E5F78";
+          } else {
+            ctx.fillStyle = pt.isNoise ? "#2E5F78" : "#8B6941";
+          }
+          ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = "#fff";
+          ctx.stroke();
+
+          // Noise indicator
+          if (pt.isNoise) {
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 8.5, 0, Math.PI * 2);
+            ctx.strokeStyle = "#C64B2E";
+            ctx.setLineDash([2, 2]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+        });
+
+        // Legend label inside canvas
+        ctx.fillStyle = "rgba(23, 34, 31, 0.65)";
+        ctx.font = "12px sans-serif";
+        ctx.fillText("决策分界面流形", 14, 22);
+      }
+
+      function renderAll() {
+        const sc = SCENARIOS[curScenarioIdx];
+        scNameEl.textContent = sc.title;
+        scDetailEl.textContent = sc.desc;
+
+        updateStrategyButtons();
+
+        const outcome = sc.outcomes[selectedStrat];
+        lossValEl.textContent = outcome.loss;
+        timeValEl.textContent = outcome.time;
+        biasValEl.textContent = outcome.bias;
+        varValEl.textContent = outcome.variance;
+
+        // Metric coloring
+        lossValEl.className = "metric-val " + (parseFloat(outcome.loss) > 0.35 ? "bad" : "good");
+        timeValEl.className = "metric-val " + (parseFloat(outcome.time) > 3.0 ? "bad" : "good");
+
+        verdictTitleEl.textContent = outcome.title;
+        verdictMsgEl.textContent = outcome.msg;
+        verdictBoxEl.className = `verdict-box ${outcome.status}`;
+
+        // Track progress
+        const isMatched = (sc.optimal === selectedStrat);
+        scenarioProgress.set(sc.id, isMatched);
+
+        renderScenarioList();
+        drawSimulation(sc, selectedStrat);
+      }
+
+      // Event Listeners
+      stratGroupEl.addEventListener("click", e => {
+        const btn = e.target.closest(".strat-btn");
+        if (!btn) return;
+        selectedStrat = btn.dataset.strat;
+        renderAll();
+      });
+
+      window.addEventListener("load", () => {
+        ctx = Deck.fit(canvas);
+        renderAll();
+      });
+
+      Deck.onResize(() => {
+        if (canvas) {
+          ctx = Deck.fit(canvas);
+          const sc = SCENARIOS[curScenarioIdx];
+          drawSimulation(sc, selectedStrat);
+        }
+      });
+
+      Deck.init({ index: 25, total: 26 });
+    })();
+  </script>
+</body>
+</html>

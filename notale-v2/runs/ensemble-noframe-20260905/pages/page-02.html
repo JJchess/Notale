@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F4F7FB;
+      --surface: #E8EEF5;
+      --text: #13243A;
+      --muted: #53667C;
+      --model: #2457A6;
+      --aggregate: #0F766E;
+      --focus: #C94B00;
+      --font-display: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: "DIN Alternate", "DIN", -apple-system, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-size: var(--fs-h1);
+      font-family: var(--font-display);
+      font-weight: 700;
+      margin: 0 0 8px 0;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    main {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 36px;
+    }
+
+    .panel {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 16px;
+      border-bottom: 2px solid rgba(19, 36, 58, 0.08);
+      padding-bottom: 12px;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-family: var(--font-display);
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .panel-tag {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .panel-single .panel-title {
+      color: var(--model);
+    }
+
+    .panel-ensemble .panel-title {
+      color: var(--aggregate);
+    }
+
+    .diagram-wrap {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      background: #FFFFFF;
+      border-radius: var(--radius);
+      box-shadow: 0 1px 3px rgba(19, 36, 58, 0.05);
+      overflow: hidden;
+    }
+
+    .diagram-wrap canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .panel-footer {
+      margin-top: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.6);
+      padding: 12px 18px;
+      border-radius: var(--radius);
+    }
+
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .metric-val {
+      font-family: var(--font-numeric);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+    }
+
+    .metric-val.blue {
+      color: var(--model);
+    }
+
+    .metric-val.green {
+      color: var(--aggregate);
+    }
+
+    .metric-val.focus {
+      color: var(--focus);
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .dot.c1 { background: #2457A6; }
+    .dot.c2 { background: #C94B00; }
+  </style>
+</head>
+<body data-page="02" data-total="29">
+  <div id="stage">
+    <header>
+      <h1>从单模型到模型团队：组合多个预测器改善泛化</h1>
+      <p class="lead">单模型易受训练扰动产生锯齿边界；聚合多个弱相关模型可平滑过拟合毛刺。</p>
+    </header>
+
+    <main>
+      <!-- 左栏：单模型 -->
+      <section class="panel panel-single min0">
+        <div class="panel-header">
+          <h2 class="panel-title">单一预测器 (基学习器)</h2>
+          <span class="panel-tag">单决策树 / 易过拟合</span>
+        </div>
+        <div class="diagram-wrap">
+          <canvas id="cv-single" class="cv-fill"></canvas>
+        </div>
+        <div class="panel-footer">
+          <div>
+            <span class="metric-label">测试集错误率</span>
+            <span class="metric-val focus" style="margin-left:8px;">18.4%</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-item"><span class="dot c1"></span>类别 A</span>
+            <span class="legend-item"><span class="dot c2"></span>类别 B</span>
+            <span style="border-left:1px solid #ccc; height:12px; margin:0 2px;"></span>
+            <span>突兀分支切分</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：集成团队 -->
+      <section class="panel panel-ensemble min0">
+        <div class="panel-header">
+          <h2 class="panel-title">集成模型团队 (投票聚合)</h2>
+          <span class="panel-tag">5 棵差异化子树多数表决</span>
+        </div>
+        <div class="diagram-wrap">
+          <canvas id="cv-ensemble" class="cv-fill"></canvas>
+        </div>
+        <div class="panel-footer">
+          <div>
+            <span class="metric-label">测试集错误率</span>
+            <span class="metric-val green" style="margin-left:8px;">6.2%</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-item" style="color:var(--aggregate); font-weight:600;">平滑聚合边界</span>
+            <span style="border-left:1px solid #ccc; height:12px; margin:0 2px;"></span>
+            <span>抵消局部毛刺</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看，左边是一个单独训练的深层决策树模型在二维分类任务上的决策边界。因为单棵树极力拟合样本中的局部噪点，划分边界呈现出许多孤立的锯齿和狭长的飞地，在未见过的测试集上错误率高达 18.4%。
+    右边则是用集成思想组建的模型团队：由 5 棵通过不同采样训练出的子树进行多数投票聚合。单棵树各自犯下的偶然错误被其他树抵消，决策边界变得平滑且稳定，测试错误率大幅降至 6.2%。这就是集成学习提升泛化能力的最直观体现。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      // 固定种子生成合成数据
+      function createRng(seed) {
+        return function() {
+          seed = (seed * 9301 + 49297) % 233280;
+          return seed / 233280;
+        };
+      }
+      const rng = createRng(42);
+
+      // 生成两类二维数据点（月牙状或双环分布）
+      const points = [];
+      const N = 40;
+      for (let i = 0; i < N; i++) {
+        // 类别 1: 偏上方凹形弧
+        const t = rng() * Math.PI;
+        const r = 0.35 + (rng() - 0.5) * 0.15;
+        const x = 0.5 + Math.cos(t) * r;
+        const y = 0.55 + Math.sin(t) * r * 0.8;
+        points.push({ x, y, label: 0 });
+      }
+      for (let i = 0; i < N; i++) {
+        // 类别 2: 偏下方凹形弧
+        const t = rng() * Math.PI;
+        const r = 0.35 + (rng() - 0.5) * 0.15;
+        const x = 0.5 - Math.cos(t) * r;
+        const y = 0.45 - Math.sin(t) * r * 0.8;
+        points.push({ x, y, label: 1 });
+      }
+      // 加入几个难分噪点
+      points.push({ x: 0.48, y: 0.58, label: 1 });
+      points.push({ x: 0.52, y: 0.42, label: 0 });
+      points.push({ x: 0.72, y: 0.45, label: 0 });
+
+      // 单模型：硬切割带有过拟合狭长飞地的决策函数
+      function predictSingle(x, y) {
+        // 孤立过拟合岛屿
+        if (x > 0.45 && x < 0.51 && y > 0.54 && y < 0.63) return 1;
+        if (x > 0.50 && x < 0.55 && y > 0.38 && y < 0.46) return 0;
+        if (x > 0.68 && x < 0.76 && y > 0.41 && y < 0.49) return 0;
+        
+        // 阶梯状锯齿决策树边界
+        const d1 = Math.hypot(x - 0.5, y - 0.6);
+        const d2 = Math.hypot(x - 0.5, y - 0.4);
+        let base = (y - 0.5) + (x - 0.5) * 0.4;
+        
+        // 阶梯化 (轴对齐正交切分)
+        const stepX = Math.floor(x * 12) / 12;
+        const stepY = Math.floor(y * 12) / 12;
+        return (stepY + (stepX - 0.5) * 0.5 > 0.5) ? 0 : 1;
+      }
+
+      // 5 个子树模型
+      function treePredictor(k) {
+        return function(x, y) {
+          const shift = (k - 2) * 0.04;
+          const rot = (k - 2) * 0.15;
+          const nx = (x - 0.5) * Math.cos(rot) - (y - 0.5) * Math.sin(rot) + 0.5 + shift;
+          const ny = (x - 0.5) * Math.sin(rot) + (y - 0.5) * Math.cos(rot) + 0.5;
+          
+          const stepX = Math.floor(nx * 8) / 8;
+          const stepY = Math.floor(ny * 8) / 8;
+          return (stepY + (stepX - 0.5) * 0.5 > 0.5) ? 0 : 1;
+        };
+      }
+      const ensembleTrees = [0, 1, 2, 3, 4].map(treePredictor);
+
+      function predictEnsemble(x, y) {
+        let votes = 0;
+        for (let i = 0; i < 5; i++) {
+          votes += ensembleTrees[i](x, y);
+        }
+        return votes >= 3 ? 1 : 0;
+      }
+
+      // 绘制分类网格与决策背景
+      function drawField(ctx, w, h, predictFn, isEnsemble) {
+        ctx.clearRect(0, 0, w, h);
+        
+        // 低分辨率采样网格
+        const res = 60;
+        const cw = w / res;
+        const ch = h / res;
+        
+        for (let ix = 0; ix < res; ix++) {
+          for (let iy = 0; iy < res; iy++) {
+            const x = (ix + 0.5) / res;
+            const y = 1 - (iy + 0.5) / res; // y 轴向上
+            const p = predictFn(x, y);
+            
+            // 底色填充
+            if (p === 0) {
+              ctx.fillStyle = isEnsemble ? 'rgba(36, 87, 166, 0.09)' : 'rgba(36, 87, 166, 0.13)';
+            } else {
+              ctx.fillStyle = isEnsemble ? 'rgba(15, 118, 110, 0.11)' : 'rgba(201, 75, 0, 0.12)';
+            }
+            ctx.fillRect(ix * cw, iy * ch, cw + 0.5, ch + 0.5);
+          }
+        }
+
+        // 决策边界描线 (Marching squares or simple edge detection)
+        ctx.save();
+        ctx.lineWidth = isEnsemble ? 3.5 : 2;
+        ctx.strokeStyle = isEnsemble ? '#0F766E' : '#2457A6';
+        ctx.setLineDash(isEnsemble ? [] : [4, 4]);
+
+        for (let ix = 0; ix < res - 1; ix++) {
+          for (let iy = 0; iy < res - 1; iy++) {
+            const x = (ix + 0.5) / res;
+            const y = 1 - (iy + 0.5) / res;
+            const pCurrent = predictFn(x, y);
+            const pRight = predictFn(x + 1/res, y);
+            const pDown = predictFn(x, y - 1/res);
+
+            if (pCurrent !== pRight) {
+              ctx.beginPath();
+              ctx.moveTo((ix + 1) * cw, iy * ch);
+              ctx.lineTo((ix + 1) * cw, (iy + 1) * ch);
+              ctx.stroke();
+            }
+            if (pCurrent !== pDown) {
+              ctx.beginPath();
+              ctx.moveTo(ix * cw, (iy + 1) * ch);
+              ctx.lineTo((ix + 1) * cw, (iy + 1) * ch);
+              ctx.stroke();
+            }
+          }
+        }
+        ctx.restore();
+
+        // 绘制样本散点
+        points.forEach(pt => {
+          const px = pt.x * w;
+          const py = (1 - pt.y) * h;
+          ctx.beginPath();
+          ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+          if (pt.label === 0) {
+            ctx.fillStyle = '#2457A6';
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.stroke();
+          } else {
+            ctx.fillStyle = '#C94B00';
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.stroke();
+          }
+        });
+
+        // 绘制坐标与特征空间说明
+        ctx.save();
+        ctx.font = "14px 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif";
+        ctx.fillStyle = "#53667C";
+        ctx.textAlign = "left";
+        ctx.fillText("特征空间 (X₁, X₂)", 20, 30);
+        ctx.restore();
+      }
+
+      const cvSingle = document.getElementById('cv-single');
+      const cvEnsemble = document.getElementById('cv-ensemble');
+
+      function renderAll() {
+        if (cvSingle && cvSingle.width) {
+          const ctxS = cvSingle.getContext('2d');
+          drawField(ctxS, cvSingle.width, cvSingle.height, predictSingle, false);
+        }
+        if (cvEnsemble && cvEnsemble.width) {
+          const ctxE = cvEnsemble.getContext('2d');
+          drawField(ctxE, cvEnsemble.width, cvEnsemble.height, predictEnsemble, true);
+        }
+      }
+
+      Deck.autofit(cvSingle, (ctx) => {
+        drawField(ctx, cvSingle.width, cvSingle.height, predictSingle, false);
+      });
+
+      Deck.autofit(cvEnsemble, (ctx) => {
+        drawField(ctx, cvEnsemble.width, cvEnsemble.height, predictEnsemble, true);
+      });
+
+      Deck.init({ index: 2, total: 29 });
+    })();
+  </script>
+</body>
+</html>

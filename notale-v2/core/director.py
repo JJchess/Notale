@@ -3,11 +3,12 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import hashlib
 import uuid
 from pathlib import Path
-from . import gallery, llm, media, planner, skills, tools, font_library, theme as theme_io
+from . import llm, media, planner, skills, tools, font_library, style_catalog, theme as theme_io
 
-TRIES, PICKS = 3, 5
+TRIES = 3
 
 
 def _write_spec(path):
@@ -59,40 +60,36 @@ def _result(history, call, output):
     history.append({'type': 'function_call_output', 'call_id': call.call_id, 'output': output})
 
 
-def pick(run, rows, effort, history=None):
+def pick(run, effort, history=None, workflow_root=None):
     history = history if history is not None else []
-    if not rows:
-        raise ValueError('画廊没有可用参照')
-    out, count = run.root / 'style-picks.tsv', min(PICKS, len(rows))
+    out = run.root / 'style-picks.tsv'
+    index, images = style_catalog.selection_inputs()
     prompt = run.prompt('style-pick', query=run.query, audience=run.audience, scenario=run.scenario or '（没写）',
-                        n=len(rows), count=count, index=gallery.index_text(rows), out_path=out)
-    by = {r['id']: r for r in rows}
+                        request=run.style or '按本次交流目的选择', index=index, out_path=out,
+                        theme_bans=skills.theme_slop_block(workflow_root or skills.WORKFLOWS))
+    by = {r[0]: r for r in style_catalog.rows()}
+    content = [{'type': 'input_text', 'text': prompt}] + images
     for attempt in range(TRIES):
-        r, calls = _call(prompt if attempt == 0 else None, _write_spec(out), effort, run, 'style-pick', history)
+        r, calls = _call(content if attempt == 0 else None, _write_spec(out), effort, run, 'style-pick', history)
         text, bad = _one_write(r, out)
         ids = [line.split('\t')[0].strip() for line in (text or '').splitlines() if line.strip()]
-        if len(ids) != count or len(set(ids)) != len(ids) or any(i not in by for i in ids):
-            bad.append(f'需要 {count} 个真实且唯一的画廊 ID')
+        if not ids or len(set(ids)) != len(ids) or any(i not in by for i in ids):
+            bad.append('需要真实且唯一的风格 ID，首行为主方向')
         if any(c.name != 'Write' for c in calls):
             bad.append('选样只使用 Write')
         if not bad:
             try:
-                _images([by[i] for i in ids])
+                _images([{'id': i, 'shot': str(style_catalog.read_path(i))} for i in ids])
             except (OSError, ValueError) as exc:
                 bad.append(f'参照图片不可读: {exc}')
         for c in calls:
             _result(history, c, '；'.join(bad) if bad else '选样已接收，下一步读取图片写主题')
         if not bad:
-            out.write_text('\n'.join(ids) + '\n', encoding='utf-8')
-            return [by[i] for i in ids]
+            out.write_text(text.strip() + '\n', encoding='utf-8')
+            return ids
         if not calls:
             history.append({'role': 'user', 'content': '；'.join(bad)})
     raise RuntimeError('选参照失败: ' + '；'.join(bad))
-
-
-def _facts_block(picks):
-    return '\n'.join(f"- {p['id']}（{p.get('title', '')}）主色/次色（面积，不代表语义）: " +
-        '、'.join(f"{x['hex']} H{x['h']} S{x['s']} L{x['l']} 占{x['share']}%" for x in p['pal'][:4]) for p in picks)
 
 
 def _images(picks, width=900):
@@ -105,7 +102,8 @@ def _images(picks, width=900):
         im.thumbnail((width, width))
         buf = BytesIO()
         im.save(buf, 'JPEG', quality=82)
-        blocks.extend([{'type': 'input_text', 'text': f"参考 {p.get('id', '')}: {p['shot']}"},
+        digest = hashlib.sha256(buf.getvalue()).hexdigest()
+        blocks.extend([{'type': 'input_text', 'text': f"参考 {p.get('id', '')}: {p['shot']} ({im.width}×{im.height}, sha256={digest})"},
                        {'type': 'input_image', 'image_url': 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()}])
     return blocks
 
@@ -115,14 +113,15 @@ def gates(css, *, assets, browser=True):
 
 
 def theme(run, picks, effort, workflow_root, history=None, original='', shots=()):
-    from . import style_catalog
     history = history if history is not None else []
     out = run.root / 'pages/assets/theme.css'
-    catalog_text, catalog_images = style_catalog.inputs(getattr(run, 'style', None))
+    selected = picks or ([style_catalog.match(run.style)] if style_catalog.match(run.style) else [])
+    catalog_text, catalog_images = (style_catalog.selected_inputs(selected) if selected
+                                    else style_catalog.inputs(run.style))
     body = run.prompt('style-theme', query=run.query, audience=run.audience, scenario=run.scenario or '（没写）',
-        canvas_w=run.canvas[0], canvas_h=run.canvas[1], n=len(picks), facts=_facts_block(picks),
+        canvas_w=run.canvas[0], canvas_h=run.canvas[1],
         direction=skills.direction_block(run.prompts, menus=run.direction_menus),
-        theme_bans=skills.theme_slop_block(workflow_root),
+        theme_bans=skills.theme_slop_block(workflow_root) if not history else '',
         font_floor=skills.FONT_FLOOR, out_path=out)
     body += '\n\n明确风格要求：' + (getattr(run, 'style', None) or '按内容选择')
     body += '\n\n风格表（创作参考，不是页面资产）：\n' + catalog_text
@@ -134,8 +133,11 @@ def theme(run, picks, effort, workflow_root, history=None, original='', shots=()
     if assets:
         body += '\n\n已导入的本地素材，CSS 必须用重定位后的路径（不是来源目录路径）：\n' + '\n'.join(assets)
     refs = [{'id': '用户参考，优先于自动偏好', 'shot': str(p)} for p in shots]
+    available = [f'style:{key}' for key in selected] + [f'user:{p.relative_to(out.parent).as_posix()}' for p in shots]
+    if available:
+        body += '\n\n已加载参考（主参考在 INTERFACE 中用 reference 行指认）：\n' + '\n'.join(available)
     body += '\n\n用户图默认只是参考，不得擅自用作背景。工具媒体路径相对 pages/；CSS URL 相对 assets/。'
-    content = [{'type': 'input_text', 'text': body}] + _images(picks + refs) + catalog_images
+    content = [{'type': 'input_text', 'text': body}] + _images(refs) + catalog_images
     specs = _write_spec(out) + media.SCHEMAS + [style_catalog.READ_SPEC]
     rejected = 0
     while rejected < TRIES:
@@ -150,6 +152,9 @@ def theme(run, picks, effort, workflow_root, history=None, original='', shots=()
         if css and not bad:
             try:
                 font_library.prepare(css, out.parent)
+                # Missing optional provenance is not an aesthetic rejection. Resolve
+                # declared references only, using the existing local-resource boundary.
+                theme_io.reference_images(css, out.parent)
                 bad.extend(gates(css, assets=out.parent))
             except (ValueError, OSError) as exc:
                 bad.append(str(exc))
@@ -164,6 +169,7 @@ def theme(run, picks, effort, workflow_root, history=None, original='', shots=()
                     raise ValueError('工具参数必须是 JSON 对象')
                 if call.name == 'Read':
                     output, images = style_catalog.detail(args.get('file_path'))
+                    output += '\n可在 INTERFACE 指认：reference style:' + style_catalog.identify(args.get('file_path'))
                     pending.extend(images)
                 elif call.name in media.NAMES:
                     result = tools.media_call(call.name, args, run.root / 'pages', 'director')
@@ -179,6 +185,8 @@ def theme(run, picks, effort, workflow_root, history=None, original='', shots=()
             history.append({'role': 'user', 'content': pending})
         if writes:
             if not bad:
+                if not theme_io.references(css) and available:
+                    css = css.replace('==== /INTERFACE ====', f'reference {available[0]}\n==== /INTERFACE ====', 1)
                 theme_io.publish(css, out)
                 return css
             rejected += 1
@@ -204,10 +212,10 @@ def direct(run, effort, workflow_root=None):
     if not llm.default_runtime().profile.vision_input:
         raise ValueError('Style Director 需要启用 vision_input 的模型，不能盲写参考主题')
     history = []
-    picks = [] if source else pick(run, gallery.measure(), effort, history)
+    picks = [] if source or style_catalog.match(request) else pick(run, effort, history, workflow_root)
     css = theme(run, picks, effort, workflow_root, history, original, shots)
     return {'route': 'modify' if original else 'reference' if source else 'auto',
-            'picks': [p['id'] for p in picks], 'css_chars': len(css), 'model_calls': run._style_calls}
+            'picks': picks, 'css_chars': len(css), 'model_calls': run._style_calls}
 
 
 def main():

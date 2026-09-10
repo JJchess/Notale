@@ -126,8 +126,8 @@ def _variant(skill_dir: Path, row: dict, name: str, spec: dict) -> str:
                 "  </file>",
             )
         )
-    # Both shared-source and independent minis retain declared dependencies.
-    if include_css and (name == "full" or spec == row.get("full") or spec.get("omitted")):
+    # Preserve registered dependency notes without loading their source bodies.
+    if include_css and spec.get("omitted"):
         html = next(t for p, t in files if p.suffix.lower() == ".html")
         lines.extend(omitted_lines(f"{skill_dir.name}/{row['id']}", spec, html))
     lines.append("</sample>")
@@ -142,7 +142,7 @@ def render_all(workflows: Path = WORKFLOWS) -> dict[Path, str]:
             continue
         catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
         for row in catalog.get("samples", []):
-            for variant in ("full", "mini", "one"):
+            for variant in ("mini", "one"):
                 spec = row.get(variant)
                 if not isinstance(spec, dict):
                     continue

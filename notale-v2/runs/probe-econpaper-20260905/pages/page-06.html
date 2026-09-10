@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    :root {
+      --bg: #F2F6F7;
+      --text: #17272D;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: 40px 56px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* 顶栏 */
+    .header-block {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid rgba(82, 102, 110, 0.22);
+      padding-bottom: 14px;
+    }
+    .header-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .header-kicker {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--cause);
+      letter-spacing: 0.04em;
+    }
+    h1.page-title {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text);
+    }
+    .header-claim {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      max-width: 520px;
+      text-align: right;
+      line-height: 1.45;
+    }
+    .header-claim strong {
+      color: var(--cause);
+      font-weight: 700;
+    }
+
+    /* 主证据双栏布局 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 28px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：潜在结果与反事实对照舞台 */
+    .stage-card {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid rgba(82, 102, 110, 0.2);
+      box-shadow: 0 4px 18px rgba(23, 39, 45, 0.04);
+      padding: 22px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .stage-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .stage-card-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .mode-pills {
+      display: flex;
+      gap: 8px;
+      background: var(--soft);
+      padding: 4px;
+      border-radius: var(--r-sm);
+    }
+    .mode-btn {
+      border: none;
+      background: transparent;
+      padding: 6px 14px;
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--muted);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all var(--fast) var(--ease);
+    }
+    .mode-btn.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+    .mode-btn:focus-visible {
+      outline: 2px solid var(--focus);
+    }
+
+    /* 潜在结果对比图绘区 */
+    .canvas-container {
+      position: relative;
+      flex: 1;
+      min-height: 420px;
+      background: #FAFCFD;
+      border-radius: var(--r-sm);
+      border: 1px dashed rgba(82, 102, 110, 0.25);
+      overflow: hidden;
+    }
+    .canvas-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 底部因果分解与公式栏 */
+    .formula-bar {
+      background: var(--soft);
+      border-radius: var(--r-sm);
+      padding: 14px 20px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: 20px;
+      overflow-x: hidden;
+    }
+    .formula-badge {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--observed);
+      border: 1px solid rgba(36, 90, 116, 0.25);
+      white-space: nowrap;
+    }
+    .formula-content {
+      font-size: var(--fs-body);
+      line-height: 1.5;
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    /* 右侧：论文审查抓手与选择偏差分解 */
+    .inspect-column {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .panel {
+      background: var(--surface);
+      border-radius: var(--r-md);
+      border: 1px solid rgba(82, 102, 110, 0.18);
+      padding: 18px 20px;
+      box-shadow: 0 2px 10px rgba(23, 39, 45, 0.03);
+    }
+
+    .panel-head {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-head .tag {
+      font-size: 13px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .tag-danger {
+      background: rgba(177, 63, 42, 0.12);
+      color: var(--cause);
+    }
+    .tag-valid {
+      background: rgba(45, 105, 76, 0.12);
+      color: var(--supported);
+    }
+
+    .bias-breakdown {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .breakdown-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-radius: var(--r-sm);
+      background: #F8FAFB;
+      border: 1px solid rgba(82, 102, 110, 0.12);
+    }
+    .breakdown-row.highlight-bias {
+      background: rgba(177, 63, 42, 0.06);
+      border-color: rgba(177, 63, 42, 0.35);
+    }
+    .breakdown-row.highlight-effect {
+      background: rgba(45, 105, 76, 0.06);
+      border-color: rgba(45, 105, 76, 0.35);
+    }
+    .row-label {
+      font-size: var(--fs-sec);
+      font-weight: 600;
+    }
+    .row-val {
+      font-family: var(--font-num, monospace);
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    /* 论文提问卡：审查步骤 */
+    .checklist-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .check-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: var(--r-sm);
+      background: var(--soft);
+    }
+    .check-bullet {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 2px solid var(--observed);
+      color: var(--observed);
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .check-text strong {
+      color: var(--text);
+      display: block;
+      margin-bottom: 2px;
+    }
+    .check-text span {
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    /* SVG 内部样式 */
+    .cf-line {
+      stroke-dasharray: 6 6;
+    }
+    .cf-obs {
+      filter: drop-shadow(0 2px 5px rgba(36,90,116,0.2));
+    }
+    .cf-unobs {
+      filter: drop-shadow(0 2px 5px rgba(177,63,42,0.15));
+    }
+    .cf-ghost {
+      stroke-dasharray: 4 4;
+      opacity: 0.85;
+    }
+  </style>
+</head>
+<body data-page="06" data-total="24">
+  <div id="stage" class="focus min0">
+    <!-- 顶栏 -->
+    <header class="header-block min0">
+      <div class="header-title-group">
+        <span class="header-kicker">第二章 · 识别策略</span>
+        <h1 class="page-title">反事实与可信比较：回归式不是识别</h1>
+      </div>
+      <div class="header-claim">
+        实证因果推断的核心困境：<strong>同一主体在同一时刻不能同时处于处理与未处理状态</strong>。
+        简单比较处理组与对照组，混淆了真正的因果效应与固有选择偏差。
+      </div>
+    </header>
+
+    <!-- 主体区域 -->
+    <main class="main-grid min0">
+      <!-- 左侧：潜在结果框架与反事实构造 -->
+      <section class="stage-card min0">
+        <div class="stage-card-header">
+          <div class="stage-card-title">
+            <span>潜在结果视界：观测值 vs 反事实</span>
+          </div>
+          <div class="mode-pills" role="tablist" aria-label="比较基准模式切换">
+            <button id="btnNaive" class="mode-btn active" role="tab" aria-selected="true">素朴组间对比 (含选择偏差)</button>
+            <button id="btnValid" class="mode-btn" role="tab" aria-selected="false">可信反事实构建 (消除偏差)</button>
+          </div>
+        </div>
+
+        <div class="canvas-container min0">
+          <svg id="cfSvg" class="canvas-svg" viewBox="0 0 832 400">
+            <defs>
+              <!-- 箭头标记 -->
+              <marker id="arrObs" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M1,1 L7,4 L1,7 Z" fill="#245A74" />
+              </marker>
+              <marker id="arrCause" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M1,1 L7,4 L1,7 Z" fill="#B13F2A" />
+              </marker>
+              <marker id="arrGreen" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M1,1 L7,4 L1,7 Z" fill="#2D694C" />
+              </marker>
+            </defs>
+
+            <!-- 背景水平基准网格 -->
+            <g opacity="0.45">
+              <line x1="110" y1="50" x2="800" y2="50" stroke="#CBD5E1" stroke-width="1" stroke-dasharray="3 3"/>
+              <line x1="110" y1="120" x2="800" y2="120" stroke="#CBD5E1" stroke-width="1" stroke-dasharray="3 3"/>
+              <line x1="110" y1="190" x2="800" y2="190" stroke="#CBD5E1" stroke-width="1" stroke-dasharray="3 3"/>
+              <line x1="110" y1="260" x2="800" y2="260" stroke="#CBD5E1" stroke-width="1" stroke-dasharray="3 3"/>
+              <line x1="110" y1="330" x2="800" y2="330" stroke="#CBD5E1" stroke-width="1.5"/>
+            </g>
+
+            <!-- 坐标刻度 -->
+            <text x="96" y="55" text-anchor="end" font-size="13" fill="#52666E" font-weight="600">65k</text>
+            <text x="96" y="125" text-anchor="end" font-size="13" fill="#52666E" font-weight="600">55k</text>
+            <text x="96" y="195" text-anchor="end" font-size="13" fill="#52666E" font-weight="600">45k</text>
+            <text x="96" y="265" text-anchor="end" font-size="13" fill="#52666E" font-weight="600">35k</text>
+            <text x="96" y="335" text-anchor="end" font-size="13" fill="#52666E" font-weight="600">年薪/元</text>
+
+            <!-- 处理组 (D=1) 与 对照组 (D=0) 区域背景 -->
+            <rect x="180" y="30" width="280" height="310" rx="10" fill="#245A74" fill-opacity="0.04" stroke="#245A74" stroke-opacity="0.2"/>
+            <text x="320" y="364" text-anchor="middle" font-size="15" font-weight="700" fill="#245A74">大学毕业生 (处理组 D=1)</text>
+
+            <rect x="500" y="30" width="280" height="310" rx="10" fill="#52666E" fill-opacity="0.04" stroke="#52666E" stroke-opacity="0.2"/>
+            <text x="640" y="364" text-anchor="middle" font-size="15" font-weight="700" fill="#52666E">未上大学者 (对照组 D=0)</text>
+
+            <!-- 动态图形组（由 JS 切换内容） -->
+            <g id="svgDynamicContent"></g>
+          </svg>
+        </div>
+
+        <div class="formula-bar min0">
+          <div class="formula-badge">因果基本恒等式</div>
+          <div class="formula-content" id="formulaMath">
+            <!-- 由 KaTeX 渲染 -->
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：审查抓手与机制剖析 -->
+      <aside class="inspect-column min0">
+        <!-- 偏差定量拆解面板 -->
+        <div class="panel min0">
+          <div class="panel-head">
+            <span>观测差额构成拆解</span>
+            <span id="biasTag" class="tag tag-danger">存在选择偏差</span>
+          </div>
+          <div class="bias-breakdown">
+            <div class="breakdown-row">
+              <span class="row-label" style="color:var(--text);">观测组间差额 E[Y|D=1] − E[Y|D=0]</span>
+              <span class="row-val" style="color:var(--text);" id="valObsGap">+23,000 元</span>
+            </div>
+            <div class="breakdown-row highlight-effect" id="rowEffect">
+              <div>
+                <span class="row-label" style="color:var(--supported);">真正因果效应 (ATT)</span>
+                <div style="font-size:12px;color:var(--muted);">E[Y₁(i) − Y₀(i) | D=1]</div>
+              </div>
+              <span class="row-val" style="color:var(--supported);" id="valATT">+13,000 元</span>
+            </div>
+            <div class="breakdown-row highlight-bias" id="rowBias">
+              <div>
+                <span class="row-label" style="color:var(--cause);">选择偏差 (Selection Bias)</span>
+                <div style="font-size:12px;color:var(--muted);">E[Y₀ | D=1] − E[Y₀ | D=0]</div>
+              </div>
+              <span class="row-val" style="color:var(--cause);" id="valBias">+10,000 元</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 读论文审查抓手列表 -->
+        <div class="panel checklist-panel min0">
+          <div class="panel-head">
+            <span>读论文时对识别的三个审查动作</span>
+          </div>
+          
+          <div class="check-item min0">
+            <div class="check-bullet">1</div>
+            <div class="check-text">
+              <strong>把回归符号翻译为现实比较</strong>
+              <span>无论论文跑了什么 OLS 或高阶多项式，先追问：作者究竟在把谁和谁比？</span>
+            </div>
+          </div>
+
+          <div class="check-item min0">
+            <div class="check-bullet">2</div>
+            <div class="check-text">
+              <strong>定位不可观测的反事实替代者</strong>
+              <span>处理组若不接受处理会怎样？作者选取的对照组基准能否代表这一反事实状态？</span>
+            </div>
+          </div>
+
+          <div class="check-item min0">
+            <div class="check-bullet">3</div>
+            <div class="check-text">
+              <strong>警惕“无因果假定的数学游戏”</strong>
+              <span>控制变量仅能消除可观测差异；没有外生性冲击，回归系数只是条件相关，不是识别。</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const btnNaive = document.getElementById("btnNaive");
+      const btnValid = document.getElementById("btnValid");
+      const svgDynamic = document.getElementById("svgDynamicContent");
+      const formulaMath = document.getElementById("formulaMath");
+      const valObsGap = document.getElementById("valObsGap");
+      const valATT = document.getElementById("valATT");
+      const valBias = document.getElementById("valBias");
+      const biasTag = document.getElementById("biasTag");
+      const rowBias = document.getElementById("rowBias");
+
+      // 渲染公式（使用 HTML 与 span，确保整齐、不产生过长 SVG 越界问题）
+      function renderFormula(mode) {
+        if (mode === "naive") {
+          formulaMath.innerHTML = `
+            <span>素朴均值差 <strong>E[Y|D=1] − E[Y|D=0]</strong> (2.3万) ＝ 真实因果 <strong>ATT</strong> (1.3万) ＋ 选择偏差 <strong>E[Y₀|D=1] − E[Y₀|D=0]</strong> (1.0万，先天天赋/家庭资本)</span>
+          `;
+        } else {
+          formulaMath.innerHTML = `
+            <span>因果可识别充要条件：<strong>E[Y₀|D=1] ＝ E[Y₀|D=0]</strong> (无选择偏差) ⟹ 组间观测差额 <strong>≡ 平均因果效应 ATT</strong> (1.3万)</span>
+          `;
+        }
+      }
+
+      // 绘制 SVG 图表
+      // y刻度：50=65k, 120=55k, 190=45k, 260=35k (7px/k)
+      // 61k: 50 + (65-61)*7 = 78px
+      // 48k: 120 + (55-48)*7 = 169px
+      // 38k: 190 + (45-38)*7 = 239px
+      function updateStage(mode) {
+        if (mode === "naive") {
+          btnNaive.classList.add("active");
+          btnNaive.setAttribute("aria-selected", "true");
+          btnValid.classList.remove("active");
+          btnValid.setAttribute("aria-selected", "false");
+
+          biasTag.textContent = "存在选择偏差 (+1.0万)";
+          biasTag.className = "tag tag-danger";
+          rowBias.style.opacity = "1";
+          rowBias.querySelector(".row-val").textContent = "+10,000 元";
+          valObsGap.textContent = "+23,000 元";
+
+          svgDynamic.innerHTML = `
+            <!-- 处理组观测点 Y1|D=1 (61k, y=78) -->
+            <circle cx="320" cy="78" r="9" fill="#245A74" stroke="#FFFFFF" stroke-width="2.5" class="cf-obs"/>
+            <rect x="220" y="64" width="88" height="28" rx="4" fill="#245A74"/>
+            <text x="264" y="83" text-anchor="middle" font-size="13" font-weight="700" fill="#FFFFFF">Y₁ = 61k</text>
+            <text x="320" y="55" text-anchor="middle" font-size="13" font-weight="600" fill="#245A74">实际观测：已读大学</text>
+
+            <!-- 对照组观测点 Y0|D=0 (38k, y=239) -->
+            <circle cx="640" cy="239" r="9" fill="#52666E" stroke="#FFFFFF" stroke-width="2.5" class="cf-obs"/>
+            <rect x="656" y="225" width="88" height="28" rx="4" fill="#52666E"/>
+            <text x="700" y="244" text-anchor="middle" font-size="13" font-weight="700" fill="#FFFFFF">Y₀ = 38k</text>
+            <text x="640" y="216" text-anchor="middle" font-size="13" font-weight="600" fill="#52666E">实际观测：未读大学</text>
+
+            <!-- 处理组不可观测反事实 Y0|D=1 (48k, y=169) 虚线幽灵点 -->
+            <circle cx="320" cy="169" r="8" fill="none" stroke="#B13F2A" stroke-width="2.5" stroke-dasharray="4 3" class="cf-unobs"/>
+            <rect x="208" y="155" width="100" height="28" rx="4" fill="#FFF2EF" stroke="#B13F2A" stroke-width="1.2"/>
+            <text x="258" y="174" text-anchor="middle" font-size="12" font-weight="700" fill="#B13F2A">反事实 Y₀=48k</text>
+            <text x="320" y="196" text-anchor="middle" font-size="12" font-weight="600" fill="#B13F2A">若没读大学(现实中不可见)</text>
+
+            <!-- 垂直真实因果效应 ATT 箭头 (320, 161 -> 89) -->
+            <line x1="320" y1="161" x2="320" y2="89" stroke="#2D694C" stroke-width="3" marker-end="url(#arrGreen)"/>
+            <rect x="332" y="112" width="134" height="26" rx="4" fill="#E8F4EC" stroke="#2D694C" stroke-width="1.2"/>
+            <text x="399" y="129" text-anchor="middle" font-size="12" font-weight="700" fill="#2D694C">真实效应 ATT = +13k</text>
+
+            <!-- 跨组素朴对比斜线 (328, 83 -> 632, 235) -->
+            <path d="M 328 83 L 632 235" stroke="#52666E" stroke-width="2" stroke-dasharray="5 4" opacity="0.55"/>
+            <rect x="445" y="142" width="106" height="24" rx="4" fill="#FFFFFF" stroke="#52666E" stroke-width="1"/>
+            <text x="498" y="158" text-anchor="middle" font-size="12" font-weight="700" fill="#17272D">表面总差额 +23k</text>
+
+            <!-- 选择偏差对比括号虚线 (从 Y0|D=1 的 169 到 对照组 239) -->
+            <path d="M 328 169 L 632 239" stroke="#B13F2A" stroke-width="2.5" stroke-dasharray="6 4"/>
+            <rect x="424" y="208" width="144" height="38" rx="4" fill="#FDF2EE" stroke="#B13F2A" stroke-width="1"/>
+            <text x="496" y="224" text-anchor="middle" font-size="12" font-weight="700" fill="#B13F2A">选择偏差 = +10,000 元</text>
+            <text x="496" y="238" text-anchor="middle" font-size="11" fill="#B13F2A">(家庭资本 / 认知天赋优势)</text>
+          `;
+        } else {
+          // 可信反事实消除偏差状态（例如通过准实验/双胞胎/断点构造了有效基准）
+          btnValid.classList.add("active");
+          btnValid.setAttribute("aria-selected", "true");
+          btnNaive.classList.remove("active");
+          btnNaive.setAttribute("aria-selected", "false");
+
+          biasTag.textContent = "消除选择偏差 (准实验/识别设计)";
+          biasTag.className = "tag tag-valid";
+          rowBias.style.opacity = "0.5";
+          rowBias.querySelector(".row-val").textContent = "0 元 (已对齐)";
+          valObsGap.textContent = "+13,000 元";
+
+          svgDynamic.innerHTML = `
+            <!-- 处理组观测点 Y1|D=1 (61k, y=78) -->
+            <circle cx="320" cy="78" r="9" fill="#245A74" stroke="#FFFFFF" stroke-width="2.5" class="cf-obs"/>
+            <rect x="220" y="64" width="88" height="28" rx="4" fill="#245A74"/>
+            <text x="264" y="83" text-anchor="middle" font-size="13" font-weight="700" fill="#FFFFFF">Y₁ = 61k</text>
+            <text x="320" y="55" text-anchor="middle" font-size="13" font-weight="600" fill="#245A74">实际观测：已读大学</text>
+
+            <!-- 识别设计构造的可比对照组 (对齐反事实基线 48k, y=169) -->
+            <circle cx="640" cy="169" r="9" fill="#2D694C" stroke="#FFFFFF" stroke-width="2.5" class="cf-obs"/>
+            <rect x="656" y="155" width="112" height="28" rx="4" fill="#2D694C"/>
+            <text x="712" y="174" text-anchor="middle" font-size="13" font-weight="700" fill="#FFFFFF">可信基准 Y₀=48k</text>
+            <text x="640" y="145" text-anchor="middle" font-size="13" font-weight="600" fill="#2D694C">准实验对照组(禀赋对齐)</text>
+
+            <!-- 处理组真实反事实 Y0|D=1 (48k, y=169) 对齐点 -->
+            <circle cx="320" cy="169" r="8" fill="#E8F4EC" stroke="#2D694C" stroke-width="2.5" class="cf-unobs"/>
+            <rect x="200" y="155" width="108" height="28" rx="4" fill="#E8F4EC" stroke="#2D694C" stroke-width="1.2"/>
+            <text x="254" y="174" text-anchor="middle" font-size="12" font-weight="700" fill="#2D694C">真实反事实 48k</text>
+
+            <!-- 水平对齐基准线：E[Y0|D=1] == E[Y0|D=0] -->
+            <line x1="328" y1="169" x2="632" y2="169" stroke="#2D694C" stroke-width="2" stroke-dasharray="4 4"/>
+            <rect x="424" y="156" width="144" height="26" rx="4" fill="#FFFFFF" stroke="#2D694C" stroke-width="1"/>
+            <text x="496" y="173" text-anchor="middle" font-size="12" font-weight="700" fill="#2D694C">反事实基线对齐 · 偏差=0</text>
+
+            <!-- 垂直真实因果效应 ATT 箭头 (320, 161 -> 89) -->
+            <line x1="320" y1="161" x2="320" y2="89" stroke="#2D694C" stroke-width="3.5" marker-end="url(#arrGreen)"/>
+            <rect x="332" y="112" width="142" height="26" rx="4" fill="#E8F4EC" stroke="#2D694C" stroke-width="1.5"/>
+            <text x="403" y="129" text-anchor="middle" font-size="12" font-weight="700" fill="#2D694C">净因果效应 ATT = +13k</text>
+
+            <!-- 解释说明 -->
+            <rect x="520" y="225" width="240" height="56" rx="6" fill="#F4F8F6" stroke="#2D694C" stroke-opacity="0.3"/>
+            <text x="640" y="248" text-anchor="middle" font-size="13" font-weight="700" fill="#2D694C">识别设计的作用：锁定有效反事实</text>
+            <text x="640" y="267" text-anchor="middle" font-size="12" fill="#52666E">如录取断点两端、双胞胎、随机摇号</text>
+          `;
+        }
+        renderFormula(mode);
+      }
+
+      btnNaive.addEventListener("click", () => updateStage("naive"));
+      btnValid.addEventListener("click", () => updateStage("valid"));
+
+      // 键盘支持
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft" || e.key === "1") updateStage("naive");
+        if (e.key === "ArrowRight" || e.key === "2") updateStage("valid");
+      });
+
+      // 初始化
+      updateStage("naive");
+      Deck.init({ index: 6, total: 24 });
+    })();
+  </script>
+</body>
+</html>

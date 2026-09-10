@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>卷积的几何直觉：局部连接、权重共享与等变性</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: 56px 64px 44px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    /* 顶部标题区 */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .kicker-concept {
+      font-size: var(--fs-lead);
+      color: var(--structure);
+      font-weight: 600;
+    }
+
+    /* 主舞台双栏对比：左侧原理与连接图，右侧平移等变性证据 */
+    .board {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 56px;
+      height: 620px;
+      align-items: stretch;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-width: 0;
+    }
+
+    .col-head {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .col-title {
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--text);
+      margin: 0;
+    }
+    .col-desc {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.45;
+    }
+
+    /* 矢量绘图区 */
+    .diagram-wrap {
+      flex: 1;
+      position: relative;
+      margin: 12px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    svg.visual {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 结论底栏 */
+    .callout-row {
+      display: flex;
+      gap: 32px;
+      padding-top: 14px;
+      border-top: 1px solid var(--rule);
+    }
+    .metric {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .metric-num {
+      font-size: var(--fs-lead);
+      font-weight: 700;
+      color: var(--structure);
+      font-variant-numeric: tabular-nums;
+    }
+    .metric-label {
+      font-size: var(--fs-label);
+      color: var(--text);
+      opacity: 0.85;
+    }
+
+    /* 交互切换按键 */
+    .controls-lane {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .ctrl-btn {
+      background: none;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      font-size: var(--fs-label);
+      padding: 6px 14px;
+      cursor: pointer;
+      font-family: inherit;
+      border-radius: 2px;
+      transition: all 0.15s ease;
+    }
+    .ctrl-btn:hover {
+      border-color: var(--structure);
+      color: var(--structure);
+    }
+    .ctrl-btn.active {
+      background: var(--structure);
+      color: #F1F4F2;
+      border-color: var(--structure);
+    }
+
+    /* SVG 几何细节 */
+    .grid-cell {
+      stroke: var(--rule);
+      stroke-width: 1;
+      fill: #FFFFFF;
+      transition: fill 0.2s, stroke 0.2s;
+    }
+    .cell-txt {
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      fill: var(--text);
+      text-anchor: middle;
+      dominant-baseline: central;
+      font-variant-numeric: tabular-nums;
+    }
+    .cell-coord {
+      font-size: var(--fs-label);
+      fill: var(--text);
+      opacity: 0.8;
+      text-anchor: middle;
+    }
+    .flow-line {
+      stroke-width: 1.5;
+      fill: none;
+      stroke-linecap: round;
+    }
+    .tag-text {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>卷积的几何直觉：局部连接、权重共享与等变性</h1>
+      <span class="kicker-concept">参数量解耦于输入分辨率</span>
+    </header>
+
+    <div class="board">
+      <!-- 左栏：局部连接与权重共享机制 -->
+      <section class="column min0">
+        <div class="col-head">
+          <h2 class="col-title">局部连接与参数共享</h2>
+          <p class="col-desc">每个神经元只看局部窗口；全图滑动复用同组卷积核权重，参数量从 O(N²) 骤降至核尺寸。</p>
+        </div>
+
+        <div class="diagram-wrap">
+          <svg class="visual" viewBox="0 0 680 390" id="svg-conn">
+            <!-- 左端：输入像素列 (6个神经元) -->
+            <g id="input-nodes">
+              <text x="110" y="32" class="tag-text" fill="var(--text)" opacity="0.85" text-anchor="middle">输入像素 x</text>
+            </g>
+
+            <!-- 中间：权重模板 (3个共享权重) -->
+            <g id="kernel-weights">
+              <rect x="270" y="80" width="100" height="124" fill="#FFFFFF" stroke="var(--structure)" stroke-width="1.5" rx="3" />
+              <text x="320" y="104" class="tag-text" fill="var(--structure)" text-anchor="middle">共享核 w</text>
+              <text x="320" y="130" class="cell-txt" fill="var(--structure)">w₁ = +1</text>
+              <text x="320" y="156" class="cell-txt" fill="var(--structure)">w₂ = -2</text>
+              <text x="320" y="182" class="cell-txt" fill="var(--structure)">w₃ = +1</text>
+            </g>
+
+            <!-- 连线束：从输入到特征 -->
+            <g id="flow-wires"></g>
+
+            <!-- 右端：特征图 (4个输出神经元) -->
+            <g id="output-nodes">
+              <text x="570" y="32" class="tag-text" fill="var(--structure)" text-anchor="middle">特征响应 y</text>
+            </g>
+          </svg>
+        </div>
+
+        <div class="callout-row">
+          <div class="metric">
+            <span class="metric-num">3 个参数</span>
+            <span class="metric-label">卷积层 (核长 K=3，与输入尺寸无关)</span>
+          </div>
+          <div class="metric">
+            <span class="metric-num">24 个参数</span>
+            <span class="metric-label">全连接层 (6×4 密集全权重矩阵)</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：空间平移等变性实证 (输入平移 Δx → 响应图对称平移 Δx) -->
+      <section class="column min0">
+        <div class="col-head">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h2 class="col-title">平移等变性：f(T(x)) = T(f(x))</h2>
+            <div class="controls-lane">
+              <button class="ctrl-btn active" id="btn-pos-1" onclick="shiftPattern(0)">位置 1 (靠左)</button>
+              <button class="ctrl-btn" id="btn-pos-2" onclick="shiftPattern(2)">位置 2 (平移 2 格)</button>
+            </div>
+          </div>
+          <p class="col-desc">当输入特征在网格上发生位移，激活峰值在特征图上产生精确一致的同向位移。</p>
+        </div>
+
+        <div class="diagram-wrap">
+          <svg class="visual" viewBox="0 0 680 390" id="svg-shift">
+            <!-- 顶部：输入图像 1×7 网格 -->
+            <g id="shift-input-lane" transform="translate(60, 48)">
+              <text x="0" y="-14" class="tag-text" fill="var(--text)" opacity="0.85">输入图像序列 (1×7)</text>
+              <g id="input-cells"></g>
+            </g>
+
+            <!-- 卷积核算子示意标注与投影连线 -->
+            <g id="kernel-operator-group" transform="translate(340, 160)">
+              <line x1="-150" y1="0" x2="150" y2="0" stroke="var(--rule)" stroke-dasharray="4 4" />
+              <circle cx="0" cy="0" r="20" fill="#FFFFFF" stroke="var(--structure)" stroke-width="1.8" />
+              <text x="0" y="2" class="tag-text" fill="var(--structure)" text-anchor="middle" dominant-baseline="central" style="font-size:18px">∗</text>
+              <text x="45" y="4" class="tag-text" fill="var(--structure)">核 [-1, 2, -1]</text>
+            </g>
+
+            <!-- 底部：输出特征图 1×5 网格 -->
+            <g id="shift-output-lane" transform="translate(130, 246)">
+              <text x="0" y="-14" class="tag-text" fill="var(--structure)">卷积特征图 (1×5)</text>
+              <g id="output-cells"></g>
+            </g>
+          </svg>
+        </div>
+
+        <div class="callout-row">
+          <div class="metric">
+            <span class="metric-num" id="peak-input-tag">特征中心：x[2]</span>
+            <span class="metric-label">输入边缘局部坐标</span>
+          </div>
+          <div class="metric">
+            <span class="metric-num" id="peak-output-tag" style="color:var(--signal)">响应峰值：y[1] (+6)</span>
+            <span class="metric-label">空间等变激活位置</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请看，为什么图像不能直接用多层感知机全连接？如果一张高清图有上百万像素，隐藏层只要几千节点，权重矩阵就会瞬间膨胀到几十亿参数，根本无法训练而且会严重破坏二维邻近关系。
+    卷积神经网络的两大几何基石是局部连接与权重共享。左边展示了一维卷积的本质：每个输出神经元不看全局，只看长度为 3 的局部视野；更重要的是，不管窗口滑动到哪里，乘的都是同一组权重 w1, w2, w3。这就将参数量与图像像素数量彻底解耦。
+    右边展示由此带来的关键数学性质——平移等变性。当我们点击按钮把输入的特征脉冲向右平移 2 格，卷积输出的响应峰值也丝毫不差地向右平移 2 格。这意味着，卷积网络学会识别一个局部边缘后，这个能力自动适用于画面的每一个角落，不需要在每个位置重复学习一遍。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 13, total: 32 });
+
+    // 绘制左图：神经元连接图与共享连线
+    const inputG = document.getElementById('input-nodes');
+    const outputG = document.getElementById('output-nodes');
+    const wiresG = document.getElementById('flow-wires');
+
+    const inY = [65, 115, 165, 215, 265, 315];
+    const outY = [115, 165, 215, 265];
+    const inX = 110;
+    const outX = 570;
+
+    inY.forEach((y, i) => {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.innerHTML = `
+        <circle cx="${inX}" cy="${y}" r="15" fill="#FFFFFF" stroke="var(--muted)" stroke-width="1.5" />
+        <text x="${inX}" y="${y}" class="cell-txt">x${i+1}</text>
+      `;
+      inputG.appendChild(g);
+    });
+
+    outY.forEach((y, j) => {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.innerHTML = `
+        <circle cx="${outX}" cy="${y}" r="16" fill="#FFFFFF" stroke="var(--structure)" stroke-width="2" />
+        <text x="${outX}" y="${y}" class="cell-txt" fill="var(--structure)">y${j+1}</text>
+      `;
+      outputG.appendChild(g);
+    });
+
+    // 绘制滑动窗口连线（重点高亮第 2 个输出神经元 y2 对应的局部连接）
+    outY.forEach((oy, j) => {
+      const isTarget = (j === 1);
+      for (let k = 0; k < 3; k++) {
+        const iy = inY[j + k];
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const d = `M ${inX + 15} ${iy} C ${inX + 160} ${iy}, ${outX - 160} ${oy}, ${outX - 16} ${oy}`;
+        path.setAttribute('d', d);
+        path.setAttribute('class', 'flow-line');
+        if (isTarget) {
+          path.setAttribute('stroke', 'var(--signal)');
+          path.setAttribute('stroke-width', '2.2');
+          path.setAttribute('opacity', '0.9');
+        } else {
+          path.setAttribute('stroke', 'var(--structure)');
+          path.setAttribute('stroke-width', '1');
+          path.setAttribute('opacity', '0.22');
+        }
+        wiresG.appendChild(path);
+      }
+    });
+
+    // 右图：平移等变性交互
+    const inputCellsG = document.getElementById('input-cells');
+    const outputCellsG = document.getElementById('output-cells');
+    const peakInputTag = document.getElementById('peak-input-tag');
+    const peakOutputTag = document.getElementById('peak-output-tag');
+    const btn1 = document.getElementById('btn-pos-1');
+    const btn2 = document.getElementById('btn-pos-2');
+
+    const kernel = [-1, 2, -1];
+    const cellSize = 60;
+
+    function renderShift(shift) {
+      const inputArr = [0, 0, 0, 0, 0, 0, 0];
+      const peakIdx = 1 + shift;
+      inputArr[peakIdx] = 1;
+      inputArr[peakIdx + 1] = 4;
+      inputArr[peakIdx + 2] = 1;
+
+      const outArr = [];
+      for (let i = 0; i <= inputArr.length - 3; i++) {
+        let sum = 0;
+        for (let k = 0; k < 3; k++) {
+          sum += inputArr[i + k] * kernel[k];
+        }
+        outArr.push(sum);
+      }
+
+      let maxVal = -999, maxIdx = 0;
+      outArr.forEach((v, idx) => {
+        if (v > maxVal) {
+          maxVal = v;
+          maxIdx = idx;
+        }
+      });
+
+      // 渲染输入格子
+      inputCellsG.innerHTML = '';
+      inputArr.forEach((val, idx) => {
+        const x = idx * (cellSize + 8);
+        const isPeak = idx === (peakIdx + 1);
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        const fill = isPeak ? 'rgba(212, 56, 17, 0.12)' : (val > 0 ? 'rgba(28, 68, 54, 0.06)' : '#FFFFFF');
+        const stroke = isPeak ? 'var(--signal)' : 'var(--rule)';
+        g.innerHTML = `
+          <rect x="${x}" y="0" width="${cellSize}" height="${cellSize}" rx="3" class="grid-cell" style="fill:${fill}; stroke:${stroke}; stroke-width:${isPeak ? 2 : 1};" />
+          <text x="${x + cellSize/2}" y="${cellSize/2}" class="cell-txt" style="font-weight:${isPeak?700:400}; fill:${isPeak?'var(--signal)':'var(--text)'}">${val}</text>
+          <text x="${x + cellSize/2}" y="${cellSize + 20}" class="cell-coord">x[${idx}]</text>
+        `;
+        inputCellsG.appendChild(g);
+      });
+
+      // 渲染输出格子
+      outputCellsG.innerHTML = '';
+      outArr.forEach((val, idx) => {
+        const x = idx * (cellSize + 8);
+        const isPeak = idx === maxIdx;
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        const fill = isPeak ? 'rgba(212, 56, 17, 0.16)' : '#FFFFFF';
+        const stroke = isPeak ? 'var(--signal)' : 'var(--structure)';
+        g.innerHTML = `
+          <rect x="${x}" y="0" width="${cellSize}" height="${cellSize}" rx="3" class="grid-cell" style="fill:${fill}; stroke:${stroke}; stroke-width:${isPeak ? 2.5 : 1};" />
+          <text x="${x + cellSize/2}" y="${cellSize/2}" class="cell-txt" style="font-weight:${isPeak?700:500}; fill:${isPeak?'var(--signal)':'var(--structure)'}">${val}</text>
+          <text x="${x + cellSize/2}" y="${cellSize + 20}" class="cell-coord" style="fill:${isPeak?'var(--signal)':'var(--text)'}; font-weight:${isPeak?600:400}">y[${idx}]</text>
+        `;
+        outputCellsG.appendChild(g);
+      });
+
+      peakInputTag.textContent = `特征中心：x[${peakIdx + 1}]`;
+      peakOutputTag.textContent = `响应峰值：y[${maxIdx}] (${valToStr(maxVal)})`;
+
+      if (shift === 0) {
+        btn1.classList.add('active');
+        btn2.classList.remove('active');
+      } else {
+        btn2.classList.add('active');
+        btn1.classList.remove('active');
+      }
+    }
+
+    function valToStr(v) {
+      return v >= 0 ? '+' + v : '' + v;
+    }
+
+    function shiftPattern(shift) {
+      renderShift(shift);
+    }
+
+    renderShift(0);
+  </script>
+</body>
+</html>

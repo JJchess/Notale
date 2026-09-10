@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>反向传播推导：利用微积分链式法则将误差梯度逐层回传</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    /* 页面排版与网格定位 */
+    #stage {
+      padding: 40px 56px 32px;
+      box-sizing: border-box;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      row-gap: 16px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--border-strong);
+      padding-bottom: 12px;
+    }
+
+    .header-text {
+      max-width: 1040px;
+    }
+
+    .header-meta {
+      text-align: right;
+      font-family: var(--font-mono);
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .nt-title {
+      font-size: 32px;
+      line-height: 1.15;
+      margin-bottom: 4px;
+    }
+
+    .nt-subtitle {
+      font-size: 15px;
+      line-height: 1.45;
+      color: var(--text-dim);
+    }
+
+    /* 主工作台双栏：左侧网络计算图与回传路径，右侧链式法则推导栈与数值流 */
+    .bp-layout {
+      display: grid;
+      grid-template-columns: 780px 1fr;
+      column-gap: 24px;
+      min-height: 0;
+      height: 100%;
+    }
+
+    /* 左侧：计算图容器 */
+    .graph-pane {
+      display: flex;
+      flex-direction: column;
+      background: rgba(255, 255, 255, 0.5);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .pane-header {
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(223, 227, 222, 0.6);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .pane-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pane-legend {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--muted);
+      align-items: center;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-line {
+      width: 20px;
+      height: 2px;
+      display: inline-block;
+    }
+    .legend-line.fwd {
+      background: var(--class-a);
+    }
+    .legend-line.bwd {
+      background: var(--accent);
+      border-top: 1px dashed var(--accent);
+    }
+
+    .svg-canvas {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+
+    /* 交互阶段指示栏 */
+    .step-navigator {
+      padding: 8px 12px;
+      border-top: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.7);
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .step-btn {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .step-btn:hover {
+      border-color: var(--border-strong);
+      background: #f4f6f3;
+    }
+
+    .step-btn.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .step-btn-num {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .step-btn.active .step-btn-num {
+      color: var(--accent);
+    }
+
+    .step-btn-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 右侧：链式法则拆解与数值对应 */
+    .math-pane {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 0;
+      height: 100%;
+      box-sizing: border-box;
+      gap: 8px;
+    }
+
+    .chain-card {
+      background: rgba(255, 255, 255, 0.6);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--border-strong);
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      transition: all 0.15s ease;
+    }
+
+    .chain-card.highlight {
+      border-left-color: var(--accent);
+      background: #ffffff;
+      box-shadow: 0 2px 8px rgba(224, 62, 45, 0.08);
+    }
+
+    .chain-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .chain-title .target-tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-subtle);
+      color: var(--text-dim);
+    }
+
+    .chain-card.highlight .target-tag {
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .formula-row {
+      display: flex;
+      align-items: center;
+      margin: 2px 0 6px;
+      line-height: 1.25;
+    }
+
+    .formula-row .katex {
+      font-size: 1.0em;
+    }
+
+    .factor-breakdown {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-top: 4px;
+      padding-top: 4px;
+      border-top: 1px dashed var(--border);
+      font-size: 12px;
+    }
+
+    .factor-box {
+      background: var(--bg-subtle);
+      padding: 3px 6px;
+      border-radius: 2px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .factor-box .factor-val {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--class-a);
+      font-size: 12px;
+    }
+
+    .chain-card.highlight .factor-box .factor-val.red {
+      color: var(--accent);
+    }
+
+    .factor-box .factor-desc {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    /* 底部核心结论横幅 */
+    .summary-card {
+      background: #ffffff;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+    }
+
+    .summary-card h4 {
+      margin: 0 0 3px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .summary-card p {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--text-dim);
+    }
+
+    /* SVG 节点与路径类 */
+    .fwd-edge {
+      stroke: var(--class-a);
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      opacity: 0.55;
+    }
+
+    .bwd-edge {
+      stroke: var(--accent);
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-dasharray: 5 4;
+      opacity: 0.25;
+      transition: opacity 0.2s, stroke-width 0.2s;
+    }
+
+    .bwd-edge.active {
+      opacity: 1;
+      stroke-width: 3.2;
+      filter: drop-shadow(0 0 3px rgba(224, 62, 45, 0.4));
+    }
+
+    .node-circle {
+      fill: #ffffff;
+      stroke: var(--border-strong);
+      stroke-width: 1.5;
+      transition: all 0.2s ease;
+    }
+
+    .node-circle.active {
+      stroke: var(--accent);
+      stroke-width: 2.5;
+      fill: var(--accent-soft);
+    }
+
+    .node-text-title {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 700;
+      fill: var(--text);
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    .node-text-sub {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      fill: var(--muted);
+      text-anchor: middle;
+    }
+
+    .edge-badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="15">
+  <div id="stage">
+    <header>
+      <div class="header-text">
+        <h1 class="nt-title">反向传播推导：微积分链式法则的逐层回传</h1>
+        <p class="nt-subtitle">标量损失在输出端生成，沿计算图逆向穿透激活函数与权重连接；每层中间误差敏感度 <span id="texSubtitleDelta"></span> 成为向前复用的基石。</p>
+      </div>
+      <div class="header-meta">
+        <div>1-HIDDEN MLP (2→2→1)</div>
+        <div style="color: var(--accent); font-weight:700;">BACKPROPAGATION</div>
+      </div>
+    </header>
+
+    <div class="bp-layout">
+      <!-- 左栏：计算图与网络拓扑 -->
+      <div class="graph-pane">
+        <div class="pane-header">
+          <div class="pane-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.7 10.7l6.6-3.4M8.7 13.3l6.6 3.4"/></svg>
+            2层感知机计算图与双向梯度流
+          </div>
+          <div class="pane-legend">
+            <span class="legend-item"><span class="legend-line fwd"></span> 前向传导 <span id="texLegFwd"></span></span>
+            <span class="legend-item"><span class="legend-line bwd"></span> 梯度逆向流 <span id="texLegBwd"></span></span>
+          </div>
+        </div>
+
+        <svg class="svg-canvas" id="graphSvg" viewBox="0 0 780 440">
+          <defs>
+            <marker id="fwd-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#1E6B65"/>
+            </marker>
+            <marker id="bwd-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#E03E2D"/>
+            </marker>
+          </defs>
+
+          <!-- 区域背景层指示 -->
+          <g id="layerBgs">
+            <rect x="25" y="24" width="130" height="380" rx="4" fill="rgba(100,112,106,0.03)" stroke="#C6CEC8" stroke-dasharray="3 3"/>
+            <text x="90" y="44" text-anchor="middle" font-size="12" font-family="var(--font-sans)" font-weight="700" fill="var(--muted)">输入层 X</text>
+
+            <rect x="230" y="24" width="170" height="380" rx="4" fill="rgba(100,112,106,0.03)" stroke="#C6CEC8" stroke-dasharray="3 3"/>
+            <text x="315" y="44" text-anchor="middle" font-size="12" font-family="var(--font-sans)" font-weight="700" fill="var(--muted)">隐藏层 H (Sigmoid)</text>
+
+            <rect x="480" y="24" width="150" height="380" rx="4" fill="rgba(100,112,106,0.03)" stroke="#C6CEC8" stroke-dasharray="3 3"/>
+            <text x="555" y="44" text-anchor="middle" font-size="12" font-family="var(--font-sans)" font-weight="700" fill="var(--muted)">输出层 ŷ (Sigmoid)</text>
+
+            <rect x="670" y="140" width="85" height="150" rx="4" fill="rgba(224,62,45,0.04)" stroke="#C6CEC8"/>
+            <text x="712" y="160" text-anchor="middle" font-size="12" font-family="var(--font-sans)" font-weight="700" fill="var(--accent)">标量损失</text>
+          </g>
+
+          <!-- 连线层：前向与反向 -->
+          <g id="edgeLayer"></g>
+
+          <!-- 节点层 -->
+          <g id="nodeLayer"></g>
+        </svg>
+
+        <div class="step-navigator">
+          <button class="step-btn active" id="btnStep0" onclick="goToStep(0)">
+            <span class="step-btn-num">STEP 01</span>
+            <span class="step-btn-name">① 损失对输出激活</span>
+          </button>
+          <button class="step-btn" id="btnStep1" onclick="goToStep(1)">
+            <span class="step-btn-num">STEP 02</span>
+            <span class="step-btn-name">② 输出层权重梯度</span>
+          </button>
+          <button class="step-btn" id="btnStep2" onclick="goToStep(2)">
+            <span class="step-btn-num">STEP 03</span>
+            <span class="step-btn-name">③ 逆传穿透隐藏层</span>
+          </button>
+          <button class="step-btn" id="btnStep3" onclick="goToStep(3)">
+            <span class="step-btn-num">STEP 04</span>
+            <span class="step-btn-name">④ 输入层权重梯度</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 右栏：链式法则数学分解与数值追踪 -->
+      <div class="math-pane">
+        <!-- 步骤1 卡片 -->
+        <div class="chain-card highlight" id="card0">
+          <div class="chain-title">
+            <span>阶段 1：输出端误差初生（交叉熵 + Sigmoid）</span>
+            <span class="target-tag">δ^(2) = ŷ - y</span>
+          </div>
+          <div class="formula-row" id="texEq0"></div>
+          <div class="factor-breakdown">
+            <div class="factor-box">
+              <span class="factor-desc">损失对预测偏导</span>
+              <span class="factor-val red">∂L/∂ŷ = -1.250</span>
+            </div>
+            <div class="factor-box">
+              <span class="factor-desc">激活函数导数 σ'</span>
+              <span class="factor-val">ŷ(1-ŷ) = 0.160</span>
+            </div>
+            <div class="factor-box">
+              <span class="factor-desc">合成局部误差 δ^(2)</span>
+              <span class="factor-val red">δ^(2) = -0.200</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤2 卡片 -->
+        <div class="chain-card" id="card1">
+          <div class="chain-title">
+            <span>阶段 2：输出层参数更新（对 W^(2) 与 b^(2) 求偏导）</span>
+            <span class="target-tag">∂L/∂W^(2) = δ^(2) · (a^(1))^T</span>
+          </div>
+          <div class="formula-row" id="texEq1"></div>
+          <div class="factor-breakdown">
+            <div class="factor-box">
+              <span class="factor-desc">上游误差传导</span>
+              <span class="factor-val red">δ^(2) = -0.200</span>
+            </div>
+            <div class="factor-box">
+              <span class="factor-desc">隐藏层前向激活</span>
+              <span class="factor-val">a₁^(1) = 0.680</span>
+            </div>
+            <div class="factor-box">
+              <span class="factor-desc">权重 w₁₂^(2) 梯度</span>
+              <span class="factor-val red">∂L/∂w₁ = -0.136</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤3 卡片 -->
+        <div class="chain-card" id="card2">
+          <div class="chain-title">
+            <span>阶段 3：误差逆向加权分配（多路回传至隐藏层）</span>
+            <span class="target-tag">δ^(1) = ((W^(2))^T δ^(2)) ⊙ σ'(z^(1))</span>
+          </div>
+          <div class="formula-row" id="texEq2"></div>
+          <div class="factor-breakdown">
+            <div class="factor-box">
+              <span class="factor-desc">输出误差权重投影</span>
+              <span class="factor-val red">w₁₂^(2) · δ^(2) = -0.180</span>
+            </div>
+            <div class="factor-box">
+              <span class="factor-desc">隐层局域门控导数</span>
+              <span class="factor-val">σ'(z₁^(1)) = 0.218</span>
+            </div>
+            <div class="factor-box">
+              <span class="factor-desc">隐藏节点误差 δ₁^(1)</span>
+              <span class="factor-val red">-0.039</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤4 卡片 -->
+        <div class="chain-card" id="card3">
+          <div class="chain-title">
+            <span>阶段 4：最底层输入权重梯度（到达网络起始）</span>
+            <span class="target-tag">∂L/∂W^(1) = δ^(1) · x^T</span>
+          </div>
+          <div class="formula-row" id="texEq3"></div>
+          <div class="factor-breakdown">
+            <div class="factor-box">
+              <span class="factor-desc">隐藏节点误差</span>
+              <span class="factor-val red">δ₁^(1) = -0.039</span>
+            </div>
+            <div class="factor-box">
+              <span class="factor-desc">输入特征分量</span>
+              <span class="factor-val">x₁ = 0.800</span>
+            </div>
+            <div class="factor-box">
+              <span class="factor-desc">权重 w₁₁^(1) 梯度</span>
+              <span class="factor-val red">∂L/∂w₁₁ = -0.031</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 总结说明条 -->
+        <div class="summary-card">
+          <h4>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            核心复用逻辑：避免重复求导的动态规划
+          </h4>
+          <p>反向传播的本质是<strong>微积分链式法则的记忆化计算</strong>：每一层只需计算并保留误差敏感度向量 <span id="texSumDelta"></span>，既用于直接更新当前层的权重矩阵 <span id="texSumW"></span>，又向后传递给上游隐藏层。计算复杂度从直接符号微分的指数级降为线性的 <span id="texSumO"></span>。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们，上一页我们推导了标量损失函数，大家看到训练的目标是让损失沿着梯度方向下滑。但深度网络有成千上万甚至数百万个权重，我们难道要一个个对权重求偏导数吗？
+    答案就在反向传播算法中。反向传播之所以伟大，在于它把微积分链式法则变成了类似动态规划的“误差记忆回传”。
+    请看左侧的计算图：在第一步，真实标签和网络预测在输出端产生二元交叉熵损失，两者的差值直接给出了输出误差敏感度 delta2。
+    第二步，这个 delta2 乘上隐藏层的输入，就直接得到了输出层权重的梯度；
+    第三步是精髓所在：误差 delta2 顺着权重矩阵反向逆流回隐藏神经元，经过隐藏层激活函数的门控过滤，形成了隐藏层的误差敏感度 delta1；
+    第四步，delta1 再次与输入 x 相乘，得到输入层权重的梯度。
+    注意看，每一层的权重梯度，永远等于“下游送回来的误差 delta”乘以“该连接上游送过来的前向激活 a”。这一规律贯穿整个深度学习体系。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    // 节点布局坐标定义 (基于 780 x 440 的 SVG 空间)
+    const NODES = {
+      x1: { x: 90, y: 140, label: 'x₁', val: '0.80', type: 'input' },
+      x2: { x: 90, y: 280, label: 'x₂', val: '0.40', type: 'input' },
+      h1: { x: 315, y: 140, label: 'h₁', sub: 'a₁=0.68', type: 'hidden' },
+      h2: { x: 315, y: 280, label: 'h₂', sub: 'a₂=0.43', type: 'hidden' },
+      out: { x: 555, y: 210, label: 'ŷ', sub: 'σ=0.80', type: 'output' },
+      loss: { x: 712, y: 210, label: 'L', sub: 'BCE=0.22', type: 'loss' }
+    };
+
+    // 边定义：包含前向与回传关系
+    const EDGES = [
+      // 0: 损失 -> 输出
+      { from: 'out', to: 'loss', fwdLabel: '', bwdLabel: '∂L/∂ŷ', bwdOffset: -12 },
+      // 1: 输出 -> 隐层 h1
+      { from: 'h1', to: 'out', fwdLabel: 'w₁₂=0.9', bwdLabel: 'δ^(2)·w₁₂', bwdOffset: -14 },
+      // 2: 输出 -> 隐层 h2
+      { from: 'h2', to: 'out', fwdLabel: 'w₂₂=-0.5', bwdLabel: 'δ^(2)·w₂₂', bwdOffset: 14 },
+      // 3: 隐层 h1 -> 输入 x1
+      { from: 'x1', to: 'h1', fwdLabel: 'w₁₁=0.5', bwdLabel: 'δ₁·x₁', bwdOffset: -12 },
+      // 4: 隐层 h1 -> 输入 x2
+      { from: 'x2', to: 'h1', fwdLabel: '', bwdLabel: '', bwdOffset: 10 },
+      // 5: 隐层 h2 -> 输入 x1
+      { from: 'x1', to: 'h2', fwdLabel: '', bwdLabel: '', bwdOffset: -10 },
+      // 6: 隐层 h2 -> 输入 x2
+      { from: 'x2', to: 'h2', fwdLabel: 'w₂₂=0.3', bwdLabel: '', bwdOffset: 12 }
+    ];
+
+    let currentStep = 0;
+
+    // 渲染 KaTeX 公式 (紧凑排版，避免 underbrace 的拉伸过界)
+    function renderFormulas() {
+      katex.render(
+        "\\frac{\\partial \\mathcal{L}}{\\partial z^{(2)}} = \\frac{\\partial \\mathcal{L}}{\\partial \\hat{y}} \\cdot \\frac{\\partial \\hat{y}}{\\partial z^{(2)}} = \\left(-\\frac{y}{\\hat{y}}\\right) \\cdot \\hat{y}(1-\\hat{y}) = \\hat{y} - y = \\delta^{(2)}",
+        document.getElementById("texEq0"),
+        { displayMode: false }
+      );
+      katex.render(
+        "\\frac{\\partial \\mathcal{L}}{\\partial \\boldsymbol{W}^{(2)}} = \\delta^{(2)} (\\boldsymbol{a}^{(1)})^T, \\quad \\frac{\\partial \\mathcal{L}}{\\partial w_{12}^{(2)}} = \\delta^{(2)} \\cdot a_1^{(1)} = -0.136",
+        document.getElementById("texEq1"),
+        { displayMode: false }
+      );
+      katex.render(
+        "\\delta_j^{(1)} = \\left( \\sum_k w_{jk}^{(2)} \\delta_k^{(2)} \\right) \\cdot \\sigma'(z_j^{(1)}) = (-0.180) \\times 0.218 = -0.039",
+        document.getElementById("texEq2"),
+        { displayMode: false }
+      );
+      katex.render(
+        "\\frac{\\partial \\mathcal{L}}{\\partial w_{11}^{(1)}} = \\delta_1^{(1)} \\cdot x_1 = (-0.039) \\times 0.80 = -0.031",
+        document.getElementById("texEq3"),
+        { displayMode: false }
+      );
+
+      // 行内辅助公式
+      katex.render("\\delta", document.getElementById("texSubtitleDelta"));
+      katex.render("a^{(l)}", document.getElementById("texLegFwd"));
+      katex.render("\\partial \\mathcal{L} / \\partial (\\cdot)", document.getElementById("texLegBwd"));
+      katex.render("\\boldsymbol{\\delta}^{(l)}", document.getElementById("texSumDelta"));
+      katex.render("\\boldsymbol{W}^{(l)}", document.getElementById("texSumW"));
+      katex.render("\\mathcal{O}(|W|)", document.getElementById("texSumO"));
+    }
+
+    // 初始化 SVG 结构
+    function initSvg() {
+      const edgeG = document.getElementById('edgeLayer');
+      const nodeG = document.getElementById('nodeLayer');
+
+      // 绘制边（前向和反向成对）
+      EDGES.forEach((e, idx) => {
+        const n1 = NODES[e.from];
+        const n2 = NODES[e.to];
+
+        // 前向箭头线
+        const fwdPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const dFwd = `M ${n1.x + 24} ${n1.y} L ${n2.x - 24} ${n2.y}`;
+        fwdPath.setAttribute('d', dFwd);
+        fwdPath.setAttribute('class', 'fwd-edge');
+        fwdPath.setAttribute('marker-end', 'url(#fwd-arrow)');
+        edgeG.appendChild(fwdPath);
+
+        // 反向回传箭头线（微小偏移避免重叠）
+        const bwdPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const dy = e.bwdOffset || 0;
+        const dBwd = `M ${n2.x - 22} ${n2.y + dy} L ${n1.x + 22} ${n1.y + dy}`;
+        bwdPath.setAttribute('d', dBwd);
+        bwdPath.setAttribute('class', 'bwd-edge');
+        bwdPath.setAttribute('id', `bwd-edge-${idx}`);
+        bwdPath.setAttribute('marker-end', 'url(#bwd-arrow)');
+        edgeG.appendChild(bwdPath);
+
+        // 如果有回传标签，绘制小徽标
+        if (e.bwdLabel) {
+          const midX = (n1.x + n2.x) / 2;
+          const midY = (n1.y + n2.y) / 2 + dy - 6;
+          const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          t.setAttribute('x', midX);
+          t.setAttribute('y', midY);
+          t.setAttribute('class', 'edge-badge');
+          t.setAttribute('text-anchor', 'middle');
+          t.setAttribute('id', `bwd-text-${idx}`);
+          t.setAttribute('fill', 'var(--accent)');
+          t.setAttribute('opacity', '0.2');
+          t.textContent = e.bwdLabel;
+          edgeG.appendChild(t);
+        }
+      });
+
+      // 绘制神经元节点
+      Object.keys(NODES).forEach(key => {
+        const n = NODES[key];
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('id', `node-${key}`);
+
+        const r = key === 'loss' ? 26 : 24;
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', n.x);
+        circle.setAttribute('cy', n.y);
+        circle.setAttribute('r', r);
+        circle.setAttribute('class', 'node-circle');
+        circle.setAttribute('id', `circle-${key}`);
+        g.appendChild(circle);
+
+        const textTitle = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        textTitle.setAttribute('x', n.x);
+        textTitle.setAttribute('y', n.y - (n.sub ? 4 : 0));
+        textTitle.setAttribute('class', 'node-text-title');
+        textTitle.textContent = n.label;
+        g.appendChild(textTitle);
+
+        if (n.sub) {
+          const textSub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          textSub.setAttribute('x', n.x);
+          textSub.setAttribute('y', n.y + 13);
+          textSub.setAttribute('class', 'node-text-sub');
+          textSub.textContent = n.sub;
+          g.appendChild(textSub);
+        }
+
+        nodeG.appendChild(g);
+      });
+    }
+
+    // 切换到具体步骤并更新状态
+    function setStep(step) {
+      currentStep = step;
+
+      // 1. 更新导航按钮高亮
+      for (let i = 0; i < 4; i++) {
+        const btn = document.getElementById(`btnStep${i}`);
+        const card = document.getElementById(`card${i}`);
+        if (i === step) {
+          btn.classList.add('active');
+          card.classList.add('highlight');
+        } else {
+          btn.classList.remove('active');
+          card.classList.remove('highlight');
+        }
+      }
+
+      // 2. 更新 SVG 中反向流与节点高亮
+      document.querySelectorAll('.bwd-edge').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.node-circle').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.edge-badge').forEach(el => el.setAttribute('opacity', '0.2'));
+
+      // 根据阶段高亮特定路径与节点
+      if (step === 0) {
+        // 损失 -> 输出层 (边 0)
+        const edge0 = document.getElementById('bwd-edge-0');
+        if (edge0) edge0.classList.add('active');
+        document.getElementById('circle-loss').classList.add('active');
+        document.getElementById('circle-out').classList.add('active');
+        const badge0 = document.getElementById('bwd-text-0');
+        if (badge0) badge0.setAttribute('opacity', '1');
+      } else if (step === 1) {
+        // 输出层权重梯度 (边 1 和 边 2)
+        const e1 = document.getElementById('bwd-edge-1');
+        const e2 = document.getElementById('bwd-edge-2');
+        if (e1) e1.classList.add('active');
+        if (e2) e2.classList.add('active');
+        document.getElementById('circle-out').classList.add('active');
+        document.getElementById('circle-h1').classList.add('active');
+        document.getElementById('circle-h2').classList.add('active');
+        const b1 = document.getElementById('bwd-text-1');
+        const b2 = document.getElementById('bwd-text-2');
+        if (b1) b1.setAttribute('opacity', '1');
+        if (b2) b2.setAttribute('opacity', '1');
+      } else if (step === 2) {
+        // 误差穿透隐藏层门控（多路投影汇入隐节点）
+        const e1 = document.getElementById('bwd-edge-1');
+        const e2 = document.getElementById('bwd-edge-2');
+        if (e1) e1.classList.add('active');
+        if (e2) e2.classList.add('active');
+        document.getElementById('circle-h1').classList.add('active');
+        document.getElementById('circle-h2').classList.add('active');
+      } else if (step === 3) {
+        // 隐层 -> 输入层权重 (边 3, 4, 5, 6)
+        const e3 = document.getElementById('bwd-edge-3');
+        if (e3) e3.classList.add('active');
+        document.getElementById('circle-h1').classList.add('active');
+        document.getElementById('circle-x1').classList.add('active');
+        const b3 = document.getElementById('bwd-text-3');
+        if (b3) b3.setAttribute('opacity', '1');
+      }
+    }
+
+    function goToStep(step) {
+      setStep(step);
+    }
+
+    // 初始化运行
+    window.addEventListener('DOMContentLoaded', () => {
+      Deck.init({ index: 10, total: 15 });
+      renderFormulas();
+      initSvg();
+      Deck.onStep((step) => {
+        setStep(Math.min(3, Math.max(0, step)));
+      }, 3);
+      setStep(0);
+    });
+  </script>
+</body>
+</html>

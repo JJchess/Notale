@@ -1,0 +1,1109 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>从弱到强：AdaBoost 以串行纠错和加权投票区别于简单多数表决</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 针对本页双范式结构化对比的布局规则 */
+    .page-head {
+      margin-bottom: 16px;
+      flex-shrink: 0;
+    }
+    .page-title {
+      font-size: 28px;
+      font-weight: 750;
+      color: var(--text);
+      line-height: 1.25;
+      margin-bottom: 6px;
+    }
+    .page-lead {
+      color: var(--muted);
+      font-size: var(--fs-sec);
+      line-height: 1.45;
+      margin: 0;
+      max-width: 1400px;
+    }
+    .page-lead strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    /* 主对比双栏 */
+    .compare-stage {
+      display: flex;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左栏：简单多数表决 */
+    .col-majority {
+      flex: 0 0 460px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 16px 18px;
+      background: #fafcfe;
+      border: var(--line) solid var(--muted);
+      border-radius: var(--radius);
+    }
+    .col-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
+      padding-bottom: 10px;
+    }
+    .col-title {
+      font-size: var(--fs-h2);
+      font-weight: 720;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .col-sub {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* 左栏 3 个独立基分类器排布 */
+    .mini-stumps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .stump-mini-card {
+      background: var(--bg);
+      border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
+      border-radius: 6px;
+      padding: 8px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .stump-mini-name {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      color: var(--weak);
+    }
+    .stump-mini-detail {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .stump-vote-badge {
+      font-size: var(--fs-tick);
+      font-weight: 650;
+      padding: 2px 6px;
+      background: color-mix(in srgb, var(--muted) 15%, transparent);
+      border-radius: 4px;
+      color: var(--text);
+    }
+
+    /* 综合判决图区域 */
+    .majority-result-block {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: var(--bg);
+      border: 1px solid color-mix(in srgb, var(--muted) 30%, transparent);
+      border-radius: 6px;
+      padding: 12px;
+    }
+    .majority-plot-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+    .majority-stat-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: color-mix(in srgb, var(--weight) 8%, var(--bg));
+      border-radius: 6px;
+      border-left: 3px solid var(--weight);
+    }
+
+    .majority-verdict-note {
+      font-size: 15px;
+      line-height: 1.45;
+      color: var(--muted);
+      padding: 10px 12px;
+      background: color-mix(in srgb, var(--surface) 60%, var(--bg));
+      border-radius: 6px;
+    }
+    .majority-verdict-note strong {
+      color: var(--weight);
+      font-weight: 700;
+    }
+
+    /* 右栏：AdaBoost 串行集成 */
+    .col-adaboost {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 16px 20px;
+      background: var(--surface);
+      border: var(--line) solid var(--ensemble);
+      border-radius: var(--radius);
+    }
+
+    .adaboost-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid color-mix(in srgb, var(--ensemble) 25%, transparent);
+      padding-bottom: 10px;
+    }
+    .adaboost-title-group {
+      display: flex;
+      flex-direction: column;
+    }
+    .stepper-btns {
+      display: flex;
+      gap: 6px;
+    }
+    .step-btn {
+      padding: 5px 12px;
+      font-size: var(--fs-label);
+      font-weight: 680;
+      border: 1.5px solid var(--weak);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+    }
+    .step-btn:hover {
+      background: color-mix(in srgb, var(--ensemble) 12%, var(--bg));
+      border-color: var(--ensemble);
+    }
+    .step-btn[aria-pressed="true"] {
+      background: var(--ensemble);
+      border-color: var(--ensemble);
+      color: #fff;
+    }
+
+    /* 串行 3 轮横向流程链 */
+    .rounds-flow {
+      display: flex;
+      align-items: stretch;
+      gap: 10px;
+      height: 310px;
+      min-height: 310px;
+    }
+    .round-card {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      border: 1.5px solid color-mix(in srgb, var(--ensemble) 30%, transparent);
+      border-radius: 6px;
+      padding: 10px;
+      transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+      position: relative;
+    }
+    .round-card.highlighted {
+      border-color: var(--focus);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 25%, transparent);
+    }
+    .round-card-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .round-title {
+      font-size: 16px;
+      font-weight: 750;
+      color: var(--text);
+    }
+    .round-split-tag {
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      color: var(--weak);
+      background: color-mix(in srgb, var(--weak) 12%, transparent);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .round-plot-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+    .round-metrics {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px dashed color-mix(in srgb, var(--muted) 30%, transparent);
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* 流程箭头节点 */
+    .flow-transfer {
+      flex: 0 0 54px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      color: var(--weight);
+      text-align: center;
+    }
+    .flow-transfer-text {
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.25;
+      writing-mode: vertical-rl;
+      letter-spacing: 1px;
+    }
+    .flow-transfer-arrow {
+      width: 24px;
+      height: 24px;
+    }
+
+    /* 聚合决算区：下半部 */
+    .adaboost-synthesis-row {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      gap: 16px;
+    }
+
+    /* 左半部：加权选票分析 */
+    .vote-analysis-panel {
+      flex: 0 0 410px;
+      background: var(--bg);
+      border: 1px solid color-mix(in srgb, var(--ensemble) 30%, transparent);
+      border-radius: 6px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .vote-panel-title {
+      font-size: 16px;
+      font-weight: 720;
+      color: var(--ensemble);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .weight-formula-box {
+      font-size: 14px;
+      line-height: 1.4;
+      background: color-mix(in srgb, var(--surface) 65%, var(--bg));
+      padding: 8px 10px;
+      border-radius: 5px;
+      color: var(--text);
+    }
+    .weight-formula-box code {
+      font-family: var(--font-num);
+      font-weight: 700;
+      color: var(--ensemble);
+    }
+
+    .voters-bars-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .voter-bar-item {
+      display: grid;
+      grid-template-columns: 85px 1fr 65px;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--fs-label);
+    }
+    .voter-label {
+      font-weight: 700;
+      color: var(--text);
+    }
+    .voter-track {
+      height: 12px;
+      background: color-mix(in srgb, var(--surface) 80%, var(--bg));
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+    }
+    .voter-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width var(--dur) var(--ease);
+    }
+    .voter-pct {
+      font-family: var(--font-num);
+      font-size: var(--fs-tick);
+      font-weight: 700;
+      text-align: right;
+      color: var(--muted);
+    }
+
+    /* 右半部：最终强判决面 */
+    .strong-boundary-panel {
+      flex: 1;
+      min-width: 0;
+      background: var(--bg);
+      border: 1px solid color-mix(in srgb, var(--ensemble) 30%, transparent);
+      border-radius: 6px;
+      padding: 12px 14px;
+      display: flex;
+      gap: 16px;
+      align-items: stretch;
+    }
+    .strong-plot-wrap {
+      flex: 0 0 240px;
+      position: relative;
+    }
+    .strong-details {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .strong-title {
+      font-size: 16px;
+      font-weight: 750;
+      color: var(--text);
+    }
+    .strong-stat-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: color-mix(in srgb, var(--confirmed) 10%, var(--bg));
+      border-radius: 6px;
+      border-left: 3px solid var(--confirmed);
+    }
+    .strong-verdict-note {
+      font-size: 14.5px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+    .strong-verdict-note strong {
+      color: var(--ensemble);
+    }
+
+    /* 底部交互探测读数条 */
+    .interactive-inspector-bar {
+      margin-top: 2px;
+      background: color-mix(in srgb, var(--surface) 85%, var(--bg));
+      border: 1px solid color-mix(in srgb, var(--ensemble) 20%, transparent);
+      border-radius: 6px;
+      padding: 7px 14px;
+      font-size: 14px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .inspector-hint {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* SVG 内部共用样式 */
+    svg text {
+      user-select: none;
+      font-family: var(--font-sans);
+    }
+    .svg-tick {
+      font-size: 12px;
+      fill: var(--muted);
+    }
+    .pt-hoverable {
+      cursor: pointer;
+      transition: transform 120ms ease;
+    }
+    .pt-hoverable:hover {
+      filter: drop-shadow(0 0 4px rgba(20,39,46,0.35));
+    }
+  </style>
+</head>
+<body data-page="02" data-total="5">
+  <main id="stage">
+    <!-- 顶部标题与导语 -->
+    <header class="page-head">
+      <h1 class="page-title">从弱到强：AdaBoost 以串行纠错和加权投票区别于简单多数表决</h1>
+      <p class="page-lead">
+        简单多数表决假设弱分类器相互独立；当弱模型在同类难样本上同时失误时，等权表决无法修正盲区。AdaBoost 通过<strong>样本权重串行转移</strong>持续聚焦上一轮错分点，并按分类表现<strong>动态分配投票权</strong>，让一组单层弱树桩结合出精准的非线性分界面。
+      </p>
+    </header>
+
+    <!-- 主对比舞台：左栏简单表决，右栏 AdaBoost 串行增强 -->
+    <section class="compare-stage" aria-label="简单多数表决与 AdaBoost 机制对比">
+      <!-- 左栏：简单多数表决 -->
+      <article class="col-majority" aria-labelledby="col-majority-title">
+        <div class="col-header">
+          <div>
+            <h2 id="col-majority-title" class="col-title">简单多数表决</h2>
+            <div class="col-sub">Bagging / 独立弱学习器集成</div>
+          </div>
+          <span class="tag" data-kind="weak">并行独立 · 等权累加</span>
+        </div>
+
+        <!-- 3 个基分类器小卡片 -->
+        <div class="mini-stumps-grid">
+          <div class="stump-mini-card">
+            <span class="stump-mini-name">树桩 h₁</span>
+            <span class="stump-mini-detail">切分 x &lt; 3.5</span>
+            <span class="stump-vote-badge">票权 33.3%</span>
+          </div>
+          <div class="stump-mini-card">
+            <span class="stump-mini-name">树桩 h₂</span>
+            <span class="stump-mini-detail">切分 x ≥ 6.5</span>
+            <span class="stump-vote-badge">票权 33.3%</span>
+          </div>
+          <div class="stump-mini-card">
+            <span class="stump-mini-name">树桩 h₃</span>
+            <span class="stump-mini-detail">切分 y &lt; 5.0</span>
+            <span class="stump-vote-badge">票权 33.3%</span>
+          </div>
+        </div>
+
+        <!-- 等权多数表决最终空间图 -->
+        <div class="majority-result-block">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:var(--fs-label); font-weight:700; color:var(--text);">多数表决综合预测面</span>
+            <span style="font-size:var(--fs-tick); color:var(--muted);">sign(h₁ + h₂ + h₃)</span>
+          </div>
+          <div class="majority-plot-wrap">
+            <svg id="svg-majority" class="cv-fill" viewBox="0 0 300 240" preserveAspectRatio="xMidYMid meet" aria-label="简单多数表决结果散点图"></svg>
+          </div>
+          <div class="majority-stat-row">
+            <span style="font-size:14px; font-weight:650; color:var(--weight);">表决错误率</span>
+            <div class="big sm" style="font-size:28px;">
+              <span class="num" style="color:var(--weight)">40%</span>
+              <span class="unit" style="font-size:13px;">(4 / 10 错分)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 机制诊断结论 -->
+        <div class="majority-verdict-note">
+          <strong>盲区重叠失效</strong>：各基分类器在均权样本上独立拟合，对密集重叠难样本缺乏协同分工；当其中两个分类器同时误判时，简单多数表决直接被错误主导。
+        </div>
+      </article>
+
+      <!-- 右栏：AdaBoost 串行纠错与加权投票 -->
+      <article class="col-adaboost" aria-labelledby="col-adaboost-title">
+        <div class="adaboost-nav">
+          <div class="adaboost-title-group">
+            <h2 id="col-adaboost-title" class="col-title" style="color:var(--ensemble);">AdaBoost 串行纠错与动态加权</h2>
+            <div class="col-sub">样本权重引导后续基学习器攻坚 · 分类器权重论功行赏</div>
+          </div>
+          <div class="stepper-btns" role="tablist" aria-label="轮次步骤切换">
+            <button class="step-btn" data-step="all" aria-pressed="true">全流程链</button>
+            <button class="step-btn" data-step="1" aria-pressed="false">第 1 轮 h₁</button>
+            <button class="step-btn" data-step="2" aria-pressed="false">第 2 轮 h₂</button>
+            <button class="step-btn" data-step="3" aria-pressed="false">第 3 轮 h₃</button>
+            <button class="step-btn" data-step="ens" aria-pressed="false">最终强判决 H</button>
+          </div>
+        </div>
+
+        <!-- 串行 3 轮流程横向展示 -->
+        <div class="rounds-flow">
+          <!-- 轮次 1 -->
+          <div class="round-card" id="round-card-1" data-round="1">
+            <div class="round-card-head">
+              <span class="round-title">轮次 1 · 基学习器 h₁</span>
+              <span class="round-split-tag">x &lt; 3.5 → +1</span>
+            </div>
+            <div class="round-plot-wrap">
+              <svg id="svg-r1" class="cv-fill" viewBox="0 0 200 180" preserveAspectRatio="xMidYMid meet" aria-label="第 1 轮分类图"></svg>
+            </div>
+            <div class="round-metrics">
+              <span>误差率 <b class="metric-val">ε₁ = 0.30</b></span>
+              <span>模型权重 <b class="metric-val" style="color:var(--ensemble)">α₁ = 0.42</b></span>
+            </div>
+          </div>
+
+          <!-- 权重传递 1 -->
+          <div class="flow-transfer" aria-hidden="true">
+            <span class="flow-transfer-text">样本增权 2.3×</span>
+            <svg class="flow-transfer-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="4" y1="12" x2="20" y2="12"></line>
+              <polyline points="14 6 20 12 14 18"></polyline>
+            </svg>
+          </div>
+
+          <!-- 轮次 2 -->
+          <div class="round-card" id="round-card-2" data-round="2">
+            <div class="round-card-head">
+              <span class="round-title">轮次 2 · 基学习器 h₂</span>
+              <span class="round-split-tag">x ≥ 6.5 → +1</span>
+            </div>
+            <div class="round-plot-wrap">
+              <svg id="svg-r2" class="cv-fill" viewBox="0 0 200 180" preserveAspectRatio="xMidYMid meet" aria-label="第 2 轮分类图"></svg>
+            </div>
+            <div class="round-metrics">
+              <span>误差率 <b class="metric-val">ε₂ = 0.21</b></span>
+              <span>模型权重 <b class="metric-val" style="color:var(--ensemble)">α₂ = 0.65</b></span>
+            </div>
+          </div>
+
+          <!-- 权重传递 2 -->
+          <div class="flow-transfer" aria-hidden="true">
+            <span class="flow-transfer-text">难点再聚焦</span>
+            <svg class="flow-transfer-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="4" y1="12" x2="20" y2="12"></line>
+              <polyline points="14 6 20 12 14 18"></polyline>
+            </svg>
+          </div>
+
+          <!-- 轮次 3 -->
+          <div class="round-card" id="round-card-3" data-round="3">
+            <div class="round-card-head">
+              <span class="round-title">轮次 3 · 基学习器 h₃</span>
+              <span class="round-split-tag">y &lt; 7.6 → +1</span>
+            </div>
+            <div class="round-plot-wrap">
+              <svg id="svg-r3" class="cv-fill" viewBox="0 0 200 180" preserveAspectRatio="xMidYMid meet" aria-label="第 3 轮分类图"></svg>
+            </div>
+            <div class="round-metrics">
+              <span>误差率 <b class="metric-val">ε₃ = 0.14</b></span>
+              <span>模型权重 <b class="metric-val" style="color:var(--ensemble)">α₃ = 0.92</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 下半部分：加权投票核算与最终强分类器分界面 -->
+        <div class="adaboost-synthesis-row">
+          <!-- 加权投票权分析 -->
+          <div class="vote-analysis-panel">
+            <div class="vote-panel-title">
+              <div class="vote-mark" title="三轮分类器加权票权签名"><i></i><i></i><i></i></div>
+              <span>动态票权与聚合判决公式</span>
+            </div>
+            <div class="weight-formula-box">
+              <code>H(x) = sign(0.42 h₁ + 0.65 h₂ + 0.92 h₃)</code><br>
+              <span style="font-size:12.5px; color:var(--muted); margin-top:3px; display:inline-block;">
+                分类器权重公式：αₘ = ½ ln((1 - εₘ) / εₘ)
+              </span>
+            </div>
+            <div class="voters-bars-list">
+              <div class="voter-bar-item">
+                <span class="voter-label">h₁ (α = 0.42)</span>
+                <div class="voter-track">
+                  <div class="voter-fill" style="width: 21%; background: var(--weak);"></div>
+                </div>
+                <span class="voter-pct">21.1% 票权</span>
+              </div>
+              <div class="voter-bar-item">
+                <span class="voter-label">h₂ (α = 0.65)</span>
+                <div class="voter-track">
+                  <div class="voter-fill" style="width: 33%; background: var(--ensemble);"></div>
+                </div>
+                <span class="voter-pct">32.7% 票权</span>
+              </div>
+              <div class="voter-bar-item">
+                <span class="voter-label">h₃ (α = 0.92)</span>
+                <div class="voter-track">
+                  <div class="voter-fill" style="width: 46%; background: var(--weight);"></div>
+                </div>
+                <span class="voter-pct">46.2% 票权</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 强分类器空间分界面图 -->
+          <div class="strong-boundary-panel">
+            <div class="strong-plot-wrap">
+              <svg id="svg-adaboost-final" class="cv-fill" viewBox="0 0 240 180" preserveAspectRatio="xMidYMid meet" aria-label="AdaBoost 最终强分类器判决图"></svg>
+            </div>
+            <div class="strong-details">
+              <div>
+                <div class="strong-title">最终强判决面 H(x)</div>
+                <div style="font-size:13px; color:var(--muted); margin-top:2px;">
+                  3 个单一切分线线性加权组合出台阶状非线性决策边界
+                </div>
+              </div>
+              <div class="strong-stat-row">
+                <span style="font-size:14px; font-weight:700; color:var(--confirmed);">集成后总错误率</span>
+                <div class="big sm" style="font-size:28px;">
+                  <span class="num" style="color:var(--confirmed)">0%</span>
+                  <span class="unit" style="font-size:13px;">(0 / 10 全分对)</span>
+                </div>
+              </div>
+              <div class="strong-verdict-note">
+                <strong>双重权重纽带</strong>：串行样本权重迫使后续基学习器接力攻坚未解样本；模型权重依胜率论功行赏，彻底克服单模型容量不足与集体误判。
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部实时交互探测读数条 -->
+        <div class="interactive-inspector-bar" id="inspector-bar">
+          <span id="inspector-text">
+            <strong>交互探测</strong>：悬停或点击上方散点可查看该样本在三轮中的权重变化（w₁ → w₂ → w₃）与加权得分；点击轮次按钮可聚焦单轮细节。
+          </span>
+          <span class="inspector-hint">支持键盘 Tab 聚焦与数字键 1–4 快速选轮</span>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      Deck.init({ index: 2, total: 5 });
+
+      // 10 个标准测试样本坐标与真实类别 (+1 或 -1)
+      const SAMPLES = [
+        { id: 1,  x: 1.5, y: 7.5, label:  1, name: "P₁" },
+        { id: 2,  x: 2.0, y: 4.5, label:  1, name: "P₂" },
+        { id: 3,  x: 2.5, y: 2.0, label:  1, name: "P₃" },
+        { id: 4,  x: 4.5, y: 7.0, label: -1, name: "P₄" },
+        { id: 5,  x: 5.0, y: 4.5, label: -1, name: "P₅" },
+        { id: 6,  x: 5.5, y: 2.0, label: -1, name: "P₆" },
+        { id: 7,  x: 7.5, y: 7.5, label:  1, name: "P₇" },
+        { id: 8,  x: 8.0, y: 4.5, label:  1, name: "P₈" },
+        { id: 9,  x: 8.5, y: 2.0, label:  1, name: "P₉" },
+        { id: 10, x: 5.0, y: 9.0, label: -1, name: "P₁₀" }
+      ];
+
+      // 样本在 3 轮 AdaBoost 中的权重
+      // 轮 1: 均权 0.10
+      // 轮 2: 错分点(P7,P8,P9)放大至 0.167，其余收缩至 0.071
+      // 轮 3: P1,P2,P3 放大至 0.167，P7,P8,P9 为 0.106，P4,P5,P6,P10 为 0.045
+      const WEIGHTS = [
+        [0.100, 0.071, 0.167], // P1
+        [0.100, 0.071, 0.167], // P2
+        [0.100, 0.071, 0.167], // P3
+        [0.100, 0.071, 0.045], // P4
+        [0.100, 0.071, 0.045], // P5
+        [0.100, 0.071, 0.045], // P6
+        [0.100, 0.167, 0.106], // P7
+        [0.100, 0.167, 0.106], // P8
+        [0.100, 0.167, 0.106], // P9
+        [0.100, 0.071, 0.045]  // P10
+      ];
+
+      // 各分类器定义
+      // h1: x < 3.5 -> +1, else -1
+      // h2: x >= 6.5 -> +1, else -1
+      // h3: y < 7.6 -> +1, else -1
+      // h_maj_3: y < 5.0 -> +1, else -1
+      const predH1 = pt => pt.x < 3.5 ? 1 : -1;
+      const predH2 = pt => pt.x >= 6.5 ? 1 : -1;
+      const predH3 = pt => pt.y < 7.6 ? 1 : -1;
+      const predHMaj3 = pt => pt.y < 5.0 ? 1 : -1;
+
+      const alpha1 = 0.4236;
+      const alpha2 = 0.6496;
+      const alpha3 = 0.9229;
+
+      // 颜色常数（从 CSS Token 获取）
+      const COLOR_POS = "#17617B";    // --ensemble (正类)
+      const COLOR_NEG = "#526A73";    // --weak (负类)
+      const COLOR_ERR = "#B43A13";    // --weight (错分高亮)
+      const COLOR_CONF = "#2F6B4F";   // --confirmed
+
+      // 坐标映射帮助函数: x in [0, 10] -> svgX, y in [0, 10] -> svgY (y轴朝上)
+      function makeScale(viewW, viewH, padX = 22, padY = 20) {
+        return {
+          cx: x => padX + (x / 10) * (viewW - 2 * padX),
+          cy: y => viewH - padY - (y / 10) * (viewH - 2 * padY),
+          w: viewW - 2 * padX,
+          h: viewH - 2 * padY,
+          x0: padX,
+          y0: padY
+        };
+      }
+
+      // 渲染网格线与坐标刻度
+      function renderGrid(svg, scale, viewW, viewH) {
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.setAttribute("class", "grid-lines");
+        
+        // 框底
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", scale.cx(0));
+        rect.setAttribute("y", scale.cy(10));
+        rect.setAttribute("width", scale.w);
+        rect.setAttribute("height", scale.h);
+        rect.setAttribute("fill", "#ffffff");
+        rect.setAttribute("stroke", "color-mix(in srgb, var(--muted) 25%, transparent)");
+        rect.setAttribute("stroke-width", "1");
+        g.appendChild(rect);
+
+        // 弱参考线
+        [2.5, 5.0, 7.5].forEach(v => {
+          const lX = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          lX.setAttribute("x1", scale.cx(v));
+          lX.setAttribute("y1", scale.cy(0));
+          lX.setAttribute("x2", scale.cx(v));
+          lX.setAttribute("y2", scale.cy(10));
+          lX.setAttribute("stroke", "color-mix(in srgb, var(--muted) 15%, transparent)");
+          lX.setAttribute("stroke-dasharray", "2,3");
+          g.appendChild(lX);
+
+          const lY = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          lY.setAttribute("x1", scale.cx(0));
+          lY.setAttribute("y1", scale.cy(v));
+          lY.setAttribute("x2", scale.cx(10));
+          lY.setAttribute("y2", scale.cy(v));
+          lY.setAttribute("stroke", "color-mix(in srgb, var(--muted) 15%, transparent)");
+          lY.setAttribute("stroke-dasharray", "2,3");
+          g.appendChild(lY);
+        });
+
+        svg.appendChild(g);
+      }
+
+      // 渲染样本点集合
+      function renderPoints(svg, scale, getRadius, getIsError) {
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.setAttribute("class", "points-group");
+
+        SAMPLES.forEach((pt, idx) => {
+          const px = scale.cx(pt.x);
+          const py = scale.cy(pt.y);
+          const r = getRadius(idx, pt);
+          const isErr = getIsError(idx, pt);
+
+          const pg = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          pg.setAttribute("class", "pt-hoverable");
+          pg.setAttribute("data-id", pt.id);
+          pg.setAttribute("tabindex", "0");
+          pg.setAttribute("role", "button");
+          pg.setAttribute("aria-label", `${pt.name}: 坐标(${pt.x}, ${pt.y}), 真实类别 ${pt.label > 0 ? '+1' : '-1'}`);
+
+          // 若错分，绘制红色警示扩散光圈
+          if (isErr) {
+            const errRing = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            errRing.setAttribute("cx", px);
+            errRing.setAttribute("cy", py);
+            errRing.setAttribute("r", r + 4.5);
+            errRing.setAttribute("fill", "none");
+            errRing.setAttribute("stroke", COLOR_ERR);
+            errRing.setAttribute("stroke-width", "2");
+            errRing.setAttribute("stroke-dasharray", "3,2");
+            pg.appendChild(errRing);
+          }
+
+          // 主圆点
+          const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          circle.setAttribute("cx", px);
+          circle.setAttribute("cy", py);
+          circle.setAttribute("r", r);
+          circle.setAttribute("fill", pt.label === 1 ? COLOR_POS : COLOR_NEG);
+          circle.setAttribute("stroke", "#ffffff");
+          circle.setAttribute("stroke-width", "1.5");
+          pg.appendChild(circle);
+
+          // 正负号标示
+          const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          txt.setAttribute("x", px);
+          txt.setAttribute("y", py + 4);
+          txt.setAttribute("text-anchor", "middle");
+          txt.setAttribute("fill", "#ffffff");
+          txt.setAttribute("font-size", "12");
+          txt.setAttribute("font-weight", "bold");
+          txt.textContent = pt.label === 1 ? "+" : "−";
+          pg.appendChild(txt);
+
+          // 样本名标签
+          const nameTxt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          nameTxt.setAttribute("x", px + r + 4);
+          nameTxt.setAttribute("y", py + 4);
+          nameTxt.setAttribute("font-size", "12");
+          nameTxt.setAttribute("font-weight", "700");
+          nameTxt.setAttribute("fill", isErr ? COLOR_ERR : "var(--muted)");
+          nameTxt.textContent = pt.name;
+          pg.appendChild(nameTxt);
+
+          // 悬停/聚焦事件绑定
+          const onInspect = () => updateInspector(pt, idx);
+          pg.addEventListener("mouseenter", onInspect);
+          pg.addEventListener("focus", onInspect);
+
+          g.appendChild(pg);
+        });
+
+        svg.appendChild(g);
+      }
+
+      // 渲染切分线与半平面底色
+      function renderSplit(svg, scale, axis, val, posDirection, strokeColor = "var(--weak)") {
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+        // 半平面淡色填充 (正类区域淡填色)
+        const shade = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        shade.setAttribute("fill", "color-mix(in srgb, var(--ensemble) 8%, transparent)");
+        if (axis === "x") {
+          if (posDirection === "<") {
+            shade.setAttribute("x", scale.cx(0));
+            shade.setAttribute("y", scale.cy(10));
+            shade.setAttribute("width", scale.cx(val) - scale.cx(0));
+            shade.setAttribute("height", scale.h);
+          } else {
+            shade.setAttribute("x", scale.cx(val));
+            shade.setAttribute("y", scale.cy(10));
+            shade.setAttribute("width", scale.cx(10) - scale.cx(val));
+            shade.setAttribute("height", scale.h);
+          }
+        } else {
+          if (posDirection === "<") {
+            shade.setAttribute("x", scale.cx(0));
+            shade.setAttribute("y", scale.cy(val));
+            shade.setAttribute("width", scale.w);
+            shade.setAttribute("height", scale.cy(0) - scale.cy(val));
+          } else {
+            shade.setAttribute("x", scale.cx(0));
+            shade.setAttribute("y", scale.cy(10));
+            shade.setAttribute("width", scale.w);
+            shade.setAttribute("height", scale.cy(val) - scale.cy(10));
+          }
+        }
+        g.appendChild(shade);
+
+        // 分割线段
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        if (axis === "x") {
+          line.setAttribute("x1", scale.cx(val));
+          line.setAttribute("y1", scale.cy(0));
+          line.setAttribute("x2", scale.cx(val));
+          line.setAttribute("y2", scale.cy(10));
+        } else {
+          line.setAttribute("x1", scale.cx(0));
+          line.setAttribute("y1", scale.cy(val));
+          line.setAttribute("x2", scale.cx(10));
+          line.setAttribute("y2", scale.cy(val));
+        }
+        line.setAttribute("stroke", strokeColor);
+        line.setAttribute("stroke-width", "2.5");
+        line.setAttribute("stroke-dasharray", "4,3");
+        g.appendChild(line);
+
+        svg.appendChild(g);
+      }
+
+      // 1. 绘制左栏：多数表决综合图
+      function drawMajorityPlot() {
+        const svg = document.getElementById("svg-majority");
+        svg.innerHTML = "";
+        const scale = makeScale(300, 240, 24, 22);
+        renderGrid(svg, scale, 300, 240);
+
+        // 3 条切分虚线
+        renderSplit(svg, scale, "x", 3.5, "<", "color-mix(in srgb, var(--weak) 70%, transparent)");
+        renderSplit(svg, scale, "x", 6.5, ">", "color-mix(in srgb, var(--weak) 70%, transparent)");
+        renderSplit(svg, scale, "y", 5.0, "<", "color-mix(in srgb, var(--weak) 70%, transparent)");
+
+        // 多数表决预测函数
+        const majPred = pt => {
+          const vote = predH1(pt) + predH2(pt) + predHMaj3(pt);
+          return Math.sign(vote);
+        };
+
+        // 绘制样本点 (均权半径 r = 6.5)
+        renderPoints(
+          svg, scale,
+          () => 6.5,
+          (idx, pt) => majPred(pt) !== pt.label // 4 个错分样本 (P7, P8, P9, P4)
+        );
+      }
+
+      // 2. 绘制 AdaBoost 第 1 轮
+      function drawRound1() {
+        const svg = document.getElementById("svg-r1");
+        svg.innerHTML = "";
+        const scale = makeScale(200, 180, 20, 18);
+        renderGrid(svg, scale, 200, 180);
+        renderSplit(svg, scale, "x", 3.5, "<", "var(--weak)");
+
+        renderPoints(
+          svg, scale,
+          () => 6.0, // 初始等权，半径一致
+          (idx, pt) => predH1(pt) !== pt.label // 错分 P7, P8, P9
+        );
+      }
+
+      // 3. 绘制 AdaBoost 第 2 轮
+      function drawRound2() {
+        const svg = document.getElementById("svg-r2");
+        svg.innerHTML = "";
+        const scale = makeScale(200, 180, 20, 18);
+        renderGrid(svg, scale, 200, 180);
+        renderSplit(svg, scale, "x", 6.5, ">", "var(--ensemble)");
+
+        // 样本半径根据第 2 轮权重调整：错分点 P7,P8,P9 放大至 9.5px
+        renderPoints(
+          svg, scale,
+          idx => {
+            const w = WEIGHTS[idx][1];
+            return 5.0 + Math.sqrt(w / 0.10) * 3.5;
+          },
+          (idx, pt) => predH2(pt) !== pt.label // 错分 P1, P2, P3
+        );
+      }
+
+      // 4. 绘制 AdaBoost 第 3 轮
+      function drawRound3() {
+        const svg = document.getElementById("svg-r3");
+        svg.innerHTML = "";
+        const scale = makeScale(200, 180, 20, 18);
+        renderGrid(svg, scale, 200, 180);
+        renderSplit(svg, scale, "y", 7.6, "<", "var(--weight)");
+
+        // 样本半径根据第 3 轮权重调整
+        renderPoints(
+          svg, scale,
+          idx => {
+            const w = WEIGHTS[idx][2];
+            return 4.5 + Math.sqrt(w / 0.10) * 4.0;
+          },
+          (idx, pt) => predH3(pt) !== pt.label // 错分 P10, P7
+        );
+      }
+
+      // 5. 绘制 AdaBoost 最终强判决图
+      function drawAdaBoostFinal() {
+        const svg = document.getElementById("svg-adaboost-final");
+        svg.innerHTML = "";
+        const scale = makeScale(240, 180, 22, 18);
+        renderGrid(svg, scale, 240, 180);
+
+        // 正类判决区域 1: [0, 3.5] x [0, 7.6]
+        const r1 = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        r1.setAttribute("x", scale.cx(0));
+        r1.setAttribute("y", scale.cy(7.6));
+        r1.setAttribute("width", scale.cx(3.5) - scale.cx(0));
+        r1.setAttribute("height", scale.cy(0) - scale.cy(7.6));
+        r1.setAttribute("fill", "color-mix(in srgb, var(--ensemble) 14%, transparent)");
+        svg.appendChild(r1);
+
+        // 正类判决区域 2: [6.5, 10] x [0, 7.6]
+        const r2 = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        r2.setAttribute("x", scale.cx(6.5));
+        r2.setAttribute("y", scale.cy(7.6));
+        r2.setAttribute("width", scale.cx(10) - scale.cx(6.5));
+        r2.setAttribute("height", scale.cy(0) - scale.cy(7.6));
+        r2.setAttribute("fill", "color-mix(in srgb, var(--ensemble) 14%, transparent)");
+        svg.appendChild(r2);
+
+        // 分界轮廓折线
+        const boundaryLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        const bdD = `
+          M ${scale.cx(0)} ${scale.cy(7.6)}
+          L ${scale.cx(3.5)} ${scale.cy(7.6)}
+          L ${scale.cx(3.5)} ${scale.cy(0)}
+          M ${scale.cx(6.5)} ${scale.cy(0)}
+          L ${scale.cx(6.5)} ${scale.cy(7.6)}
+          L ${scale.cx(10)} ${scale.cy(7.6)}
+        `;
+        boundaryLine.setAttribute("d", bdD);
+        boundaryLine.setAttribute("fill", "none");
+        boundaryLine.setAttribute("stroke", "var(--ensemble)");
+        boundaryLine.setAttribute("stroke-width", "2.5");
+        svg.appendChild(boundaryLine);
+
+        // 绘制样本点 (在强分类器下全部正确分类，无错误高亮)
+        renderPoints(
+          svg, scale,
+          () => 7.0,
+          () => false // 0 错误
+        );
+      }
+
+      // 交互探测器更新函数
+      const inspectorText = document.getElementById("inspector-text");
+      function updateInspector(pt, idx) {
+        const w1 = WEIGHTS[idx][0].toFixed(2);
+        const w2 = WEIGHTS[idx][1].toFixed(2);
+        const w3 = WEIGHTS[idx][2].toFixed(2);
+        const v1 = predH1(pt);
+        const v2 = predH2(pt);
+        const v3 = predH3(pt);
+        const score = (alpha1 * v1 + alpha2 * v2 + alpha3 * v3).toFixed(2);
+        const finalClass = score > 0 ? "+1" : "−1";
+        const isRight = (score > 0 && pt.label === 1) || (score < 0 && pt.label === -1);
+
+        inspectorText.innerHTML = `
+          <strong>选定样本 ${pt.name}(${pt.x}, ${pt.y})</strong> · 真实类别: <b>${pt.label > 0 ? '+1' : '−1'}</b> ｜
+          权重演变: <b>w₁=${w1} → w₂=${w2} → w₃=${w3}</b> ｜
+          综合加权得分: <b>${score > 0 ? '+' : ''}${score}</b> → 最终判定: <b style="color:${isRight ? 'var(--confirmed)' : 'var(--weight)'}">${finalClass} (${isRight ? '正确' : '错误'})</b>
+        `;
+      }
+
+      // 步骤按钮切换逻辑
+      const stepBtns = document.querySelectorAll(".step-btn");
+      const roundCards = {
+        "1": document.getElementById("round-card-1"),
+        "2": document.getElementById("round-card-2"),
+        "3": document.getElementById("round-card-3")
+      };
+
+      function setStep(step) {
+        stepBtns.forEach(btn => {
+          btn.setAttribute("aria-pressed", btn.dataset.step === step ? "true" : "false");
+        });
+
+        // 重置高亮
+        Object.values(roundCards).forEach(card => card.classList.remove("highlighted"));
+
+        if (step === "all") {
+          inspectorText.innerHTML = "<strong>全流程模式</strong>：观察样本权重如何串行转移，以及三位分类器如何由模型权重 α 汇总出非线性强决策。";
+        } else if (step === "1") {
+          roundCards["1"].classList.add("highlighted");
+          inspectorText.innerHTML = "<strong>聚焦第 1 轮</strong>：弱树桩 h₁ 切分 x &lt; 3.5，错分右侧 3 个正样本(P₇, P₈, P₉)，误差率 30%，这 3 个样本权重将被放大 2.3 倍。";
+        } else if (step === "2") {
+          roundCards["2"].classList.add("highlighted");
+          inspectorText.innerHTML = "<strong>聚焦第 2 轮</strong>：权重放大迫使 h₂ 优先切分右侧高权样本(x ≥ 6.5)，纠正上一轮的盲区，误差率下降至 21.4%。";
+        } else if (step === "3") {
+          roundCards["3"].classList.add("highlighted");
+          inspectorText.innerHTML = "<strong>聚焦第 3 轮</strong>：横向切分 y &lt; 7.6 进一步剔除中上方冲突点，获得最高发言权 α₃ = 0.92。";
+        } else if (step === "ens") {
+          inspectorText.innerHTML = "<strong>聚焦强判决面 H(x)</strong>：三个弱树桩加权合成阶梯状边界，彻底分离全部正负样本，错误率降为 0%。";
+        }
+      }
+
+      stepBtns.forEach(btn => {
+        btn.addEventListener("click", () => setStep(btn.dataset.step));
+      });
+
+      // 键盘快捷键 1-4 选步骤
+      window.addEventListener("keydown", e => {
+        if (e.key === "1") setStep("1");
+        else if (e.key === "2") setStep("2");
+        else if (e.key === "3") setStep("3");
+        else if (e.key === "4" || e.key === "0") setStep("all");
+      });
+
+      // 初始化所有 SVG 绘制
+      function renderAll() {
+        drawMajorityPlot();
+        drawRound1();
+        drawRound2();
+        drawRound3();
+        drawAdaBoostFinal();
+      }
+
+      renderAll();
+      Deck.onResize(renderAll);
+    })();
+  </script>
+</body>
+</html>

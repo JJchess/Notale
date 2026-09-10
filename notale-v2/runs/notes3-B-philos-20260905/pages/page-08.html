@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bootstrap 重采样：用有放回抽样制造相互不同的训练集</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #E8EEF2;
+      --text: #142533;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: "DIN Alternate", Bahnschrift, system-ui, sans-serif;
+    }
+
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      color: var(--text);
+      box-sizing: border-box;
+    }
+
+    /* 顶部标题行与简短结论 */
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: var(--line) solid var(--surface-strong);
+      padding-bottom: 14px;
+      flex-shrink: 0;
+    }
+    .header-row h1 {
+      font-size: var(--fs-h1);
+      margin: 0;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .header-row .claim {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主舞台双栏网格 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 24px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左栏：原始样本池与重采样机 */
+    .pool-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+    .panel-box {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+    }
+    .pool-box {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 0;
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .panel-head h2 {
+      font-size: var(--fs-h2);
+      margin: 0;
+      font-weight: 600;
+    }
+    .pool-chips {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin: 10px 0 20px;
+    }
+    .chip {
+      height: 64px;
+      border-radius: 8px;
+      background: #FFFFFF;
+      border: 2px solid var(--surface-strong);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-num);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--learner);
+      transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease);
+    }
+    .chip.highlight {
+      border-color: var(--aggregate);
+      background: #FDEDEB;
+      color: var(--aggregate);
+      transform: scale(1.04);
+    }
+
+    .math-callout {
+      background: #EBF3FA;
+      border: 1px solid #C4D9EC;
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin-top: 14px;
+    }
+    .math-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-sec);
+      color: var(--learner);
+      font-weight: 600;
+    }
+    .math-formula {
+      font-family: var(--font-num);
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .math-desc {
+      font-size: var(--fs-label);
+      color: var(--text);
+      margin-top: 8px;
+      line-height: 1.45;
+    }
+
+    /* 控制操作区 */
+    .ctrl-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 16px;
+    }
+    .btn-act {
+      flex: 1;
+      height: 48px;
+      border-radius: 8px;
+      border: var(--line) solid var(--learner);
+      background: var(--learner);
+      color: #FFFFFF;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background var(--dur) var(--ease);
+    }
+    .btn-act:hover {
+      background: #1D4770;
+    }
+    .btn-reset {
+      height: 48px;
+      padding: 0 20px;
+      border-radius: 8px;
+      border: var(--line) solid var(--muted);
+      background: var(--surface);
+      color: var(--text);
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-reset:hover {
+      background: var(--surface-strong);
+    }
+
+    /* 右栏：多个 Bootstrap 子集对比展示 */
+    .subsets-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+    .subsets-container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      min-height: 0;
+    }
+    .subset-card {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .subset-card.active-subset {
+      border-color: var(--learner);
+    }
+    .subset-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--surface-strong);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .subset-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--learner);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tag-count {
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      background: #DCE8F2;
+      color: var(--learner);
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .samples-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: auto;
+    }
+    .sample-pill {
+      height: 52px;
+      border-radius: 8px;
+      background: #FFFFFF;
+      border: 2px solid var(--surface-strong);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-num);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      position: relative;
+      transition: all var(--dur) var(--ease);
+    }
+    .sample-pill.dup {
+      border-color: var(--aggregate);
+      background: #FEF3F0;
+      color: var(--aggregate);
+    }
+    .dup-badge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--aggregate);
+      color: #FFFFFF;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+    }
+
+    /* 子集统计栏 */
+    .stat-bar {
+      border-top: 1px solid var(--surface-strong);
+      padding-top: 14px;
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .stat-val {
+      font-family: var(--font-num);
+      font-weight: 700;
+      font-size: var(--fs-sec);
+      color: var(--text);
+    }
+    .oob-box {
+      margin-top: 2px;
+    }
+    .oob-title {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .oob-list {
+      font-family: var(--font-num);
+      font-size: var(--fs-sec);
+      color: var(--text);
+      background: #EEF3F7;
+      border: 1px solid #C4D9EC;
+      padding: 6px 10px;
+      border-radius: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 底部收束总结卡片 */
+    .bottom-summary {
+      background: var(--surface);
+      border: var(--line) solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      color: var(--text);
+    }
+    .bottom-summary strong {
+      color: var(--learner);
+    }
+    .bottom-summary .legend-group {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body data-page="08" data-total="27">
+  <div id="stage">
+    <div class="header-row">
+      <h1>Bootstrap 重采样：制造差异化子集</h1>
+      <p class="claim">每次抽取独立放回：同一子集内出现重复，不同子集间产生自然扰动</p>
+    </div>
+
+    <div class="main-grid">
+      <!-- 左栏：原始样本池 -->
+      <div class="pool-col min0">
+        <div class="panel-box pool-box">
+          <div>
+            <div class="panel-head">
+              <h2>原始训练集 <span style="font-family:var(--font-num);font-size:18px;color:var(--muted);">(N = 12)</span></h2>
+              <span class="tag-count" id="poolTotal">12 个不同样本</span>
+            </div>
+            <div class="pool-chips" id="poolChips">
+              <!-- JS 填充 12 个样本点 -->
+            </div>
+          </div>
+
+          <div>
+            <div class="math-callout">
+              <div class="math-row">
+                <span>极限未抽中概率</span>
+                <span class="math-formula">(1 - 1/N)ᴺ → 1/e ≈ 36.8%</span>
+              </div>
+              <div class="math-desc">
+                当抽样规模与样本量相等时，每个子集平均保留约 63.2% 的独特样本，剩余约 36.8% 成为袋外验证数据。
+              </div>
+            </div>
+
+            <div class="ctrl-bar">
+              <button class="btn-act" id="btnResample">重新抽取 3 个 Bootstrap 子集</button>
+              <button class="btn-reset" id="btnReset">重置初态</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右栏：3 个平行的 Bootstrap 子集 -->
+      <div class="subsets-col min0">
+        <div class="subsets-container" id="subsetsContainer">
+          <!-- JS 渲染 3 个采样副本 -->
+        </div>
+
+        <div class="bottom-summary">
+          <div>
+            核心机制：<strong>大小为 N 的有放回抽样</strong>保证了每个子集都有独立的扰动分布，从而降低基学习器间的相关性。
+          </div>
+          <div class="legend-group">
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#FFFFFF;border:1.5px solid var(--surface-strong);"></div>
+              <span>普通抽中 (1次)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#FEF3F0;border:1.5px solid var(--aggregate);"></div>
+              <span>重复抽中 (≥2次)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#EEF3F7;border:1px solid #C4D9EC;"></div>
+              <span>袋外未抽中 (OOB)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      var N = 12;
+      var SUBSETS_COUNT = 3;
+      var poolChipsEl = document.getElementById("poolChips");
+      var subsetsContainerEl = document.getElementById("subsetsContainer");
+      var btnResample = document.getElementById("btnResample");
+      var btnReset = document.getElementById("btnReset");
+
+      // 渲染原始样本池
+      function renderPool() {
+        poolChipsEl.innerHTML = "";
+        for (var i = 1; i <= N; i++) {
+          var chip = document.createElement("div");
+          chip.className = "chip";
+          chip.id = "pool-chip-" + i;
+          chip.textContent = "x" + i;
+          poolChipsEl.appendChild(chip);
+        }
+      }
+
+      // 可复现伪随机数生成器 (种子 PRNG)
+      var seed = 42;
+      function random() {
+        var x = Math.sin(seed++) * 10000;
+        return x - Math.floor(x);
+      }
+
+      // 进行一次 Bootstrap 抽样 (N 个，有放回)
+      function sampleBootstrap() {
+        var samples = [];
+        var counts = {};
+        for (var i = 1; i <= N; i++) counts[i] = 0;
+
+        for (var j = 0; j < N; j++) {
+          var picked = Math.floor(random() * N) + 1;
+          samples.push(picked);
+          counts[picked] = (counts[picked] || 0) + 1;
+        }
+
+        var unique = [];
+        var oob = [];
+        for (var k = 1; k <= N; k++) {
+          if (counts[k] > 0) unique.push(k);
+          else oob.push(k);
+        }
+
+        return {
+          samples: samples,
+          counts: counts,
+          uniqueCount: unique.length,
+          oob: oob
+        };
+      }
+
+      var currentSubsets = [];
+
+      function generateSubsets() {
+        currentSubsets = [];
+        for (var s = 0; s < SUBSETS_COUNT; s++) {
+          currentSubsets.push(sampleBootstrap());
+        }
+      }
+
+      // 渲染 3 个子集
+      function renderSubsets() {
+        subsetsContainerEl.innerHTML = "";
+
+        currentSubsets.forEach(function(sub, idx) {
+          var card = document.createElement("div");
+          card.className = "subset-card";
+
+          var head = document.createElement("div");
+          head.className = "subset-head";
+          head.innerHTML = "<div class=\"subset-title\">子集 D<sub>" + (idx + 1) + "</sub></div>" +
+            "<span class=\"tag-count\">大小 N = 12</span>";
+          card.appendChild(head);
+
+          var grid = document.createElement("div");
+          grid.className = "samples-grid";
+
+          // 显示该子集中的 12 个抽中项
+          sub.samples.forEach(function(item) {
+            var pill = document.createElement("div");
+            var isDup = sub.counts[item] > 1;
+            pill.className = "sample-pill" + (isDup ? " dup" : "");
+            pill.textContent = "x" + item;
+            if (isDup) {
+              var badge = document.createElement("span");
+              badge.className = "dup-badge";
+              badge.textContent = sub.counts[item];
+              pill.appendChild(badge);
+            }
+            grid.appendChild(pill);
+          });
+          card.appendChild(grid);
+
+          // 底部统计
+          var statBar = document.createElement("div");
+          statBar.className = "stat-bar";
+
+          var coveragePct = ((sub.uniqueCount / N) * 100).toFixed(1);
+          statBar.innerHTML = 
+            "<div class=\"stat-row\"><span>独特样本覆盖率</span><span class=\"stat-val\">" + sub.uniqueCount + "/" + N + " (" + coveragePct + "%)</span></div>" +
+            "<div class=\"stat-row\"><span>袋外未抽中 (OOB)</span><span class=\"stat-val\">" + sub.oob.length + " 个</span></div>" +
+            "<div class=\"oob-box\">" +
+              "<div class=\"oob-title\">袋外样本列表：</div>" +
+              "<div class=\"oob-list\">" + (sub.oob.length > 0 ? sub.oob.map(function(n) { return "x" + n; }).join(", ") : "无") + "</div>" +
+            "</div>";
+          
+          card.appendChild(statBar);
+          subsetsContainerEl.appendChild(card);
+        });
+      }
+
+      function update(newSeed) {
+        if (newSeed !== undefined) seed = newSeed;
+        generateSubsets();
+        renderSubsets();
+      }
+
+      btnResample.addEventListener("click", function() {
+        update();
+      });
+
+      btnReset.addEventListener("click", function() {
+        seed = 42;
+        update();
+      });
+
+      // 初始化
+      renderPool();
+      update(42);
+
+      Deck.init({ index: 8, total: 27 });
+    })();
+  </script>
+</body>
+</html>

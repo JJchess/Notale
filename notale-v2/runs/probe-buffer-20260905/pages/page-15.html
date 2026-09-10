@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>滴定微观粒子、适用模型与曲线联动</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F7F8;
+      --paper: #FFFFFF;
+      --text: #142B33;
+      --muted: #526970;
+      --focus: #C45A00;
+      --acid: #B43F2B;
+      --base: #23629A;
+      --buffer: #08746E;
+      --selected: #DCECEF;
+      --correct: #356A3A;
+      --incorrect: #8A5100;
+      --font-sans: "Noto Sans SC", system-ui, sans-serif;
+      --font-num: Bahnschrift, "DIN Alternate", "Roboto Condensed", sans-serif;
+    }
+
+    #stage {
+      display: flex;
+      flex-direction: column;
+      padding: 38px 48px;
+      box-sizing: border-box;
+      gap: 18px;
+      user-select: none;
+    }
+
+    /* 顶部标题栏与导语 */
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid rgba(82, 105, 112, 0.25);
+      padding-bottom: 12px;
+    }
+    .header-left h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .header-left p {
+      margin: 4px 0 0 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+    .system-badge {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      color: var(--muted);
+      background: rgba(8, 116, 110, 0.08);
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid rgba(8, 116, 110, 0.2);
+    }
+
+    /* 主网格两列 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 820px 1fr;
+      gap: 22px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：滴定曲线与控制区 */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .curve-card {
+      background: var(--paper);
+      border-radius: 10px;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+      padding: 14px 18px 10px 18px;
+      box-shadow: 0 2px 10px rgba(20, 43, 51, 0.04);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .card-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .curve-legend {
+      display: flex;
+      gap: 14px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sw-line {
+      width: 14px;
+      height: 3px;
+      border-radius: 2px;
+    }
+    .sw-box {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+    }
+
+    .chart-container {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      width: 100%;
+    }
+    #curveCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 控制面板条 */
+    .control-panel {
+      background: var(--paper);
+      border-radius: 10px;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+      padding: 12px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 2px 8px rgba(20, 43, 51, 0.03);
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .slider-label {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .slider-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+    .slider-wrap input[type="range"] {
+      width: 100%;
+      -webkit-appearance: none;
+      background: transparent;
+      outline: none;
+      margin: 0;
+      cursor: pointer;
+    }
+    .slider-wrap input[type="range"]::-webkit-slider-runnable-track {
+      height: 6px;
+      background: #DCECEF;
+      border-radius: 3px;
+      border: none;
+    }
+    .slider-wrap input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--focus);
+      border: 2px solid #FFFFFF;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+      cursor: grab;
+      margin-top: -7px;
+      transition: transform 0.1s;
+    }
+    .slider-wrap input[type="range"]::-webkit-slider-thumb:active {
+      cursor: grabbing;
+      transform: scale(1.15);
+    }
+    .vol-display {
+      font-family: var(--font-num);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      min-width: 86px;
+      text-align: right;
+    }
+    .vol-display .unit {
+      font-size: var(--fs-tick);
+      font-weight: normal;
+      color: var(--muted);
+      margin-left: 2px;
+    }
+
+    /* 快捷特征点按钮 */
+    .snap-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .snap-title {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .snap-btn {
+      flex: 1;
+      padding: 5px 0;
+      border: 1px solid rgba(82, 105, 112, 0.25);
+      background: #F8FAFB;
+      border-radius: 6px;
+      font-size: var(--fs-tick);
+      color: var(--text);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: all 0.15s ease;
+      text-align: center;
+    }
+    .snap-btn:hover {
+      background: var(--selected);
+      border-color: var(--buffer);
+    }
+    .snap-btn.active {
+      background: var(--buffer);
+      color: #FFFFFF;
+      border-color: var(--buffer);
+      font-weight: 600;
+    }
+
+    /* 右侧：实时数据、微观分布、主导模型卡片 */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* 读数仪表板 */
+    .readout-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+    .metric-card {
+      background: var(--paper);
+      border-radius: 8px;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+      padding: 10px 14px;
+      box-shadow: 0 1px 4px rgba(20, 43, 51, 0.03);
+    }
+    .metric-lbl {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .metric-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+    }
+    .metric-sub {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      margin-top: 3px;
+      white-space: nowrap;
+    }
+
+    /* 物种摩尔分布分析 */
+    .species-card {
+      background: var(--paper);
+      border-radius: 10px;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+      padding: 14px 18px;
+      box-shadow: 0 2px 8px rgba(20, 43, 51, 0.03);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .species-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .species-row {
+      display: grid;
+      grid-template-columns: 78px 1fr 88px;
+      align-items: center;
+      gap: 10px;
+    }
+    .species-name {
+      font-size: var(--fs-label);
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .species-track {
+      height: 14px;
+      background: #EEF3F5;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+    .species-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.12s ease-out;
+    }
+    .species-amt {
+      font-family: var(--font-num);
+      font-size: var(--fs-label);
+      color: var(--text);
+      text-align: right;
+    }
+
+    /* 适用模型与化学驱动力卡片 */
+    .model-card {
+      flex: 1;
+      background: var(--paper);
+      border-radius: 10px;
+      border: 1px solid rgba(82, 105, 112, 0.2);
+      padding: 14px 18px;
+      box-shadow: 0 2px 8px rgba(20, 43, 51, 0.03);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+    }
+    .model-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: var(--fs-tick);
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 4px;
+      width: fit-content;
+    }
+    .model-eq {
+      background: #F4F8FA;
+      border: 1px solid rgba(82, 105, 112, 0.15);
+      border-radius: 6px;
+      padding: 9px 12px;
+      font-size: var(--fs-label);
+      font-family: var(--font-num);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    .model-desc {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      line-height: 1.5;
+      flex: 1;
+    }
+    .model-takeaway {
+      background: rgba(8, 116, 110, 0.06);
+      border: 1px solid rgba(8, 116, 110, 0.18);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: var(--fs-tick);
+      color: var(--text);
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body data-page="15" data-total="17">
+  <div id="stage">
+    <!-- 顶部导引 -->
+    <header class="header-row">
+      <div class="header-left">
+        <h1>弱酸滴定全景联动：从加入体积推演微观物种与控制模型</h1>
+        <p>拖动滴定管体积滑块，实时观察溶液主要微观物种比例演化、控制方程切换与滴定曲线位置的严谨数学对应。</p>
+      </div>
+      <div class="system-badge">
+        体系：0.100 mol/L HAc (20.00 mL) + 0.100 mol/L NaOH · pKa = 4.74
+      </div>
+    </header>
+
+    <!-- 主体区域：两列 -->
+    <main class="main-grid">
+      <!-- 左栏：滴定曲线可视化与输入交互 -->
+      <section class="left-col min0">
+        <div class="curve-card min0">
+          <div class="card-head">
+            <div class="card-title">
+              <span>滴定曲线实时追踪</span>
+              <span id="regionTag" class="model-badge" style="background:#F2F7F8;color:var(--text);border:1px solid #CBD8DC">未开始</span>
+            </div>
+            <div class="curve-legend">
+              <div class="legend-item"><span class="sw-box" style="background:rgba(8,116,110,0.15);border:1px dashed var(--buffer)"></span><span>有效缓冲区间 (±1 pH)</span></div>
+              <div class="legend-item"><span class="sw-line" style="background:var(--text)"></span><span>pH 理论滴定曲线</span></div>
+              <div class="legend-item"><span class="sw-box" style="background:var(--focus);border-radius:50%"></span><span>当前滴定点</span></div>
+            </div>
+          </div>
+          <div class="chart-container min0">
+            <canvas id="curveCanvas" class="cv-fill"></canvas>
+          </div>
+        </div>
+
+        <!-- 交互滑块与锚点 -->
+        <div class="control-panel">
+          <div class="slider-row">
+            <span class="slider-label">滴定管加入 NaOH 体积：</span>
+            <div class="slider-wrap">
+              <input type="range" id="volSlider" min="0" max="30" step="0.05" value="10.00" aria-label="加入NaOH体积 (mL)">
+            </div>
+            <div class="vol-display">
+              <span id="volText">10.00</span><span class="unit">mL</span>
+            </div>
+          </div>
+          <div class="snap-row">
+            <span class="snap-title">特征状态快跳：</span>
+            <button type="button" class="snap-btn" data-v="0.00">① 滴定起点 (0 mL)</button>
+            <button type="button" class="snap-btn" data-v="5.00">② 缓冲初段 (5 mL)</button>
+            <button type="button" class="snap-btn active" data-v="10.00">③ 半当量点 (10 mL)</button>
+            <button type="button" class="snap-btn" data-v="20.00">④ 当量点 (20 mL)</button>
+            <button type="button" class="snap-btn" data-v="25.00">⑤ 强碱过量 (25 mL)</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：微观物种柱状图、主导模型卡片 -->
+      <section class="right-col min0">
+        <!-- 核心指标读数条 -->
+        <div class="readout-bar">
+          <div class="metric-card">
+            <div class="metric-lbl">溶液 pH 读数</div>
+            <div class="metric-val" id="phVal" style="color:var(--buffer)">4.74</div>
+            <div class="metric-sub" id="pohVal">pOH = 9.26</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-lbl">滴定进行百分比</div>
+            <div class="metric-val" id="titrPercent">50.0%</div>
+            <div class="metric-sub" id="equivRatio">n(NaOH) / n₀(HAc) = 0.50</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-lbl">主要共轭对浓度比</div>
+            <div class="metric-val" id="bufferRatio">1.00</div>
+            <div class="metric-sub">[Ac⁻] / [HAc] 比值</div>
+          </div>
+        </div>
+
+        <!-- 溶液主要微观物种分布 -->
+        <div class="species-card">
+          <div class="card-head" style="margin-bottom:0">
+            <div class="card-title" style="font-size:15px">微观物种总量与分布 (总体系体积 <span id="totVolText" style="font-family:var(--font-num);color:var(--text)">30.00</span> mL)</div>
+            <span style="font-size:12px;color:var(--muted)">单位：mmol</span>
+          </div>
+          <div class="species-bars">
+            <div class="species-row">
+              <div class="species-name"><span class="sw-box" style="background:var(--acid)"></span>HAc</div>
+              <div class="species-track">
+                <div id="barHAc" class="species-fill" style="background:var(--acid);width:50%"></div>
+              </div>
+              <div class="species-amt" id="amtHAc">1.000 mmol</div>
+            </div>
+            <div class="species-row">
+              <div class="species-name"><span class="sw-box" style="background:var(--buffer)"></span>Ac⁻</div>
+              <div class="species-track">
+                <div id="barAc" class="species-fill" style="background:var(--buffer);width:50%"></div>
+              </div>
+              <div class="species-amt" id="amtAc">1.000 mmol</div>
+            </div>
+            <div class="species-row">
+              <div class="species-name"><span class="sw-box" style="background:#526970"></span>Na⁺</div>
+              <div class="species-track">
+                <div id="barNa" class="species-fill" style="background:#526970;width:50%"></div>
+              </div>
+              <div class="species-amt" id="amtNa">1.000 mmol</div>
+            </div>
+            <div class="species-row">
+              <div class="species-name"><span class="sw-box" style="background:var(--base)"></span>游离 OH⁻</div>
+              <div class="species-track">
+                <div id="barOH" class="species-fill" style="background:var(--base);width:0.1%"></div>
+              </div>
+              <div class="species-amt" id="amtOH">&lt; 0.001 mmol</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 当前区域的主导数学控制模型 -->
+        <div class="model-card min0">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="card-title" style="font-size:15px">主导化学平衡与控制模型</div>
+            <span id="modelTag" class="model-badge" style="background:rgba(8,116,110,0.12);color:var(--buffer)">缓冲体系模型</span>
+          </div>
+          <div class="model-eq" id="modelFormula">
+            pH = pKa + lg([Ac⁻] / [HAc]) = 4.74 + lg(1.00) = 4.74
+          </div>
+          <div class="model-desc" id="modelExplain">
+            弱酸与生成的共轭碱同时大量共存。体系形成高容量缓冲对，外加少量强碱或强酸时通过移动平衡消除扰动，导致此区间斜率极为平缓。
+          </div>
+          <div class="model-takeaway" id="modelSummary">
+            <strong>规律总结：</strong>半当量点时弱酸与共轭碱摩尔数恰好相等，pH 完全等于弱酸的 pKa (4.74)，此时缓冲容量 β 达到峰值。
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 体系常量
+      const C_ACID = 0.100; // mol/L
+      const V_ACID = 20.00; // mL
+      const N0_ACID = C_ACID * V_ACID; // 2.000 mmol
+      const C_BASE = 0.100; // mol/L
+      const PKa = 4.74;
+      const Ka = Math.pow(10, -PKa);
+      const Kw = 1.0e-14;
+
+      // 严格计算弱酸-强碱滴定在任意体积 V (mL) 下的 pH 与物种分布
+      function computeTitration(V) {
+        const Vtot = V_ACID + V; // 总毫升数
+        const cAcidNom = N0_ACID / Vtot; // 初始弱酸名义浓度 mol/L
+        const cBaseNom = (C_BASE * V) / Vtot; // 加入强碱名义浓度 mol/L
+
+        let ph = 7;
+        // 起点 V = 0: 弱酸电离平衡 [H+] = sqrt(Ka * c)
+        if (V <= 0.001) {
+          const hPlus = Math.sqrt(Ka * cAcidNom);
+          ph = -Math.log10(hPlus);
+        } else if (V < 19.95) {
+          // 缓冲区间：弱酸未完全中和，适用亨德森-哈塞尔巴尔赫方程，接近起点极小体积时用精确二次方程
+          const nHAc = Math.max(0, N0_ACID - C_BASE * V);
+          const nAc = C_BASE * V;
+          const ratio = nAc / nHAc;
+          // 若比值极小（V 接近 0.1mL），求解 [H+]^2 + (cBase + Ka)[H+] - Ka(cAcid - cBase) = 0
+          if (V < 0.3) {
+            const b = cBaseNom + Ka;
+            const c = -Ka * (cAcidNom - cBaseNom);
+            const hPlus = (-b + Math.sqrt(b * b - 4 * c)) / 2;
+            ph = -Math.log10(hPlus);
+          } else {
+            ph = PKa + Math.log10(ratio);
+          }
+        } else if (V >= 19.95 && V <= 20.05) {
+          // 当量点附近 (V = 20.00 mL): Ac- 弱碱水解 [OH-] = sqrt(Kb * c_Ac-)
+          const cAc = N0_ACID / Vtot;
+          const Kb = Kw / Ka;
+          // 考虑水解二次近似
+          const ohMinus = Math.sqrt(Kb * cAc);
+          const poh = -Math.log10(ohMinus);
+          ph = 14.0 - poh;
+        } else {
+          // 过量强碱区间: 主要是过量 NaOH 决定 [OH-]
+          const excessOH_mmol = (V - 20.00) * C_BASE;
+          const cOH = excessOH_mmol / Vtot;
+          const poh = -Math.log10(cOH);
+          ph = 14.0 - poh;
+        }
+
+        // 微观摩尔量 (mmol)
+        let molHAc = 0;
+        let molAc = 0;
+        let molNa = C_BASE * V;
+        let molOH = 0;
+
+        if (V < 20.00) {
+          molHAc = Math.max(0, N0_ACID - C_BASE * V);
+          molAc = C_BASE * V;
+          const hPlus = Math.pow(10, -ph);
+          const ohConc = Kw / hPlus;
+          molOH = ohConc * (Vtot / 1000) * 1000; // mmol
+        } else {
+          molHAc = 0;
+          molAc = N0_ACID;
+          molOH = (V - 20.00) * C_BASE;
+        }
+
+        return {
+          V,
+          Vtot,
+          ph: Math.min(14, Math.max(0, ph)),
+          molHAc,
+          molAc,
+          molNa,
+          molOH
+        };
+      }
+
+      // 预计算滴定曲线采样点 (V 从 0 到 30)
+      const curveData = [];
+      for (let v = 0; v <= 30; v += 0.1) {
+        curveData.push(computeTitration(v));
+      }
+      // 保证当量点前后精细采样
+      [19.9, 19.95, 20.0, 20.05, 20.1].forEach(v => {
+        curveData.push(computeTitration(v));
+      });
+      curveData.sort((a, b) => a.V - b.V);
+
+      // DOM 引用
+      const ui = {
+        volSlider: document.getElementById("volSlider"),
+        volText: document.getElementById("volText"),
+        phVal: document.getElementById("phVal"),
+        pohVal: document.getElementById("pohVal"),
+        titrPercent: document.getElementById("titrPercent"),
+        equivRatio: document.getElementById("equivRatio"),
+        bufferRatio: document.getElementById("bufferRatio"),
+        totVolText: document.getElementById("totVolText"),
+        barHAc: document.getElementById("barHAc"),
+        amtHAc: document.getElementById("amtHAc"),
+        barAc: document.getElementById("barAc"),
+        amtAc: document.getElementById("amtAc"),
+        barNa: document.getElementById("barNa"),
+        amtNa: document.getElementById("amtNa"),
+        barOH: document.getElementById("barOH"),
+        amtOH: document.getElementById("amtOH"),
+        modelTag: document.getElementById("modelTag"),
+        regionTag: document.getElementById("regionTag"),
+        modelFormula: document.getElementById("modelFormula"),
+        modelExplain: document.getElementById("modelExplain"),
+        modelSummary: document.getElementById("modelSummary"),
+        snapBtns: document.querySelectorAll(".snap-btn"),
+        canvas: document.getElementById("curveCanvas")
+      };
+
+      let currentV = 10.00;
+
+      // 区域判定与文案推演
+      function updateModelInterpretation(data) {
+        const V = data.V;
+        const ph = data.ph;
+        let regTitle = "";
+        let regColor = "";
+        let formula = "";
+        let explain = "";
+        let summary = "";
+
+        if (V <= 0.05) {
+          regTitle = "滴定起点 (纯弱酸电离)";
+          regColor = "var(--acid)";
+          formula = `[H⁺] ≈ √(Ka · c₀) = √(1.8×10⁻⁵ × 0.100) = 1.34×10⁻³ mol/L  →  pH = 2.88`;
+          explain = `滴定管尚未放出碱液。溶液仅由弱酸 HAc 及其微弱电离产物构成，电离度仅约 1.34%，呈较强酸性，体系尚未形成缓冲对。`;
+          summary = `<strong>特征：</strong>起始点 pH 取决于弱酸自身 Ka 及起始浓度，不能使用缓冲公式计算。`;
+        } else if (V > 0.05 && V < 19.80) {
+          if (Math.abs(V - 10.00) < 0.2) {
+            regTitle = "半当量点 (缓冲能力最强点)";
+            regColor = "var(--buffer)";
+            formula = `[Ac⁻] = [HAc]  →  pH = pKa + lg(1.00) = 4.74 + 0 = 4.74`;
+            explain = `滴入了一半化学计量所需的 NaOH，弱酸恰好被中和掉 50%，溶液中共轭酸碱对摩尔数严格 1:1。此时抗酸、抗碱储备等量充沛。`;
+            summary = `<strong>特征：</strong>半当量点直接测定弱酸 pKa，曲线斜率达到局部最小值，抗干扰缓冲容量 β 达到最大峰值。`;
+          } else {
+            regTitle = "缓冲储备区 (HAc + Ac⁻ 共存)";
+            regColor = "var(--buffer)";
+            const ratio = data.molAc / data.molHAc;
+            formula = `pH = pKa + lg([Ac⁻] / [HAc]) = 4.74 + lg(${ratio.toFixed(2)}) = ${ph.toFixed(2)}`;
+            explain = `中和产生的共轭碱 Ac⁻ 与未反应的弱酸 HAc 形成高浓度共轭对体系。加入的外界酸碱被该对平衡快速消耗，pH 随加入量变化极其平缓。`;
+            summary = `<strong>特征：</strong>缓冲有效范围通常在 pH = pKa ± 1 (即 3.74 ~ 5.74，对应 NaOH 约 1.8 mL ~ 18.2 mL)。`;
+          }
+        } else if (V >= 19.80 && V <= 20.20) {
+          regTitle = "化学计量点 / 当量点 (突跃主导区)";
+          regColor = "var(--text)";
+          const cAc = (2.0 / 40.0).toFixed(3);
+          formula = `[OH⁻] ≈ √(Kb · c(Ac⁻)) = √((Kw/Ka) · ${cAc}) ≈ 5.27×10⁻⁶ mol/L  →  pH = 8.72`;
+          explain = `弱酸 HAc 与加入的 NaOH 摩尔数严格完全中和，溶质仅为强电解质 NaAc。强碱弱酸盐中的共轭碱 Ac⁻ 发生水解，溶液显著显碱性！`;
+          summary = `<strong>突跃特征：</strong>由于弱酸耗尽而过量强碱尚未累积，曲线发生急剧陡跃；当量点 pH 必定大于 7（本体系为 8.72），而非中性 7.00。`;
+        } else {
+          regTitle = "强碱过量区 (NaOH 游离过量)";
+          regColor = "var(--base)";
+          const excess = (V - 20.0).toFixed(2);
+          const cOH = ((V - 20.0) * 0.1 / data.Vtot).toExponential(2);
+          formula = `[OH⁻] ≈ n(过量NaOH) / V总 = (${excess} mL × 0.1 M) / ${data.Vtot.toFixed(1)} mL = ${cOH} M`;
+          explain = `加入的强碱 NaOH 已经超过计量当量点，水解产生的微量微摩尔碱被游离过量的强碱 OH⁻ 完全压制，pH 几乎完全由外加过量 NaOH 决定。`;
+          summary = `<strong>特征：</strong>曲线趋平并无限渐近滴定剂碱液自身浓度上限（pH → 12~13）。`;
+        }
+
+        ui.modelTag.textContent = regTitle;
+        ui.regionTag.textContent = regTitle;
+        ui.regionTag.style.color = regColor;
+        ui.regionTag.style.borderColor = regColor;
+        ui.modelFormula.textContent = formula;
+        ui.modelExplain.textContent = explain;
+        ui.modelSummary.innerHTML = summary;
+      }
+
+      // 渲染所有界面指标与柱状图
+      function updateView(v) {
+        const data = computeTitration(v);
+        ui.volSlider.value = v.toFixed(2);
+        ui.volText.textContent = v.toFixed(2);
+        ui.totVolText.textContent = data.Vtot.toFixed(2);
+
+        // 读数仪表
+        ui.phVal.textContent = data.ph.toFixed(2);
+        ui.phVal.style.color = data.ph < 4.0 ? "var(--acid)" : data.ph > 8.0 ? "var(--base)" : "var(--buffer)";
+        ui.pohVal.textContent = `pOH = ${(14.0 - data.ph).toFixed(2)}`;
+
+        const pct = (v / 20.00 * 100).toFixed(1);
+        ui.titrPercent.textContent = `${pct}%`;
+        ui.equivRatio.textContent = `n(NaOH)/n₀(HAc) = ${(v / 20.0).toFixed(2)}`;
+
+        if (data.molHAc > 0.001) {
+          const r = (data.molAc / data.molHAc).toFixed(2);
+          ui.bufferRatio.textContent = r;
+        } else {
+          ui.bufferRatio.textContent = "— (已耗尽)";
+        }
+
+        // 柱状图 (以初始 2.000 mmol 或当前总 Na+ 为标尺)
+        const maxMmol = 3.0; // 柱状图满格约 3.0 mmol
+        ui.amtHAc.textContent = `${data.molHAc.toFixed(3)} mmol`;
+        ui.barHAc.style.width = `${Math.min(100, (data.molHAc / maxMmol) * 100)}%`;
+
+        ui.amtAc.textContent = `${data.molAc.toFixed(3)} mmol`;
+        ui.barAc.style.width = `${Math.min(100, (data.molAc / maxMmol) * 100)}%`;
+
+        ui.amtNa.textContent = `${data.molNa.toFixed(3)} mmol`;
+        ui.barNa.style.width = `${Math.min(100, (data.molNa / maxMmol) * 100)}%`;
+
+        ui.amtOH.textContent = data.molOH < 0.001 ? "< 0.001 mmol" : `${data.molOH.toFixed(3)} mmol`;
+        ui.barOH.style.width = `${Math.min(100, (data.molOH / maxMmol) * 100)}%`;
+
+        // 模型与文字解释联动
+        updateModelInterpretation(data);
+
+        // 高亮对应的快捷按钮
+        ui.snapBtns.forEach(btn => {
+          const bv = parseFloat(btn.dataset.v);
+          if (Math.abs(bv - v) < 0.15) {
+            btn.classList.add("active");
+          } else {
+            btn.classList.remove("active");
+          }
+        });
+
+        // 重绘滴定曲线 Canvas
+        if (canvasFit) {
+          canvasFit.redraw();
+        }
+      }
+
+      // 绘制 Canvas 滴定曲线
+      function drawCurve(ctx) {
+        const w = ui.canvas.clientWidth;
+        const h = ui.canvas.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const padL = 52;
+        const padR = 24;
+        const padT = 24;
+        const padB = 40;
+        const plotW = w - padL - padR;
+        const plotH = h - padT - padB;
+
+        // 坐标换算
+        const vMax = 30.0;
+        const phMax = 14.0;
+        const phMin = 0.0;
+
+        const xPos = v => padL + (v / vMax) * plotW;
+        const yPos = p => padT + (1 - (p - phMin) / (phMax - phMin)) * plotH;
+
+        // 1. 背景网格与刻度
+        ctx.strokeStyle = "rgba(82, 105, 112, 0.15)";
+        ctx.lineWidth = 1;
+
+        // pH 水平网格线 (每隔 2 pH)
+        ctx.fillStyle = "#526970";
+        ctx.font = "12px Bahnschrift, 'Noto Sans SC', sans-serif";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+
+        for (let p = 0; p <= 14; p += 2) {
+          const y = yPos(p);
+          ctx.beginPath();
+          ctx.moveTo(padL, y);
+          ctx.lineTo(w - padR, y);
+          ctx.stroke();
+          ctx.fillText(p.toString(), padL - 8, y);
+        }
+
+        // 体积垂直网格线 (每隔 5 mL)
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        for (let v = 0; v <= 30; v += 5) {
+          const x = xPos(v);
+          ctx.beginPath();
+          ctx.moveTo(x, padT);
+          ctx.lineTo(x, h - padB);
+          ctx.stroke();
+          ctx.fillText(v + " mL", x, h - padB + 8);
+        }
+
+        // 轴线名称
+        ctx.font = "12px 'Noto Sans SC', sans-serif";
+        ctx.fillStyle = "#142B33";
+        ctx.textAlign = "left";
+        ctx.fillText("pH", padL + 6, padT + 12);
+        ctx.textAlign = "right";
+        ctx.fillText("V(NaOH) / mL", w - padR, h - padB - 8);
+
+        // 2. 缓冲有效区背景色块 (pKa ± 1: 3.74 ~ 5.74)
+        const yBufTop = yPos(PKa + 1);
+        const yBufBot = yPos(PKa - 1);
+        ctx.fillStyle = "rgba(8, 116, 110, 0.08)";
+        ctx.fillRect(padL, yBufTop, plotW, yBufBot - yBufTop);
+
+        // 缓冲带虚线边界
+        ctx.strokeStyle = "rgba(8, 116, 110, 0.4)";
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padL, yBufTop);
+        ctx.lineTo(w - padR, yBufTop);
+        ctx.moveTo(padL, yBufBot);
+        ctx.lineTo(w - padR, yBufBot);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 缓冲区标注文案
+        ctx.fillStyle = "#08746E";
+        ctx.font = "11.5px 'Noto Sans SC', sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText("有效缓冲区间 (pH = 4.74 ± 1)", padL + 12, yBufTop + 14);
+
+        // 3. 特征垂直参考线：半当量点 (10mL) 与 当量点 (20mL)
+        ctx.strokeStyle = "rgba(20, 43, 51, 0.25)";
+        ctx.setLineDash([3, 3]);
+
+        // 10 mL
+        const xHalf = xPos(10.0);
+        ctx.beginPath();
+        ctx.moveTo(xHalf, padT);
+        ctx.lineTo(xHalf, h - padB);
+        ctx.stroke();
+
+        // 20 mL
+        const xEquiv = xPos(20.0);
+        ctx.beginPath();
+        ctx.moveTo(xEquiv, padT);
+        ctx.lineTo(xEquiv, h - padB);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 参考点标注文字
+        ctx.font = "11.5px 'Noto Sans SC', sans-serif";
+        ctx.fillStyle = "#08746E";
+        ctx.textAlign = "center";
+        ctx.fillText("半当量点 (10 mL)", xHalf, padT + 8);
+
+        ctx.fillStyle = "#B43F2B";
+        ctx.fillText("计量当量点 (20 mL)", xEquiv, padT + 8);
+
+        // 4. 绘制整条滴定理论曲线
+        ctx.strokeStyle = "#142B33";
+        ctx.lineWidth = 2.4;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        curveData.forEach((pt, idx) => {
+          const x = xPos(pt.V);
+          const y = yPos(pt.ph);
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // 5. 绘制半当量点和当量点的永久标注小实心圆
+        const halfPt = computeTitration(10.0);
+        const eqPt = computeTitration(20.0);
+
+        ctx.fillStyle = "#08746E";
+        ctx.beginPath();
+        ctx.arc(xPos(10.0), yPos(halfPt.ph), 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#B43F2B";
+        ctx.beginPath();
+        ctx.arc(xPos(20.0), yPos(eqPt.ph), 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 6. 绘制当前点指示器 (大橘色圆 + 坐标光晕 + 引导虚线)
+        const curData = computeTitration(currentV);
+        const curX = xPos(curData.V);
+        const curY = yPos(curData.ph);
+
+        // 投影导线至 X/Y 轴
+        ctx.strokeStyle = "rgba(196, 90, 0, 0.6)";
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(curX, h - padB);
+        ctx.lineTo(curX, curY);
+        ctx.lineTo(padL, curY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 当前点光晕
+        ctx.fillStyle = "rgba(196, 90, 0, 0.22)";
+        ctx.beginPath();
+        ctx.arc(curX, curY, 11, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 当前点实心
+        ctx.fillStyle = "#C45A00";
+        ctx.beginPath();
+        ctx.arc(curX, curY, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // 当前点浮动标签
+        ctx.font = "bold 13px Bahnschrift, 'Noto Sans SC', sans-serif";
+        ctx.fillStyle = "#C45A00";
+        const labelX = curX > w - 140 ? curX - 110 : curX + 12;
+        const labelY = curY < padT + 30 ? curY + 20 : curY - 10;
+        ctx.textAlign = "left";
+        ctx.fillText(`(${curData.V.toFixed(2)} mL, pH ${curData.ph.toFixed(2)})`, labelX, labelY);
+      }
+
+      let canvasFit;
+      if (window.Deck && Deck.autofit) {
+        canvasFit = Deck.autofit(ui.canvas, drawCurve);
+      } else {
+        // 降级兜底
+        const ctx = ui.canvas.getContext("2d");
+        drawCurve(ctx);
+      }
+
+      // 事件绑定：滑块拖动
+      ui.volSlider.addEventListener("input", e => {
+        currentV = parseFloat(e.target.value);
+        updateView(currentV);
+      });
+
+      // 事件绑定：快捷按钮点击
+      ui.snapBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          currentV = parseFloat(btn.dataset.v);
+          updateView(currentV);
+        });
+      });
+
+      // 初始化显示半当量点 (10.00 mL)
+      updateView(currentV);
+    })();
+  </script>
+</body>
+</html>

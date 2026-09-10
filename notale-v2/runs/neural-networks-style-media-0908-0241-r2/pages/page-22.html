@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    :root {
+      --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", -apple-system, sans-serif;
+    }
+    #stage {
+      width: 1600px;
+      height: 900px;
+      padding: 38px 56px 40px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* 顶部标题区 */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1.5px solid var(--rule);
+      padding-bottom: 14px;
+    }
+    h1 {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .head-lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin: 0;
+      font-weight: 500;
+    }
+
+    /* 主舞台：三区对齐 */
+    .bptt-stage {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      grid-template-rows: 320px 240px;
+      gap: 20px 32px;
+      margin-top: 10px;
+      flex: 1;
+    }
+
+    /* 上左：时序展开与连乘链条 (SVG) */
+    .unroll-view {
+      grid-column: 1;
+      grid-row: 1;
+      position: relative;
+      border-bottom: 1px dashed var(--rule);
+    }
+    #chainSvg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 上右：连乘数值仪表与谱半径对比 */
+    .matrix-control {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding-left: 24px;
+      border-left: 1.5px solid var(--rule);
+    }
+    .ctl-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--structure);
+      margin: 0 0 10px 0;
+    }
+    .ctl-group {
+      margin-bottom: 12px;
+    }
+    .ctl-label {
+      font-size: var(--fs-label);
+      color: var(--text);
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .ctl-sub {
+      color: var(--text);
+      font-weight: 500;
+    }
+    .ctl-val {
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--structure);
+      cursor: pointer;
+    }
+
+    /* 模式切换按钮组 */
+    .preset-btns {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .preset-btn {
+      flex: 1;
+      background: none;
+      border: 1.5px solid var(--rule);
+      border-radius: 4px;
+      padding: 6px 4px;
+      font-size: var(--fs-sec);
+      cursor: pointer;
+      color: var(--muted);
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+    .preset-btn.active {
+      border-color: var(--signal);
+      color: var(--signal);
+      background: rgba(212, 56, 17, 0.06);
+    }
+    .preset-btn.active-stable {
+      border-color: var(--structure);
+      color: var(--structure);
+      background: rgba(28, 68, 54, 0.08);
+    }
+
+    /* 乘方衰减/发散指示盘 */
+    .norm-box {
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 12px 14px;
+      margin-top: 8px;
+    }
+    .norm-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-label);
+      margin-bottom: 6px;
+    }
+    .norm-huge {
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .norm-huge.signal { color: var(--signal); }
+    .norm-huge.structure { color: var(--structure); }
+
+    /* 下左：时间反向传播幅值柱形图 */
+    .magnitude-view {
+      grid-column: 1;
+      grid-row: 2;
+      position: relative;
+    }
+    #magSvg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 底盘分步与总结条 */
+    .summary-strip {
+      border-top: 1px solid var(--rule);
+      padding-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-body);
+      color: var(--text);
+    }
+    .tag-token {
+      display: inline-block;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: var(--fs-sec);
+      margin-right: 6px;
+    }
+    .tag-token.fwd {
+      background: rgba(28, 68, 54, 0.12);
+      color: var(--structure);
+    }
+    .tag-token.bwd {
+      background: rgba(212, 56, 17, 0.12);
+      color: var(--signal);
+    }
+
+    /* Katex 细微微调 */
+    .math-sm {
+      font-size: 0.95em;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <!-- 顶部标题区 -->
+    <header>
+      <h1>跨时间反向传播与长程依赖困境</h1>
+      <p class="head-lead">雅可比矩阵连乘：序列越长，早期隐状态梯度指数衰减或发散</p>
+    </header>
+
+    <!-- 主展示区 -->
+    <div class="bptt-stage">
+      <!-- 上左：时序展开网络与梯度回传连乘 -->
+      <div class="unroll-view">
+        <svg id="chainSvg" viewBox="0 0 1120 320"></svg>
+      </div>
+
+      <!-- 右侧：交互试验与连乘指数监控 -->
+      <div class="matrix-control">
+        <div>
+          <h2 class="ctl-title">循环权重模长 <span class="math-sm">‖W_hh‖</span></h2>
+          <div class="preset-btns">
+            <button class="preset-btn" id="btnVanish">梯度消失 (0.75)</button>
+            <button class="preset-btn active-stable" id="btnUnit">临界稳定 (1.00)</button>
+            <button class="preset-btn" id="btnExplode">梯度爆炸 (1.25)</button>
+          </div>
+          
+          <div class="ctl-group">
+            <div class="ctl-label">
+              <span class="ctl-sub">基数 λ ≈ ‖W·diag(σ')‖</span>
+              <span class="ctl-val" id="valLambda">0.75</span>
+            </div>
+            <input type="range" id="sliderLambda" min="0.4" max="1.4" step="0.05" value="0.75">
+          </div>
+
+          <div class="ctl-group">
+            <div class="ctl-label">
+              <span class="ctl-sub">回传步数 Δt = T - t</span>
+              <span class="ctl-val" id="valSteps">4 步 (T=5)</span>
+            </div>
+            <input type="range" id="sliderSteps" min="2" max="6" step="1" value="5">
+          </div>
+        </div>
+
+        <div class="norm-box">
+          <div class="norm-row">
+            <span class="ctl-sub">连乘系数 λ^Δt</span>
+            <span class="norm-huge signal" id="valGain">0.316</span>
+          </div>
+          <div class="norm-row" style="margin-bottom:0">
+            <span class="ctl-sub">远期保留率</span>
+            <span class="ctl-val" id="valRetention">31.6%</span>
+          </div>
+        </div>
+
+        <div style="font-size:var(--fs-sec); color:var(--text); line-height:1.45; border-top:1px dashed var(--rule); padding-top:10px;">
+          若 <strong>λ &lt; 1</strong>，远处梯度指数收缩归零，网络遗忘远期输入；若 <strong>λ &gt; 1</strong>，梯度在连续矩阵乘法中指数级暴增，引发数值溢出。
+        </div>
+      </div>
+
+      <!-- 下左：沿时间回溯的梯度幅值分布条形图 -->
+      <div class="magnitude-view">
+        <svg id="magSvg" viewBox="0 0 1120 240"></svg>
+      </div>
+    </div>
+
+    <!-- 底部结论提示 -->
+    <div class="summary-strip">
+      <div>
+        <span class="tag-token fwd">前向推导</span>
+        <span style="font-size:var(--fs-sec); color:var(--structure)">h_t = tanh(W_hh · h_{t-1} + W_xh · x_t)</span>
+        <span style="margin: 0 14px; color:var(--rule)">|</span>
+        <span class="tag-token bwd">反向链式</span>
+        <span style="font-size:var(--fs-sec); color:var(--signal)">∂L_T / ∂h_1 = (∂L_T / ∂h_T) · ∏_{k=2}^T (∂h_k / ∂h_{k-1})</span>
+      </div>
+      <div style="font-size:var(--fs-label); color:var(--muted)">
+        循环权重共享强制施加相同的转移矩阵，导致长程信息无法稳定传递
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    本节重点剖析跨时间反向传播（BPTT）中的核心数学障碍——长程依赖困境。
+    在展开的 RNN 中，损失函数对时刻 1 隐状态的偏导数，需要依次穿透从时刻 T 到时刻 1 的每一个转移步。
+    由于每一时刻的网络共享同一套权重 W_hh，中间状态导数 ∂h_k/∂h_{k-1} 实际上是循环雅可比矩阵。
+    当其最大奇异值小于 1 时，连续相乘导致梯度指数衰减，使得远处输入无法获得有效参数更新；当其大于 1 时，梯度的指数发散更会造成数值爆炸。这也是后续必须引入 LSTM 恒常门控通路的核心动机。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const chainSvg = document.getElementById("chainSvg");
+      const magSvg = document.getElementById("magSvg");
+      const sliderLambda = document.getElementById("sliderLambda");
+      const sliderSteps = document.getElementById("sliderSteps");
+      const valLambda = document.getElementById("valLambda");
+      const valSteps = document.getElementById("valSteps");
+      const valGain = document.getElementById("valGain");
+      const valRetention = document.getElementById("valRetention");
+
+      const btnVanish = document.getElementById("btnVanish");
+      const btnUnit = document.getElementById("btnUnit");
+      const btnExplode = document.getElementById("btnExplode");
+
+      let currentLambda = 0.75;
+      let totalSteps = 5; // 可选 2..6
+
+      const STEP_LABELS = ["h₁", "h₂", "h₃", "h₄", "h₅", "h₆"];
+      const X_LABELS = ["x₁", "x₂", "x₃", "x₄", "x₅", "x₆"];
+
+      function updateMathFormulas() {
+        // 可选公式强化
+      }
+
+      function renderChain() {
+        const w = 1120;
+        const h = 320;
+        chainSvg.innerHTML = "";
+
+        // 步数节点坐标布局
+        const n = totalSteps;
+        const startX = 120;
+        const stepW = (w - 240) / (n - 1);
+        const nodeY = 140;
+        const inputY = 240;
+        const lossY = 46;
+
+        const ns = "http://www.w3.org/2000/svg";
+
+        // 1. 绘制前向传播连接（深墨绿）
+        for (let i = 0; i < n; i++) {
+          const x = startX + i * stepW;
+
+          // x_t -> h_t 箭头
+          const xPath = document.createElementNS(ns, "line");
+          xPath.setAttribute("x1", x);
+          xPath.setAttribute("y1", inputY - 18);
+          xPath.setAttribute("x2", x);
+          xPath.setAttribute("y2", nodeY + 36);
+          xPath.setAttribute("stroke", "var(--structure)");
+          xPath.setAttribute("stroke-width", "2");
+          chainSvg.appendChild(xPath);
+
+          // x_t 标签
+          const xTxt = document.createElementNS(ns, "text");
+          xTxt.setAttribute("x", x);
+          xTxt.setAttribute("y", inputY);
+          xTxt.setAttribute("fill", "var(--structure)");
+          xTxt.setAttribute("font-size", "15");
+          xTxt.setAttribute("font-weight", "600");
+          xTxt.setAttribute("text-anchor", "middle");
+          xTxt.textContent = X_LABELS[i];
+          chainSvg.appendChild(xTxt);
+
+          // h_{t-1} -> h_t 前向水平连接
+          if (i < n - 1) {
+            const nextX = startX + (i + 1) * stepW;
+            const hLine = document.createElementNS(ns, "line");
+            hLine.setAttribute("x1", x + 34);
+            hLine.setAttribute("y1", nodeY - 6);
+            hLine.setAttribute("x2", nextX - 34);
+            hLine.setAttribute("y2", nodeY - 6);
+            hLine.setAttribute("stroke", "var(--structure)");
+            hLine.setAttribute("stroke-width", "2.5");
+            chainSvg.appendChild(hLine);
+
+            // W_hh 共享权重标记
+            const wTxt = document.createElementNS(ns, "text");
+            wTxt.setAttribute("x", (x + nextX) / 2);
+            wTxt.setAttribute("y", nodeY - 14);
+            wTxt.setAttribute("fill", "var(--structure)");
+            wTxt.setAttribute("font-size", "13");
+            wTxt.setAttribute("font-weight", "700");
+            wTxt.setAttribute("text-anchor", "middle");
+            wTxt.textContent = "W_hh";
+            chainSvg.appendChild(wTxt);
+          }
+        }
+
+        // 2. 尾端损失连接 L_T 与反向刺入箭头 (朱红)
+        const lastX = startX + (n - 1) * stepW;
+        const lossLine = document.createElementNS(ns, "line");
+        lossLine.setAttribute("x1", lastX);
+        lossLine.setAttribute("y1", lossY + 18);
+        lossLine.setAttribute("x2", lastX);
+        lossLine.setAttribute("y2", nodeY - 36);
+        lossLine.setAttribute("stroke", "var(--signal)");
+        lossLine.setAttribute("stroke-width", "2.5");
+        lossLine.setAttribute("stroke-dasharray", "4 3");
+        chainSvg.appendChild(lossLine);
+
+        // 损失节点圆标
+        const lossRect = document.createElementNS(ns, "rect");
+        lossRect.setAttribute("x", lastX - 44);
+        lossRect.setAttribute("y", lossY - 16);
+        lossRect.setAttribute("width", "88");
+        lossRect.setAttribute("height", "32");
+        lossRect.setAttribute("rx", "4");
+        lossRect.setAttribute("fill", "rgba(212, 56, 17, 0.08)");
+        lossRect.setAttribute("stroke", "var(--signal)");
+        lossRect.setAttribute("stroke-width", "1.5");
+        chainSvg.appendChild(lossRect);
+
+        const lTxt = document.createElementNS(ns, "text");
+        lTxt.setAttribute("x", lastX);
+        lTxt.setAttribute("y", lossY + 5);
+        lTxt.setAttribute("fill", "var(--signal)");
+        lTxt.setAttribute("font-size", "15");
+        lTxt.setAttribute("font-weight", "700");
+        lTxt.setAttribute("text-anchor", "middle");
+        lTxt.textContent = "损失 L_" + n;
+        chainSvg.appendChild(lTxt);
+
+        // 3. 绘制反向传播弧线链（朱红逆向回传，线宽与透明度随衰减/爆炸变化）
+        for (let i = n - 1; i > 0; i--) {
+          const currX = startX + i * stepW;
+          const prevX = startX + (i - 1) * stepW;
+          const distFromEnd = n - i; // 1, 2, ...
+          const scaleFactor = Math.pow(currentLambda, distFromEnd);
+
+          // 限制绘制线宽与透明度
+          const bwdWidth = Math.min(8, Math.max(1.2, 2.5 * scaleFactor));
+          const bwdAlpha = Math.min(1, Math.max(0.2, 0.85 * (scaleFactor > 1.5 ? 1 : scaleFactor)));
+
+          const arc = document.createElementNS(ns, "path");
+          // 从 currX 下方弧线回连到 prevX 下方
+          const d = `M ${currX - 10} ${nodeY + 16} Q ${(currX + prevX) / 2} ${nodeY + 52} ${prevX + 16} ${nodeY + 16}`;
+          arc.setAttribute("d", d);
+          arc.setAttribute("fill", "none");
+          arc.setAttribute("stroke", "var(--signal)");
+          arc.setAttribute("stroke-width", bwdWidth);
+          arc.setAttribute("stroke-opacity", bwdAlpha);
+          arc.setAttribute("stroke-dasharray", currentLambda > 1.1 ? "none" : "none");
+          chainSvg.appendChild(arc);
+
+          // 逆向导数雅可比标注 J_k
+          const jTxt = document.createElementNS(ns, "text");
+          jTxt.setAttribute("x", (currX + prevX) / 2);
+          jTxt.setAttribute("y", nodeY + 68);
+          jTxt.setAttribute("fill", "var(--signal)");
+          jTxt.setAttribute("font-size", "13");
+          jTxt.setAttribute("font-weight", "700");
+          jTxt.setAttribute("text-anchor", "middle");
+          jTxt.textContent = `× ∂h_${i + 1}/∂h_${i}`;
+          chainSvg.appendChild(jTxt);
+        }
+
+        // 4. 绘制隐状态节点 h_t 圆圈
+        for (let i = 0; i < n; i++) {
+          const x = startX + i * stepW;
+          const isFirst = (i === 0);
+          const isLast = (i === n - 1);
+
+          const circle = document.createElementNS(ns, "circle");
+          circle.setAttribute("cx", x);
+          circle.setAttribute("cy", nodeY);
+          circle.setAttribute("r", "32");
+          circle.setAttribute("fill", isFirst ? "rgba(212, 56, 17, 0.08)" : "var(--bg)");
+          circle.setAttribute("stroke", isFirst ? "var(--signal)" : "var(--structure)");
+          circle.setAttribute("stroke-width", isFirst ? "2.5" : "2");
+          chainSvg.appendChild(circle);
+
+          const hTxt = document.createElementNS(ns, "text");
+          hTxt.setAttribute("x", x);
+          hTxt.setAttribute("y", nodeY + 6);
+          hTxt.setAttribute("fill", isFirst ? "var(--signal)" : "var(--text)");
+          hTxt.setAttribute("font-size", "18");
+          hTxt.setAttribute("font-weight", "700");
+          hTxt.setAttribute("text-anchor", "middle");
+          hTxt.textContent = STEP_LABELS[i];
+          chainSvg.appendChild(hTxt);
+
+          // 关键标注：目标远期状态
+          if (isFirst) {
+            const tag = document.createElementNS(ns, "text");
+            tag.setAttribute("x", x);
+            tag.setAttribute("y", nodeY - 44);
+            tag.setAttribute("fill", "var(--signal)");
+            tag.setAttribute("font-size", "13");
+            tag.setAttribute("font-weight", "700");
+            tag.setAttribute("text-anchor", "middle");
+            tag.textContent = "初始状态 (远期依赖)";
+            chainSvg.appendChild(tag);
+          }
+        }
+      }
+
+      function renderMagnitude() {
+        const w = 1120;
+        const h = 240;
+        magSvg.innerHTML = "";
+        const ns = "http://www.w3.org/2000/svg";
+
+        const n = totalSteps;
+        const padX = 120;
+        const chartW = w - 240;
+        const barWidth = Math.min(48, chartW / (n * 2.2));
+        const baseY = 190;
+        const maxH = 118; // 保留足够顶部间距，彻底消除数值与刻度叠压
+
+        // 基准横轴
+        const axis = document.createElementNS(ns, "line");
+        axis.setAttribute("x1", padX - 30);
+        axis.setAttribute("y1", baseY);
+        axis.setAttribute("x2", padX + chartW + 30);
+        axis.setAttribute("y2", baseY);
+        axis.setAttribute("stroke", "var(--rule)");
+        axis.setAttribute("stroke-width", "1.5");
+        magSvg.appendChild(axis);
+
+        // 轴标题
+        const axTitle = document.createElementNS(ns, "text");
+        axTitle.setAttribute("x", padX - 24);
+        axTitle.setAttribute("y", baseY - maxH - 22);
+        axTitle.setAttribute("fill", "var(--text)");
+        axTitle.setAttribute("font-size", "13");
+        axTitle.setAttribute("font-weight", "600");
+        axTitle.textContent = "梯度模长 ‖∂L_T / ∂h_t‖";
+        magSvg.appendChild(axTitle);
+
+        // 计算从 T 到 1 每步的模长 (归一化以便可视化展示)
+        const stepW = chartW / (n - 1);
+        const gains = [];
+        for (let t = 1; t <= n; t++) {
+          const delta = n - t;
+          gains.push(Math.pow(currentLambda, delta));
+        }
+
+        // 归一化柱高基准
+        const maxVal = Math.max(...gains, 1.0);
+
+        for (let i = 0; i < n; i++) {
+          const x = padX + i * stepW;
+          const val = gains[i];
+          let barH = 0;
+
+          if (currentLambda > 1.0) {
+            // 爆炸模式：对数比例展示，避免冲出顶端
+            barH = (Math.log10(val + 1) / Math.log10(maxVal + 1)) * maxH;
+          } else {
+            // 衰减模式：线性比例展示
+            barH = (val / 1.0) * maxH;
+          }
+          barH = Math.max(3, Math.min(maxH, barH));
+
+          const isFirst = (i === 0);
+          const barColor = isFirst ? "var(--signal)" : (currentLambda > 1.0 ? "var(--signal)" : "var(--structure)");
+
+          // 柱体
+          const rect = document.createElementNS(ns, "rect");
+          rect.setAttribute("x", x - barWidth / 2);
+          rect.setAttribute("y", baseY - barH);
+          rect.setAttribute("width", barWidth);
+          rect.setAttribute("height", barH);
+          rect.setAttribute("fill", barColor);
+          rect.setAttribute("rx", "2");
+          rect.setAttribute("opacity", isFirst ? "1" : "0.75");
+          magSvg.appendChild(rect);
+
+          // 数值标注 (位于柱顶上方 12px)
+          const valTxt = document.createElementNS(ns, "text");
+          valTxt.setAttribute("x", x);
+          valTxt.setAttribute("y", baseY - barH - 10);
+          valTxt.setAttribute("fill", isFirst ? "var(--signal)" : "var(--text)");
+          valTxt.setAttribute("font-size", "13");
+          valTxt.setAttribute("font-weight", "700");
+          valTxt.setAttribute("text-anchor", "middle");
+          valTxt.textContent = val >= 10 ? val.toFixed(1) : (val >= 0.01 ? val.toFixed(3) : val.toExponential(1));
+          magSvg.appendChild(valTxt);
+
+          // 横轴刻度文本
+          const stepTxt = document.createElementNS(ns, "text");
+          stepTxt.setAttribute("x", x);
+          stepTxt.setAttribute("y", baseY + 20);
+          stepTxt.setAttribute("fill", isFirst ? "var(--signal)" : "var(--muted)");
+          stepTxt.setAttribute("font-size", "13");
+          stepTxt.setAttribute("font-weight", isFirst ? "700" : "500");
+          stepTxt.setAttribute("text-anchor", "middle");
+          stepTxt.textContent = `t = ${i + 1}`;
+          magSvg.appendChild(stepTxt);
+        }
+      }
+
+      function updateDashboard() {
+        valLambda.textContent = currentLambda.toFixed(2);
+        valSteps.textContent = `${totalSteps - 1} 步 (T=${totalSteps})`;
+
+        const delta = totalSteps - 1;
+        const gain = Math.pow(currentLambda, delta);
+
+        if (gain > 100) {
+          valGain.textContent = gain.toExponential(2);
+          valGain.className = "norm-huge signal";
+          valRetention.textContent = "梯度溢出 (爆炸)";
+          valRetention.style.color = "var(--signal)";
+        } else if (gain < 0.005) {
+          valGain.textContent = gain.toExponential(2);
+          valGain.className = "norm-huge signal";
+          valRetention.textContent = "趋近 0% (完全消失)";
+          valRetention.style.color = "var(--signal)";
+        } else {
+          valGain.textContent = gain.toFixed(3);
+          valGain.className = (currentLambda === 1.0) ? "norm-huge structure" : "norm-huge signal";
+          const pct = (gain * 100).toFixed(1) + "%";
+          valRetention.textContent = pct;
+          valRetention.style.color = (currentLambda === 1.0) ? "var(--structure)" : "var(--signal)";
+        }
+
+        // 更新预设按钮激活态
+        btnVanish.className = (Math.abs(currentLambda - 0.75) < 0.01) ? "preset-btn active" : "preset-btn";
+        btnUnit.className = (Math.abs(currentLambda - 1.0) < 0.01) ? "preset-btn active-stable" : "preset-btn";
+        btnExplode.className = (Math.abs(currentLambda - 1.25) < 0.01) ? "preset-btn active" : "preset-btn";
+
+        renderChain();
+        renderMagnitude();
+      }
+
+      // 交互事件绑定
+      sliderLambda.addEventListener("input", (e) => {
+        currentLambda = parseFloat(e.target.value);
+        updateDashboard();
+      });
+
+      sliderSteps.addEventListener("input", (e) => {
+        totalSteps = parseInt(e.target.value, 10);
+        updateDashboard();
+      });
+
+      btnVanish.addEventListener("click", () => {
+        currentLambda = 0.75;
+        sliderLambda.value = "0.75";
+        updateDashboard();
+      });
+
+      btnUnit.addEventListener("click", () => {
+        currentLambda = 1.00;
+        sliderLambda.value = "1.00";
+        updateDashboard();
+      });
+
+      btnExplode.addEventListener("click", () => {
+        currentLambda = 1.25;
+        sliderLambda.value = "1.25";
+        updateDashboard();
+      });
+
+      Deck.init({ index: 22, total: 32 });
+      updateDashboard();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>集成有效的前提：准确性与多样性</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #F2F6F8;
+      --surface: #FFFFFF;
+      --surface-strong: #E2EBF0;
+      --text: #122634;
+      --muted: #536A78;
+      --model: #27648F;
+      --sample: #2F7568;
+      --aggregate: #C34B22;
+      --answer: #237052;
+      --focus: #9B3F11;
+      --err-color: #D9483B;
+      --ok-color: #E2EBF0;
+    }
+
+    #stage {
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      padding: 34px 56px 30px;
+      height: 900px;
+      width: 1600px;
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    .header-block {
+      flex: 0 0 auto;
+      margin-bottom: 20px;
+    }
+    .header-block h1 {
+      font-size: 32px;
+      line-height: 1.18;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 6px 0;
+      letter-spacing: -0.02em;
+    }
+    .header-block .lead-text {
+      font-size: 17px;
+      line-height: 1.4;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 主舞台双栏 */
+    .main-grid {
+      flex: 1 1 0;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1040px 1fr;
+      gap: 32px;
+      align-items: stretch;
+    }
+
+    /* 左侧：矩阵与对比图区 */
+    .plot-card {
+      background: var(--surface);
+      border: 1px solid #D1DDE5;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      padding: 22px 26px 18px;
+      position: relative;
+    }
+
+    .plot-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex: 0 0 auto;
+    }
+    .plot-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .scenario-tabs {
+      display: flex;
+      gap: 8px;
+      background: var(--surface-strong);
+      padding: 4px;
+      border-radius: 6px;
+    }
+    .scenario-btn {
+      border: none;
+      background: transparent;
+      padding: 6px 14px;
+      font-size: 15px;
+      font-family: inherit;
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: 4px;
+      font-weight: 600;
+      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
+    }
+    .scenario-btn:hover {
+      color: var(--text);
+    }
+    .scenario-btn.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    /* 矩阵容器 */
+    .matrix-container {
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+    }
+
+    .matrix-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 3px;
+      table-layout: fixed;
+    }
+    .matrix-table th, .matrix-table td {
+      text-align: center;
+      padding: 0;
+      font-family: var(--font-num, var(--font-sans));
+    }
+    .matrix-table th {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+      height: 24px;
+      vertical-align: bottom;
+    }
+    .matrix-table th.head-label {
+      width: 140px;
+      text-align: left;
+      font-size: 14px;
+      padding-left: 6px;
+    }
+    .matrix-table th.head-stat {
+      width: 110px;
+      font-size: 14px;
+      text-align: right;
+      padding-right: 8px;
+    }
+
+    .row-learner td {
+      height: 48px;
+    }
+    .row-agg td {
+      height: 56px;
+    }
+    .row-sep td {
+      height: 18px;
+      border-bottom: 2px dashed #D1DDE5;
+    }
+
+    .td-name {
+      text-align: left !important;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      padding-left: 6px !important;
+      white-space: nowrap;
+    }
+    .row-agg .td-name {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--aggregate);
+    }
+
+    .cell-box {
+      width: 100%;
+      height: 44px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 700;
+      box-sizing: border-box;
+      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
+    }
+    .cell-ok {
+      background: #EDF3F6;
+      color: #728A98;
+      border: 1px solid #DCE6EC;
+    }
+    .cell-err {
+      background: #FBEBE9;
+      color: var(--err-color);
+      border: 1px solid #F5C6C2;
+    }
+    .row-agg .cell-box {
+      height: 50px;
+      font-size: 18px;
+    }
+    .row-agg .cell-ok {
+      background: #E8F4EE;
+      color: var(--answer);
+      border: 1.5px solid #BDDFCD;
+    }
+    .row-agg .cell-err {
+      background: #FBE6E4;
+      color: var(--err-color);
+      border: 1.5px solid #F6AFA7;
+    }
+
+    .td-stat {
+      text-align: right !important;
+      font-size: 16px;
+      font-weight: 700;
+      padding-right: 8px !important;
+      color: var(--text);
+    }
+    .row-agg .td-stat {
+      font-size: 18px;
+      color: var(--aggregate);
+    }
+
+    /* 矩阵底部图例与标注 */
+    .matrix-footer {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid #E2EBF0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 14px;
+      color: var(--muted);
+      flex: 0 0 auto;
+    }
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-chip {
+      width: 18px;
+      height: 18px;
+      border-radius: 3px;
+      display: inline-block;
+    }
+
+    /* 右侧：推演与结论侧边栏 */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .sidebar-panel {
+      background: var(--surface);
+      border: 1px solid #D1DDE5;
+      border-radius: 8px;
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .state-summary-panel {
+      flex: 1 1 0;
+      justify-content: space-between;
+    }
+
+    .panel-heading {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+
+    .state-title {
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--text);
+      margin: 0 0 12px 0;
+    }
+
+    .stat-comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 12px 0 16px;
+      background: var(--bg);
+      padding: 12px 14px;
+      border-radius: 6px;
+      border: 1px solid #E2EBF0;
+    }
+    .stat-box .label {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .stat-box .value {
+      font-size: 26px;
+      font-weight: 800;
+      font-family: var(--font-num, var(--font-sans));
+      color: var(--text);
+    }
+    .stat-box.highlight .value {
+      color: var(--aggregate);
+    }
+
+    .state-desc {
+      font-size: 16px;
+      line-height: 1.55;
+      color: var(--text);
+      margin: 0 0 10px 0;
+    }
+
+    .state-insight {
+      font-size: 15px;
+      line-height: 1.5;
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: #F6F9FA;
+      border-left: 3px solid #27648F;
+      color: #2C4A5E;
+      margin: 0;
+    }
+    .state-insight.good {
+      background: #F0F8F4;
+      border-left-color: var(--answer);
+      color: #174835;
+    }
+    .state-insight.bad {
+      background: #FDF3F2;
+      border-left-color: var(--err-color);
+      color: #6C1E17;
+    }
+
+    /* 底部通用法则卡片 */
+    .principle-panel {
+      background: #EBF2F6;
+      border: 1px solid #CDDCE4;
+      border-radius: 8px;
+      padding: 16px 20px;
+    }
+    .principle-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .principle-text {
+      font-size: 14.5px;
+      line-height: 1.45;
+      color: var(--muted);
+      margin: 0;
+    }
+    .principle-text strong {
+      color: var(--text);
+    }
+  </style>
+</head>
+<body data-page="03" data-total="27">
+  <div id="stage">
+    <header class="header-block">
+      <h1>集成有效的前提：准确性与多样性</h1>
+      <p class="lead-text">多数表决能纠正独立分散的偶发错误；如果个体能力不足或错误完全同质，集成将无法提升甚至恶化表现。</p>
+    </header>
+
+    <div class="main-grid">
+      <!-- 左侧：20 样本 × 5 成员 + 集成预测 错误分布对照图 -->
+      <section class="plot-card">
+        <div class="plot-topbar">
+          <span class="plot-title">20 个验证样本上的预测对错分布（多数投票规则）</span>
+          <div class="scenario-tabs" role="tablist" aria-label="对比情境">
+            <button class="scenario-btn active" id="btn-ideal" role="tab" aria-selected="true">情境 A：准确且独立（理想）</button>
+            <button class="scenario-btn" id="btn-correlated" role="tab" aria-selected="false">情境 B：同质冗余（错误重叠）</button>
+            <button class="scenario-btn" id="btn-weak" role="tab" aria-selected="false">情境 C：能力不足（多数盲从）</button>
+          </div>
+        </div>
+
+        <div class="matrix-container" id="matrixContainer">
+          <!-- 动态渲染 20 列样本矩阵 -->
+          <table class="matrix-table" id="matrixTable">
+            <thead>
+              <tr id="matrixHeadRow">
+                <th class="head-label">模型 / 样本</th>
+                <!-- 20个样本编号 S1-S20 -->
+              </tr>
+            </thead>
+            <tbody id="matrixBody">
+              <!-- 5个基模型行 + 分隔线 + 1个集成输出行 -->
+            </tbody>
+          </table>
+        </div>
+
+        <footer class="matrix-footer">
+          <div class="legend-row">
+            <div class="legend-item">
+              <span class="legend-chip cell-ok"></span>
+              <span>基模型正确（✓）</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-chip cell-err"></span>
+              <span>基模型错误（✕）</span>
+            </div>
+            <div class="legend-item" style="margin-left: 12px;">
+              <span class="legend-chip" style="background:#E8F4EE; border:1.5px solid #BDDFCD;"></span>
+              <span>集成表决正确</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-chip" style="background:#FBE6E4; border:1.5px solid #F6AFA7;"></span>
+              <span>集成表决错误（≥3 模型同错）</span>
+            </div>
+          </div>
+          <div>5 个模型表决：≥3 票定最终判断</div>
+        </footer>
+      </section>
+
+      <!-- 右侧：定量指标与机制阐明 -->
+      <aside class="sidebar">
+        <div class="sidebar-panel state-summary-panel">
+          <div>
+            <div class="panel-heading" id="scenarioTag">情境 A 机制分析</div>
+            <h2 class="state-title" id="scenarioHeading">错误错位分布，少数服从多数消除单点缺陷</h2>
+
+            <div class="stat-comparison">
+              <div class="stat-box">
+                <div class="label">成员平均准确率</div>
+                <div class="value" id="valBaseAcc">75.0%</div>
+              </div>
+              <div class="stat-box highlight">
+                <div class="label">多数投票集成准确率</div>
+                <div class="value" id="valEnsembleAcc">95.0%</div>
+              </div>
+            </div>
+
+            <p class="state-desc" id="scenarioDesc">
+              每个基模型的单体错误率在 25% 左右，但 5 个模型的错误分布在不同的测试样本上。当某一个模型犯错时，其余 4 个模型依然保持正确，多数表决将个别模型的单点失误全部抹平。
+            </p>
+          </div>
+
+          <div class="state-insight good" id="scenarioInsight">
+            <strong>互补效应生效：</strong>集成最终仅在 1 个样本（S13）上因 3 个模型同时失误而失守，错误率从单体的 25% 骤降至 5%（20 题仅错 1 题）。
+          </div>
+        </div>
+
+        <div class="principle-panel">
+          <div class="principle-title">
+            <span>集成两大约束条件（Condorcet 陪审团引理）</span>
+          </div>
+          <p class="principle-text">
+            1. <strong>准确性底线</strong>：个体能力必须优于随机猜测（例如二分类中单体准确率 <em>p</em> &gt; 0.5）。<br>
+            2. <strong>差异化/低相关性</strong>：成员之间的误差必须具备多样性，否则相同错误会被多数表决成倍固化为系统性盲区。
+          </p>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      // 预先算定且逻辑严格自洽的 3 组实验矩阵（20 样本，5 基模型 + 集成多数表决）
+      // 0: 正确, 1: 错误
+      const SCENARIOS = {
+        ideal: {
+          tag: "情境 A 机制分析",
+          heading: "错误错位分布，多数投票抹平个体失误",
+          baseAcc: "75.0%",
+          ensembleAcc: "95.0%",
+          desc: "5 个基模型各有约 25% 的失误（每人错 5 题），但彼此失误样本错开（低相关）。在绝大多数样本上，出错的只有 1 到 2 个模型，另外 3~4 个正确的模型通过多数票压倒错误，集体决策准确率跃升至 95%。",
+          insight: "<strong>多样性互补生效：</strong>集成的整体失误仅发生在 S13（3 人同时犯错），其余 19 个样本全对。个体局限被群体互补化解。",
+          insightClass: "good",
+          // 5 行 x 20 列: 1 表示错误
+          // 成员 1: S2, S6, S10, S13, S17 错 (5/20 -> 75%)
+          // 成员 2: S3, S7, S11, S13, S18 错 (5/20 -> 75%)
+          // 成员 3: S4, S8, S12, S13, S19 错 (5/20 -> 75%)
+          // 成员 4: S1, S5, S9, S14, S20 错 (5/20 -> 75%)
+          // 成员 5: S2, S7, S12, S15, S16 错 (5/20 -> 75%)
+          // 多数表决统计：S13 同时 3 人错 (M1, M2, M3)，因此 S13 集成错；其他样本最多 2 人错，集成全对！
+          // 集成错误率: 1/20 (5%), 准确率: 19/20 (95%)
+          matrix: [
+            [0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+            [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0],
+            [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0],
+            [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+            [0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0]
+          ]
+        },
+        correlated: {
+          tag: "情境 B 机制分析",
+          heading: "高相关同质化：错误同步发生，集成失效",
+          baseAcc: "75.0%",
+          ensembleAcc: "75.0%",
+          desc: "5 个基模型的单体准确率依然是 75%（各错 5 题），但它们是在几乎相同的数据子集或特征上训练的同质模型。错误集中在 S3, S7, S11, S15, S19 这几道难题上同步爆发，多数票无法纠偏。",
+          insight: "<strong>冗余无增益：</strong>当大家错在同一个地方，集成后的判断与单个基模型完全一样，多数表决毫无互补意义，准确率停滞在 75%。",
+          insightClass: "bad",
+          // 5 个模型错在几乎完全相同的位置：S3, S7, S11, S15, S19
+          matrix: [
+            [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1],
+            [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0]
+          ]
+        },
+        weak: {
+          tag: "情境 C 机制分析",
+          heading: "单体能力不足：多数人犯错，集成雪上加霜",
+          baseAcc: "40.0%",
+          ensembleAcc: "25.0%",
+          desc: "每个基模型的能力低于随机基准（准确率仅 40%，平均每人错 12 题）。在每个样本上，错误发生的概率大于正确概率，多数表决将个体的不可靠性进一步放大，多数票反而形成了错误的集结。",
+          insight: "<strong>集体盲从恶化：</strong>单个模型尚有 40% 的可能猜对；集成多数表决后准确率进一步暴跌至 25%（20 题错 15 题）。集成必须以模型‘优于随机’为前提！",
+          insightClass: "bad",
+          // 5 个模型准确率在 40% 左右（每人错 12 题）
+          matrix: [
+            [1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1],
+            [1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1],
+            [0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0],
+            [1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0],
+            [1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1]
+          ]
+        }
+      };
+
+      const SAMPLE_COUNT = 20;
+      const MODEL_COUNT = 5;
+
+      // 缓存 DOM
+      const matrixHeadRow = document.getElementById("matrixHeadRow");
+      const matrixBody = document.getElementById("matrixBody");
+      const btnIdeal = document.getElementById("btn-ideal");
+      const btnCorrelated = document.getElementById("btn-correlated");
+      const btnWeak = document.getElementById("btn-weak");
+
+      const scenarioTag = document.getElementById("scenarioTag");
+      const scenarioHeading = document.getElementById("scenarioHeading");
+      const scenarioDesc = document.getElementById("scenarioDesc");
+      const scenarioInsight = document.getElementById("scenarioInsight");
+      const valBaseAcc = document.getElementById("valBaseAcc");
+      const valEnsembleAcc = document.getElementById("valEnsembleAcc");
+
+      // 构建表头 20 个样本 S1-S20
+      for (let s = 1; s <= SAMPLE_COUNT; s++) {
+        const th = document.createElement("th");
+        th.textContent = "S" + s;
+        matrixHeadRow.appendChild(th);
+      }
+      const thStat = document.createElement("th");
+      thStat.className = "head-stat";
+      thStat.textContent = "单体准确率";
+      matrixHeadRow.appendChild(thStat);
+
+      // 当前状态
+      let currentKey = "ideal";
+
+      function renderScenario(key) {
+        currentKey = key;
+        const data = SCENARIOS[key];
+
+        // 按钮高亮
+        btnIdeal.classList.toggle("active", key === "ideal");
+        btnCorrelated.classList.toggle("active", key === "correlated");
+        btnWeak.classList.toggle("active", key === "weak");
+        btnIdeal.setAttribute("aria-selected", key === "ideal");
+        btnCorrelated.setAttribute("aria-selected", key === "correlated");
+        btnWeak.setAttribute("aria-selected", key === "weak");
+
+        // 侧边栏文字
+        scenarioTag.textContent = data.tag;
+        scenarioHeading.textContent = data.heading;
+        valBaseAcc.textContent = data.baseAcc;
+        valEnsembleAcc.textContent = data.ensembleAcc;
+        scenarioDesc.textContent = data.desc;
+        scenarioInsight.innerHTML = data.insight;
+        scenarioInsight.className = "state-insight " + data.insightClass;
+
+        // 计算表决
+        const ensembleVotes = [];
+        let ensembleCorrectCount = 0;
+        for (let col = 0; col < SAMPLE_COUNT; col++) {
+          let errVotes = 0;
+          for (let row = 0; row < MODEL_COUNT; row++) {
+            if (data.matrix[row][col] === 1) errVotes++;
+          }
+          // 多数表决：errVotes >= 3 则集成预测错误(1)，否则正确(0)
+          const isEnsembleErr = errVotes >= 3 ? 1 : 0;
+          ensembleVotes.push(isEnsembleErr);
+          if (isEnsembleErr === 0) ensembleCorrectCount++;
+        }
+
+        // 构建表格行
+        matrixBody.innerHTML = "";
+
+        // 5 个基模型
+        for (let m = 0; m < MODEL_COUNT; m++) {
+          const tr = document.createElement("tr");
+          tr.className = "row-learner";
+
+          const tdName = document.createElement("td");
+          tdName.className = "td-name";
+          tdName.textContent = "基模型 M" + (m + 1);
+          tr.appendChild(tdName);
+
+          let correctInRow = 0;
+          for (let s = 0; s < SAMPLE_COUNT; s++) {
+            const td = document.createElement("td");
+            const box = document.createElement("div");
+            box.className = "cell-box";
+            const isErr = data.matrix[m][s] === 1;
+            if (isErr) {
+              box.classList.add("cell-err");
+              box.textContent = "✕";
+            } else {
+              box.classList.add("cell-ok");
+              box.textContent = "✓";
+              correctInRow++;
+            }
+            td.appendChild(box);
+            tr.appendChild(td);
+          }
+
+          const tdStat = document.createElement("td");
+          tdStat.className = "td-stat";
+          const accPct = ((correctInRow / SAMPLE_COUNT) * 100).toFixed(0) + "%";
+          tdStat.textContent = accPct;
+          tr.appendChild(tdStat);
+
+          matrixBody.appendChild(tr);
+        }
+
+        // 分隔行
+        const trSep = document.createElement("tr");
+        trSep.className = "row-sep";
+        const tdSep = document.createElement("td");
+        tdSep.colSpan = SAMPLE_COUNT + 2;
+        trSep.appendChild(tdSep);
+        matrixBody.appendChild(trSep);
+
+        // 集成表决行
+        const trAgg = document.createElement("tr");
+        trAgg.className = "row-agg";
+
+        const tdAggName = document.createElement("td");
+        tdAggName.className = "td-name";
+        tdAggName.textContent = "集成多数投票";
+        trAgg.appendChild(tdAggName);
+
+        for (let s = 0; s < SAMPLE_COUNT; s++) {
+          const td = document.createElement("td");
+          const box = document.createElement("div");
+          box.className = "cell-box";
+          const isErr = ensembleVotes[s] === 1;
+          if (isErr) {
+            box.classList.add("cell-err");
+            box.textContent = "✕";
+          } else {
+            box.classList.add("cell-ok");
+            box.textContent = "✓";
+          }
+          td.appendChild(box);
+          trAgg.appendChild(td);
+        }
+
+        const tdAggStat = document.createElement("td");
+        tdAggStat.className = "td-stat";
+        const aggAccPct = ((ensembleCorrectCount / SAMPLE_COUNT) * 100).toFixed(0) + "%";
+        tdAggStat.textContent = aggAccPct;
+        trAgg.appendChild(tdAggStat);
+
+        matrixBody.appendChild(trAgg);
+      }
+
+      // 事件绑定
+      btnIdeal.addEventListener("click", function(){ renderScenario("ideal"); });
+      btnCorrelated.addEventListener("click", function(){ renderScenario("correlated"); });
+      btnWeak.addEventListener("click", function(){ renderScenario("weak"); });
+
+      // 初始化
+      renderScenario("ideal");
+
+      // Deck 契约
+      Deck.init({ index: 3, total: 27, keys: false });
+    })();
+  </script>
+</body>
+</html>

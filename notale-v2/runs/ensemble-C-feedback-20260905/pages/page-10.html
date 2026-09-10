@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>袋外样本 OOB：天然的留出验证</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-shrink: 0;
+    }
+    .header-main h1 {
+      margin: 0 0 6px 0;
+      font-size: var(--fs-h1);
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+    .header-main p {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* 状态与统计摘要胶囊条（不是 kicker） */
+    .stats-strip {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 8px 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      min-width: 130px;
+    }
+    .stat-label {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .stat-val {
+      font-family: var(--font-num);
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .stat-val.highlight {
+      color: var(--aggregate);
+    }
+
+    /* 主工作台：网格与验证流程两列 */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 880px 1fr;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* 左侧：矩阵看板区 */
+    .matrix-panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+      position: relative;
+    }
+    .panel-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .panel-top h2 {
+      margin: 0;
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .legend-row {
+      display: flex;
+      gap: 16px;
+      font-size: var(--fs-label);
+      color: var(--muted);
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+    .legend-dot.in-bag {
+      background: var(--learner);
+    }
+    .legend-dot.oob {
+      background: #FFFFFF;
+      border: 2px dashed var(--aggregate);
+      box-sizing: border-box;
+    }
+
+    /* 矩阵容器 */
+    .matrix-container {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: #FFFFFF;
+      border-radius: 8px;
+      border: 1px solid var(--surface-strong);
+      padding: 12px;
+      box-sizing: border-box;
+    }
+
+    /* 矩阵表格自绘 */
+    .matrix-grid {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-columns: 70px repeat(10, 1fr) 74px;
+      grid-template-rows: 28px repeat(12, 1fr);
+      gap: 4px;
+      align-items: center;
+    }
+    .grid-th {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      text-align: center;
+      font-weight: 600;
+    }
+    .grid-row-lbl {
+      font-size: var(--fs-tick);
+      color: var(--muted);
+      font-family: var(--font-num);
+      text-align: right;
+      padding-right: 8px;
+    }
+    .grid-cell {
+      height: 100%;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-family: var(--font-num);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+      user-select: none;
+      box-sizing: border-box;
+    }
+    .grid-cell.in {
+      background: #D9E4EF;
+      color: var(--learner);
+      font-weight: 600;
+      border: 1px solid #B8CDDF;
+    }
+    .grid-cell.in.mult {
+      background: #A9C5E0;
+      color: #0F3B66;
+      font-weight: 700;
+    }
+    .grid-cell.oob {
+      background: #FFF4F2;
+      color: var(--aggregate);
+      border: 1.5px dashed #E58675;
+      font-weight: 700;
+    }
+    .grid-cell.selected-row {
+      filter: brightness(0.92);
+      outline: 2px solid var(--focus);
+    }
+    .grid-cell.selected-col {
+      box-shadow: inset 0 0 0 1px var(--focus);
+    }
+    .grid-summary-cell {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      font-weight: 700;
+      text-align: center;
+      color: var(--aggregate);
+      background: #FAF0EE;
+      border-radius: 4px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* 矩阵交互控件底条 */
+    .matrix-ctrls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 4px;
+      flex-shrink: 0;
+    }
+    .matrix-ctrls .hint-text {
+      font-size: var(--fs-label);
+      color: var(--muted);
+    }
+    .matrix-ctrls .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* 按钮通用 */
+    .btn {
+      height: 36px;
+      padding: 0 14px;
+      border-radius: 6px;
+      border: 1px solid var(--surface-strong);
+      background: var(--surface);
+      color: var(--text);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background var(--dur), border-color var(--dur);
+    }
+    .btn:hover {
+      background: #FFFFFF;
+      border-color: var(--focus);
+    }
+    .btn.active {
+      background: var(--learner);
+      color: #FFFFFF;
+      border-color: var(--learner);
+    }
+    .btn.primary {
+      background: var(--focus);
+      color: #FFFFFF;
+      border-color: var(--focus);
+    }
+
+    /* 右侧：推导证明与评估流程两段式 */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    /* 推导卡片 */
+    .card-formula {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      flex-shrink: 0;
+    }
+    .card-formula h3 {
+      margin: 0 0 10px 0;
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .formula-badge {
+      font-size: var(--fs-tick);
+      background: #EAEFF4;
+      padding: 3px 8px;
+      border-radius: 4px;
+      color: var(--learner);
+      font-weight: 600;
+    }
+    .formula-body {
+      font-size: 16px;
+      line-height: 1.55;
+      color: var(--text);
+    }
+    .katex-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 0;
+      background: #FFFFFF;
+      border-radius: 6px;
+      border: 1px solid var(--surface-strong);
+      margin: 8px 0;
+      font-size: 19px;
+    }
+    .formula-expl {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* 评估流转与检验卡片 */
+    .card-eval {
+      background: var(--surface);
+      border: 1px solid var(--surface-strong);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .card-eval h3 {
+      margin: 0;
+      font-size: var(--fs-h2);
+      font-weight: 600;
+    }
+
+    /* 交互式样本检验视窗 */
+    .sample-inspector {
+      background: #FFFFFF;
+      border: 1px solid var(--surface-strong);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .inspector-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+    }
+    .inspector-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-height: 32px;
+      align-items: center;
+    }
+    .model-tag {
+      font-size: var(--fs-tick);
+      font-family: var(--font-num);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .model-tag.oob-eval {
+      background: #FCEAE7;
+      color: var(--aggregate);
+      border: 1px solid #F3C4BC;
+    }
+    .model-tag.in-train {
+      background: #E8EEF5;
+      color: var(--learner);
+      border: 1px solid #CCDCEB;
+      text-decoration: line-through;
+      opacity: 0.7;
+    }
+    .eval-flow-text {
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    /* 限制对比信息框：整圈细边框，符合禁用清单第 2 条（无单侧粗侧边条） */
+    .contrast-box {
+      margin-top: auto;
+      background: #EDF3F7;
+      border: 1px solid var(--surface-strong);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: var(--fs-label);
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .contrast-box b {
+      color: var(--learner);
+    }
+  </style>
+</head>
+<body data-page="10" data-total="27">
+  <div id="stage">
+    <!-- 顶部标题 -->
+    <header class="page-header">
+      <div class="header-main">
+        <h1>袋外样本 OOB：天然的留出验证</h1>
+        <p>每棵树只需约 63.2% 的样本参与训练；未被抽取的约 36.8% 样本可直接构成无偏测试集。</p>
+      </div>
+      <div class="stats-strip">
+        <div class="stat-card">
+          <span class="stat-label">极限未抽中率</span>
+          <span class="stat-val">1/e ≈ 36.79%</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">当前模拟 OOB 均值</span>
+          <span class="stat-val highlight" id="stat-oob-ratio">37.50%</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">每样本可用评审树</span>
+          <span class="stat-val" id="stat-eval-trees">3.8 棵</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 主展示区 -->
+    <div class="main-grid">
+      <!-- 左栏：抽样分配网格 -->
+      <section class="matrix-panel">
+        <div class="panel-top">
+          <h2>
+            <span>样本 × 基学习器 抽取状态表</span>
+            <span style="font-size: var(--fs-label); color: var(--muted); font-weight: normal;">(12 样本 × 10 棵树)</span>
+          </h2>
+          <div class="legend-row">
+            <div class="legend-item">
+              <div class="legend-dot in-bag"></div>
+              <span>袋内训练 (In-Bag)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot oob"></div>
+              <span style="color: var(--aggregate); font-weight: 600;">袋外验证 (OOB)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="matrix-container">
+          <div class="matrix-grid" id="matrixGrid">
+            <!-- 由 JS 渲染网格表头、行与格子 -->
+          </div>
+        </div>
+
+        <div class="matrix-ctrls">
+          <div class="hint-text">
+            <span>点击任意行查看该样本由哪些“未参与训练的纯洁树”联合表决</span>
+          </div>
+          <div class="btn-group">
+            <button class="btn primary" id="btnResample">重新 Bootstrap 抽样</button>
+            <button class="btn" id="btnSelectSample">轮换高亮样本</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏：数学机理与无偏评估推导 -->
+      <div class="right-col">
+        <!-- 数学证明 -->
+        <div class="card-formula">
+          <h3>
+            <span>为何每个样本必有 ~36.8% 模型未见？</span>
+            <span class="formula-badge">极限收敛证明</span>
+          </h3>
+          <div class="formula-body">
+            设数据集大小为 <span id="mathN1"></span>，每次有放回抽取 1 个样本，单个样本未被抽中的概率为 <span id="mathP1"></span>。独立抽取 <span id="mathN2"></span> 次后：
+            <div class="katex-row" id="katexFormula"></div>
+            <p class="formula-expl">
+              当 <span id="mathN3"></span> 时，未被抽中概率已稳定在 36.8% 附近。这保证每个样本必定天然成为约三分之一基学习器的“未知测试样本”。
+            </p>
+          </div>
+        </div>
+
+        <!-- OOB 评估流转机制 -->
+        <div class="card-eval">
+          <h3>OOB 泛化误差计算机制</h3>
+          
+          <div class="sample-inspector">
+            <div class="inspector-title">
+              <span id="inspectSampleName">样本 x₁ 的集成检验</span>
+              <span id="inspectOobCount" style="color: var(--aggregate); font-family: var(--font-num);">4 棵树充当验证集</span>
+            </div>
+            <div class="inspector-tags" id="inspectTags">
+              <!-- 动态标签 -->
+            </div>
+            <p class="eval-flow-text" id="inspectFlowText">
+              该样本进入了其余 6 棵树的训练；只有对它而言未知的 4 棵树被允许参与投票，从而在<b>没有单独划分测试集</b>的前提下完成无偏评估。
+            </p>
+          </div>
+
+          <div class="contrast-box">
+            <b>免去交叉验证开销：</b>在包含数千棵树的随机森林中，大数定律确保每个样本平均拥有约 37% 的独立评估者，OOB 误差是测试集误差的优良无偏估计。
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function() {
+      // 核心参数
+      const N_SAMPLES = 12;
+      const N_TREES = 10;
+      let selectedSampleIdx = 0; // 当前高亮检查的样本 x_1..x_12 (0-indexed)
+
+      // 伪随机生成器，种子固定保证首屏与确定性
+      let seed = 42;
+      function random() {
+        const x = Math.sin(seed++) * 10000;
+        return x - Math.floor(x);
+      }
+
+      // matrix[sample][tree] = 采样命中次数 (0 = OOB, >=1 = In-Bag)
+      let sampleCounts = [];
+
+      function runBootstrap() {
+        // 重置矩阵为 0
+        sampleCounts = Array.from({ length: N_SAMPLES }, () => Array(N_TREES).fill(0));
+        
+        // 对每棵树独立进行 N 次有放回抽样
+        for (let t = 0; t < N_TREES; t++) {
+          for (let i = 0; i < N_SAMPLES; i++) {
+            const chosen = Math.floor(random() * N_SAMPLES);
+            sampleCounts[chosen][t]++;
+          }
+        }
+      }
+
+      // 初始抽样
+      runBootstrap();
+
+      // 排版 KaTeX 公式与行内符号
+      const formulaEl = document.getElementById('katexFormula');
+      if (window.katex) {
+        katex.render(
+          'P(\\text{未被抽中}) = \\lim_{N \\to \\infty} \\left(1 - \\frac{1}{N}\\right)^N = \\frac{1}{e} \\approx 36.79\\%',
+          formulaEl,
+          { displayMode: true, throwOnError: false }
+        );
+        katex.render('N', document.getElementById('mathN1'));
+        katex.render('1 - \\frac{1}{N}', document.getElementById('mathP1'));
+        katex.render('N', document.getElementById('mathN2'));
+        katex.render('N \\ge 100', document.getElementById('mathN3'));
+      } else {
+        formulaEl.innerHTML = 'P(未被抽中) = lim (1 - 1/N)^N = 1/e ≈ 36.79%';
+        document.getElementById('mathN1').textContent = 'N';
+        document.getElementById('mathP1').textContent = '1 - 1/N';
+        document.getElementById('mathN2').textContent = 'N';
+        document.getElementById('mathN3').textContent = 'N ≥ 100';
+      }
+
+      // DOM 容器
+      const grid = document.getElementById('matrixGrid');
+      const inspectName = document.getElementById('inspectSampleName');
+      const inspectCount = document.getElementById('inspectOobCount');
+      const inspectTags = document.getElementById('inspectTags');
+      const inspectFlowText = document.getElementById('inspectFlowText');
+      const statOobRatio = document.getElementById('stat-oob-ratio');
+      const statEvalTrees = document.getElementById('stat-eval-trees');
+
+      function renderMatrix() {
+        grid.innerHTML = '';
+
+        // 1. 表头行：左上角、Tree 1..10、OOB 占比
+        const cornerTh = document.createElement('div');
+        cornerTh.className = 'grid-th';
+        cornerTh.textContent = '样本 \\ 树';
+        grid.appendChild(cornerTh);
+
+        for (let t = 1; t <= N_TREES; t++) {
+          const th = document.createElement('div');
+          th.className = 'grid-th';
+          th.textContent = 'T' + t;
+          grid.appendChild(th);
+        }
+
+        const oobTh = document.createElement('div');
+        oobTh.className = 'grid-th';
+        oobTh.textContent = 'OOB 树数';
+        grid.appendChild(oobTh);
+
+        // 2. 逐行填充数据
+        let totalCells = N_SAMPLES * N_TREES;
+        let totalOob = 0;
+
+        for (let s = 0; s < N_SAMPLES; s++) {
+          // 行标
+          const rowLbl = document.createElement('div');
+          rowLbl.className = 'grid-row-lbl';
+          rowLbl.textContent = 'x' + (s + 1);
+          grid.appendChild(rowLbl);
+
+          let rowOobCount = 0;
+
+          // 10 棵树单元格
+          for (let t = 0; t < N_TREES; t++) {
+            const count = sampleCounts[s][t];
+            const cell = document.createElement('div');
+            cell.className = 'grid-cell';
+
+            if (count === 0) {
+              cell.classList.add('oob');
+              cell.textContent = 'OOB';
+              rowOobCount++;
+              totalOob++;
+            } else {
+              cell.classList.add('in');
+              if (count > 1) cell.classList.add('mult');
+              cell.textContent = count > 1 ? count + '次' : '1次';
+            }
+
+            if (s === selectedSampleIdx) {
+              cell.classList.add('selected-row');
+            }
+
+            // 点击该行切换高亮样本
+            cell.addEventListener('click', () => {
+              selectedSampleIdx = s;
+              render();
+            });
+
+            grid.appendChild(cell);
+          }
+
+          // 尾部汇总单元格：该样本拥有的 OOB 树数量
+          const sumCell = document.createElement('div');
+          sumCell.className = 'grid-summary-cell';
+          sumCell.textContent = rowOobCount + ' 棵';
+          grid.appendChild(sumCell);
+        }
+
+        // 更新顶部全局状态
+        const actualOobPct = ((totalOob / totalCells) * 100).toFixed(1) + '%';
+        statOobRatio.textContent = actualOobPct;
+        const avgOobTrees = (totalOob / N_SAMPLES).toFixed(1) + ' 棵';
+        statEvalTrees.textContent = avgOobTrees;
+      }
+
+      function renderInspector() {
+        const s = selectedSampleIdx;
+        const oobTrees = [];
+        const trainTrees = [];
+
+        for (let t = 0; t < N_TREES; t++) {
+          if (sampleCounts[s][t] === 0) {
+            oobTrees.push(t + 1);
+          } else {
+            trainTrees.push(t + 1);
+          }
+        }
+
+        inspectName.textContent = `样本 x${s + 1} 的集成检验流水线`;
+        inspectCount.textContent = `${oobTrees.length} 棵树具有判别资格`;
+
+        inspectTags.innerHTML = '';
+        oobTrees.forEach(t => {
+          const tag = document.createElement('span');
+          tag.className = 'model-tag oob-eval';
+          tag.textContent = `T${t} (参与验证)`;
+          inspectTags.appendChild(tag);
+        });
+        trainTrees.forEach(t => {
+          const tag = document.createElement('span');
+          tag.className = 'model-tag in-train';
+          tag.textContent = `T${t} (见过去除)`;
+          inspectTags.appendChild(tag);
+        });
+
+        inspectFlowText.innerHTML = `在当前抽样下，样本 <b>x${s + 1}</b> 在训练阶段被 <b>${trainTrees.length} 棵树</b>（${trainTrees.map(t=>'T'+t).join(', ')}）抽取，因此这些树严禁对它打分；<br>其余 <b>${oobTrees.length} 棵袋外树</b>（${oobTrees.map(t=>'T'+t).join(', ')}）此前从未见过该样本，它们组成的聚合预测构成了针对 <b>x${s + 1}</b> 的<b>纯净留出验证</b>。`;
+      }
+
+      function render() {
+        renderMatrix();
+        renderInspector();
+      }
+
+      // 控制按钮交互
+      document.getElementById('btnResample').addEventListener('click', () => {
+        runBootstrap();
+        render();
+      });
+
+      document.getElementById('btnSelectSample').addEventListener('click', () => {
+        selectedSampleIdx = (selectedSampleIdx + 1) % N_SAMPLES;
+        render();
+      });
+
+      // 初始化渲染
+      render();
+
+      Deck.init({ index: 10, total: 27, keys: false });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="zh">
+<!--
+构图意图：
+1. 主对象：左侧显示集成分类误差随基模型数 T 演化的两条鲜明曲线（独立假设下的指数衰减 vs 强相关下的误差下限瓶颈），右侧并列两组“样本-模型错误相关性”的离散网格证据。
+2. 关系显现：独立时错误分散互补、投票抹平个别失误；高相关时错误完全重叠、多数表决同步失效，使曲线在横轴推进时呈现分道扬镳。
+3. 说明依附：核心定理判断直接贴在曲线终点与网格旁，结论与对比条件紧凑锚定在视觉标记处。
+-->
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --bg: #DCE2DE;
+      --text: #17221F;
+      --muted: #46534F;
+      --line: #74817C;
+      --model: #2E5F78;
+      --aggregate: #173E50;
+      --focus: #C64B2E;
+      --uncertain: #8B6941;
+      --font-sans: "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Noto Sans CJK SC Medium", "Noto Sans SC", system-ui, sans-serif;
+      --font-numeric: "Lato", "Noto Sans CJK SC", sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* 顶部标题区 */
+    header {
+      position: absolute;
+      top: 40px;
+      left: 64px;
+      right: 64px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: var(--weight-bold);
+      line-height: var(--lh-tight);
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      margin: 10px 0 0 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      line-height: var(--lh-copy);
+    }
+
+    /* 主内容区双列网格 */
+    .content-grid {
+      position: absolute;
+      top: 146px;
+      left: 64px;
+      right: 64px;
+      bottom: 40px;
+      display: grid;
+      grid-template-columns: 820px 1fr;
+      gap: 56px;
+    }
+
+    /* 左侧理论曲线区 */
+    .chart-panel {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2);
+      font-weight: var(--weight-medium);
+      color: var(--aggregate);
+      margin-bottom: 8px;
+    }
+
+    .chart-host {
+      position: relative;
+      width: 100%;
+      height: 520px;
+    }
+
+    #curve-chart {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 曲线旁关键注记（绝对定位于图表区域） */
+    .chart-callout {
+      position: absolute;
+      font-size: var(--fs-sec);
+      line-height: var(--lh-tight);
+      pointer-events: none;
+    }
+
+    .callout-indep {
+      right: 36px;
+      top: 388px;
+      color: var(--aggregate);
+      text-align: right;
+    }
+
+    .callout-corr {
+      right: 36px;
+      top: 130px;
+      color: var(--focus);
+      text-align: right;
+    }
+
+    .callout-base {
+      left: 70px;
+      top: 60px;
+      color: var(--muted);
+      border-bottom: 1px dashed var(--line);
+      padding-bottom: 2px;
+    }
+
+    /* 右侧对比与机制 */
+    .compare-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      padding-top: 6px;
+      gap: 28px;
+    }
+
+    .condition-block {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .cond-header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .cond-title {
+      font-size: var(--fs-lead);
+      font-weight: var(--weight-medium);
+      color: var(--text);
+    }
+
+    .cond-status {
+      font-size: var(--fs-label);
+      font-weight: var(--weight-medium);
+      font-family: var(--font-numeric);
+      padding: 1px 8px;
+    }
+
+    .cond-status.good {
+      color: var(--aggregate);
+      border-left: 2px solid var(--aggregate);
+    }
+
+    .cond-status.warn {
+      color: var(--focus);
+      border-left: 2px solid var(--focus);
+    }
+
+    .cond-desc {
+      font-size: var(--fs-body);
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    /* 错误分布微矩阵可视化 */
+    .matrix-view {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 5px;
+      padding: 10px 0;
+      width: 320px;
+    }
+
+    .matrix-cell {
+      height: 18px;
+      background: rgba(46, 95, 120, 0.12);
+      border-radius: 2px;
+      transition: background 0.2s;
+    }
+
+    .matrix-cell.err {
+      background: var(--focus);
+    }
+
+    .matrix-cell.ok {
+      background: var(--aggregate);
+    }
+
+    .matrix-caption {
+      font-size: var(--fs-label);
+      color: var(--muted);
+      display: flex;
+      gap: 16px;
+    }
+
+    .matrix-caption span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+    }
+
+    .dot.err { background: var(--focus); }
+    .dot.ok { background: var(--aggregate); }
+
+    /* 底部收束结论条 */
+    .conclusion-bar {
+      margin-top: auto;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      font-size: var(--fs-sec);
+      color: var(--text);
+      line-height: var(--lh-copy);
+    }
+
+    .conclusion-bar strong {
+      color: var(--aggregate);
+      font-weight: var(--weight-bold);
+    }
+  </style>
+</head>
+<body data-page="03" data-total="26">
+  <div id="stage">
+    <header>
+      <h1>集成有效双前提：精准与独立</h1>
+      <p class="lead">基学习器必须优于随机猜测（ε &lt; 0.5），且各学习器错误不能高度相关。</p>
+    </header>
+
+    <div class="content-grid">
+      <!-- 左侧：理论曲线（独立指数衰减 vs 相关瓶颈） -->
+      <section class="chart-panel min0">
+        <div class="panel-title">基学习器数量 T 与集成错误率</div>
+        <div class="chart-host min0">
+          <div id="curve-chart"></div>
+          <div class="chart-callout callout-base">个体基准 ε = 0.35</div>
+          <div class="chart-callout callout-corr">
+            <strong>强相关（ρ = 0.8）</strong><br>
+            多数表决同步失效
+          </div>
+          <div class="chart-callout callout-indep">
+            <strong>相互独立（ρ = 0）</strong><br>
+            表决误差呈指数衰减
+          </div>
+        </div>
+      </section>
+
+      <!-- 右侧：两个必要条件的结构化证据 -->
+      <section class="compare-panel min0">
+        <div class="condition-block">
+          <div class="cond-header">
+            <span class="cond-title">准确率门槛</span>
+            <span class="cond-status good">ε &lt; 0.5</span>
+          </div>
+          <p class="cond-desc">
+            若 ε ≥ 0.5，多数表决错误率将随 T 增加单调上升，集成彻底劣化。
+          </p>
+        </div>
+
+        <div class="condition-block">
+          <div class="cond-header">
+            <span class="cond-title">多样性门槛</span>
+            <span class="cond-status warn">Cov(e_i, e_j) → 0</span>
+          </div>
+          <p class="cond-desc">
+            若模型在相同样本上同步犯错，投票仅重复偏见，无法降低方差。
+          </p>
+          
+          <div class="matrix-view" id="matrix">
+            <!-- 20个样本在5个基模型上的投票模拟 -->
+          </div>
+          <div class="matrix-caption">
+            <span><i class="dot ok"></i> 互补纠正</span>
+            <span><i class="dot err"></i> 同步误判</span>
+          </div>
+        </div>
+
+        <div class="conclusion-bar">
+          <strong>孔多塞陪审团定理：</strong>“好而不同”是集成的本质。<br>
+          单个模型决定性能底线，模型间多样性决定降噪上限。
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，在进入具体的集成算法之前，我们必须厘清一个根本问题：是不是随便找十几个模型绑在一起，效果就会变好？
+    答案显然是否定的。数学上集成学习能发挥威力，建立在两个不可或缺的前提之上，这就是经典的孔多塞陪审团定理在机器学习中的映射。
+    首先，每个个体必须具备“基本预测能力”，也就是二分类下的错误率 ε 必须严格小于 0.5。如果个体水平还不如随机瞎猜，那么根据二项分布的累积概率，随着模型越来越多，多数表决的错误率反而会无限趋近于 1，集成就成了“乌合之众”。
+    第二，也是工程中往往更棘手的一点：各个基学习器的错误不能高度相关。左图展示了两种截然不同的极端：如果每个模型的错误完全独立，随着 T 增大，集成的分类误差呈指数衰减；但如果模型结构雷同、训练数据完全一致，模型之间呈现出高相关性，那么一个人犯错大家一起犯错，多数表决就没有任何纠错空间，曲线很快卡在死胡同里。
+    所以，后续我们讲的 Bagging 用自助采样造样本差异、Boosting 改变权重造样本聚焦、随机森林造特征随机，全部都是在为了达成这第二个条件——制造“好而不同”的多样性。
+  </aside>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      Deck.init({ index: 3, total: 26 });
+
+      // 生成矩阵格子演示
+      var matrixContainer = document.getElementById("matrix");
+      if (matrixContainer) {
+        // 20个样本点的集成表决表现
+        var cells = [
+          0,0,0,0,1, 0,0,0,0,0,
+          0,1,0,0,0, 0,0,1,0,0,
+          0,0,0,0,0, 1,1,1,0,0,
+          0,0,0,0,0, 0,0,0,0,1
+        ];
+        for (var i = 0; i < 20; i++) {
+          var el = document.createElement("div");
+          el.className = "matrix-cell " + (cells[i] ? "err" : "ok");
+          matrixContainer.appendChild(el);
+        }
+      }
+
+      // 理论计算 Condorcet 陪审团定理下的错误率曲线
+      // ε = 0.35
+      // 奇数 T 从 1 到 45
+      function nCr(n, r) {
+        if (r < 0 || r > n) return 0;
+        if (r === 0 || r === n) return 1;
+        if (r > n / 2) r = n - r;
+        var res = 1;
+        for (var i = 1; i <= r; i++) {
+          res = res * (n - i + 1) / i;
+        }
+        return res;
+      }
+
+      function ensembleErrorIndependent(T, eps) {
+        var k = Math.floor(T / 2) + 1;
+        var sum = 0;
+        for (var i = k; i <= T; i++) {
+          sum += nCr(T, i) * Math.pow(eps, i) * Math.pow(1 - eps, T - i);
+        }
+        return sum;
+      }
+
+      // 存在相关性 ρ 时：
+      // T=1 时，单个模型的错误率为 eps (0.35)
+      // 随着 T 增大，如果模型间高度相关 (ρ=0.8)，绝大部分错误是系统性共享的，
+      // 多数表决无法消除共享错误部分 (约 eps * rho = 0.28)，仅微弱降低非相关部分。
+      function ensembleErrorCorrelated(T, eps, rho) {
+        var indep = ensembleErrorIndependent(T, eps);
+        var commonError = eps * rho;
+        var specificError = eps * (1 - rho);
+        return commonError + specificError * (indep / eps);
+      }
+
+      var T_values = [];
+      var dataIndep = [];
+      var dataCorr = [];
+      var eps = 0.35;
+      var rho = 0.75;
+
+      for (var t = 1; t <= 45; t += 2) {
+        T_values.push(t);
+        dataIndep.push(parseFloat(ensembleErrorIndependent(t, eps).toFixed(4)));
+        dataCorr.push(parseFloat(ensembleErrorCorrelated(t, eps, rho).toFixed(4)));
+      }
+
+      var chartDom = document.getElementById("curve-chart");
+      if (chartDom && window.echarts) {
+        var myChart = echarts.init(chartDom, null, { renderer: 'svg' });
+
+        var option = {
+          animation: !Deck.reduced(),
+          grid: {
+            left: 54,
+            right: 48,
+            top: 48,
+            bottom: 48
+          },
+          tooltip: {
+            trigger: 'axis',
+            backgroundColor: '#17221F',
+            borderColor: '#74817C',
+            textStyle: { color: '#DCE2DE', fontSize: 13 },
+            formatter: function (params) {
+              var res = '基学习器数量 T = ' + params[0].name + '<br/>';
+              params.forEach(function (item) {
+                res += item.marker + item.seriesName + ': <b>' + (item.value * 100).toFixed(1) + '%</b><br/>';
+              });
+              return res;
+            }
+          },
+          xAxis: {
+            type: 'category',
+            name: '数量 T',
+            nameLocation: 'end',
+            nameTextStyle: { color: '#46534F', fontSize: 13, padding: [0, 0, 0, 8] },
+            data: T_values,
+            axisLine: { lineStyle: { color: '#74817C', width: 1.5 } },
+            axisTick: { alignWithLabel: true, lineStyle: { color: '#74817C' } },
+            axisLabel: { color: '#46534F', fontSize: 13 }
+          },
+          yAxis: {
+            type: 'value',
+            name: '多数表决错误率',
+            nameTextStyle: { color: '#46534F', fontSize: 13, padding: [0, 0, 10, 0] },
+            min: 0,
+            max: 0.45,
+            interval: 0.1,
+            axisLine: { show: true, lineStyle: { color: '#74817C', width: 1.5 } },
+            splitLine: { lineStyle: { color: 'rgba(116, 129, 124, 0.25)', type: 'dashed' } },
+            axisLabel: {
+              color: '#46534F',
+              fontSize: 13,
+              formatter: function (val) {
+                return (val * 100).toFixed(0) + '%';
+              }
+            }
+          },
+          series: [
+            {
+              name: '独立假设 (ρ = 0)',
+              type: 'line',
+              data: dataIndep,
+              smooth: 0.25,
+              symbol: 'circle',
+              symbolSize: 6,
+              lineStyle: { color: '#173E50', width: 3.5 },
+              itemStyle: { color: '#173E50' },
+              areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                  { offset: 0, color: 'rgba(23, 62, 80, 0.28)' },
+                  { offset: 1, color: 'rgba(23, 62, 80, 0.02)' }
+                ])
+              },
+              markLine: {
+                silent: true,
+                symbol: 'none',
+                data: [
+                  {
+                    yAxis: 0.35,
+                    lineStyle: { color: '#74817C', type: 'dashed', width: 1.5 },
+                    label: { show: false }
+                  }
+                ]
+              }
+            },
+            {
+              name: '高相关 (ρ = 0.8)',
+              type: 'line',
+              data: dataCorr,
+              smooth: 0.25,
+              symbol: 'circle',
+              symbolSize: 6,
+              lineStyle: { color: '#C64B2E', width: 3.5 },
+              itemStyle: { color: '#C64B2E' }
+            }
+          ]
+        };
+
+        myChart.setOption(option);
+
+        Deck.onResize(function () {
+          myChart.resize();
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

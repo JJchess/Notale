@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+    }
+
+    /* 标题区 */
+    .header {
+      margin-top: 10px;
+      height: 96px;
+    }
+    .title {
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      margin: 0;
+      letter-spacing: -0.01em;
+    }
+    .subtitle {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin-top: 10px;
+      line-height: var(--lh-tight);
+    }
+
+    /* 核心对比区：三列实验对比 */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 36px;
+      margin-top: 32px;
+      height: 660px;
+    }
+
+    .scenario-col {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* 列顶部的状态标签与条件描述 */
+    .scenario-header {
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--rule);
+      min-height: 52px;
+    }
+    .scenario-name {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      line-height: var(--lh-tight);
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .scenario-tag {
+      font-size: var(--fs-label);
+      font-weight: normal;
+      color: var(--text);
+    }
+    .scenario-header.is-effective .scenario-name {
+      color: var(--focus);
+    }
+    .scenario-header.is-effective .scenario-tag {
+      color: var(--focus);
+      font-weight: 500;
+    }
+
+    /* 绘图区卡片：展示样本预测矩阵与汇聚投票 */
+    .matrix-box {
+      flex: 1;
+      margin-top: 18px;
+      position: relative;
+    }
+
+    svg.diagram {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* SVG 文本与图形 */
+    .diag-text {
+      font-family: var(--font-sans);
+      fill: var(--text);
+    }
+    .diag-muted {
+      font-family: var(--font-sans);
+      fill: var(--muted);
+      font-size: var(--fs-label);
+    }
+    .diag-tick {
+      font-family: var(--font-sans);
+      fill: var(--muted);
+      font-size: var(--fs-tick);
+      text-anchor: middle;
+    }
+    .diag-label {
+      font-family: var(--font-display);
+      fill: var(--text);
+      font-size: var(--fs-label);
+      alignment-baseline: middle;
+    }
+    .diag-score {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: 500;
+      alignment-baseline: middle;
+    }
+  </style>
+</head>
+<body data-page="05" data-total="32">
+  <div id="stage">
+    <header class="header">
+      <h1 class="title">集成有效的条件：准确性与多样性</h1>
+      <p class="subtitle">仅靠多个模型无法自动带来增益，唯有各基学习器优于随机猜测且错误相互错开时，多数投票才能修正偏差。</p>
+    </header>
+
+    <div class="comparison-grid">
+      <!-- 条件一：准且独立（有效） -->
+      <section class="scenario-col" id="col-effective">
+        <div class="scenario-header is-effective">
+          <div class="scenario-name">
+            <span>好而不同</span>
+            <span class="scenario-tag">67% 准度 · 错误独立</span>
+          </div>
+        </div>
+        <div class="matrix-box">
+          <svg class="diagram" viewBox="0 0 450 540" id="svg-effective"></svg>
+        </div>
+      </section>
+
+      <!-- 条件二：准但同质（无效） -->
+      <section class="scenario-col" id="col-correlated">
+        <div class="scenario-header">
+          <div class="scenario-name">
+            <span>好而同质</span>
+            <span class="scenario-tag">67% 准度 · 错误高度相关</span>
+          </div>
+        </div>
+        <div class="matrix-box">
+          <svg class="diagram" viewBox="0 0 450 540" id="svg-correlated"></svg>
+        </div>
+      </section>
+
+      <!-- 条件三：差且同质/差独立（失效） -->
+      <section class="scenario-col" id="col-weak">
+        <div class="scenario-header">
+          <div class="scenario-name">
+            <span>差而同错</span>
+            <span class="scenario-tag">33% 准度 · 低于随机猜测</span>
+          </div>
+        </div>
+        <div class="matrix-box">
+          <svg class="diagram" viewBox="0 0 450 540" id="svg-weak"></svg>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    各位同学，我们来看集成学习发挥威力必须满足的核心前提。
+    很多人误以为“三个臭皮匠顶个诸葛亮”，只要多堆几个模型，性能就一定会提升。事实并非如此。
+    看左侧这组对比：每个基模型在6个样本里都只做对4个，准确率66.7%。但在“好而不同”的场景下，三个模型错开在不同的样本上出错。对于任意一个样本，最多只有一个模型看走眼，另外两个依然正确，最终多数投票在全部6个样本上全部命中，准确率达到了100%。这正是集成的理想收益。
+    中间这组：单模型的准确率完全一样，但由于模型间缺乏多样性、学到的特征雷同，它们在第5和第6个样本上错得一模一样。少数服从多数直接跟着一起错，集成没有任何收益。
+    再看右边：如果基模型的性能本身就很差，低于随机水平，多数投票甚至会产生负向聚合，集成的准确率进一步塌陷。
+    因此，集成学习既要求基学习器具备“弱学习器优于随机”的底线准度，更要求它们之间具有充足的“差异性”。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({ index: 5, total: 32, keys: false });
+
+    // 6 个样本，3 个基学习器 + 1 个集成投票结果
+    // 0: 错误 (Cross), 1: 正确 (Circle)
+    const SCENARIOS = {
+      effective: {
+        learners: [
+          [1, 1, 1, 1, 0, 0], // M1 错 5,6
+          [1, 1, 0, 0, 1, 1], // M2 错 3,4
+          [0, 0, 1, 1, 1, 1]  // M3 错 1,2
+        ],
+        ensemble: [1, 1, 1, 1, 1, 1],
+        gain: "100%",
+        note: "集成分数反超个体",
+        isFocus: true
+      },
+      correlated: {
+        learners: [
+          [1, 1, 1, 1, 0, 0], // M1
+          [1, 1, 1, 1, 0, 0], // M2
+          [1, 1, 1, 1, 0, 0]  // M3
+        ],
+        ensemble: [1, 1, 1, 1, 0, 0],
+        gain: "67%",
+        note: "零增益",
+        isFocus: false
+      },
+      weak: {
+        learners: [
+          [0, 0, 1, 0, 0, 1], // M1 错 4 个
+          [0, 1, 0, 0, 0, 1], // M2 错 4 个
+          [1, 0, 0, 0, 1, 0]  // M3 错 4 个
+        ],
+        ensemble: [0, 0, 0, 0, 0, 1],
+        gain: "17%",
+        note: "投票放大劣势",
+        isFocus: false
+      }
+    };
+
+    function renderScenario(svgId, data) {
+      const svg = document.getElementById(svgId);
+      const ns = "http://www.w3.org/2000/svg";
+
+      const startX = 110;
+      const stepX = 52;
+      const startY = 40;
+      const rowGap = 56;
+      const radius = 15;
+
+      // 1. 样本刻度标签 x1 .. x6
+      for (let i = 0; i < 6; i++) {
+        const x = startX + i * stepX;
+        const text = document.createElementNS(ns, "text");
+        text.setAttribute("x", x);
+        text.setAttribute("y", 20);
+        text.setAttribute("class", "diag-tick");
+        text.textContent = `x${i + 1}`;
+        svg.appendChild(text);
+      }
+
+      // 2. 绘制 3 个基学习器的预测行
+      data.learners.forEach((row, rowIdx) => {
+        const y = startY + rowIdx * rowGap;
+
+        // 模型名称
+        const label = document.createElementNS(ns, "text");
+        label.setAttribute("x", 12);
+        label.setAttribute("y", y);
+        label.setAttribute("class", "diag-label");
+        label.textContent = `模型 ${rowIdx + 1}`;
+        svg.appendChild(label);
+
+        // 准度小标签
+        const acc = document.createElementNS(ns, "text");
+        acc.setAttribute("x", 425);
+        acc.setAttribute("y", y);
+        acc.setAttribute("class", "diag-muted");
+        acc.setAttribute("text-anchor", "end");
+        acc.textContent = (row.filter(v => v === 1).length / 6 * 100).toFixed(0) + "%";
+        svg.appendChild(acc);
+
+        // 节点
+        row.forEach((val, colIdx) => {
+          const x = startX + colIdx * stepX;
+          drawMark(svg, x, y, radius, val, false);
+        });
+      });
+
+      // 3. 汇聚指向折线或聚合箭头示意：采用主题签名——多条等重蓝色预测路径收束为一条粗线
+      const forkTopY = startY + 2 * rowGap + 28;
+      const forkMidY = forkTopY + 36;
+      const forkBottomY = forkMidY + 44;
+
+      // 3根等重细线汇聚到中心
+      const fanIn = document.createElementNS(ns, "path");
+      fanIn.setAttribute("d", `
+        M 175 ${forkTopY} L 240 ${forkMidY}
+        M 240 ${forkTopY} L 240 ${forkMidY}
+        M 305 ${forkTopY} L 240 ${forkMidY}
+      `);
+      fanIn.setAttribute("fill", "none");
+      fanIn.setAttribute("stroke", data.isFocus ? "var(--focus)" : "var(--model)");
+      fanIn.setAttribute("stroke-width", "2");
+      svg.appendChild(fanIn);
+
+      // 汇聚后的粗收束线
+      const convergeStem = document.createElementNS(ns, "path");
+      convergeStem.setAttribute("d", `M 240 ${forkMidY} L 240 ${forkBottomY}`);
+      convergeStem.setAttribute("fill", "none");
+      convergeStem.setAttribute("stroke", data.isFocus ? "var(--focus)" : "var(--model)");
+      convergeStem.setAttribute("stroke-width", "4");
+      svg.appendChild(convergeStem);
+
+      // 标签放在收束线右侧上方，完全不与粗线干涉
+      const voteText = document.createElementNS(ns, "text");
+      voteText.setAttribute("x", 254);
+      voteText.setAttribute("y", forkMidY + 16);
+      voteText.setAttribute("class", "diag-tick");
+      voteText.setAttribute("text-anchor", "start");
+      voteText.setAttribute("fill", data.isFocus ? "var(--focus)" : "var(--model)");
+      voteText.textContent = "多数投票";
+      svg.appendChild(voteText);
+
+      // 4. 集成结果行
+      const ensY = forkBottomY + 36;
+
+      const ensLabel = document.createElementNS(ns, "text");
+      ensLabel.setAttribute("x", 12);
+      ensLabel.setAttribute("y", ensY);
+      ensLabel.setAttribute("class", "diag-label");
+      ensLabel.setAttribute("fill", data.isFocus ? "var(--focus)" : "var(--text)");
+      ensLabel.style.fontWeight = "bold";
+      ensLabel.textContent = "集成";
+      svg.appendChild(ensLabel);
+
+      // 绘制集成节点
+      data.ensemble.forEach((val, colIdx) => {
+        const x = startX + colIdx * stepX;
+        drawMark(svg, x, ensY, radius + 2, val, true, data.isFocus);
+      });
+
+      // 5. 最终准度大字
+      const resultBoxY = ensY + 74;
+
+      const resScore = document.createElementNS(ns, "text");
+      resScore.setAttribute("x", startX);
+      resScore.setAttribute("y", resultBoxY);
+      resScore.setAttribute("class", "diag-score");
+      resScore.setAttribute("fill", data.isFocus ? "var(--focus)" : "var(--text)");
+      resScore.textContent = `集成准度 ${data.gain}`;
+      svg.appendChild(resScore);
+
+      const noteText = document.createElementNS(ns, "text");
+      noteText.setAttribute("x", startX);
+      noteText.setAttribute("y", resultBoxY + 30);
+      noteText.setAttribute("class", "diag-muted");
+      noteText.setAttribute("fill", "var(--muted)");
+      noteText.textContent = data.note;
+      svg.appendChild(noteText);
+    }
+
+    function drawMark(svg, cx, cy, r, isCorrect, isEnsemble, isFocus) {
+      const ns = "http://www.w3.org/2000/svg";
+      if (isCorrect === 1) {
+        // 圆圈：正确
+        const circle = document.createElementNS(ns, "circle");
+        circle.setAttribute("cx", cx);
+        circle.setAttribute("cy", cy);
+        circle.setAttribute("r", r);
+        circle.setAttribute("fill", isEnsemble && isFocus ? "rgba(184, 61, 11, 0.12)" : "rgba(23, 98, 142, 0.08)");
+        circle.setAttribute("stroke", isEnsemble && isFocus ? "var(--focus)" : "var(--model)");
+        circle.setAttribute("stroke-width", isEnsemble ? "3" : "2");
+        svg.appendChild(circle);
+
+        // 正确勾号或实心点
+        const dot = document.createElementNS(ns, "circle");
+        dot.setAttribute("cx", cx);
+        dot.setAttribute("cy", cy);
+        dot.setAttribute("r", isEnsemble ? 4.5 : 3.5);
+        dot.setAttribute("fill", isEnsemble && isFocus ? "var(--focus)" : "var(--model)");
+        svg.appendChild(dot);
+      } else {
+        // 叉号：错误
+        const g = document.createElementNS(ns, "g");
+        const d = r * 0.58;
+        const line1 = document.createElementNS(ns, "line");
+        line1.setAttribute("x1", cx - d);
+        line1.setAttribute("y1", cy - d);
+        line1.setAttribute("x2", cx + d);
+        line1.setAttribute("y2", cy + d);
+        line1.setAttribute("stroke", "var(--rule)");
+        line1.setAttribute("stroke-width", isEnsemble ? "3" : "2");
+
+        const line2 = document.createElementNS(ns, "line");
+        line2.setAttribute("x1", cx + d);
+        line2.setAttribute("y1", cy - d);
+        line2.setAttribute("x2", cx - d);
+        line2.setAttribute("y2", cy + d);
+        line2.setAttribute("stroke", "var(--rule)");
+        line2.setAttribute("stroke-width", isEnsemble ? "3" : "2");
+
+        g.appendChild(line1);
+        g.appendChild(line2);
+        svg.appendChild(g);
+      }
+    }
+
+    renderScenario("svg-effective", SCENARIOS.effective);
+    renderScenario("svg-correlated", SCENARIOS.correlated);
+    renderScenario("svg-weak", SCENARIOS.weak);
+  </script>
+</body>
+</html>

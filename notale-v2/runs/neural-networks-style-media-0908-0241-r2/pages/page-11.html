@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>泛化与正则化：从训练/验证误差识别过拟合与评估泄漏</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --train-c: #1C4436;
+      --val-c: #D43811;
+      --leak-c: #7C3AED;
+    }
+    #stage {
+      padding: 44px 56px 40px 56px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1.5px solid var(--rule);
+      padding-bottom: 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: var(--fs-h1);
+      font-weight: 750;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.15;
+    }
+    .lead {
+      font-size: var(--fs-lead);
+      color: var(--muted);
+      margin-top: 6px;
+    }
+    .nav-tabs {
+      display: flex;
+      gap: 10px;
+    }
+    .reg-btn {
+      font-family: inherit;
+      font-size: var(--fs-sec);
+      font-weight: 650;
+      background: transparent;
+      border: 1.5px solid var(--rule);
+      color: var(--text);
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all var(--motion-fast);
+    }
+    .reg-btn:hover {
+      border-color: var(--structure);
+      color: var(--structure);
+    }
+    .reg-btn.active {
+      background: var(--structure);
+      border-color: var(--structure);
+      color: #FFF;
+    }
+    .main-grid {
+      display: grid;
+      grid-template-columns: 960px 480px;
+      gap: 48px;
+      height: 640px;
+      align-items: stretch;
+    }
+    .chart-panel {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .chart-title {
+      font-size: var(--fs-h2);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .legend {
+      display: flex;
+      gap: 20px;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+    }
+    .leg-line {
+      width: 24px;
+      height: 3px;
+      display: inline-block;
+    }
+    .leg-train { background: var(--train-c); }
+    .leg-val { background: var(--val-c); }
+    .leg-leak { background: var(--leak-c); border-top: 2px dashed var(--leak-c); height: 0; }
+    .plot-area {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+    #chartHost {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    .chart-footer {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      margin-top: 6px;
+      padding-top: 8px;
+      border-top: 1px solid var(--rule);
+    }
+    .chart-footer strong {
+      color: var(--text);
+    }
+    .info-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-left: 1.5px solid var(--rule);
+      padding-left: 36px;
+      min-width: 0;
+    }
+    .diagnosis-box {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .metric-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--rule);
+    }
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .metric-label {
+      font-size: var(--fs-sec);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .metric-val {
+      font-size: var(--fs-h1);
+      font-weight: 750;
+      color: var(--text);
+      line-height: 1.1;
+    }
+    .metric-val.high { color: var(--signal); }
+    .diag-title {
+      font-size: var(--fs-h2);
+      font-weight: 750;
+      margin: 0;
+      color: var(--text);
+    }
+    .diag-desc {
+      font-size: var(--fs-body);
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+    }
+    .diag-action {
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+      color: var(--muted);
+      margin: 0;
+      border-left: 3px solid var(--structure);
+      padding-left: 10px;
+    }
+    .leak-section {
+      border-top: 1.5px solid var(--rule);
+      padding-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .leak-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .leak-title {
+      font-size: var(--fs-sec);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .leak-pill {
+      font-size: var(--fs-label);
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 3px;
+      background: rgba(212, 56, 17, 0.12);
+      color: var(--signal);
+    }
+    .leak-pill.clean {
+      background: rgba(28, 68, 54, 0.12);
+      color: var(--structure);
+    }
+    .leak-text {
+      font-size: var(--fs-sec);
+      line-height: 1.4;
+      color: var(--muted);
+      margin: 0;
+    }
+    .scrubber-zone {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-top: 12px;
+      border-top: 1.5px solid var(--rule);
+    }
+    .scrubber-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--fs-sec);
+      font-weight: 600;
+      color: var(--text);
+    }
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      background: var(--rule);
+      border-radius: 3px;
+      outline: none;
+      margin: 4px 0;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--signal);
+      cursor: pointer;
+      border: 2px solid #FFF;
+      box-shadow: 0 0 2px rgba(0,0,0,0.3);
+    }
+    .epoch-val {
+      color: var(--signal);
+      font-weight: 750;
+    }
+  </style>
+</head>
+<body data-page="NN" data-total="32">
+  <div id="stage">
+    <header>
+      <div>
+        <h1>泛化与正则化：从训练/验证误差识别过拟合</h1>
+        <p class="lead">验证误差随训练轮数拐头向上，标志模型开始死记样本噪声。</p>
+      </div>
+      <nav class="nav-tabs" aria-label="正则化策略切换">
+        <button class="reg-btn active" data-mode="none" id="btnNone">未加正则化</button>
+        <button class="reg-btn" data-mode="l2" id="btnL2">权重衰减 (L2)</button>
+        <button class="reg-btn" data-mode="early" id="btnEarly">早停法 (Early Stop)</button>
+        <button class="reg-btn" data-mode="leak" id="btnLeak">数据泄漏假象</button>
+      </nav>
+    </header>
+
+    <main class="main-grid">
+      <section class="chart-panel min0">
+        <div class="chart-header">
+          <div class="chart-title">损失轨迹与泛化间隙</div>
+          <div class="legend">
+            <span class="legend-item"><i class="leg-line leg-train"></i>训练损失</span>
+            <span class="legend-item"><i class="leg-line leg-val"></i>真实验证损失</span>
+            <span class="legend-item" id="leakLegItem" style="display:none;"><i class="leg-line leg-leak"></i>泄漏污染假象</span>
+          </div>
+        </div>
+
+        <div class="plot-area min0">
+          <div id="chartHost" role="img" aria-label="训练损失与验证损失随轮数变化折线图"></div>
+        </div>
+
+        <div class="chart-footer">
+          <span>横轴：训练轮数 (Epoch 1–100)</span>
+          <span>纵轴：交叉熵损失 (Loss)</span>
+          <span id="gapIndicator">当前泛化间隙：<strong>+1.35</strong></span>
+        </div>
+      </section>
+
+      <aside class="info-panel min0">
+        <div class="diagnosis-box">
+          <div class="metric-row">
+            <div class="metric-item">
+              <span class="metric-label">训练损失 (Train)</span>
+              <span class="metric-val" id="trainLossVal">0.07</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label" id="valLabelTitle">验证损失 (Val)</span>
+              <span class="metric-val high" id="valLossVal">1.42</span>
+            </div>
+          </div>
+
+          <div>
+            <h2 class="diag-title" id="diagTitle">严重过拟合 (Overfitting)</h2>
+            <p class="diag-desc" id="diagDesc" style="margin-top: 6px;">
+              训练误差单调下降，但验证误差在第 35 轮触底后大幅反弹。参数死记样本噪声，泛化能力恶化。
+            </p>
+          </div>
+
+          <p class="diag-action" id="diagAction">
+            对策：引入权重惩罚、增加数据扰动或提前停止训练。
+          </p>
+        </div>
+
+        <div class="leak-section">
+          <div class="leak-head">
+            <span class="leak-title">评估陷阱：数据泄漏 (Data Leakage)</span>
+            <span class="leak-pill" id="leakBadge">严格隔离</span>
+          </div>
+          <p class="leak-text" id="leakBodyText">
+            标准化若使用包含测试集的全局数据计算，会把未来分布信息提前渗入网络，制造虚假收敛。
+          </p>
+        </div>
+
+        <div class="scrubber-zone">
+          <div class="scrubber-labels">
+            <span>检视轮数 (Epoch)</span>
+            <span class="epoch-val"><span id="currEpoch">100</span> / 100</span>
+          </div>
+          <input type="range" id="epochScrubber" min="1" max="100" value="100" aria-label="训练轮数游标">
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们，上一节我们亲手实现了梯度下降更新，损失确实在不断下降。但训练集上的损失归零，真的意味着网络学会了通用规律吗？
+    看白板上的这张损失曲线：深墨绿线是训练损失，它单调下降到 0.08；但朱红色的验证损失在第 35 轮达到谷底后，开始急速翘起。
+    这就是典型的过拟合——两者的差值叫做“泛化间隙”（Generalization Gap）。这说明网络的多余参数开始背诵训练样本里的偶然噪声，在新样本上错误反而增大。
+    怎么解决？我们切换右上角的“权重衰减 (L2)”，它在目标函数里加了一项权重二范数惩罚，抑制了激进的参数震荡，红绿两线贴合得非常平缓。
+    再点“早停法 (Early Stop)”，网络在验证损失触底的瞬间果断停机，把参数冻结在泛化最好的一刻。
+    最后请特别警惕“数据泄漏陷阱”：如果先对全部数据做归一化再划分验证集，验证误差会虚假地和训练误差一样低，在上线真实预测时会瞬间崩溃。
+  </aside>
+
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+  (function() {
+    "use strict";
+
+    const epochs = Array.from({ length: 100 }, (_, i) => i + 1);
+
+    function computeSeries(mode) {
+      const train = [];
+      const val = [];
+      const leak = [];
+
+      for (let e = 1; e <= 100; e++) {
+        const x = e;
+        if (mode === 'none') {
+          const t = 1.2 * Math.exp(-x / 22) + 0.05 + 0.015 * Math.sin(x * 0.4);
+          let v = 1.25 * Math.exp(-x / 20) + 0.18;
+          if (x > 34) {
+            v += 0.0035 * Math.pow(x - 34, 1.4);
+          }
+          train.push(+t.toFixed(3));
+          val.push(+v.toFixed(3));
+        } else if (mode === 'l2') {
+          const t = 1.15 * Math.exp(-x / 25) + 0.16 + 0.01 * Math.sin(x * 0.3);
+          const v = 1.20 * Math.exp(-x / 24) + 0.22 + 0.008 * Math.cos(x * 0.35);
+          train.push(+t.toFixed(3));
+          val.push(+v.toFixed(3));
+        } else if (mode === 'early') {
+          const stopE = 36;
+          const t = 1.2 * Math.exp(-Math.min(x, stopE) / 22) + 0.05;
+          let v = 1.25 * Math.exp(-Math.min(x, stopE) / 20) + 0.18;
+          train.push(+t.toFixed(3));
+          val.push(+v.toFixed(3));
+        } else if (mode === 'leak') {
+          const t = 1.18 * Math.exp(-x / 23) + 0.06;
+          const v = 1.19 * Math.exp(-x / 23) + 0.07;
+          const trueVal = 1.25 * Math.exp(-x / 20) + 0.18 + (x > 34 ? 0.0035 * Math.pow(x - 34, 1.4) : 0);
+          train.push(+t.toFixed(3));
+          val.push(+trueVal.toFixed(3));
+          leak.push(+v.toFixed(3));
+        }
+      }
+      return { train, val, leak };
+    }
+
+    const state = {
+      mode: 'none',
+      epoch: 100,
+      data: computeSeries('none')
+    };
+
+    const modeMeta = {
+      none: {
+        title: "严重过拟合 (Overfitting)",
+        desc: "训练误差单调下降，但验证误差在第 35 轮触底后大幅反弹。参数死记样本噪声，泛化能力恶化。",
+        action: "对策：引入权重惩罚、增加数据扰动或提前停止训练。",
+        pill: "严格隔离",
+        pillClean: true,
+        leakDesc: "验证集只在测试阶段评估，严格未参与特征标准化与前向计算。"
+      },
+      l2: {
+        title: "L2 权重衰减 (Weight Decay)",
+        desc: "在损失中加入权重惩罚 0.5λ||W||²，限制权重幅度。训练与验证损失平稳收敛于 0.2 附近。",
+        action: "收益：压制高频震荡，容忍少量训练偏差换取大幅提升的未见样本泛化性。",
+        pill: "严格隔离",
+        pillClean: true,
+        leakDesc: "权重衰减有效平滑了假设空间边界，避免对局部孤立点过度包围。"
+      },
+      early: {
+        title: "早停法 (Early Stopping)",
+        desc: "监控验证误差，在连续数轮不降时提前阻断训练（第 36 轮），参数停在最佳泛化状态。",
+        action: "核心机制：将训练轮数本身作为正则化超参数，零计算开销阻止进入过拟合区间。",
+        pill: "严格隔离",
+        pillClean: true,
+        leakDesc: "验证集充当外部裁判，不传递反向传播梯度，仅用于触发停机判定。"
+      },
+      leak: {
+        title: "数据泄漏陷阱 (Data Leakage)",
+        desc: "测试集提早渗入特征预处理。紫色虚线报表验证损失近乎贴着训练曲线，制造完美假象；真实泛化已彻底崩溃。",
+        action: "致命危害：虚假繁荣在上线部署时彻底破灭，模型面对真实现实分布将直接失效。",
+        pill: "严重泄漏",
+        pillClean: false,
+        leakDesc: "警惕错误流程：先做全局标准化再拆分验证集，等于把测试答案偷填进了标准化参数里！"
+      }
+    };
+
+    const chartDom = document.getElementById('chartHost');
+    let chart;
+
+    function getChartOption() {
+      const e = state.epoch;
+      const subTrain = state.data.train.slice(0, e);
+      const subVal = state.data.val.slice(0, e);
+      const subLeak = state.data.leak ? state.data.leak.slice(0, e) : [];
+
+      const series = [
+        {
+          name: '训练损失',
+          type: 'line',
+          smooth: 0.15,
+          showSymbol: false,
+          data: subTrain,
+          lineStyle: { color: '#1C4436', width: 3.5 }
+        },
+        {
+          name: '真实验证损失',
+          type: 'line',
+          smooth: 0.15,
+          showSymbol: false,
+          data: subVal,
+          lineStyle: { color: '#D43811', width: 3.5 }
+        }
+      ];
+
+      const markLines = [];
+      if (state.mode === 'early' && e >= 36) {
+        markLines.push({
+          xAxis: 35,
+          lineStyle: { color: '#D43811', type: 'dashed', width: 2 },
+          label: { show: true, formatter: '最佳早停轮次 (Epoch 36)', position: 'end', color: '#D43811', fontSize: 13, fontWeight: 600 }
+        });
+      } else if (state.mode === 'none' && e >= 35) {
+        markLines.push({
+          xAxis: 34,
+          lineStyle: { color: '#5B6661', type: 'dotted', width: 1.5 },
+          label: { show: true, formatter: '泛化拐点 (Epoch 35)', position: 'end', color: '#5B6661', fontSize: 13, fontWeight: 600 }
+        });
+      }
+
+      if (state.mode === 'leak') {
+        series.push({
+          name: '泄漏污染假象',
+          type: 'line',
+          smooth: 0.15,
+          showSymbol: false,
+          data: subLeak,
+          lineStyle: { color: '#7C3AED', width: 2.5, type: 'dashed' }
+        });
+      }
+
+      return {
+        animation: false,
+        grid: {
+          left: 50,
+          right: 30,
+          top: 32,
+          bottom: 34
+        },
+        xAxis: {
+          type: 'category',
+          data: epochs,
+          boundaryGap: false,
+          axisLine: { lineStyle: { color: '#BAC4BF' } },
+          axisTick: { alignWithLabel: true, interval: 9 },
+          axisLabel: {
+            color: '#5B6661',
+            fontSize: 13,
+            interval: (index) => index === 0 || (index + 1) % 10 === 0
+          }
+        },
+        yAxis: {
+          type: 'value',
+          min: 0,
+          max: 1.4,
+          interval: 0.2,
+          axisLine: { show: false },
+          axisLabel: { color: '#5B6661', fontSize: 13 },
+          splitLine: { lineStyle: { color: '#BAC4BF', opacity: 0.4 } }
+        },
+        series: series.map(s => {
+          if (s.name === '真实验证损失' && markLines.length > 0) {
+            s.markLine = { data: markLines, symbol: 'none' };
+          }
+          return s;
+        })
+      };
+    }
+
+    function updateDOM() {
+      const e = state.epoch;
+      const tVal = state.data.train[e - 1];
+      const vVal = state.data.val[e - 1];
+      const gap = (vVal - tVal).toFixed(2);
+
+      document.getElementById('trainLossVal').textContent = tVal.toFixed(2);
+      document.getElementById('valLossVal').textContent = vVal.toFixed(2);
+      document.getElementById('currEpoch').textContent = e;
+      document.getElementById('gapIndicator').innerHTML = `当前泛化间隙：<strong>${gap >= 0 ? '+' : ''}${gap}</strong>`;
+
+      const meta = modeMeta[state.mode];
+      document.getElementById('diagTitle').textContent = meta.title;
+      document.getElementById('diagDesc').textContent = meta.desc;
+      document.getElementById('diagAction').textContent = meta.action;
+
+      const valLabelTitle = document.getElementById('valLabelTitle');
+      if (state.mode === 'leak') {
+        valLabelTitle.textContent = '真实验证损失 (Val)';
+      } else {
+        valLabelTitle.textContent = '验证损失 (Val)';
+      }
+
+      const leakBadge = document.getElementById('leakBadge');
+      const leakBodyText = document.getElementById('leakBodyText');
+      const leakLegItem = document.getElementById('leakLegItem');
+
+      leakBadge.textContent = meta.pill;
+      leakBodyText.textContent = meta.leakDesc;
+      if (meta.pillClean) {
+        leakBadge.className = 'leak-pill clean';
+      } else {
+        leakBadge.className = 'leak-pill';
+      }
+
+      leakLegItem.style.display = state.mode === 'leak' ? 'flex' : 'none';
+
+      const valLossVal = document.getElementById('valLossVal');
+      if (vVal > 0.45 && (state.mode === 'none' || state.mode === 'leak')) {
+        valLossVal.classList.add('high');
+      } else {
+        valLossVal.classList.remove('high');
+      }
+    }
+
+    function render() {
+      if (!chart) {
+        chart = echarts.init(chartDom, null, { renderer: 'svg' });
+      }
+      chart.setOption(getChartOption(), true);
+      updateDOM();
+    }
+
+    // 交互绑定
+    const buttons = document.querySelectorAll('.reg-btn');
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        buttons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.mode = btn.dataset.mode;
+        state.data = computeSeries(state.mode);
+        render();
+      });
+    });
+
+    const scrubber = document.getElementById('epochScrubber');
+    scrubber.addEventListener('input', (e) => {
+      state.epoch = parseInt(e.target.value, 10);
+      render();
+    });
+
+    Deck.onResize(() => {
+      if (chart) chart.resize();
+    });
+
+    Deck.init({ index: 11, total: 32 });
+    render();
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Bagging 的完整流程</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* 严格遵循底盘：不覆盖 #stage 的 position/left/top/transform */
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    /* 顶部标题区 */
+    .header {
+      position: absolute;
+      top: 28px;
+      left: 56px;
+      right: 56px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      font-weight: 600;
+      line-height: var(--lh-tight);
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      margin: 0;
+      font-size: var(--fs-lead);
+      color: var(--muted);
+    }
+
+    /* 流程主图舞台 */
+    .pipeline-stage {
+      position: absolute;
+      top: 92px;
+      left: 56px;
+      width: 1488px;
+      height: 660px;
+    }
+
+    svg.flow-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 交互与测试输入条 */
+    .footer-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 56px;
+      right: 56px;
+      height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--rule);
+      padding-top: 10px;
+    }
+    .test-prompt {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .test-title {
+      font-size: var(--fs-body);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .sample-picker {
+      display: flex;
+      gap: 10px;
+    }
+    .sample-btn {
+      background: #FFFFFF;
+      border: 1.5px solid var(--rule);
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: border-color var(--motion-fast), color var(--motion-fast);
+    }
+    .sample-btn:hover {
+      border-color: var(--model);
+    }
+    .sample-btn[aria-pressed="true"] {
+      border-color: var(--focus);
+      background: #FFFFFF;
+      color: var(--focus);
+      font-weight: 600;
+    }
+
+    .metrics-summary {
+      display: flex;
+      align-items: center;
+      gap: 36px;
+    }
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .metric-name {
+      font-size: var(--fs-tick);
+      color: var(--text);
+      opacity: 0.82;
+      letter-spacing: 0.04em;
+    }
+    .metric-value {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .metric-value.focus {
+      color: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="10" data-total="32">
+  <div id="stage">
+    <header class="header">
+      <h1>Bagging 完整流程：并行重采样、独立训练与聚合决策</h1>
+      <p class="lead">多路独立学习器投票对冲单模型波动</p>
+    </header>
+
+    <div class="pipeline-stage">
+      <svg class="flow-canvas" viewBox="0 0 1488 660">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#17628E"/>
+          </marker>
+        </defs>
+
+        <!-- 列标识刻度 -->
+        <g opacity="0.85" font-size="15" fill="#142630" font-weight="600">
+          <text x="70" y="24">原始训练集 D</text>
+          <text x="360" y="24">1. 并行 Bootstrap 抽样</text>
+          <text x="710" y="24">2. 独立拟合基学习器</text>
+          <text x="1060" y="24">3. 测试样本与独立预测</text>
+          <text x="1350" y="24">4. 多数投票集成</text>
+        </g>
+
+        <!-- 第一列：原始训练集 D -->
+        <g id="col-data" transform="translate(40, 50)">
+          <!-- 边界表达集合范围 -->
+          <rect x="0" y="0" width="160" height="540" rx="4" fill="#FFFFFF" stroke="#71828B" stroke-width="1.5"/>
+          <text x="80" y="34" text-anchor="middle" font-size="16" font-weight="600" fill="#142630">原始样本集 D</text>
+          <text x="80" y="56" text-anchor="middle" font-size="13" fill="#50616B">N = 8 样本</text>
+          
+          <!-- 8 个样本节点 -->
+          <g transform="translate(24, 76)">
+            <!-- 正类 +1 (x1 ~ x4) -->
+            <circle cx="20" cy="18" r="14" fill="#E8EEF1" stroke="#17628E" stroke-width="2"/>
+            <text x="20" y="23" text-anchor="middle" font-size="13" font-weight="600" fill="#17628E">x₁</text>
+            <text x="68" y="23" font-size="13" fill="#142630">类 +1</text>
+
+            <circle cx="20" cy="68" r="14" fill="#E8EEF1" stroke="#17628E" stroke-width="2"/>
+            <text x="20" y="73" text-anchor="middle" font-size="13" font-weight="600" fill="#17628E">x₂</text>
+            <text x="68" y="73" font-size="13" fill="#142630">类 +1</text>
+
+            <circle cx="20" cy="118" r="14" fill="#E8EEF1" stroke="#17628E" stroke-width="2"/>
+            <text x="20" y="123" text-anchor="middle" font-size="13" font-weight="600" fill="#17628E">x₃</text>
+            <text x="68" y="123" font-size="13" fill="#142630">类 +1</text>
+
+            <circle cx="20" cy="168" r="14" fill="#E8EEF1" stroke="#17628E" stroke-width="2"/>
+            <text x="20" y="173" text-anchor="middle" font-size="13" font-weight="600" fill="#17628E">x₄</text>
+            <text x="68" y="173" font-size="13" fill="#142630">类 +1</text>
+
+            <!-- 负类 -1 (x5 ~ x8) -->
+            <rect x="7" y="205" width="26" height="26" rx="3" fill="#E8EEF1" stroke="#50616B" stroke-width="2"/>
+            <text x="20" y="223" text-anchor="middle" font-size="13" font-weight="600" fill="#50616B">x₅</text>
+            <text x="68" y="223" font-size="13" fill="#142630">类 -1</text>
+
+            <rect x="7" y="255" width="26" height="26" rx="3" fill="#E8EEF1" stroke="#50616B" stroke-width="2"/>
+            <text x="20" y="273" text-anchor="middle" font-size="13" font-weight="600" fill="#50616B">x₆</text>
+            <text x="68" y="273" font-size="13" fill="#142630">类 -1</text>
+
+            <rect x="7" y="305" width="26" height="26" rx="3" fill="#E8EEF1" stroke="#50616B" stroke-width="2"/>
+            <text x="20" y="323" text-anchor="middle" font-size="13" font-weight="600" fill="#50616B">x₇</text>
+            <text x="68" y="323" font-size="13" fill="#142630">类 -1</text>
+
+            <rect x="7" y="355" width="26" height="26" rx="3" fill="#E8EEF1" stroke="#50616B" stroke-width="2"/>
+            <text x="20" y="373" text-anchor="middle" font-size="13" font-weight="600" fill="#50616B">x₈</text>
+            <text x="68" y="373" font-size="13" fill="#142630">类 -1</text>
+          </g>
+
+          <line x1="20" y1="492" x2="140" y2="492" stroke="#71828B" stroke-dasharray="2 2" stroke-width="1"/>
+          <text x="80" y="516" text-anchor="middle" font-size="13" fill="#50616B">有放回等概率抽取</text>
+        </g>
+
+        <!-- 连线：原始集 -> 3个子集 (Bootstrap 抽样分支) -->
+        <g id="paths-step1" stroke="#17628E" stroke-width="2" fill="none" opacity="0.85">
+          <path d="M 200 230 C 260 230, 260 120, 310 120" marker-end="url(#arrow)"/>
+          <path d="M 200 320 L 310 320" marker-end="url(#arrow)"/>
+          <path d="M 200 410 C 260 410, 260 520, 310 520" marker-end="url(#arrow)"/>
+        </g>
+
+        <!-- 第二列：Bootstrap 采样集 D1, D2, D3 -->
+        <!-- 子集 1 -->
+        <g id="box-d1" transform="translate(320, 50)">
+          <rect x="0" y="0" width="220" height="144" rx="4" fill="#FFFFFF" stroke="#17628E" stroke-width="1.5"/>
+          <text x="16" y="28" font-size="16" font-weight="600" fill="#17628E">子训练集 D₁</text>
+          <text x="150" y="28" font-size="13" fill="#50616B">|D₁|=8</text>
+          <text x="16" y="60" font-size="13" fill="#142630">正类样本：x₁, x₁, x₂, x₄</text>
+          <text x="16" y="86" font-size="13" fill="#142630">负类样本：x₅, x₇, x₇, x₈</text>
+          <text x="16" y="118" font-size="13" fill="#50616B">未抽中：x₃, x₆ (OOB 约37%)</text>
+        </g>
+
+        <!-- 子集 2 -->
+        <g id="box-d2" transform="translate(320, 248)">
+          <rect x="0" y="0" width="220" height="144" rx="4" fill="#FFFFFF" stroke="#17628E" stroke-width="1.5"/>
+          <text x="16" y="28" font-size="16" font-weight="600" fill="#17628E">子训练集 D₂</text>
+          <text x="150" y="28" font-size="13" fill="#50616B">|D₂|=8</text>
+          <text x="16" y="60" font-size="13" fill="#142630">正类样本：x₂, x₃, x₃, x₄</text>
+          <text x="16" y="86" font-size="13" fill="#142630">负类样本：x₅, x₆, x₆, x₈</text>
+          <text x="16" y="118" font-size="13" fill="#50616B">未抽中：x₁, x₇ (OOB 约37%)</text>
+        </g>
+
+        <!-- 子集 3 -->
+        <g id="box-d3" transform="translate(320, 446)">
+          <rect x="0" y="0" width="220" height="144" rx="4" fill="#FFFFFF" stroke="#17628E" stroke-width="1.5"/>
+          <text x="16" y="28" font-size="16" font-weight="600" fill="#17628E">子训练集 D₃</text>
+          <text x="150" y="28" font-size="13" fill="#50616B">|D₃|=8</text>
+          <text x="16" y="60" font-size="13" fill="#142630">正类样本：x₁, x₂, x₂, x₃</text>
+          <text x="16" y="86" font-size="13" fill="#142630">负类样本：x₆, x₇, x₈, x₈</text>
+          <text x="16" y="118" font-size="13" fill="#50616B">未抽中：x₄, x₅ (OOB 约37%)</text>
+        </g>
+
+        <!-- 连线：子集 -> 基学习器 (训练阶段) -->
+        <g id="paths-step2" stroke="#17628E" stroke-width="2" fill="none">
+          <path d="M 540 122 L 660 122" marker-end="url(#arrow)"/>
+          <path d="M 540 320 L 660 320" marker-end="url(#arrow)"/>
+          <path d="M 540 518 L 660 518" marker-end="url(#arrow)"/>
+          <text x="600" y="112" text-anchor="middle" font-size="13" fill="#50616B">拟合</text>
+          <text x="600" y="310" text-anchor="middle" font-size="13" fill="#50616B">拟合</text>
+          <text x="600" y="508" text-anchor="middle" font-size="13" fill="#50616B">拟合</text>
+        </g>
+
+        <!-- 第三列：基学习器 (决策树) -->
+        <!-- 树 1 -->
+        <g id="model-m1" transform="translate(670, 50)">
+          <rect x="0" y="0" width="240" height="144" rx="4" fill="#FFFFFF" stroke="#17628E" stroke-width="2"/>
+          <circle cx="45" cy="42" r="10" fill="#E8EEF1" stroke="#17628E" stroke-width="1.5"/>
+          <line x1="40" y1="50" x2="28" y2="78" stroke="#17628E" stroke-width="1.5"/>
+          <line x1="50" y1="50" x2="62" y2="78" stroke="#17628E" stroke-width="1.5"/>
+          <circle cx="26" cy="86" r="8" fill="#17628E"/>
+          <circle cx="64" cy="86" r="8" fill="#50616B"/>
+
+          <text x="95" y="38" font-size="16" font-weight="600" fill="#17628E">基学习器 h₁(x)</text>
+          <text x="95" y="66" font-size="13" fill="#50616B">根划分: 特征 A ≤ 2.4</text>
+          <text x="95" y="92" font-size="13" fill="#142630">独立并行拟合</text>
+          <text x="16" y="124" font-size="13" fill="#50616B">对 D₁ 扰动敏感</text>
+        </g>
+
+        <!-- 树 2 -->
+        <g id="model-m2" transform="translate(670, 248)">
+          <rect x="0" y="0" width="240" height="144" rx="4" fill="#FFFFFF" stroke="#17628E" stroke-width="2"/>
+          <circle cx="45" cy="42" r="10" fill="#E8EEF1" stroke="#17628E" stroke-width="1.5"/>
+          <line x1="40" y1="50" x2="28" y2="78" stroke="#17628E" stroke-width="1.5"/>
+          <line x1="50" y1="50" x2="62" y2="78" stroke="#17628E" stroke-width="1.5"/>
+          <circle cx="26" cy="86" r="8" fill="#50616B"/>
+          <circle cx="64" cy="86" r="8" fill="#17628E"/>
+
+          <text x="95" y="38" font-size="16" font-weight="600" fill="#17628E">基学习器 h₂(x)</text>
+          <text x="95" y="66" font-size="13" fill="#50616B">根划分: 特征 B ≤ 1.1</text>
+          <text x="95" y="92" font-size="13" fill="#142630">独立并行拟合</text>
+          <text x="16" y="124" font-size="13" fill="#50616B">结构与 h₁ 产生分歧</text>
+        </g>
+
+        <!-- 树 3 -->
+        <g id="model-m3" transform="translate(670, 446)">
+          <rect x="0" y="0" width="240" height="144" rx="4" fill="#FFFFFF" stroke="#17628E" stroke-width="2"/>
+          <circle cx="45" cy="42" r="10" fill="#E8EEF1" stroke="#17628E" stroke-width="1.5"/>
+          <line x1="40" y1="50" x2="28" y2="78" stroke="#17628E" stroke-width="1.5"/>
+          <line x1="50" y1="50" x2="62" y2="78" stroke="#17628E" stroke-width="1.5"/>
+          <circle cx="26" cy="86" r="8" fill="#17628E"/>
+          <circle cx="64" cy="86" r="8" fill="#17628E"/>
+
+          <text x="95" y="38" font-size="16" font-weight="600" fill="#17628E">基学习器 h₃(x)</text>
+          <text x="95" y="66" font-size="13" fill="#50616B">根划分: 特征 A ≤ 1.9</text>
+          <text x="95" y="92" font-size="13" fill="#142630">独立并行拟合</text>
+          <text x="16" y="124" font-size="13" fill="#50616B">差异性保障泛化</text>
+        </g>
+
+        <!-- 第四列：测试样本独立预测 -->
+        <g id="col-test-pred">
+          <path d="M 910 122 L 1020 122" stroke="#17628E" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+          <path d="M 910 320 L 1020 320" stroke="#17628E" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+          <path d="M 910 518 L 1020 518" stroke="#17628E" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+
+          <!-- 预测值 1 -->
+          <g transform="translate(1030, 87)">
+            <rect x="0" y="0" width="165" height="70" rx="4" fill="#FFFFFF" stroke="#71828B" stroke-width="1.5"/>
+            <text x="16" y="26" font-size="13" fill="#50616B">h₁(x_test) 判定</text>
+            <text id="pred-val-1" x="16" y="54" font-size="19" font-weight="600" fill="#17628E">+1 (正类)</text>
+          </g>
+
+          <!-- 预测值 2 -->
+          <g transform="translate(1030, 285)">
+            <rect x="0" y="0" width="165" height="70" rx="4" fill="#FFFFFF" stroke="#71828B" stroke-width="1.5"/>
+            <text x="16" y="26" font-size="13" fill="#50616B">h₂(x_test) 判定</text>
+            <text id="pred-val-2" x="16" y="54" font-size="19" font-weight="600" fill="#B83D0B">-1 (误判)</text>
+          </g>
+
+          <!-- 预测值 3 -->
+          <g transform="translate(1030, 483)">
+            <rect x="0" y="0" width="165" height="70" rx="4" fill="#FFFFFF" stroke="#71828B" stroke-width="1.5"/>
+            <text x="16" y="26" font-size="13" fill="#50616B">h₃(x_test) 判定</text>
+            <text id="pred-val-3" x="16" y="54" font-size="19" font-weight="600" fill="#17628E">+1 (正类)</text>
+          </g>
+
+          <!-- 签名设计：多条等重蓝色预测路径在结论前收束为一条 4px 粗线 -->
+          <path d="M 1195 122 C 1245 122, 1255 290, 1290 312" stroke="#17628E" stroke-width="2" fill="none"/>
+          <path d="M 1195 320 L 1290 320" stroke="#17628E" stroke-width="2" fill="none"/>
+          <path d="M 1195 518 C 1245 518, 1255 350, 1290 328" stroke="#17628E" stroke-width="2" fill="none"/>
+
+          <path d="M 1290 320 L 1324 320" stroke="#17628E" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+        </g>
+
+        <!-- 第五列：多数投票集成输出 -->
+        <g id="box-ensemble" transform="translate(1334, 230)">
+          <rect x="0" y="0" width="140" height="180" rx="6" fill="#FFFFFF" stroke="#17628E" stroke-width="3"/>
+          <text x="70" y="32" text-anchor="middle" font-size="16" font-weight="600" fill="#17628E">集成预测</text>
+          <text x="70" y="52" text-anchor="middle" font-size="13" fill="#50616B">H(x) = mode{hᵢ}</text>
+          
+          <line x1="16" y1="68" x2="124" y2="68" stroke="#71828B" stroke-width="1"/>
+          
+          <text x="70" y="96" text-anchor="middle" font-size="13" fill="#50616B">投票结果</text>
+          <text id="vote-count-text" x="70" y="122" text-anchor="middle" font-size="15" font-weight="600" fill="#142630">2 票对 1 票</text>
+
+          <rect x="18" y="136" width="104" height="32" rx="3" fill="#E8EEF1"/>
+          <text id="final-pred-badge" x="70" y="158" text-anchor="middle" font-size="16" font-weight="700" fill="#17628E">+1 (正类)</text>
+        </g>
+      </svg>
+    </div>
+
+    <!-- 底部测试与验证操作栏 -->
+    <footer class="footer-bar">
+      <div class="test-prompt">
+        <span class="test-title">输入测试样本验证：</span>
+        <div class="sample-picker">
+          <button class="sample-btn" data-sample="A" aria-pressed="true">边界样本 A（存在分歧）</button>
+          <button class="sample-btn" data-sample="B" aria-pressed="false">典型正类样本 B</button>
+          <button class="sample-btn" data-sample="C" aria-pressed="false">典型负类样本 C</button>
+        </div>
+      </div>
+
+      <div class="metrics-summary">
+        <div class="metric-item">
+          <span class="metric-name">单个模型错误率</span>
+          <span id="metric-single-err" class="metric-value">33.3%</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-name">集成判定结果</span>
+          <span id="metric-ensemble-res" class="metric-value focus">正类 +1</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-name">核心机制收益</span>
+          <span class="metric-value" style="font-size: 18px; color: var(--model);">多数投票对冲方差</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <aside class="notes" hidden>
+    本页展示 Bagging（Bootstrap Aggregating）的完整执行流程。
+    首先，从原始训练集出发，并行执行有放回的 Bootstrap 抽样，构造多个子训练集。每个子集约有 63.2% 的独特样本，未被抽中的约 36.8% 构成袋外样本（OOB）。
+    第二步，利用同一基学习算法在每个子集上独立并行拟合，得到多个结构略有差异的基学习器。因为基学习器通常选择未剪枝决策树等高方差模型，训练集的扰动被充分放大为模型的多样性。
+    第三步，在推断阶段，测试样本被送入所有基学习器，分类任务通过多数投票、回归任务通过简单平均汇总为最终预测。
+    点击底部的测试样本可以看出，即使单个基学习器在边界上出现误判，其余模型的正确决策依然能通过投票纠错，从而大幅降低预测方差。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (function(){
+      "use strict";
+
+      Deck.init({ index: 10, total: 32 });
+
+      const sampleScenarios = {
+        A: {
+          p1: { color: "#17628E", label: "+1 (正类)" },
+          p2: { color: "#B83D0B", label: "-1 (误判)" },
+          p3: { color: "#17628E", label: "+1 (正类)" },
+          vote: "2 票对 1 票",
+          final: "+1 (正类)",
+          finalColor: "#17628E",
+          singleErr: "33.3%",
+          ensembleRes: "正类 +1"
+        },
+        B: {
+          p1: { color: "#17628E", label: "+1 (正类)" },
+          p2: { color: "#17628E", label: "+1 (正类)" },
+          p3: { color: "#17628E", label: "+1 (正类)" },
+          vote: "3 票对 0 票",
+          final: "+1 (正类)",
+          finalColor: "#17628E",
+          singleErr: "0.0%",
+          ensembleRes: "正类 +1"
+        },
+        C: {
+          p1: { color: "#50616B", label: "-1 (负类)" },
+          p2: { color: "#50616B", label: "-1 (负类)" },
+          p3: { color: "#B83D0B", label: "+1 (误判)" },
+          vote: "2 票对 1 票",
+          final: "-1 (负类)",
+          finalColor: "#50616B",
+          singleErr: "33.3%",
+          ensembleRes: "负类 -1"
+        }
+      };
+
+      const pred1 = document.getElementById("pred-val-1");
+      const pred2 = document.getElementById("pred-val-2");
+      const pred3 = document.getElementById("pred-val-3");
+      const voteText = document.getElementById("vote-count-text");
+      const badge = document.getElementById("final-pred-badge");
+      const metricErr = document.getElementById("metric-single-err");
+      const metricRes = document.getElementById("metric-ensemble-res");
+      const sampleButtons = document.querySelectorAll(".sample-btn");
+
+      function applyScenario(key) {
+        const d = sampleScenarios[key];
+        if (!d) return;
+
+        pred1.textContent = d.p1.label;
+        pred1.style.fill = d.p1.color;
+
+        pred2.textContent = d.p2.label;
+        pred2.style.fill = d.p2.color;
+
+        pred3.textContent = d.p3.label;
+        pred3.style.fill = d.p3.color;
+
+        voteText.textContent = d.vote;
+        badge.textContent = d.final;
+        badge.style.fill = d.finalColor;
+
+        metricErr.textContent = d.singleErr;
+        metricRes.textContent = d.ensembleRes;
+
+        sampleButtons.forEach(btn => {
+          btn.setAttribute("aria-pressed", btn.dataset.sample === key ? "true" : "false");
+        });
+      }
+
+      sampleButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          applyScenario(btn.dataset.sample);
+        });
+      });
+
+      applyScenario("A");
+    })();
+  </script>
+</body>
+</html>
