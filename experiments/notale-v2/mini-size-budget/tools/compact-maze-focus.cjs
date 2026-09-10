@@ -1,4 +1,0 @@
-const fs=require('fs'),babel=require('/tmp/notale-waveform-build/node_modules/@babel/core');let p='experiments/mini-size-budget/maze/app.js',source=fs.readFileSync(p,'utf8'),count=0;
-if(/const focusStill\s*=/.test(source))throw Error('already applied');
-let code=babel.transformSync(source,{babelrc:false,configFile:false,plugins:[({types:t})=>{let visit=path=>{let n=path.node,c=n.callee,a=n.arguments;if((t.isMemberExpression(c)||t.isOptionalMemberExpression(c))&&!c.computed&&c.property.name==='focus'&&a.length===1&&t.isObjectExpression(a[0])&&a[0].properties.length===1){let prop=a[0].properties[0];if(prop.key.name==='preventScroll'&&prop.value.value===true){path.replaceWith(t.callExpression(t.identifier('focusStill'),[c.object]));path.skip();count++}}};return{visitor:{CallExpression:visit,OptionalCallExpression:visit}}}]}).code;
-fs.writeFileSync(p,'const focusStill=element=>element?.focus({preventScroll:true});\n'+code);console.log({count});

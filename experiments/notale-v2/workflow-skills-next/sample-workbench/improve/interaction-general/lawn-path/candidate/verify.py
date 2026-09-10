@@ -1,1 +1,0 @@
-../../../../../../workflow-skills-next-dev/sample-metadata/build-interaction/samples/general/lawn-path/verify.py

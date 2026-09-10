@@ -1,1 +1,0 @@
-../../../../../../../build-cover/samples/composition/climate-zones-title/pages/assets/base.js

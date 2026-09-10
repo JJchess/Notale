@@ -1,1 +1,0 @@
-export const fade=({oscillator:i,direction:l,output:e,maxAmplitude:s=1,duration:m=.015,context:T})=>{const a=T.currentTime,n=a+m;e.gain.cancelScheduledValues(a),l==="in"?(e.gain.setValueAtTime(0,a),e.gain.linearRampToValueAtTime(s,n),i.start(a)):l==="out"&&(e.gain.setValueAtTime(e.gain.value,a),e.gain.linearRampToValueAtTime(0,n),i.stop(n))};

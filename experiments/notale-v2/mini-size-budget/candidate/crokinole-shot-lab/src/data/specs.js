@@ -1,1 +1,0 @@
-export const rimW=6,surfaceR=330,ditchW=51,pegR=4.7625,twentyR=17.5,fifteenR=102,tenR=203,fiveR=305,discR=15,baseR=381,boardR=387,center=387,uiHeight=96,scoreHeight=39,marginBottom=32,stepperPadding=32,marginSide=0;

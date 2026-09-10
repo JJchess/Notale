@@ -1,1 +1,0 @@
-import{writable as e,derived as a}from"svelte/store";export const mazeData=e({}),selectedState=e(void 0),pathLength=e(0),globalGameState=e("pre"),revealMethods=e(!1),currentMazeSize=a([mazeData,selectedState],([t,r])=>{const o=t[r]?.length||0;return Math.sqrt(o)});

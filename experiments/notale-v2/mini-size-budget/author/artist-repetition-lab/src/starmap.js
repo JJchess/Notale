@@ -1,1 +1,0 @@
-export default await (await fetch('assets/artist-index.json')).json();

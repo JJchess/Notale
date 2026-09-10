@@ -1,1 +1,0 @@
-export function scaleCanvas(i,e){if(typeof window>"u")return;const o=e.webkitBackingStorePixelRatio||e.mozBackingStorePixelRatio||e.msBackingStorePixelRatio||e.oBackingStorePixelRatio||e.backingStorePixelRatio||1,t=(window.devicePixelRatio||1)/o;t>1&&(i.style.height=`${i.height}px`,i.style.width=`${i.width}px`,i.width*=t,i.height*=t,e.scale(t,t))}

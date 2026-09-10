@@ -1,1 +1,0 @@
-../../../../../../../build-page/samples/3d/population-mountains/pages/assets/base.js

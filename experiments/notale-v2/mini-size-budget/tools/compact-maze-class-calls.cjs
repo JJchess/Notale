@@ -1,4 +1,0 @@
-const fs=require('fs'),babel=require('/tmp/notale-waveform-build/node_modules/@babel/core');
-let p='experiments/mini-size-budget/maze/app.js',source=fs.readFileSync(p,'utf8'),count=0;
-let output=babel.transformSync(source,{configFile:false,babelrc:false,plugins:[({types:t})=>({visitor:{CallExpression(path){let c=path.node.callee;if(t.isMemberExpression(c)&&!c.computed&&t.isIdentifier(c.property,{name:'toggle'})&&t.isMemberExpression(c.object)&&!c.object.computed&&t.isIdentifier(c.object.property,{name:'classList'})&&path.node.arguments.length===2){path.replaceWith(t.callExpression(t.identifier('toggleClass'),[c.object.object,...path.node.arguments]));count++}}}})]}).code;
-if(count){output='const toggleClass=(element,name,on)=>element.classList.toggle(name,on);\n'+output;fs.writeFileSync(p,output)}console.log({calls:count});

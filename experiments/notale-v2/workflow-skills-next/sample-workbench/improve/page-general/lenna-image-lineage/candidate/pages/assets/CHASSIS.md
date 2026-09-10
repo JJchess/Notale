@@ -1,1 +1,0 @@
-../../../../../../../../workflow-skills-next-dev/sample-metadata/build-page/samples/general/lenna-image-lineage/output/pages/assets/CHASSIS.md
