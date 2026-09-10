@@ -10,7 +10,8 @@ from urllib.parse import urlsplit
 import httpx
 from PIL import Image
 
-from core import image_search as search, llm, media, tools
+from core import llm
+from tools import image_search as search, media, runtime as tools
 
 
 class ImageSearchTests(unittest.TestCase):

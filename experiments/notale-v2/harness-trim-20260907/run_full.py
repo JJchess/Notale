@@ -60,7 +60,7 @@ def main():
     for pid in args.only:
         command += ['--only', pid]
     sources = [*ROOT.glob('core/*.py'), *ROOT.glob('prompts/*.md'),
-               *ROOT.glob('workflows/**/*.md'), *ROOT.glob('vendor/chassis/*')]
+               *ROOT.glob('skills/**/*.md'), *ROOT.glob('vendor/chassis/*')]
     provenance = {
         'startedAt': datetime.now(timezone.utc).isoformat(),
         'query': query, 'source': str(SOURCE.relative_to(ROOT)),

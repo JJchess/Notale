@@ -10,7 +10,7 @@ from urllib.parse import urljoin
 
 ROOT = Path(__file__).resolve().parents[3] / 'notale-v2'
 sys.path.insert(0, str(ROOT))
-from core.media import _public_connection
+from tools.media import _public_connection
 from core.redact import redact
 
 

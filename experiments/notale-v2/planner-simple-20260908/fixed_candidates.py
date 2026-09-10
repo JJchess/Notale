@@ -8,7 +8,8 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[3] / 'notale-v2'
 RUNS_ROOT = ROOT.parent / 'runs' / ROOT.name
 sys.path.insert(0, str(ROOT))
-from core import llm, planner, skills, tools
+from core import llm, planner, skills
+from tools import runtime as tools
 
 
 def main():

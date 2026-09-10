@@ -32,7 +32,7 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 V2 = HERE.parents[1]
-WORKFLOWS = V2 / "workflows"
+WORKFLOWS = V2 / "skills"
 ATTIC = V2 / "attic"
 CHASSIS = V2 / "vendor" / "chassis"
 CASES_FILE = HERE / "cases.yaml"

@@ -21,7 +21,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import code_runtime, skills, tools
+from . import skills
+from tools import code_runtime, runtime as tools
 from . import llm
 from .llm import ROOT, RUNS_ROOT, config, respond, text_of
 from .trace import Writer

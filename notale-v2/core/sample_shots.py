@@ -29,7 +29,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOWS = ROOT / "workflows"
+WORKFLOWS = ROOT / "skills"
 CHASSIS = ROOT / "vendor" / "chassis"
 W, H = 1600, 900           # canvas, same as selfcheck
 TW, TH = 800, 450          # thumbnail, same as selfcheck's shrunk shot

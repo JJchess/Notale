@@ -288,7 +288,7 @@ planner 与 builder 之间是否再加"页面合同"步骤，取决于 D2 实验
 
 - `eval/FAILURES.md` —— 每条失败模式一节：症状、可指的页、探测器（哪个仪器哪个字段）、当前状态（open / mitigated by <commit> / regressed on <date>）。**没有探测器的失败不许登记为"已修"**。
 - `eval/KNOWLEDGE.md` —— 设计知识，只收"有对照证据"的条目，每条附实验 label（例如 `#stage flex column` 那条）。禁止收"感觉"。
-- 样本库治理（`workflows/*/samples/catalog.json` 加字段）：每份样本的读取次数、被读后产物的盲评均分；**一个类别 ≥ 40% 读取集中在一份样本上就触发"补样本或删样本"**；新样本必须来自盲评最差的那类失败。
+- 样本库治理（`skills/*/samples/catalog.json` 加字段）：每份样本的读取次数、被读后产物的盲评均分；**一个类别 ≥ 40% 读取集中在一份样本上就触发"补样本或删样本"**；新样本必须来自盲评最差的那类失败。
 - `eval/regression/` —— 金样本：每个失败模式一个"曾经坏过、现在好"的 (冻结规划页, 探测器期望值) 对；每次接受改动后全跑。现有 `experiments/workflow-skills-next/fixtures/adaboost-cold-gray` 就是第一份。
 - 实验记录沿用 `../runs/notale-v2/*-experiment.json` 的形状，但补齐固定字段（§4.8）。
 

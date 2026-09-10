@@ -65,7 +65,7 @@ def main():
 
     def one(case):
         name, style = case
-        template = ROOT / 'references/styles/shots' / f'{style}.png' if style else None
+        template = ROOT / 'skills/style-director/shots' / f'{style}.png' if style else None
         run = planner.Run(QUERY, 5, '中英混排的课堂读者', f'{args.prefix}-{name}', '投影课堂', template=template, style=style)
         assets = run.root / 'pages/assets'
         assets.mkdir(parents=True, exist_ok=True)

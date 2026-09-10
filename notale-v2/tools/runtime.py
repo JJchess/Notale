@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import media
-from .redact import redact
+from core.redact import redact
 
 CAP = 30_000  # 普通 tool_result 的字符上限。实测 nn-06 最大一个 679,500 字符,
               # 不截断的话一次就把上下文灌爆。

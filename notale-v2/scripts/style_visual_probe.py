@@ -61,7 +61,7 @@ def prepare_pages(label, source, baseline, report, *, run=None, page_ids=('page-
                                            include_aux=True, notes='notes',
                                            prompts=old_prompts if baseline else None)
         if baseline:
-            current = (ROOT / 'workflows/scrub-visual-slop.md').read_text().strip()
+            current = (ROOT / 'skills/scrub-visual-slop.md').read_text().strip()
             blocks['anti_slop'] = blocks['anti_slop'].replace(current, old_file('workflows/scrub-visual-slop.md').strip())
         instructions = '\n\n'.join(blocks.values())
         page.prompt = (builder.environment_context(run.pages, page, skills.WORKFLOWS / page.workflow)

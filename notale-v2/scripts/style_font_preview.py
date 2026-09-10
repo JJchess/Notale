@@ -8,6 +8,7 @@ from functools import partial
 from html import escape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+from os.path import relpath
 from pathlib import Path
 import re
 import sys
@@ -40,6 +41,7 @@ def roles(key):
 
 def build(output):
     output.mkdir(parents=True, exist_ok=True)
+    style_root = escape(Path(relpath(catalog.ROOT, output)).as_posix(), quote=True)
     cards, required = [], []
     for row in catalog.rows():
         entries = roles(row[0])
@@ -61,8 +63,8 @@ def build(output):
                 f'style="font-family:\'NTF-{key}\',sans-serif;font-weight:{item["weight"]};'
                 f'font-style:{item["style"]};font-size:{size}px">{escape(SAMPLES[role])}</div>')
         sections.append(f'<section id="{card["id"]}"><h2>{escape(card["name"])}</h2>'
-            f'<p><a href="../../references/styles/details/{card["id"]}.md">风格详情</a> · '
-            f'<a href="../../references/styles/shots/{card["id"]}.png">原参考图</a></p>' + ''.join(lines) + '</section>')
+            f'<p><a href="{style_root}/details/{card["id"]}.md">风格详情</a> · '
+            f'<a href="{style_root}/shots/{card["id"]}.png">原参考图</a></p>' + ''.join(lines) + '</section>')
     html = '''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>40 项风格 · 中英字体实效</title><link rel="stylesheet" href="assets/fonts.css">
@@ -74,6 +76,8 @@ nav{margin:20px 0}nav a{display:inline-block;margin:4px 12px 4px 0}</style>
 <h1>40 项风格 · 中英字体实效</h1>
 <p>同一组文字、真实随包字体。这里验证字体搭配与交付，不是 40 套模型生成页面。点击详情查看构图、材质和配色说明。</p>
 <p><a href="audit.json">实际字体审计</a> · <a href="../../vendor/fonts/README.md">字体来源与授权</a></p><nav>'''
+    html = html.replace('../../vendor/fonts/README.md',
+                        escape(Path(relpath(ROOT / 'vendor/fonts/README.md', output)).as_posix(), quote=True))
     html += ' '.join(f'<a href="#{c["id"]}">{escape(c["name"].split(" · ")[-1])}</a>' for c in cards)
     html += '</nav><main>' + ''.join(sections) + '</main></html>'
     (output / 'index.html').write_text(html)

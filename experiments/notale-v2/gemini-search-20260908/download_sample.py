@@ -7,7 +7,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[3] / 'notale-v2'
 sys.path.insert(0, str(ROOT))
-from core.media import _download_image
+from tools.media import _download_image
 from core.redact import redact
 
 ap = argparse.ArgumentParser()

@@ -198,7 +198,7 @@ SSE 推送阶段、当前页、检查结果、候选就绪和 head 变化；事�
 
 **9．建议目录与开发交付**
 
-以下为拟新增目录，保留当前 `core/`、`workflows/`、`vendor/`：
+以下为拟新增目录，保留当前 `core/`、`skills/`、`vendor/`：
 
 ```text
 apps/api/                 Fastify 路由、会话、领域模块组装

@@ -10,7 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from core import builder, code_runtime, sample_bundles, sample_shots, skills, tools
+from core import builder, sample_bundles, sample_shots, skills
+from tools import code_runtime, runtime as tools
 
 
 ROOT = Path(__file__).resolve().parents[1]

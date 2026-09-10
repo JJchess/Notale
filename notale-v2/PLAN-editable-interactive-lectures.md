@@ -20,8 +20,8 @@
 
 - [core/planner.py](core/planner.py) 使用 `pages/plan/pages.md`、逐页规格及主题输入组织生成；[core/builder.py](core/builder.py) 按标题页、内容页、交互页、代码页分别生成。计划文本表达教学意图，但没有承担最终元素级文档模型。
 - [vendor/chassis/CHASSIS.md](vendor/chassis/CHASSIS.md) 已提供默认 1600×900 逻辑画布、缩放、指针坐标和 `Deck.onStep` / `data-deck-step` 分步机制。这能复用为编辑画布与演示运行时的基础。
-- [core/tools.py](core/tools.py) 的 `Write` / `Patch` / `Edit` 修改页面文件，`Check` 检查渲染与交互；这些是生成代理的工具，还不是老师的可视化编辑器。
-- [core/code_runtime.py](core/code_runtime.py) 已区分固定代码工作台与 `lesson.js`、`starter.py`、`trace.py`、`tests.py`、视图文件等内容。适合作为“运行时＋可编辑内容”分离的第一个组件示范。
+- [tools/runtime.py](tools/runtime.py) 的 `Write` / `Patch` / `Edit` 修改页面文件，`Check` 检查渲染与交互；这些是生成代理的工具，还不是老师的可视化编辑器。
+- [tools/code_runtime.py](tools/code_runtime.py) 已区分固定代码工作台与 `lesson.js`、`starter.py`、`trace.py`、`tests.py`、视图文件等内容。适合作为“运行时＋可编辑内容”分离的第一个组件示范。
 
 对以下目录顶层 `page-*.html` 做源码标签统计，计数表示“至少含一个该标签的页面数”，同页可重复归类，**不代表实际可编辑率，也不包含脚本动态创建或 iframe 内部的元素**：
 

@@ -60,13 +60,13 @@ builder.main()
     package=RUNS_ROOT/f'{args.prefix}-input'
     package.mkdir(parents=True,exist_ok=True)
     (package/'assets').mkdir(exist_ok=True)
-    photo=ROOT/'workflows/build-page/samples/general/walk-photo-journal/pages/assets/images/holden-pond.jpg'
+    photo=ROOT/'skills/build-page/samples/general/walk-photo-journal/pages/assets/images/holden-pond.jpg'
     shutil.copy2(photo,package/'assets/photo.jpg')
     (package/'shots').mkdir(exist_ok=True)
     shutil.copy2(photo,package/'shots/photo.jpg')
     (package/'theme.css').write_text(CSS+'\n:root{--photo-source:url(assets/photo.jpg)}',encoding='utf-8')
     cases=[('auto',None,'02-swiss'),
-           ('glass',ROOT/'references/styles/shots/04-glassmorphism.png','04-glassmorphism'),
+           ('glass',ROOT/'skills/style-director/shots/04-glassmorphism.png','04-glassmorphism'),
            ('photo',package,'改成自然摄影编辑风，使用提供的 assets/photo.jpg 作 opening 变体装饰背景；默认无图正文。保留照片真实颜色，用多层 background-image 控制文字区域对比。不要搜索其他素材。')]
     def one(case):
         name,template,style=case

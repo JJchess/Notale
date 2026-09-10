@@ -169,7 +169,7 @@ class PlanningContextTests(unittest.TestCase):
             for name in ['assets/theme.css', 'page-24.html']:
                 with self.subTest(name=name):
                     denial = builder.code_runtime.tool_guard(
-                        'Read', {'file_path': name}, pages, 'page-25', ROOT / 'workflows/build-code')
+                        'Read', {'file_path': name}, pages, 'page-25', ROOT / 'skills/build-code')
                     self.assertIsNotNone(denial)
 
     @staticmethod
@@ -237,7 +237,7 @@ class PlanningContextTests(unittest.TestCase):
             pages.mkdir()
             p = page()
             text = builder.environment_context(
-                pages, p, ROOT / "workflows" / p.workflow
+                pages, p, ROOT / "skills" / p.workflow
             )
         node = ET.fromstring(text)
         self.assertEqual(node.findtext("target_state"), "absent")
@@ -288,7 +288,7 @@ class AgentLoopTests(unittest.TestCase):
                 with patch.object(builder, 'respond', side_effect=responses) as respond, \
                      patch.object(builder.tools, 'run', self.fake_run_factory(events)):
                     result = builder.build_one(page(), Path(td), Path(td)/'trace.jsonl',
-                                               ROOT/'workflows', 'instructions', 'low')
+                                               ROOT/'skills', 'instructions', 'low')
                 self.assertEqual(respond.call_count, 2)
                 self.assertEqual(result.termination, 'initial_read_order')
                 self.assertEqual([name for name, _ in events], ['Read'])
@@ -302,7 +302,7 @@ class AgentLoopTests(unittest.TestCase):
                     call('Write', file_path='page-01.html', content='<html/>'))) as respond, \
                  patch.object(builder.tools, 'run') as execute:
                 result = builder.build_one(page(), Path(td), Path(td)/'trace.jsonl',
-                                           ROOT/'workflows', 'instructions', 'low')
+                                           ROOT/'skills', 'instructions', 'low')
             execute.assert_not_called()
             respond.assert_called_once()
             self.assertEqual(result.termination, 'initial_read_order')
@@ -316,7 +316,7 @@ class AgentLoopTests(unittest.TestCase):
                 with patch.object(builder, 'respond', return_value=tool_response(reading)) as respond, \
                      patch.object(builder.tools, 'run', return_value='FileNotFoundError: missing') as execute:
                     result = builder.build_one(page(), Path(td), Path(td)/'trace.jsonl',
-                                               ROOT/'workflows', 'instructions', 'low')
+                                               ROOT/'skills', 'instructions', 'low')
                 respond.assert_called_once()
                 self.assertEqual(execute.call_count, 0 if broken_args else 1)
                 self.assertEqual(result.termination, 'initial_read_failed')
@@ -341,7 +341,7 @@ class AgentLoopTests(unittest.TestCase):
                 with patch.object(builder, 'respond', side_effect=responses), \
                      patch.object(builder.tools, 'run', side_effect=execute):
                     result = builder.build_one(page(), pages, pages/'trace.jsonl',
-                                               ROOT/'workflows', 'instructions', 'low')
+                                               ROOT/'skills', 'instructions', 'low')
                 self.assertEqual(result.termination, 'initial_read_order')
                 self.assertEqual(sum(name == 'Read' for name, _ in events), 1)
 
@@ -351,7 +351,7 @@ class AgentLoopTests(unittest.TestCase):
                 pages = Path(td)
                 lesson = builder.code_runtime.editable_root(pages, 'page-04')
                 source = lesson/'starter.py'
-                reference = ROOT/'workflows/build-code/references/code.md'
+                reference = ROOT/'skills/build-code/references/code.md'
                 def scaffold(*_args):
                     lesson.mkdir(parents=True)
                     source.write_text('x = 1')
@@ -365,7 +365,7 @@ class AgentLoopTests(unittest.TestCase):
                      patch.object(builder.code_runtime, 'scaffold', side_effect=scaffold), \
                      patch.object(builder, 'audit_delivery', return_value={}):
                     result = builder.build_one(page('page-04','build-code','代码页'), pages, pages/'trace.jsonl',
-                                               ROOT/'workflows', 'instructions', 'low')
+                                               ROOT/'skills', 'instructions', 'low')
                 self.assertEqual(result.termination, 'no_tool_use' if edit else 'initial_read_order')
                 self.assertEqual(source.read_text(), 'x = 2' if edit else 'x = 1')
 
@@ -391,7 +391,7 @@ class AgentLoopTests(unittest.TestCase):
                 patch.object(builder, 'respond', respond), \
                 patch.object(builder.tools, 'run', side_effect=execute):
             builder.build_one(page(), Path(td), Path(td) / 'trace.jsonl',
-                              ROOT / 'workflows', 'instructions', 'low')
+                              ROOT / 'skills', 'instructions', 'low')
         outputs = [x['output'] for x in snapshots[-1] if x.get('type') == 'function_call_output'
                    and x['call_id'].startswith('c-Check-')]
         self.assertEqual(len(outputs), 2)
@@ -427,7 +427,7 @@ class AgentLoopTests(unittest.TestCase):
             builder, "respond", return_value=done_response()
         ) as respond:
             result = builder.build_one(
-                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "skills",
                 "instructions", "low",
             )
         self.assertEqual(result.calls, 1)
@@ -450,7 +450,7 @@ class AgentLoopTests(unittest.TestCase):
                 patch.object(builder, "respond", side_effect=responses) as respond, \
                 patch.object(builder.tools, "run", self.fake_run_factory(events)):
             result = builder.build_one(
-                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "skills",
                 "instructions", "low",
             )
 
@@ -473,7 +473,7 @@ class AgentLoopTests(unittest.TestCase):
                 patch.object(builder, "respond", side_effect=responses), \
                 patch.object(builder.tools, "run", self.fake_run_factory(events)):
             result = builder.build_one(
-                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "skills",
                 "instructions", "low",
             )
 
@@ -483,7 +483,7 @@ class AgentLoopTests(unittest.TestCase):
         self.assertTrue(result.artifact_present)
 
     def test_native_reads_then_write_use_one_constant_surface_and_effort(self):
-        skill = ROOT / "workflows" / "build-cover"
+        skill = ROOT / "skills" / "build-cover"
         responses = [
             tool_response(
                 call("Read", file_path=str(skill / "references/composition.md")),
@@ -507,7 +507,7 @@ class AgentLoopTests(unittest.TestCase):
                 patch.object(builder, "respond", fake_respond), \
                 patch.object(builder.tools, "run", self.fake_run_factory(events)):
             result = builder.build_one(
-                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "skills",
                 "instructions", "low",
             )
 
@@ -549,7 +549,7 @@ class AgentLoopTests(unittest.TestCase):
                 patch.object(builder.tools, "run", self.fake_run_factory(events)):
             pages = Path(td)
             result = builder.build_one(
-                page(), pages, pages / "trace.jsonl", ROOT / "workflows",
+                page(), pages, pages / "trace.jsonl", ROOT / "skills",
                 "instructions", "low",
             )
             final = (pages / "page-01.html").read_text(encoding="utf-8")
@@ -573,14 +573,14 @@ class AgentLoopTests(unittest.TestCase):
                     self.fake_run_factory(events, fatal_audit=True),
                 ):
             result = builder.build_one(
-                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "skills",
                 "instructions", "low",
             )
         self.assertTrue(result.artifact_present)
         self.assertEqual(result.audit["fatal_errors"], ["✗ JS 报错"])
 
     def test_code_surface_is_constant_and_scaffold_returns_editable_contents(self):
-        skill = ROOT / "workflows" / "build-code"
+        skill = ROOT / "skills" / "build-code"
         responses = [
             tool_response(
                 call("Read", file_path=str(skill / "references/code.md")),
@@ -613,7 +613,7 @@ class AgentLoopTests(unittest.TestCase):
                 patch.object(builder.tools, "run", return_value="✓ outer"):
             result = builder.build_one(
                 page("page-04", "build-code", "代码页"),
-                Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                Path(td), Path(td) / "trace.jsonl", ROOT / "skills",
                 "instructions", "low",
                 refs=[{'type': 'input_image', 'image_url': 'data:image/png;base64,stub'}],
             )
@@ -645,7 +645,7 @@ class AgentLoopTests(unittest.TestCase):
                 patch.object(builder, "respond", fake_respond), \
                 patch.object(builder.tools, "run", self.fake_run_factory(events)):
             result = builder.build_one(
-                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "skills",
                 "instructions", "low", vision_input=False,
             )
         self.assertTrue(result.artifact_present)

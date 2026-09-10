@@ -12,7 +12,8 @@ import tempfile
 import unittest
 
 from playwright.sync_api import sync_playwright
-from core import builder, font_library, tools
+from core import builder, font_library
+from tools import runtime as tools
 from test import test_builder
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,7 +86,7 @@ class GuidanceTests(unittest.TestCase):
                     self.assertIn('instrumentation, not approval', guidance)
                     self.assertIn('recomput', guidance.lower())
             reference = tools.run('Read', {'file_path':'references/composition.md'},
-                                  root / 'pages', ROOT / 'workflows/build-cover', 'page-01')
+                                  root / 'pages', ROOT / 'skills/build-cover', 'page-01')
             text = reference.text if isinstance(reference, tools.Out) else reference
             self.assertIn('When encoding evidence', text)
             self.assertIn('decorative gradients and textures need not encode data', text)

@@ -7,7 +7,8 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-from core import builder, tools
+from core import builder
+from tools import runtime as tools
 from core.trace import Writer, TraceRow
 from test.test_builder import page, call, tool_response, done_response
 
@@ -50,7 +51,7 @@ class ToolEvidenceTests(unittest.TestCase):
                  patch.object(builder.tools, 'run', return_value='actual tool result'), \
                  patch.object(builder, 'audit_delivery', return_value={}):
                 result = builder.build_one(page(), root, root/'trace.jsonl',
-                                           builder.ROOT/'workflows', 'instructions', 'low')
+                                           builder.ROOT/'skills', 'instructions', 'low')
             rows = [json.loads(line) for line in (root/'trace.jsonl').read_text().splitlines()]
             evidence = [r for r in rows if r['type'] == 'system']
             self.assertEqual(len(evidence), 1)

@@ -15,7 +15,7 @@
 
 - [40 项中英字体样张](http://localhost:4177/runs/notale-v2/style-fonts-0908/)
 - [四个真实 Director 主题测试页](http://localhost:4177/runs/notale-v2/style-details-0908a-audit/)
-- [完整风格索引](references/styles/INDEX.md) · [字体来源与授权](vendor/fonts/README.md)
+- [完整风格索引](skills/style-director/INDEX.md) · [字体来源与授权](vendor/fonts/README.md)
 
 第一组是确定性字样测试，不是 40 套生成作品。第二组 CSS 来自真实 Director，HTML 使用相同固定文字和排布，不冒充四个 Builder 成品。
 

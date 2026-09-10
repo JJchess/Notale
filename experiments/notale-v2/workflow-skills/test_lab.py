@@ -13,7 +13,7 @@ import lab
 class CatalogTests(unittest.TestCase):
     def test_every_legacy_skill_is_accounted_for_once_or_more(self):
         catalog = lab.yaml.safe_load(lab.CATALOG.read_text())
-        old = {p.name for p in (lab.V2 / "vendor/skills").iterdir() if (p / "SKILL.md").is_file()}
+        old = {p.name for p in (lab.ROOT / "legacy/notale-v2/vendor-skills").iterdir() if (p / "SKILL.md").is_file()}
         mapped = {s for row in catalog["workflows"] for s in row.get("sources", [])}
         omitted = {row["name"] for row in catalog.get("not_imported", [])}
         self.assertEqual(old, mapped | omitted)

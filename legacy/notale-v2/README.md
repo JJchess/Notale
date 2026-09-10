@@ -11,6 +11,7 @@
 | [architecture/](architecture/) | 架构 v1–v3；`mkarch.py` 仅重建同目录 v1 图，不生成当前 v4 |
 | [prompts/direction-menus.md](prompts/direction-menus.md) | 已退役方向菜单，生产不加载 |
 | [harness/](harness/) | 已退出生产链路的抠图实现和旧请求模型；无兼容回接 |
+| [vendor-skills/](vendor-skills/) | 旧供应商 skill 包，生产不加载；唯一仍使用的 ImageGen 脚本已迁至 [tools](../../notale-v2/tools/make-illustration/scripts/gen.py)，整理前 baseline 为 `dd53a70e` |
 | [experiments/](experiments/README.md) | 18 个旧实验启动脚本，保留原输入与命令，不作为当前入口 |
 | [full-samples/](full-samples/) | 完整样例归档，内部目录结构与资源不变 |
 | [image-search/](image-search/README.md) | 图片检索旧实现，保留恢复用源码快照 |

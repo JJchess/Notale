@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from playwright.async_api import async_playwright
 
-from core import code_runtime
+from tools import code_runtime
 
 
 class CodeRuntimeTests(unittest.TestCase):

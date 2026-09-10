@@ -56,10 +56,10 @@ def now():
 def hashes():
     paths = [ROOT / 'config.yaml', *sorted((ROOT / 'core').glob('*.py')),
              *sorted((ROOT / 'prompts').glob('*.md')),
-             *sorted((ROOT / 'references/styles').rglob('*.md')),
-             *sorted((ROOT / 'references/styles/shots').glob('*.png')),
-             *sorted((ROOT / 'references/styles/contact-sheets').glob('*.png')),
-             *sorted((ROOT / 'workflows').rglob('*.md')),
+             *sorted((ROOT / 'skills/style-director').rglob('*.md')),
+             *sorted((ROOT / 'skills/style-director/shots').glob('*.png')),
+             *sorted((ROOT / 'skills/style-director/contact-sheets').glob('*.png')),
+             *sorted((ROOT / 'skills').rglob('*.md')),
              *sorted((ROOT / 'vendor/chassis').glob('*')),
              Path(__file__).resolve()]
     paths = [p for p in paths if p.is_file()]
@@ -195,7 +195,7 @@ def main():
     if Path(args.prefix).name != args.prefix or args.prefix in ('.', '..'):
         ap.error('Use one run prefix')
     cases = [('auto', None, None),
-             ('reference', ROOT / 'references/styles/shots/19-hand-drawn.png', '19-hand-drawn'),
+             ('reference', ROOT / 'skills/style-director/shots/19-hand-drawn.png', '19-hand-drawn'),
              ('modify', RUNS_ROOT / 'style-details-0908a-auto/pages/assets', '38-fashion-editorial')]
     cases = [case for case in cases if args.route == 'all' or case[0] == args.route]
     report = RUNS_ROOT / (args.prefix + '-report')

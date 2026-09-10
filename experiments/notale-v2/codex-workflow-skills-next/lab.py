@@ -29,7 +29,7 @@ HERE = Path(__file__).resolve().parent
 V2 = HERE.parents[1]
 # Exercise the promoted production packages. Research workbenches remain under experiments,
 # but future comparisons must not silently test a duplicate skill tree.
-SKILLS_ROOT = V2 / "workflows"
+SKILLS_ROOT = V2 / "skills"
 CHASSIS = V2 / "vendor" / "chassis"
 FIXTURES = HERE / "fixtures"
 CASES_FILE = HERE / "cases.yaml"

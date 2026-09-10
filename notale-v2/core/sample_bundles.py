@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOWS = ROOT / "workflows"
+WORKFLOWS = ROOT / "skills"
 VISUAL_WORKFLOWS = frozenset({
     "build-cover",
     "build-page",

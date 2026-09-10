@@ -42,7 +42,7 @@ sys.path.insert(0, str(V2))
 from core import builder as core_builder  # noqa: E402
 from core import llm  # noqa: E402
 from core import skills as core_skills  # noqa: E402
-from core import tools as core_tools  # noqa: E402
+from tools import runtime as core_tools  # noqa: E402
 
 
 MODEL = "AWS-GPT-5.6-Terra"
@@ -435,7 +435,7 @@ def validate() -> int:
     listed = [x["name"] for x in catalog.get("workflows") or []]
     if names != sorted(listed):
         errors.append(f"catalog workflow 不一致: dirs={names}, catalog={sorted(listed)}")
-    old = {p.name for p in (V2 / "vendor" / "skills").iterdir() if (p / "SKILL.md").is_file()}
+    old = {p.name for p in (ROOT / "legacy/notale-v2/vendor-skills").iterdir() if (p / "SKILL.md").is_file()}
     accounted = {
         source for row in catalog.get("workflows") or [] for source in row.get("sources") or []
     } | {row["name"] for row in catalog.get("not_imported") or []}

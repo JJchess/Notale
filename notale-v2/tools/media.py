@@ -18,8 +18,8 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 from PIL import Image
 
-from . import skills
-from .redact import redact
+from core import skills
+from core.redact import redact
 
 SCHEMAS = [
     {"type": "function", "name": "ImageSearch",
@@ -40,7 +40,7 @@ NAMES = frozenset(s["name"] for s in SCHEMAS)
 
 
 def search_backend() -> str:
-    from .llm import config
+    from core.llm import config
     return config().get("media", {}).get("image_search_backend", "gemini")
 
 

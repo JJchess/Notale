@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 from . import font_library
 
-ROOT = Path(__file__).resolve().parents[1] / 'references/styles'
+ROOT = Path(__file__).resolve().parents[1] / 'skills/style-director'
 READ_SPEC = {'type': 'function', 'name': 'Read',
     'description': '选择并读取风格详情、中英字体用法和原始参考图；file_path 填风格 ID 或 details/<ID>.md。可同轮读取多个风格进行组合。',
     'parameters': {'type': 'object', 'properties': {'file_path': {'type': 'string'}},

@@ -9,10 +9,9 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-LEGACY = ROOT / "vendor" / "skills"
-WORKFLOWS = ROOT / "workflows"
+WORKFLOWS = ROOT / "skills"
 PROMPTS = ROOT / "prompts"
-DEFAULT = LEGACY  # Planner-only media acquisition resources.
+DEFAULT = ROOT / "tools"  # ImageGen script resource root; --skills retains this contract.
 
 PAGE_WORKFLOWS = (
     "build-cover",
@@ -176,7 +175,7 @@ def routed_workflow(
             1,
         )
     # **路径根只写一次。** 展开成绝对路径时,每条都重复
-    # `/…/workflows/build-page/` 这 60 多个字符 —— build-page 的 SKILL 里 25 条路径,
+    # `/…/skills/build-page/` 这 60 多个字符 —— build-page 的 SKILL 里 25 条路径,
     # 光前缀就占 1,575 字符(全块的 22.6%),四个 workflow 合计 3,089 字符。
     # 路径声明由 builder.environment_context 统一生成，工具仍按 resource_root 解析。
     root_dir = path.parent.resolve()

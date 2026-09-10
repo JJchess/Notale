@@ -7,7 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from PIL import Image
-from core import builder, director, planner, style_catalog, theme, tools
+from core import builder, director, planner, style_catalog, theme
+from tools import runtime as tools
 from test.test_media import call, response
 
 CSS = '''/* ==== INTERFACE ====

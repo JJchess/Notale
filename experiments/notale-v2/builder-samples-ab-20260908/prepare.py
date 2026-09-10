@@ -26,8 +26,8 @@ def main():
         if (RUNS_ROOT / label).exists():
             raise FileExistsError(label)
     source_files = [*ROOT.glob('core/*.py'), *ROOT.glob('prompts/*.md'), ROOT / 'config.yaml',
-                    *ROOT.glob('workflows/*/SKILL.md'), *ROOT.glob('workflows/*/references/*.md'),
-                    *ROOT.glob('workflows/*/samples/bundles/*/*.md')]
+                    *ROOT.glob('skills/*/SKILL.md'), *ROOT.glob('skills/*/references/*.md'),
+                    *ROOT.glob('skills/*/samples/bundles/*/*.md')]
     source_hashes = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in source_files}
     records = {}

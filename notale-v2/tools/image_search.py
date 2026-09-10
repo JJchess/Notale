@@ -12,7 +12,7 @@ from urllib.parse import unquote, urljoin, urlsplit
 import httpx
 
 from . import media
-from .redact import redact
+from core.redact import redact
 
 MODEL = "gemini-3.8-flash"
 ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
@@ -158,7 +158,7 @@ def download_candidate(item: dict, out: Path, index: int, deadline: float) -> di
 def search(query, count: int, out: Path) -> tuple[list[dict], list[dict]]:
     queries = queries_of(query)
     # Reuse environment loading only, not the Planner's model/history/transport.
-    from .llm import config
+    from core.llm import config
     config()
     key = os.environ.get("GEMINI_API_KEY")
     if not key:

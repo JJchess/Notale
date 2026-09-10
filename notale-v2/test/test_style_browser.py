@@ -4,11 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from core import theme, code_runtime
+from core import theme
+from tools import code_runtime
 from test.test_style_upgrade import CSS
 
 ROOT = Path(__file__).resolve().parents[1]
-PHOTO = ROOT/'workflows/build-page/samples/general/walk-photo-journal/pages/assets/images/holden-pond.jpg'
+PHOTO = ROOT/'skills/build-page/samples/general/walk-photo-journal/pages/assets/images/holden-pond.jpg'
 
 
 class BrowserTests(unittest.TestCase):
