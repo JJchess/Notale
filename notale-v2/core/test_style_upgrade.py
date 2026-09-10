@@ -32,7 +32,7 @@ class StyleTests(unittest.TestCase):
         self.assets = self.root / 'pages/assets'
         self.assets.mkdir(parents=True)
         self.run = SimpleNamespace(root=self.root, query='固定事实', audience='读者', scenario='',
-            style=None, template=None, style_director=True, direction_menus=False, canvas=(1600,900),
+            style=None, template=None, style_director=True, canvas=(1600,900),
             prompts=planner.PROMPTS, prompt=lambda *args, **kw: json.dumps(kw, default=str), log=Mock())
 
     def test_no_aesthetic_thresholds_or_shape_rejection(self):
@@ -249,10 +249,6 @@ class StyleTests(unittest.TestCase):
         (source/'theme.css').write_text(css.replace('reference: style:03-editorial', 'reference: user:ref.png'))
         imported,_=theme.import_input(source,self.assets)
         self.assertEqual(theme.references(imported), [('user','style/ref.png'),('style','03-editorial')])
-
-    def test_legacy_style_ids_remain_readable_without_rewriting_runs(self):
-        (self.root/'style-picks.tsv').write_text('19-hand-drawn\t依据\n')
-        self.assertEqual(sum(x['type']=='input_image' for x in builder.ref_images(self.root)),1)
 
     def test_theme_submissions_are_bounded_and_keep_source_candidate(self):
         r=response(call('Write',file_path=str(self.assets/'theme.css'),content='bad CSS'))

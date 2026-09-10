@@ -8,9 +8,3 @@ Typography roles, shape/stroke treatment and materials remain related across var
 
 Keep the first frame informative and text readable under scaling and projector conditions.
 Make the selected visual treatment usable in foreground graphics, annotations, images or controls, not just background and fonts. Named styles are optional implementations of that direction, not a page skeleton; Builder owns composition, scientific relationships and interaction choreography.
-Decoration may be purely visual, but must not masquerade as evidence, data, controls or scientific meaning.
-Colour roles distinguish current interaction, stable states and actual labelled categories; don't invent a global concept map.
-Do not force one neutral temperature, font family, lightness band or muted material on every explicit style.
-Give a usable no-image state when using backgrounds. Keep image masks in the same stage background composition.
-Keep decoration behind content and input, respect focus/hidden/reduced-motion, and leave code workbenches independent.
-Express the result only in theme.css and its short INTERFACE comment, with local referenced assets.

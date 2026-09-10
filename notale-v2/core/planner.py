@@ -78,8 +78,6 @@ class Run:
     # 提示词目录可换。理由同下面 --skills 那段注释:三个外部依赖要么都能换,要么都不能换。
     # 这一条是为了能一键切两套模板做对照臂,而不必对 prompts/ 做 git 体操。
     prompts: Path = PROMPTS
-    # 两张选项菜单表接不接回 direction 块。**有期限的开关**,见 skills.direction_block。
-    direction_menus: bool = False
     # 页表每页多一行「视觉焦点」。实验开关,见 VISUAL_FOCUS_SPEC。
     visual_focus: bool = False
     # theme.css 交给 style director(core/director.py)另起一路并行写,deck 这步只写页表。
@@ -152,31 +150,6 @@ def _valid_pages(text: str) -> str:
         if not topic:
             return f"page-{key} 的主题为空"
     return ""
-
-
-def iface_gaps(text: str) -> list[str]:
-    """正文里定义了、但 INTERFACE 没列的类。**只报不拦。**
-
-    2026-08-29 这条是硬闸,2026-08-30 降级 —— 它连着杀了两轮 Sonnet:
-    第一次是我的正则把 `url(https://fonts.googleapis.com/…)` 里的点当成类
-    (报 `.googleapis`,模型永远修不掉,已修);第二次是 Sonnet 写的 CSS 更细碎
-    (`.is-active`/`.is-selected` 这类状态类、`.ctl-row`/`.col-text` 这类内部子块),
-    13 个漏列它三次都补不齐,而同一条闸 GPT-Sol 一次就过。
-    **一条只有某个模型能过的闸,是模型指纹,不是质量判据**(同 selfcheck 密度那条的教训)。
-
-    接口不全的后果是软的:builder 少几个可选的类,自己写页内样式。
-    比起为此判死整轮(3 次调用 + 一次规划全废),报出来让人看见更划算。
-    """
-    if "==== /INTERFACE ==== */" not in text:
-        return []
-    bare = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    sel = re.sub(r"url\([^)]*\)|\"[^\"]*\"|'[^']*'", " ", bare)
-    iface = text.split("==== /INTERFACE ==== */", 1)[0]
-    svg_guard = set(re.findall(r"svg\s+\.([A-Za-z][\w-]*)", sel))
-    defined = {m for m in re.findall(r"\.([A-Za-z][\w-]*)", sel)} - svg_guard
-    # 状态类归它的宿主组件,不单独上表
-    defined = {c for c in defined if not c.startswith(("is-", "has-"))}
-    return sorted(c for c in defined if f".{c}" not in iface and c not in iface)
 
 
 def _split_specs(text: str, nns) -> dict:
@@ -406,7 +379,7 @@ def plan_run(run: Run, chassis: Path, lib: Path,
         pages_path=run.root / PAGES_REL,
         philosophy=skills.philosophy_block("deck", run.prompts),
         page_skills=skills.page_skill_descriptions(workflow_root),
-        direction=skills.direction_block(run.prompts, menus=run.direction_menus),
+        direction=skills.direction_block(run.prompts),
         theme_bans=skills.theme_slop_block(workflow_root),
         font_floor=skills.FONT_FLOOR,
         visual_focus=VISUAL_FOCUS_SPEC if run.visual_focus else ""))
@@ -422,10 +395,6 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     if not run.style_director:
         (run.root / CSS_REL).write_text(css, encoding="utf-8")
     pages = split_pages(pages_doc)
-    gaps = iface_gaps(css)
-    if gaps:
-        print(f"  ⚠ 接口块漏列 {len(gaps)} 个类(只报不拦,builder 会少几个可选项): "
-              f"{' '.join('.' + c for c in gaps[:12])}")
     nns = sorted(pages)
 
     (run.pages / "plan").mkdir(parents=True, exist_ok=True)
@@ -479,10 +448,6 @@ def main() -> None:
     a.add_argument("--workflows", default=str(skills.WORKFLOWS))
     a.add_argument("--prompts", default=str(PROMPTS),
                    help="提示词模板目录,用来跑模板对照臂;默认 notale-v2/prompts")
-    # **有期限的开关**,出了结论就要和 prompts/direction-menus.md 一起删掉。
-    # 见 skills.direction_block 的 docstring。
-    a.add_argument("--direction-menus", action="store_true",
-                   help="把两张选项菜单表接回 direction 块(对照臂用);默认不接")
     a.add_argument("--visual-focus", action="store_true",
                    help="实验开关:页表每页多一行「视觉焦点」(主证据场由 planner 定);默认关")
     a.add_argument("--style-director", action=argparse.BooleanOptionalAction, default=True,
@@ -518,7 +483,7 @@ def main() -> None:
     llm.override(name=n.model, wire_api=n.wire, base_url=n.base_url, api_key_env=n.key_env)
     if n.effort: config()["planner"]["reasoning_effort"] = n.effort
     plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
-                 prompts=Path(n.prompts), direction_menus=n.direction_menus,
+                 prompts=Path(n.prompts),
                  visual_focus=n.visual_focus, style_director=n.style_director,
                  template=n.template, style=n.style),
              Path(n.chassis), Path(n.lib), workflow_root)

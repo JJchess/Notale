@@ -61,6 +61,11 @@ def page(pid="page-01", workflow="build-cover", label="标题页") -> builder.Pa
 
 
 class SampleDefaultsTests(unittest.TestCase):
+    def test_cli_rejects_retired_frame_cap(self):
+        with patch("sys.stderr"), self.assertRaises(SystemExit) as caught:
+            builder.parse_args(["--label", "test", "--frame-cap"])
+        self.assertEqual(caught.exception.code, 2)
+
     def test_cli_defaults_to_mini_plus_aux(self):
         args = builder.parse_args(["--label", "test"])
         self.assertEqual(args.samples, "mini")
@@ -123,7 +128,7 @@ class PlanningContextTests(unittest.TestCase):
             assets = root / 'pages/assets'
             def instructions(workflow):
                 return '\n\n'.join(builder.instruction_blocks(
-                    root, 6, workflow, notes='notes', visual_focus=True, frame_cap=True).values())
+                    root, 6, workflow, notes='notes', visual_focus=True).values())
             (assets / 'theme.css').write_text(
                 '/* ==== INTERFACE ====\n论点 LIGHT_THEME_SENTINEL\n'
                 'token --bg #E8EEF1\n==== /INTERFACE ==== */')
@@ -137,7 +142,7 @@ class PlanningContextTests(unittest.TestCase):
             cover_after = instructions('build-cover')
         self.assertEqual(before, after)
         for token in ['<theme_css>', '<chassis>', '<anti_ai_slop_visual>',
-                      '<speaker_notes>', '<visual_focus>', '<frame_budget>',
+                      '<speaker_notes>', '<visual_focus>',
                       'LIGHT_THEME_SENTINEL', 'MAGENTA_THEME_SENTINEL', 'DECK_CHASSIS_SENTINEL']:
             self.assertNotIn(token, after)
         self.assertIn('<deck_outline>', after)
@@ -652,6 +657,27 @@ class AgentLoopTests(unittest.TestCase):
 
 
 class ProfileTests(unittest.TestCase):
+    def test_repository_defaults_keep_gemini_low_and_code_override(self):
+        import yaml
+        cfg = yaml.safe_load((builder.ROOT / 'config.yaml').read_text())
+        default = llm._default_model_profile(cfg)
+        visual = llm.resolve_builder_profile(cfg)
+        expected = llm.resolve_builder_profile(cfg, 'gemini38-google-low')
+        for field in ('model', 'base_url', 'api_key_env', 'adapter', 'reasoning_effort', 'vision_input'):
+            self.assertEqual(getattr(default, field), getattr(expected, field), field)
+            self.assertEqual(getattr(visual, field), getattr(expected, field), field)
+        self.assertEqual(cfg['planner']['reasoning_effort'], 'low')
+        self.assertEqual(default.reasoning_effort, 'low')
+        self.assertTrue(default.vision_input)
+        self.assertNotIn('adapter', cfg['model'])  # --wire must keep overriding wire_api.
+        with patch.object(llm.ModelRuntime, '__init__',
+                          lambda self, profile, sdk_client=None: setattr(self, 'profile', profile)):
+            runtimes = builder.workflow_runtimes(cfg, visual)
+        self.assertEqual({name: rt.profile.id for name, rt in runtimes.items()}, {
+            'build-cover': 'gemini38-google-low', 'build-page': 'gemini38-google-low',
+            'build-interaction': 'gemini38-google-low', 'build-code': 'deepseek-v4-flash-low'})
+        self.assertEqual(runtimes['build-code'].profile.reasoning_effort, 'low')
+
     def test_builder_profile_keeps_one_effort_setting(self):
         cfg = {
             "builder": {

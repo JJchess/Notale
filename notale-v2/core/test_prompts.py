@@ -41,6 +41,12 @@ AdaBoosting 算法的历史
 
 
 class PromptTests(unittest.TestCase):
+    def test_planner_rejects_retired_direction_menus(self):
+        with patch('sys.argv', ['planner', '--label', 'test', '--query', 'test', '--direction-menus']), \
+                patch('sys.stderr'), self.assertRaises(SystemExit) as caught:
+            planner.main()
+        self.assertEqual(caught.exception.code, 2)
+
     def test_text_cap_is_restored_and_keeps_notes(self):
         self.assertIn('可见文字总量不超过 200 个字符', builder.NOTES_BLOCK)
         self.assertIn('标题、正文、标签、数值都算', builder.NOTES_BLOCK)

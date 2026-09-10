@@ -24,8 +24,6 @@
 
 中英中性字减少扫读负担，数字可用 tabular-nums；标签与正文不因密度无限缩小。
 
-这些是可交付的项目搭配建议，不声称是截图原字体。中英混排把英文资源放在中文资源前，中文负责汉字和中文标点。标题与正文分别定义字体栈；资源提供的实际字重范围见加载时附带的声明。中文标点不沿用大写英文的宽字距。
-
 条件备选：需要编辑式字图对照时，中文标题可用 [noto-serif-sc](../../../vendor/fonts/noto-serif-sc/) 600、英文标题用 [source-serif-4](../../../vendor/fonts/source-serif-4/) 600；需要几何短标题时可用 [zcool-qingke](../../../vendor/fonts/zcool-qingke/) 400 与 [space-grotesk](../../../vendor/fonts/space-grotesk/) 600。原表的无衬线是一种中性方案，不是本方向身份。正文独立选择，不把展示字体铺满长文。
 
 ## 可变表达

@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root {
+      --c-line1: #e02424; /* 慢线 1号线 红色 */
+      --c-line2: #0284c7; /* 快线 2号线 蓝色 */
+      --c-line3: #059669; /* 快线接续 3号线 绿色 */
+      --c-walk: #d97706;  /* 换乘步移 橙色 */
+      --c-wait: #6366f1;  /* 候车 紫色 */
+    }
+
+    #stage {
+      padding: 44px 56px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 20px;
+      color: var(--text);
+      background-color: var(--bg);
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 2px solid var(--text);
+      padding-bottom: 12px;
+    }
+
+    .main-title {
+      font-size: var(--fs-h1, 34px);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin: 0;
+      line-height: 1.15;
+    }
+
+    .subtitle-badge {
+      font-size: var(--fs-sec, 13px);
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .layout-grid {
+      display: grid;
+      grid-template-columns: 560px 1fr;
+      gap: 36px;
+      align-items: stretch;
+    }
+
+    /* 左侧：线路图拓扑与时段控制 */
+    .metro-panel {
+      border: 1.5px solid #d1d5db;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      padding: 20px 24px;
+      position: relative;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .panel-title {
+      font-size: var(--fs-h2, 20px);
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .svg-canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 380px;
+      border: 1px solid #f3f4f6;
+      background: #fafafa;
+    }
+
+    .time-slot-controls {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .slot-btn {
+      padding: 10px 8px;
+      border: 1.5px solid #d1d5db;
+      background: #ffffff;
+      color: var(--text);
+      font-size: var(--fs-sec, 13px);
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s ease;
+    }
+
+    .slot-btn[aria-pressed="true"] {
+      border-color: var(--text);
+      background: var(--text);
+      color: #ffffff;
+    }
+
+    /* 右侧：用时拆解柱状图与量化对比 */
+    .compare-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .summary-card {
+      border: 1.5px solid #d1d5db;
+      background: #ffffff;
+      padding: 18px 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .winner-label {
+      font-size: var(--fs-lead, 17px);
+      font-weight: 700;
+    }
+
+    .winner-val {
+      font-size: 32px;
+      font-family: var(--font-display, sans-serif);
+      font-weight: 800;
+      color: var(--c-line1);
+    }
+
+    .timeline-container {
+      border: 1.5px solid #d1d5db;
+      background: #ffffff;
+      padding: 24px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+    }
+
+    .route-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .route-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .route-name {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tag-dir {
+      padding: 2px 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #fff;
+      border-radius: 2px;
+    }
+
+    .tag-dir.direct { background: var(--c-line1); }
+    .tag-dir.trans { background: var(--c-line2); }
+
+    .route-total {
+      font-size: 26px;
+      font-family: var(--font-display, sans-serif);
+      font-weight: 800;
+    }
+
+    .bar-track {
+      height: 36px;
+      background: #f3f4f6;
+      display: flex;
+      width: 100%;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+    }
+
+    .bar-segment {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden;
+      white-space: nowrap;
+      min-width: 0;
+      padding: 0 4px;
+    }
+
+    .seg-ride1 { background: var(--c-line1); }
+    .seg-ride2 { background: var(--c-line2); }
+    .seg-ride3 { background: var(--c-line3); }
+    .seg-walk  { background: var(--c-walk); }
+    .seg-wait  { background: var(--c-wait); }
+
+    .legend-bar {
+      display: flex;
+      gap: 16px;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 14px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+    }
+
+    /* 线路图 SVG 样式 */
+    .station-circle {
+      stroke-width: 3;
+      cursor: pointer;
+    }
+    .station-name {
+      font-size: 12px;
+      font-weight: 700;
+      fill: #11141a;
+      text-anchor: middle;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body data-page="03" data-total="3">
+  <div id="stage">
+    <header class="top-bar">
+      <h1 class="main-title">方案比对：直达慢线 vs 换乘快线</h1>
+      <span class="subtitle-badge">甲站 → 乙站 示例网络</span>
+    </header>
+
+    <div class="layout-grid">
+      <!-- 左：网络拓扑与发车时段切换 -->
+      <section class="metro-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">网络与发车间隔</h2>
+          <span id="interval-tag" style="font-size:13px; font-weight:600; color:var(--muted);">高峰期：发车 3 分钟</span>
+        </div>
+
+        <div class="svg-canvas-wrap">
+          <svg id="metro-svg" class="cv-fill" viewBox="0 0 510 380">
+            <!-- 慢线直达轨道 (Line 1 红) -->
+            <path d="M 65 300 C 180 340, 330 340, 445 300" fill="none" stroke="var(--c-line1)" stroke-width="8" stroke-linecap="round" />
+            <!-- 快线 Line 2 (蓝) -->
+            <path d="M 65 300 L 255 100" fill="none" stroke="var(--c-line2)" stroke-width="8" stroke-linecap="round" />
+            <!-- 快线 Line 3 (绿) -->
+            <path d="M 255 100 L 445 300" fill="none" stroke="var(--c-line3)" stroke-width="8" stroke-linecap="round" />
+            <!-- 枢纽换乘标识 -->
+            <circle cx="255" cy="100" r="16" fill="#fff" stroke="var(--c-walk)" stroke-width="4" stroke-dasharray="4 2" />
+
+            <!-- 车站节点 -->
+            <g transform="translate(65, 300)">
+              <circle class="station-circle" r="9" fill="#fff" stroke="#111" />
+              <text class="station-name" y="24">甲站 (起点)</text>
+            </g>
+            <g transform="translate(255, 100)">
+              <circle class="station-circle" r="8" fill="#fff" stroke="var(--text)" />
+              <text class="station-name" y="-22">枢纽换乘站</text>
+              <text style="font-size:10px;fill:var(--c-walk);font-weight:700;text-anchor:middle;" y="-9">步移 5分</text>
+            </g>
+            <g transform="translate(445, 300)">
+              <circle class="station-circle" r="9" fill="#fff" stroke="#111" />
+              <text class="station-name" y="24">乙站 (终点)</text>
+            </g>
+
+            <!-- 线路文字标注 -->
+            <text x="255" y="342" style="font-size:12px;font-weight:700;fill:var(--c-line1);text-anchor:middle;">1号线 (慢车直达·全站停·乘车26分)</text>
+            <text x="135" y="185" style="font-size:12px;font-weight:700;fill:var(--c-line2);text-anchor:middle;">2号线 乘车8分</text>
+            <text x="375" y="185" style="font-size:12px;font-weight:700;fill:var(--c-line3);text-anchor:middle;">3号线 乘车8分</text>
+          </svg>
+        </div>
+
+        <div class="time-slot-controls" role="group" aria-label="发车时段切换">
+          <button class="slot-btn" data-slot="rush" aria-pressed="true">早晚高峰 (发车3分)</button>
+          <button class="slot-btn" data-slot="normal" aria-pressed="false">平峰期 (发车7分)</button>
+          <button class="slot-btn" data-slot="night" aria-pressed="false">深夜班次 (发车14分)</button>
+        </div>
+      </section>
+
+      <!-- 右：时间拆解与对比 -->
+      <section class="compare-panel">
+        <div class="summary-card">
+          <span class="winner-label" id="decision-text">高峰期：换乘快线更省时</span>
+          <span class="winner-val" id="time-diff">快 6.5 分</span>
+        </div>
+
+        <div class="timeline-container">
+          <!-- 方案A：直达慢线 -->
+          <div class="route-row">
+            <div class="route-header">
+              <span class="route-name">
+                <span class="tag-dir direct">直达慢线</span>
+                1号线直通 (0次换乘)
+              </span>
+              <span class="route-total" id="total-direct">27.5 分</span>
+            </div>
+            <div class="bar-track" id="bar-direct">
+              <!-- 乘车 26分，候车 0.5*间隔 -->
+              <div class="bar-segment seg-ride1" id="seg-direct-ride" style="width: 75%;">乘车 26分</div>
+              <div class="bar-segment seg-wait" id="seg-direct-wait" style="width: 10%;">候 1.5分</div>
+            </div>
+          </div>
+
+          <!-- 方案B：换乘快线 -->
+          <div class="route-row">
+            <div class="route-header">
+              <span class="route-name">
+                <span class="tag-dir trans">换乘快线</span>
+                2号线 → 3号线 (1次换乘)
+              </span>
+              <span class="route-total" id="total-trans">21.0 分</span>
+            </div>
+            <div class="bar-track" id="bar-trans">
+              <!-- 乘车8+8=16分，步行换乘5分，候车两次各 0.5*间隔 -->
+              <div class="bar-segment seg-ride2" id="seg-trans-ride1" style="width: 25%;">2号线 8分</div>
+              <div class="bar-segment seg-walk" id="seg-trans-walk" style="width: 15%;">步移 5分</div>
+              <div class="bar-segment seg-ride3" id="seg-trans-ride2" style="width: 25%;">3号线 8分</div>
+              <div class="bar-segment seg-wait" id="seg-trans-wait" style="width: 10%;">候车共 3分</div>
+            </div>
+          </div>
+
+          <!-- 图例与结论 -->
+          <div class="legend-bar">
+            <div class="legend-item"><span class="legend-dot" style="background:var(--c-line1);"></span>1号线乘车</div>
+            <div class="legend-item"><span class="legend-dot" style="background:var(--c-line2);"></span>2/3号线乘车</div>
+            <div class="legend-item"><span class="legend-dot" style="background:var(--c-walk);"></span>通道换乘步移</div>
+            <div class="legend-item"><span class="legend-dot" style="background:var(--c-wait);"></span>平均候车时间</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    本页对比两条方案：慢线虽然单车运行 26 分钟，但不用换乘；快线两段乘车仅 16 分钟，却包含 5 分钟换乘步行与两次候车。
+    读者切换高峰、平峰、深夜三种发车间隔，会直观发现：高峰期快线优势明显；平峰期两者差距缩至极小；深夜班次稀疏时，换乘快线的二次候车成本直接超过了速度优势，直达慢线反超胜出。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      // 模型参数 (分钟)
+      const MODEL = {
+        direct: {
+          ride: 26,
+          transfers: 0
+        },
+        trans: {
+          ride1: 8,
+          ride2: 8,
+          walk: 5,
+          transfers: 1
+        },
+        // 各时段发车间隔 (分)
+        slots: {
+          rush: { headway: 3, label: "高峰期：发车 3 分钟" },
+          normal: { headway: 7, label: "平峰期：发车 7 分钟" },
+          night: { headway: 14, label: "深夜班次：发车 14 分钟" }
+        }
+      };
+
+      let currentSlot = "rush";
+
+      // DOM 缓存
+      const ui = {
+        intervalTag: document.getElementById("interval-tag"),
+        decisionText: document.getElementById("decision-text"),
+        timeDiff: document.getElementById("time-diff"),
+        totalDirect: document.getElementById("total-direct"),
+        totalTrans: document.getElementById("total-trans"),
+        segDirectRide: document.getElementById("seg-direct-ride"),
+        segDirectWait: document.getElementById("seg-direct-wait"),
+        segTransRide1: document.getElementById("seg-trans-ride1"),
+        segTransWalk: document.getElementById("seg-trans-walk"),
+        segTransRide2: document.getElementById("seg-trans-ride2"),
+        segTransWait: document.getElementById("seg-trans-wait"),
+        buttons: document.querySelectorAll(".slot-btn")
+      };
+
+      function calculate(slotKey) {
+        const h = MODEL.slots[slotKey].headway;
+        // 平均候车时间 = 0.5 * 发车间隔
+        const waitDirect = 0.5 * h;
+        const totalDirect = MODEL.direct.ride + waitDirect;
+
+        // 快线需要候车 2 次 (起点 + 换乘站各一次)
+        const waitTrans = 2 * (0.5 * h);
+        const rideTrans = MODEL.trans.ride1 + MODEL.trans.ride2;
+        const totalTrans = rideTrans + MODEL.trans.walk + waitTrans;
+
+        return {
+          headway: h,
+          waitDirect,
+          totalDirect,
+          rideTrans,
+          waitTrans,
+          totalTrans,
+          diff: totalDirect - totalTrans // > 0 说明快线更快，< 0 说明直达慢线反超
+        };
+      }
+
+      function updateView() {
+        const res = calculate(currentSlot);
+        const maxTime = Math.max(res.totalDirect, res.totalTrans, 35); // 基准用于缩放条形比例
+
+        ui.intervalTag.textContent = MODEL.slots[currentSlot].label;
+        ui.totalDirect.textContent = `${res.totalDirect.toFixed(1)} 分`;
+        ui.totalTrans.textContent = `${res.totalTrans.toFixed(1)} 分`;
+
+        // 计算柱形宽度百分比
+        const pDirectRide = (MODEL.direct.ride / maxTime) * 100;
+        const pDirectWait = (res.waitDirect / maxTime) * 100;
+
+        ui.segDirectRide.style.width = `${pDirectRide}%`;
+        ui.segDirectWait.style.width = `${pDirectWait}%`;
+        ui.segDirectWait.textContent = pDirectWait < 6 ? `${res.waitDirect.toFixed(1)}分` : `候 ${res.waitDirect.toFixed(1)}分`;
+
+        const pRide1 = (MODEL.trans.ride1 / maxTime) * 100;
+        const pWalk = (MODEL.trans.walk / maxTime) * 100;
+        const pRide2 = (MODEL.trans.ride2 / maxTime) * 100;
+        const pWaitTrans = (res.waitTrans / maxTime) * 100;
+
+        ui.segTransRide1.style.width = `${pRide1}%`;
+        ui.segTransWalk.style.width = `${pWalk}%`;
+        ui.segTransRide2.style.width = `${pRide2}%`;
+        ui.segTransWait.style.width = `${pWaitTrans}%`;
+        ui.segTransWait.textContent = `候车共 ${res.waitTrans.toFixed(1)}分`;
+
+        // 决策与比较
+        if (res.diff > 0.5) {
+          ui.decisionText.textContent = "换乘快线用时更少";
+          ui.timeDiff.textContent = `快 ${res.diff.toFixed(1)} 分`;
+          ui.timeDiff.style.color = "var(--c-line2)";
+        } else if (res.diff < -0.5) {
+          ui.decisionText.textContent = "直达慢线反超更省时";
+          ui.timeDiff.textContent = `快 ${Math.abs(res.diff).toFixed(1)} 分`;
+          ui.timeDiff.style.color = "var(--c-line1)";
+        } else {
+          ui.decisionText.textContent = "两方案用时几乎相同";
+          ui.timeDiff.textContent = `仅差 ${Math.abs(res.diff).toFixed(1)} 分`;
+          ui.timeDiff.style.color = "var(--muted)";
+        }
+
+        ui.buttons.forEach(btn => {
+          btn.setAttribute("aria-pressed", btn.dataset.slot === currentSlot ? "true" : "false");
+        });
+      }
+
+      ui.buttons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          currentSlot = btn.dataset.slot;
+          updateView();
+        });
+      });
+
+      Deck.init({ index: 3, total: 3 });
+      updateView();
+    })();
+  </script>
+</body>
+</html>

@@ -211,24 +211,13 @@ def philosophy_block(scope: str, root: Path = PROMPTS) -> str:
 
 
 DIRECTION_FILE = "direction.md"
-DIRECTION_MENUS_FILE = "direction-menus.md"
-_MENUS_START = "## Direction families"
 
 
-def direction_block(root: Path = PROMPTS, menus: bool = False) -> str:
-    """Load the Planner's visual-direction source verbatim."""
-    parts = []
-    for name in [DIRECTION_FILE] + ([DIRECTION_MENUS_FILE] if menus else []):
-        path = root / name
-        if not path.is_file():
-            raise FileNotFoundError(f"direction_block requires {path}")
-        text = path.read_text(encoding="utf-8")
-        if name == DIRECTION_MENUS_FILE:
-            if _MENUS_START not in text:
-                raise ValueError(f"{path} is missing {_MENUS_START!r}")
-            text = _MENUS_START + text.split(_MENUS_START, 1)[1]
-        parts.append(f'<direction src="{name}">\n{text.strip()}\n</direction>')
-    return "\n\n".join(parts)
+def direction_block(root: Path = PROMPTS) -> str:
+    """Shared direction principles for Director and the explicit legacy Planner route."""
+    path = root / DIRECTION_FILE
+    text = path.read_text(encoding="utf-8").strip()
+    return f'<direction src="{DIRECTION_FILE}">\n{text}\n</direction>'
 
 
 ANTI_SLOP_FILES = (
@@ -256,5 +245,5 @@ def anti_slop_block(root: Path = WORKFLOWS, *, include_visual: bool = True) -> s
 
 
 def theme_slop_block(root: Path = WORKFLOWS) -> str:
-    """Theme guidance belongs only to the Planner's shared-theme decision."""
+    """Theme guidance for Director, or Planner when Director is explicitly disabled."""
     return _source_block(root, (THEME_SLOP_FILE,))

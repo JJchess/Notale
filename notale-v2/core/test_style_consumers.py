@@ -62,7 +62,7 @@ class GuidanceTests(unittest.TestCase):
                 self.assertIn('Director 定主题方向', inputs)
                 self.assertIn('风格化容器可以承载整幅图表', inputs)
                 self.assertIn('不以有框、白底或面积大单独判错', inputs)
-                self.assertIn('必要时可按需读', inputs)
+                self.assertIn('首版之后遇到具体样式问题才定点读', inputs)
                 self.assertIn('字号使用主题 token 或具名排版类', inputs)
                 self.assertIn('path.fixed 为线', inputs)
                 self.assertIn('同类角色的视觉依据仍沿用主题', inputs)
@@ -79,8 +79,10 @@ class GuidanceTests(unittest.TestCase):
                 guidance = tools.check_use(workflow)
                 self.assertNotIn('Remove fills, borders and shadows that only group content', guidance)
                 if workflow != 'build-cover':
-                    self.assertIn('Review container treatments against the initial visual guidance', guidance)
-                    self.assertIn('do not flatten every panel into a borderless layout', guidance)
+                    self.assertNotIn('container treatments', guidance)
+                    self.assertNotIn('main evidence field', guidance)
+                    self.assertIn('instrumentation, not approval', guidance)
+                    self.assertIn('recomput', guidance.lower())
             reference = tools.run('Read', {'file_path':'references/composition.md'},
                                   root / 'pages', ROOT / 'workflows/build-cover', 'page-01')
             text = reference.text if isinstance(reference, tools.Out) else reference
@@ -91,7 +93,7 @@ class GuidanceTests(unittest.TestCase):
                      '只改配色则保留未要求改动的字体', '外部视口', '最小 HTML/SVG 例子',
                      '粗 stroke 不得无差别命中文字'):
             self.assertIn(rule, prompt)
-        for rule in ('贯穿整套的视觉语言', 'background-size/position/repeat',
+        for rule in ('background-size/position/repeat',
                      '必要组合关系', '少量 CSS 变量公开', '不要求固定变体名'):
             self.assertIn(rule, prompt)
         for rule in ('同套同角色保持同一默认排版', '不强制所有标题等大',
@@ -99,6 +101,15 @@ class GuidanceTests(unittest.TestCase):
                      'hover/focus/aria-pressed', '不要预设训练集/验证集',
                      'currentColor 或公开的局部 CSS 变量', '必要排版角色的少量值'):
             self.assertIn(rule, prompt)
+        direction = builder.skills.direction_block()
+        self.assertIn('one deck-wide language', direction)
+        self.assertIn('Builder owns composition', direction)
+        chassis = (ROOT / 'vendor/chassis/CHASSIS.md').read_text()
+        tech = (ROOT / 'prompts/tech.md').read_text()
+        self.assertIn('document.fonts.load', chassis)
+        self.assertNotIn('document.fonts.load', tech)
+        self.assertNotIn('Director 定主题方向', chassis)
+        self.assertIn('Director 定主题方向', tech)
 
 
 class ConsumerBrowserTests(unittest.TestCase):

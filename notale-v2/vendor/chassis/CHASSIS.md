@@ -8,22 +8,19 @@
 
 引入方式：`<link rel="stylesheet" href="assets/base.css">`，放在你自己的样式之前。
 
-主题实现由 `assets/theme.css` 加载；Builder 默认预置 INTERFACE，必要时可按需读实现，不得修改共享主题。
-Director 定主题方向，Builder 结合内容设计具体页面，具名样式不是必用组件。根 `html[data-variant]`
+主题实现由 `assets/theme.css` 加载；根 `html[data-variant]`
 同时选择背景与前景，应在初始化图表前设置；不设置就是默认。Canvas 通过 `Deck.token()`
 取根值，局部反色区域读取对应元素值。页面不要用 stage 的 background 简写清空主题合成。
 `#stage::after` 保留为不拦截指针的品牌层（z-index:100），内容在其下并留接口要求的净空。
 无 logo 时此层不生成可见内容。代码工作台不加载共享 theme.css。
 
 主题须提供 `--bg`、`--text`、`--font-sans`，底盘不给默认值。
-主题 token 或排版类均可用于字号；不要求每个最终字号等于某个根 token。
-同类角色沿用主题的默认排版、笔触与材质依据；封面强调按接口使用，页面几何与内容表达仍由 Builder 设计。
-SVG 与 ECharts/Canvas 承接公开的共享样式值及用法；具体数据系列归 Builder，不新增图表 adapter 或逐线像素补偿流程。
 舞台内按固定逻辑画布设计尺寸，不用外部视口单位或宽度断点再次缩放字号/排版；整体缩放只由底盘负责。
 
-主题主要字体由本地 `@font-face` 随包交付；标题/正文/数字按主题接口使用。
-Canvas 使用字体前先 `await document.fonts.load(font, text)`，再测量和绘制；
+主题主要字体由本地 `@font-face` 随包交付。
+Canvas 使用字体前先 `await document.fonts.load(font, text)`，再等待 `document.fonts.ready`，然后测量和绘制；
 从对应元素的 computed style 获取已解析的字号与混排字体栈，不把原始 clamp()/calc() token 直接拼成 Canvas font。
+字体加载后重绘，不将首次 fallback 的字宽缓存为最终结果；页面不重复下载字体。
 截图等待 `document.fonts.ready`，但该 Promise 本身不证明没有缺字或 fallback。
 不要以服务器安装字体、CSS family 字符串或字体请求成功冒充跨机器渲染一致。
 

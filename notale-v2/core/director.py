@@ -120,7 +120,7 @@ def theme(run, picks, effort, workflow_root, history=None, original='', shots=()
                                     else style_catalog.inputs(run.style))
     body = run.prompt('style-theme', query=run.query, audience=run.audience, scenario=run.scenario or '（没写）',
         canvas_w=run.canvas[0], canvas_h=run.canvas[1],
-        direction=skills.direction_block(run.prompts, menus=run.direction_menus),
+        direction=skills.direction_block(run.prompts),
         theme_bans=skills.theme_slop_block(workflow_root) if not history else '',
         font_floor=skills.FONT_FLOOR, out_path=out)
     body += '\n\n明确风格要求：' + (getattr(run, 'style', None) or '按内容选择')

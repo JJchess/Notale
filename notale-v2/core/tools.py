@@ -46,13 +46,10 @@ _CHECK_USE_ITEMS = {
         "result; decoration must not imitate the algorithm.",
     ),
     "build-page": (
-        "Review container treatments against the initial visual guidance. Preserve the chosen style and actual controls; do not flatten every panel into a borderless layout.",
-        "Check that there is one main evidence field, not several equal parts.",
         "Recompute at least one derived value from the page's own data and formulas.",
         "The same data must agree across prose, chart, and annotations.",
     ),
     "build-interaction": (
-        "Review container treatments against the initial visual guidance. Preserve the chosen style and actual controls; do not flatten every panel into a borderless layout.",
         "Walk one legal progression path with the after states.",
         "Also cover the applicable illegal or boundary case, the completion state, and Reset.",
         "A legal action must change the real model and the visible evidence; an action "

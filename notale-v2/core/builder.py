@@ -76,13 +76,6 @@ NOTES_ONLY_BLOCK = """<speaker_notes>
 </speaker_notes>"""
 NOTES_BLOCKS = {"off": "", "cap": TEXT_CAP_BLOCK, "notes": NOTES_BLOCK, "only": NOTES_ONLY_BLOCK}
 
-# 实验开关 --frame-cap:对准「每个区块画一圈描边」这个动作。2026-09-06 同题重跑后 judge 判 AI 的前三条线索
-# 是边框/卡片/面板(17/15/14 次),而删词汇只把版块从 11 压到 8、没动描边。硬数 + Check 报数,不再靠词。
-FRAME_CAP_BLOCK = """<frame_budget>
-带描边或底色的区块最多 1 个,而且只能是主体本身;其余内容靠留白、对齐和共享基线分组,不加框、不铺底色。
-对照(A 与 B)放在同一条基线或同一坐标系上并排表达,不用并排的框。按截图核对区块数量。
-</frame_budget>"""
-
 STEPS_BLOCK = """<steps>
 课堂讲授可使用底盘分步，API 见 chassis。
 每一步必须新增证据 —— 一条线、一个状态、一次变化 —— 不是再冒出一段文字;
@@ -446,7 +439,7 @@ def instruction_blocks(root: Path, n_pages: int, workflow: str, *,
                        workflow_root: Path = skills.WORKFLOWS,
                        prompts: Path | None = None, samples: str = "mini",
                        include_aux: bool | None = None, notes: str = "off",
-                       visual_focus: bool = False, frame_cap: bool = False) -> dict[str, str]:
+                       visual_focus: bool = False) -> dict[str, str]:
     """One assembly path for production, offline sizing and frozen comparisons."""
     blocks = {"identity": IDENTITY, "philosophy": skills.philosophy_block("page"),
               "anti_slop": skills.anti_slop_block(
@@ -456,8 +449,6 @@ def instruction_blocks(root: Path, n_pages: int, workflow: str, *,
             blocks["visual_focus"] = VISUAL_FOCUS_BLOCK
         if NOTES_BLOCKS[notes]:
             blocks["notes"] = NOTES_BLOCKS[notes]
-        if frame_cap:
-            blocks["frame_cap"] = FRAME_CAP_BLOCK
         blocks["steps"] = COVER_STEPS_BLOCK if workflow == "build-cover" else STEPS_BLOCK
     blocks["shared"] = shared_preload(root, n_pages, prompts, workflow)
     blocks["workflow"] = skills.routed_workflow(
@@ -535,26 +526,10 @@ def audit_delivery(
 
 
 REF_SHOTS_NOTE = """<references>
-随附图片是最终主题采用的参考，不是要照抄的页面。按 INTERFACE 说明借鉴形状、笔触、材质和字图关系；仅供配色的图片不授权照搬其结构。
+随附图片是最终主题采用的参考，不是成品页面；按 INTERFACE 说明借鉴，仅供配色的图不授权照搬结构。
 实际颜色、字体和变体以 theme_css 与明确修改要求为准，原参考不冒充修改后的效果。
-你决定本页主体、布局和交互；把适用的视觉处理落实到主体、图解、批注或操作，而不只继承背景色和字体。
-不复制题材、营销文案、导航和品牌；只有封面样张时正文是推导。样例的默认皮肤不覆盖最终主题。
+只有封面样张时，正文外观需按主题方向推导。
 </references>"""
-
-
-def ref_images(root: Path, n: int = 2) -> list[dict]:
-    """Legacy runs: resolve old gallery IDs or new style IDs without rewriting them."""
-    picks = root / "style-picks.tsv"
-    if not picks.is_file():
-        return []
-    from . import director, gallery, style_catalog
-    ids = [l.split("\t")[0].strip() for l in picks.read_text(encoding="utf-8").splitlines() if l.strip()]
-    styles = {r[0] for r in style_catalog.rows()}
-    rows = []
-    for key in ids[:n]:
-        rows.extend([{'id': key, 'shot': str(style_catalog.read_path(key))}]
-                    if key in styles else gallery.facts([key]))
-    return director._images(rows) if rows else []
 
 
 def user_ref_images(root: Path) -> list[dict]:
@@ -935,11 +910,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="实验开关：页表带「视觉焦点」行时，system 追加使用规则；默认关闭（基线不变）",
     )
     parser.add_argument(
-        "--frame-cap",
-        action="store_true",
-        help="实验开关：带描边/底色的区块 ≤1（只能是主体）；默认关",
-    )
-    parser.add_argument(
         "--notes",
         choices=tuple(NOTES_BLOCKS),
         default="off",
@@ -1011,7 +981,6 @@ def main() -> None:
         "sampleShots": args.sample_shots,
         "visualFocus": args.visual_focus,
         "notesMode": args.notes,
-        "frameCap": args.frame_cap,
         "refShots": any(x['type'] == 'input_image' for x in refs),
         "themeReferences": [x['text'] for x in refs if x['type'] == 'input_text'],
         "pages": [page.pid for page in pages],
@@ -1028,7 +997,7 @@ def main() -> None:
             root, len(briefs), name, workflow_root=workflow_root,
             include_aux=args.aux_samples,
             samples=args.samples,
-            notes=args.notes, visual_focus=args.visual_focus, frame_cap=args.frame_cap,
+            notes=args.notes, visual_focus=args.visual_focus,
         ).values())
         for name in skills.PAGE_WORKFLOWS
     }
@@ -1058,7 +1027,7 @@ def main() -> None:
         + f"samples={args.samples}，"
         + f"sample-shots={'on' if args.sample_shots else 'off'}，"
         + f"visual-focus={'on' if args.visual_focus else 'off'}，"
-        + f"notes={args.notes}，frame-cap={'on' if args.frame_cap else 'off'}，"
+        + f"notes={args.notes}，"
         + f"aux-samples={'on' if args.aux_samples else 'off'}\n"
         f"  完整 system {lengths[0]:,}–{lengths[-1]:,} 字符，"
         f"按 workflow 分 {len(groups)} 组共享\n"
