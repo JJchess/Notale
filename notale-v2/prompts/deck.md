@@ -1,13 +1,14 @@
 一次规划并完整交付《{query}》这套 {minutes} 分钟的内容。
 - 读者：{audience}
 - 场合：{scenario}
-
+{materials}
 ## 交付
 
 <!--css:start-->用 `Write(file_path="{css_path}", content=…)` 提交完整纯 CSS，不加代码围栏。
 <!--css:end-->先拟定页表草稿，按主题需要用 ImageSearch / ImageGen 取图；首轮搜图需求合入同一次 ImageSearch 的 query 数组，草稿不另行提交。
 查看图片，将选中的素材分配到它实际支持的页面；有缺口可补搜，不合适可不用。
 最后用 `FinalizePlan` 提交完整页表 `pages_md` 与素材映射 `media_by_page`；映射使用工具已返回的图片路径列表，无图页省略。不要在页表里写图池或图片规格。
+有「材料」时同时提交 `sources_by_page`：每页一段 150–400 字的材料摘录（关键原句、数字、术语、人名、图表的内容描述，保留材料语言），建页 agent 只依据这段写页面。
 
 页表保持原格式：
 

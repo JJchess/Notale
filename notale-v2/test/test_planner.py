@@ -23,7 +23,7 @@ prompts_PAGES_OK = '本套无需图池\n\n# page-01 [标题页]\nAdaBoosting 算
 class PromptTests(unittest.TestCase):
 
     def test_templates_fill_without_placeholders(self):
-        cases = {'brief': dict(query='Q', pid='page-01', total=4), 'tech': dict(n_pages=4, canvas_w=1600, canvas_h=900, libs='local libs', font_floor=skills.FONT_FLOOR), 'deck': dict(query='Q', minutes=90, audience='students', scenario='classroom', canvas_w=1600, canvas_h=900, direction='direction', philosophy=skills.philosophy_block('deck'), page_skills=skills.page_skill_descriptions(), theme_bans='theme bans', font_floor=skills.FONT_FLOOR, css_path='/run/pages/assets/theme.css', pages_path='/run/pages/plan/pages.md', visual_focus='')}
+        cases = {'brief': dict(query='Q', pid='page-01', total=4), 'tech': dict(n_pages=4, canvas_w=1600, canvas_h=900, libs='local libs', font_floor=skills.FONT_FLOOR), 'deck': dict(query='Q', minutes=90, audience='students', scenario='classroom', canvas_w=1600, canvas_h=900, direction='direction', philosophy=skills.philosophy_block('deck'), page_skills=skills.page_skill_descriptions(), theme_bans='theme bans', font_floor=skills.FONT_FLOOR, css_path='/run/pages/assets/theme.css', pages_path='/run/pages/plan/pages.md', visual_focus='', materials='')}
         for name, args in cases.items():
             with self.subTest(name=name):
                 source = (ROOT / f'prompts/{name}.md').read_text(encoding='utf-8')

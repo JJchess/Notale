@@ -76,6 +76,10 @@ class Run:
     style_director: bool = True
     template: Path | None = None
     style: str | None = None
+    # 参考材料(教材章节、讲义、题目要求)。.pdf 走 pdftotext,.md/.txt 原样;
+    # 全文内联进 deck prompt,并落盘到 pages/materials 给 Builder 首轮 Read。
+    # 不给时行为与以前完全一致。benchmark(PresentBench 等)靠这个通道喂材料。
+    materials: tuple[Path, ...] = ()
     root: Path = field(init=False)
     log: Writer = field(init=False)
 
@@ -289,6 +293,45 @@ def seed(run: Run, chassis: Path, lib: Path) -> None:
     print(f"  seed         底盘已就位,库 {len(list(lib.glob('*.js')))} 个（真拷贝,非软链接）")
 
 
+def ingest_materials(run: Run) -> list[Path]:
+    """把 run.materials 转成 pages/materials/*.md;返回落盘路径。
+
+    # ponytail: 纯文本抽取(pdftotext -layout),图表丢掉。要图进页面时换文档 VLM
+    # (PaddleOCR-VL / MinerU)出 Markdown + images/,再把图登进素材记录。
+    """
+    out = []
+    if not run.materials:
+        return out
+    # 落在 pages/ 之内:Builder 的 Read 只放行本页 run 目录(= pages/)里的文件。
+    dest = run.pages / "materials"
+    dest.mkdir(parents=True, exist_ok=True)
+    files = []
+    for m in run.materials:
+        files += sorted(x for x in m.iterdir() if x.is_file()) if m.is_dir() else [m]
+    for f in files:
+        if f.suffix.lower() == ".pdf":
+            import subprocess
+            text = subprocess.run(["pdftotext", "-layout", str(f), "-"],
+                                  capture_output=True, text=True, check=True).stdout
+        elif f.suffix.lower() in (".md", ".txt"):
+            text = f.read_text(encoding="utf-8", errors="replace")
+        else:
+            continue
+        target = dest / (f.stem + ".md")
+        target.write_text(text, encoding="utf-8")
+        out.append(target)
+    print(f"  materials    {len(out)} 份 → {dest}  ({sum(len(x.read_text()) for x in out):,} 字符)")
+    return out
+
+
+def materials_block(paths: list[Path]) -> str:
+    if not paths:
+        return ""
+    parts = [f"### {p.name}\n\n{p.read_text(encoding='utf-8')}" for p in paths]
+    return ("\n## 材料\n\n下列材料是这套内容的依据与范围边界:页表、事实、术语、例子都从材料出发,"
+            "材料里的要求(页数、章节顺序、必须覆盖的点)优先于默认习惯。\n\n" + "\n\n".join(parts) + "\n")
+
+
 def briefs(run: Run, nns: list, mapping: dict | None = None) -> list[Brief]:
     """Keep the existing brief schema; append only this page's selected paths."""
     records = media.sources(run.pages)
@@ -296,6 +339,15 @@ def briefs(run: Run, nns: list, mapping: dict | None = None) -> list[Brief]:
     for nn in nns:
         pid = f"page-{nn}"
         prompt = run.prompt("brief", query=run.query, pid=pid, total=len(nns))
+        # 材料摘录由 Planner 在 FinalizePlan 时按页给出(pages/plan/sources.json),直接内联;
+        # 不让 Builder 去 Read 材料全文 —— 实测一页读全 17 万字符要 30–60 万 token,
+        # 且 Read 一次 2000 行读不完,第二轮补读会撞首轮规则(initial_read_order)。
+        src_file = run.pages / "plan" / "sources.json"
+        if src_file.is_file():
+            excerpt = json.loads(src_file.read_text(encoding="utf-8")).get(pid, "").strip()
+            if excerpt:
+                prompt += ("\n\n<sources>本页依据的材料摘录,事实、数字、术语、人名以此为准,不编造材料之外的内容:\n"
+                           + excerpt + "\n</sources>")
         paths = (mapping or {}).get(pid, [])
         if paths:
             prompt += "\n\n本页可用素材（按内容需要选用）：\n" + "\n".join(
@@ -317,6 +369,7 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     print(f"\n▸ planner · {run.label}\n  {run.query}  /  {run.minutes} 分钟\n")
     t0 = time.time()
     seed(run, chassis, lib)
+    material_paths = ingest_materials(run)
     w, h = run.canvas
 
     # style director 与页表并行。两边互不看对方的输出:director 不知道有几页、
@@ -349,7 +402,8 @@ def plan_run(run: Run, chassis: Path, lib: Path,
         direction=skills.direction_block(run.prompts),
         theme_bans=skills.theme_slop_block(workflow_root),
         font_floor=skills.FONT_FLOOR,
-        visual_focus=VISUAL_FOCUS_SPEC if run.visual_focus else ""))
+        visual_focus=VISUAL_FOCUS_SPEC if run.visual_focus else "",
+        materials=materials_block(material_paths)))
 
     if director_thread:
         director_thread.join()
@@ -421,6 +475,8 @@ def main() -> None:
                    help="theme.css 由 core.director 并行产出；默认开启，--no-style-director 关闭")
     a.add_argument("--template", type=Path, help="参考图片或 theme.css / shots 目录")
     a.add_argument("--style", help="风格要求；修改成品主题必须显式指定")
+    a.add_argument("--materials", type=Path, action="append", default=[],
+                   help="参考材料文件或目录(.pdf/.md/.txt),可重复;全文进 Planner,落盘给 Builder")
     n = a.parse_args()
     from .theme import check_options
     try:
@@ -452,7 +508,7 @@ def main() -> None:
     plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
                  prompts=Path(n.prompts),
                  visual_focus=n.visual_focus, style_director=n.style_director,
-                 template=n.template, style=n.style),
+                 template=n.template, style=n.style, materials=tuple(n.materials)),
              Path(n.chassis), Path(n.lib), workflow_root)
 
 
