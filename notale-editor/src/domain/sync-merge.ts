@@ -22,6 +22,10 @@ function merge(base:any,next:any,head:any,path:string[]=[]):any {
     const out={...head};for(const key of new Set([...Object.keys(base),...Object.keys(next)])){const value=merge(base[key],next[key],head[key],[...path,key]);if(value===undefined)delete out[key];else out[key]=value;}
     const geometry=path.at(-2)==='transforms'?['matrix','x','y','rotate','scaleX','scaleY']:path.at(-1)==='style'?['transform','translate','rotate','scale']:[];
     if(geometry.some(k=>!equal(base[k],next[k])))for(const k of geometry){if(next[k]===undefined)delete out[k];else out[k]=structuredClone(next[k]);}
+    // A removed transform must not survive as an empty record: its object may
+    // have been deleted by an inverse copy/delete operation. Keep real concurrent
+    // properties (e.g. width/height), but not a dangling identity with no values.
+    if(path.at(-2)==='transforms'&&!Object.keys(out).length)return undefined;
     return out;
   }
   if(Array.isArray(base)&&Array.isArray(next)&&Array.isArray(head)){

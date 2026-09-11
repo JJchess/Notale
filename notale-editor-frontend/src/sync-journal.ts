@@ -1,12 +1,12 @@
 import { commitSchema, identifier } from '@notale/editor/browser';
 import { isPending, type Pending } from './pending-journal.js';
-export type SavedOperation={id:string;documentId:string;task?:Pending;draftTask?:Pending;staged?:boolean;edit?:any;createdAt:number;state:'pending'|'recovery';error?:string};
+export type SavedOperation={id:string;documentId:string;task?:Pending;draftTask?:Pending;staged?:boolean;edit?:any;createdAt:number;state:'pending'|'recovery';error?:string;sent?:boolean};
 const request=<T>(req:IDBRequest<T>)=>new Promise<T>((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
 /** One durable record per intent; a closed or duplicated tab cannot orphan a queue. */
 export class SyncJournal {
   private db:Promise<IDBDatabase>;
   namespace='';
-  constructor(){this.db=(async()=>{const response=await fetch('/api/sync-context');if(!response.ok)throw Error('无法确认草稿所属身份');const {scope,actor}=await response.json();this.namespace=JSON.stringify([scope,actor]);return new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open('notale-sync-v1:'+this.namespace,1);r.onupgradeneeded=()=>{const db=r.result;db.createObjectStore('operations',{keyPath:'id'}).createIndex('document','documentId');db.createObjectStore('meta');};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});})();}
+  constructor(){this.db=(async()=>{const response=await fetch('/api/sync-context');if(!response.ok)throw Error('无法确认草稿所属身份');const {scope,actor}=await response.json();this.namespace=JSON.stringify([scope,actor]);return new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open('notale-sync-v2:'+this.namespace,1);r.onupgradeneeded=()=>{const db=r.result;db.createObjectStore('operations',{keyPath:'id'}).createIndex('document','documentId');db.createObjectStore('meta');};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});})();}
 
   async stage(entry:SavedOperation){const db=await this.db;return new Promise<boolean>((resolve,reject)=>{let saved=false;const tx=db.transaction('operations','readwrite'),store=tx.objectStore('operations'),r=store.get(entry.id);r.onsuccess=()=>{if(!r.result?.task){store.put({...entry,createdAt:r.result?.createdAt??entry.createdAt});saved=true;}};tx.oncomplete=()=>resolve(saved);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
   async finalize(id:string){const db=await this.db;await new Promise<void>((resolve,reject)=>{const tx=db.transaction('operations','readwrite'),store=tx.objectStore('operations'),r=store.get(id);r.onsuccess=()=>{const entry=r.result;if(entry?.staged&&entry.draftTask){entry.task=entry.draftTask;delete entry.draftTask;entry.staged=false;store.put(entry);}};tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
@@ -20,9 +20,24 @@ export class SyncJournal {
   async get(id:string){const db=await this.db;return request(db.transaction('operations').objectStore('operations').get(id)) as Promise<SavedOperation|undefined>;}
   async put(operation:SavedOperation){const db=await this.db;await new Promise<void>((resolve,reject)=>{const tx=db.transaction('operations','readwrite');tx.objectStore('operations').put(structuredClone(operation));tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error??Error('本机草稿写入中断'));});}
   async claim(id:string,task:Pending){const db=await this.db;return new Promise<boolean>((resolve,reject)=>{let claimed=false;const tx=db.transaction('operations','readwrite'),store=tx.objectStore('operations'),r=store.get(id);r.onsuccess=()=>{const entry=r.result;if(entry?.state==='pending'){entry.task??=structuredClone(task);store.put(entry);claimed=true;}};tx.oncomplete=()=>resolve(claimed);tx.onerror=()=>reject(tx.error);});}
-  async cancel(id:string){const db=await this.db;return new Promise<boolean>((resolve,reject)=>{let cancelled=false;const tx=db.transaction('operations','readwrite'),store=tx.objectStore('operations'),r=store.get(id);r.onsuccess=()=>{if(r.result&&!r.result.task){store.delete(id);cancelled=true;}};tx.oncomplete=()=>resolve(cancelled);tx.onerror=()=>reject(tx.error);});}
+  async cancel(id:string){const db=await this.db;return new Promise<boolean>((resolve,reject)=>{let cancelled=false;const tx=db.transaction('operations','readwrite'),store=tx.objectStore('operations'),r=store.get(id);r.onsuccess=()=>{if(r.result&&!r.result.sent&&(!r.result.task||r.result.task.kernel?.protocol===2)){store.delete(id);cancelled=true;}};tx.oncomplete=()=>resolve(cancelled);tx.onerror=()=>reject(tx.error);});}
+  async markSending(id:string){const db=await this.db;return new Promise<boolean>((resolve,reject)=>{let found=false;const tx=db.transaction('operations','readwrite'),store=tx.objectStore('operations'),r=store.get(id);r.onsuccess=()=>{const entry=r.result;if(entry?.state==='pending'&&!entry.staged){entry.sent=true;store.put(entry);found=true;}};tx.oncomplete=()=>resolve(found);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
   async acknowledge(id:string,documentId:string,version:number,snapshot?:unknown){const db=await this.db;await new Promise<void>((resolve,reject)=>{const tx=db.transaction(['operations','meta'],'readwrite');tx.objectStore('operations').delete(id);tx.objectStore('meta').put(version,'version:'+documentId);if(snapshot)tx.objectStore('meta').put(structuredClone(snapshot),'checkpoint:'+documentId);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}
   async migrate(){
+    // Import v1 without deleting its records or changing an already-sent request.
+    const oldName='notale-sync-v1:'+this.namespace;
+    if((await indexedDB.databases()).some(db=>db.name===oldName)){
+      const old=await new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open(oldName);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+      try{
+        const entries=await request(old.transaction('operations').objectStore('operations').getAll()) as SavedOperation[];
+        const db=await this.db;
+        for(const entry of entries){
+          const marker='imported-v1:'+entry.id;
+          if(await request(db.transaction('meta').objectStore('meta').get(marker)))continue;
+          await new Promise<void>((resolve,reject)=>{const tx=db.transaction(['operations','meta'],'readwrite'),ops=tx.objectStore('operations'),r=ops.get(entry.id);r.onsuccess=()=>{if(!r.result)ops.put(entry);tx.objectStore('meta').put(true,marker);};tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
+        }
+      }finally{old.close();}
+    }
     // Read all legacy owners, including closed windows. Never remove source data here.
     const existing=new Set((await this.list()).map(e=>e.id));
     const response=await fetch('/api/documents');if(!response.ok)throw Error('无法读取待恢复讲义');const allowed=new Set((await response.json()).map((d:any)=>d.id));

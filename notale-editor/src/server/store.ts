@@ -1,3 +1,5 @@
+import {authorChanges, type AuthorChangeSet, type AuthorChangesPage, type SyncAcknowledgement} from '../domain/author-changes.js';
+import {withStableIds} from '../domain/html.js';
 import { mergeDocuments } from '../domain/sync-merge.js';
 import { materializeLayout } from '../domain/layouts.js';
 import { Pool, type PoolClient } from 'pg';
@@ -45,6 +47,7 @@ export class Store {
           document jsonb NOT NULL, actor text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
           PRIMARY KEY(document_id,version)
         );
+        ALTER TABLE editor_revisions ADD COLUMN IF NOT EXISTS author_changes jsonb;
         CREATE TABLE IF NOT EXISTS editor_mutations (
           document_id text NOT NULL REFERENCES editor_documents(id), mutation_id text NOT NULL,
           actor text NOT NULL, request_hash text NOT NULL, version integer NOT NULL,
@@ -334,14 +337,52 @@ export class Store {
     );
   }
   async syncHead(ctx:Context,id:string){return {version:(await this.requireDoc(this.pool,ctx,id)).head};}
-  async recoverSync(ctx:Context,id:string,input:Commit){
+  async recoverSync(ctx:Context,id:string,input:Commit & {inverseVersion?:number;restoreVersion?:number}){
     const source=await this.get(ctx,id,input.baseVersion);
-    const intended=applyCommands(source.document,input.commands);
+    // History recovery creates an isolated copy of the intended historical
+    // state, without replaying an inverse onto the conflicting current head.
+    const intended=input.inverseVersion?(await this.get(ctx,id,input.inverseVersion-1)).document
+      :input.restoreVersion?(await this.get(ctx,id,input.restoreVersion)).document
+      :applyCommands(source.document,input.commands);
     // Stable recovery identity makes repeated clicks/retries return the same copy.
     const recoveryId=input.mutationId;
     const exists=await this.pool.query('SELECT id FROM editor_documents WHERE id=$1 AND scope=$2',[recoveryId,ctx.scope]);
     if(exists.rowCount)return this.get(ctx,recoveryId);
     return this.create(ctx,{...intended,id:recoveryId,title:(intended.title+'（恢复副本）').slice(0,300)});
+  }
+  async revisionChanges(ctx: Context, id: string, version: number): Promise<AuthorChangeSet> {
+    await this.requireDoc(this.pool,ctx,id);
+    const row=await this.pool.query('SELECT author_changes,(SELECT mutation_id FROM editor_mutations m WHERE m.document_id=editor_revisions.document_id AND m.version=editor_revisions.version LIMIT 1) AS mutation_id FROM editor_revisions WHERE document_id=$1 AND version=$2',[id,version]);
+    invariant(row.rowCount,'VERSION_NOT_FOUND','变化版本不存在',404);
+    if(row.rows[0].author_changes)return row.rows[0].author_changes;
+    const before=await this.get(ctx,id,version-1),after=await this.get(ctx,id,version);
+    const change={...authorChanges(before,after),mutationId:row.rows[0].mutation_id??undefined};
+    await this.pool.query('UPDATE editor_revisions SET author_changes=$3 WHERE document_id=$1 AND version=$2 AND author_changes IS NULL',[id,version,change]);
+    return change;
+  }
+  async changes(ctx: Context,id: string,after: number): Promise<AuthorChangesPage> {
+    const head=await this.requireDoc(this.pool,ctx,id);
+    invariant(after<=head.head,'VERSION_CONFLICT','编辑版本超过服务器版本',409);
+    const through=Math.min(head.head,after+100),changes:AuthorChangeSet[]=[];
+    for(let version=after+1;version<=through;version++)changes.push(await this.revisionChanges(ctx,id,version));
+    return {changes,headVersion:head.head,throughVersion:through,hasMore:through<head.head};
+  }
+  async prepareSync(ctx:Context,id:string,input:Commit) {
+    const source=await this.get(ctx,id,input.baseVersion);
+    const stylesheets=input.commands.some(c=>c.type==='layout.detach')?await this.stylesheets(ctx,source.document):undefined;
+    const document=withStableIds(input.mutationId,()=>applyCommands(source.document,input.commands,{stylesheets}));
+    return authorChanges(source,{...source,document});
+  }
+  async syncV2(ctx:Context,id:string,input:Commit & {inverseVersion?:number;restoreVersion?:number;geometry?:boolean;inverseMutationId?:string}):Promise<SyncAcknowledgement> {
+    const {inverseMutationId,...request}=input;
+    if(inverseMutationId){
+      await this.requireDoc(this.pool,ctx,id);
+      const row=await this.pool.query('SELECT version,actor FROM editor_mutations WHERE document_id=$1 AND mutation_id=$2',[id,inverseMutationId]);
+      invariant(row.rowCount&&row.rows[0].actor===ctx.actor,'VERSION_NOT_FOUND','待撤销操作尚未确认',409);
+      request.inverseVersion=row.rows[0].version;
+    }
+    const snapshot=await this.sync(ctx,id,request);
+    return {mutationId:input.mutationId,committedVersion:snapshot.version,change:await this.revisionChanges(ctx,id,snapshot.version)};
   }
   async sync(ctx:Context,id:string,input:Commit & {inverseVersion?:number;restoreVersion?:number;geometry?:boolean}) {
     return this.change(ctx,id,input.baseVersion,input.mutationId,sha256(JSON.stringify(input)),async(base,c)=>{
@@ -354,8 +395,8 @@ export class Store {
       const stylesheets=input.commands.some(c=>c.type==='layout.detach')?await this.stylesheets(ctx,base,c):undefined;
       const latest=await c.query('SELECT r.document FROM editor_documents d JOIN editor_revisions r ON r.document_id=d.id AND r.version=d.head WHERE d.id=$1',[id]);
       // Locks and structural preconditions must also hold on the current head.
-      try{applyCommands(latest.rows[0].document,input.commands,{stylesheets});}catch(error){if(error instanceof DomainError)throw new DomainError('SYNC_RECOVERY_REQUIRED',error.message,409);throw error;}
-      return applyCommands(base,input.commands,{stylesheets});
+      try{withStableIds(input.mutationId,()=>applyCommands(latest.rows[0].document,input.commands,{stylesheets}));}catch(error){if(error instanceof DomainError)throw new DomainError('SYNC_RECOVERY_REQUIRED',error.message,409);throw error;}
+      return withStableIds(input.mutationId,()=>applyCommands(base,input.commands,{stylesheets}));
     },input.restoreVersion?[sha256(JSON.stringify({restore:input.restoreVersion,baseVersion:input.baseVersion}))]:[],true,(doc)=>applyCommands(doc,input.commands.flatMap<Command>(c=>c.type==='element.patch'?(c.patch.style||c.patch.attributes?[{...c,patch:{...(c.patch.style?{style:c.patch.style}:{}),...(c.patch.attributes?{attributes:c.patch.attributes}:{})}}]:[]):input.geometry&&c.type==='element.transform'?[c]:[])));
   }
   private async change(
@@ -402,9 +443,20 @@ export class Store {
       const intended=await apply(source,c);
       const head=row.head===base?source:(await c.query('SELECT document FROM editor_revisions WHERE document_id=$1 AND version=$2',[id,row.head])).rows[0].document;
       const combined=row.head===base?intended:mergeDocuments(source,intended,head);
-      const next = validateDocument(finishMerge?finishMerge(combined):combined);
+      let next:DeckDocument;
+      try { next=validateDocument(finishMerge?finishMerge(combined):combined); }
+      catch(error){
+        // A concurrent relationship can reference an object removed by this
+        // transaction. Preserve the operation for recovery instead of leaving
+        // the client permanently blocked on an unretryable validation error.
+        if(mergeConcurrent&&error instanceof DomainError&&error.code==='DANGLING_OBJECT')
+          throw new DomainError('SYNC_RECOVERY_REQUIRED','对象引用已被其他修改改变，操作已保留供恢复',409);
+        throw error;
+      }
       const version = row.head + 1;
       await this.saveRevision(c, ctx, next, version);
+      const delta={...authorChanges({document:head,version:row.head} as Snapshot,{document:next,version} as Snapshot),mutationId};
+      await c.query('UPDATE editor_revisions SET author_changes=$3 WHERE document_id=$1 AND version=$2',[id,version,delta]);
       await c.query('UPDATE editor_documents SET head=$1 WHERE id=$2 AND head=$3', [
         version,
         id,

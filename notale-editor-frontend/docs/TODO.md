@@ -1,6 +1,6 @@
 # notale-editor 待办（2026-09-10 起，按优先级）
 
-约定：每项做完必须有 Playwright 验收（沿用 `tests/insert-gallery.spec.ts` 的克隆真实讲义 + `change()` + `select()` 模式），跑 `tests/editor.spec.ts` 无新增红条，更新 `docs/INTEGRATION-COVERAGE.md` 对应行。后端改动限定为「一行级」，否则先写计划。另一个会话在并行改 `index.html` 与动画/媒体，动前 `ls -la --time-style=+%H:%M src/*.ts index.html` 看最近改动。
+约定：每项做完必须有 Playwright 验收（沿用 `tests/insert-gallery.spec.ts` 的克隆真实讲义 + `change()` + `select()` 模式），跑 `tests/editor.spec.ts` 无新增红条，更新 `docs/INTEGRATION-COVERAGE.md` 对应行。后端改动限定为「一行级」，否则先写计划。另一个会话在并行改 `src/components/editor-chrome.tsx` 与动画/媒体，动前 `ls -la --time-style=+%H:%M src/*.ts src/components/*.tsx` 看最近改动。
 
 ## P0 编辑深度
 

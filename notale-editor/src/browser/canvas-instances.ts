@@ -6,7 +6,7 @@ type Factory = (
   document: object,
   deck: object,
   initial: Values,
-  view: { read?: () => Values },
+  view: { read?: () => Values;apply?:(values:Values)=>void },
 ) => void;
 declare global {
   interface Window {
@@ -70,7 +70,7 @@ export function canvasInstanceController(slide: Slide) {
         descriptor: Object.getOwnPropertyDescriptor(node, 'addEventListener'),
         method: node.addEventListener,
       }));
-      const view: { read?: () => Values } = {};
+      const view: { read?: () => Values;apply?:(values:Values)=>void } = {};
       try {
         for (const { node, method } of originals)
           Object.defineProperty(node, 'addEventListener', {
@@ -141,6 +141,7 @@ export function canvasInstanceController(slide: Slide) {
       for (const canvas of drawings.keys()) resize.observe(canvas);
       window.addEventListener('resize', redraw);
       (window.__NOTALE_SCENES__ ??= {})[rootId] = read;
+      if(view.apply)(window.__NOTALE_PRESENTATION_ADAPTERS__??={})[rootId]={capture:read,apply:values=>{view.apply!(values);sync();}};
       running.set(rootId, {
         read,
         stop: () => {
@@ -151,6 +152,7 @@ export function canvasInstanceController(slide: Slide) {
             node.removeEventListener(type, callback, options);
           drawings.clear();
           delete window.__NOTALE_SCENES__?.[rootId];
+          delete window.__NOTALE_PRESENTATION_ADAPTERS__?.[rootId];
         },
       });
     }

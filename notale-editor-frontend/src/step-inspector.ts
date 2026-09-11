@@ -11,9 +11,9 @@ export function createStepInspector(context: {
 }) {
   const panel = document.createElement('fieldset');
   panel.id = 'teaching-steps';
-  panel.innerHTML = `<legend>讲授步骤</legend><button id="teaching-initialize">建立可编辑步骤列表</button><div id="teaching-step-controls" hidden>
-  <div id="teaching-order" class="teaching-order" aria-label="讲授顺序"></div><label class="sr-only">步骤<select id="teaching-step"></select></label><label>步骤名称<input id="teaching-name" /></label><label>本步骤讲稿<textarea id="teaching-notes" rows="4"></textarea></label>
-  <label>自动前进（毫秒）<input id="teaching-advance" type="number" min="0" max="3600000" placeholder="留空继承页面，0 表示手动" /></label>
+  panel.innerHTML = `<legend>讲授步骤</legend><button id="teaching-initialize">编辑步骤与讲稿</button><div id="teaching-step-controls" hidden>
+  <div id="teaching-order" class="teaching-order" aria-label="讲授顺序"></div><label class="sr-only">步骤<select id="teaching-step"></select></label><label>步骤名称<input id="teaching-name" maxlength="200" /></label><label>本步骤讲稿<textarea id="teaching-notes" rows="4"></textarea></label>
+  <label>自动前进（秒）<input id="teaching-advance" type="number" min="0" max="3600" step="0.1" placeholder="留空继承页面，0 表示手动" /></label>
   <button id="teaching-save">保存步骤信息</button><button id="teaching-preview">预览当前步骤</button>
   <button id="teaching-insert">在后面插入空步骤</button><button id="teaching-duplicate">复制当前步骤及动画</button><button id="teaching-remove">删除当前步骤</button><button id="teaching-up">提前一步</button><button id="teaching-down">推后一步</button><p id="teaching-summary"></p></div>`;
   const details=document.createElement('details');details.className='animation-step-details';details.innerHTML='<summary>讲授步骤与讲稿</summary>';details.append(document.querySelector('[data-panel="animation"] .stepbar')!,panel);
@@ -26,6 +26,7 @@ export function createStepInspector(context: {
     context.slide().steps?.findIndex((step) => step.id === input('teaching-step').value) ?? -1;
   const on = (id: string, action: () => unknown) =>
     (el(id).onclick = () => {
+      if(id==='teaching-save'&&!panel.reportValidity())return;
       panel.disabled = true;
       panel.setAttribute('aria-busy', 'true');
       Promise.resolve()
@@ -72,17 +73,15 @@ export function createStepInspector(context: {
     if (!step) return;
     input('teaching-name').value = step.name;
     input('teaching-notes').value = step.notes;
-    input('teaching-advance').value = step.advanceAfter === null ? '' : String(step.advanceAfter);
+    input('teaching-advance').value = step.advanceAfter === null ? '' : String(step.advanceAfter / 1000);
     for (const id of ['teaching-remove', 'teaching-up'])
       el<HTMLButtonElement>(id).disabled = at <= 0;
+    el<HTMLButtonElement>('teaching-up').disabled = at <= 1;
     el<HTMLButtonElement>('teaching-down').disabled =
       at <= 0 || at === context.slide().steps!.length - 1;
-    const slide = context.slide(),
-      native = slide.stepMap.length
-        ? slide.stepMap[Math.min(at, slide.stepMap.length - 1)]
-        : Math.min(at, slide.nativeStepCount);
+    const slide = context.slide();
     el('teaching-summary').textContent =
-      `原生状态 ${native} · ${slide.animations.filter((cue) => cue.step === at).length} 个动画 · ${(slide.components ?? []).filter((component) => component.steps.some((step) => step.step === at)).length} 个组件状态`;
+      `${slide.animations.filter((cue) => cue.step === at).length} 个动画 · ${(slide.components ?? []).filter((component) => component.steps.some((step) => step.step === at)).length} 个互动变化`;
   }
   let key = '';
   function render() {
@@ -132,7 +131,7 @@ export function createStepInspector(context: {
             advanceAfter:
               input('teaching-advance').value === ''
                 ? null
-                : Number(input('teaching-advance').value),
+                : Math.round(Number(input('teaching-advance').value)*1000),
           },
         },
       ]),

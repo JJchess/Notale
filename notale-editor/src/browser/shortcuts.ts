@@ -2,6 +2,12 @@ export type EditAction =
   | { type: 'nudge'; dx: number; dy: number }
   | {
       type:
+        | 'group'
+        | 'ungroup'
+        | 'front'
+        | 'back'
+        | 'forward'
+        | 'backward'
         | 'copy'
         | 'cut'
         | 'paste'
@@ -24,6 +30,9 @@ export function editShortcut(e: {
   const key = e.key.toLowerCase(),
     command = e.ctrlKey || e.metaKey;
   if (command) {
+    if (key === 'g') return {type:e.shiftKey?'ungroup':'group'};
+    if (key === ']' || key === '}') return {type:e.shiftKey?'front':'forward'};
+    if (key === '[' || key === '{') return {type:e.shiftKey?'back':'backward'};
     if (key === 'z') return { type: e.shiftKey ? 'redo' : 'undo' };
     const shortcuts: Record<string, Exclude<EditAction, { type: 'nudge' }>['type']> = {
       y: 'redo',

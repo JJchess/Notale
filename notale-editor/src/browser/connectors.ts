@@ -328,5 +328,5 @@ export function connectorController(connectors: Connector[], editor?: EditorOpti
       frame = requestAnimationFrame(tick);
     });
   }
-  return { refresh, stop, cancel };
+  return { refresh, stop, cancel, update(next: Connector[]) {connectors=next;cancel();refresh();if(connectors.length&&!frame)frame=requestAnimationFrame(tick);} };
 }

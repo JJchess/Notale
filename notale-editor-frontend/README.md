@@ -22,7 +22,7 @@ npm run build
 npm start
 ```
 
-Open `http://127.0.0.1:4312/`. A specific lecture opens via `?document=<id>`. The local development server proxies `/api/`, presentation assets and health to `EDITOR_BACKEND_URL` (default `http://127.0.0.1:4310`). `PORT` defaults to 4312. `npm run dev` builds and starts; rebuild after source changes. This server is a local integration host. For main-system integration, serve `dist/index.html`, `dist/editor.js`, `dist/editor.css` and `dist/katex.min.css` from the host and route the same API and presentation paths to its backend, preserving host credentials. Keep rendered slide content on its separate origin.
+Open `http://127.0.0.1:4312/`. A specific lecture opens via `?document=<id>`. The frontend uses Next.js App Router, React and TypeScript. `npm run dev` starts the development server; `npm run build` followed by `npm start` runs production. `PORT` defaults to 4312. The custom Next.js host preserves `/api/`, presentation proxies and the isolated authored-content hostname; it is required for the current same-port, separate-origin preview setup. Backend services remain independent. Deploy the Next.js application and its runtime dependencies, `templates/refined/` and `vendor/katex.min.css`; static `dist/editor.js` deployment is no longer used. `NEXT_DIST_DIR` optionally selects a separate Next build directory, and must match between build and start.
 
 For local port forwarding, only forward **4312**. Preview URLs use `http://notale-content.localhost:4312`, a separate loopback hostname on the same port. The server routes only signed `/content/` requests on that hostname to `EDITOR_CONTENT_BACKEND_URL` (default `http://127.0.0.1:4311`); it never exposes the host API there or content on the editor hostname. Preview API responses are rewritten at the proxy boundary, preserving signed paths and lease renewal. `EDITOR_PUBLIC_CONTENT_URL` configures the distinct public content origin for a deployed host; that hostname must resolve to the content proxy and use the appropriate HTTPS endpoint. Restart `npm start` after server/environment changes. Local browser acceptance deliberately blocks ports 4310/4311 and verifies native interaction, presentation and origin isolation.
 
@@ -99,4 +99,8 @@ See [backend/frontend integration coverage](docs/INTEGRATION-COVERAGE.md) for ve
 
 设置迁移定向检查：`npx playwright test tests/settings-navigation.spec.ts --workers=1`（候选入口默认 4318，可用 SETTINGS_TEST_URL 覆盖）。覆盖独立双页副本、母版、保存范围、历史恢复及重开，不运行整套讲义回归。
 
-开发源码与工具脚本统一使用 TypeScript。`npm run build:scripts` 将脚本编译到 `.local/tooling/`，`npm start`、`npm run templates:prepare`、`npm run diagrams:prepare`、`npm run experience:create` 自动编译后执行；请在此前端目录运行。浏览器产物仍由 esbuild 生成 JavaScript。
+开发源码与工具脚本统一使用 TypeScript。`npm run build:scripts` 将脚本编译到 `.local/tooling/`，`npm start`、`npm run templates:prepare`、`npm run diagrams:prepare`、`npm run experience:create` 自动编译后执行；请在此前端目录运行。浏览器产物由 Next.js 构建。
+
+React 界面位于 `src/components/`，App Router 入口位于 `app/`。根布局保留编辑会话；`mountWorkbench()` 在 React 挂载后启动一次，复用既有命令、保存、画布与快捷键控制器。动态检查器的宿主节点由 React 提供，内部交互由控制器管理，避免 React 重绘高频拖拽。
+
+增量作者文档、事务入口、运行时适配器与 sync/v2 协议见 [AUTHOR-KERNEL.md](docs/AUTHOR-KERNEL.md)。本轮定向用例：`NEXT_TEST_URL=http://127.0.0.1:4312 npx playwright test tests/author-kernel.spec.ts`。常用属性和几何修改先在本机反馈，保存确认通过差量推进，不重新载入整页画布。

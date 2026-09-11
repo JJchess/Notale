@@ -29,3 +29,14 @@ export { timeline, type Cue } from './domain/timeline.js';
 
 export {chartKinds,chartNames,chartAuthoringSchema,chartStateSchema,newChart,compileChart,chartAtState,cleanChartReferences} from './domain/chart-authoring.js';
 export type {ChartAuthoring,ChartKind,ChartState,ChartSelection} from './domain/chart-authoring.js';
+
+export { authorChanges, applyAuthorChanges, reverseAuthorChanges, operationPolicies } from './domain/author-changes.js';
+export type { AuthorChange, AuthorChangeSet, SyncAcknowledgement, AuthorChangesPage, OperationPolicy } from './domain/author-changes.js';
+export { mergeAuthorHtml } from './browser/author-dom.js';
+
+export {arrangePlan} from './domain/arrange-plan.js';
+export {maxStep,stepLabel,stepNotes,stepInterval} from './domain/timeline.js';
+export {showControl,type ShowControlMode} from './browser/show-control.js';
+export {readShowCheckpoint} from './browser/show-session.js';
+export {mergePresentationRuntime,presentationOrder,validPresentationState} from './domain/presentation.js';
+export type {PresentationRole,PresentationRuntimeState,PresentationRuntimePatch,PresentationSessionState,PresentationViewport} from './domain/presentation.js';

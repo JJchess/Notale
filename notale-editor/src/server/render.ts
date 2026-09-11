@@ -60,6 +60,9 @@ export async function renderSlide(
   head.childNodes = head.childNodes.filter((node) => node !== encoding);
   head.childNodes.unshift(encoding);
 
+  // Presentation copies must be silent before authored scripts can start media.
+  const guard=appendHtml(head,`<script data-notale-runtime>(function(){const role=new URLSearchParams(location.search).get('notaleRole');if(!role)return;const play=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){if(this.dataset.notaleDesiredMuted===undefined)this.dataset.notaleDesiredMuted=String(this.muted);this.muted=true;if(role==='preview')return Promise.resolve();return play.call(this);};})();</script>`,undefined,false)[0];
+  head.childNodes=head.childNodes.filter(node=>node!==guard);head.childNodes.unshift(guard);
   const numberedSlides = doc.slides.filter((page) => !page.layoutSourceId);
   for (const el of elements(root)) {
     if (el.tagName === 'aside' && (attr(el, 'class') ?? '').split(/\s+/).includes('notes'))
@@ -96,7 +99,7 @@ export async function renderSlide(
   );
   if(Object.values(slide.nativeCharts).some(chart=>chart.authoring&&!chart.source)) {
     const engine=await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist','chart-engine.js'),'utf8');
-    appendHtml(head,`<script>${engine.replaceAll('</script','<\\/script')}</script>`,undefined,false);
+    appendHtml(head,`<script data-notale-chart-engine>${engine.replaceAll('</script','<\\/script')}</script>`,undefined,false);
   }
   const runtime = await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist','bridge.js'), 'utf8');
   const factories: string[] = [];
@@ -134,7 +137,7 @@ export async function renderSlide(
   if (factories.length)
     appendHtml(
       body,
-      `<script>window.__NOTALE_CANVAS_FACTORIES__={};window.__NOTALE_CHART_FACTORIES__={};window.__NOTALE_CHART_INTERACTIONS__={};${factories.join('\n').replaceAll('</script', '<\\/script')}</script>`,
+      `<script data-notale-factories>window.__NOTALE_CANVAS_FACTORIES__={};window.__NOTALE_CHART_FACTORIES__={};window.__NOTALE_CHART_INTERACTIONS__={};${factories.join('\n').replaceAll('</script', '<\\/script')}</script>`,
       undefined,
       false,
     );
@@ -153,7 +156,7 @@ export async function renderSlide(
   };
   appendHtml(
     body,
-    `<script>window.__NOTALE__=${JSON.stringify(data).replaceAll('<', '\\u003c')};\n${runtime.replaceAll('</script', '<\\/script')}</script>`,
+    `<script type="application/json" id="notale-author-config">${JSON.stringify(data).replaceAll('<', '\\u003c')}</script><script data-notale-runtime>window.__NOTALE__=${JSON.stringify(data).replaceAll('<', '\\u003c')};\n${runtime.replaceAll('</script', '<\\/script')}</script>`,
     undefined,
     false,
   );

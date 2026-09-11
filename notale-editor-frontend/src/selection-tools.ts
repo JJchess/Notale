@@ -1,3 +1,4 @@
+import {selectionUnits} from './object-geometry.js';
 type Item = { id: string; parent?: string; locked: boolean };
 export function renderSelectionTools(objects: Item[], selected: Set<string>, groups: {members: string[]}[], ready: boolean) {
   const items = objects.filter(object => selected.has(object.id));
@@ -14,7 +15,7 @@ export function renderSelectionTools(objects: Item[], selected: Set<string>, gro
     group: items.length >= 2,
     ungroup: groups.some(group => group.members.some(id => selected.has(id))),
     'align-left': items.length >= 2,
-    distribute: items.length >= 3,
+    distribute: selectionUnits(items,groups).length >= 3,
   };
   for (const [id, visible] of Object.entries(visibility)) {
     const button = document.getElementById(id) as HTMLButtonElement;

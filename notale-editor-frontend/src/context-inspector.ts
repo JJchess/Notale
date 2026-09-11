@@ -42,7 +42,15 @@ export function createContextInspector() {
   const grid = el('tx').closest<HTMLElement>('.field-grid')!;
   geometry.append(grid);
   move(geometry, ['apply-format']);
-  el('apply-format').textContent = '应用位置与尺寸';
+  el('apply-format').hidden = true;
+  for(const [id,label] of Object.entries({tx:'X',ty:'Y',scale:'缩放倍数'})){
+    const control=el(id) as HTMLInputElement;
+    control.closest('label')!.firstChild!.textContent=label;
+  }
+  const proportional=document.createElement('label');
+  proportional.innerHTML='<input id="geometry-proportional" type="checkbox" checked> 锁定宽高比';
+  geometry.append(proportional);
+  for(const id of ['tx','ty','rotation','scale','object-width','object-height'])(el(id) as HTMLInputElement).step='any';
   const arrangement = group('property-arrange', '排列与对齐', true);
   move(arrangement, ['arrange-reference', 'arrange-tools', 'group-angle', 'group-factor', 'rotate-group', 'scale-group', 'front', 'back', 'layer-forward', 'layer-backward']);
   const identity = group('property-identity', '名称与可见性', true);

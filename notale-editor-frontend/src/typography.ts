@@ -1,5 +1,6 @@
+import {bindPropertyInput,type PropertyTransactions} from './property-input.js';
 import type { Command } from '@notale/editor/browser';
-export function createTypography(context: {
+export function createTypography(context: PropertyTransactions & {
   key: () => string;
   ready: () => boolean;
   ids: () => string[];
@@ -44,7 +45,7 @@ export function createTypography(context: {
         const varied = values.some(value => value !== values[0]);
         mixed ||= varied;
         const control = input(field);
-        if (control.value !== before[field]) continue;
+        if (control===document.activeElement || control.value !== before[field]) continue;
         const value = varied ? '' : display(field, values[0]);
         if (field !== 'color' || value) control.value = value;
         control.dataset.initial = control.value;
@@ -65,6 +66,17 @@ export function createTypography(context: {
   function save(style: Record<string,string>) {
     if (!Object.keys(style).length) return;
     return context.commands(context.ids().map(target => ({type:'element.patch',slideId:context.slideId(),target,patch:{style}})));
+  }
+  for(const id of fields){
+    const control=input(id);
+    const read=():Command[]=>{
+      if(!control.validity.valid)return [];
+      const value=control.value===''?'':['font-size','line-height','letter-spacing'].includes(id)?Number(control.value)+'px':control.value;
+      const style:Record<string,string>={[id]:value};if(id==='writing-mode')style['text-orientation']=value.startsWith('vertical')?'upright':'mixed';
+      return context.ids().map(target=>({type:'element.patch',slideId:context.slideId(),target,patch:{style}}));
+    };
+    if(['color','range','number'].includes(control.type))bindPropertyInput(control,read,context);
+    else control.addEventListener('change',()=>{control.dataset.initial=control.value;void context.commands(read()).catch(context.error);});
   }
   return {
     render,

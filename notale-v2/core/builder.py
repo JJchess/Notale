@@ -1,6 +1,6 @@
 """builder —— 每页一个自由循环,并发跑。
 
-Harness 只约束首次实现前的一轮预读；之后自由创作，不补催、不重启。模型不再要求工具就结束；
+Harness 不限制工具调用轮次或首次实现顺序，不补催、不重启。模型不再要求工具就结束；
 提示词要求最多 11 次响应并在 4–7 次内完成，但 harness 不在第 11 次截断，
 而是让模型自然结束并事后记录是否超出目标。最终产物与一次独立审计分别记录。
 
@@ -270,9 +270,6 @@ def evict_images(hist: list, tok_in: int) -> int:
 
 # Shared material stays byte-identical across pages for prefix caching. Per-page
 # chapter context stays in the first user message.
-PRELOAD_TAGS = (("chassis", "CHASSIS.md"), ("theme_css", "theme.css"),
-                ("deck_outline", "pages.md"))
-
 # 技术契约 2026-08-28 从「每轮让模型写一份 CONTRACT.md」改成**仓库常量**
 # `prompts/tech.md`,由 builder 填几个槽位。
 #
@@ -415,13 +412,12 @@ def shared_preload(root: Path, n_pages: int, prompts: Path = None,
         return (_deck_outline(paths["pages.md"]) + "\n\n"
                 + _wrap("tech", (prompts or ROOT / "prompts") / "tech-code.md"))
     chassis = paths["CHASSIS.md"].read_text(encoding="utf-8").strip()
-    text = "\n\n".join(
-        (f"<{tag}>\n{_theme_interface(paths[name]).strip()}\n</{tag}>"
-         if name == "theme.css" else
-         _deck_outline(paths[name])
-         if name == "pages.md" else f"<chassis>\n{chassis}\n</chassis>")
-        for tag, name in PRELOAD_TAGS)
-    return text + "\n\n" + tech_block(root, n_pages, prompts)
+    return "\n\n".join((
+        tech_block(root, n_pages, prompts),
+        f"<theme_css>\n{_theme_interface(paths['theme.css']).strip()}\n</theme_css>",
+        f"<chassis>\n{chassis}\n</chassis>",
+        _deck_outline(paths["pages.md"]),
+    ))
 
 
 def environment_context(pages_dir: Path, page: Page, resource_root: Path) -> str:
@@ -456,6 +452,10 @@ def instruction_blocks(root: Path, n_pages: int, workflow: str, *,
     blocks["shared"] = shared_preload(root, n_pages, prompts, workflow)
     blocks["workflow"] = skills.routed_workflow(
         workflow, workflow_root, include_aux=include_aux, samples=samples)
+    if workflow != "build-code":
+        order = ("identity", "workflow", "shared", "philosophy", "anti_slop",
+                 "notes", "visual_focus", "steps")
+        return {key: blocks[key] for key in order if key in blocks}
     return blocks
 
 
@@ -587,7 +587,6 @@ def build_one(
         specs = [code_runtime.tool_schema()] + specs
 
     seen_guidance: set[str] = set()
-    implemented = False  # 本次真实写入，不以旧页面或 CodeScaffold 作为首次实现。
     t0 = time.time()
     while True:
         if time.time() - t0 > MAX_SECONDS:
@@ -641,15 +640,6 @@ def build_one(
             page.termination = "no_tool_use"
             break
 
-        if page.calls == 1 and (
-            not any(call.name == "Read" for call in calls)
-            or any(call.name not in ({"Read", "CodeScaffold"} if page.workflow == "build-code" else {"Read"})
-                   for call in calls)
-        ):
-            page.termination = "initial_read_order"
-            page.why = "首轮只允许一批并行 Read（代码页可同轮 CodeScaffold）；本批工具未执行。"
-            break
-
         print(
             f"      {page.pid} 步{page.calls:>3}  "
             f"{' '.join(call.name for call in calls)[:52]}",
@@ -665,15 +655,6 @@ def build_one(
 
         for call in calls:
             tool_started, tool_clock = _now(), time.monotonic()
-            if page.calls > 1 and not implemented and call.name not in (
-                {"Write", "Edit"} if page.workflow == "build-code" else {"Write"}
-            ):
-                page.termination = "initial_read_order"
-                page.why = f"首轮材料已返回，首次实现前不能执行 {call.name}；本页停止，不追加补读。"
-                log.tool(rid=request_id, call_id=call.call_id, page=page.pid, name=call.name,
-                         arguments=call.arguments, output=page.why,
-                         started=tool_started, finished=_now(), seconds=time.monotonic()-tool_clock)
-                break
             try:
                 args = json.loads(call.arguments or "{}")
                 if not isinstance(args, dict):
@@ -693,22 +674,7 @@ def build_one(
                 log.tool(rid=request_id, call_id=call.call_id, page=page.pid, name=call.name,
                          arguments=call.arguments, output=hist[-1]['output'],
                          started=tool_started, finished=_now(), seconds=time.monotonic()-tool_clock)
-                if page.calls == 1:
-                    page.termination = "initial_read_failed"
-                    page.why = f"首轮 {call.name} 参数无效：{exc}"
-                    break
                 continue
-
-            writing = None
-            before = None
-            if not implemented and call.name in {"Write", "Edit"} and args.get("file_path"):
-                candidate = (pages_dir / str(args["file_path"])).resolve()
-                own_target = (pages_dir / f"{page.pid}.html").resolve()
-                allowed = (candidate.is_relative_to(code_runtime.editable_root(pages_dir, page.pid).resolve())
-                           if page.workflow == "build-code" else candidate == own_target)
-                if allowed:
-                    writing = candidate
-                    before = candidate.read_bytes() if candidate.is_file() else None
 
             page.steps.append(
                 call.name
@@ -814,18 +780,6 @@ def build_one(
                 }
             )
             pending_images.extend(images)
-
-            if page.calls == 1 and (_FATAL_PREFIX.search(output.strip())
-                                    or output.startswith("CodeScaffold 失败")):
-                page.termination = "initial_read_failed"
-                page.why = f"首轮 {call.name} 失败：{output[:300]}"
-                break
-            if writing is not None and writing.is_file():
-                after = writing.read_bytes()
-                implemented = bool(after.strip()) and after != before and not _FATAL_PREFIX.search(output.strip())
-
-        if page.termination in {"initial_read_order", "initial_read_failed"}:
-            break
 
         for media_type, encoded in pending_images:
             hist.append(

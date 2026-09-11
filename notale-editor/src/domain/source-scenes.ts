@@ -1,4 +1,4 @@
-import { inspectCanvasSources, canvasSceneDescriptor } from './canvas-instances.js';
+import { isCorrelationSource, inspectCanvasSources, canvasSceneDescriptor } from './canvas-instances.js';
 import { parse as parseScript } from 'acorn';
 import { ancestor } from 'acorn-walk';
 import { createHash } from 'node:crypto';
@@ -357,6 +357,7 @@ export function instrumentSourceScenes(slide: Slide): string {
       end: scene.insertAt,
       text: `\n;(window.__NOTALE_SCENES__??={})[${json(scene.id)}]=()=>({${scene.parameters.map((p) => `${json(p.key)}:${scene.variable}[${json(p.key)}]`).join(',')}});\n`,
     });
+    if(isCorrelationSource(textOf(scene.script)))changes.push({start:scene.insertAt,end:scene.insertAt,text:`\n;(window.__NOTALE_PRESENTATION_ADAPTERS__??={})[${json(scene.id)}]={capture:()=>({...${scene.variable}}),apply:(value)=>{Object.assign(${scene.variable},value);update();}};\n`});
     const settings = slide.scenes?.find((s) => s.id === scene.id);
     for (const [key, value] of Object.entries(settings?.values ?? {})) {
       const field = scene.fields[key];

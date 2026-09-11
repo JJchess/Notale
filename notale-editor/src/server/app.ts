@@ -155,12 +155,20 @@ export function createApps(options: AppOptions) {
     },
   );
   api.get<{Params:{id:string}}>('/api/documents/:id/sync-head',async req=>store.syncHead(await context(req,'read',req.params.id),req.params.id));
+  const syncSchema=commitSchema.extend({commands:z.array(commitSchema.shape.commands.element).max(500),geometry:z.boolean().optional(),inverseVersion:z.number().int().min(2).optional(),restoreVersion:z.number().int().positive().optional()}).refine(v=>!!v.inverseVersion||!!v.restoreVersion||v.commands.length>0).refine(v=>!(v.inverseVersion&&v.restoreVersion)).refine(v=>!v.commands.length||(!v.inverseVersion&&!v.restoreVersion));
   api.post<{ Params: { id: string } }>('/api/documents/:id/sync-recovery',async req=>{
-    const ctx=await context(req,'edit',req.params.id);await context(req,'create');return store.recoverSync(ctx,req.params.id,commitSchema.parse(req.body));
+    const ctx=await context(req,'edit',req.params.id);await context(req,'create');return store.recoverSync(ctx,req.params.id,syncSchema.parse(req.body));
   });
+  api.get<{Params:{id:string};Querystring:{after:string}}>('/api/documents/:id/changes',async req=>
+    store.changes(await context(req,'read',req.params.id),req.params.id,z.coerce.number().int().positive().parse(req.query.after)));
+  api.post<{Params:{id:string}}>('/api/documents/:id/prepare',async req=>
+    store.prepareSync(await context(req,'edit',req.params.id),req.params.id,commitSchema.parse(req.body)));
+  const syncV2Schema=commitSchema.extend({commands:z.array(commitSchema.shape.commands.element).max(500),geometry:z.boolean().optional(),inverseVersion:z.number().int().min(2).optional(),restoreVersion:z.number().int().positive().optional(),inverseMutationId:commitSchema.shape.mutationId.optional()}).refine(v=>Number(!!v.inverseVersion)+Number(!!v.restoreVersion)+Number(!!v.inverseMutationId)+(v.commands.length?1:0)===1);
+  api.post<{Params:{id:string}}>('/api/documents/:id/sync/v2',async req=>
+    store.syncV2(await context(req,'edit',req.params.id),req.params.id,syncV2Schema.parse(req.body)));
   api.post<{ Params: { id: string } }>('/api/documents/:id/sync', async req =>
     store.sync(await context(req,'edit',req.params.id),req.params.id,
-      commitSchema.extend({commands:z.array(commitSchema.shape.commands.element).max(500),geometry:z.boolean().optional(),inverseVersion:z.number().int().min(2).optional(),restoreVersion:z.number().int().positive().optional()}).refine(v=>!!v.inverseVersion||!!v.restoreVersion||v.commands.length>0).refine(v=>!(v.inverseVersion&&v.restoreVersion)).refine(v=>!v.commands.length||(!v.inverseVersion&&!v.restoreVersion)).parse(req.body)));
+      syncSchema.parse(req.body)));
   api.post<{ Params: { id: string } }>('/api/documents/:id/commits', async (req) =>
     store.commit(
       await context(req, 'edit', req.params.id),
@@ -264,6 +272,7 @@ export function createApps(options: AppOptions) {
         'Preview grant expired',
         403,
       );
+      if(path==='__notale_runtime__/chart-engine.js')return reply.type('text/javascript; charset=utf-8').send(await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist','chart-engine.js')));
       if(path==='__notale_runtime__/text-editor.js')return reply.type('text/javascript; charset=utf-8').send(await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist','text-editor.js')));
       if(path==='__notale_runtime__/vector-editor.js'||path==='__notale_runtime__/vector-worker.js'||path==='__notale_runtime__/pathkit.wasm')return reply.type(path.endsWith('.wasm')?'application/wasm':'text/javascript; charset=utf-8').send(await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist',path.split('/').at(-1)!)));
       const snapshot = await store.get(ctx, id, version),

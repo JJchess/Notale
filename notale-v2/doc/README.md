@@ -7,6 +7,8 @@
 - [架构 v4](../ARCHITECTURE-v4.html)
 - [当前风格契约](PLAN-style-control.md)
 - [工具目录与边界](../tools/README.md)
+- [视觉 Builder 输入精简与离线验证](BUILDER-INPUT-COMPACTION.md)
+- [底盘维护说明](chassis-notes.md)
 
 ## 规划与研究
 

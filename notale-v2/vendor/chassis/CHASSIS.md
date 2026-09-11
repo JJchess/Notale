@@ -1,119 +1,74 @@
-# CHASSIS.md —— 底盘接口速查
+# 底盘接口
 
-底盘负责画布缩放、canvas 高分屏、指针坐标与可访问性机制；主题提供共享 CSS 与使用说明。
+## 舞台与主题机制
 
----
+底盘负责逻辑画布、等比缩放、Canvas 高分屏及指针坐标；主题提供视觉实现。
+`#stage` 默认 1600×900，尺寸由 `--stage-w/--stage-h` 指定；整体缩放仅由底盘负责。
+舞台内按逻辑尺寸排版，不用外部视口单位、宽度断点或 `position:fixed` 二次缩放／脱离舞台。
+`--s` 是底盘写入根元素的缩放比；`--focus` 用于焦点圈。
+主题必须提供 `--bg/--text/--font-sans`，底盘不兜底。
 
-## base.css
+根 `html[data-variant]` 同时切换前景与背景，须在初始化图表前设置；不设置即默认。
+不要用 stage 的 `background` 简写清空主题合成。
+`#stage::after` 是不拦截指针的品牌层（z-index:100）；内容在其下并按主题接口留净空，无 logo 时不可见。
 
-引入方式：`<link rel="stylesheet" href="assets/base.css">`，放在你自己的样式之前。
+## 布局类与坐标
 
-主题实现由 `assets/theme.css` 加载；根 `html[data-variant]`
-同时选择背景与前景，应在初始化图表前设置；不设置就是默认。Canvas 通过 `Deck.token()`
-取根值，局部反色区域读取对应元素值。页面不要用 stage 的 background 简写清空主题合成。
-`#stage::after` 保留为不拦截指针的品牌层（z-index:100），内容在其下并留接口要求的净空。
-无 logo 时此层不生成可见内容。代码工作台不加载共享 theme.css。
+| 类 | 用途 |
+|---|---|
+| `.min0` | grid/flex 子项设置 min-width/min-height:0，允许收缩 |
+| `.cv-fill` | Canvas 铺满父容器：absolute、inset:0、width/height:100%；不能只写 inset |
+| `.no-pan` | 拖动交互区关闭触摸平移 |
+| `.sr-only` | 只给读屏软件的图形文字替代 |
 
-主题须提供 `--bg`、`--text`、`--font-sans`，底盘不给默认值。
-舞台内按固定逻辑画布设计尺寸，不用外部视口单位或宽度断点再次缩放字号/排版；整体缩放只由底盘负责。
+保留这些类的机制。全局对象为 `Deck`：
 
-主题主要字体由本地 `@font-face` 随包交付。
-Canvas 使用字体前先 `await document.fonts.load(font, text)`，再等待 `document.fonts.ready`，然后测量和绘制；
-从对应元素的 computed style 获取已解析的字号与混排字体栈，不把原始 clamp()/calc() token 直接拼成 Canvas font。
-字体加载后重绘，不将首次 fallback 的字宽缓存为最终结果；页面不重复下载字体。
-截图等待 `document.fonts.ready`，但该 Promise 本身不证明没有缺字或 fallback。
-不要以服务器安装字体、CSS family 字符串或字体请求成功冒充跨机器渲染一致。
-
-底盘另外会读 `--stage-w` / `--stage-h`（画布逻辑尺寸，默认 1600 / 900）和
-`--focus`（焦点圈颜色）。缩放比由底盘算出后写回 `:root` 的 `--s`，CSS 里可以直接用。
-
-### 结构
-
-页面里要有 `#stage`，它就是那块 1600×900 的逻辑画布；引入 base.css + base.js 之后
-缩放自动生效，不需要你写任何缩放代码。
-Check 核对基础资源是否引入并生效、舞台逻辑尺寸及居中等比缩放；缺资源时先恢复引用，不改主题或靠页面布局补偿。
-
-### 四个工具类（这是 base.css 提供的全部类）
-
-| 类 | 作用 | 什么时候必须加 |
-|---|---|---|
-| `.min0` | `min-width:0; min-height:0` | grid/flex 分栏的子项，允许内容收缩 |
-| `.cv-fill` | `position:absolute; inset:0; width:100%; height:100%` | 铺满父容器的 canvas，不能只写 inset |
-| `.no-pan` | 关掉触摸平移 | 需要拖动的交互区 |
-| `.sr-only` | 只给读屏软件 | 图形的文字替代 |
-
----
-
-## base.js
-
-引入方式：`<script src="assets/base.js"></script>`。全局对象 `Deck`。
-
-### 尺寸与缩放
-
-```
-Deck.W / Deck.H          逻辑画布尺寸(读自 --stage-w / --stage-h)
-Deck.s                   当前缩放比(同 :root 上的 --s)
-Deck.onResize(fn)        注册尺寸变化回调,返回注销函数
-Deck.init(cfg)           可选,只做键盘翻页和 document.title,不生成任何外观
+```text
+Deck.W / Deck.H          逻辑画布尺寸
+Deck.s                   缩放比，同 --s
+Deck.onResize(fn)        注册尺寸变化回调，返回注销函数
+Deck.fit(canvas)         高分屏适配，返回已 setTransform 的 2d ctx
+Deck.autofit(cv, draw)   fit、首次绘制及 resize 重绘
+Deck.pt(el, event)       指针／触摸转换为局部逻辑坐标 {x,y}
+Deck.init(cfg)           可选：键盘翻页与 document.title，不生成外观
 ```
 
-```js
-Deck.init({ index:3, total:14 });                 // 通常只需要这一行
-Deck.init({ index:3, total:14, keys:false });     // 不要键盘翻页;另有 href:n=>… 自定义跳转
+缩放下必须用 `Deck.pt`，不能依赖 `offsetX`；支持嵌套缩放，不支持元素 rotate。
+可选翻页示例：`Deck.init({index:3,total:14})`；`keys:false` 关闭键盘翻页，
+`href:n=>…` 自定义目标路径。
+
+## 字体、颜色与动画
+
+字体由主题的本地 `@font-face` 提供，不重复下载。
+Canvas 先 `await document.fonts.load(font,text)` 再等 `document.fonts.ready`，随后测量、绘制。
+字号和混排字体栈取对应元素的 computed style；不把原始 clamp()/calc() token 拼进 Canvas font。
+字体加载后重绘，不把首次 fallback 字宽当最终值。
+Canvas 颜色从根 token 读取；局部反色区域取对应元素的 computed style。
+
+```text
+Deck.token(name)         token 原始字符串，不求值字体长度表达式
+Deck.rgb(name)           浏览器转换为 sRGB [r,g,b]；超色域裁剪，全透明返回 [0,0,0]
+Deck.rgba(name, alpha)   rgba 字符串，使用传入 alpha，不保留源色 alpha
+Deck.reduced()          是否启用 reduced-motion
+Deck.loop(fn[,opt])     rAF 循环，返回 stop 函数
+Deck.clamp / Deck.lerp / Deck.fmt   数值辅助
+Deck.rr(ctx,x,y,w,h,r)  圆角矩形路径
 ```
 
-### canvas 与指针
+`Deck.loop` 在 reduced-motion 下仅调用一次 `fn(opt.still||0,0)`；
+初态无信息时用 `opt.still` 指定有效定格。标签页隐藏自动暂停，恢复时无 dt 跳变。
 
-```
-Deck.fit(cv)             高分屏适配,返回已 setTransform 的 2d ctx
-Deck.autofit(cv, draw)   fit + 首次绘制 + 缩放变化时自动重新 fit 并重绘
-Deck.pt(el, e)           指针事件 → 逻辑坐标 {x,y}(缩放/触摸/触摸结束都兼容)
-```
+## 可选分步
 
-`Deck.pt` 是必须用的：外层有 `transform: scale()` 时 `e.offsetX` 是错的。
-它靠 `r.width / el.offsetWidth` 反推，**嵌套缩放也对，但元素被 rotate 之后不适用**。
-
-### 从 CSS 读颜色（canvas 里写不了 `var()`）
-
-```
-Deck.token(name)         读成原始字符串
-Deck.rgb(name)           读成 [r,g,b]
-Deck.rgba(name, a)       读成 'rgba(r,g,b,a)'
-```
-
-`Deck.rgb()` 用浏览器转换为 sRGB 数值（超出 sRGB 的颜色会裁至可表示范围）；完全透明颜色返回 `[0,0,0]`。
-`Deck.rgba()` 使用传入的 alpha，不保留源色 alpha。`Deck.token()` 不求值字体长度表达式。
-
-### 动画
-
-```
-Deck.reduced()           系统是否要求减少动态
-Deck.loop(fn[,opt])      rAF 循环,返回 stop()
-```
-
-`Deck.loop` 两个已经处理掉的坑：reduced-motion 下不进循环，只画一帧
-`fn(opt.still||0, 0)` —— 起始帧没信息的动画要用 `opt.still` 指定定格在哪一刻；
-标签页隐藏时自动暂停，回来不会有 dt 跳变。
-
-### 小工具
-
-```
-Deck.clamp / Deck.lerp / Deck.fmt / Deck.rgba
-Deck.rr(ctx,x,y,w,h,r)              圆角矩形路径(有原生 roundRect 就用原生)
-```
-
-## 分步出场（可选）
-
-元素需要在第 n 步出现时，写 `data-deck-step="n"`；不需要分步出场就不写。
+元素在第 n 步出现时写 `data-deck-step="n"`，不需要分步就不写：
 
 ```html
 <p data-deck-step="2">第 2 步出现的证据</p>
 ```
 
-第 0 步是页面刚打开的样子，第 1 步是按第一下。右方向键先在页内推进，出完才翻页，左键对称回退。
-canvas/svg 里画的东西用 `Deck.onStep(function(step, max){ … }, maxStep)` 按步重绘；第二参数是最大 step 下标，不是状态个数。
-例如三个状态 0/1/2 传 `2`，数组驱动时传 `states.length - 1`。
-函数是步数的函数：任何 step（含 0）都要画出那一步的
-完整画面，不能只向前追加——回退、`?all`、课后复看靠的都是这一点。
-未出场的元素透明且 `inert`。`?all` 或系统 reduced-motion 直接停在末步，给课后复看。
-默认淡入加 6px 上移，页面可覆盖；静态页、只推进一次或多步都合法，按内容需要选择。
+初始为第 0 步，按第一次进入第 1 步；右键先推进分步再翻页，左键对称回退。
+Canvas/SVG 用 `Deck.onStep(fn,maxStep)`，回调为 `fn(step,max)`；
+maxStep 是最大下标，不是状态数量：状态 0/1/2 传 2，数组传 `states.length-1`。
+回调必须重绘任意 step 的完整状态，不能只追加，保证回退和课后复看。
+未出现的元素透明且 inert；`?all` 或 reduced-motion 停在末步。
+默认淡入加 6px 上移，可覆盖；静态、单次推进和多步均合法。

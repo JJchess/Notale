@@ -133,10 +133,8 @@ def _apply_sample_mode(name: str, body: str, mode: str) -> str:
     start = body.find("## Samples")
     if start < 0:
         raise ValueError(f"{name}/SKILL.md has no '## Samples' section")
-    tail = body.find("\nFollow the selected reference", start)
-    if tail < 0:
-        raise ValueError(f"{name}/SKILL.md has no closing 'Follow the selected' line")
-    return (body[:start].rstrip() + body[tail:]).replace(
+    # Samples is the final section; do not use explanatory prose as a delimiter.
+    return body[:start].rstrip().replace(
         _READ_BOTH, _READ_REFERENCE_ONLY, 1)
 
 

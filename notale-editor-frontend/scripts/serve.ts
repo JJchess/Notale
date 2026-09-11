@@ -1,3 +1,4 @@
+import next from 'next';
 import { createServer, request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { resolve } from 'node:path';
@@ -7,14 +8,9 @@ const port = Number(process.env.PORT ?? 4312);
 const contentBackend = new URL(process.env.EDITOR_CONTENT_BACKEND_URL ?? 'http://127.0.0.1:4311');
 // A distinct loopback hostname keeps authored scripts isolated, using the same forwarded port.
 const publicContent = new URL(process.env.EDITOR_PUBLIC_CONTENT_URL ?? `http://notale-content.localhost:${port}`);
-const assets = new Map([
-  ['/', ['index.html', 'text/html; charset=utf-8']],
-  ['/index.html', ['index.html', 'text/html; charset=utf-8']],
-  ['/workbench.html', ['index.html', 'text/html; charset=utf-8']],
-  ['/editor.js', ['editor.js', 'text/javascript; charset=utf-8']],
-  ['/editor.css', ['editor.css', 'text/css; charset=utf-8']],
-  ['/katex.min.css', ['katex.min.css', 'text/css; charset=utf-8']],
-]);
+const app=next({webpack:true,dev:process.env.NODE_ENV==='development',hostname:'127.0.0.1',port});
+await app.prepare();
+const handle=app.getRequestHandler();
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url!, 'http://frontend.local').pathname;
   const requestHost = new URL('http://' + (req.headers.host ?? 'localhost')).hostname;
@@ -31,14 +27,11 @@ const server = createServer(async (req, res) => {
   }
   // Signed slide content is never served on the editor/API origin.
   if (pathname.startsWith('/content/')) { res.writeHead(404).end('Not found'); return; }
-  const asset = assets.get(pathname) ?? (/^\/chunks\/[a-zA-Z0-9_.-]+\.js$/.test(pathname)?[pathname.slice(1),'text/javascript; charset=utf-8']:undefined);
   const templateAsset = /^\/templates\/refined\/(?:assets\/)?[a-zA-Z0-9_.-]+\.(?:json|html|png|jpg|woff2)$/.test(pathname) ? [pathname.slice(1), ({json:'application/json',html:'text/html; charset=utf-8',png:'image/png',jpg:'image/jpeg',woff2:'font/woff2'})[pathname.split('.').pop() as 'json'|'html'|'png'|'jpg'|'woff2']] : undefined;
-  const staticAsset=asset??templateAsset;
-  if (staticAsset && req.method === 'GET') {
-    try {
-      const body = await readFile(process.env.EDITOR_DIST_DIR ? resolve(process.env.EDITOR_DIST_DIR,staticAsset[0]) : new URL('../../../dist/' + staticAsset[0], import.meta.url));
-      res.writeHead(200, { 'content-type': staticAsset[1], 'cache-control': 'no-cache' }).end(body);
-    } catch { res.writeHead(503).end('Build frontend first: npm run build'); }
+  const staticAsset=pathname==='/katex.min.css'?['vendor/katex.min.css','text/css; charset=utf-8']:templateAsset;
+  if(staticAsset && req.method==='GET'){
+    try{const body=await readFile(resolve(staticAsset[0]));res.writeHead(200,{'content-type':staticAsset[1],'cache-control':'no-cache'}).end(body);}
+    catch{res.writeHead(404).end('Resource not found');}
     return;
   }
   // Host API/show routing; preview URLs point at the isolated content hostname above.
@@ -74,6 +67,7 @@ const server = createServer(async (req, res) => {
     req.pipe(upstream);
     return;
   }
-  res.writeHead(404).end('Not found');
+  if(['/index.html','/workbench.html'].includes(pathname))req.url='/'+new URL(req.url!,'http://frontend.local').search;
+  await handle(req,res);
 });
 server.listen(port, '127.0.0.1', () => console.log(`Editor frontend: http://127.0.0.1:${port}`));

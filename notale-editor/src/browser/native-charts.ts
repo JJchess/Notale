@@ -533,10 +533,11 @@ export function nativeChartController(
         );
     },
     update(next: Record<string, NativeChart>) {
+      const changed=new Set(Object.keys(next).filter(id=>JSON.stringify(charts[id])!==JSON.stringify(next[id])));
       for (const key of Object.keys(charts)) if (!next[key]) delete charts[key];
       Object.assign(charts, next);
       refresh();
-      for (const apply of applyUpdates.values()) apply();
+      for (const [id,apply] of applyUpdates) if(changed.has(id))apply();
     },
     editing(value: boolean) {
       editing = value;

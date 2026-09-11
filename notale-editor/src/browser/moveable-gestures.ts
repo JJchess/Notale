@@ -69,7 +69,7 @@ export function moveableGestures(options: {
     let world=[1,0,0,1],tx=dx,ty=dy;
     if(g.kind==='drag'){
       if(input.shiftKey){if(Math.abs(dx)>Math.abs(dy))dy=0;else dx=0;}
-      const result=snapTranslation(g.rects,g.neighbors,dx,dy,snap);tx=result.dx;ty=result.dy;options.guides(result.lines);
+      const result=snapTranslation(g.rects,g.neighbors,dx,dy,{...snap,constrain:!!input.shiftKey});tx=result.dx;ty=result.dy;options.guides(result.lines);
     } else if(g.kind==='rotate') {
       const anchor:[number,number]=[g.box.x+g.box.width/2,g.box.y+g.box.height/2];g.anchor=anchor;
       const px=stage.x+anchor[0]*scale,py=stage.y+anchor[1]*scale;

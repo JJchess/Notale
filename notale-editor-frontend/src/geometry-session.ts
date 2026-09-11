@@ -1,10 +1,10 @@
 import { commitSchema } from '@notale/editor/browser';
-import type { Pending } from './pending-journal.js';
+import {isPending,invalidPendingError,type Pending} from './pending-journal.js';
 import { SyncJournal, type SavedOperation } from './sync-journal.js';
 export type GeometryState={chart?:import('@notale/editor/browser').Slide['nativeCharts'][string];id:string;style:string|null;patch?:Record<string,string|null>;vector?:unknown[]};
 export type GeometryEdit={id:string;slideId:string;runtimeId:string;sequence:number;sourceVersion?:number;commands:unknown[];before:GeometryState[];after:GeometryState[];task?:Pending;vector?:boolean;chart?:boolean};
 /** Shared durable document queue. Geometry is one producer, never a second writer. */
-export class GeometrySession {
+export class DocumentSession {
   ownerId=sessionStorage.getItem('notale-sync-client')??crypto.randomUUID();
   private documentId='';private entries:SavedOperation[]=[];private undone:SavedOperation[]=[];
   private running:Promise<void>|undefined;private failure:unknown;private activeId='';private lastTime=0;private volatile:SavedOperation[]=[];private retainedCount=0;private timer:ReturnType<typeof setTimeout>|undefined;private backoff=1000;
@@ -28,12 +28,15 @@ export class GeometrySession {
   private record(edit?:GeometryEdit,task?:Pending):SavedOperation{return {id:edit?.id??task!.request.mutationId,documentId:this.documentId,edit,task:task?{...task,owner:task.owner??this.ownerId}:undefined,createdAt:this.lastTime=Math.max(Date.now(),this.lastTime+1),state:'pending'};}
   async enqueue(edit:GeometryEdit){
     if(!commitSchema.shape.commands.safeParse(edit.commands).success)throw Error('手势命令无效');
-    const entry=this.record({...edit,sourceVersion:this.context.task(edit).request.baseVersion,owner:this.ownerId} as GeometryEdit,edit.task);await this.add(entry);void this.drain().catch(this.context.error);
+    const entry=this.record({...edit,sourceVersion:edit.sourceVersion??this.context.task(edit).request.baseVersion,owner:this.ownerId} as GeometryEdit,edit.task);await this.add(entry);void this.drain().catch(this.context.error);
   }
-  async stageText(task:Pending){await this.initialized;const entry:SavedOperation={id:task.request.mutationId,documentId:task.documentId,draftTask:{...task,owner:this.ownerId},staged:true,createdAt:Date.now(),state:'pending'};try{if(!await this.journal.stage(entry))throw Error('文字批次已提交');this.volatile=this.volatile.filter(e=>e.id!==entry.id);this.entries=this.entries.filter(e=>e.id!==entry.id);this.entries.push(entry);this.context.changed();}catch(e){this.volatile=this.volatile.filter(v=>v.id!==entry.id);this.volatile.push(entry);this.failure=e;this.context.changed();throw e;}}
+  async stageText(task:Pending){if(!isPending(task))throw invalidPendingError(task);task={...task,kernel:task.kernel??{protocol:2}};await this.initialized;const entry:SavedOperation={id:task.request.mutationId,documentId:task.documentId,draftTask:{...task,owner:this.ownerId},staged:true,createdAt:Date.now(),state:'pending'};try{if(!await this.journal.stage(entry))throw Error('文字批次已提交');this.volatile=this.volatile.filter(e=>e.id!==entry.id);this.entries=this.entries.filter(e=>e.id!==entry.id);this.entries.push(entry);this.context.changed();}catch(e){this.volatile=this.volatile.filter(v=>v.id!==entry.id);this.volatile.push(entry);this.failure=e;this.context.changed();throw e;}}
   async finalizeText(id:string){await this.journal.finalize(id);await this.refresh();void this.drain().catch(this.context.error);}
   async cancelText(id:string){const result=await this.journal.cancel(id);if(result)await this.refresh();return result;}
-  async submit(task:Pending){const entry=this.record(undefined,task);await this.add(entry);await this.drain();if(await this.journal.get(entry.id))throw this.failure??Error('修改尚未同步，已保存在本机');}
+  operations():Pending[]{return this.entries.map(entry=>entry.task??entry.draftTask??{...this.context.task(entry.edit),owner:entry.edit.owner??this.ownerId}).filter(Boolean);}
+  async enqueueTask(task:Pending){if(!isPending(task))throw invalidPendingError(task);await this.add(this.record(undefined,task));void this.drain().catch(this.context.error);}
+  async cancelOperation(id:string){const result=await this.journal.cancel(id);if(result){this.entries=this.entries.filter(e=>e.id!==id);this.context.changed();}return result;}
+  async submit(task:Pending){task={...task,kernel:task.kernel??{protocol:2}};if(!isPending(task))throw invalidPendingError(task);const entry=this.record(undefined,task);await this.add(entry);await this.drain();if(await this.journal.get(entry.id))throw this.failure??Error('修改尚未同步，已保存在本机');}
   private async add(entry:SavedOperation){await this.initialized;this.entries.push(entry);this.undone=[];this.context.changed();try{await this.journal.put(entry);}catch(e){this.volatile.push(entry);this.failure=Error('无法写入本机草稿，请保留当前窗口并导出修改');this.context.error(this.failure);this.context.changed();throw e;}this.context.changed();}
   has(id:string){return this.entries.some(e=>e.id===id&&!!e.edit);}
   get onlyChartEdits(){return this.entries.every(e=>e.edit?.chart);}
@@ -53,8 +56,9 @@ export class GeometrySession {
       while(true){const pending=(await this.journal.list(this.documentId)).filter(e=>e.state==='pending');if(!pending.length){this.entries=[];break;}
         const entry=pending[0];this.entries=pending;if(entry.staged)break;this.activeId=entry.id;
         if(!entry.task){entry.task={...this.context.task(entry.edit),owner:entry.edit.owner??this.ownerId,geometry:!entry.edit.vector&&!entry.edit.chart,vector:!!entry.edit.vector,chart:!!entry.edit.chart};if(!await this.journal.claim(entry.id,entry.task))continue;}
+        if(!await this.journal.markSending(entry.id))continue;
         try{const version=await this.context.submit(entry.task);await this.journal.acknowledge(entry.id,this.documentId,version,this.context.snapshot());this.backoff=1000;this.entries=this.entries.filter(e=>e.id!==entry.id);this.activeId='';this.context.changed();this.channel.postMessage({documentId:this.documentId,version,task:entry.task});}
-        catch(error){const code=(error as any)?.code;if(code==='SYNC_RECOVERY_REQUIRED'||code==='OBJECT_NOT_FOUND'||code==='SLIDE_NOT_FOUND') {entry.state='recovery';entry.error=String(error);await this.journal.put(entry);this.retainedCount++;this.context.recovered(entry.task);this.entries=this.entries.filter(e=>e.id!==entry.id);this.context.error(Error('部分修改无法应用，完整操作已保留为恢复草稿'));continue;}throw error;}
+        catch(error){const code=(error as any)?.code;if(code==='INVALID_SAVE_REQUEST'||code==='SYNC_RECOVERY_REQUIRED'||code==='OBJECT_NOT_FOUND'||code==='SLIDE_NOT_FOUND') {entry.state='recovery';entry.error=String(error);await this.journal.put(entry);this.retainedCount++;this.context.recovered(entry.task);this.entries=this.entries.filter(e=>e.id!==entry.id);this.context.error(Error(code==='INVALID_SAVE_REQUEST'?String(error)+'；该操作已保留为恢复草稿，后续保存可继续':'部分修改无法应用，完整操作已保留为恢复草稿'));continue;}throw error;}
       }
     });})();
     try{await this.running;void this.context.remote().catch(this.context.error);}catch(error){this.failure=error;const code=(error as any)?.code;if(!code||/^HTTP_5|^HTTP_429|^NETWORK|^TIMEOUT|^INTERNAL/.test(code)){clearTimeout(this.timer);this.timer=setTimeout(()=>{void this.retry().catch(()=>{});},this.backoff);this.backoff=Math.min(30000,this.backoff*2);}throw error;}finally{this.running=undefined;this.activeId='';this.context.changed();}
@@ -69,3 +73,6 @@ export class GeometrySession {
   async recoveries(){await this.initialized;return (await this.journal.list()).filter(e=>e.state==='recovery');}
   async exportDraft(){return JSON.stringify({schema:'notale-sync-v1',documentId:this.documentId,checkpoint:await this.journal.checkpoint(this.documentId),operations:[...await this.journal.list(this.documentId),...this.volatile].map(e=>({...e,task:e.task??e.draftTask,staged:false,draftTask:undefined}))},null,2);}
 }
+
+/** Compatibility name for existing runtime producers. */
+export {DocumentSession as GeometrySession};

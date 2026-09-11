@@ -3,6 +3,8 @@ import { commitSchema, identifier } from '@notale/editor/browser';
 export type HistoryPlan = { undo: number[]; redo: number[] };
 export type Pending = {
   owner?: string;
+  inverseMutationId?: string;
+  kernel?: { protocol: 2; prepared?: boolean; preview?: import('@notale/editor/browser').AuthorChangeSet; htmlBases?: Record<string,string> };
   inverseVersion?: number;
   historyAction?: 'undo' | 'redo';
   geometry?: boolean;
@@ -53,6 +55,15 @@ export function isPending(value: unknown): value is Pending {
     );
   }
   return (p.kind === undefined || p.kind === 'commit') && commitSchema.safeParse(p.request).success;
+}
+export function invalidPendingError(task:Pending){
+  const parsed=task.kind==='restore'?undefined:commitSchema.safeParse(task.request);
+  const details=parsed&&!parsed.success?parsed.error.issues.slice(0,3).map(issue=>{
+    const index=typeof issue.path[1]==='number'?issue.path[1]:undefined;
+    const command=index===undefined?undefined:task.request as {commands?:{type?:string}[]};
+    return [index===undefined?'请求':command?.commands?.[index]?.type??'操作',issue.path.join('.'),issue.message].filter(Boolean).join(' · ');
+  }).join('；'):'保存版本或撤销记录无效';
+  return Object.assign(new Error('保存参数校验失败：'+details),{code:'INVALID_SAVE_REQUEST'});
 }
 export const pendingRecordKey = (p: Pending) =>
   `${prefix}${encodeURIComponent(p.documentId)}:${encodeURIComponent(p.request.mutationId)}`;
@@ -111,7 +122,7 @@ export class PendingJournal {
     return entry;
   }
   private store(task: Pending, title: string, createdAt = this.now()) {
-    if (!isPending(task)) throw new Error('无法记录无效的保存请求');
+    if (!isPending(task)) throw invalidPendingError(task);
     const key = pendingRecordKey(task),
       existing = this.read(key);
     if (existing) {

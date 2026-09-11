@@ -17,7 +17,7 @@ export function componentController(
   const baselines = new Map<string, Map<string, Baseline>>(),
     values = new Map<string, string>(),
     animations = new Map<string, Animation[]>();
-  const cleanups: Array<() => void> = [];
+  const cleanups = new Map<string, Array<() => void>>();
   const eventSources = new WeakMap<Event, Map<string, string>>();
   function select(id: string, stateId: string, animate = true) {
     const component = components.find((c) => c.id === id),
@@ -73,8 +73,8 @@ export function componentController(
     notify(id, stateId);
     return true;
   }
-  function start() {
-    for (const component of components) {
+  function start(items = components, initialize = true) {
+    for (const component of items) {
       const base = new Map<string, Baseline>();
       for (const state of component.states)
         for (const [target, patch] of Object.entries(state.patches)) {
@@ -125,10 +125,10 @@ export function componentController(
             select(component.id, event.to);
         };
         node.addEventListener(event.event, handle);
-        cleanups.push(() => node.removeEventListener(event.event, handle));
+        const list=cleanups.get(component.id)??[];list.push(() => node.removeEventListener(event.event, handle));cleanups.set(component.id,list);
       }
     }
-    seek(0, false);
+    if(initialize)seek(0, false);
   }
   function seek(step: number, animate = false) {
     for (const component of components) {
@@ -202,10 +202,19 @@ export function componentController(
     }
   }
   function stop() {
-    cleanups.splice(0).forEach((cleanup) => cleanup());
+    for(const list of cleanups.values())list.forEach(cleanup=>cleanup());cleanups.clear();
     for (const list of animations.values()) list.forEach((animation) => animation.cancel());
   }
+  function update(next: InteractiveComponent[]) {
+    const changed=next.filter(c=>JSON.stringify(c)!==JSON.stringify(components.find(old=>old.id===c.id)));
+    const ids=new Set([...changed.map(c=>c.id),...components.filter(c=>!next.some(n=>n.id===c.id)).map(c=>c.id)]);
+    for(const id of ids){cleanups.get(id)?.forEach(fn=>fn());cleanups.delete(id);animations.get(id)?.forEach(a=>a.cancel());animations.delete(id);baselines.delete(id);}
+    components=next;start(changed,false);
+    for(const c of changed)select(c.id,c.states.some(s=>s.id===values.get(c.id))?values.get(c.id)!:c.initial,false);
+    for(const id of [...values.keys()])if(!next.some(c=>c.id===id))values.delete(id);
+  }
   return {
+    update,
     start,
     stop,
     seek,

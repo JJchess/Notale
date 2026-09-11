@@ -1,3 +1,4 @@
+import {bindPropertyInput, type PropertyTransactions} from './property-input.js';
 import type { Command } from '@notale/editor/browser';
 type ObjectInfo = { id: string; parent?: string; tag: string; locked: boolean; style: Record<string, string>; attributes: Record<string, string> };
 type Style = Record<string, string>;
@@ -20,8 +21,8 @@ const paintless = (v: string | undefined) => !v || v === 'none' || v === 'transp
 // Refreshing is only held back while a field is being typed in; clicking the panel's own
 // buttons must not freeze the list.
 const editing = (root: HTMLElement) =>
-  !!root.querySelector('textarea:focus, select:focus, input:is([type=text],[type=search],[type=number],[type=url],[type=email]):focus');
-export function createAppearanceInspector(context: {
+  !!root.querySelector('textarea:focus, select:focus, input:focus');
+export function createAppearanceInspector(context: PropertyTransactions & {
   objects: () => ObjectInfo[];
   selected: () => string[];
   key: () => string;
@@ -55,7 +56,7 @@ export function createAppearanceInspector(context: {
   const el = <T extends HTMLElement = HTMLElement>(id: string) => panel.querySelector<T>('#' + id)!;
   const value = (id: string) => el<HTMLInputElement>(id).value;
   const checked = (id: string) => el<HTMLInputElement>(id).checked;
-  let key = '', queue: Promise<unknown> = Promise.resolve();
+  let key = '';
   const chosen = () => context.objects().filter((o) => context.selected().includes(o.id));
   const isVector = (o: ObjectInfo) => o.tag === 'svg' || !!o.attributes['data-notale-shape'] || !!o.attributes['data-notale-icon'];
   const templated = (o: ObjectInfo) => o.attributes['data-notale-smart'] !== undefined || o.attributes['data-notale-wordart'] !== undefined;
@@ -93,32 +94,20 @@ export function createAppearanceInspector(context: {
     if (field === 'accent') return { '--accent': value('appearance-accent') };
     return {};
   }
-  // Edits queue instead of dropping: changing fill and then stroke within the same
-  // second must produce both commits, in order.
-  function apply(field: string) {
-    const targets = chosen().filter((o) => !o.locked);
-    if (!targets.length) return;
-    const slideId = context.slideId();
-    const edits = targets.map((o) => ({ type: 'element.patch', slideId, target: o.id, patch: { style: patchFor(o, field) } }) as Command);
-    queue = queue.catch(() => {}).then(() => context.commands(edits)).then(() => { key = ''; }, context.error);
+  function edits(field:string):Command[] {
+    const targets=chosen().filter(o=>!o.locked),slideId=context.slideId();
+    return targets.map(o=>({type:'element.patch',slideId,target:o.id,patch:{style:patchFor(o,field)}}));
   }
-  for (const [id, field] of [
-    ['appearance-fill', 'fill'], ['appearance-fill-none', 'fill'],
-    ['appearance-gradient', 'gradient'], ['appearance-gradient-color', 'gradient'], ['appearance-gradient-angle', 'gradient'],
-    ['appearance-stroke', 'stroke'], ['appearance-stroke-none', 'stroke'], ['appearance-stroke-width', 'stroke'],
-    ['appearance-radius', 'radius'], ['appearance-shadow', 'shadow'], ['appearance-opacity', 'opacity'],
-    ['appearance-accent', 'accent'], ['appearance-fit', 'fit'],
-  ] as const)
-    el<HTMLInputElement>(id).addEventListener('change', () => {
-      if (!el<HTMLInputElement>(id).reportValidity()) return;
-      // Picking a colour or width restores a paint that was switched off, so adding a
-      // fill back is one gesture rather than two.
-      if (id === 'appearance-fill' || id === 'appearance-gradient') el<HTMLInputElement>('appearance-fill-none').checked = false;
-      if (id === 'appearance-stroke' || id === 'appearance-stroke-width') el<HTMLInputElement>('appearance-stroke-none').checked = false;
-      refreshEnabled();
-      apply(field);
-    });
-  el('appearance-opacity').addEventListener('input', () => (el('appearance-opacity-value').textContent = `${value('appearance-opacity')}%`));
+  for(const [id,field] of [
+    ['appearance-fill','fill'],['appearance-fill-none','fill'],['appearance-gradient','gradient'],['appearance-gradient-color','gradient'],['appearance-gradient-angle','gradient'],
+    ['appearance-stroke','stroke'],['appearance-stroke-none','stroke'],['appearance-stroke-width','stroke'],['appearance-radius','radius'],['appearance-shadow','shadow'],['appearance-opacity','opacity'],['appearance-accent','accent'],['appearance-fit','fit'],
+  ] as const){
+    const input=el<HTMLInputElement>(id);
+    const read=()=>{if(id==='appearance-fill'||id==='appearance-gradient')el<HTMLInputElement>('appearance-fill-none').checked=false;if(id==='appearance-stroke'||id==='appearance-stroke-width')el<HTMLInputElement>('appearance-stroke-none').checked=false;refreshEnabled();return edits(field);};
+    if(['color','range','number'].includes(input.type))bindPropertyInput(input,read,context);
+    else input.addEventListener('change',()=>{if(input.reportValidity())void context.commands(read()).catch(context.error);});
+  }
+  el('appearance-opacity').addEventListener('input',()=>el('appearance-opacity-value').textContent=value('appearance-opacity')+'%');
   // Paint inputs stay usable while a paint is off; only the gradient's own fields go dim.
   function refreshEnabled() {
     const flat = checked('appearance-fill-none') || !checked('appearance-gradient');
@@ -149,7 +138,7 @@ export function createAppearanceInspector(context: {
     const shadow = svg ? css.filter : css['box-shadow'];
     const preset = Object.entries(SHADOWS).find(([, [, cssValue, svgValue]]) => (svg ? svgValue : cssValue) === shadow);
     set('appearance-shadow', paintless(shadow) ? 'none' : preset?.[0] ?? 'custom');
-    set('appearance-opacity', Math.round((parseFloat(css.opacity ?? '1') || 1) * 100));
+    set('appearance-opacity', Math.round(Number.isFinite(Number(css.opacity))?Number(css.opacity)*100:100));
     el('appearance-opacity-value').textContent = `${value('appearance-opacity')}%`;
     set('appearance-accent', toHex(o.style['--accent']) ?? toHex(css['--accent'] ?? (isVector(o) ? css.stroke : css.color)) ?? '#466ddb');
     const authoredWidth = o.style.width ?? '', authoredHeight = o.style.height ?? '';
@@ -161,7 +150,7 @@ export function createAppearanceInspector(context: {
   const set = (id: string, v: unknown) => {
     const input = el<HTMLInputElement>(id);
     const typing = document.activeElement === input && ['text', 'search', 'number', 'url', 'email', ''].includes(input.type);
-    if (!typing) input.value = String(v);
+    if (!typing) {input.value = String(v);input.dataset.initial=input.value;}
   };
   return {
     render() {
@@ -183,7 +172,7 @@ export function createAppearanceInspector(context: {
       const first = targets[0];
       // Templates paint through CSS variables, so the resolved values come from the canvas.
       void context.capture(targets.map((o) => o.id)).then((capture) => {
-        if (key !== next) return;
+        if (key !== next || editing(panel)) {key="";return;}
         rects = Object.fromEntries((capture.rectangles ?? []).map((r) => [r.id, { width: r.width, height: r.height }]));
         fill(capture.computedStyles?.[first.id] ?? first.style, first);
       }, () => fill(first.style, first));

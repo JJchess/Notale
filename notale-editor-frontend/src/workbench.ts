@@ -1,3 +1,8 @@
+import { projectCommands } from './author-projection.js';
+import { EditorKernel } from './editor-kernel.js';
+import { applyAuthorChanges, type AuthorChangesPage, type SyncAcknowledgement } from '@notale/editor/browser';
+import {selectionBounds,geometryCommand,selectionUnits,alignmentCommands} from './object-geometry.js';
+import {animationOrderCommands,hasTeachingStructure,sequenceAnimations,type AnimationSequence} from './animation-authoring.js';
 import {createTemplateLibrary} from './template-library.js';
 import {createEchartsEditor} from './echarts-editor.js';
 import type {ChartAuthoring} from '@notale/editor/browser';
@@ -71,7 +76,13 @@ import { createThemePanel } from './theme-panel.js';
 import { createFindReplace } from './find-replace.js';
 import { createPageBackground } from './page-background.js';
 import { createCommentsPanel } from './comments-panel.js';
+import { createHeaderMenus } from './header-menu.js';
+import { setSaveStatus, showSaveStatus, PHASES } from './save-status.js';
 import { parsePptx } from './pptx-import.js';
+let mounted=false;
+export function mountWorkbench(){
+  if(mounted)return;
+  mounted=true;
 type ObjectInfo = {
   id: string;
   tag: string;
@@ -96,7 +107,9 @@ type Rect = {
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const value = (id: string) => $<HTMLInputElement>(id).value;
 const num = (id: string) => Number(value(id));
+let paintingAuthor=false;
 const set = (id: string, v: unknown) => {
+  if(paintingAuthor&&document.activeElement===$(id))return;
   $<HTMLInputElement>(id).value = String(v ?? '');
 };
 const esc = (s: unknown) =>
@@ -128,6 +141,7 @@ let pendingConflict = false;
 let echartsUI:ReturnType<typeof createEchartsEditor>|undefined;
 let documentUI:ReturnType<typeof createDocumentUI>|undefined;
 type Capture = {
+  textReflowTargets?:string[];
   rectangles: (Rect & {
     baseWidth?: number;
     baseHeight?: number;
@@ -184,6 +198,7 @@ async function captureSelection(ids = [...selected]): Promise<Capture> {
 let clipboardCapture: Promise<void> | undefined;
 function copySelection(mode: 'copy' | 'cut') {
   const task = (async () => {
+    await kernel.flush();await textIngress.flush();await vectorIngress.flush();
     await echartsUI?.flush();
     const ids = [...selected],
       source = structuredClone(slide()),
@@ -234,17 +249,55 @@ let migratedLegacy: PendingEntry | undefined;
 const frame = $<HTMLIFrameElement>('canvas');
 buildInsertPanel($('insert-drawer'));
 const editorShell = createEditorShell(scale=>send('camera',{scale}));
-const geometrySession = new GeometrySession({
-  task: edit => ({documentId:snapshot.document.id,slideId:edit.slideId,selection:[...selected],request:{baseVersion:snapshot.version,mutationId:edit.id,commands:edit.commands},after:{undo:[...undo],redo:[]}}),
+const geometrySession: GeometrySession = new GeometrySession({
+  task: edit => ({kernel:{protocol:2},documentId:snapshot.document.id,slideId:edit.slideId,selection:[...selected],request:{baseVersion:edit.sourceVersion??snapshot.version,mutationId:edit.id,commands:edit.commands},after:{undo:[...undo],redo:[]}}),
   submit: task => transmit(task),
-  snapshot:()=>snapshot,
-  recovered:task=>{journal.clear(task);if(pending?.request.mutationId===task.request.mutationId)pending=undefined;},
-  confirm:(task,version)=>{const plan=nextHistory(task,version);undo=plan.undo;redo=plan.redo;sessionStorage.setItem(historyKey(task.documentId),JSON.stringify({version:Math.max(version,snapshot.version),...plan}));mark();},
-  remote: async()=>{if(!busy&&!canvasGesture&&!textSession&&snapshot){const head=await api(`/api/documents/${snapshot.document.id}/sync-head`);if(head.version<=snapshot.version)return;const next:Snapshot=await api(`/api/documents/${snapshot.document.id}`);if(next.version>snapshot.version){const previous=slide();snapshot=next;await updateAuthor(previous);mark();}}},
+  snapshot:()=>kernel.confirmed,
+  recovered:task=>{kernel.recover(task.request.mutationId);journal.clear(task);if(pending?.request.mutationId===task.request.mutationId)pending=undefined;},
+  confirm:(task,version)=>{mutationVersions.set(task.request.mutationId,version);void pullAuthorChanges().then(()=>kernel.acknowledge(task.request.mutationId,version)).catch(error);const plan=nextHistory(task,version);undo=plan.undo;redo=plan.redo;sessionStorage.setItem(historyKey(task.documentId),JSON.stringify({version:Math.max(version,snapshot.version),...plan}));mark();},
+  remote: async()=>{if(!busy&&!canvasGesture&&!textSession&&snapshot){await pullAuthorChanges();kernel.refresh(true);}},
   paint: states => {const chartStates=states.filter(s=>s.chart);if(chartStates.length){const charts={...slide().nativeCharts};for(const state of chartStates){charts[state.id]=state.chart!;if(selected.has(state.id)&&state.chart?.authoring)echartsUI?.restore(state.chart.authoring);}send('charts-update',{charts});}send('geometry-draft',{states:states.filter(s=>!s.chart)});},
-  changed: () => {if(snapshot)mark();},error,
+  changed: () => {if(snapshot){kernel.refresh();mark();}},error,
 });
-let textSession:{sessionId:string;target:string}|undefined;
+let authorPreviewCommands:Command[]=[];
+const kernel: EditorKernel = new EditorKernel({
+  operations:()=>geometrySession.operations(),owner:()=>geometrySession.ownerId,
+  stage:task=>geometrySession.stageText(task),finalize:id=>geometrySession.finalizeText(id),
+  enqueue:task=>geometrySession.enqueueTask(task),cancel:id=>geometrySession.cancelOperation(id),
+  prepare:request=>api('/api/documents/'+snapshot.document.id+'/prepare',request),
+  barrier:async()=>{await geometrySession.barrier();await pullAuthorChanges();},
+  changed:(next,previous,paint)=>{
+    snapshot=next;
+    if(paint&&canvasReady&&previous?.document.id===next.document.id){
+      if(!next.document.slides.some(s=>s.id===slideId)){void render('page-removed').catch(error);return;}
+      const old=previous.document.slides.find(s=>s.id===slideId);
+      refreshAuthorObjects();
+      if(old)void updateAuthor(old).catch(error);
+      renderPageList();renderObjects();paintingAuthor=true;try{renderSelection(false);}finally{paintingAuthor=false;}
+    }
+  },
+  preview:cmds=>{authorPreviewCommands.push(...cmds);send('author-preview',{commands:cmds});mark();},error,
+});
+async function pullAuthorChanges(){
+  const id=kernel.confirmed.document.id;
+  while(true){
+    const page:AuthorChangesPage=await api('/api/documents/'+id+'/changes?after='+kernel.confirmed.version);
+    if(kernel.confirmed.document.id!==id)return;
+    for(const change of page.changes)kernel.accept(change);
+    if(!page.hasMore)break;
+  }
+}
+function refreshAuthorObjects(){
+  const s=slide(),doc=new DOMParser().parseFromString(s.html,'text/html'),old=new Map(objects.map(o=>[o.id,o]));
+  objects=[...doc.querySelectorAll<HTMLElement>('[data-notale-id]')].filter(e=>!['HTML','HEAD','BODY','SCRIPT','STYLE','LINK','META'].includes(e.tagName)).map(e=>{
+    const id=e.dataset.notaleId!,previous=old.get(id);
+    return {id,tag:e.tagName.toLowerCase(),namespace:e.namespaceURI??'',parent:e.parentElement?.getAttribute('data-notale-id')??undefined,
+      text:e.textContent??'',html:e.outerHTML,attributes:Object.fromEntries([...e.attributes].map(a=>[a.name,a.value])),
+      style:Object.fromEntries([...e.style].map(k=>[k,e.style.getPropertyValue(k)+(e.style.getPropertyPriority(k)?' !important':'')])),locked:s.locked.includes(id),kind:previous?.kind??'element'};
+  });
+  selected=new Set([...selected].filter(id=>objects.some(o=>o.id===id)));
+}
+let textSession:{sessionId:string;target:string;sequence?:number}|undefined;
 const textIngress=createTextIngress({queue:geometrySession,documentId:()=>snapshot.document.id,version:()=>snapshot.version,error,confirm:data=>send('text-confirm',data)});
 bindPageNavigation({
   pages: normalPages,
@@ -305,6 +358,7 @@ function current() {
 }
 let selectionScope:string|undefined;
 function changeSelection(ids: string[], operation: 'replace' | 'add' | 'toggle' = 'replace') {
+  if(kernel.editing)void kernel.flush().catch(error);
   selected = new Set(
     selectIds(
       [...selected],
@@ -325,22 +379,42 @@ function refreshPendingControls() {
 function mark() {
   if(snapshot)documentUI?.render();
   refreshPendingControls();
-  $('save-status').textContent = geometrySession.status || (busy ? '正在保存…' : `已保存 · v${snapshot.version}`);
-  $<HTMLButtonElement>('undo').disabled = !textIngress.canUndo && !geometrySession.canUndo && (!undo.length || (busy && !geometrySession.count) || (!!pending && !geometrySession.count));
-  $<HTMLButtonElement>('redo').disabled = !textIngress.canRedo && !geometrySession.canRedo && (!redo.length || busy || !!pending);
+  showSaveStatus({ editing: kernel.editing, journal: geometrySession.status, busy, version: snapshot.version });
+  $<HTMLButtonElement>('undo').disabled = !kernel.canUndo && !textIngress.canUndo && !undo.some(v=>!kernel.handlesVersion(v));
+  $<HTMLButtonElement>('redo').disabled = !kernel.canRedo && !textIngress.canRedo && !redo.length;
   $<HTMLSelectElement>('documents').disabled = busy;
   refreshRecoveries();
 }
-async function updateAuthor(previous:Slide){
-  const next=snapshot.document.slides.find(s=>s.id===slideId);if(!next){await render();return;}
-  const shape=(html:string)=>{const d=new DOMParser().parseFromString(html,'text/html');return JSON.stringify([...d.querySelectorAll('[data-notale-id]')].map(e=>[e.getAttribute('data-notale-id'),e.tagName,e.parentElement?.getAttribute('data-notale-id')]));};
-  const metadata=({html,transforms,notes,animations,nativeCharts,...rest}:Slide)=>JSON.stringify(rest);
-  const runtime=(html:string)=>{const d=new DOMParser().parseFromString(html,'text/html');return JSON.stringify([...d.querySelectorAll('script,style,link')].map(e=>e.outerHTML));};
-  if(previous.id!==next.id||shape(previous.html)!==shape(next.html)||metadata(previous)!==metadata(next)||runtime(previous.html)!==runtime(next.html)){await render();return;}
-  send('author-update',{before:previous.html,after:next.html,transforms:next.transforms});
-  if(JSON.stringify(previous.nativeCharts)!==JSON.stringify(next.nativeCharts))paintChartModels();
-  if(JSON.stringify(previous.animations)!==JSON.stringify(next.animations)){send('animations-update',{animations:next.animations});renderAnimations();teachingStepsUI.render();}
+const assetLeases=new Map<number,ReturnType<typeof keepPreviewAlive>>();
+let assetSignature='',assetBase='',authorUpdateSequence=0;
+let paintedAssets:Snapshot['document']['assets']={};
+async function authorAssetBase(){
+  const base=kernel.confirmed,signature=JSON.stringify(base.document.assets);
+  if(signature===assetSignature&&assetBase)return assetBase;
+  if(!Object.keys(base.document.assets).length){assetSignature=signature;return '';}
+  const previews=await api('/api/documents/'+base.document.id+'/preview?version='+base.version);
+  if(!assetLeases.has(base.version))assetLeases.set(base.version,keepPreviewAlive(base.document.id,previews));
+  const first=base.document.slides[0],url=previews.slides.find((s:{id:string})=>s.id===first.id).url;
+  assetBase=new URL('../'.repeat(first.sourcePath.split('/').length-1)||'./',url).href;
+  assetSignature=signature;return assetBase;
 }
+async function updateAuthor(previous:Slide){
+  const target=slideId,sequence=++authorUpdateSequence;
+  const base=await authorAssetBase();if(sequence!==authorUpdateSequence||target!==slideId)return;
+  const next=snapshot.document.slides.find(s=>s.id===slideId);if(!next){await render('page-removed');return;}
+  previous=renderedSlide?.id===next.id?renderedSlide:previous;
+  if(previous.id!==next.id)return;
+  if(authorPreviewCommands.length){previous=projectCommands({...snapshot,document:{...snapshot.document,slides:[previous]}},authorPreviewCommands).document.slides[0];authorPreviewCommands=[];}
+  const assets=kernel.confirmed.document.assets,changedPaths=Object.keys(assets).filter(path=>JSON.stringify(assets[path])!==JSON.stringify(paintedAssets[path]));paintedAssets=assets;
+  send('author-resources',{assetBase:base,changedPaths});
+  send('author-update',{before:previous.html,after:next.html,transforms:next.transforms});
+  send('author-state',{slide:{...next,html:''},theme:{...snapshot.document.theme,...snapshot.document.layouts.find(l=>l.id===next.layoutId)?.theme,...next.theme},width:snapshot.document.width,height:snapshot.document.height,assetBase:base,assetPaths:Object.keys(kernel.confirmed.document.assets)});
+  renderedSlide=structuredClone(next);
+  pageThumbnails.patch(snapshot.document,base,changedPaths);
+  if(JSON.stringify(previous.animations)!==JSON.stringify(next.animations)){renderAnimations();teachingStepsUI.render();}
+  mark();
+}
+
 const flushWaiters=new Map<string,()=>void>();
 async function flushTextEditor(){const id=uuid();await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>{flushWaiters.delete(id);reject(Error('画布尚未确认编辑内容，请稍后再试'));},5000);flushWaiters.set(id,()=>{clearTimeout(timer);resolve();});send('flush-editor',{id});});await textIngress.flush();await vectorIngress.flush();}
 function paintChartModels(){
@@ -348,9 +422,13 @@ function paintChartModels(){
   for(const state of geometrySession.states(slideId))if(state.chart)charts[state.id]=state.chart;
   send('charts-update',{charts});const id=[...selected][0];if(charts[id]?.authoring)echartsUI?.restore(charts[id].authoring!);
 }
-async function flushAuthor(){await echartsUI?.flush();await whenReady();await flushTextEditor();await whenEditsIdle();await geometrySession.barrier();await geometrySession.pull();}
+async function flushAuthor(){await kernel.flush();await propertyEdits;await echartsUI?.flush();await whenReady();await flushTextEditor();await whenEditsIdle();await geometrySession.barrier();await geometrySession.pull();}
+const mutationVersions=new Map<string,number>();
 const historyKey = (id: string) => `notale-editor-history-v2:${id}`;
 function nextHistory(task:Pending,version:number):HistoryPlan {
+  if(task.kernel&&task.historyAction){const target=task.inverseMutationId?mutationVersions.get(task.inverseMutationId):task.inverseVersion;
+    return task.historyAction==='undo'?{undo:undo.filter(v=>v!==target),redo:[...redo.filter(v=>v!==version),version]}:{undo:[...undo.filter(v=>v!==version),version],redo:redo.filter(v=>v!==target)};
+  }
   const old=validHistory(task.after)?task.after:{undo:[...undo],redo:[...redo]};
   const add=(values:number[])=>values.includes(version)?[...values]:[...values,version];
   return task.historyAction==='undo'?{undo:old.undo,redo:add(old.redo)}:task.historyAction==='redo'?{undo:add(old.undo),redo:old.redo}:{undo:add(undo),redo:[]};
@@ -364,18 +442,26 @@ async function transmit(task: Pending) {
   pendingConflict = false;
   if(snapshot)documentUI?.render();
   refreshPendingControls();
-  $('save-status').textContent = task.kind === 'restore' ? '正在恢复…' : '正在保存…';
+  setSaveStatus(task.kind === 'restore' ? PHASES.restoring : PHASES.saving);
   try {
-    // Persist the exact request AND its resulting local history before sending.
-    // Replaying an acknowledged request reapplies this plan instead of pushing twice.
-    journal.put(task, snapshot.document.title);
+    if(!task.kernel)journal.put(task,snapshot.document.title);
     refreshRecoveries();
-    const acknowledged: Snapshot = await api(
-      `/api/documents/${task.documentId}/sync`,
-      task.inverseVersion ? {baseVersion:task.request.baseVersion,mutationId:task.request.mutationId,commands:[],inverseVersion:task.inverseVersion} : task.kind==='restore'?{baseVersion:task.request.baseVersion,mutationId:task.request.mutationId,commands:[],restoreVersion:task.request.version}:task.geometry?{...task.request,geometry:true}:task.request,
-    );
-    const result=snapshot.document.id===acknowledged.document.id&&snapshot.version>acknowledged.version?snapshot:acknowledged;
-    const confirmedVersion=acknowledged.version;
+    const request=task.inverseMutationId?{baseVersion:task.request.baseVersion,mutationId:task.request.mutationId,commands:[],inverseMutationId:task.inverseMutationId}
+      :task.inverseVersion?{baseVersion:task.request.baseVersion,mutationId:task.request.mutationId,commands:[],inverseVersion:task.inverseVersion}
+      :task.kind==='restore'?{baseVersion:task.request.baseVersion,mutationId:task.request.mutationId,commands:[],restoreVersion:task.request.version}
+      :task.geometry?{...task.request,geometry:true}:task.request;
+    let acknowledged:Snapshot;
+    if(task.kernel){
+      const reply:SyncAcknowledgement=await api('/api/documents/'+task.documentId+'/sync/v2',request);
+      if(reply.change.fromVersion===kernel.confirmed.version)kernel.accept(reply.change);
+      if(kernel.confirmed.version<reply.committedVersion)await pullAuthorChanges();
+      acknowledged={...kernel.confirmed,version:reply.committedVersion};
+    }else{
+      acknowledged=await api('/api/documents/'+task.documentId+'/sync',request);
+      if(acknowledged.version>kernel.confirmed.version)kernel.resetBase(acknowledged);
+    }
+    const result=kernel.confirmed;
+    const confirmedVersion=acknowledged.version;mutationVersions.set(task.request.mutationId,confirmedVersion);
     const advanced=false;
     const geometryOnly=!!task.geometry || geometrySession.has(task.request.mutationId);
     const foreign=!await geometrySession.ownsHistory(task);
@@ -384,46 +470,23 @@ async function transmit(task: Pending) {
       historyKey(task.documentId),
       JSON.stringify({ version: result.version, ...plan }),
     );
-    const withoutGuides = (document: Snapshot['document']) =>
-      JSON.stringify({ ...document, slides: document.slides.map(({ guides, ...slide }) => slide) });
-    const guideOnly =
-      canvasReady &&
-      snapshot.document.id === result.document.id &&
-      (!task.slideId || task.slideId === slideId) &&
-      JSON.stringify(snapshot.document.slides.map((slide) => slide.guides)) !==
-        JSON.stringify(result.document.slides.map((slide) => slide.guides)) &&
-      withoutGuides(snapshot.document) === withoutGuides(result.document);
-    const withoutAnimations=(document:Snapshot['document'])=>JSON.stringify({...document,slides:document.slides.map(({animations,...rest})=>rest)});
-    const animationOnly=canvasReady && (!task.slideId||task.slideId===slideId) && withoutAnimations(snapshot.document)===withoutAnimations(result.document);
-    const previousSlide=slide();
-    snapshot = result;
-    undo = [...plan.undo];
-    redo = [...plan.redo];
-    if (!foreign && task.slideId && result.document.slides.some((s) => s.id === task.slideId))
-      slideId = task.slideId;
-    if(!geometryOnly&&!foreign&&!task.textEdit&&!task.chart) selected = new Set(task.selection ?? []);
     journal.clear(task);
-    pending = undefined;
-    history.replaceState(null, '', `?document=${task.documentId}`);
-    selectDocument(snapshot.document);
+    pending=undefined;
+    undo=[...plan.undo];redo=[...plan.redo];
+    kernel.acknowledge(task.request.mutationId,confirmedVersion);
+    snapshot=kernel.current;
     if(task.textEdit&&canvasReady&&task.slideId===slideId){
-      const doc=new DOMParser().parseFromString(slide().html,'text/html'),node=doc.querySelector<HTMLElement>(`[data-notale-id="${CSS.escape(task.textEdit.target)}"]`);
-      if(node){send('text-confirm',{...task.textEdit,html:node.innerHTML});const cached=objects.find(o=>o.id===task.textEdit!.target);if(cached){cached.html=node.outerHTML;cached.text=node.textContent??'';}}
-      send('author-update',{before:previousSlide.html,after:slide().html,transforms:slide().transforms});renderedSlide=structuredClone(slide());mark();
-    }else if(task.chart&&canvasReady&&task.slideId===slideId){paintChartModels();mark();
-    }else if(task.vector&&canvasReady&&task.slideId===slideId){send('author-update',{before:previousSlide.html,after:slide().html,transforms:slide().transforms});renderedSlide=structuredClone(slide());mark();
-    }else if(animationOnly){send('animations-update',{animations:slide().animations});renderAnimations();teachingStepsUI.render();mark();}
-    else if (geometryOnly||foreign) {
-      await updateAuthor(previousSlide);
-      send('geometry-confirm',{mutationId:task.request.mutationId,version:result.version,transforms:slide().transforms});
-      // The rendered geometry already includes newer local gestures. Never replace it
-      // with an older acknowledgement or rebuild the iframe on this path.
-    } else if (guideOnly) {
-      send('guides-update', { guides: slide().guides });
-      renderGuides();
-      renderSelection();
-      mark();
-    } else await render();
+      const doc=new DOMParser().parseFromString(slide().html,'text/html'),node=doc.querySelector<HTMLElement>('[data-notale-id="'+CSS.escape(task.textEdit.target)+'"]');
+      if(node)send('text-confirm',{...task.textEdit,html:node.innerHTML});
+    }
+    if(canvasReady)send('geometry-confirm',{mutationId:task.request.mutationId,version:result.version,transforms:slide().transforms});
+    if(task.kernel?.prepared&&canvasReady&&task.slideId===slideId){
+      const previews=await api('/api/documents/'+task.documentId+'/preview?version='+result.version);
+      if(!assetLeases.has(result.version))assetLeases.set(result.version,keepPreviewAlive(task.documentId,previews));
+      const source=previews.slides.find((p:{id:string})=>p.id===slideId);
+      pageThumbnails.update(previews.slides,result.document);pageThumbnails.patch(snapshot.document,assetBase);
+      if(source)send('runtime-refresh',{url:source.url,version:result.version});
+    }
     if (advanced) {
       $('toast').textContent = '这批修改已确认，已载入其他窗口的较新版本';
       $('toast').hidden = false;
@@ -439,21 +502,14 @@ async function transmit(task: Pending) {
   }
 }
 async function commands(cmds: unknown[], remember = true, focusSlide?: string) {
+  if(!cmds.length)return;
   await initialized;
-  if(textSession){await flushTextEditor();send("text-end",{});}
+  if(textSession){await flushTextEditor();send('text-end',{});}
   await textIngress.flush();
-  await geometrySession.submit({
-    kind: 'commit',
-    documentId: snapshot.document.id,
-    request: { baseVersion: snapshot.version, mutationId: uuid(), commands: cmds },
-    after: {
-      undo: [...undo],
-      redo: remember ? [] : [...redo],
-    },
-    slideId: focusSlide ?? slideId,
-    selection: focusSlide ? [] : [...selected],
-  });
+  await kernel.execute(cmds as Command[],focusSlide);
+  if(focusSlide&&focusSlide!==slideId){await geometrySession.barrier();await showPage(focusSlide);}
 }
+
 function selectDocument(document: Snapshot['document']) {
   const select = $<HTMLSelectElement>('documents');
   let option = [...select.options].find((o) => o.value === document.id);
@@ -465,6 +521,8 @@ function selectDocument(document: Snapshot['document']) {
   select.value = document.id;
 }
 async function load(id: string) {
+  await kernel.flush();
+  await propertyEdits;
   if(textSession){await flushTextEditor();send("text-end",{});textSession=undefined;}
   await clipboardCapture?.catch(() => undefined);
   await geometrySession.barrier();
@@ -473,7 +531,7 @@ async function load(id: string) {
   $<HTMLSelectElement>('documents').disabled = true;
   if(snapshot)documentUI?.render();
   refreshPendingControls();
-  $('save-status').textContent = '正在载入…';
+  setSaveStatus(PHASES.loading);
   try {
     let entry = journal.own(id);
     if (!entry && migratedLegacy?.task.documentId === id) {
@@ -483,8 +541,8 @@ async function load(id: string) {
     const result: Snapshot = await api(`/api/documents/${id}`);
     pending = undefined;
     pendingConflict = false;
-    snapshot = result;
-    await geometrySession.load(id);
+    snapshot = result;kernel.load(result);authorPreviewCommands=[];assetSignature="";assetBase="";for(const lease of assetLeases.values())lease.stop();assetLeases.clear();
+    await geometrySession.load(id);kernel.refresh();
     await geometrySession.checkpoint(snapshot);
     selectDocument(snapshot.document);
     slideId = geometrySession.firstSlide ?? normalPages()[0]?.id ?? snapshot.document.slides[0].id;
@@ -511,11 +569,11 @@ function pageError(e: unknown) {
   if (!(e instanceof SupersededPage)) error(e);
 }
 async function showPage(id: string) {
-  if(textSession){await flushAuthor();send("text-end",{});textSession=undefined;}
+  await kernel.flush();
+  await propertyEdits;
+  if(textSession){await flushTextEditor();send("text-end",{});textSession=undefined;}
   await initialized;
   await clipboardCapture?.catch(() => undefined);
-  await geometrySession.barrier();
-  await whenIdle();
   if (!snapshot.document.slides.some((s) => s.id === id)) throw new Error('页面不存在');
   slideId = id;
   selected.clear();
@@ -530,7 +588,7 @@ let menuContext:MenuContext|undefined;
 const objectMenu=createObjectMenu(()=>send(textSession?'text-refocus':'focus',{}),error);
 function formatControls(ctx:MenuContext):FormatControl[]{
  const info=ctx.info,styles=ctx.text?.styles??info[0]?.styles??{},mixed=ctx.text?.mixed??Object.keys(styles).filter(k=>info.some(o=>o.styles[k]!==styles[k]));
- const disabled=info.some(o=>o.locked)||geometrySession.blocked;
+ const disabled=info.some(o=>o.locked);
  const format=(property:string,value:string)=>{if(ctx.text)send('text-format',{sessionId:ctx.text.sessionId,selectionToken:ctx.text.selectionToken,property,value});else send('text-object-format',{ids:ctx.ids,property,value});};
  const color=(value:string)=>{const m=value.match(/\d+/g);return /^#[\da-f]{6}$/i.test(value)?value:m&&m.length>=3?'#'+m.slice(0,3).map(v=>Number(v).toString(16).padStart(2,'0')).join(''):'#000000';};
  if(ctx.text||info.every(o=>o.editableText)){
@@ -551,7 +609,7 @@ function openObjectMenu(data:MenuContext) {
  if(!data.ids?.length||![data.x,data.y,data.width].every(Number.isFinite)||data.width<=0)return;
  changeSelection(data.ids);menuContext=data;
  const documentId=snapshot.document.id,valid=()=>documentId===snapshot.document.id&&data.slideId===slideId&&data.runtimeId===frameRuntimeId&&menuContext?.contextId===data.contextId&&(!data.text?JSON.stringify([...selected])===JSON.stringify(data.ids):data.text.sessionId===textSession?.sessionId);
- const blocked=geometrySession.blocked,locked=data.info.some(o=>o.locked),mod=/Mac|iPhone|iPad/.test(navigator.platform)?'⌘':'Ctrl';
+ const blocked=false,locked=data.info.some(o=>o.locked),mod=/Mac|iPhone|iPad/.test(navigator.platform)?'⌘':'Ctrl';
  const edit=(label:string,type:'copy'|'cut'|'paste'|'duplicate'|'delete',key:string,disabled=false,separator=false):ObjectMenuItem=>({id:type,label,icon:type,shortcut:key,disabled:blocked||disabled,separator,danger:type==='delete',run:()=>enqueueEdit({type},true)});
  let items:ObjectMenuItem[];
  if(data.text){
@@ -560,10 +618,12 @@ function openObjectMenu(data:MenuContext) {
   items=[{id:'cut',label:'剪切',icon:'cut',shortcut:mod+' X',disabled:data.text.collapsed||locked,run:async()=>{const token=data.text!.selectionToken;await write();replace('',token);}},{id:'copy',label:'复制',icon:'copy',shortcut:mod+' C',disabled:data.text.collapsed,run:write},{id:'paste',label:'粘贴',icon:'paste',shortcut:mod+' V',disabled:locked,run:async()=>{const token=data.text!.selectionToken;const text=await navigator.clipboard.readText();replace(text,token);}},{id:'select-all',label:'全选文字',shortcut:mod+' A',separator:true,run:()=>send('text-select-all',{})},{id:'clear-format',label:'清除格式',icon:'clear',disabled:locked,run:()=>send('text-format',{sessionId:data.text!.sessionId,selectionToken:data.text!.selectionToken,property:'clear',value:''})},{id:'text-link',label:'链接…',icon:'link',disabled:locked||data.text.collapsed,run:()=>openTextLink(data)},{id:'end-text',label:'结束文字编辑',separator:true,run:()=>send('text-end',{})},{id:'format',label:'文字设置',icon:'format',run:()=>editorShell.inspect('format')}];
  }else{
   const groups=slide().groups.filter(g=>g.members.some(id=>data.ids.includes(id)));
+  const contextUnits=selectionUnits(data.ids.map(id=>({id})),selectionScope?[]:slide().groups).length;
   const svgSelection=data.info.every(n=>['svg','g','path','rect','circle','ellipse','line','polygon','polyline','text','tspan','use'].includes(n.tag));
   items=[edit('剪切','cut',mod+' X',locked),edit('复制','copy',mod+' C'),edit('粘贴','paste',mod+' V',!clipboard||clipboard.documentId!==documentId),edit('创建副本','duplicate',mod+' D'),
    ...(svgSelection?[{id:'vector-edit',label:'编辑图形',icon:'format',disabled:locked,children:[{label:'编辑顶点',disabled:data.info.length!==1||!['path','rect','circle','ellipse','line','polyline','polygon'].includes(data.info[0].tag),run:()=>send('vector-action',{action:'nodes'})},{label:'编辑文字',disabled:data.info.length!==1||!['text','tspan','textPath'].includes(data.info[0].tag),run:()=>send('vector-action',{action:'text'})},{label:'图形格式',run:()=>editorShell.inspect('format')},{label:'导出 SVG',run:()=>send('vector-action',{action:'export'})}]}]:[]),
    {id:'arrange',label:'排列',icon:'layers',separator:true,disabled:locked||blocked,children:([{action:'front',label:'置于顶层'},{action:'forward',label:'上移一层'},{action:'backward',label:'下移一层'},{action:'back',label:'置于底层'}] as const).map(i=>({id:i.action,label:i.label,run:async()=>{await geometrySession.barrier();if(valid())await changeLayer(i.action);}}))},
+   {id:'alignment',label:contextUnits===1?'对齐到页面':'对齐与分布',disabled:locked||blocked,children:Object.entries({left:'左对齐',center:'水平居中',right:'右对齐',top:'顶部对齐',middle:'垂直居中',bottom:'底部对齐','distribute-x':'水平分布','distribute-y':'垂直分布'}).map(([action,label])=>({id:action,label,disabled:action.startsWith('distribute')&&contextUnits<3,run:()=>{if(valid())return arrange(action);}}))},
    ...(data.ids.length>1?[{id:'group',label:'组合',icon:'group',disabled:locked||blocked,run:()=>svgSelection?send('vector-action',{action:'group'}):commands([{type:'group.set',slideId,id:uuid(),name:'组合',members:data.ids}])}]:[]),
    ...(svgSelection&&data.info[0].tag==='g'?[{id:'svg-ungroup',label:'取消组合',icon:'group',disabled:locked||blocked,run:()=>send('vector-action',{action:'ungroup'})}]:[]),
    ...(groups.length?[{id:'ungroup',label:'取消组合',icon:'group',disabled:locked||blocked,run:()=>commands(groups.map(g=>({type:'group.remove',slideId,id:g.id})))}]:[]),
@@ -586,9 +646,22 @@ let canvasGesture=false;const gestureWaiters=new Set<()=>void>();
 let renderedSlide:Slide|undefined;
 let frameRuntimeId = '';
 let renderGeneration = 0;
-async function render() {
+function renderPageList(){
+  const pages=normalPages(),host=$('slides'),existing=new Map([...host.querySelectorAll<HTMLButtonElement>('[data-slide]')].map(node=>[node.dataset.slide!,node]));
+  for(const [index,page] of pages.entries()){
+    let button=existing.get(page.id);
+    if(!button){button=document.createElement('button');button.className='slide-card';button.dataset.slide=page.id;button.draggable=true;button.title='拖动排序 · Alt + ↑ / ↓ 调整顺序';button.innerHTML='<span class="number"></span><span class="page-thumbnail" aria-hidden="true"><span>载入页面…</span></span><span class="name"></span><span class="meta"></span>';button.querySelector<HTMLElement>('.page-thumbnail')!.dataset.thumbnail=page.id;button.onclick=()=>{document.body.classList.remove('overview-mode');void showPage(page.id).catch(pageError);};}
+    existing.delete(page.id);button.classList.toggle('active',page.id===slideId);button.setAttribute('aria-current',String(page.id===slideId));
+    for(const [selector,value] of [['.number',String(index+1).padStart(2,'0')+(page.hidden?' · 已隐藏':'')],['.name',page.name],['.meta',(page.section||'未分章节')+' · '+page.animations.length+' 动画']]){const field=button.querySelector(selector)!;if(field.textContent!==value)field.textContent=value;}
+    if(host.children[index]!==button)host.insertBefore(button,host.children[index]??null);
+  }
+  for(const node of existing.values())node.remove();
+  $('slide-count').textContent=String(pages.length);$('page-name').textContent=slide().name;
+}
+async function render(reason: 'navigation'|'page-removed'|'source-script'|'runtime-recovery' = 'navigation') {
+  (window as any).__notaleMounts??=[];(window as any).__notaleMounts.push({reason,slideId,at:performance.now()});
   if(canvasGesture)await new Promise<void>(resolve=>gestureWaiters.add(resolve));
-  objectMenu.close();textSession=undefined;
+  objectMenu.close();textSession=undefined;authorPreviewCommands=[];
   const generation = ++renderGeneration;
   canvasReady = false;
   canvasLoading.start();
@@ -602,24 +675,14 @@ async function render() {
   for(const id of ['copy-slide','delete-slide','up-slide','down-slide','add-slide'])$<HTMLButtonElement>(id).disabled=!!s.layoutSourceId;
   
   $('page-name').textContent = s.name;
-  $('slides').innerHTML = pages
-    .map(
-      (s, i) =>
-        `<button class="slide-card ${s.id === slideId ? 'active' : ''}" data-slide="${s.id}" draggable="true" aria-current="${s.id === slideId ? 'page' : 'false'}" title="拖动排序 · Alt + ↑ / ↓ 调整顺序"><span class="number">${String(i + 1).padStart(2, '0')}${s.hidden ? ' · 已隐藏' : ''}</span><span class="page-thumbnail" data-thumbnail="${s.id}" aria-hidden="true"><span>载入页面…</span></span><span class="name">${esc(s.name)}</span><span class="meta">${esc(s.section || '未分章节')} · ${s.animations.length} 动画</span></button>`,
-    )
-    .join('');
-  editorShell.render(snapshot.document.width, snapshot.document.height, pages.findIndex(s => s.id === slideId), pages.length);
-  for (const el of document.querySelectorAll<HTMLElement>('[data-slide]'))
-    el.onclick = () => {
-      document.body.classList.remove('overview-mode');
-      void showPage(el.dataset.slide!).catch(pageError);
-    };
+  renderPageList();
+  editorShell.render(snapshot.document.width,snapshot.document.height,pages.findIndex(s=>s.id===slideId),pages.length);
   const [nextObjects, previews] = await Promise.all([
     api(`/api/documents/${snapshot.document.id}/slides/${slideId}/objects?version=${snapshot.version}`),
     api(`/api/documents/${snapshot.document.id}/preview?version=${snapshot.version}`),
   ]);
   if (generation !== renderGeneration) return;
-  objects = nextObjects;
+  objects = nextObjects;refreshAuthorObjects();
   selected = new Set([...selected].filter((id) => objects.some((o) => o.id === id)));
   renderObjects();
   set('notes', s.notes);
@@ -629,10 +692,12 @@ async function render() {
   previewLease?.stop();
   previewSlides = previews.slides;
   previewLease = keepPreviewAlive(snapshot.document.id, previews);
-  pageThumbnails.update(previews.slides, snapshot.document);
+  pageThumbnails.update(previews.slides, kernel.confirmed.document);
+  pageThumbnails.patch(snapshot.document,assetBase);
   channel = previews.channel;
-  renderedSlide=structuredClone(s);
+  renderedSlide=structuredClone(kernel.confirmed.document.slides.find(page=>page.id===s.id)??s);
   frame.src = previews.slides.find((p: { id: string }) => p.id === slideId).url;
+  assetBase=new URL('../'.repeat(s.sourcePath.split('/').length-1)||'./',frame.src).href;assetSignature=JSON.stringify(kernel.confirmed.document.assets);
   assetLibrary.update(frame.src, s.sourcePath);
   $('empty').hidden = true;
   renderAnimations();
@@ -698,11 +763,16 @@ function renderObjects() {
     )
     .join('');
 }
+let inspectedSelectionKey = '';
 let selectionFieldsKey = '',
   bindingRendered = '';
-function renderSelection() {
+function renderSelection(autoInspect = true) {
   syncAnimationSelection();
+  const nextSelectionKey=JSON.stringify([snapshot.document.id,slideId,[...selected].sort()]);
+  const selectionChanged=nextSelectionKey!==inspectedSelectionKey;
+  inspectedSelectionKey=nextSelectionKey;
   editorShell.selectionChanged(selected.size > 0);
+  if(autoInspect&&selectionChanged&&selected.size)editorShell.inspect('format');
   renderSelectionTools(objects, selected, slide().groups, canvasReady);
   chartEditor.render();
   appearanceInspector.render();
@@ -721,6 +791,16 @@ function renderSelection() {
   renderComponentNavigation();
   if (canvasReady) send('select', { ids: [...selected] });
   const hasSelection = selected.size > 0;
+  const alignmentReference=$<HTMLSelectElement>('arrange-reference');
+  const units=selectionUnits([...selected].map(id=>({id})),selectionScope?[]:slide().groups).length;
+  const selectionKind=units===1?'single':'multiple';
+  if(alignmentReference.dataset.selectionKind!==selectionKind){
+    alignmentReference.value=units===1?'slide':'selection';
+    alignmentReference.dataset.selectionKind=selectionKind;
+  }
+  const cannotArrange=!canvasReady||!hasSelection||[...selected].some(id=>objects.find(o=>o.id===id)?.locked);
+  for(const button of document.querySelectorAll<HTMLButtonElement>('#arrange-tools button'))
+    button.disabled=cannotArrange||(button.id.includes('distribute')&&units<3);
   $<HTMLButtonElement>('layer-forward').disabled = !hasSelection;
   $<HTMLButtonElement>('layer-backward').disabled = !hasSelection;
   renderConnector();
@@ -749,6 +829,7 @@ function renderSelection() {
     fieldsKey = JSON.stringify([snapshot.document.id, snapshot.version, slideId, [...selected], o, t, binding]);
   // A runtime-ready or repeated selection notification must not overwrite an
   // unfinished form when its authored source has not changed.
+  renderGeometryFields();
   if (fieldsKey === selectionFieldsKey) {
     if ($<HTMLInputElement>('binding-value').value === bindingRendered)
       set('binding-value', bindingValue);
@@ -761,12 +842,7 @@ function renderSelection() {
   set('object-name', o.attributes['data-notale-name'] ?? '');
   set('object-text', o.text);
   set('font-size', parseFloat(o.style['font-size']) || 32);
-  set('tx', t.x);
-  set('ty', t.y);
-  set('rotation', t.rotate);
-  set('scale', t.scaleX);
-  set('object-width', t.width ?? '');
-  set('object-height', t.height ?? '');
+  renderGeometryFields();
   const layoutParent = o.parent ? objects.find((x) => x.id === o.parent) : undefined;
   $('layout-item-tools').hidden = !(selected.size === 1 && ['process', 'list'].includes(layoutParent?.attributes['data-notale-smart'] ?? ''));
   const cycle = selected.size === 1 && o.attributes['data-notale-smart'] === 'cycle';
@@ -836,13 +912,13 @@ function syncAnimationSelection() {
   else resetAnimationDraft();
   renderAnimations();
 }
-async function previewSingleAnimation(spec?: AnimationSpec) {
+async function previewSingleAnimation(spec?: AnimationSpec, batch?: AnimationSpec[]) {
   const currentSlide = slideId;
   await whenReady();
   if (currentSlide !== slideId) return;
-  const a = spec ?? slide().animations.find(a => a.id === editingAnimation);
+  const a = spec ?? slide().animations.find(a => a.id === editingAnimation) ?? (selected.size>1?slide().animations.find(a=>selected.has(a.target)):undefined);
   if (!a) throw Error('请先选择一条动画');
-  send('animation-preview', { animation: a });
+  send('animation-preview', { animations:batch?.length?batch:!spec&&selected.size>1?slide().animations.filter(item=>selected.has(item.target)):[a] });
 }
 async function applyAnimationEffect(effect: string) {
   if (!selected.size) throw Error('请先选择画布对象');
@@ -852,15 +928,15 @@ async function applyAnimationEffect(effect: string) {
   else if(num('duration')===0)set('duration',.6);
   const edits: Command[] = [];
   let first: string | undefined;
-  for (const target of selected) {
-    const old = slide().animations.find(a => a.id === editingAnimation && a.target === target);
-    const id = old?.id ?? uuid(); first ??= id;
-    const animation = {...readAnimation(id), target};
-    edits.push({type:'animation.set', slideId, animation} as Command);
+  const batch=sequenceAnimations(readAnimation(uuid()) as AnimationSpec,[...selected],value('animation-sequence') as AnimationSequence,uuid);
+  for (const proposed of batch) {
+    const old = slide().animations.find(a => a.id === editingAnimation && a.target === proposed.target);
+    const id = old?.id ?? proposed.id; first ??= id;
+    edits.push({type:'animation.set', slideId, animation:{...proposed,id}});
   }
   editingAnimation = first;
   await commands(edits);
-  await previewSingleAnimation();
+  await previewSingleAnimation(batch[0],batch);
 }
 
 function animationLabel(id: string, v: string) { return Array.from($<HTMLSelectElement>(id).options).find(o => o.value === v)?.textContent ?? v; }
@@ -880,13 +956,14 @@ function renderAnimations() {
   if(!s.animations.some(a=>a.id===editingAnimation))editingAnimation=restoreFocus?s.animations.find(a=>selected.has(a.target))?.id:undefined;
   const chosen = s.animations.find(a => a.id === editingAnimation);
   if(chosen && JSON.stringify(chosen)!==animationFieldsKey && !$('animation-settings').contains(document.activeElement)){fillAnimation(chosen);animationFieldsKey=JSON.stringify(chosen);}
+  $('animation-sequence-field').hidden=selected.size<2;
   $('animation-target').textContent = selected.size ? `${selected.size > 1 ? `已选 ${selected.size} 个对象` : (objects.find(o=>selected.has(o.id))?.text?.trim().slice(0,30) || '已选对象')}` : '选择对象，添加动画';
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-animation-effect]')) {
     button.disabled = !selected.size;
     button.setAttribute('aria-pressed', String(chosen?.effect === button.dataset.animationEffect));
   }
   $('animation-settings').toggleAttribute('disabled', !chosen);
-  $('preview-selected-animation').toggleAttribute('disabled', !chosen);
+  $('preview-selected-animation').toggleAttribute('disabled', !chosen && !(selected.size>1&&s.animations.some(a=>selected.has(a.target))));
   $('add-animation').toggleAttribute('disabled', !selected.size);
   $('new-animation').toggleAttribute('disabled', !selected.size);
   $('clear-object-animations').toggleAttribute('disabled',!s.animations.some(a=>selected.has(a.target)));
@@ -910,7 +987,7 @@ function renderAnimations() {
       <span class="animation-description">${esc(animationLabel('effect', a.effect))} · ${esc(s.steps?.[a.step]?.name ?? `步骤 ${a.step}`)} · ${esc(animationLabel('trigger', a.trigger))}</span>
       <div class="animation-time-label">${esc(origin)} ${seconds(cue.start)}–${seconds(cue.end)}</div>
       <button class="animation-track" data-extent="${extent}" data-edit-animation="${a.id}" aria-label="编辑${esc(objectLabel(a.target))}的${esc(animationLabel('effect', a.effect))}动画" title="${esc(origin)} ${seconds(cue.start)}–${seconds(cue.end)}"><span style="left:${cue.start / extent * 100}%;width:${(cue.end-cue.start) / extent * 100}%"><i aria-hidden="true"></i></span></button>
-      <div class="animation-actions"><button data-preview-animation="${a.id}" title="预览此动画" aria-label="预览此动画">▷</button><button data-copy-animation="${a.id}" title="复制动画" aria-label="复制动画">⧉</button><button data-remove-animation="${a.id}" title="删除动画" aria-label="删除动画">×</button><span class="grow"></span><button data-up-animation="${a.id}" title="上移" aria-label="上移动画" ${i === 0 ? 'disabled' : ''}>↑</button><button data-down-animation="${a.id}" title="下移" aria-label="下移动画" ${i === cues.length - 1 ? 'disabled' : ''}>↓</button></div></div>`;
+      <div class="animation-actions"><button data-preview-animation="${a.id}" title="预览此动画" aria-label="预览此动画">▷</button><button data-copy-animation="${a.id}" title="复制动画" aria-label="复制动画">⧉</button><button data-remove-animation="${a.id}" title="删除动画" aria-label="删除动画">×</button><span class="grow"></span><button data-up-animation="${a.id}" title="上移" aria-label="上移动画"  ${i === 0 || hasTeachingStructure(s) && cues[i-1].spec.step !== a.step ? 'disabled' : ''}>↑</button><button data-down-animation="${a.id}" title="下移" aria-label="下移动画"  ${i === cues.length - 1 || hasTeachingStructure(s) && cues[i+1].spec.step !== a.step ? 'disabled' : ''}>↓</button></div></div>`;
   }).join('') || '<p class="hint">选择画布对象，为它添加进入、强调或退出动画。</p>';
   $('timeline').innerHTML = cues.map(cue => `<button class="cue" data-edit-animation="${cue.spec.id}">${esc(objectLabel(cue.spec.target))} · ${esc(s.steps?.[cue.spec.step]?.name ?? `步骤 ${cue.spec.step}`)} · ${seconds(cue.start)}–${seconds(cue.end)}${cue.eventTarget ? ' · 点击触发' : ''}</button>`).join('');
   if (!s.animations.some((a) => a.id === editingAnimation)) editingAnimation = undefined;
@@ -927,7 +1004,7 @@ function renderAnimations() {
       selected = new Set([a.target]);
       animationSelectionKey = slideId + ':' + a.target;
       renderObjects();
-      renderSelection();
+      renderSelection(false);
       fillAnimation(a);
       renderAnimations();
     };
@@ -943,8 +1020,9 @@ function renderAnimations() {
       event.preventDefault(); row.classList.remove('drag-target');
       const id=event.dataTransfer?.getData('application/notale-animation');
       if(!id || id===row.dataset.cueId || !s.animations.some(a=>a.id===id))return;
+      if(hasTeachingStructure(s)&&s.animations.find(a=>a.id===id)!.step!==s.animations.find(a=>a.id===row.dataset.cueId)!.step){error(Error('请通过动画的“步骤”选项移动到其他讲授步骤'));return;}
       const ids=s.animations.map(a=>a.id).filter(a=>a!==id); ids.splice(ids.indexOf(row.dataset.cueId!),0,id);
-      void commands([{type:'animation.reorder',slideId,ids}]).catch(error);
+      void commands(animationOrderCommands(s,ids.map(id=>s.animations.find(a=>a.id===id)!))).catch(error);
     };
   }
   const timingVersion = snapshot.version, timingDocument = snapshot.document.id, timingSlide = s.id;
@@ -973,8 +1051,9 @@ function renderAnimations() {
       const ids = s.animations.map((a) => a.id),
         at = ids.indexOf(el.dataset.downAnimation!);
       if (at < ids.length - 1) {
+        if(hasTeachingStructure(s)&&s.animations[at].step!==s.animations[at+1].step){error(Error('请通过动画的“步骤”选项移动到其他讲授步骤'));return;}
         [ids[at], ids[at + 1]] = [ids[at + 1], ids[at]];
-        void commands([{ type: 'animation.reorder', slideId, ids }]).catch(error);
+        void commands(animationOrderCommands(s,ids.map(id=>s.animations.find(a=>a.id===id)!))).catch(error);
       }
     };
   for (const el of document.querySelectorAll<HTMLElement>('[data-remove-animation]'))
@@ -987,8 +1066,9 @@ function renderAnimations() {
       const ids = s.animations.map((a) => a.id),
         index = ids.indexOf(el.dataset.upAnimation!);
       if (index > 0) {
+        if(hasTeachingStructure(s)&&s.animations[index].step!==s.animations[index-1].step){error(Error('请通过动画的“步骤”选项移动到其他讲授步骤'));return;}
         [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
-        void commands([{ type: 'animation.reorder', slideId, ids }]).catch(error);
+        void commands(animationOrderCommands(s,ids.map(id=>s.animations.find(a=>a.id===id)!))).catch(error);
       }
     };
   if(restoreFocus){const focus=editingAnimation?$('animations').querySelector<HTMLButtonElement>(`[data-edit-animation="${editingAnimation}"].animation-object`):$('animations');focus?.focus({preventScroll:true});}
@@ -1019,6 +1099,7 @@ window.addEventListener('message', (e) => {
   )
     return;
   const { type, data } = e.data;
+  if(type==='runtime-reload-required'&&data.runtimeId===frameRuntimeId&&data.slideId===slideId)void kernel.flush().then(()=>geometrySession.barrier()).then(()=>render(data.reason==='source-script'?'source-script':'runtime-recovery')).catch(error);
   if (type === 'scene-inspect') {
     sceneRequests.get(data.requestId)?.(data);
     sceneRequests.delete(data.requestId);
@@ -1035,7 +1116,7 @@ window.addEventListener('message', (e) => {
   if(data?.runtimeId===frameRuntimeId&&data?.slideId===slideId){
     if(type==='text-session-start')textSession={sessionId:data.sessionId,target:data.target};
     if(type==='text-session-end'&&textSession?.sessionId===data.sessionId){textSession=undefined;if(menuContext?.text)objectMenu.close();void textIngress.flush().catch(error);}
-    if(type==='text-draft'&&textSession?.sessionId===data.sessionId)textIngress.receive(data as TextDraft);
+    if(type==='text-draft'&&textSession&&textSession.sessionId===data.sessionId){textSession.sequence=data.sequence;textIngress.receive(data as TextDraft);}
     if(type==='text-history')enqueueEdit({type:data.action},false);
     if(type==='text-context-state'&&menuContext&&menuContext.text?.sessionId===data.sessionId){menuContext.text=data;objectMenu.refresh(formatControls(menuContext));}
   }
@@ -1061,7 +1142,7 @@ window.addEventListener('message', (e) => {
     $<HTMLInputElement>('step').max = String(max);
     mode(interacting);
     send('camera',{scale:editorShell.zoom()});
-    if(renderedSlide?.id===slideId)send('author-update',{before:renderedSlide.html,after:slide().html,transforms:slide().transforms});
+    if(renderedSlide?.id===slideId)void updateAuthor(renderedSlide).catch(error);
     const drafts=geometrySession.states(slideId);if(drafts.length)send('geometry-draft',{states:drafts});
     if(geometrySession.count)void geometrySession.drain().catch(error);
     sendSnapping();
@@ -1147,7 +1228,7 @@ window.addEventListener('message', (e) => {
   if (type === 'edit-error') error(new Error(data.message));
   if (type === 'media-blocked')
     $('media-notice').textContent = '浏览器未允许自动播放，请使用媒体播放按钮。';
-  if (type === 'measure') rects = data;
+  if (type === 'measure') {rects = data;renderGeometryFields();}
   if (type === 'capture') {
     const callback = captures.get(data.requestId);
     if (callback) {
@@ -1267,24 +1348,40 @@ on('apply-text', () =>
     { type: 'element.patch', slideId, target: current().id, patch: { text: value('object-text') } },
   ]),
 );
-on('apply-format', async () => {
+let propertyEdits:Promise<unknown>=Promise.resolve();
+function editGeometry(field:string){
+ const control=$<HTMLInputElement>(field);
+ if(!control.reportValidity()||!control.value)return;
+ const amount=num(field),ids=[...selected],pageId=slideId,documentId=snapshot.document.id;
+ const rotation=Number($<HTMLInputElement>('rotation').dataset.initial)||0;
+ const proportional=$<HTMLInputElement>('geometry-proportional').checked;
+ propertyEdits=propertyEdits.catch(()=>{}).then(async()=>{
   await geometrySession.barrier();
-  const ids = ['tx', 'ty', 'rotation', 'scale', 'object-width', 'object-height'];
-  const dirty = ids.filter(id => value(id) !== $<HTMLInputElement>(id).dataset.initial);
-  if (!dirty.length) return;
-  return commands([...selected].map(target => {
-    const transform: Slide['transforms'][string] = { ...(slide().transforms[target] ?? { x: 0, y: 0, rotate: 0, scaleX: 1, scaleY: 1 }) };
-    for (const id of dirty) {
-      if (id === 'tx') transform.x = num(id);
-      if (id === 'ty') transform.y = num(id);
-      if (id === 'rotation') transform.rotate = num(id);
-      if (id === 'scale') transform.scaleX = transform.scaleY = num(id);
-      if (id === 'object-width') transform.width = value(id) ? num(id) : null;
-      if (id === 'object-height') transform.height = value(id) ? num(id) : null;
-    }
-    return { type: 'element.transform', slideId, target, transform };
-  }));
-});
+  if(documentId!==snapshot.document.id||pageId!==slideId)return;
+  const capture=await captureSelection(ids);
+  const reflow=ids.length===1&&capture.textReflowTargets?.includes(ids[0])&&$<HTMLInputElement>('text-reflow').checked;
+  if(reflow&&(field==='object-width'||field==='object-height')){
+    send('object-box-size',{target:ids[0],field,value:amount,proportional});
+    await captureSelection(ids);
+    await geometrySession.barrier();
+  }else await commands([geometryCommand(pageId,capture.rectangles,field,amount,proportional,rotation)]);
+ }).catch(error);
+}
+on('apply-format',()=>{for(const id of ['tx','ty','rotation','scale','object-width','object-height'])if(value(id)!==$<HTMLInputElement>(id).dataset.initial)editGeometry(id);});
+for(const id of ['tx','ty','rotation','scale','object-width','object-height']){
+ $(id).addEventListener('change',()=>editGeometry(id));
+ $(id).addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();(event.target as HTMLInputElement).blur();}});
+}
+function renderGeometryFields(){
+ const box=selectionBounds(rects.filter(r=>selected.has(r.id)));
+ if(!box)return;
+ const first=slide().transforms[[...selected][0]],matrix=first?.matrix;
+ const rotation=selected.size>1?0:matrix?Math.atan2(matrix[1],matrix[0])*180/Math.PI:first?.rotate??0;
+ for(const [id,n] of Object.entries({tx:box.x,ty:box.y,'object-width':box.width,'object-height':box.height,rotation,scale:1})){
+  if(document.activeElement===$(id))continue;
+  set(id,Math.round(n*100)/100);$<HTMLInputElement>(id).dataset.initial=value(id);
+ }
+}
 on('apply-advanced', () =>
   commands([
     {
@@ -1398,16 +1495,18 @@ on('show-objects', () =>
 );
 on('layer-forward', () => changeLayer('forward'));
 on('layer-backward', () => changeLayer('backward'));
-on('group', () =>
-  [...selected].every(id=>objects.find(o=>o.id===id)?.namespace==='http://www.w3.org/2000/svg')?send('vector-action',{action:'group'}):commands([{ type: 'group.set', slideId, id: uuid(), name: '组合', members: [...selected] }]),
-);
-on('ungroup', () =>
-  selected.size===1&&objects.find(o=>selected.has(o.id))?.tag==='g'?send('vector-action',{action:'ungroup'}):commands(
-    slide()
-      .groups.filter((g) => g.members.some((id) => selected.has(id)))
-      .map((g) => ({ type: 'group.remove', slideId, id: g.id })),
-  ),
-);
+function groupSelection(){
+ if(selected.size<2)return;
+ return [...selected].every(id=>objects.find(o=>o.id===id)?.namespace==='http://www.w3.org/2000/svg')
+ ?send('vector-action',{action:'group'}):commands([{type:'group.set',slideId,id:uuid(),name:'组合',members:[...selected]}]);
+}
+function ungroupSelection(){
+ if(selected.size===1&&objects.find(o=>selected.has(o.id))?.tag==='g')return send('vector-action',{action:'ungroup'});
+ const groups=slide().groups.filter(g=>g.members.some(id=>selected.has(id)));
+ if(groups.length)return commands(groups.map(g=>({type:'group.remove',slideId,id:g.id})));
+}
+on('group',groupSelection);
+on('ungroup',ungroupSelection);
 on('align-left', () => arrange('left'));
 on('distribute', () => arrange('distribute-x'));
 
@@ -1877,6 +1976,7 @@ $('effect').insertAdjacentHTML('beforeend', Object.entries({'disappear':'消失'
 $('animation-settings').insertAdjacentHTML('beforeend', '<label>垂直位移<input id="dy" type="number" value="0"></label><label>缓动<select id="easing"><option value="ease-out">减速</option><option value="linear">线性</option><option value="ease">平滑</option><option value="ease-in">加速</option><option value="ease-in-out">加速后减速</option></select></label><details id="animation-custom" hidden><summary>自定义效果数据</summary><label>关键帧<textarea id="keyframes" rows="4">[{"opacity":0,"offset":0},{"opacity":1,"offset":1}]</textarea></label></details>');
 const effectSymbol:Record<string,string>={'draw-stroke':'✎','appear':'◈','fade-in':'◌','fly-in':'↘','zoom-in':'⤢','float-in':'↑','bounce-in':'↟','wipe-in':'▥','split-in':'◧','pulse':'✦','spin':'⟳','disappear':'◇','fade-out':'◌','fly-out':'↗','zoom-out':'⤡','wipe-out':'▥','split-out':'◨','motion':'↝'};
 $('animation-gallery').innerHTML = `<div class="animation-category-tabs" role="tablist" aria-label="动画效果分类">${effectGroups.map(g=>`<button role="tab" data-animation-category="${g.kind}" aria-selected="${g.kind==='entrance'}">${g.name}</button>`).join('')}</div>`+effectGroups.map(group=>`<section class="animation-effect-group ${group.kind}" ${group.kind==='entrance'?'':'hidden'}><div>${group.effects.map(effect=>`<button data-animation-effect="${effect}" title="${animationLabel('effect',effect)}"><span class="effect-symbol" aria-hidden="true">${effectSymbol[effect]}</span><span>${animationLabel('effect',effect)}</span></button>`).join('')}</div></section>`).join('');
+$('animation-gallery').insertAdjacentHTML('beforebegin','<label id="animation-sequence-field" hidden>多个对象<select id="animation-sequence"><option value="together">同时播放</option><option value="after">依次播放</option><option value="click">逐次单击</option></select></label>');
 $('animation-gallery').insertAdjacentHTML('afterbegin','<button id="clear-object-animations" title="移除所选对象的全部动画">无动画</button>');
 on('clear-object-animations',()=>commands(slide().animations.filter(a=>selected.has(a.target)).map(a=>({type:'animation.remove',slideId,id:a.id}))));
 for(const tab of document.querySelectorAll<HTMLButtonElement>('[data-animation-category]'))tab.onclick=()=>showAnimationGroup(tab.dataset.animationCategory!);
@@ -1889,7 +1989,7 @@ for(const id of ['easing','animation-repeat','animation-reverse']) {
 $('animation-settings').append(advancedAnimation);
 $('effect').closest<HTMLElement>('label')!.hidden=true;
 let animationUpdate: Promise<unknown> = Promise.resolve();
-function saveAnimationFields() {
+function saveAnimationFields(reflow=false) {
   renderAnimationFields();
   if (!editingAnimation) return;
   if (!$<HTMLFieldSetElement>('animation-settings').checkValidity()) return;
@@ -1898,9 +1998,13 @@ function saveAnimationFields() {
   let animation: ReturnType<typeof readAnimation>;
   try {animation=readAnimation(editingAnimation);} catch(e) {error(e);return;}
   const targetSlide=slideId, id=editingAnimation;
-  animationUpdate=animationUpdate.catch(()=>{}).then(()=>commands([{type:'animation.set',slideId:targetSlide,animation} as Command])).then(()=>{if(slideId===targetSlide&&editingAnimation===id)return previewSingleAnimation();}).catch(error);
+  animationUpdate=animationUpdate.catch(()=>{}).then(()=>{
+    const source=snapshot.document.slides.find(s=>s.id===targetSlide);
+    if(!source)return;
+    return commands(reflow&&!hasTeachingStructure(source)?animationOrderCommands(source,source.animations.map(a=>a.id===id?animation as AnimationSpec:a)):[{type:'animation.set',slideId:targetSlide,animation} as Command]);
+  }).then(()=>{if(slideId===targetSlide&&editingAnimation===id)return previewSingleAnimation();}).catch(error);
 }
-const animationPath=createAnimationPath($('animation-path'),saveAnimationFields);
+const animationPath=createAnimationPath($('animation-path'),()=>saveAnimationFields());
 animationPath.set([{x:0,y:0},{x:200,y:0}]);
 for (const field of $('animation-settings').querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>('input,select,textarea')) {
   if(field.closest('#animation-path'))continue;
@@ -1915,7 +2019,7 @@ for (const field of $('animation-settings').querySelectorAll<HTMLInputElement|HT
       const distance=Math.max(Math.abs(num('dx')),Math.abs(num('dy')),120),d=value('effect-direction');
       set('dx',d==='left'?-distance:d==='right'?distance:0);set('dy',d==='up'?-distance:d==='down'?distance:0);
     }
-    saveAnimationFields();
+    saveAnimationFields(field.id==='trigger');
   });
 }
 on('add-animation', () => applyAnimationEffect(value('effect')));
@@ -2121,6 +2225,7 @@ async function restore(
   after: HistoryPlan = { undo: [...undo], redo: [] },
   historyAction?: 'undo'|'redo',
 ) {
+  await kernel.flush();
   await geometrySession.barrier();
   if (pending) throw new Error('请先处理待确认修改');
   await geometrySession.submit({
@@ -2133,13 +2238,18 @@ async function restore(
     selection: [...selected],
   });
 }
+function confirmLocalTextHistory(){if(textSession?.sequence!==undefined){const node=new DOMParser().parseFromString(slide().html,'text/html').querySelector('[data-notale-id="'+CSS.escape(textSession.target)+'"]');if(node)send('text-confirm',{...textSession,html:node.innerHTML});}}
 async function undoEdit() {
+  await textIngress.flush();
+  if(await kernel.undo()){confirmLocalTextHistory();return;}
+  undo=undo.filter(v=>!kernel.handlesVersion(v));
   if(await geometrySession.undo())return;
   await geometrySession.barrier();
   if (!undo.length) return;
   await restore(undo.at(-1)!, { undo: undo.slice(0, -1), redo: [...redo] },'undo');
 }
 async function redoEdit() {
+  if(await kernel.redo()){confirmLocalTextHistory();return;}
   if(await geometrySession.redo())return;
   await geometrySession.barrier();
   if (!redo.length) return;
@@ -2200,7 +2310,7 @@ $<HTMLInputElement>('import-pptx').onchange = () =>
     const input = $<HTMLInputElement>('import-pptx'), file = input.files?.[0];
     input.value = '';
     if (!file) return;
-    $('save-status').textContent = '正在导入 PPTX…';
+    setSaveStatus(PHASES.importing);
     const deck = parsePptx(new Uint8Array(await file.arrayBuffer()));
     if (!deck.slides.length) throw new Error('这份 PPTX 里没有可导入的页面');
     const id = uuid();
@@ -2259,6 +2369,7 @@ function enqueueEdit(action: EditAction, focusCanvas = false) {
     !action ||
     ![
       'nudge',
+      'group','ungroup','front','back','forward','backward',
       'copy',
       'cut',
       'paste',
@@ -2306,27 +2417,19 @@ async function drainEdits() {
   editingKeys = true;
   try {
     while (editQueue.length) {
-      const nextAction = editQueue[0]?.action.type;
-      if(nextAction==='undo'&&await textIngress.undo()){editQueue.shift();continue;}
-      if(nextAction==='redo'&&await textIngress.redo()){editQueue.shift();continue;}
       await textIngress.flush();
-      if(nextAction==='undo' && geometrySession.canUndo){editQueue.shift();await geometrySession.undo();continue;}
-      if(nextAction==='redo' && geometrySession.canRedo){editQueue.shift();await geometrySession.redo();continue;}
-      if(geometrySession.count)await geometrySession.barrier();
-      await whenIdle();
       await whenReady();
       const item = editQueue.shift()!;
       if (item.documentId !== snapshot.document.id || item.slideId !== slideId)
         throw new Error('页面已切换，未执行剩余快捷键操作');
-      if (pending) throw new Error('有待确认修改，请先重试保存');
       const action = item.action;
-      if (['nudge', 'copy', 'cut', 'delete', 'duplicate'].includes(action.type)) {
+      if (['nudge', 'copy', 'cut', 'delete', 'duplicate','group','ungroup','front','back','forward','backward'].includes(action.type)) {
         changeSelection(item.ids);
         renderObjects();
         renderSelection();
         if (!selected.size) continue;
       }
-      if (['nudge', 'delete', 'cut'].includes(action.type)) {
+      if (['nudge', 'delete', 'cut','group','ungroup','front','back','forward','backward'].includes(action.type)) {
         const byId = new Map(objects.map((o) => [o.id, o]));
         const ancestor = (parent: string, child: string) => {
           const seen = new Set<string>();
@@ -2366,7 +2469,11 @@ async function drainEdits() {
             dy: action.dy,
           },
         ]);
-      } else if (action.type === 'copy' || action.type === 'cut') await copySelection(action.type);
+      } else if(action.type==='group'){
+        if(selected.size>=2)await groupSelection();
+      } else if(action.type==='ungroup')await ungroupSelection();
+      else if(action.type==='front'||action.type==='back'||action.type==='forward'||action.type==='backward')await changeLayer(action.type);
+      else if (action.type === 'copy' || action.type === 'cut') await copySelection(action.type);
       else if (action.type === 'paste') await pasteSelection();
       else if (action.type === 'duplicate') {
         await copySelection('copy');
@@ -2465,7 +2572,7 @@ async function init(id?: string) {
   populate(docs);
   if (!docs[0]?.id) {
     $('empty').textContent = '尚无讲义。请使用导入脚本导入 HTML slides，或导入已有工程包。';
-    $('save-status').textContent = '等待导入';
+    setSaveStatus(PHASES.waitingImport);
     return;
   }
   await load(docs[0].id);
@@ -2501,7 +2608,7 @@ async function refreshRecoveries() {
     for(const entry of recovery){
       const row=document.createElement('div');row.className='recovery-row';const label=document.createElement('p');label.textContent='已保留草稿 · '+(entry.error??'等待恢复');
       const download=document.createElement('button');download.textContent='导出完整草稿';download.onclick=()=>downloadRecovery(JSON.stringify({schema:'notale-sync-v1',operations:records.filter(e=>e.documentId===entry.documentId)},null,2));
-      const recover=document.createElement('button');recover.textContent='打开恢复副本';recover.onclick=()=>{void (async()=>{const source=entry.edit?.sourceVersion??entry.task?.request.baseVersion??entry.draftTask?.request.baseVersion;if(!source)throw Error('请先导出草稿以保留操作');const edits=records.filter(e=>e.documentId===entry.documentId&&e.state==='recovery');const commands=edits.flatMap(e=>e.edit?.commands??(e.task?.kind!=='restore'?e.task?.request.commands??(e.draftTask?.kind!=="restore"?e.draftTask?.request.commands??[]:[]):[]));const copy=await api(`/api/documents/${entry.documentId}/sync-recovery`,{baseVersion:source,mutationId:entry.id,commands});window.open(`/?document=${copy.document.id}`,'_blank','noopener');})().catch(error);};row.append(label,recover,download);list.append(row);
+      const recover=document.createElement('button');recover.textContent='打开恢复副本';recover.onclick=()=>{void (async()=>{const source=entry.edit?.sourceVersion??entry.task?.request.baseVersion??entry.draftTask?.request.baseVersion;if(!source)throw Error('请先导出草稿以保留操作');const edits=records.filter(e=>e.documentId===entry.documentId&&e.state==='recovery');const commands=edits.flatMap(e=>e.edit?.commands??(e.task?.kind!=='restore'?e.task?.request.commands??(e.draftTask?.kind!=="restore"?e.draftTask?.request.commands??[]:[]):[]));const history=entry.task??entry.draftTask;const operation=history?.inverseVersion?{commands:[],inverseVersion:history.inverseVersion}:history?.kind==='restore'?{commands:[],restoreVersion:history.request.version}:{commands};const copy=await api(`/api/documents/${entry.documentId}/sync-recovery`,{baseVersion:source,mutationId:entry.id,...operation});window.open(`/?document=${copy.document.id}`,'_blank','noopener');})().catch(error);};row.append(label,recover,download);list.append(row);
     }
     for (const { key, entry } of entries) {
       const row = document.createElement('div');
@@ -2654,6 +2761,11 @@ async function arrange(action: string) {
   if (snapshot.document !== sourceDocument || slideId !== sourceSlide) throw new Error('页面或内容已变化，请在当前页重新操作');
   if (!capture.rectangles.length) {
     connectorGeometryNotice();
+    return;
+  }
+  if(!['rotate','scale','translate'].includes(action)){
+    const edits=alignmentCommands(slideId,capture.rectangles,selectionScope?[]:slide().groups,action,settings.reference,snapshot.document.width,snapshot.document.height);
+    if(edits.length)return commands(edits);
     return;
   }
   return commands([
@@ -2937,12 +3049,12 @@ const layoutValuesUI = createLayoutValues({
 });
 const contextInspector = createContextInspector();
 const typographyUI = createTypography({
-  key: () => JSON.stringify([snapshot.document.id, snapshot.version, slideId, [...selected]]),
+  key: () => JSON.stringify([snapshot.document.id, snapshot.version, kernel.revision, slideId, [...selected]]),
   ready: () => canvasReady,
   ids: () => [...selected],
   slideId: () => slideId,
   capture: captureSelection,
-  commands,
+  commands,preview:(key,cmds)=>kernel.preview(key,cmds),commit:(key,cmds)=>kernel.commit(key,cmds),cancel:key=>kernel.cancel(key),error,
 });
 on('apply-typography', () => typographyUI.apply());
 on('reset-typography', () => typographyUI.reset());
@@ -3030,9 +3142,10 @@ on('open-find-replace', () => findReplace.open());
 const appearanceInspector = createAppearanceInspector({
   objects: () => objects,
   selected: () => [...selected],
-  key: () => JSON.stringify([snapshot.document.id, snapshot.version, slideId, [...selected]]),
+  key: () => JSON.stringify([snapshot.document.id, snapshot.version, kernel.revision, slideId, [...selected]]),
   slideId: () => slideId,
   commands,
+  preview:(key,cmds)=>kernel.preview(key,cmds),commit:(key,cmds)=>kernel.commit(key,cmds),cancel:key=>kernel.cancel(key),
   capture: captureSelection,
   error,
 });
@@ -3073,6 +3186,7 @@ const previewOverlay = createPreviewOverlay({
   present: () => $('present').click(), error,
 });
 installDockIcons();
+createHeaderMenus();
 on('dock-add-page', () => $('add-slide').click());
 on('dock-delete-page', () => $('delete-slide').click());
 for (const [id, delta] of [['dock-previous-page', -1], ['dock-next-page', 1]] as const)
@@ -3093,7 +3207,9 @@ Object.assign(window, {
   NotaleWorkbench: {
     commands,
     getSyncState:()=>({pending:geometrySession.count,status:geometrySession.status,blocked:geometrySession.blocked}),
-    getSnapshot: () => snapshot,
+    getSnapshot: () => snapshot ? kernel.current : undefined,
+  getConfirmedSnapshot:()=>kernel.confirmed,
+  whenSynchronized:async()=>{await kernel.flush();await geometrySession.barrier();},
     getPending: () => (pending ? structuredClone(pending) : undefined),
     select: (id: string) => {
       changeSelection([id]);
@@ -3206,4 +3322,6 @@ function connectorGeometryNotice() {
   $('toast').textContent = '连接线会跟随端点，请移动或调整端点对象';
   $('toast').hidden = false;
   setTimeout(() => ($('toast').hidden = true), 5000);
+}
+
 }

@@ -208,7 +208,7 @@ export function canvasFactory(instance: CanvasInstance): string {
   invariant(end >= 0, 'INVALID_CANVAS_SOURCE', 'Canvas state initializer is missing');
   const source =
     instance.script.slice(0, end) +
-    '\nObject.assign(state, initial); view.read=()=>({...state});\n' +
+    '\nObject.assign(state, initial); view.read=()=>({...state}); view.apply=(values)=>{Object.assign(state,values);update();};\n' +
     instance.script.slice(end);
   return `function(document,Deck,initial,view){${source}\n}`;
 }

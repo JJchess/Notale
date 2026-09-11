@@ -11,7 +11,13 @@ import { invariant, type Slide } from './model.js';
 export type Element = DefaultTreeAdapterMap['element'];
 type Node = DefaultTreeAdapterMap['node'];
 export const NODE_ID = 'data-notale-id';
-export const uid = () => randomUUID();
+let allocation: {seed: string; index: number} | undefined;
+export const uid = () => allocation ? allocation.seed + '-' + allocation.index++ : randomUUID();
+/** Synchronous author commands use the same identities during preparation and commit. */
+export function withStableIds<T>(seed: string, work: () => T): T {
+  const previous = allocation; allocation = {seed, index: 0};
+  try { return work(); } finally { allocation = previous; }
+}
 export const attr = (el: Element, name: string) => el.attrs.find((a) => a.name === name)?.value;
 export function setAttr(el: Element, name: string, value: string | null) {
   el.attrs = el.attrs.filter((a) => a.name !== name);

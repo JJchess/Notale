@@ -1,3 +1,6 @@
+import {presentationRuntime} from './presentation-runtime.js';
+import {createAuthorRuntime} from './author-runtime.js';
+import {textBox,beginBoxResize,previewBoxResize} from './text-box.js';
 import { chartAuthoringSchema } from '../domain/chart-authoring.js';
 import {stageBounds} from './stage-bounds.js';
 import {paintVector} from './vector-dom.js';
@@ -126,6 +129,7 @@ function commitGeometry(before: {id:string;style:string|null}[], after: {id:stri
     commands.push({type:'element.transform',slideId:slide.id,target:state.id,transform:{x:0,y:0,rotate:0,scaleX:1,scaleY:1,matrix:[matrix.a,matrix.b,matrix.c,matrix.d,matrix.e,matrix.f]}});
   }
   send('geometry-commit',{id:crypto.randomUUID(),runtimeId,sequence:++geometrySequence,slideId:slide.id,commands,before,after});
+  send('measure',measure());
 }
 function gestureRectangles() {
   const stage=stageBounds(config.width,config.height), scale=stage.width/config.width;
@@ -216,6 +220,14 @@ const components = componentController(
   },
   (target) => nativeCharts.inspect(target).value ?? slide.nativeCharts[target]?.interaction?.value,
 );
+const authorRuntime=createAuthorRuntime({config,charts:nativeCharts,components,connectors,media,canvas:canvasInstances,
+  protect:el=>!!textEditor?.root.contains(el),refresh:()=>{refreshGuides();send('measure',measure());},
+  metadata:()=>{cues=timeline(slide);send('step',{step,max:total()});},
+  reload:reason=>send('runtime-reload-required',{reason,runtimeId,slideId:slide.id}),error:error=>send('edit-error',{message:String(error)}),
+});
+const presentation=presentationRuntime({slide,send,components,sceneApply:(id,values)=>{
+  const scene=config.scenes?.find(s=>s.id===id);for(const parameter of scene?.parameters??[]){if(!parameter.control||!Object.hasOwn(values,parameter.key))continue;const node=get(parameter.control.target) as HTMLInputElement|null;if(node){if(node.type==='checkbox')node.checked=!!values[parameter.key];else node.value=String(values[parameter.key]);node.dispatchEvent(new Event(parameter.control.event,{bubbles:true}));}}
+}});
 function total() {
   return Math.max(
     media.maxStep,
@@ -555,6 +567,7 @@ function captureAuthor(ids: string[], clipboard: boolean) {
       ? { componentStates: componentCapture.states }
       : {}),
     rectangles,
+    textReflowTargets:ids.filter(id=>{const el=get(id);return el&&textBox(el);}),
     ...(Object.keys(canvasSceneStates).length ? { canvasSceneStates } : {}),
     computedStyles: styles,
     ...(nativeChartTargets.length ? { nativeChartTargets } : {}),
@@ -1163,6 +1176,8 @@ window.addEventListener('message', (event) => {
   )
     return;
   const { type, data } = event.data;
+  if(presentation.receive(type,data))return;
+  if(authorRuntime.receive(type,data))return;
   if(type==='chart-draft'){
     const parsed=chartAuthoringSchema.safeParse(data.model);if(parsed.success&&get(data.target)){
       slide.nativeCharts[data.target]={...slide.nativeCharts[data.target],adapter:'echarts',option:slide.nativeCharts[data.target]?.option??{},authoring:parsed.data};
@@ -1187,16 +1202,26 @@ window.addEventListener('message', (event) => {
   if (type === 'animation-preview-stop') stopAuthorPreview();
   if (type === 'animation-preview' && mode === 'edit') {
     stopAuthorPreview();
-    const parsed = animationSchema.safeParse(data.animation);
-    if (parsed.success) {
-      const el = get(parsed.data.target);
-      if (el) {
-        const preview = animateObject(el, parsed.data, 0, 'none');
-        authorPreview = preview;
-        void Promise.allSettled(preview.map(a => a.finished)).then(() => {
-          if (authorPreview === preview) stopAuthorPreview();
-        });
+    const candidates:unknown[]=Array.isArray(data.animations)?data.animations:[data.animation];
+    const parsed=candidates.slice(0,500).map((animation:unknown)=>animationSchema.safeParse(animation));
+    if(parsed.length&&parsed.every(result=>result.success)){
+      const specs=parsed.map(result=>result.data!);
+      const preview:Animation[]=[];
+      const previewCues=timeline({animations:specs});
+      const offsets=new Map<number,number>();
+      let offset=0;
+      for(const at of [...new Set(specs.map(a=>a.step))].sort((a,b)=>a-b)){
+        offsets.set(at,offset);
+        offset+=Math.max(0,...previewCues.filter(c=>c.spec.step===at).map(c=>c.end))+200;
       }
+      for(const cue of previewCues){
+        const el=get(cue.spec.target);
+        if(el)preview.push(...animateObject(el,cue.spec,cue.start+(offsets.get(cue.spec.step)??0),'none'));
+      }
+      authorPreview=preview;
+      void Promise.allSettled(preview.map(a=>a.finished)).then(()=>{
+        if(authorPreview===preview)stopAuthorPreview();
+      });
     }
   }
   if (type === 'snapping') {
@@ -1252,15 +1277,22 @@ window.addEventListener('message', (event) => {
     window.focus();
   }
   if (type === 'camera') {handles.camera(data.scale);vectorEditor?.refresh();}
-  if(type==='author-update') {
-    const before=new DOMParser().parseFromString(data.before,'text/html'),after=new DOMParser().parseFromString(data.after,'text/html');
-    for(const node of after.querySelectorAll<HTMLElement>('[data-notale-id]')){
-      const id=node.dataset.notaleId!,old=before.querySelector<HTMLElement>(`[data-notale-id="${CSS.escape(id)}"]`),live=get(id);if(!old||!live||textEditor?.root.contains(live))continue;
-      for(const key of new Set([...old.style,...node.style]))if(old.style.getPropertyValue(key)!==node.style.getPropertyValue(key)&&live.style.getPropertyValue(key)===old.style.getPropertyValue(key)){const value=node.style.getPropertyValue(key);if(value)live.style.setProperty(key,value,node.style.getPropertyPriority(key));else live.style.removeProperty(key);}
-      for(const key of new Set([...old.attributes,...node.attributes].map(a=>a.name)))if(key!=='style'&&key!=='data-notale-id'&&old.getAttribute(key)!==node.getAttribute(key)&&live.getAttribute(key)===old.getAttribute(key)){const value=node.getAttribute(key);if(value===null)live.removeAttribute(key);else live.setAttribute(key,value);}
-      if(!old.children.length&&!node.children.length&&old.textContent!==node.textContent&&live.textContent===old.textContent&&!live.isContentEditable)live.textContent=node.textContent;
+  if(type==='object-box-size'&&mode==='edit'){
+    const el=get(data.target);
+    if(el&&!locked(el)&&textBox(el)&&Number.isFinite(data.value)&&data.value>0){
+      const rect=el.getBoundingClientRect(),scale=stageBounds(config.width,config.height).width/config.width;
+      const horizontal=data.field==='object-width';
+      const gesture=beginBoxResize(el,horizontal?'e':'s');
+      if(gesture){
+        const before=[{id:data.target,style:el.getAttribute('style')}];
+        const ratio=data.value*scale/(horizontal?rect.width:rect.height);
+        const local=horizontal?{x:gesture.size.width*(ratio-1),y:0}:{x:0,y:gesture.size.height*(ratio-1)};
+        const forward=gesture.inverse.inverse();
+        previewBoxResize(gesture,forward.a*local.x+forward.c*local.y,forward.b*local.x+forward.d*local.y,false,!!data.proportional,scale);
+        commitGeometry(before,[{id:data.target,style:el.getAttribute('style')}]);
+        handles.refresh(true);send('measure',measure());
+      }
     }
-    Object.assign(slide.transforms,data.transforms);refreshGuides();
   }
   if (type === 'geometry-confirm') { Object.assign(slide.transforms, data.transforms); }
   if (type === 'geometry-draft') {
