@@ -27,3 +27,7 @@
 1. Builder 侧禁编数：没有来源的数值不进图表，图表只画材料给的数或改为示意（无刻度）。这是 prompt/契约层改动，影响所有 deck，需要用户拍板。
 2. 语言跟随材料：把语言要求从 scenario 提到 brief 的硬约束。
 3. 跑完 MIT-the_human_brain 全部 11 题看方差，再决定是否推到 education 全子集。
+
+## 6. 分支约定（2026-09-11）
+
+产品与科研分开：本文档及材料通道的 harness 改动只在 `nv2-benchmark` 分支，工作树 `~/ws2/Notale-bench/`。`~/ws2/Notale/` 留在 nv2-dev 给产品线（与另一会话共用，不在那里切分支）。benchmark 脚本的 `NV2` 指向 Notale-bench；数据与外部仓库仍在 `Notale/benchmark/`。产品线需要材料通道时从本分支 cherry-pick。
