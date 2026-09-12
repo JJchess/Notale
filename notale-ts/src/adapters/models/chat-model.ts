@@ -8,11 +8,15 @@ export interface ToolCall {
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
+  content: string | null | ChatInputBlock[];
   tool_call_id?: string;
   tool_calls?: ToolCall[];
   reasoning_content?: unknown;
 }
+
+export type ChatInputBlock =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
 
 export interface ToolDefinition {
   type: "function";

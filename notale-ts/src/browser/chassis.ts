@@ -6,6 +6,14 @@ let currentStep = 0;
 let maximumStep = 0;
 let initialized = false;
 
+function installHiddenRule(): void {
+  if (document.getElementById("notale-step-rule")) return;
+  const style = document.createElement("style");
+  style.id = "notale-step-rule";
+  style.textContent = '[data-deck-step][hidden]{display:none!important}';
+  document.head.append(style);
+}
+
 function discoverMaximum(): number {
   return Math.max(0, ...Array.from(document.querySelectorAll<HTMLElement>("[data-deck-step]"), (node) => Number(node.dataset.deckStep) || 0));
 }
@@ -30,6 +38,7 @@ function setStep(value: number): number {
 
 export const Deck = {
   init(options: DeckOptions = {}) {
+    installHiddenRule();
     maximumStep = discoverMaximum();
     setStep(options.initialStep ?? 0);
     initialized = true;

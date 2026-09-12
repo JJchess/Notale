@@ -23,4 +23,6 @@ npm run dev -- inspect <run-id>
 
 Configuration uses `GEMINI_API_KEY` by default. `NOTALE_MODEL`, `NOTALE_BASE_URL`, `NOTALE_API_KEY_ENV`, `NOTALE_REASONING_EFFORT`, `NOTALE_PAGE_CONCURRENCY`, and `NOTALE_RUNS_ROOT` override the model or runtime settings.
 
+`ImageSearch` uses `GEMINI_API_KEY`; `ImageGen` uses `PARATERA_API_KEY`. Page agents receive the downloaded/generated image as visual input and run a real 1600×900 Chromium check after authoring. If Playwright has no browser on the machine, run `npx playwright install chromium` or set `NOTALE_CHROMIUM_PATH`.
+
 The viewer runs separately from `../notale-viewer`. Generated artifacts contain regular relative files, include browser dependency notices, and do not link back to this repository. Monaco inherits its light/dark base under the MIT license, while lecture-specific syntax colors are derived from the generated semantic lecture theme; no third-party VS Code theme collection is bundled.

@@ -15,7 +15,6 @@ await mkdir(packageOutput, { recursive: true });
 
 await build({
   entryPoints: {
-    "chassis": path.resolve(sourceRoot, "../chassis.ts"),
     "code-workbench": path.join(sourceRoot, "index.ts"),
     "monaco-worker": path.join(sourceRoot, "monaco-worker.ts"),
     "python-worker": path.join(sourceRoot, "python-worker.ts"),
@@ -28,6 +27,18 @@ await build({
   entryNames: "[name]",
   assetNames: "assets/[name]-[hash]",
   loader: { ".ttf": "file" },
+  minify: true,
+  sourcemap: false,
+  logLevel: "warning",
+});
+
+await build({
+  entryPoints: [path.resolve(sourceRoot, "../chassis.ts")],
+  bundle: true,
+  format: "iife",
+  platform: "browser",
+  target: ["es2022"],
+  outfile: path.join(output, "chassis.js"),
   minify: true,
   sourcemap: false,
   logLevel: "warning",

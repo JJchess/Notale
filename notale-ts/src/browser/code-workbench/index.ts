@@ -47,7 +47,7 @@ worker.onmessage = (message: MessageEvent<{ type: string; output?: string; error
   const data = message.data;
   if (data.type === "timing" && data.mark) report(data.mark, data.milliseconds);
   if (data.type === "ready") { status.textContent = "Python 已就绪"; runButton.disabled = false; }
-  if (data.type === "result") { output.textContent = data.output || "（无输出）"; runButton.disabled = false; report("firstExecutionComplete"); }
+  if (data.type === "result") { output.textContent = data.output || "（无输出）"; runButton.disabled = false; status.textContent = "Python 已就绪"; report("firstExecutionComplete"); }
   if (data.type === "error") { output.textContent = data.error || "运行失败"; runButton.disabled = false; status.textContent = "运行失败"; }
 };
 worker.onerror = (event) => { status.textContent = "Python 加载失败"; output.textContent = event.message; };
