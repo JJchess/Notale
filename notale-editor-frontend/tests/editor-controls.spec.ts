@@ -1,0 +1,22 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+import {importHtml} from '@notale/editor';
+test.use({baseURL:process.env.ARCHITECTURE_URL??'http://127.0.0.1:4394'});
+test('React controls dispatch one edit, track history and manage presentation menu focus',async({page})=>{
+  const id=randomUUID();
+  const response=await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'React controls',width:1600,height:900,slides:[{id:'first',name:'原始页',sourcePath:'first.html',html:importHtml('<html><body><main id="stage"><h1>原始页</h1></main></body></html>').html}]}});expect(response.ok()).toBe(true);
+  await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});
+  await page.waitForFunction(id=>(window as any).NotaleWorkbench?.getSnapshot()?.document.id===id,id);
+  await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
+  await page.locator('[data-tool="pages"]').click();
+  await page.locator('#copy-slide').click();await expect(page.locator('.slide-card')).toHaveCount(2);
+  await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());
+  await expect(page.locator('#save-status')).toHaveAttribute('data-state','saved');
+  await expect(page.locator('#undo')).toBeEnabled();await page.locator('#undo').click();await expect(page.locator('.slide-card')).toHaveCount(1);
+  await expect(page.locator('#redo')).toBeEnabled();await page.locator('#redo').click();await expect(page.locator('.slide-card')).toHaveCount(2);
+  await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());
+  await page.locator('#present-menu summary').focus();await page.keyboard.press('ArrowDown');await expect(page.locator('#present-beginning')).toBeFocused();
+  await page.keyboard.press('ArrowUp');await expect(page.locator('#present-speaker')).toBeFocused();
+  await page.keyboard.press('Escape');await expect(page.locator('#present-menu')).not.toHaveAttribute('open','');await expect(page.locator('#present-menu summary')).toBeFocused();
+  await page.locator('#present-menu summary').click();await page.locator('.brand').click({button:'right'});await expect(page.locator('#present-menu')).not.toHaveAttribute('open','');
+});

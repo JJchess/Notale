@@ -1,0 +1,48 @@
+export const vectorActions: [string, string][] = [
+    ["nodes", "编辑顶点"],
+    ["text", "编辑文字"],
+    ["group", "组合"],
+    ["ungroup", "取消组合"],
+    ["union", "联合"],
+    ["subtract", "相减"],
+    ["intersect", "相交"],
+    ["exclude", "排除"],
+    ["outline", "描边转轮廓"],
+    ["flatten", "合并路径"],
+    ["split", "拆分路径"],
+    ["offset", "偏移路径"],
+    ["source", "编辑源形状"],
+    ["clip", "设为裁剪"],
+    ["mask", "设为蒙版"],
+    ["clip-edit", "编辑裁剪边界"],
+    ["release", "解除 / 恢复源形状"],
+    ["detach", "分离实例"],
+    ["export", "导出 SVG"],
+  ];
+export const vectorGeometry: Record<string, [string, string][]> = {
+        rect: [
+          ["x", "X"],
+          ["y", "Y"],
+          ["width", "宽"],
+          ["height", "高"],
+          ["rx", "圆角"],
+        ],
+        circle: [
+          ["cx", "中心 X"],
+          ["cy", "中心 Y"],
+          ["r", "半径"],
+        ],
+        ellipse: [
+          ["cx", "中心 X"],
+          ["cy", "中心 Y"],
+          ["rx", "水平半径"],
+          ["ry", "垂直半径"],
+        ],
+        line: [
+          ["x1", "起点 X"],
+          ["y1", "起点 Y"],
+          ["x2", "终点 X"],
+          ["y2", "终点 Y"],
+        ],
+        textPath: [["startOffset", "路径起始偏移"]],
+      };

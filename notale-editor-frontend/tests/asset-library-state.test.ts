@@ -1,0 +1,20 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {createAssetLibrary,assetLibraryState} from '../src/state/asset-library';
+test('asset actions ignore stale pages and preserve current busy state after an old operation finishes',async()=>{
+ let page={id:'a',sourcePath:'folder/a.html'},resolve!:()=>void;
+ const commands:unknown[][]=[];
+ const document={id:'doc',assets:{'assets/photo.png':{hash:'abc',mime:'image/png'}}} as any;
+ const library=createAssetLibrary({document:()=>document,slide:()=>page,selection:()=>[],insert:(_,src)=>src,commands:async batch=>{commands.push(batch);await new Promise<void>(done=>{resolve=done;});},error:()=>{}});
+ const update=()=>library.update('https://example.test/deck/folder/a.html',page.sourcePath);
+ update();assetLibraryState.getSnapshot().select!('assets/photo.png');
+ const stale=assetLibraryState.getSnapshot().use!;
+ page={id:'b',sourcePath:'b.html'};update();await stale(false);assert.equal(commands.length,0);
+ const pending=assetLibraryState.getSnapshot().use!(false),finishOld=resolve;
+ assert.equal(assetLibraryState.getSnapshot().busy,true);
+ page={id:'a',sourcePath:'a.html'};update();page={id:'b',sourcePath:'b.html'};update();
+ const second=assetLibraryState.getSnapshot().use!(false),finishNew=resolve;
+ finishOld();await pending;assert.equal(assetLibraryState.getSnapshot().busy,true);
+ finishNew();await second;assert.equal(assetLibraryState.getSnapshot().busy,false);
+ const beforeDispose=assetLibraryState.getSnapshot().use!;library.dispose();await beforeDispose(false);assert.equal(commands.length,2);
+});

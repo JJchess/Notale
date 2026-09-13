@@ -1,0 +1,22 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {documentSchema,animationSchema} from '../src/domain/model.js';
+import {applyCommands} from '../src/domain/commands.js';
+import {mergeDocuments} from '../src/domain/sync-merge.js';
+import {causalBase} from '../src/domain/causal-base.js';
+test('dependent animation copy uses its predecessor while keeping unrelated remote values out of the baseline',()=>{
+ const base=documentSchema.parse({schemaVersion:1,id:'doc',title:'original',width:1600,height:900,slides:[{id:'page',name:'Page',sourcePath:'page.html',html:'<h1 data-notale-id="title">Title</h1>'}]});
+ const remote={...base,title:'remote'};
+ const first=animationSchema.parse({id:'first',target:'title',step:1,effect:'pulse',trigger:'click',duration:1000});
+ const saved=applyCommands(remote,[{type:'animation.set',slideId:'page',animation:first}]);
+ const source=causalBase(base,1,[{version:3,before:remote,after:saved}]);
+ assert.equal(source.title,'original');assert.equal(source.slides[0].animations[0].id,'first');
+ const intended=applyCommands(source,[{type:'animation.set',slideId:'page',animation:{...first,id:'copy'}},{type:'animation.reorder',slideId:'page',ids:['first','copy']}]);
+ const combined=mergeDocuments(source,intended,saved);
+ assert.equal(combined.title,'remote');assert.deepEqual(combined.slides[0].animations.map(a=>a.id),['first','copy']);
+ const edited=applyCommands(source,[{type:'animation.set',slideId:'page',animation:{...first,duration:2000}}]);
+ const deleted=applyCommands(saved,[{type:'animation.remove',slideId:'page',id:'first'}]);
+ assert.throws(()=>mergeDocuments(source,edited,deleted),{code:'SYNC_RECOVERY_REQUIRED'});
+ assert.equal(base.slides[0].animations.length,0);
+ assert.equal(causalBase(saved,3,[{version:3,before:remote,after:saved}]),saved);
+});

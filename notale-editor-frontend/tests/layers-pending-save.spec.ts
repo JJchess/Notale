@@ -1,0 +1,20 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+test.use({baseURL:process.env.ARCHITECTURE_URL??'http://127.0.0.1:4399'});
+test('context layer order applies locally while an unrelated save is held',async({page})=>{
+ const id=randomUUID();const response=await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'后台保存排列',width:1600,height:900,slides:[{id:'first',name:'页面',sourcePath:'first.html',html:'<html><body><div data-notale-id="a" style="position:absolute;left:100px;top:100px;width:200px;height:100px;z-index:0;background:blue">A</div><div data-notale-id="b" style="position:absolute;left:200px;top:100px;width:200px;height:100px;z-index:1;background:green">B</div></body></html>'}]}});expect(response.ok(),await response.text()).toBe(true);
+ await page.goto('/?document='+id);await page.waitForFunction(()=>(window as any).NotaleWorkbench);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
+ let release!:()=>void;const hold=new Promise<void>(resolve=>release=resolve);let arrived!:()=>void;const requested=new Promise<void>(resolve=>arrived=resolve);
+ await page.route('**/api/documents/*/sync/v2',async route=>{arrived();await hold;await route.continue()});
+ await page.evaluate(()=>(window as any).NotaleWorkbench.commands([{type:'deck.update',title:'标题已更新'}]));await requested;
+ await page.evaluate(()=>(window as any).NotaleWorkbench.select('a'));
+ const a=page.frameLocator('#canvas').locator('[data-notale-id="a"]');
+ const point=await a.evaluate(n=>{const r=n.getBoundingClientRect();return{x:r.x+20,y:r.y+20,w:innerWidth,h:innerHeight}});const frame=(await page.locator('#canvas').boundingBox())!;
+ await page.mouse.click(frame.x+point.x*frame.width/point.w,frame.y+point.y*frame.height/point.h,{button:'right'});
+ await page.locator('[data-action="arrange"]').click();await page.locator('.object-submenu [data-action="front"]').click();
+ const ordered=()=>a.evaluate(n=>Number(getComputedStyle(n).zIndex)>Number(getComputedStyle(document.querySelector('[data-notale-id="b"]')!).zIndex));
+ await expect.poll(ordered).toBe(true);
+ release();await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());
+ await page.reload();await page.waitForFunction(()=>(window as any).NotaleWorkbench);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());await expect.poll(ordered).toBe(true);
+ expect(await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot().document.title)).toBe('标题已更新');
+});

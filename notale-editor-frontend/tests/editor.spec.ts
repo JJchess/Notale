@@ -1,0 +1,1199 @@
+import { test, expect, type Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+const original = 'f5d596d1-0584-4de4-ada6-ecf918147cd4';
+async function openStyle(page:Page,global=false){if(global)await page.evaluate(()=>(window as any).NotaleWorkbench.selectMany([]));if(await page.locator('[data-tool="style"]').getAttribute('aria-pressed')!=='true')await page.locator('[data-tool="style"]').click();}
+async function openPageMaster(page:Page){if(!await page.locator('#page-panel').isVisible())await page.locator('[data-tool="pages"]').click();await page.locator('#open-page-settings').click();if(await page.locator('#page-master-settings').getAttribute('open')===null)await page.locator('#page-master-settings summary').click();}
+
+const ready = (page: Page) => page.evaluate(() => (window as any).NotaleWorkbench.whenReady());
+const version = (page: Page) => page.evaluate(() => (window as any).NotaleWorkbench.getSnapshot().version);
+// Media entries live inside the insert drawer; teaching steps sit in a collapsed details. Objects are selected through the
+// workbench API because page content often overlaps the fixed insertion point and intercepts canvas clicks.
+// The insert drawer groups entries into collapsible categories; open whatever contains
+// the entry rather than naming a category.
+async function pick(page: Page, selector: string) {
+  if ((await page.locator('[data-tool="insert"]').getAttribute('aria-pressed')) !== 'true') await page.locator('[data-tool="insert"]').click();
+  const button = page.locator(selector);
+  await button.evaluate((el) => { for (let node = el.parentElement; node; node = node.parentElement) if (node instanceof HTMLDetailsElement) node.open = true; });
+  await button.click();
+}
+// Media entries move between categories as the drawer is reorganised, so open whichever
+// category currently holds the image entry.
+async function openMedia(page: Page) {
+  if ((await page.locator('[data-tool="insert"]').getAttribute('aria-pressed')) !== 'true') await page.locator('[data-tool="insert"]').click();
+  await page.locator('[data-insert="image"]').evaluate((el) => { for (let node = el.parentElement; node; node = node.parentElement) if (node instanceof HTMLDetailsElement) node.open = true; });
+}
+async function openSteps(page: Page) {
+  await page.locator('[data-tool="animation"]').click();
+  const details = page.locator('.animation-step-details');
+  if (!(await details.evaluate(el => (el as HTMLDetailsElement).open))) await details.locator('> summary').click();
+}
+const selectObject = (page: Page, id: string) => page.evaluate(id => (window as any).NotaleWorkbench.select(id), id);
+// The style tool toggles: a second click on an open inspector hides it.
+async function openStyleTab(page: Page) {
+  if ((await page.locator('[data-tool="style"]').getAttribute('aria-pressed')) !== 'true') await page.locator('[data-tool="style"]').click();
+}
+async function openDetails(page: Page, selector: string) {
+  const details = page.locator(selector);
+  if (!(await details.evaluate(el => (el as HTMLDetailsElement).open))) await details.locator('> summary').click();
+}
+// Interactive preview now runs in a modal overlay with its own iframe rather than in the editing canvas.
+const preview = (page: Page) => page.frameLocator('#preview-canvas');
+async function change(page: Page, action: () => Promise<unknown>) {
+  const before = await version(page);
+  await action();
+  await expect.poll(() => version(page), { timeout: 15000 }).toBeGreaterThan(before);
+  await ready(page);
+}
+
+test('independent editor: zoom, pan, edit/retry/reopen, page ordering, native interaction and show', async ({ page }) => {
+  const baseline = await (await page.request.get('/api/documents/' + original)).json();
+  const doc = structuredClone(baseline.document);
+  doc.id = randomUUID(); doc.title = '互动演示编辑器 · 前端联调样本';
+  expect((await page.request.post('/api/documents', { data: doc })).status()).toBe(201);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/?document=' + doc.id);
+  await expect(page.locator('#save-status')).toContainText('已保存');
+  await ready(page);
+  await expect(page.locator('#property-panel')).toBeHidden();
+  await expect(page.locator('#page-panel')).toBeHidden();
+  const firstWidth = (await page.locator('#canvas').boundingBox())!.width;
+  expect(firstWidth).toBeGreaterThan(1100);
+  const cleanVersion = await version(page);
+  await page.locator('#canvas-zoom').selectOption('1.5');
+  await expect.poll(async () => (await page.locator('#canvas').boundingBox())!.width).toBe(doc.width * 1.5);
+  if (await page.locator('#pan-canvas').isVisible()) {
+    await page.locator('#pan-canvas').click();
+    await page.locator('#canvas-viewport').evaluate(el => el.scrollTo(400, 200));
+    const viewport = (await page.locator('#canvas-viewport').boundingBox())!;
+    const beforePan = await page.locator('#canvas-viewport').evaluate(el => el.scrollLeft);
+    await page.mouse.move(viewport.x + 400, viewport.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(viewport.x + 280, viewport.y + 150, { steps: 4 });
+    await page.mouse.up();
+    expect(await page.locator('#canvas-viewport').evaluate(el => el.scrollLeft)).toBeGreaterThan(beforePan + 90);
+    await page.locator('#canvas-viewport').press('Escape');
+    await expect(page.locator('#pan-canvas')).toHaveAttribute('aria-pressed', 'false');
+  } else test.info().annotations.push({ type: 'note', description: 'hand panning control is inside the hidden view menu; gesture not exercised' });
+  await page.locator('#canvas-zoom').selectOption('fit');
+  expect(await version(page)).toBe(cleanVersion);
+
+  await page.locator('[data-tool="insert"]').click();
+  await expect(page.locator('#tool-panel')).toBeVisible();
+  await change(page, () => pick(page, '[data-insert="text"]'));
+  const text = page.frameLocator('#canvas').getByText('输入你的内容', { exact: true });
+  await selectObject(page, (await text.getAttribute('data-notale-id'))!);
+  await openStyleTab(page);
+  await page.locator('#object-text').fill('前端独立，讲授连贯');
+  // Drop an acknowledged save: the frontend must recover the existing exact mutation.
+  let dropped = false;
+  await page.route('**/api/documents/*/sync', async route => {
+    if (!dropped) { dropped = true; await route.fetch(); await route.abort('failed'); }
+    else await route.continue();
+  });
+  const beforeDrop = await version(page);
+  await page.locator('#apply-text').click();
+  // The lost acknowledgement is replayed with the same mutation id, either automatically or through the manual entry.
+  await expect.poll(() => dropped).toBe(true);
+  const retry = page.locator('#retry-save');
+  await Promise.race([retry.waitFor({ state: 'visible', timeout: 8000 }).catch(() => undefined), expect.poll(() => version(page), { timeout: 8000 }).toBeGreaterThan(beforeDrop).catch(() => undefined)]);
+  if (await retry.isVisible()) await retry.click();
+  await expect(page.locator('#save-status')).toContainText('已保存');
+  await expect.poll(() => version(page)).toBe(beforeDrop + 1);
+  await page.reload();
+  await expect(page.locator('#save-status')).toContainText('已保存');
+  await ready(page);
+  await expect(page.frameLocator('#canvas').getByText('前端独立，讲授连贯', { exact: true })).toBeVisible();
+  expect(dropped).toBe(true);
+  await page.unroute('**/api/documents/*/commits');
+
+  await page.locator('[data-tool="pages"]').click();
+  await page.locator('#slide-search').fill('does-not-exist');
+  await expect(page.locator('#slide-search-empty')).toBeVisible();
+  await page.locator('#slide-search').fill('');
+  const first = page.locator(`[data-slide="${doc.slides[0].id}"]`);
+  await first.focus();
+  await change(page, () => first.press('Alt+ArrowDown'));
+  expect(await page.locator('.slide-card').nth(1).getAttribute('data-slide')).toBe(doc.slides[0].id);
+  await change(page, () => page.locator('#undo').click());
+  expect(await page.locator('.slide-card').first().getAttribute('data-slide')).toBe(doc.slides[0].id);
+  const thirdCard=page.locator('.slide-card').nth(2);
+  await change(page, async () => first.dragTo(thirdCard, { targetPosition: { x: 40, y: (await thirdCard.boundingBox())!.height - 8 } }));
+  expect(await page.locator('.slide-card').nth(2).getAttribute('data-slide')).toBe(doc.slides[0].id);
+  await change(page, () => page.locator('#undo').click());
+
+  const scene = doc.slides.find((s: any) => s.sourcePath === 'page-07.html');
+  await page.evaluate(id => (window as any).NotaleWorkbench.showSlide(id), scene.id);
+  await page.locator('#interact').click();
+  await expect(page.locator('#preview-overlay')).toBeVisible();
+  await expect(page.locator('#preview-loading')).toBeHidden({ timeout: 15000 });
+  const frame = preview(page);
+  const matrix = frame.locator('#matrix-canvas');
+  const before = await matrix.evaluate((el: HTMLCanvasElement) => el.toDataURL());
+  await frame.locator('#m-slider').fill('31');
+  await expect(frame.locator('#m-val')).toHaveText('31');
+  await expect.poll(() => matrix.evaluate((el: HTMLCanvasElement) => el.toDataURL())).not.toBe(before);
+  await page.screenshot({ path: '.local/editor-preview.png' });
+  await page.locator('#preview-close').click();
+  await expect(page.locator('#preview-overlay')).toBeHidden();
+  await page.locator('[data-tool="pages"]').click();
+  await openMedia(page);
+  await page.screenshot({ path: '.local/editor-resources.png' });
+  await openMedia(page);
+  await page.screenshot({ path: '.local/editor-canvas.png' });
+  const popup = page.waitForEvent('popup');
+  await page.locator('#present').click();
+  const show = await popup;
+  await expect(show.locator('#slides section.present iframe')).toHaveAttribute('title', scene.name);
+  await expect(show.frameLocator('#slides section.present iframe').locator('#matrix-canvas')).toBeVisible();
+  await show.close();
+  // The lecture's own page script expects the player's `Deck` global when it runs inside the preview overlay.
+  expect(errors.filter(e => !e.includes('Deck is not defined'))).toEqual([]);
+  expect(await (await page.request.get('/api/documents/' + original)).json()).toEqual(baseline);
+  await writeFile('.local/demo.json', JSON.stringify({ documentId: doc.id, url: `http://127.0.0.1:4312/?document=${doc.id}` }, null, 2));
+});
+
+test('narrow screen drawers remain dismissible without horizontal page overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/?document=' + original);
+  await expect(page.locator('#save-status')).toContainText('已保存');
+  await ready(page);
+  await openMedia(page);
+  await expect(page.locator('#tool-panel')).toBeVisible();
+  await page.locator('[data-tool="insert"]').click();
+  const viewportWidth=await page.locator('#canvas-viewport').evaluate(el=>el.clientWidth);
+  await page.locator('[data-tool="style"]').click();
+  // Without a selection the style tab shows document settings instead of staying hidden.
+  await expect(page.locator('#property-panel')).toBeVisible();
+  await page.evaluate(()=>{const w=(window as any).NotaleWorkbench;w.select(w.getObjects().find((o:any)=>o.tag==='h1').id);});
+  await expect(page.locator('#property-panel')).toBeVisible();
+  expect(await page.locator('#canvas-viewport').evaluate(el=>el.clientWidth)).toBe(viewportWidth);
+  await page.locator('[data-tool="style"]').click();
+  await expect(page.locator('#property-panel')).toBeHidden();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: '.local/editor-mobile.png' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.locator('[data-tool="style"]').click();
+  const panel = await page.locator('#property-panel').boundingBox();
+  const canvas = await page.locator('#canvas-viewport').boundingBox();
+  expect(panel!.x).toBe(66);
+  expect(panel!.width).toBe(300);
+  expect(panel!.y).toBe(48);
+  await expect(page.locator('.inspector-heading')).toBeHidden();
+  await expect(page.locator('.tabs')).toBeHidden();
+  expect((await page.locator('.app-header').boundingBox())!.x).toBe(66);
+  expect((await page.locator('.tool-rail').boundingBox())!.y).toBe(0);
+  expect(panel!.x + panel!.width).toBeLessThanOrEqual(canvas!.x);
+  await openMedia(page);
+  await expect(page.locator('#property-panel')).toBeHidden();
+  await expect(page.locator('#tool-panel')).toBeVisible();
+  expect((await page.locator('#tool-panel').boundingBox())!.width).toBe(300);
+  await page.locator('[data-tool="style"]').click();
+  await expect(page.locator('#tool-panel')).toBeHidden();
+  await expect(page.locator('#property-panel')).toBeVisible();
+  await page.screenshot({ path: '.local/editor-left-properties.png' });
+  await page.locator('[data-tool="pages"]').click();
+  await expect(page.locator('#property-panel')).toBeHidden();
+  await expect(page.locator('#page-panel')).toBeVisible();
+  expect((await page.locator('#page-panel').boundingBox())!.width).toBe(300);
+  for (const tool of ['objects']) {
+    await page.locator(`[data-tool="${tool}"]`).click();
+    await expect(page.locator(`[data-panel="${tool}"]`)).toBeVisible();
+    await expect(page.locator(`[data-tool="${tool}"]`)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#page-panel')).toBeHidden();
+  }
+});
+
+test('context properties preserve nested interaction and untouched styles/transforms', async ({ page }) => {
+  const baseline = await (await page.request.get('/api/documents/' + original)).json();
+  const doc = structuredClone(baseline.document);
+  doc.id = randomUUID(); doc.title = 'Context property acceptance';
+  expect((await page.request.post('/api/documents', { data: doc })).status()).toBe(201);
+  await page.goto('/?document=' + doc.id);
+  await expect(page.locator('#save-status')).toContainText('已保存');
+  await ready(page);
+  await page.evaluate(async slideId => {
+    await (window as any).NotaleWorkbench.commands([{ type: 'element.insert', slideId, html: '<section id="context-card" style="position:absolute;left:100px;top:100px;width:600px;background:white;z-index:90"><p id="context-first" style="font-size:47px;color:#954321">第一段</p><p id="context-second" style="font-size:28px;color:#135790">第二段</p><input id="context-control" type="range" min="0" max="100" value="37"><img id="context-image" alt="示例" style="width:40px;height:40px" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></section>' }]);
+  }, doc.slides[0].id);
+  await ready(page);
+  const ids = await page.frameLocator('#canvas').locator('#context-card').evaluate(root => Object.fromEntries([root, ...root.querySelectorAll('[data-notale-id]')].map(el => [el.id, el.getAttribute('data-notale-id')!])));
+  const choose = async (names: string[]) => {
+    await page.evaluate(ids => (window as any).NotaleWorkbench.selectMany(ids), names.map(name => ids[name]));
+    if (await page.locator('[data-tool="style"]').getAttribute('aria-pressed') !== 'true') await page.locator('[data-tool="style"]').click();
+  };
+  await choose(['context-card']);
+  await expect(page.locator('#property-text')).toBeHidden();
+  await expect(page.locator('#property-geometry')).toBeVisible();
+  await choose(['context-control']);
+  await expect(page.locator('#property-binding')).toBeVisible();
+  await expect(page.locator('#property-text')).toBeHidden();
+  await choose(['context-image']);
+  await expect(page.locator('#media-panel')).toBeVisible();
+  await expect(page.locator('#property-binding')).toBeHidden();
+  await choose(['context-first']);
+  await expect(page.locator('#property-text')).toBeVisible();
+  await expect(page.locator('#media-panel')).toBeHidden();
+  await page.locator('#object-width').fill('410');
+  await change(page, () => page.locator('#apply-format').click());
+  const object = (id: string) => page.evaluate(id => (window as any).NotaleWorkbench.getObjects().find((o: any) => o.id === id), id);
+  expect((await object(ids['context-first'])).style['font-size']).toBe('47px');
+  expect((await object(ids['context-first'])).style.color).toBe('#954321');
+  await change(page, async () => { await page.locator('#color').fill('#112233'); await page.locator('#color').blur(); });
+  expect((await object(ids['context-first'])).style['font-size']).toBe('47px');
+  expect((await object(ids['context-first'])).style.color).toBe('#112233');
+  await choose(['context-second']);
+  await page.locator('#rotation').fill('17');
+  await change(page, () => page.locator('#apply-format').click());
+  await choose(['context-first', 'context-second']);
+  await expect(page.locator('#object-text')).toBeHidden();
+  await page.locator('#ty').fill('25');
+  await change(page, () => page.locator('#apply-format').click());
+  const transforms = await page.evaluate(() => (window as any).NotaleWorkbench.getSnapshot().document.slides[0].transforms);
+  expect(transforms[ids['context-first']]).toMatchObject({ width:410, y:25, rotate:0 });
+  expect(transforms[ids['context-second']]).toMatchObject({ y:25, rotate:17 });
+  expect((await object(ids['context-second'])).style.color).toBe('#135790');
+  await choose(['context-first']);
+  await page.locator('#property-identity summary').click();
+  await change(page, () => page.locator('#lock').click());
+  await expect(page.locator('#apply-format')).toBeDisabled();
+  await expect(page.locator('#font-size')).toBeDisabled();
+  await change(page, () => page.locator('#lock').click());
+  await page.screenshot({path:'.local/editor-context-properties.png'});
+  await page.reload();
+  await expect(page.locator('#save-status')).toContainText('已保存');
+  await ready(page);
+  await expect(page.frameLocator('#canvas').locator('#context-control')).toHaveValue('37');
+  expect(await (await page.request.get('/api/documents/' + original)).json()).toEqual(baseline);
+});
+
+test('teaching cards create, name, duplicate and reorder animation steps across reopen', async ({page}) => {
+  const baseline = await (await page.request.get('/api/documents/' + original)).json();
+  const doc = structuredClone(baseline.document);
+  doc.id = randomUUID(); doc.title = 'Teaching order acceptance';
+  expect((await page.request.post('/api/documents', { data: doc })).status()).toBe(201);
+  await page.goto('/?document=' + doc.id);
+  await expect(page.locator('#save-status')).toContainText('已保存');
+  await ready(page);
+  await openSteps(page);
+  await change(page, () => page.locator('#teaching-initialize').click());
+  await change(page, () => page.locator('#teaching-insert').click());
+  await expect(page.locator('#teaching-name')).toHaveValue('新步骤');
+  await expect(page.locator('#animation-step')).toHaveValue('1');
+  await page.locator('#teaching-name').fill('观察现象');
+  await page.locator('#teaching-notes').fill('先让学生描述看到的变化。');
+  await change(page, () => page.locator('#teaching-save').click());
+  const firstId = await page.locator('.teaching-card[aria-pressed="true"]').getAttribute('data-step-id');
+  const target = await page.frameLocator('#canvas').locator('h1').first().getAttribute('data-notale-id');
+  await page.evaluate(id => (window as any).NotaleWorkbench.select(id), target);
+  await page.locator('[data-animation-category="emphasis"]').click();
+  await change(page, () => page.locator('[data-animation-effect="pulse"]').click());
+  await expect(page.locator('#keyframes')).toBeHidden();
+  await expect(page.locator('#dx')).toBeHidden();
+  await expect(page.locator(`[data-step-id="${firstId}"]`)).toContainText('1 个动画');
+  await change(page, () => page.locator('#teaching-duplicate').click());
+  const secondId = await page.locator('.teaching-card[aria-pressed="true"]').getAttribute('data-step-id');
+  expect(secondId).not.toBe(firstId);
+  await page.locator('#teaching-name').fill('解释原因');
+  await change(page, () => page.locator('#teaching-save').click());
+  await openDetails(page, '.animation-step-details');
+  await change(page, () => page.locator(`[data-step-id="${secondId}"]`).dragTo(page.locator(`[data-step-id="${firstId}"]`), {targetPosition:{x:40,y:5}}));
+  const slides = await page.evaluate(() => (window as any).NotaleWorkbench.getSnapshot().document.slides);
+  expect(slides[0].steps.map((s:any)=>s.name).slice(1)).toEqual(['解释原因','观察现象']);
+  expect(slides[0].animations.map((a:any)=>a.step).sort()).toEqual([1,2]);
+  await expect(page.locator('.teaching-card').first()).toHaveAttribute('draggable','false');
+  await page.locator(`[data-step-id="${firstId}"]`).click();
+  await expect(page.locator('#teaching-notes')).toHaveValue('先让学生描述看到的变化。');
+  await expect(page.locator('#step-label')).toHaveText('2 / 2');
+  await page.screenshot({path:'.local/editor-teaching-order.png'});
+  await page.reload();
+  await expect(page.locator('#save-status')).toContainText('已保存');
+  await ready(page);
+  await openSteps(page);
+  await expect(page.locator('.teaching-card').nth(1)).toContainText('解释原因');
+  await page.locator(`[data-step-id="${firstId}"]`).click();
+  await page.locator('#teaching-preview').click();
+  await expect(page.locator('#interact')).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('#step-label')).toHaveText('2 / 2');
+  expect(await (await page.request.get('/api/documents/' + original)).json()).toEqual(baseline);
+});
+
+test('typography reads inherited values and preserves mixed styles through edit and reset', async ({page}) => {
+  const baseline = await (await page.request.get('/api/documents/' + original)).json();
+  const doc=structuredClone(baseline.document); doc.id=randomUUID(); doc.title='Typography acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id); await expect(page.locator('#save-status')).toContainText('已保存'); await ready(page);
+  await page.evaluate(async slideId => {
+    await (window as any).NotaleWorkbench.commands([{type:'element.insert',slideId,html:'<section id="type-parent" style="position:absolute;left:80px;top:90px;z-index:90;width:650px;background:white;font-family:Georgia;font-size:43px;color:#386421;line-height:1.6;letter-spacing:2px;text-align:center"><p id="type-a">继承页面排版</p><p id="type-b" style="font-size:29px;color:#765432">保留各自样式</p></section>'}]);
+  },doc.slides[0].id); await ready(page);
+  const ids=await page.frameLocator('#canvas').locator('#type-parent').evaluate(root=>Object.fromEntries([...root.children].map(el=>[el.id,el.getAttribute('data-notale-id')!])));
+  const choose=async(names:string[])=>{
+    await page.evaluate(ids=>(window as any).NotaleWorkbench.selectMany(ids),names.map(n=>ids[n]));
+    await openStyleTab(page);
+    await expect(page.locator('#typography-status')).toContainText('已读取');
+  };
+  await choose(['type-a']);
+  await expect(page.locator('#font-size')).toHaveValue('43');
+  await expect(page.locator('#font-family')).toHaveValue('Georgia');
+  await expect(page.locator('#line-height')).toHaveValue('68.8');
+  await expect(page.locator('#letter-spacing')).toHaveValue('2');
+  await expect(page.locator('#text-align')).toHaveValue('center');
+  await change(page, async()=>{ await page.locator('#letter-spacing').fill('4'); await page.locator('#letter-spacing').press('Enter'); });
+  const style=(id:string)=>page.evaluate(id=>(window as any).NotaleWorkbench.getObjects().find((o:any)=>o.id===id).style,id);
+  expect((await style(ids['type-a']))['font-size']).toBeUndefined();
+  expect((await style(ids['type-a']))['letter-spacing']).toBe('4px');
+  await expect(page.locator('#typography-status')).toContainText('已读取');
+  await change(page,()=>page.locator('#bold').click());
+  await expect(page.locator('#bold')).toHaveAttribute('aria-pressed','true');
+  await change(page,()=>page.locator('#bold').click());
+  await expect(page.locator('#bold')).toHaveAttribute('aria-pressed','false');
+  await choose(['type-a','type-b']);
+  await expect(page.locator('#font-size')).toHaveValue('');
+  await expect(page.locator('#typography-status')).toContainText('多种值');
+  await change(page,()=>page.locator('#text-align').selectOption('left'));
+  expect((await style(ids['type-b']))['font-size']).toBe('29px');
+  expect((await style(ids['type-b'])).color).toBe('#765432');
+  expect((await style(ids['type-a']))['font-size']).toBeUndefined();
+  await choose(['type-a']);
+  await page.locator('#font-family').fill('Arial');
+  await change(page, async()=>{ await page.locator('#line-height').fill('72'); await page.locator('#line-height').press('Enter'); });
+  await page.screenshot({path:'.local/editor-typography.png'});
+  await page.reload(); await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await choose(['type-a']);
+  await expect(page.locator('#font-family')).toHaveValue('Arial');
+  await expect(page.locator('#line-height')).toHaveValue('72');
+  await change(page,()=>page.locator('#reset-typography').click());
+  await expect(page.locator('#font-family')).toHaveValue('Georgia');
+  await expect(page.locator('#font-size')).toHaveValue('43');
+  await expect(page.locator('#text-align')).toHaveValue('center');
+  expect(await (await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('media library reuses uploaded assets and replaces nested-page images with undo', async ({page}) => {
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();
+  const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Media library acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await openMedia(page);
+  await expect(page.locator('#asset-empty')).toBeVisible();
+  for(const [name,color] of [['diagram one.svg','#aa3300'],['第二张图.svg','#0055aa']]) {
+    await pick(page, '[data-insert="image"]');
+    await change(page,()=>page.locator('#media-file').setInputFiles({name,mimeType:'image/svg+xml',buffer:Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="100"><rect width="160" height="100" fill="${color}"/></svg>`)}));
+  }
+  await expect(page.locator('#asset-count')).toHaveText('2');
+  const state=await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot());
+  const paths=Object.keys(state.document.assets).filter(path=>path.startsWith('media/'));
+  const first=paths.find(path=>path.endsWith('diagram one.svg'))!, second=paths.find(path=>path.endsWith('第二张图.svg'))!;
+  expect(first).toBeTruthy();expect(second).toBeTruthy();
+  const destination=randomUUID();
+  await page.evaluate(async ({id,after})=>{
+    await(window as any).NotaleWorkbench.commands([{type:'slide.insert',after,slide:{id,name:'嵌套图片页面',sourcePath:'chapters/images/page.html',html:'<!doctype html><html><head><meta charset="utf-8"></head><body><main id="stage"></main></body></html>'}}]);
+    await(window as any).NotaleWorkbench.showSlide(id);
+  },{id:destination,after:doc.slides[0].id});
+  await ready(page);
+  await page.locator('#asset-search').fill('diagram one');
+  const card=page.locator('.asset-card').first();
+  await expect(page.locator('.asset-card')).toHaveCount(1);
+  await expect.poll(()=>card.locator('img').evaluate((img:HTMLImageElement)=>img.complete&&img.naturalWidth>0)).toBe(true);
+  await card.click();
+  await change(page,()=>page.locator('#asset-insert').click());
+  const frame=page.frameLocator('#canvas');
+  const inserted=frame.locator('#stage img');
+  await expect.poll(()=>inserted.evaluate((img:HTMLImageElement)=>img.complete&&img.naturalWidth>0)).toBe(true);
+  const target=await inserted.getAttribute('data-notale-id');
+  const before=await inserted.boundingBox();
+  const originalSrc=await inserted.getAttribute('src');
+  expect(originalSrc).toBe('../../'+first.split('/').map(encodeURIComponent).join('/'));
+  await inserted.click();
+  await page.locator('#asset-search').fill('第二张');
+  await page.locator('.asset-card').click();
+  await expect(page.locator('#asset-replace')).toBeEnabled();
+  await change(page,()=>page.locator('#asset-replace').click());
+  await expect(inserted).toHaveAttribute('data-notale-id',target!);
+  expect(await inserted.getAttribute('src')).toBe('../../'+second.split('/').map(encodeURIComponent).join('/'));
+  expect(await inserted.boundingBox()).toEqual(before);
+  const afterAssets=await page.evaluate(()=>Object.keys((window as any).NotaleWorkbench.getSnapshot().document.assets).length);
+  expect(afterAssets).toBe(Object.keys(state.document.assets).length);
+  await change(page,()=>page.locator('#undo').click());
+  await expect(inserted).toHaveAttribute('src',originalSrc!);
+  await page.screenshot({path:'.local/editor-media-library.png'});
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await page.evaluate(id=>(window as any).NotaleWorkbench.showSlide(id),destination);
+  await expect.poll(()=>page.frameLocator('#canvas').locator('#stage img').evaluate((img:HTMLImageElement)=>img.complete&&img.naturalWidth>0)).toBe(true);
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+
+test('native page thumbnails paginate, search, refresh and release hidden runtimes', async ({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();
+  const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Thumbnail acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await expect(page.locator('.page-thumbnail iframe')).toHaveCount(0);
+  await page.locator('#overview').click();
+  await expect(page.locator('#overview-range')).toHaveText('1–8 / 32');
+  await expect(page.locator('.slide-card:not([hidden])')).toHaveCount(8);
+  const scene=doc.slides.find((s:any)=>s.sourcePath==='page-07.html');
+  const thumb=page.frameLocator(`[data-thumbnail="${scene.id}"] iframe`);
+  await expect(thumb.locator('#matrix-canvas')).toBeVisible();
+  await expect.poll(()=>thumb.locator('#matrix-canvas').evaluate((canvas:HTMLCanvasElement)=>{
+    const pixels=canvas.getContext('2d')!.getImageData(0,0,canvas.width,canvas.height).data;
+    const colors=new Set<string>();for(let i=0;i<pixels.length;i+=4*101) colors.add(`${pixels[i]},${pixels[i+1]},${pixels[i+2]}`);return colors.size;
+  })).toBeGreaterThan(5);
+  expect(await page.locator('.page-thumbnail iframe').count()).toBeLessThanOrEqual(8);
+  await page.screenshot({path:'.local/editor-overview-thumbnails.png'});
+  await page.locator('#overview-next').click();
+  await expect(page.locator('#overview-range')).toHaveText('9–16 / 32');
+  await expect(page.locator(`[data-thumbnail="${scene.id}"] iframe`)).toHaveCount(0);
+  await page.locator('#slide-search').fill(scene.name);
+  await expect(page.locator('#overview-range')).toHaveText('1–1 / 1');
+  await expect(thumb.locator('#matrix-canvas')).toBeVisible();
+  await page.locator(`[data-slide="${scene.id}"]`).click();await ready(page);
+  await expect(page.locator('body')).not.toHaveClass(/overview-mode/);
+  const headingId=await page.frameLocator('#canvas').locator('h1').first().getAttribute('data-notale-id');
+  await page.evaluate(async ({slideId,target})=>{await(window as any).NotaleWorkbench.commands([{type:'element.patch',slideId,target,patch:{text:'缩略图随保存更新'}}]);},{slideId:scene.id,target:headingId});await ready(page);
+  // The old name still matches the rail search; title content comes from the new revision.
+  await expect(thumb.locator('h1').first()).toHaveText('缩略图随保存更新');
+  expect(await page.locator('.page-thumbnail iframe').count()).toBeLessThanOrEqual(6);
+  await page.locator('[data-tool="pages"]').click();
+  await expect(page.locator('.page-thumbnail iframe')).toHaveCount(0);
+  await expect(page.frameLocator('#canvas').locator('#matrix-canvas')).toBeVisible();
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('click-reveal preset saves atomically and remains interactive after reopen and portable export', async ({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();
+  const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Reveal interaction acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await page.locator('[data-tool="insert"]').click();await page.locator('[data-insert-category="interactive"] > summary').click();
+  const before=await version(page);
+  await change(page,()=>page.locator('#insert-reveal').click());
+  expect(await version(page)).toBe(before+1);
+  const snapshot=await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot());
+  expect(snapshot.document.slides).toHaveLength(32);
+  expect(snapshot.document.slides[0].components).toHaveLength(1);
+  await expect(page.locator('#reveal-editor')).toBeVisible();
+  await change(page,()=>page.locator('#undo').click());
+  await expect(page.frameLocator('#canvas').locator('[data-notale-preset="reveal"]')).toHaveCount(0);
+  await change(page,()=>page.locator('#redo').click());
+  const root=snapshot.document.slides[0].components[0].root;
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),root);
+  await page.locator('#reveal-name').fill('为什么集成有效');
+  await page.locator('#reveal-closed-label').fill('揭示要点');
+  await page.locator('#reveal-open-label').fill('收起要点');
+  await page.locator('#reveal-answer').fill('多样性让不同模型的错误相互抵消。');
+  await change(page,()=>page.locator('#save-reveal').click());
+  await page.locator('#library-preview').click();
+  await expect(page.locator('#preview-loading')).toBeHidden({timeout:15000});
+  const frame=page.frameLocator('#canvas'), card=preview(page).locator('[data-notale-preset="reveal"]');
+  await expect(card.locator('[data-notale-role="answer"]')).toBeHidden();
+  await card.getByRole('button',{name:'揭示要点',exact:true}).click();
+  await expect(card.getByText('多样性让不同模型的错误相互抵消。')).toBeVisible();
+  await card.getByRole('button',{name:'收起要点',exact:true}).click();
+  await expect(card.locator('[data-notale-role="answer"]')).toBeHidden();
+  await page.locator('#preview-close').click();
+  await page.screenshot({path:'.local/editor-reveal-preset.png'});
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await page.locator('#interact').click();
+  await expect(page.locator('#preview-loading')).toBeHidden({timeout:15000});
+  await card.getByRole('button',{name:'揭示要点',exact:true}).click();
+  await expect(card.locator('[data-notale-role="answer"]')).toBeVisible();
+  const {unzipSync}=await import('fflate');
+  const exported=await page.request.get('/api/documents/'+doc.id+'/export',{timeout:60000});
+  expect(exported.status()).toBe(200);
+  const files=unzipSync(new Uint8Array(await exported.body()));
+  // Serve only bytes from the exported archive; no editor API or content grant is used.
+  await page.route('**/portable/**',async route=>{
+    const path=decodeURIComponent(new URL(route.request().url()).pathname.slice('/portable/'.length));
+    const file=files[path];
+    await route.fulfill({status:file?200:404,body:file?Buffer.from(file):'missing',contentType:path.endsWith('.html')?'text/html; charset=utf-8':path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'application/octet-stream'});
+  });
+  await page.goto('/portable/'+doc.slides[0].sourcePath);
+  const portable=page.locator('[data-notale-preset="reveal"]');
+  await expect(portable.locator('[data-notale-role="answer"]')).toBeHidden();
+  await portable.getByRole('button',{name:'揭示要点',exact:true}).click();
+  await expect(portable.locator('[data-notale-role="answer"]')).toBeVisible();
+  await portable.getByRole('button',{name:'收起要点',exact:true}).click();
+  await expect(portable.locator('[data-notale-role="answer"]')).toBeHidden();
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('page links author nested routes, edit without replacing children, and navigate portable output', async ({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();
+  const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Navigation authoring acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  const sourceId=randomUUID(),destination=doc.slides.find((s:any)=>s.sourcePath==='page-07.html');
+  await page.evaluate(async id=>{
+    await(window as any).NotaleWorkbench.commands([{type:'slide.insert',after:null,slide:{id,name:'导航入口',sourcePath:'chapters/start/index.html',html:'<!doctype html><html><head><meta charset="utf-8"></head><body><main id="stage"></main></body></html>'}}]);
+    await(window as any).NotaleWorkbench.showSlide(id);
+  },sourceId);await ready(page);
+  await page.locator('[data-tool="insert"]').click();await page.locator('[data-insert-category="interactive"] > summary').click();
+  await page.locator('#link-page').selectOption(destination.id);
+  await page.locator('#link-label').fill('探索模型相关性');
+  await change(page,()=>page.locator('#insert-link').click());
+  const link=page.frameLocator('#canvas').locator('a').filter({hasText:'探索模型相关性'});
+  const id=await link.getAttribute('data-notale-id');
+  await expect(link).toHaveAttribute('href','../../page-07.html');
+  await page.evaluate(async ({slideId,target})=>{await(window as any).NotaleWorkbench.commands([{type:'element.patch',slideId,target,patch:{richText:'<span>探索模型相关性</span>'}}]);},{slideId:sourceId,target:id});await ready(page);
+  const childId=await link.locator('span').getAttribute('data-notale-id');
+  await selectObject(page,childId!);
+  await expect(page.locator('#update-link')).toBeEnabled();
+  await page.locator('#link-kind').selectOption('url');
+  await page.locator('#link-url').fill('https://example.org/lesson');
+  await change(page,()=>page.locator('#update-link').click());
+  await expect(link).toHaveAttribute('href','https://example.org/lesson');
+  await expect(link).toHaveAttribute('target','_blank');
+  await expect(link).toHaveAttribute('rel','noopener noreferrer');
+  await expect(link).toHaveAttribute('data-notale-id',id!);
+  await expect(link.locator('span')).toHaveAttribute('data-notale-id',childId!);
+  await change(page,()=>page.locator('#remove-link').click());
+  await expect(link).not.toHaveAttribute('href');
+  await expect(link).toHaveText('探索模型相关性');
+  await expect(link.locator('span')).toHaveAttribute('data-notale-id',childId!);
+  await page.locator('#link-kind').selectOption('page');
+  await page.locator('#link-page').selectOption(destination.id);
+  await change(page,()=>page.locator('#update-link').click());
+  await page.screenshot({path:'.local/editor-page-links.png'});
+  // Page links are followed inside the preview overlay; the editor stays on the source page.
+  await page.locator('#interact').click();
+  await preview(page).locator('a').filter({hasText:'探索模型相关性'}).click();
+  await expect(preview(page).locator('#matrix-canvas')).toBeVisible({timeout:15000});
+  await page.locator('#preview-close').click();
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await expect(page.frameLocator('#canvas').locator('a').filter({hasText:'探索模型相关性'})).toHaveAttribute('href','../../page-07.html');
+  const {unzipSync}=await import('fflate');
+  const exported=await page.request.get('/api/documents/'+doc.id+'/export',{timeout:60000});
+  expect(exported.status()).toBe(200);const files=unzipSync(new Uint8Array(await exported.body()));
+  await page.route('**/portable-links/**',async route=>{
+    const path=decodeURIComponent(new URL(route.request().url()).pathname.slice('/portable-links/'.length));
+    const file=files[path];await route.fulfill({status:file?200:404,body:file?Buffer.from(file):'missing',contentType:path.endsWith('.html')?'text/html; charset=utf-8':path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'application/octet-stream'});
+  });
+  await page.goto('/portable-links/index.html');
+  await page.frameLocator('#slide').getByText('探索模型相关性',{exact:true}).click();
+  await expect(page.frameLocator('#slide').locator('#matrix-canvas')).toBeVisible();
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('rich text formats a selection and preserves authored links through save undo and reopen', async ({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();
+  const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Rich text acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await page.evaluate(async slideId=>{
+    await(window as any).NotaleWorkbench.commands([{type:'element.insert',slideId,html:'<section id="rich-fixture" style="position:absolute;left:100px;top:100px;z-index:1000;background:white;width:700px"><p id="rich-copy">讲授中的重点 <a href="https://example.org/reference" class="original-link" style="padding:3px">参考资料</a></p><div id="rich-interaction"><input type="range" value="42"></div></section>'}]);
+  },doc.slides[0].id);await ready(page);
+  const canvas=page.frameLocator('#canvas');
+  const target=await canvas.locator('#rich-copy').getAttribute('data-notale-id');
+  const linkId=await canvas.locator('#rich-copy a').getAttribute('data-notale-id');
+  const choose=async(id:string)=>{await page.evaluate(id=>(window as any).NotaleWorkbench.selectMany([id]),id);await page.locator('[data-tool="style"]').click();};
+  await choose(target!);await page.locator('#open-rich-editor').click();
+  await page.locator('#rich-surface').evaluate(el=>{
+    const node=el.firstChild!;const range=document.createRange();range.setStart(node,4);range.setEnd(node,6);
+    const selection=document.getSelection()!;selection.removeAllRanges();selection.addRange(range);
+  });
+  await page.locator('[data-rich-command="bold"]').click();
+  await expect(page.locator('#rich-surface')).toContainText('讲授中的重点');
+  await page.screenshot({path:'.local/editor-rich-text.png'});
+  await change(page,()=>page.locator('#rich-save').click());
+  const copy=canvas.locator('#rich-copy');
+  await expect(copy.locator('span').filter({hasText:'重点'})).toHaveCSS('font-weight','700');
+  await expect(copy.locator('a')).toHaveAttribute('data-notale-id',linkId!);
+  await expect(copy.locator('a')).toHaveAttribute('href','https://example.org/reference');
+  await expect(copy.locator('a')).toHaveClass('original-link');
+  await expect(copy.locator('a')).toHaveCSS('padding-top','3px');
+  await change(page,()=>page.locator('#undo').click());
+  await expect(copy.locator('span')).toHaveCount(0);
+  await change(page,()=>page.locator('#redo').click());
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await expect(copy.locator('span').filter({hasText:'重点'})).toHaveCSS('font-weight','700');
+  await choose(target!);await page.locator('#open-rich-editor').click();
+  const saved=await version(page);await page.locator('#rich-surface').fill('取消的改动');
+  await page.locator('#rich-discard').click();expect(await version(page)).toBe(saved);
+  await expect(copy).toContainText('讲授中的重点');
+  await page.locator('#open-rich-editor').click();
+  await page.locator('#rich-surface').evaluate(el=>{
+    const range=document.createRange();range.selectNodeContents(el);
+    const selection=document.getSelection()!;selection.removeAllRanges();selection.addRange(range);
+  });
+  await page.locator('#rich-color').evaluate((el:HTMLInputElement)=>{el.value='#995522';el.dispatchEvent(new Event('change',{bubbles:true}));});
+  await change(page,()=>page.locator('#rich-save').click());
+  await expect(copy.locator('a')).toHaveCSS('color','rgb(153, 85, 34)');
+  await expect(copy.locator('a')).toHaveAttribute('data-notale-id',linkId!);
+  const interactive=await canvas.locator('#rich-interaction').getAttribute('data-notale-id');
+  await choose(interactive!);await expect(page.locator('#open-rich-editor')).toBeHidden();
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('rich paragraphs create nested lists and keep an animated inline target after reopening',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();
+  const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Rich paragraph acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await page.evaluate(async slideId=>{await(window as any).NotaleWorkbench.commands([{type:'element.insert',slideId,html:'<div id="rich-paragraphs" style="position:absolute;left:120px;top:100px;z-index:1000;background:white;width:700px"><p>观察现象</p><p>解释<span id="animated-word" style="color:#6638dc">原因</span></p><p>应用知识</p></div>'}]);},doc.slides[0].id);await ready(page);
+  const frame=page.frameLocator('#canvas');const target=await frame.locator('#rich-paragraphs').getAttribute('data-notale-id');
+  const animated=await frame.locator('#animated-word').getAttribute('data-notale-id');
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),animated);
+  await openSteps(page);
+  await change(page,()=>page.locator('#teaching-initialize').click());
+  await change(page,()=>page.locator('#teaching-insert').click());
+  await page.locator('[data-animation-category="emphasis"]').click();await change(page,()=>page.locator('[data-animation-effect="pulse"]').click());
+  const before=await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot().document.slides[0].animations);
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),target);
+  await page.locator('[data-tool="style"]').click();await page.locator('#open-rich-editor').click();
+  await page.locator('#rich-surface').evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);const s=document.getSelection()!;s.removeAllRanges();s.addRange(range);});
+  await page.locator('[data-rich-command="insertUnorderedList"]').click();
+  await expect(page.locator('#rich-surface li')).toHaveCount(3);
+  await page.locator('#rich-surface li').nth(1).evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);const s=document.getSelection()!;s.removeAllRanges();s.addRange(range);});
+  await page.locator('[data-rich-command="indent"]').click();
+  await expect(page.locator('#rich-surface ul ul li')).toHaveCount(1);
+  await change(page,()=>page.locator('#rich-save').click());
+  await expect(frame.locator('#rich-paragraphs ul ul li')).toHaveText('解释原因');
+  await expect(frame.locator('#animated-word')).toHaveAttribute('data-notale-id',animated!);
+  expect(await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot().document.slides[0].animations)).toEqual(before);
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await expect(frame.locator('#rich-paragraphs ul ul li')).toHaveText('解释原因');
+  await expect(frame.locator('#animated-word')).toHaveAttribute('data-notale-id',animated!);
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('two editor windows merge concurrent edits to different objects without a conflict',async({page,context})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();
+  const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Concurrent frontend acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  const other=await context.newPage();
+  for(const tab of [page,other]){await tab.goto('/?document='+doc.id);await expect(tab.locator('#save-status')).toContainText('已保存');await ready(tab);}
+  // The sync endpoint merges per object and property, so two windows editing different
+  // objects both keep their work; an unmergeable edit is covered by tests/sync-session.spec.ts.
+  const ids=await page.evaluate(()=>{const objects=(window as any).NotaleWorkbench.getObjects();return {title:objects.find((o:any)=>o.tag==='h1').id,lead:objects.find((o:any)=>o.tag==='p'&&o.text.trim()).id};});
+  let conflicts=0;
+  for(const tab of [page,other])tab.on('response',r=>{if(r.url().endsWith('/sync')&&r.status()===409)conflicts++;});
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),ids.title);
+  await other.evaluate(id=>(window as any).NotaleWorkbench.select(id),ids.lead);
+  await openStyleTab(page);await openStyleTab(other);
+  await page.locator('#object-text').fill('左窗口改标题');
+  await other.locator('#object-text').fill('右窗口改导语');
+  await Promise.all([
+    change(page,()=>page.locator('#apply-text').click()),
+    change(other,()=>other.locator('#apply-text').click()),
+  ]);
+  for(const tab of [page,other])await expect(tab.locator('#save-status')).toContainText('已保存');
+  expect(conflicts).toBe(0);
+  const head=await(await page.request.get('/api/documents/'+doc.id)).json();
+  const html=head.document.slides[0].html;
+  expect(html).toContain('左窗口改标题');
+  expect(html).toContain('右窗口改导语');
+  for(const tab of [page,other]){
+    await tab.reload();await expect(tab.locator('#save-status')).toContainText('已保存');await ready(tab);
+    await expect(tab.frameLocator('#canvas').getByText('左窗口改标题',{exact:true})).toHaveCount(1);
+    await expect(tab.frameLocator('#canvas').getByText('右窗口改导语',{exact:true})).toHaveCount(1);
+    expect(await tab.evaluate(()=>(window as any).NotaleWorkbench.getPending())).toBeUndefined();
+  }
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('media drop inserts a batch atomically and host paste adds an image without replacing text',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Media ingress acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  const transfer=await page.evaluateHandle(()=>{const data=new DataTransfer();for(const name of ['课堂 图一.svg','课堂 图二.svg'])data.items.add(new File(['<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="purple"/></svg>'],name,{type:'image/svg+xml'}));return data;});
+  const v=await version(page);
+  await page.locator('#canvas-viewport').dispatchEvent('dragenter',{dataTransfer:transfer});
+  await expect(page.locator('#media-drop-overlay')).toBeVisible();
+  const frame=await page.locator('#canvas').boundingBox();
+  await change(page,()=>page.locator('#media-drop-overlay').dispatchEvent('drop',{dataTransfer:transfer,clientX:frame!.x+150,clientY:frame!.y+120}));
+  expect(await version(page)).toBe(v+1);
+  await expect(page.frameLocator('#canvas').locator('img[alt="插入图片"]')).toHaveCount(2);
+  await expect(page.locator('#media-drop-overlay')).toBeHidden();
+  const after=await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot());
+  expect(Object.keys(after.document.assets).length).toBe(Object.keys(doc.assets).length+2);
+  await change(page,()=>page.locator('#undo').click());
+  await expect(page.frameLocator('#canvas').locator('img[alt="插入图片"]')).toHaveCount(0);
+  await change(page,()=>page.locator('#redo').click());
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await expect(page.frameLocator('#canvas').locator('img[alt="插入图片"]')).toHaveCount(2);
+  const pasted=await page.evaluateHandle(()=>{const data=new DataTransfer();data.items.add(new File(['<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30"><circle cx="15" cy="15" r="14" fill="orange"/></svg>'],'截图.svg',{type:'image/svg+xml'}));return data;});
+  await change(page,()=>page.locator('#canvas-viewport').evaluate((el,data)=>el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data})),pasted));
+  await expect(page.frameLocator('#canvas').locator('img[alt="插入图片"]')).toHaveCount(3);
+  await openMedia(page);await expect(page.locator('#asset-count')).toHaveText('3');
+  await expect(page.locator('#paste-image')).toBeVisible();
+  const saved=await version(page);
+  await page.locator('#asset-search').evaluate((el,data)=>el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data})),pasted);
+  expect(await version(page)).toBe(saved);
+  const imageId=await page.frameLocator('#canvas').locator('img[alt="插入图片"]').first().getAttribute('data-notale-id');
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),imageId);
+  await page.locator('#canvas-viewport').focus();await page.keyboard.press('Control+c');
+  await page.evaluate(()=>(window as any).NotaleWorkbench.whenEditsIdle());
+  await change(page,()=>page.keyboard.press('Control+v'));
+  await expect(page.frameLocator('#canvas').locator('img[alt="插入图片"]')).toHaveCount(4);
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('visual image crop preserves source and geometry through drag save undo and reopen',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Visual crop acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await openMedia(page);await pick(page, '[data-insert="image"]');
+  await change(page,()=>page.locator('#media-file').setInputFiles({name:'裁剪示例.svg',mimeType:'image/svg+xml',buffer:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="320"><rect width="250" height="320" fill="#6638dc"/><rect x="250" width="250" height="320" fill="#f7b955"/></svg>')}));
+  const image=page.frameLocator('#canvas').locator('img[alt="插入图片"]');const id=await image.getAttribute('data-notale-id'),src=await image.getAttribute('src');
+  await page.evaluate(async ({slideId,target})=>{await(window as any).NotaleWorkbench.commands([{type:'element.patch',slideId,target,patch:{style:{width:'200px',height:'600px'}}}]);},{slideId:doc.slides[0].id,target:id});await ready(page);
+  const geometry=await image.evaluate(el=>{const s=getComputedStyle(el);return[s.width,s.height,s.left,s.top];});
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),id);await page.locator('[data-tool="style"]').click();
+  await page.locator('#open-image-crop').click();await expect(page.locator('#crop-preview')).toBeVisible();
+  await expect.poll(async()=>{const b=await page.locator('#crop-stage').boundingBox();return b!.width/b!.height;}).toBeCloseTo(1/3,2);
+  const stage=await page.locator('#crop-stage').boundingBox(),handle=await page.locator('[data-crop-edge="left"]').boundingBox();
+  await page.mouse.move(handle!.x+handle!.width/2,handle!.y+handle!.height/2);await page.mouse.down();await page.mouse.move(handle!.x+handle!.width/2+stage!.width*.2,handle!.y+handle!.height/2,{steps:5});await page.mouse.up();
+  await expect(page.locator('[data-crop-edge="left"]')).toHaveAttribute('aria-valuenow','20');
+  await page.locator('[data-crop-edge="top"]').focus();await page.keyboard.press('Shift+ArrowDown');
+  await page.locator('[data-crop-edge="right"]').focus();await page.keyboard.press('Shift+ArrowLeft');await page.locator('[data-crop-edge="bottom"]').focus();await page.keyboard.press('Shift+ArrowUp');
+  await page.locator('#crop-fit').selectOption('cover');
+  await page.locator('#crop-focus-x').fill('75');
+  await page.screenshot({path:'.local/editor-image-crop.png'});
+  await change(page,()=>page.locator('#save-image-crop').click());
+  const metadata=JSON.parse((await image.getAttribute('data-notale-media'))!);
+  expect(metadata.crop.left).toBeCloseTo(20,0);expect(metadata.crop.top).toBe(10);expect(metadata.crop.right).toBe(10);expect(metadata.crop.bottom).toBe(10);expect(metadata.positionX).toBe(75);expect(metadata.fit).toBe('cover');
+  await expect(image).toHaveAttribute('src',src!);await expect(image).toHaveAttribute('data-notale-id',id!);
+  expect(await image.evaluate(el=>{const s=getComputedStyle(el);return[s.width,s.height,s.left,s.top];})).toEqual(geometry);
+  await change(page,()=>page.locator('#undo').click());await expect(image).not.toHaveAttribute('data-notale-media');
+  await change(page,()=>page.locator('#redo').click());
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  expect(JSON.parse((await image.getAttribute('data-notale-media'))!)).toEqual(metadata);
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),id);await page.locator('[data-tool="style"]').click();await page.locator('#open-image-crop').click();
+  await page.setViewportSize({width:740,height:780});await expect.poll(async()=>{const b=await page.locator('#crop-stage').boundingBox();return b!.width/b!.height;}).toBeCloseTo(1/3,2);
+  const v=await version(page);await page.locator('#reset-image-crop').click();await page.locator('#close-image-crop').click();expect(await version(page)).toBe(v);
+  expect(JSON.parse((await image.getAttribute('data-notale-media'))!)).toEqual(metadata);
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('unfinished integrations stay hidden across renders while connected editing remains available',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Availability acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await expect(page.locator('[data-tool="components"]')).toBeHidden();
+  await openStyle(page,true);
+  for(const id of ['layout-source-controls','layout-placeholder-author','visual-layout-preset','publish-layout-canvas'])await expect(page.locator('#'+id)).toBeHidden();
+  await page.locator('[data-tool="insert"]').click();await change(page,()=>pick(page, '[data-insert="text"]'));
+  const text=page.frameLocator('#canvas').getByText('输入你的内容',{exact:true});await selectObject(page,(await text.getAttribute('data-notale-id'))!);await page.locator('[data-tool="style"]').click();
+  await expect(page.locator('#property-advanced')).toBeHidden();
+  await expect(page.locator('#apply-text')).toBeEnabled();await expect(page.locator('#open-rich-editor')).toBeEnabled();
+  await page.locator('#open-rich-editor').click();
+  await expect(page.locator('[data-rich-command="insertUnorderedList"]')).toBeDisabled();
+  await expect(page.locator('[data-rich-command="bold"]')).toBeEnabled();
+  await page.locator('#rich-surface').press('End');await page.locator('#rich-surface').press('Enter');
+  await expect(page.locator('#rich-surface p')).toHaveCount(0);
+  await page.locator('#rich-discard').click();
+  await page.locator('[data-tool="insert"]').click();await page.locator('[data-insert-category="interactive"] > summary').click();for(const button of await page.locator('[data-inspect="author-components"]').all())await expect(button).toBeHidden();
+  await expect(page.locator('#library-preview')).toBeVisible();
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await expect(page.locator('[data-tool="components"]')).toBeHidden();
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('master workflow publishes shared text while retaining per-page overrides',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Master candidate acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await openStyle(page,true);
+  await page.locator('#visual-layout-name').fill('课程统一页脚');
+  await change(page,()=>page.locator('#create-visual-layout').click());
+  await expect(page.locator('#master-edit-banner')).toBeVisible();
+  const state=await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot());const layout=state.document.layouts.find((l:any)=>l.name==='课程统一页脚');
+  expect(state.document.slides.find((s:any)=>s.layoutSourceId===layout.id).hidden).toBe(true);
+  const sourceId=state.document.slides.find((s:any)=>s.layoutSourceId===layout.id).id;
+  await expect(page.locator('#slide-count')).toHaveText(String(doc.slides.length));
+  await expect(page.locator('.slide-card')).toHaveCount(doc.slides.length);
+  await expect(page.locator('#page-position')).toHaveText('母版编辑');
+  await expect(page.locator('#delete-slide')).toBeDisabled();
+  const caption=page.frameLocator('#canvas').locator('[data-notale-placeholder="caption"]');const target=await caption.getAttribute('data-notale-id');
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),target);await openStyle(page);
+  await page.locator('#object-text').fill('共同的讲授要点');await change(page,()=>page.locator('#apply-text').click());
+  await change(page,()=>page.locator('#publish-master-return').click());await expect(page.locator('#master-edit-banner')).toBeHidden();
+  await openStyle(page,true);await page.locator('#shared-layout').selectOption(layout.id);
+  await change(page,()=>page.locator('#apply-layout-all').click());
+  await expect(page.frameLocator('#canvas').getByText('共同的讲授要点',{exact:true})).toBeVisible();
+  await openPageMaster(page);await page.locator('#layout-value-fields [data-key="caption"]').fill('首页独立说明');await change(page,()=>page.locator('#save-layout-values').click());await page.locator('#close-page-settings').click();await openStyle(page,true);
+  await page.locator('#edit-layout-canvas').click();await ready(page);await expect(page.locator('#master-edit-banner')).toBeVisible();
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),target);await openStyle(page);await page.locator('#object-text').fill('发布后的共同要点');await change(page,()=>page.locator('#apply-text').click());
+  await change(page,()=>page.locator('#publish-master-return').click());
+  await expect(page.frameLocator('#canvas').getByText('首页独立说明',{exact:true})).toBeVisible();
+  await page.evaluate(id=>(window as any).NotaleWorkbench.showSlide(id),doc.slides[1].id);await ready(page);
+  await expect(page.frameLocator('#canvas').getByText('发布后的共同要点',{exact:true})).toBeVisible();
+  await openPageMaster(page);await change(page,()=>page.locator('#page-master-detach').click());await page.locator('#close-page-settings').click();await openStyle(page,true);
+  const detached=await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot().document.slides[1]);expect(detached.layoutId).toBeNull();expect(detached.html).toContain('发布后的共同要点');
+  await page.locator('#shared-layout').selectOption(layout.id);await page.locator('#edit-layout-canvas').click();await ready(page);
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),target);await openStyle(page);await page.locator('#object-text').fill('第三次发布');await change(page,()=>page.locator('#apply-text').click());
+  await change(page,()=>page.locator('#publish-master-return').click());
+  await expect(page.frameLocator('#canvas').getByText('发布后的共同要点',{exact:true})).toBeVisible();
+  await expect(page.frameLocator('#canvas').getByText('第三次发布',{exact:true})).toHaveCount(0);
+  await page.evaluate(id=>(window as any).NotaleWorkbench.showSlide(id),doc.slides[2].id);await ready(page);
+  await expect(page.frameLocator('#canvas').getByText('第三次发布',{exact:true})).toBeVisible();
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await expect(page.frameLocator('#canvas').getByText('首页独立说明',{exact:true})).toBeVisible();
+  const reopened=await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot().document);expect(reopened.slides.find((s:any)=>s.id===sourceId).hidden).toBe(true);
+  await page.evaluate(async id=>{await(window as any).NotaleWorkbench.commands([{type:'slide.move',slideId:id,index:0}]);},sourceId);await ready(page);
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await expect(page.locator('#page-position')).toHaveText('1 / '+doc.slides.length);
+  await page.locator('[data-tool="pages"]').click();
+  await expect(page.locator('.slide-card')).toHaveCount(doc.slides.length);
+  const first=page.locator(`[data-slide="${doc.slides[0].id}"]`);await first.focus();
+  await change(page,()=>first.press('Alt+ArrowDown'));
+  const ordered=await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot().document.slides.filter((s:any)=>!s.layoutSourceId).map((s:any)=>s.id));
+  expect(ordered.slice(0,2)).toEqual([doc.slides[1].id,doc.slides[0].id]);
+  await change(page,()=>page.locator('#undo').click());
+  const {unzipSync}=await import('fflate');
+  const exported=await page.request.get('/api/documents/'+doc.id+'/export',{timeout:60000});expect(exported.status()).toBe(200);
+  const files=unzipSync(new Uint8Array(await exported.body()));
+  await page.route('**/portable-master/**',async route=>{
+    const path=decodeURIComponent(new URL(route.request().url()).pathname.slice('/portable-master/'.length)),file=files[path];
+    await route.fulfill({status:file?200:404,body:file?Buffer.from(file):'missing',contentType:path.endsWith('.html')?'text/html; charset=utf-8':path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'application/octet-stream'});
+  });
+  await page.goto('/portable-master/index.html');
+  await expect(page.frameLocator('#slide').getByText('首页独立说明',{exact:true})).toBeVisible();
+  await expect(page.frameLocator('#slide').locator('[data-notale-field="slide-number"]')).toHaveText('1');
+  await page.locator('#next').click();
+  await expect(page.frameLocator('#slide').getByText('发布后的共同要点',{exact:true})).toBeVisible();
+  const lastStep=await page.locator('#step-select option').last().getAttribute('value');
+  await page.locator('#step-select').selectOption(lastStep!);
+  await page.locator('#next').click();
+  await expect(page.frameLocator('#slide').getByText('第三次发布',{exact:true})).toBeVisible();
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('table inspector edits cells and rows without replacing table identity',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Table inspector acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await page.locator('[data-tool="insert"]').click();await change(page,()=>pick(page, '[data-insert="table"]'));
+  const table=page.frameLocator('#canvas').locator('table').last();const id=await table.getAttribute('data-notale-id');
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),id);await page.locator('[data-tool="style"]').click();
+  await expect(page.locator('#visual-table-panel')).toBeVisible();
+  const cell=table.locator('tbody tr').first().locator('td').first(),cellId=await cell.getAttribute('data-notale-id');
+  await page.locator(`[data-table-cell="${cellId}"]`).click();await page.locator('#table-cell-text').fill('新的基线');
+  await change(page,()=>page.locator('#save-table-cell').click());await expect(cell).toHaveText('新的基线');await expect(cell).toHaveAttribute('data-notale-id',cellId!);
+  await change(page,()=>page.locator('[data-table-action="insert-row"]').click());await expect(table.locator('tr')).toHaveCount(4);
+  await expect(table.locator(`[data-notale-id="${cellId}"]`)).toHaveText('新的基线');
+  await change(page,()=>page.locator('[data-table-action="insert-column"]').click());await expect(table.locator('tbody tr').last().locator('td')).toHaveCount(4);
+  await expect(table).toHaveAttribute('data-notale-id',id!);
+  await change(page,()=>page.locator('[data-table-action="delete-column"]').click());
+  await change(page,()=>page.locator('#undo').click());await expect(table.locator(`[data-notale-id="${cellId}"]`)).toHaveText('新的基线');
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),cellId);
+  await change(page,()=>page.locator('[data-table-action="delete-row"]').click());await expect(table.locator('tr')).toHaveCount(3);
+  await change(page,()=>page.locator('#undo').click());await expect(table.locator(`[data-notale-id="${cellId}"]`)).toHaveText('新的基线');
+  await page.evaluate(async ({target,slideId})=>{await(window as any).NotaleWorkbench.commands([{type:'table.edit',slideId,target,action:'merge',row:1,column:0,rowSpan:1,colSpan:2}]);},{target:id,slideId:doc.slides[0].id});await ready(page);
+  const merged=table.locator('[colspan="2"]'),mergedId=await merged.getAttribute('data-notale-id');
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),mergedId);
+  await change(page,()=>page.locator('[data-table-action="unmerge"]').click());await expect(table.locator('[colspan="2"]')).toHaveCount(0);
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await expect(table).toHaveAttribute('data-notale-id',id!);await expect(table.locator('tr')).toHaveCount(4);await expect(table.locator(`[data-notale-id="${cellId}"]`)).toHaveText('新的基线');
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('table range styles and merges preserve content through undo and reopen',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Table range acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await page.locator('[data-tool="insert"]').click();await change(page,()=>pick(page, '[data-insert="table"]'));
+  const table=page.frameLocator('#canvas').locator('table').last(),id=await table.getAttribute('data-notale-id');
+  const ids=await table.locator('tbody td').evaluateAll(cells=>cells.map(cell=>cell.getAttribute('data-notale-id')!));
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),id);await page.locator('[data-tool="style"]').click();
+  await page.locator('#table-cell-grid button').first().click();await page.locator(`[data-table-cell="${ids[0]}"]`).click({modifiers:['Shift']});
+  await expect(page.locator('#merge-table-range')).toBeDisabled();
+  await page.locator(`[data-table-cell="${ids[0]}"]`).click();await page.locator(`[data-table-cell="${ids[4]}"]`).click({modifiers:['Shift']});
+  await expect(page.locator('#table-cell-grid [aria-pressed="true"]')).toHaveCount(4);
+  await expect(page.locator('#save-table-cell')).toBeDisabled();
+  const before=await version(page);await page.locator('#table-range-color').fill('#eeddff');await change(page,()=>page.locator('#apply-table-color').click());expect(await version(page)).toBe(before+1);
+  for(const index of [0,1,3,4])await expect(table.locator(`[data-notale-id="${ids[index]}"]`)).toHaveCSS('background-color','rgb(238, 221, 255)');
+  await expect(table.locator(`[data-notale-id="${ids[2]}"]`)).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
+  await page.locator('#table-range-align').selectOption('center');await change(page,()=>page.locator('#apply-table-align').click());
+  for(const index of [0,1,3,4]){const cell=table.locator(`[data-notale-id="${ids[index]}"]`);await expect(cell).toHaveCSS('text-align','center');await expect(cell).toHaveCSS('padding-top','14px');await expect(cell).toHaveCSS('background-color','rgb(238, 221, 255)');}
+  const firstCell=table.locator(`[data-notale-id="${ids[0]}"]`),outside=table.locator(`[data-notale-id="${ids[2]}"]`);const originalOutsideStyle=await outside.getAttribute('style'),innerBorder=await firstCell.evaluate(el=>getComputedStyle(el).borderRightWidth);
+  await page.locator('#table-font-size').fill('32');await change(page,()=>page.locator('#apply-table-font-size').click());await page.locator('#table-text-color').fill('#6638dc');await change(page,()=>page.locator('#apply-table-text-color').click());
+  for(const index of [0,1,3,4]){const cell=table.locator(`[data-notale-id="${ids[index]}"]`);await expect(cell).toHaveCSS('font-size','32px');await expect(cell).toHaveCSS('color','rgb(102, 56, 220)');}
+  await page.locator('#table-font-size').fill('');await change(page,()=>page.locator('#apply-table-font-size').click());expect(await firstCell.evaluate(el=>(el as HTMLElement).style.fontSize)).toBe('');await change(page,()=>page.locator('#undo').click());await expect(firstCell).toHaveCSS('font-size','32px');
+  await page.locator('#table-border-mode').selectOption('outer');await page.locator('#table-border-width').fill('3');await change(page,()=>page.locator('#apply-table-border').click());await expect(firstCell).toHaveCSS('border-top-width','3px');await expect(firstCell).toHaveCSS('border-left-color','rgb(102, 56, 220)');await expect(firstCell).toHaveCSS('border-right-width',innerBorder);await expect(table.locator(`[data-notale-id="${ids[4]}"]`)).toHaveCSS('border-bottom-width','3px');expect(await outside.getAttribute('style')).toBe(originalOutsideStyle);
+  await page.locator('#table-border-mode').selectOption('all');await change(page,()=>page.locator('#apply-table-border').click());await expect(firstCell).toHaveCSS('border-right-width','3px');
+  await page.locator('#table-border-mode').selectOption('none');await change(page,()=>page.locator('#apply-table-border').click());await expect(firstCell).toHaveCSS('border-top-style','none');await expect(firstCell).toHaveCSS('background-color','rgb(238, 221, 255)');await change(page,()=>page.locator('#undo').click());await expect(firstCell).toHaveCSS('border-right-width','3px');
+  await page.screenshot({path:'.local/editor-table-range.png'});
+  await change(page,()=>page.locator('#merge-table-range').click());
+  const merged=table.locator(`[data-notale-id="${ids[0]}"]`);await expect(merged).toHaveAttribute('rowspan','2');await expect(merged).toHaveAttribute('colspan','2');
+  for(const text of ['基线','78%','集成','91%'])await expect(merged).toContainText(text);
+  await expect(table).toHaveAttribute('data-notale-id',id!);
+  await change(page,()=>page.locator('#undo').click());for(const index of [0,1,3,4])await expect(table.locator(`[data-notale-id="${ids[index]}"]`)).toHaveCount(1);
+  await change(page,()=>page.locator('#redo').click());
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await expect(merged).toHaveCSS('font-size','32px');await expect(merged).toHaveCSS('border-top-width','3px');await expect(merged).toHaveAttribute('rowspan','2');await expect(merged).toHaveAttribute('colspan','2');for(const text of ['基线','78%','集成','91%'])await expect(merged).toContainText(text);
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('chart editor saves category and series changes with geometry and undo intact',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Chart data acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await page.locator('[data-tool="insert"]').click();await change(page,()=>pick(page, '[data-insert="chart"]'));
+  const chart=page.frameLocator('#canvas').locator('svg[data-notale-chart]').last(),id=await chart.getAttribute('data-notale-id');
+  const initial=JSON.parse((await chart.getAttribute('data-notale-chart'))!);const geometry=await chart.evaluate(el=>{const s=getComputedStyle(el);return[s.width,s.height,s.left,s.top,s.transform,el.getAttribute('viewBox')];});
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),id);await page.locator('[data-tool="style"]').click();await page.locator('#open-chart-editor').click();
+  await page.locator('#visual-chart-title').fill('模型对比');await page.locator('[data-chart-label="0"]').fill('模型 A');await page.locator('[data-chart-value="0:0"]').fill('88');
+  await page.locator('#chart-add-row').click();await page.locator('[data-chart-label="3"]').fill('模型 D');await page.locator('[data-chart-value="0:3"]').fill('95');
+  await page.locator('#chart-add-series').click();await page.locator('[data-series-name="1"]').fill('另一组');
+  for(const [index,value]of [35,65,75,85].entries())await page.locator(`[data-chart-value="1:${index}"]`).fill(String(value));
+  await page.locator('#visual-chart-kind').selectOption('pie');await expect(page.locator('#save-chart-editor')).toBeDisabled();
+  await expect(page.locator('#chart-editor-status')).toContainText('只支持一个');
+  await page.locator('#visual-chart-kind').selectOption('line');await expect(page.locator('#save-chart-editor')).toBeEnabled();
+  await page.screenshot({path:'.local/editor-chart-data.png'});
+  await change(page,()=>page.locator('#save-chart-editor').click());
+  const saved=JSON.parse((await chart.getAttribute('data-notale-chart'))!);expect(saved.kind).toBe('line');expect(saved.labels).toEqual(['模型 A','B','C','模型 D']);expect(saved.series).toEqual([{name:'系列 1',values:[88,72,91,95]},{name:'另一组',values:[35,65,75,85]}]);
+  await expect(chart).toHaveAttribute('data-notale-id',id!);expect(await chart.evaluate(el=>{const s=getComputedStyle(el);return[s.width,s.height,s.left,s.top,s.transform,el.getAttribute('viewBox')];})).toEqual(geometry);await expect(chart.locator('[data-chart-title]')).toContainText('模型对比');
+  await page.locator('#open-chart-editor').click();await page.locator('[data-remove-series="1"]').click();await page.locator('[data-remove-category="3"]').click();await page.locator('#visual-chart-kind').selectOption('doughnut');
+  await change(page,()=>page.locator('#save-chart-editor').click());
+  const reduced=JSON.parse((await chart.getAttribute('data-notale-chart'))!);expect(reduced.kind).toBe('doughnut');expect(reduced.labels).toHaveLength(3);expect(reduced.series).toHaveLength(1);
+  await change(page,()=>page.locator('#undo').click());expect(JSON.parse((await chart.getAttribute('data-notale-chart'))!)).toEqual(saved);
+  await change(page,()=>page.locator('#undo').click());expect(JSON.parse((await chart.getAttribute('data-notale-chart'))!)).toEqual(initial);
+  await change(page,()=>page.locator('#redo').click());await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  expect(JSON.parse((await chart.getAttribute('data-notale-chart'))!)).toEqual(saved);await expect(chart).toHaveAttribute('data-notale-id',id!);
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('component authoring creates visual click states and an independent shared instance',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Component authoring acceptance';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await expect(page.locator('#property-components')).not.toHaveAttribute('data-editor-unavailable');
+  await page.evaluate(async slideId=>{await(window as any).NotaleWorkbench.commands([{type:'element.insert',slideId,html:'<section id="state-card" style="position:absolute;left:150px;top:180px;width:500px;padding:20px;background:white;z-index:1000"><button id="state-button" style="padding:16px">切换说明</button><p id="state-answer">请先观察，再解释原因。</p></section>'}]);},doc.slides[0].id);await ready(page);
+  const frame=page.frameLocator('#canvas');const ids=await frame.locator('#state-card').evaluate(root=>Object.fromEntries([root,...root.querySelectorAll('[id]')].map(el=>[el.id,el.getAttribute('data-notale-id')!])));
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),ids['state-card']);await page.locator('[data-tool="style"]').click();await page.locator('#property-components > summary').click();
+  await change(page,()=>page.locator('#author-component-create').click());
+  await expect(page.locator('#author-text-enabled')).toBeDisabled();await expect(page.locator('#author-text')).toBeDisabled();await expect(page.locator('#author-text-hint')).toBeVisible();
+  await page.locator('#author-background-color').fill('#ffffff');await change(page,()=>page.locator('#author-patch-save').click());await expect(frame.locator('#state-button')).toHaveText('切换说明');await expect(frame.locator('#state-answer')).toHaveText('请先观察，再解释原因。');
+  await page.locator('#author-target').selectOption(ids['state-answer']);await expect(page.locator('#author-text-enabled')).toBeEnabled();await page.locator('#author-visible').selectOption('false');await change(page,()=>page.locator('#author-patch-save').click());
+  await change(page,()=>page.locator('#author-state-add').click());const open=await page.locator('#author-state').inputValue();
+  await page.locator('#author-state-name').fill('展开说明');await page.locator('#author-visible').selectOption('true');await change(page,()=>page.locator('#author-patch-save').click());
+  // Seed an existing complex property: editing the visual fields must preserve it.
+  await page.evaluate(async ({slideId, target, stateId})=>{const w=(window as any).NotaleWorkbench;const component=structuredClone(w.getSnapshot().document.slides[0].components[0]);component.states.find((s:any)=>s.id===stateId).patches[target].style={'border-radius':'13px'};await w.commands([{type:'component.set',slideId,component}]);},{slideId:doc.slides[0].id,target:ids['state-answer'],stateId:open});await ready(page);
+  await page.locator('#author-color').fill('#6638dc');await page.locator('#author-background-color').fill('#fff4cc');await page.locator('#author-opacity').fill('0.8');
+  await page.locator('#author-text-enabled').check();await page.locator('#author-text').fill('请先观察，再解释原因。');await change(page,()=>page.locator('#author-patch-save').click());
+  const visualStyle=await page.evaluate(({stateId,target})=>(window as any).NotaleWorkbench.getSnapshot().document.slides[0].components[0].states.find((s:any)=>s.id===stateId).patches[target].style,{stateId:open,target:ids['state-answer']});expect(visualStyle).toEqual({'border-radius':'13px',color:'#6638dc','background-color':'#fff4cc',opacity:'0.8'});
+  await change(page,()=>page.locator('#author-state-add').click());await change(page,()=>page.locator('#author-state-remove').click());await page.locator('#author-state').selectOption(open);
+  await change(page,()=>page.locator('#author-state-initial').click());await page.locator('#author-state').selectOption('base');await change(page,()=>page.locator('#author-state-initial').click());await page.locator('#author-state').selectOption(open);
+  await page.locator('#author-component-name').fill('讲授提示');await page.locator('#author-duration').fill('150');await change(page,()=>page.locator('#author-behavior-save').click());
+  await page.locator('#author-target').selectOption(ids['state-button']);await page.locator('#author-from').selectOption('base');await change(page,()=>page.locator('#author-event-add').click());
+  await page.locator('#author-state').selectOption('base');await page.locator('#author-target').selectOption(ids['state-button']);await page.locator('#author-from').selectOption(open);await change(page,()=>page.locator('#author-event-add').click());
+  await page.locator('#author-state').selectOption(open);await page.locator('#author-state-preview').click();await expect(frame.locator('#state-answer')).toHaveCSS('background-color','rgb(255, 244, 204)');await expect(frame.locator('#state-answer')).toHaveCSS('border-radius','13px');
+  await change(page,()=>page.locator('#author-library-publish').click());
+  await expect(page.locator('#author-style')).toBeHidden();await expect(page.locator('#author-layout-save')).toBeHidden();
+  const library=await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot().document.componentLibrary);expect(library).toHaveLength(1);
+  await page.locator('#interact').click();await expect(page.locator('#preview-loading')).toBeHidden({timeout:15000});await expect(preview(page).locator('#state-answer')).toBeHidden();await preview(page).getByRole('button',{name:'切换说明',exact:true}).click();await expect(preview(page).locator('#state-answer')).toBeVisible();await preview(page).getByRole('button',{name:'切换说明',exact:true}).click();await expect(preview(page).locator('#state-answer')).toBeHidden();await page.locator('#preview-close').click();
+  await page.evaluate(id=>(window as any).NotaleWorkbench.showSlide(id),doc.slides[1].id);await ready(page);
+  await selectObject(page,(await frame.locator('[data-notale-id]:not(#stage)').first().getAttribute('data-notale-id'))!);await openStyleTab(page);await openDetails(page,'#property-components');await page.locator('#author-library').selectOption(library[0].id);await change(page,()=>page.locator('#author-library-insert').click());
+  const instance=await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot().document.slides[1].components.find((c:any)=>c.instance));expect(instance.instance.definitionId).toBe(library[0].id);expect(instance.root).not.toBe(ids['state-card']);
+  const root=frame.locator(`[data-notale-id="${instance.root}"]`),answer=root.getByText('请先观察，再解释原因。',{exact:true}),previewRoot=preview(page).locator(`[data-notale-id="${instance.root}"]`),previewAnswer=previewRoot.getByText('请先观察，再解释原因。',{exact:true});await page.locator('#interact').click();await expect(page.locator('#preview-loading')).toBeHidden({timeout:15000});await expect(previewAnswer).toBeHidden();await previewRoot.getByRole('button',{name:'切换说明',exact:true}).click();await expect(previewAnswer).toBeVisible();
+  await page.locator('#preview-close').click();await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),instance.root);
+  await page.locator('#author-state').selectOption(open);await page.locator('#author-target').selectOption(instance.instance.objects[ids['state-answer']]);
+  await expect(page.locator('#author-library-publish')).toBeDisabled();await expect(page.locator('#author-state-add')).toBeDisabled();
+  await page.locator('#author-background-color').fill('#ffccdd');await change(page,()=>page.locator('#author-patch-save').click());
+  await page.locator('#author-library-edit').click();await ready(page);await expect(page.locator('#author-source-return')).toBeVisible();
+  await page.locator('#author-state').selectOption(open);await page.locator('#author-target').selectOption(ids['state-answer']);await page.locator('#author-background-color').fill('#cceeff');await change(page,()=>page.locator('#author-patch-save').click());await change(page,()=>page.locator('#author-library-publish').click());
+  await page.locator('#author-source-return').click();await ready(page);await page.locator('#author-state').selectOption(open);await page.locator('#author-target').selectOption(instance.instance.objects[ids['state-answer']]);await page.locator('#author-state-preview').click();await expect(answer).toHaveCSS('background-color','rgb(255, 204, 221)');
+  await change(page,()=>page.locator('#author-state-override-reset').click());await page.locator('#author-state-preview').click();await expect(answer).toHaveCSS('background-color','rgb(204, 238, 255)');
+  await change(page,()=>page.locator('#undo').click());await page.locator('#author-state-preview').click();await expect(answer).toHaveCSS('background-color','rgb(255, 204, 221)');await change(page,()=>page.locator('#redo').click());
+  await change(page,()=>page.locator('#author-library-unlink').click());
+  await page.locator('#author-library-edit').click();await ready(page);await page.locator('#author-state').selectOption(open);await page.locator('#author-target').selectOption(ids['state-answer']);await page.locator('#author-background-color').fill('#ffffcc');await change(page,()=>page.locator('#author-patch-save').click());await change(page,()=>page.locator('#author-library-publish').click());await page.locator('#author-source-return').click();await ready(page);
+  await page.locator('#author-state').selectOption(open);await page.locator('#author-state-preview').click();await expect(answer).toHaveCSS('background-color','rgb(204, 238, 255)');
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await page.evaluate(id=>(window as any).NotaleWorkbench.showSlide(id),doc.slides[1].id);await ready(page);await page.locator('#interact').click();await expect(page.locator('#preview-loading')).toBeHidden({timeout:15000});await expect(previewAnswer).toBeHidden();await previewRoot.getByRole('button',{name:'切换说明',exact:true}).click();await expect(previewAnswer).toBeVisible();
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('shared component source can be recovered after its original page is removed', async ({page}) => {
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Shared source recovery';
+  expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await page.evaluate(async slideId=>{await(window as any).NotaleWorkbench.commands([{type:'element.insert',slideId,html:'<button id="checkout-root" style="position:absolute;left:100px;top:100px">可恢复的共享组件</button>'}]);},doc.slides[0].id);await ready(page);
+  const rootId=(await page.frameLocator('#canvas').locator('#checkout-root').getAttribute('data-notale-id'))!;
+  await page.evaluate(async ({slideId,root})=>{await(window as any).NotaleWorkbench.commands([{type:'component.set',slideId,component:{id:'checkout-component',root,name:'可恢复组件',initial:'base',duration:200,easing:'ease',states:[{id:'base',name:'初始',patches:{}}],events:[],steps:[]}}]);}, {slideId:doc.slides[0].id,root:rootId});await ready(page);
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),rootId);await page.locator('[data-tool="style"]').click();await page.locator('#property-components > summary').click();await change(page,()=>page.locator('#author-library-publish').click());
+  await page.evaluate(id=>(window as any).NotaleWorkbench.showSlide(id),doc.slides[1].id);await ready(page);
+  await page.evaluate(async slideId=>{await(window as any).NotaleWorkbench.commands([{type:'slide.delete',slideId}]);},doc.slides[0].id);await ready(page);
+  await selectObject(page,(await page.frameLocator('#canvas').locator('[data-notale-id]:not(#stage)').first().getAttribute('data-notale-id'))!);await openStyleTab(page);await openDetails(page,'#property-components');
+  await change(page,()=>page.locator('#author-library-edit').click());
+  const recovered=await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot().document.slides.find((s:any)=>s.sourcePath.startsWith('components/')));expect(recovered.hidden).toBe(true);expect(recovered.components[0].root).toBe(rootId);
+  await expect(page.frameLocator('#canvas').getByRole('button',{name:'可恢复的共享组件'})).toBeVisible();await expect(page.locator('#author-source-return')).toBeVisible();
+  await page.locator('#author-component-name').fill('恢复后的共享组件');await change(page,()=>page.locator('#author-behavior-save').click());await change(page,()=>page.locator('#author-library-publish').click());
+  await page.locator('#author-source-return').click();await ready(page);
+  await selectObject(page,(await page.frameLocator('#canvas').locator('[data-notale-id]:not(#stage)').first().getAttribute('data-notale-id'))!);await openStyleTab(page);await openDetails(page,'#property-components');
+  await change(page,()=>page.locator('#author-library-insert').click());
+  const library=await page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot().document.componentLibrary);expect(library).toHaveLength(1);expect(library[0].name).toBe('恢复后的共享组件');
+  await expect(page.frameLocator('#canvas').getByRole('button',{name:'可恢复的共享组件'})).toBeVisible();expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('chart spreadsheet paste validates drafts, preserves identity and survives undo and reopening',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Chart spreadsheet acceptance';expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  await page.locator('[data-tool="insert"]').click();await change(page,()=>pick(page, '[data-insert="chart"]'));
+  const chart=page.frameLocator('#canvas').locator('svg[data-notale-chart]').last(),id=await chart.getAttribute('data-notale-id');const initial=JSON.parse((await chart.getAttribute('data-notale-chart'))!);
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),id);await page.locator('[data-tool="style"]').click();await page.locator('#open-chart-editor').click();await page.locator('#chart-paste-panel > summary').click();
+  const before=await version(page);const apply=async(text:string)=>{await page.locator('#chart-paste-data').fill(text);await page.locator('#chart-paste-apply').click();};
+  await apply('分类\t训练集\t验证集\r\n模型 A\t92\t85\r\n模型 B\t95\t89\r\n');await expect(page.locator('#chart-paste-status')).toContainText('2 个分类、2 个系列');await expect(page.locator('input[data-chart-value="1:1"]')).toHaveValue('89');expect(await version(page)).toBe(before);
+  await apply('分类\t训练集\nA\t=SUM(1,2)');await expect(page.locator('#chart-paste-status')).toContainText('第 2 行第 2 列');await expect(page.locator('input[data-chart-value="1:1"]')).toHaveValue('89');
+  await apply('分类,训练集,验证集\nA,10');await expect(page.locator('#chart-paste-status')).toContainText('列数不一致');
+  await apply('分类,训练集\n"未闭合,12');await expect(page.locator('#chart-paste-status')).toContainText('引号未闭合');
+  await page.locator('#visual-chart-kind').selectOption('pie');await apply('分类\t训练集\t验证集\nA\t10\t20');await expect(page.locator('#chart-paste-status')).toContainText('一个非负系列');
+  await page.locator('#visual-chart-kind').selectOption('line');await apply('分类,"训练,准确率",验证\r\n"模型 ""A""",9.2e1,85\r\n"模型\nB",95,89\r\n');await expect(page.locator('#chart-paste-status')).toContainText('2 个分类、2 个系列');
+  await change(page,()=>page.locator('#save-chart-editor').click());expect(await version(page)).toBe(before+1);const saved=JSON.parse((await chart.getAttribute('data-notale-chart'))!);expect(saved.labels).toEqual(['模型 "A"','模型\nB']);expect(saved.series.map((s:any)=>({name:s.name,values:s.values}))).toEqual([{name:'训练,准确率',values:[92,95]},{name:'验证',values:[85,89]}]);expect(saved.kind).toBe('line');await expect(chart).toHaveAttribute('data-notale-id',id!);
+  await change(page,()=>page.locator('#undo').click());expect(JSON.parse((await chart.getAttribute('data-notale-chart'))!)).toEqual(initial);await change(page,()=>page.locator('#redo').click());await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);expect(JSON.parse((await chart.getAttribute('data-notale-chart'))!)).toEqual(saved);expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('forwarding only 4312 loads the lecture, native interaction and presentation with origin isolation',async({page,context})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();
+  await context.route('**/*',route=>{const url=new URL(route.request().url());return ['4310','4311'].includes(url.port)?route.abort():route.continue();});
+  await page.goto('http://localhost:4312/?document='+original);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
+  const content=page.frames().find(frame=>frame!==page.mainFrame())!;expect(new URL(content.url()).origin).toBe('http://notale-content.localhost:4312');await expect(content.locator('h1')).toHaveText('集成学习');
+  expect(await content.evaluate(async()=>({api:(await fetch('/api/documents')).status,host:(()=>{try{return !!parent.document}catch{return false}})()}))).toEqual({api:404,host:false});
+  const contentPath=new URL(content.url()).pathname;expect((await page.request.get('http://localhost:4312'+contentPath)).status()).toBe(404);
+  const scene=baseline.document.slides.find((s:any)=>s.sourcePath==='page-07.html');await page.evaluate(id=>(window as any).NotaleWorkbench.showSlide(id),scene.id);await ready(page);await page.locator('#interact').click();
+  const frame=preview(page),matrix=frame.locator('#matrix-canvas');const before=await matrix.evaluate((el:HTMLCanvasElement)=>el.toDataURL());await frame.locator('#m-slider').fill('31');await expect(frame.locator('#m-val')).toHaveText('31');await expect.poll(()=>matrix.evaluate((el:HTMLCanvasElement)=>el.toDataURL())).not.toBe(before);
+  await page.locator('#preview-close').click();const popup=page.waitForEvent('popup');await page.locator('#present').click();const show=await popup;await expect(show.frameLocator('#slides section.present iframe').locator('#matrix-canvas')).toBeVisible();await show.close();expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('failed canvas loading offers retry without changing the saved lecture',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Canvas reconnect acceptance';expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  let blocked=true;await page.route('http://notale-content.localhost:4312/**',route=>blocked?route.abort():route.continue());
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');const before=await version(page);
+  await expect(page.locator('#canvas-loading')).toBeVisible();await expect(page.locator('#retry-canvas')).toBeVisible({timeout:12000});await expect(page.locator('#canvas-loading-status')).toContainText('检查连接');
+  blocked=false;await page.locator('#retry-canvas').click();await ready(page);await expect(page.locator('#canvas-loading')).toBeHidden();await expect(page.frameLocator('#canvas').locator('h1')).toHaveText('集成学习');expect(await version(page)).toBe(before);
+  const snapshot=await(await page.request.get('/api/documents/'+doc.id)).json();expect(snapshot.document).toEqual(doc);expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('page settings rename and hide from the rail without changing slide content',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Page settings acceptance';expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);await page.locator('[data-tool="pages"]').click();
+  const card=page.locator(`[data-slide="${doc.slides[1].id}"]`);await card.click({button:'right'});await expect(page.locator('#page-settings-name')).toHaveValue(doc.slides[1].name);await page.locator('#page-settings-name').fill('   ');await expect(page.locator('#save-page-settings')).toBeDisabled();
+  await page.locator('#page-settings-name').fill('投票与组合 · 课堂讨论');await page.locator('#page-settings-section').fill('讨论环节');await page.locator('#page-settings-hidden').check();const before=await version(page);await change(page,()=>page.locator('#save-page-settings').click());expect(await version(page)).toBe(before+1);await expect(card).toContainText('已隐藏');await expect(card).toContainText('投票与组合 · 课堂讨论');
+  doc.slides[1].name='投票与组合 · 课堂讨论';doc.slides[1].section='讨论环节';doc.slides[1].hidden=true;expect((await(await page.request.get('/api/documents/'+doc.id)).json()).document).toEqual(doc);
+  await page.locator('#slide-search').fill('讨论环节');await expect(page.locator('.slide-card:not([hidden])')).toHaveCount(1);await page.locator('#slide-search').fill('');
+  const popup=page.waitForEvent('popup');await page.locator('#present').click();const show=await popup;await expect(show.locator('#slides > section')).toHaveCount(doc.slides.filter((s:any)=>!s.hidden).length);await expect(show.locator('iframe[title="投票与组合 · 课堂讨论"]')).toHaveCount(0);await show.close();
+  await page.reload();await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);if(!await page.locator('#page-panel').isVisible())await page.locator('[data-tool="pages"]').click();await card.focus();await page.keyboard.press('F2');await expect(page.locator('#page-settings-name')).toHaveValue('投票与组合 · 课堂讨论');await expect(page.locator('#page-settings-hidden')).toBeChecked();await page.locator('#page-settings-name').fill('未保存名称');await page.locator('#close-page-settings').click();expect(await version(page)).toBe(before+1);
+  await change(page,()=>page.locator('#undo').click());await expect(card).toContainText(baseline.document.slides[1].name);expect((await(await page.request.get('/api/documents/'+doc.id)).json()).document.slides[1]).toEqual(baseline.document.slides[1]);expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('formal editor speaker and audience synchronize steps blackout timer and reconnect',async({page,context})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Speaker handoff acceptance';expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  await context.route('**/*',route=>['4310','4311'].includes(new URL(route.request().url()).port)?route.abort():route.continue());
+  await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);await page.evaluate(id=>(window as any).NotaleWorkbench.showSlide(id),doc.slides[1].id);await ready(page);
+  await page.locator('#toggle-notes').click();await page.locator('#notes').fill('讲授提示：先观察各模型的分歧，再揭示集成决策。');await change(page,()=>page.locator('#save-notes').click());const saved=await(await page.request.get('/api/documents/'+doc.id)).json();
+  const speakerPopup=page.waitForEvent('popup');await page.locator('#speaker').click();const speaker=await speakerPopup;
+  await speaker.waitForFunction(()=>(window as any).NotaleShow?.state().control==='controlling');await expect(speaker.locator('body')).toHaveClass(/speaker/);await expect(speaker.locator('#notes')).toContainText('先观察各模型的分歧');await expect(speaker.locator('#next-preview')).toBeVisible();
+  const audiencePopup=speaker.waitForEvent('popup');await speaker.locator('#audience').click();const audience=await audiencePopup;await audience.waitForFunction(()=>(window as any).NotaleShow?.state().control==='audience');await expect(audience.locator('#speaker-panel')).toBeHidden();
+  const state=(p:Page)=>p.evaluate(()=>(window as any).NotaleShow.state());await expect.poll(async()=>(await state(speaker)).max).toBeGreaterThan(0);const initial=await state(speaker);expect(initial.index).toBe(1);
+  await speaker.locator('#next').click();await expect.poll(async()=>({index:(await state(audience)).index,step:(await state(audience)).step})).toEqual({index:1,step:1});
+  await speaker.locator('#blank').click();await expect(audience.locator('body')).toHaveClass(/blank/);
+  await speaker.reload();await speaker.waitForFunction(()=>(window as any).NotaleShow?.state().control==='controlling');expect((await state(speaker)).step).toBe(1);await expect(speaker.locator('body')).toHaveClass(/blank/);await expect(speaker.locator('#notes')).toContainText('先观察各模型的分歧');
+  await speaker.locator('#blank').click();await expect(audience.locator('body')).not.toHaveClass(/blank/);
+  await speaker.locator('#show-step').selectOption(String(initial.max));await speaker.locator('#next').click();await expect.poll(async()=>({index:(await state(audience)).index,step:(await state(audience)).step})).toEqual({index:2,step:0});
+  const previousStart=(await state(speaker)).started;await speaker.locator('#reset-timer').click();await expect.poll(async()=>(await state(speaker)).started).toBeGreaterThan(previousStart);await expect.poll(async()=>(await state(audience)).started).toBe((await state(speaker)).started);
+  await audience.reload();await audience.waitForFunction(()=>(window as any).NotaleShow?.state().index===2);await expect(audience.frameLocator('#slides section.present iframe').locator('body')).toBeVisible();
+  await speaker.locator('#prev').click();await expect.poll(async()=>({index:(await state(audience)).index,step:(await state(audience)).step})).toEqual({index:1,step:initial.max});
+  await audience.close();await speaker.close();expect(await(await page.request.get('/api/documents/'+doc.id)).json()).toEqual(saved);expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('portable export returns to the previous final step and reverses native content',async({page})=>{
+  const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Portable backward acceptance';doc.slides=doc.slides.filter((s:any)=>['page-20.html','page-21.html'].includes(s.sourcePath));expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
+  const {unzipSync}=await import('fflate');const response=await page.request.get('/api/documents/'+doc.id+'/export',{timeout:60000});expect(response.ok()).toBe(true);const files=unzipSync(await response.body());
+  await page.route('**/portable-back/**',route=>{const path=decodeURIComponent(new URL(route.request().url()).pathname.split('/portable-back/')[1]);const body=files[path];return route.fulfill({status:body?200:404,body:body?Buffer.from(body):'Missing file',contentType:path.endsWith('.html')?'text/html':path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'application/octet-stream'});});
+  await page.goto('/portable-back/index.html');await expect(page.locator('#status')).toContainText('1 / 2 · 0 / 2');await expect(page.frameLocator('#slide').locator('[data-step="2"]').first()).toHaveCSS('opacity','0');
+  await page.locator('#step-select').selectOption('2');await expect(page.frameLocator('#slide').locator('[data-step="2"]').first()).toHaveCSS('opacity','1');await page.locator('#next').click();await expect(page.locator('#status')).toContainText('2 / 2');await expect(page.frameLocator('#slide').locator('body')).toBeVisible();
+  // The viewer disables navigation until the destination bridge is ready.
+  await expect(page.locator('#prev')).toBeEnabled();await page.locator('#prev').click();await expect(page.locator('#status')).toHaveText('1 / 2 · 2 / 2');await expect(page.frameLocator('#slide').locator('[data-step="2"]').first()).toHaveCSS('opacity','1');
+  await page.locator('#prev').click();await expect(page.locator('#status')).toHaveText('1 / 2 · 1 / 2');await expect(page.frameLocator('#slide').locator('[data-step="2"]').first()).toHaveCSS('opacity','0');await page.locator('#prev').click();await expect(page.locator('#status')).toHaveText('1 / 2 · 0 / 2');
+  expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
+});
+
+test('animation timing bars follow shared playback order through edits and reopen', async ({ page }) => {
+  const baseline = await (await page.request.get('/api/documents/' + original)).json();
+  const doc = structuredClone(baseline.document);
+  doc.id = randomUUID(); doc.title = 'Animation timing acceptance'; doc.slides = [doc.slides[0]];
+  expect((await page.request.post('/api/documents', { data: doc })).status()).toBe(201);
+  await page.goto('/?document=' + doc.id);
+  await expect(page.locator('#save-status')).toContainText('已保存');
+  await ready(page);
+  const target = await page.frameLocator('#canvas').locator('h1').first().getAttribute('data-notale-id');
+  await page.evaluate(id => (window as any).NotaleWorkbench.select(id), target);
+  await page.locator('[data-tool="animation"]').click();
+  const animations = () => page.evaluate(() => (window as any).NotaleWorkbench.getSnapshot().document.slides[0].animations);
+  // Effects are applied from the sidebar library; duration and delay are edited in seconds on the selected cue.
+  const addPulse = async (count: number, trigger: string | undefined, duration: string, delay: string) => {
+    if (count > 1) await page.locator('#new-animation').click();
+    await page.locator('[data-animation-category="emphasis"]').click();
+    await page.locator('[data-animation-effect="pulse"]').click();
+    await expect.poll(async () => (await animations()).length).toBe(count); await ready(page);
+    if (trigger) { await page.locator('#trigger').selectOption(trigger); await expect.poll(async () => (await animations())[count - 1].trigger).toBe(trigger); }
+    await page.locator('#duration').fill(duration); await page.locator('#duration').press('Tab');
+    await expect.poll(async () => (await animations())[count - 1].duration).toBe(Math.round(Number(duration) * 1000));
+    await page.locator('#delay').fill(delay); await page.locator('#delay').press('Tab');
+    await expect.poll(async () => (await animations())[count - 1].delay ?? 0).toBe(Math.round(Number(delay) * 1000));
+    await ready(page);
+  };
+  await addPulse(1, undefined, '0.6', '0.2');
+  await addPulse(2, 'after-previous', '0.4', '0.1');
+  await addPulse(3, 'with-previous', '0.2', '0');
+  const labels = page.locator('.animation-time-label');
+  await expect(labels).toHaveText(['步骤开始后 0.2 秒–0.8 秒', '步骤开始后 0.9 秒–1.3 秒', '步骤开始后 0.9 秒–1.1 秒']);
+  await expect(page.locator('.animation-row .animation-object').first()).toContainText('集成学习');
+  const track = page.locator('.animation-track').first();
+  await track.scrollIntoViewIfNeeded();
+  let rect = (await track.boundingBox())!;
+  const beforeDrag = await version(page);
+  await page.mouse.move(rect.x + rect.width * .3, rect.y + rect.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rect.x + rect.width * .4, rect.y + rect.height / 2, { steps: 4 });
+  expect(await version(page)).toBe(beforeDrag);
+  await page.keyboard.press('Escape'); await page.mouse.up();
+  expect(await version(page)).toBe(beforeDrag);
+  await change(page, async () => {
+    await page.mouse.move(rect.x + rect.width * .3, rect.y + rect.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(rect.x + rect.width * .4, rect.y + rect.height / 2, { steps: 4 });
+    await page.mouse.up();
+  });
+  expect(await version(page)).toBe(beforeDrag + 1);
+  await expect(labels.first()).toHaveText('步骤开始后 0.35 秒–0.95 秒');
+  await change(page, () => page.keyboard.press('Control+z'));
+  await expect(labels.first()).toHaveText('步骤开始后 0.2 秒–0.8 秒');
+  const bar = (await track.locator('span').boundingBox())!;
+  rect = (await track.boundingBox())!;
+  await change(page, async () => {
+    await page.mouse.move(bar.x + bar.width - 2, bar.y + bar.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(bar.x + bar.width - 2 + rect.width * .1, bar.y + bar.height / 2, { steps: 4 });
+    await page.mouse.up();
+  });
+  await expect(labels.first()).toHaveText('步骤开始后 0.2 秒–0.95 秒');
+  await change(page, () => page.keyboard.press('Control+z'));
+  await track.focus();
+  await change(page, () => page.keyboard.press('Shift+ArrowRight'));
+  await expect(labels.first()).toHaveText('步骤开始后 0.2 秒–0.85 秒');
+  await change(page, () => page.keyboard.press('Control+z'));
+
+  await page.locator('.animation-track').nth(1).click();
+  await expect(page.locator('#duration')).toHaveValue('0.4');
+  await change(page, async () => { await page.locator('#duration').fill('0.8'); await page.locator('#duration').press('Tab'); });
+  await expect(labels.nth(1)).toHaveText('步骤开始后 0.9 秒–1.7 秒');
+  await change(page, () => page.locator('[data-up-animation]').nth(1).click());
+  await expect(labels).toHaveText(['步骤开始后 0.1 秒–0.9 秒', '步骤开始后 0.2 秒–0.8 秒', '步骤开始后 0.2 秒–0.4 秒']);
+  await page.reload(); await ready(page);
+  await page.locator('[data-tool="animation"]').click();
+  await expect(labels).toHaveText(['步骤开始后 0.1 秒–0.9 秒', '步骤开始后 0.2 秒–0.8 秒', '步骤开始后 0.2 秒–0.4 秒']);
+  await page.locator('.animation-track').first().click();
+  await page.locator('#trigger').selectOption('object');
+  await change(page, () => page.locator('#trigger-target').selectOption(target!));
+  await page.locator('.animation-track').nth(1).click();
+  await change(page, () => page.locator('#trigger').selectOption('with-previous'));
+  await expect(labels).toHaveText(['点击「集成学习」后 0.1 秒–0.9 秒', '点击「集成学习」后 0.3 秒–0.9 秒', '点击「集成学习」后 0.3 秒–0.5 秒']);
+  await page.reload(); await ready(page);
+  await page.locator('[data-tool="animation"]').click();
+  await expect(labels.nth(2)).toHaveText('点击「集成学习」后 0.3 秒–0.5 秒');
+  await page.locator('#animations').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: '.local/editor-animation-timing.png' });
+  expect(await (await page.request.get('/api/documents/' + original)).json()).toEqual(baseline);
+});

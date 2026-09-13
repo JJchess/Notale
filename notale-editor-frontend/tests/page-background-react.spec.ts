@@ -1,0 +1,14 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+test.use({baseURL:process.env.ARCHITECTURE_URL??'http://127.0.0.1:4399'});
+test('React background preserves gradient choices and saves current or all pages',async({page})=>{
+ const id=randomUUID();expect((await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'背景编辑',width:1600,height:900,theme:{'--bg':'linear-gradient(45deg, #ffffff, #112233)'},slides:['first','second'].map(id=>({id,name:id,sourcePath:id+'.html',theme:{'--accent':'#112233'},html:`<html><body><p data-notale-id="${id}-text">背景样本</p></body></html>`}))}})).ok()).toBe(true);
+ await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot()?.document.slides.length===2);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());await page.locator('[data-tool="style"]').click();await expect(page.locator('#page-background')).toBeVisible();
+ await expect(page.locator('#background-gradient')).toBeChecked();await expect(page.locator('#background-color-2')).toHaveValue('#112233');
+ const idle=async()=>{await expect(page.locator('#page-background')).toHaveAttribute('aria-busy','false');await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());};
+ await page.locator('#background-color-2').fill('#aabbcc');await idle();await expect(page.locator('#background-color-2')).toHaveValue('#aabbcc');await page.locator('#background-angle').fill('360 / 4');await page.locator('#background-angle').press('Enter');await idle();await page.locator('#background-gradient').check();await idle();
+ let saved=await page.request.get('/api/documents/'+id).then(r=>r.json());expect(saved.document.slides[0].theme['--bg']).toBe('linear-gradient(90deg, #ffffff, #aabbcc)');expect(saved.document.slides[1].theme['--bg']).toBeUndefined();
+ await page.locator('#background-color').fill('#123456');await page.locator('#background-color').fill('#654321');await idle();saved=await page.request.get('/api/documents/'+id).then(r=>r.json());expect(saved.document.slides[0].theme['--page-background']).toBe('#654321');
+ await page.locator('#background-apply-all').click();await idle();saved=await page.request.get('/api/documents/'+id).then(r=>r.json());expect(saved.document.slides[1].theme['--bg']).toBe(saved.document.slides[0].theme['--bg']);expect(saved.document.slides[1].theme['--accent']).toBe('#112233');
+ await page.locator('#background-reset').click();await idle();saved=await page.request.get('/api/documents/'+id).then(r=>r.json());expect(saved.document.slides[0].theme['--bg']).toBeUndefined();await expect(page.locator('#background-gradient')).toBeChecked();await expect(page.locator('#background-color-2')).toHaveValue('#112233');expect(saved.document.slides[1].theme['--bg']).toContain('linear-gradient');
+});

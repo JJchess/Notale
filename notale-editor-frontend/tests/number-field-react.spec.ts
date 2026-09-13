@@ -1,0 +1,22 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+test.use({baseURL:process.env.ARCHITECTURE_URL??'http://127.0.0.1:4399'});
+test('numeric drafts calculate, cancel, validate and increment without replacing the canvas',async({page})=>{
+ const id=randomUUID();
+ const response=await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'数值编辑验证',width:1600,height:900,slides:[{id:'first',name:'页面',sourcePath:'first.html',html:'<!doctype html><html><body><main id="stage" data-notale-id="stage" style="position:absolute;width:1600px;height:900px"><div data-notale-id="shape" data-notale-shape="rect" style="position:absolute;left:100px;top:100px;width:200px;height:100px;background:purple"></div></main></body></html>'}]}});
+ expect(response.ok()).toBe(true);
+ await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});
+ await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot()?.document.slides.length);
+ await page.evaluate(async()=>{await (window as any).NotaleWorkbench.whenReady();(window as any).NotaleWorkbench.select('shape');});
+ const x=page.locator('#tx');await expect(x).toHaveValue('100');
+ const canvas=page.frameLocator('#canvas');await canvas.locator('body').evaluate(()=>{(window as any).__numericIdentity='retained';});
+ await x.fill('1600 / 4');await x.press('Enter');await expect(x).toHaveValue('400');
+ await x.fill('900');await x.press('Escape');await expect(x).toHaveValue('400');
+ await x.focus();await x.press('Shift+ArrowUp');await expect(x).toHaveValue('410');
+ await x.fill('420 + 0.5');await x.press('Tab');await expect(x).toHaveValue('420.5');await x.focus();await x.press('Alt+ArrowDown');await expect(x).toHaveValue('420.4');
+ const width=page.locator('#object-width');await width.fill('-1');await width.press('Enter');await expect(width).toHaveAttribute('aria-invalid','true');await width.press('Escape');await expect(width).toHaveValue('200');
+ await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());
+ expect(await canvas.locator('body').evaluate(()=>(window as any).__numericIdentity)).toBe('retained');
+ await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot()?.document.slides.length);
+ await page.evaluate(async()=>{await (window as any).NotaleWorkbench.whenReady();(window as any).NotaleWorkbench.select('shape');});await expect(x).toHaveValue('420.4');
+});

@@ -1,0 +1,4 @@
+'use client';
+import {useSyncExternalStore} from 'react';
+import {sourceEditorState} from '../state/source-editor';
+export function SourceEditor(){const model=useSyncExternalStore(sourceEditorState.subscribe,sourceEditorState.getSnapshot,sourceEditorState.getServerSnapshot);return <fieldset disabled={model.disabled}><label>CSS JSON<textarea id="style-json" rows={4} value={model.style} onChange={e=>model.change?.('style',e.target.value)}/></label><label>属性 JSON<textarea id="attrs-json" rows={4} value={model.attributes} onChange={e=>model.change?.('attributes',e.target.value)}/></label><button id="apply-advanced" onClick={()=>void model.save?.(false)}>应用</button><label>富文本 HTML<textarea id="rich-text" rows={3} value={model.richText} onChange={e=>model.change?.('richText',e.target.value)}/></label><button id="apply-rich-text" onClick={()=>void model.save?.(true)}>应用富文本</button>{model.error&&<p role="alert">{model.error}</p>}</fieldset>;}

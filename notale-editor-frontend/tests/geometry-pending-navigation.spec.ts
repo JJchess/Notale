@@ -1,0 +1,21 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+test.use({baseURL:process.env.ARCHITECTURE_URL??'http://127.0.0.1:4399'});
+test('geometry field editing and navigation do not await an unrelated server save',async({page})=>{
+ const id=randomUUID();const response=await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'后台保存切页',width:1600,height:900,slides:[{id:'first',name:'第一页',sourcePath:'first.html',html:'<html><body><div data-notale-id="box" style="position:absolute;left:100px;top:100px;width:200px;height:100px;background:blue">对象</div></body></html>'},{id:'second',name:'第二页',sourcePath:'second.html',html:'<html><body><p data-notale-id="other">第二页</p></body></html>'}]}});expect(response.ok(),await response.text()).toBe(true);
+ await page.goto('/?document='+id);await page.waitForFunction(()=>(window as any).NotaleWorkbench);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
+ let release!:()=>void;const hold=new Promise<void>(resolve=>release=resolve);let arrived!:()=>void;const requested=new Promise<void>(resolve=>arrived=resolve);
+ await page.route('**/api/documents/*/sync/v2',async route=>{arrived();await hold;await route.continue()});
+ await page.evaluate(()=>(window as any).NotaleWorkbench.commands([{type:'deck.update',title:'标题已修改'}]));await requested;
+ await page.evaluate(()=>(window as any).NotaleWorkbench.select('box'));await page.locator('#tx').fill('250');await page.locator('#tx').press('Enter');
+ await page.locator('#geometry-proportional').uncheck();await page.locator('#object-width').fill('320');await page.locator('#object-width').press('Enter');
+ const width=()=>page.frameLocator('#canvas').locator('[data-notale-id="box"]').evaluate(n=>n.getBoundingClientRect().width);
+ await expect.poll(width).toBeCloseTo(320,1);
+ const left=()=>page.frameLocator('#canvas').locator('[data-notale-id="box"]').evaluate(n=>n.getBoundingClientRect().left);
+ await expect.poll(left).toBeCloseTo(250,1);
+ await page.evaluate(()=>(window as any).NotaleWorkbench.showSlide('second'));await expect(page.frameLocator('#canvas').locator('[data-notale-id="other"]')).toHaveText('第二页');
+ await page.evaluate(()=>(window as any).NotaleWorkbench.showSlide('first'));await expect.poll(left).toBeCloseTo(250,1);await expect.poll(width).toBeCloseTo(320,1);
+ release();await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());
+ const saved=await page.request.get('/api/documents/'+id).then(r=>r.json());expect(saved.document.title).toBe('标题已修改');
+ await page.reload();await page.waitForFunction(()=>(window as any).NotaleWorkbench);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());await expect.poll(left).toBeCloseTo(250,1);await expect.poll(width).toBeCloseTo(320,1);
+});
