@@ -5,6 +5,7 @@ description: "Builds pages explaining concepts, mechanisms, or data relationship
 
 # Build Page
 
+<!--teaching:start-->
 ## Teach through Deck steps
 
 Organize this page's explanation through chassis-controlled steps. Advance evidence, state changes, comparisons, or attention to a specific relationship within one stable main scene. Each step must make a concrete relationship more understandable; do not merely reveal another paragraph, card, or bordered section.
@@ -23,6 +24,7 @@ Remove sample step selectors entirely, including numbered pills and clickable te
 
 Design these states within the existing construction decision and first implementation; do not add a planning document, extra response, or extra Read. Apply this Build Page requirement when the shared chassis describes steps as optional for pages in general.
 
+<!--teaching:end-->
 Choose the medium carrying the decisive evidence:
 
 - `3d`: flattening would remove necessary depth, occlusion, volume, assembly, terrain, or viewpoint evidence.

@@ -19,7 +19,6 @@ export const digest = (bytes: string | Uint8Array) => createHash('sha256').updat
 export const xml = (value: string) => parseDocument(value, { xmlMode: true });
 export const elements = (root: ReturnType<typeof xml>) => DomUtils.findAll(() => true, root.children);
 export const serialize = (node: Parameters<typeof DomUtils.getOuterHTML>[0]) => DomUtils.getOuterHTML(node, { xmlMode: true });
-export const escapeHtml = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
 export interface TemplateObject { id: string; text: string; kind: string; box: number[] }
 export interface TemplateSlide { id: string; svg: string; preview: string; objects: TemplateObject[]; placeholders?: Array<{ kind: string; index: string; box?: number[] }> }
 export interface PreparedTemplate { schemaVersion: 1; sha256: string; width: number; height: number; slides: TemplateSlide[]; warnings: string[]; fontCss: string }

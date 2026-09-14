@@ -460,10 +460,11 @@ test('template layout submission and idempotent assembly reject invalid or chang
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('template mode keeps Planner input identical and changes only Builder visual modules', async () => {
+test('template and free Builders share teaching and visual rules without changing Planner or code', async () => {
   const { mkdir, writeFile, rm } = await import('node:fs/promises');
   const { deckPrompt } = await import('../src/core/planning.js');
   const { instructionBlocks } = await import('../src/core/builder-context.js');
+  const { routedWorkflow, WORKFLOWS } = await import('../src/core/guidance.js');
   const root = await mkdtemp(path.join(os.tmpdir(), 'notale-template-prompts-'));
   try {
     const request = { root, query: '种子发芽', minutes: 15, audience: '小学生' };
@@ -473,13 +474,29 @@ test('template mode keeps Planner input identical and changes only Builder visua
     await writeFile(path.join(root, 'pages/assets/lib/LIBS.md'), '## 按「要做的事」查\n本地依赖');
     await writeFile(path.join(root, 'pages/assets/theme.css'), '/* ==== INTERFACE ====\n主题\n==== /INTERFACE ==== */');
     await writeFile(path.join(root, 'pages/plan/pages.md'), '## Audience\n小学生\n\n# page-01 [标题页]\n种子发芽');
-    const before = instructionBlocks(root, 1, 'build-page'), code = instructionBlocks(root, 1, 'build-code');
-    await writeFile(path.join(root, 'template-spec.json'), JSON.stringify({ layouts: [{ id: 'body', workflows: ['build-page'], slots: [] }] }));
-    const after = instructionBlocks(root, 1, 'build-page');
-    assert.equal(after.notes, before.notes); assert.equal(after.steps, before.steps); assert.equal(after.philosophy, before.philosophy);
-    assert.match(after.shared!, /template_layouts/); assert.doesNotMatch(after.shared!, /## 构图/);
-    assert.doesNotMatch(after.anti_slop!, /anti_ai_slop_visual/); assert.doesNotMatch(after.workflow!, /aux_sample_catalog/);
+    const workflows = ['build-cover', 'build-page', 'build-interaction'];
+    const before = Object.fromEntries(workflows.map(w => [w, instructionBlocks(root, 1, w)])), code = instructionBlocks(root, 1, 'build-code');
+    await writeFile(path.join(root, 'template-spec.json'), JSON.stringify({ layouts: [{ id: 'body', workflows, slots: [] }] }));
+    for (const workflow of workflows) {
+      const after = instructionBlocks(root, 1, workflow), original = before[workflow]!;
+      for (const key of ['notes', 'steps', 'philosophy', 'anti_slop']) assert.equal(after[key], original[key]);
+      assert.ok(after.shared!.startsWith(original.shared!));
+      assert.match(after.shared!, /## 构图/); assert.match(after.shared!, /## 主题承接/);
+      assert.match(after.anti_slop!, /border-left/);
+      assert.equal(after.anti_slop!.split('<anti_ai_slop_visual>').length, 2);
+      const teaching = routedWorkflow(workflow, WORKFLOWS, { template: true }).split('\n').slice(1, -1).join('\n');
+      for (const text of [after.workflow!, original.workflow!]) assert.equal(text.split(teaching).length, 2, `${workflow} teaching occurs exactly once`);
+      assert.match(original.workflow!, /Choose Main/);
+      assert.doesNotMatch(after.workflow!, /aux_sample_catalog|Choose Main|<!--teaching/);
+      assert.match(after.workflow!, /template_constraints/);
+      assert.match(after.workflow!, /color:var\(--text\)/);
+      assert.match(after.workflow!, /color:var\(--muted\)/);
+    }
     assert.deepEqual(instructionBlocks(root, 1, 'build-code'), code);
-    await rm(path.join(root, 'template-spec.json')); assert.deepEqual(instructionBlocks(root, 1, 'build-page'), before);
+    const custom = path.join(root, 'workflows');
+    await mkdir(path.join(custom, 'build-page'), { recursive: true });
+    await writeFile(path.join(custom, 'build-page/SKILL.md'), '# Missing teaching');
+    assert.throws(() => routedWorkflow('build-page', custom, { template: true }), /exactly one teaching/);
+    await rm(path.join(root, 'template-spec.json')); assert.deepEqual(instructionBlocks(root, 1, 'build-page'), before['build-page']);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

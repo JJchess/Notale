@@ -5,7 +5,13 @@ description: "Builds interactive learning models in which learner actions change
 
 # Build Interaction
 
+<!--teaching:start-->
 The learner must act on a real algorithm, simulation, rule system, data transformation, or constrained state model, and visible evidence must derive from the resulting state. Reveal-only controls, decorative motion, hover detail, passive playback, filter-only charts, arbitrary points, and free camera orbit do not meet this boundary.
+
+Keep action, model state and visible evidence in one learning world. Give the model the largest uninterrupted region; place controls beside the variables they change and feedback beside its source. Do not separate them into a settings panel, a framed illustration and a stack of result cards. Labels confirm recognizable objects and changes rather than replacing them.
+
+Compute outcomes from one canonical state and a stated domain rule, including relevant boundary conditions. Show a useful initial state and provide a visible Reset control that restores it, including inputs, evidence and any exploration history. Preserve genuine controls and usable hit targets when removing decorative shells.
+<!--teaching:end-->
 
 Choose one category:
 

@@ -99,7 +99,7 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
     signal?.throwIfAborted();
     if (content !== undefined) history.push({ role: 'user', content });
     const started = new Date().toISOString();
-    const messages: ChatMessage[] = [{ role: 'system', content: PLANNER_IDENTITY }, ...history];
+    const messages: ChatMessage[] = [{ role: 'system', content: PLANNER_IDENTITY + '\n\n' + guidance.visualSlopBlock(workflowRoot) }, ...history];
     workflowNotice(ports.progress, 'director', step, 'started', step === 'style-pick' ? '开始选择参考风格' : '开始生成主题');
     const response = await ports.model.respond(messages, tools, signal);
     workflowNotice(ports.progress, 'director', step, 'completed', step === 'style-pick' ? '本轮选样响应已返回' : '本轮主题响应已返回');

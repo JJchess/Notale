@@ -84,7 +84,7 @@ export interface InstructionOptions { workflowRoot?: string; prompts?: string; s
 export function instructionBlocks(root: string, total: number, workflow: string, options: InstructionOptions = {}): Record<string, string> {
   const workflowRoot = options.workflowRoot ?? skills.WORKFLOWS;
   const template = existsSync(path.join(root, TEMPLATE_SPEC)) && workflow !== 'build-code';
-  const blocks: Record<string, string> = { identity: constants.IDENTITY, philosophy: skills.philosophyBlock('page'), anti_slop: skills.antiSlopBlock(workflowRoot, workflow !== 'build-code' && !template) };
+  const blocks: Record<string, string> = { identity: constants.IDENTITY, philosophy: skills.philosophyBlock('page'), anti_slop: skills.antiSlopBlock(workflowRoot, workflow !== 'build-code') };
   if (workflow !== 'build-code') {
     if (options.visualFocus && !template) blocks.visual_focus = constants.VISUAL_FOCUS_BLOCK;
     const notesMode = options.notes ?? 'cap';
@@ -99,13 +99,12 @@ export function instructionBlocks(root: string, total: number, workflow: string,
     blocks.steps = workflow === 'build-cover' ? constants.COVER_STEPS_BLOCK : constants.STEPS_BLOCK;
   }
   blocks.shared = sharedPreload(root, total, options.prompts, workflow);
-  blocks.workflow = template ? '<workflow_skill name="' + workflow + '">\n' + read(path.join(skills.PROMPTS, 'build-template.md'), true) + '\n</workflow_skill>' : skills.routedWorkflow(workflow, workflowRoot, options);
+  blocks.workflow = skills.routedWorkflow(workflow, workflowRoot, { ...options, template });
   if (template) {
+    blocks.workflow += '\n\n<template_constraints>\n' + read(path.join(options.prompts ?? skills.PROMPTS, 'build-template.md'), true).trim() + '\n</template_constraints>';
     const spec = JSON.parse(read(path.join(root, TEMPLATE_SPEC))) as TemplateSpec;
     const layout = spec.layouts.filter(layout => (layout.workflows as string[]).includes(workflow)).map(({ id, slots }) => ({ id, slots }));
-    const common = techBlock(root, total, options.prompts);
-    const technical = common.split('## 构图')[0]! + '## 库' + common.split('## 库')[1]!;
-    blocks.shared = blocks.shared.replace(/<tech>[\s\S]*?<\/tech>/, () => technical) + '\n\n<template_layouts>\n' + JSON.stringify(layout) + '\n</template_layouts>';
+    blocks.shared += '\n\n<template_layouts>\n' + JSON.stringify(layout) + '\n</template_layouts>';
   }
   if (workflow === 'build-code') return blocks;
   return Object.fromEntries(['identity', 'workflow', 'shared', 'philosophy', 'anti_slop', 'notes', 'visual_focus', 'steps'].filter(key => key in blocks).map(key => [key, blocks[key]!]));

@@ -89,17 +89,18 @@ print(json.dumps(dict(os.environ)))
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('prompt and skill resources retain baseline bytes and synchronized updates', () => {
+test('prompt resources retain baseline bytes or explicitly recorded native updates', () => {
   const baseline = JSON.parse(readFileSync(path.join(guidance.RESOURCES, 'python-baseline.json'), 'utf8'));
   for (const [file, digest] of Object.entries({ ...baseline.files, ...baseline.resourceUpdates })) {
     if (!file.startsWith('prompts/') && !file.startsWith('skills/')) continue;
     for (const root of [guidance.RESOURCES, pythonRoot]) {
-      assert.equal(createHash('sha256').update(readFileSync(path.join(root, file))).digest('hex'), digest, `${root}/${file}`);
+      const expected = root === guidance.RESOURCES ? baseline.nativeResourceUpdates?.[file] ?? digest : digest;
+      assert.equal(createHash('sha256').update(readFileSync(path.join(root, file))).digest('hex'), expected, `${root}/${file}`);
     }
   }
 });
 
-test('guidance assembly matches Python across workflow and sample modes', () => {
+test('guidance assembly matches Python on baseline resources across workflow and sample modes', () => {
   // Python is an independent comparison oracle for migration tests only.
   const reference = JSON.parse(execFileSync('python', ['-c', `
 import json
@@ -120,13 +121,13 @@ print(json.dumps(out,ensure_ascii=False))
   assert.equal(guidance.philosophyBlock('page'), reference.page);
   assert.equal(guidance.directionBlock(), reference.direction);
   assert.equal(guidance.themeSlopBlock(), reference.theme);
-  assert.equal(guidance.antiSlopBlock(), reference.visual);
+  assert.equal(guidance.antiSlopBlock(path.join(pythonRoot, 'skills')), reference.visual);
   assert.equal(guidance.antiSlopBlock(undefined, false), reference.code);
   for (const name of guidance.PAGE_WORKFLOWS) {
     for (const [samples, aux] of [['mini', undefined], ['mini', false], ['mini', true], ['none', undefined], ['none', false], ['none', true]] as const) {
       const key = `${name}/${samples}/${aux === undefined ? 'None' : aux ? 'True' : 'False'}`;
       const expected = reference.routes[key];
-      const run = () => guidance.routedWorkflow(name, undefined, { samples, ...(aux === undefined ? {} : { includeAux: aux }) });
+      const run = () => guidance.routedWorkflow(name, path.join(pythonRoot, 'skills'), { samples, ...(aux === undefined ? {} : { includeAux: aux }) });
       if (expected.error) assert.throws(run, { message: expected.error }, key);
       else assert.equal(run().replaceAll(guidance.WORKFLOWS, path.join(pythonRoot, 'skills')), expected.text, key);
     }
@@ -141,7 +142,7 @@ test('literal prompt substitution preserves code braces and warns from original 
   assert.ok(!warnings[0]!.includes('{inserted}'));
 });
 
-test('builder prompt blocks, order and chapter context match Python', async () => {
+test('builder prompt blocks, order and chapter context match Python on baseline resources', async () => {
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const builder = await import('../src/core/builder-context.js');
@@ -157,7 +158,7 @@ test('builder prompt blocks, order and chapter context match Python', async () =
     const workflowRoot = path.join(root, 'workflows');
     for (const name of guidance.PAGE_WORKFLOWS) {
       mkdirSync(path.join(workflowRoot, name), { recursive: true });
-      const skillSource = readFileSync(path.join(guidance.WORKFLOWS, name, 'SKILL.md'), 'utf8');
+      const skillSource = readFileSync(path.join(pythonRoot, 'skills', name, 'SKILL.md'), 'utf8');
       const customMetadata = skillSource.replace(/^---\n.*?\n---/s, header => header.replace(/\n---$/, '\nname: 012\ndescription: ignored\ndescription: final discovery\n---'));
       writeFileSync(path.join(workflowRoot, name, 'SKILL.md'), customMetadata.replaceAll('\n', '\r\n'));
     }
@@ -189,7 +190,7 @@ print(json.dumps(out,ensure_ascii=False))
 
     for (const workflow of guidance.PAGE_WORKFLOWS) for (const notes of ['off', 'cap', 'notes', 'only']) for (const visualFocus of [false, true]) {
       const expected = reference.blocks[`${workflow}/${notes}/${visualFocus ? 'True' : 'False'}`];
-      const actual = builder.instructionBlocks(root, 5, workflow, { notes, visualFocus });
+      const actual = builder.instructionBlocks(root, 5, workflow, { notes, visualFocus, workflowRoot: path.join(pythonRoot, 'skills'), prompts: path.join(pythonRoot, 'prompts') });
       assert.deepEqual(Object.keys(actual), expected.order);
       assert.deepEqual(JSON.parse(JSON.stringify(actual).replaceAll(guidance.WORKFLOWS, path.join(pythonRoot, 'skills'))), expected.text);
     }
@@ -483,9 +484,10 @@ print(json.dumps(result,ensure_ascii=False))
       const traceInputs: string[] = [];
       let result: Record<string, unknown>;
       try {
-        const final = await direct({ root, query: '主题', audience: '读者', minutes: 45, ...(scenario.style ? { style: scenario.style } : {}) }, {
+        const final = await direct({ root, query: '主题', audience: '读者', minutes: 45, prompts: path.join(pythonRoot, 'prompts'), ...(scenario.style ? { style: scenario.style } : {}) }, {
           progress: () => { throw new Error('observer must not alter directing'); },
           model: { async respond(messages) {
+            assert.equal(String(messages[0]!.content).split(guidance.visualSlopBlock()).length, 2, 'Director receives shared visual rules once');
             history = structuredClone(messages);
             const row = scenario.rows[count++]!;
             return { id: String(count), inputTokens: 0, outputTokens: 0, message: { role: 'assistant', content: '', tool_calls: row.map((call, index) => ({ id: `${count}-${index}`, type: 'function', function: call })) } };

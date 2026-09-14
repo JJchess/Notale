@@ -670,7 +670,7 @@ function applySampleMode(name: string, body: string, mode: string): string {
   return body.slice(0, start).trimEnd().replace(READ_BOTH, READ_REFERENCE_ONLY);
 }
 
-export function routedWorkflow(name: string, root = WORKFLOWS, options: { includeAux?: boolean; samples?: string } = {}): string {
+export function routedWorkflow(name: string, root = WORKFLOWS, options: { includeAux?: boolean; samples?: string; template?: boolean } = {}): string {
   const samples = options.samples ?? 'mini';
   if (!(PAGE_WORKFLOWS as readonly string[]).includes(name)) throw new Error(`unknown routed workflow ${name}`);
   if (!['mini', 'none'].includes(samples)) throw new Error(`unknown sample mode ${samples}`);
@@ -678,7 +678,14 @@ export function routedWorkflow(name: string, root = WORKFLOWS, options: { includ
   if (includeAux && samples === 'none') throw new Error('--aux-samples 需要一个 Main,不能配 samples=none');
   const file = path.join(root, name, 'SKILL.md');
   if (!existsSync(file)) throw new Error(`routed workflow is not installed: ${file}`);
-  let body = applySampleMode(name, read(file).trim(), samples).replace(/^---\n.*?\n---\s*/s, '');
+  let body = read(file).trim();
+  if (options.template && name !== 'build-code') {
+    const sections = [...body.matchAll(/<!--teaching:start-->\s*([\s\S]*?)\s*<!--teaching:end-->/g)];
+    if (sections.length !== 1 || !sections[0]![1]!.trim()) throw new Error(`${file} needs exactly one teaching section`);
+    return `<workflow_skill name="${name}">\n${sections[0]![1]}\n</workflow_skill>`;
+  }
+  body = body.replace(/<!--teaching:(?:start|end)-->\n?/g, '');
+  body = applySampleMode(name, body, samples).replace(/^---\n.*?\n---\s*/s, '');
   const aux = includeAux ? auxSampleCatalog(name, root) : '';
   if (aux) {
     const marker = 'Do not read any other sample.';
@@ -708,8 +715,11 @@ function sourceBlock(root: string, sources: [string, string][]): string {
   }).join('\n\n');
 }
 export function antiSlopBlock(root = WORKFLOWS, includeVisual = true): string {
-  const sources: [string, string][] = [['anti_ai_slop_copy', 'scrub-copy-slop.md'], ['anti_ai_slop_visual', 'scrub-visual-slop.md']];
-  return sourceBlock(root, includeVisual ? sources : sources.slice(0, 1));
+  const copy = sourceBlock(root, [['anti_ai_slop_copy', 'scrub-copy-slop.md']]);
+  return copy + (includeVisual ? '\n\n' + visualSlopBlock(root) : '');
+}
+export function visualSlopBlock(root = WORKFLOWS): string {
+  return sourceBlock(root, [['anti_ai_slop_visual', 'scrub-visual-slop.md']]);
 }
 export function themeSlopBlock(root = WORKFLOWS): string {
   return sourceBlock(root, [['anti_ai_slop_theme', 'scrub-theme-slop.md']]);
