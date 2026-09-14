@@ -12,6 +12,7 @@ import {
   type RunSnapshot,
 } from "../protocol/index.js";
 import { redact } from "./redact.js";
+import { projectPages } from './progress.js';
 
 const runIdPattern = /^[a-z0-9][a-z0-9-]{7,80}$/;
 
@@ -53,6 +54,7 @@ export class RunStore {
       createdAt: now,
       updatedAt: now,
       lastSequence: 0,
+      pages: [],
     };
     const directory = this.runDir(id);
     await mkdir(path.join(directory, "output"), { recursive: true });
@@ -63,7 +65,27 @@ export class RunStore {
 
   async get(id: string): Promise<RunSnapshot> {
     const raw = await readFile(path.join(this.runDir(id), "run.json"), "utf8");
-    return runSnapshotSchema.parse(JSON.parse(raw));
+    const snapshot = runSnapshotSchema.parse(JSON.parse(raw));
+    if (snapshot.pages === undefined) {
+      // Read-only compatibility for historical tasks. Never manufacture old events.
+      const work = path.join(this.runDir(id), 'work');
+      let ids: string[] = [];
+      try { ids = JSON.parse(await readFile(path.join(work, 'builder-manifest.json'), 'utf8')).pages; }
+      catch { try { ids = JSON.parse(await readFile(path.join(work, 'briefs.json'), 'utf8')).map((brief: { description: string }) => brief.description.replace(/^Build /, '')); } catch {} }
+      snapshot.pages = ids.map(pageId => ({ pageId, pageTitle: pageId, state: 'pending' }));
+      for (const event of await this.events(id)) snapshot.pages = projectPages(snapshot.pages, event);
+      try {
+        const results = JSON.parse(await readFile(path.join(work, 'builder-results.json'), 'utf8'));
+        for (const page of snapshot.pages) {
+          const result = results[page.pageId];
+          if (!result) continue;
+          if (result.termination === 'no_tool_use' && result.artifact_present && result.audit?.fatal_errors?.length === 0) {
+            page.state = 'ready'; page.previewUrl = `/v1/runs/${id}/preview/${page.pageId}.html`;
+          } else { page.state = 'failed'; delete page.previewUrl; page.message = '页面未完成交付检查'; }
+        }
+      } catch {}
+    }
+    return snapshot;
   }
 
   async list(): Promise<RunSnapshot[]> {
@@ -76,10 +98,12 @@ export class RunStore {
   }
 
   async update(id: string, change: Partial<Pick<RunSnapshot, "status" | "phase" | "error" | "previewUrl">>): Promise<RunSnapshot> {
-    const current = await this.get(id);
-    const next = runSnapshotSchema.parse({ ...current, ...change, updatedAt: new Date().toISOString() });
-    await writeJsonAtomic(path.join(this.runDir(id), "run.json"), next);
-    return next;
+    return this.#serialize(id, async () => {
+      const current = await this.get(id);
+      const next = runSnapshotSchema.parse({ ...current, ...change, updatedAt: new Date().toISOString() });
+      await writeJsonAtomic(path.join(this.runDir(id), "run.json"), next);
+      return next;
+    });
   }
 
   async emit(id: string, kind: RunEventKind, message: string, details: Partial<Omit<RunEvent, "protocolVersion" | "runId" | "sequence" | "timestamp" | "kind" | "message">> = {}): Promise<RunEvent> {
@@ -99,6 +123,7 @@ export class RunStore {
         ...snapshot,
         updatedAt: event.timestamp,
         lastSequence: event.sequence,
+        pages: projectPages(snapshot.pages, event),
         ...(event.phase ? { phase: event.phase } : {}),
         ...(event.previewUrl ? { previewUrl: event.previewUrl } : {}),
       });

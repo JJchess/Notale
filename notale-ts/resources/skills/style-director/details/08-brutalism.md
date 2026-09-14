@@ -1,0 +1,51 @@
+# Brutalism · 粗野主义
+
+稳定 ID：`08-brutalism`。本资料是创作参考，不是成品主题或固定版式。
+
+## 核心特征
+
+显露文字、链接和结构的直接构成，使用少修饰的排印、硬边界或尺度反差，保留未经磨平的视觉形态。
+
+这里指网页设计中的用法，不把建筑粗野主义直接翻译成混凝土贴图；巨大粗字和黑白都不是必要条件。
+
+## 参考图观察
+
+巨大压缩字、硬直线、强烈对比、直接且少修饰的构成。
+
+## 字体建议
+
+| 角色 | 推荐资源 | 字重 | 字姿 |
+| --- | --- | --- | --- |
+| 中文标题 | [noto-sans-sc](../../../vendor/fonts/noto-sans-sc/) | 900 | normal |
+| 英文标题 | [barlow-condensed](../../../vendor/fonts/barlow-condensed/) | 800 | normal |
+| 中文正文 | [noto-sans-sc](../../../vendor/fonts/noto-sans-sc/) | 400 | normal |
+| 英文正文 | [inter](../../../vendor/fonts/inter/) | 400 | normal |
+| 数字与标签 | [jetbrains-mono](../../../vendor/fonts/jetbrains-mono/) | 400 | normal |
+
+中文用真实 900 重黑，英文用真实窄重体；标题可紧至 1.0，长正文保持 1.5 以上。
+
+## 可变表达
+
+可用彩色或无彩色，保留直接构成和尺度关系；不强制黑白或单一警示红。
+
+## 项目应用建议
+
+### 构图与阅读
+
+封面让短标题占据主要尺度；正文用少而明确的阅读轴；交互直接展示控制和结果，不藏在装饰里。
+
+### 形状与材质
+
+硬线、直角、高对比，保留有意义的视觉粗粝；图表用强线型但不改变几何。
+
+### 使用边界
+
+不能用遮住正文、重叠读不出字、假报错作为风格证据。
+
+## 来源与定义边界
+
+创作者参照：[Typical Organization 自述](https://brutalistwebsites.com/typical-organization.com/)与 [A. M. Douglas 自述](https://brutalistwebsites.com/amdouglas.uk/)。两者对直接结构的采用不同，不据此制定统一粗野主义组件表。
+
+原始视觉依据：[用户参考裁图](../shots/08-brutalism.png)，原图 02/3。“参考图观察”保留个例；字体、配色组合和 slides 落点属于项目建议，不能反向当作风格定义。静态图不证明动态行为。
+
+字体作者与授权、覆盖范围和混排说明见[字体库说明](../../../vendor/fonts/README.md)及各资源目录。共享行为边界见[创作约定](../GUIDE.md)。

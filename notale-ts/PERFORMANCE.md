@@ -1,5 +1,7 @@
 # Representative cold start
 
+Scope correction (2026-09-12): the workbenches differ in authoring and visualization capabilities. These timings describe loading behavior only; they do not establish a speedup from translating the harness or equivalent generation performance. See [COMPATIBILITY.md](COMPATIBILITY.md).
+
 Measured 2026-09-12 with headless Chromium on the same machine and a local Python static server. Each implementation used a new browser instance.
 
 | Runtime | Ready to run | NumPy requested | Result |

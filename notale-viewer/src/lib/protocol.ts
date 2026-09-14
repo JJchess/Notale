@@ -9,6 +9,15 @@ export interface CreateRunRequest {
 
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
+export interface PageProgress {
+  pageId: string;
+  pageTitle: string;
+  state: 'pending' | 'generating' | 'checking' | 'reworking' | 'ready' | 'failed' | 'cancelled' | 'unknown';
+  message?: string;
+  previewUrl?: string;
+  updatedAt?: string;
+}
+
 export interface RunSnapshot {
   protocolVersion: 1;
   id: string;
@@ -17,6 +26,7 @@ export interface RunSnapshot {
   createdAt: string;
   updatedAt: string;
   lastSequence: number;
+  pages?: PageProgress[];
   phase?: string;
   error?: string;
   previewUrl?: string;
@@ -27,9 +37,12 @@ export interface RunEvent {
   runId: string;
   sequence: number;
   timestamp: string;
-  kind: "run.started" | "phase.changed" | "page.started" | "page.ready" | "artifact.ready" | "run.completed" | "run.failed" | "run.cancelled";
+  kind: "workflow.progress" | "plan.ready" | "page.progress" | "run.started" | "phase.changed" | "page.started" | "page.ready" | "artifact.ready" | "run.completed" | "run.failed" | "run.cancelled";
   message: string;
   phase?: string;
+  workflow?: { module: 'planner' | 'director'; step: string; status: 'started' | 'completed' | 'reworking' | 'failed' | 'skipped'; occurredAt: string };
+  pages?: PageProgress[];
+  pageState?: PageProgress["state"];
   pageId?: string;
   pageTitle?: string;
   previewUrl?: string;

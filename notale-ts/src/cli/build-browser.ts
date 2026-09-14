@@ -1,72 +1,51 @@
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { preparePublicationFonts, preparePublicationPlayer, preparePublicationAssets } from '../core/publication.js';
 
-const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../src/browser/code-workbench");
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const output = path.join(packageRoot, "dist/browser/runtime");
+const diagnostics = path.join(packageRoot, 'dist/diagnostics');
+await mkdir(diagnostics, { recursive: true });
+await build({
+  entryPoints: [path.join(packageRoot, 'src/cli/check.ts')],
+  bundle: true, platform: 'node', format: 'esm', target: 'node20',
+  outfile: path.join(diagnostics, 'selfcheck.mjs'), external: ['playwright', 'sharp'],
+  define: { BUNDLED_SELFCHECK_PROBES: await readFile(path.join(packageRoot, 'resources/selfcheck-probe.json'), 'utf8') },
+});
+const harnessPackage = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf8'));
+await writeFile(path.join(diagnostics, 'package.json'), JSON.stringify({
+  name: 'notale-artifact-check', private: true, type: 'module',
+  engines: { node: '>=20.19' },
+  dependencies: { playwright: harnessPackage.dependencies.playwright, sharp: harnessPackage.dependencies.sharp },
+}, null, 2) + '\n');
+await cp(path.join(packageRoot, 'resources/notices/Pillow-LICENSE'), path.join(diagnostics, 'Pillow-LICENSE'));
+await writeFile(path.join(diagnostics, 'SELFCHECK.md'), '# 页面复查\n\n在 pages 目录运行：\n\n```sh\nnpm install --prefix assets\nnpm exec --prefix assets -- playwright install chromium\nnode assets/selfcheck.mjs page-01.html --json\n```\n\n支持与宿主 check 相同的 --after、--shot、--shot-dir、--crop、--zoom、--wait、--text-report 和 --json。不传页面时扫描当前目录 page-*.html。依赖安装仅用于复查；页面预览不需要 Node 或这些检查依赖。检查报告中的页面问题不改变诊断成功退出码 0；未找到页面返回 2。\n');
+if (process.argv.includes('--selfcheck-only')) process.exit(0);
+await Promise.all([preparePublicationPlayer(), preparePublicationFonts(), preparePublicationAssets()]);
+// The migrated scaffold uses the original workbench plus npm-provided runtime
+// files. Only offline Python wheels need preparation; no second workbench bundle.
 const packageOutput = path.join(packageRoot, "dist/browser/packages");
-await rm(output, { recursive: true, force: true });
-await rm(packageOutput, { recursive: true, force: true });
-await mkdir(path.join(output, "pyodide"), { recursive: true });
 await mkdir(packageOutput, { recursive: true });
-
-await build({
-  entryPoints: {
-    "code-workbench": path.join(sourceRoot, "index.ts"),
-    "monaco-worker": path.join(sourceRoot, "monaco-worker.ts"),
-    "python-worker": path.join(sourceRoot, "python-worker.ts"),
-  },
-  bundle: true,
-  format: "esm",
-  platform: "browser",
-  target: ["es2022"],
-  outdir: output,
-  entryNames: "[name]",
-  assetNames: "assets/[name]-[hash]",
-  loader: { ".ttf": "file" },
-  minify: true,
-  sourcemap: false,
-  logLevel: "warning",
-});
-
-await build({
-  entryPoints: [path.resolve(sourceRoot, "../chassis.ts")],
-  bundle: true,
-  format: "iife",
-  platform: "browser",
-  target: ["es2022"],
-  outfile: path.join(output, "chassis.js"),
-  minify: true,
-  sourcemap: false,
-  logLevel: "warning",
-});
-
-for (const name of ["pyodide.asm.mjs", "pyodide.asm.wasm", "pyodide.mjs", "python_stdlib.zip", "pyodide-lock.json"] as const) {
-  await cp(path.join(packageRoot, "node_modules/pyodide", name), path.join(output, "pyodide", name));
-}
-
-const licenses = [
-  { name: "monaco-editor", version: "0.55.1", license: "MIT", source: "https://github.com/microsoft/monaco-editor" },
-  { name: "pyodide", version: "314.0.6", license: "MPL-2.0", source: "https://github.com/pyodide/pyodide" },
-];
-await writeFile(path.join(output, "licenses.json"), `${JSON.stringify(licenses, null, 2)}\n`, "utf8");
-await cp(path.join(packageRoot, "node_modules/monaco-editor/LICENSE"), path.join(output, "MONACO-LICENSE.txt"));
-await cp(path.join(packageRoot, "node_modules/monaco-editor/ThirdPartyNotices.txt"), path.join(output, "MONACO-THIRD-PARTY-NOTICES.txt"));
-await cp(path.join(packageRoot, "third_party/PYODIDE-LICENSE.txt"), path.join(output, "PYODIDE-LICENSE.txt"));
-
-const lock = JSON.parse(await readFile(path.join(output, "pyodide", "pyodide-lock.json"), "utf8")) as { packages: Record<string, { file_name: string; sha256: string }> };
+const lock = JSON.parse(await readFile(path.join(packageRoot, "node_modules/pyodide/pyodide-lock.json"), "utf8")) as { packages: Record<string, { file_name: string; sha256: string }> };
 const requested = (process.env.NOTALE_BUNDLE_PYTHON_PACKAGES ?? "numpy").split(",").map((name) => name.trim()).filter(Boolean);
 for (const name of requested) {
   if (!lock.packages[name]) throw new Error(`Unknown Pyodide package: ${name}`);
   const file = lock.packages[name].file_name;
+  const destination = path.join(packageOutput, file);
+  try {
+    const existing = await readFile(destination);
+    if (createHash('sha256').update(existing).digest('hex') === lock.packages[name].sha256) continue;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+
   const source = process.env.NOTALE_PYODIDE_PACKAGE_URL ?? "https://cdn.jsdelivr.net/pyodide/v314.0.6/full";
   const response = await fetch(`${source.replace(/\/$/, "")}/${file}`);
   if (!response.ok) throw new Error(`Unable to download ${name}: HTTP ${response.status}`);
   const body = new Uint8Array(await response.arrayBuffer());
   const digest = createHash("sha256").update(body).digest("hex");
   if (digest !== lock.packages[name].sha256) throw new Error(`Hash mismatch for ${name}: ${digest}`);
-  await writeFile(path.join(packageOutput, file), body);
+  await writeFile(destination, body);
 }

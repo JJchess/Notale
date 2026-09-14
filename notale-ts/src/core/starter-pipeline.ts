@@ -6,7 +6,7 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
 }
 
-/** Initial vertical slice. The legacy planner/builder is replaced behind this interface. */
+/** Explicit offline fixture for service/UI smoke checks; never the default model workflow. */
 export const starterPipeline: GenerationPipeline = async ({ run, outputDir, signal, emit }) => {
   if (signal.aborted) return;
   await emit("phase.changed", "正在构思讲义结构", { phase: "ideate" });

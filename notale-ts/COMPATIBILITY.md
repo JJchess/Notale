@@ -1,16 +1,1974 @@
-# Compatibility inventory
+# Python → TypeScript 行为一致性审计
 
-| Boundary | TypeScript implementation | Evidence |
+初始审计（2026-09-12）：当时 TS 是简化实现，未达到语言迁移要求。撤回此前“可淘汰旧工作流、CLI 和模型适配器”的表述：没有用户授权或等价性证据。Python `../notale-v2` 仍为行为基线。
+
+迁移必须保留提示词正文和组装顺序、skill/reference/sample 注入、工具契约、模型配置、门禁及失败处理。独立 TS 服务、Next.js Viewer、npm 依赖管理、可移动产物、按需 NumPy 和代码主题映射，不构成简化生成流程的授权。
+
+第 278 批完成本目标的迁移工程验收，当前证据索引见下。此前批次中的“未完成／未验收”描述保留当时状态，不作为当前缺陷清单。下面的初始差异表及完整批次记录继续保留，避免覆盖失败与修复历史。
+
+2026-09-14 用户授权的契约扩展：Python 与 TS 同步增加 Planner 全局 `Audience` 和按 `Pages` 分发的 `Continuity`，格式见 [README](README.md)。Audience 对四种 Builder 一致，Continuity 仅注入关联页，不进入共享前缀或相邻页规格；新 FinalizePlan 要求 Audience，旧计划仍可读取。没有增加模型阶段或改变 HTTP/SSE、briefs 结构。`resources/python-baseline.json` 保留原始基线哈希，`resourceUpdates` 单独记录本次同步修改的 deck/brief 提示词，不将新内容冒称为历史基线原文。
+
+## 当前验收索引（第 278 批，2026-09-13）
+
+用户后续要求降低切页等待：预览脚本去掉 500ms 固定预热延迟，改为串行准备后面三页；保留已访问页，未访问页离开预热范围后释放，显式导航优先。当前讲义本地单次同路径测量（前页停留 1 秒后连续翻入代码页）844ms → 34ms；这不是任意跳页的零延迟保证。三页预热上限、总览不额外加载 iframe、取消后保留当前页及继续导航已验证。Python 原脚本未改。
+
+用户预览后补正：第 278 批未覆盖 notale-v2 实际的组装壳，此前固定侧栏、胶囊及旧 Viewer 工具条都是错误参考。现已找到并复用 `experiments/lab/make_deck.py` 的模板、`preview.js` 和含 beforeslidechange 的原 Reveal 运行时，保存在 resources/preview。恢复右下角箭头、页码、进度条、分步同步、O 总览和 F 全屏；当前 22 页总览复用经原页面/资源哈希确认有效的截图。实际箭头/分步/上一页及 22 张总览图解码检查通过。4177 神经网络的 output/work 组装入口和本地预览资源已更新，原作者页未改；原验收哈希继续保留为历史证据，不代表此次新增的组装资源。
+
+现有组合回归 45 项通过、零失败/跳过，155.051 秒；测试前后 182 个记录实现文件哈希一致。证据为 `../experiments/notale-ts/validation-b278-20260913/` 的 combined.log、result.json、source-before/after.json 和 preservation.json。以下按原目标核对，而非以一次生成成功替代迁移验收。
+
+| 原目标要求 | 实现与验收证据 |
+|---|---|
+| 保留 Python 稳定基线、提示词、skills/references/samples | 5,777 个 Python 文件及 5,642 个复制资源/配置哈希无变化；guidance/Builder prompt 差分覆盖四种工作流、样本/辅助样本模式、指令块顺序与章节上下文 |
+| Planner、Style Director 及完整工作流 | 生产入口 createModelPipeline 直接重导出 createBaselinePipeline；实际接线 planRun/direct/buildRun。现有 Python 对照覆盖工具循环、提交顺序、拒绝预算、主题复用/修复、无提交失败、四种 deck 提示词组合及最终 Builder 交接 |
+| 工具、媒体及 trace 契约 | workspace schema/读写/编辑/Patch/Bash/范围拒绝、媒体请求与归属、trace/脱敏差分通过；第 269 批真实 ImageSearch 与 ImageGen 均执行，生成图保存但最终页面未直接引用，如实保留该结果 |
+| 模型配置、输出预算、轮次和恢复 | 全部实际 profiles/workflow override、三协议消息与推理回放、usage、重试/取消对照通过；保留 128000 配置预算、并发 100、自然停止及原审计，不恢复初始 TS 的 30 页/14 轮/媒体数简化。第 274–277 批具体配置和 FTP 差异已有差分；本次组合回归覆盖当前依赖与实现 |
+| Check、代码作者层、共享底盘和门禁 | 真实浏览器对照初态、分步、after、截图/裁剪及像素缩放；代码 scaffold、实际执行、作者测试拒绝、后续帧错误拒绝、重置和移动后执行均通过。按需 NumPy 与主题映射的独立用例通过 |
+| 45–90 分钟真实生成 | 第 269 批 Viewer 创建的 45 分钟课程完成九页；第 271 批用 Python 原 query、60 分钟、notes 及相同模型设置完成 22 页，原 Python 为 21 页，完整 Planner 提示词逐字相同 |
+| Viewer 创建到预览、长任务取消、断线/Viewer 重启恢复 | 第 269 批主任务与独立 90 分钟任务的真实 UI/SSE 记录：完整停掉实验 Viewer 后两页均断线并在重启后恢复；实际 snapshot 503 自动恢复；运行 136 秒后取消，单一取消终态，333 文件在约 88 秒内不再变化。七个相关 Viewer 源文件仍与当时一致 |
+| 同一最终产物移动、逐页检查、整体导入 | 第 269 批同一九页产物移动、九页检查、原 Python 代码门禁及完整编辑器导入；第 273 批同一神经网络产物移动、22 页/44 张状态截图及完整导入。当前复核两份产物的 374/554 个哈希全部一致、原路径不存在、输出无 symlink、work 链接有效 |
+| 保护工程、控制验证维护成本 | 保留 Python 入口与旧实验记录；真实导入使用隔离编辑器文档。复用集中维护的既有测试，无本轮新测试/脚本；临时差分与日志留在 experiments，不修改作者产物掩盖缺陷 |
+
+版本边界：第 269/271 批真实任务之后的生产改动仅涉及 guidance 的配置构造修复、Messages FTP 分支和相应依赖，均有直接对照及本次组合回归；未改变已验证的 Viewer、页面运行时、生成提示词或产物。真实讲义没有重新生成，不能把旧任务时间戳写成当前新实验。
+
+保留的限制：本目标验收的是迁移行为，不保证每次随机生成的教学事实或布局完美。神经网络前向内容的分页组织不同；代码页作者文字有重叠，同一作者文件在 Python/TS 样式下位置一致，两版门禁均可通过。导入检查有一次字体 ERR_ABORTED、无 pageerror。历史第 134/220 批加载超时缺少当时状态，未宣称已根治；本次现有加载及拒绝用例均正常通过。未将“后端进程重启后接管运行中模型任务”冒称为已验证，原目标要求的 Viewer 重启恢复已完成。
+
+| 边界 | Python 基线（相对 ../notale-v2） | TS 差异（相对本目录） |
 |---|---|---|
-| One-command generation | `notale build` | Real Gemini run completed with normal, steps, and code pages |
-| Long-running service | `notale serve`, Fastify, durable `RunStore` | Viewer-independent process and persisted snapshots |
-| Viewer progress recovery | protocol v1 HTTP/SSE | Terminal replay returned ordered events 1–12 and closed cleanly |
-| Page tools | scoped `Read`, `Write`, atomic `Patch`, `Edit`, Chromium `Check` | Cross-page writes rejected; a 45-minute run used the repair/check loop |
-| Media tools | grounded `ImageSearch`, `ImageGen`, image feedback to the agent | Wikimedia source image and generated 2048×1152 illustration used in a real run |
-| Page protocol | root `page-NN.html`, `#stage`, semantic assets, `window.Deck` | Real steps page emitted `data-deck-step`; Chromium state check passed |
-| Trace and run record | redacted `trace.jsonl`, `events.jsonl`, `run.json`, `briefs.json`, artifact manifest | Real and deterministic runs inspected |
-| Static export | relative regular files, no repository links or symlinks | copied-output contract test and manifest traversal |
-| Code runtime | Monaco/Pyodide ESM, semantic theme, declared packages | browser checks for plain Python and NumPy; plain run made no NumPy request |
-| Editor import | page files and recursive asset tree | current editor imported a generated three-page artifact as version 1 |
+| 规划 | prompts/deck.md、core/planner.py、tools/finalize_plan/tool.py：工具循环、页表和媒体归属校验；资源上限 60 页 | src/core/model-pipeline.ts：新写内联提示词、一次 JSON 请求、3–30 页；没有 FinalizePlan |
+| 提示词和路由 | core/skills.py、core/builder.py、prompts/tech*.md：cover/page/interaction/code 四路，教学原则、skill、reference、sample | src/core/model-pipeline.ts：normal/steps/code，短提示词；没有原资源注入和四路工作流 |
+| 风格和主题 | core/director.py、core/theme.py、core/font_library.py：独立选风格、参考图、生成修复、主题验证、字体资源 | src/core/model-pipeline.ts：九个颜色拼 CSS；无 Director 和原主题门禁 |
+| 工具契约 | tools/runtime.py 及各工具 schema：Bash、FinalizePlan、CodeScaffold；Read 指定资源和图片 | src/tools/files.ts、generation.ts：缺上述工具，Read 为文本；同名工具参数、权限和结果也未对齐 |
+| Check | tools/check/tool.py、vendor/chassis/selfcheck.py：after 逐状态重测、裁切放大、元素裁剪和越界、文字和主题检查、代码专用检查 | src/tools/visual-check.ts：初末步截图、文档尺寸和部分错误，无 after/box/zoom 和旧探针；model-pipeline.ts 结束兜底仅静态 Check，不强制最后浏览器检查通过 |
+| 代码页 | tools/code_scaffold/tool.py、skills/build-code、vendor/code-workbench：作者层、tests、trace、native view 和专用检查 | src/core/model-pipeline.ts：一次生成源码套模板，绕过 runAgent 和该分支的 Check；缺原可视化作者契约 |
+| 模型与运行策略 | config.yaml、core/llm.py、core/builder.py：workflow profiles、多 wire、配置输出上限 128000；响应目标 11 非熔断，单页时间限制；默认并发 100 | src/adapters/models/chat-model.ts、src/core/agent.ts：单 chat 模型、默认输出 32000、14 轮硬上限；默认并发 8，上限 30；不读取旧配置 |
+| 媒体 | tools/image_search、tools/image_gen、FinalizePlan：规划选媒体并校验归属，原 schema 和反馈 | model-pipeline.ts、tools/media.ts：最多一页 search 和一页 generate，静默丢弃后续分配；count≤4、n≤2；代码页强制无媒体；媒体 fetch 未传任务取消信号 |
+| 浏览器底盘 | vendor/chassis/base.js：包括 Deck.onStep(fn,n) 纯 JS 步数声明及导航/分步契约 | src/browser/chassis.ts：缩小 API，onStep 无 n，步数只从 DOM 推导；不是原底盘等价移植 |
+| 记录与入口 | core/planner.py、core/builder.py、core/trace.py：briefs、页表、builder manifest/results、profile 和工具证据 | src/core/model-pipeline.ts、run-store.ts、cli/main.ts：新 briefs 结构、简化 trace 和新 CLI；没有完整兼容映射 |
 
-The TS workflow intentionally does not carry over retired experiment switches, duplicate planner/builder CLIs, or unused model wire adapters. The active configuration uses the Google OpenAI-compatible chat wire; that is the implemented model boundary.
+这是静态审计确认的差异，不是完整运行时差分测试结果。未运行新的模型实验。提示词要求 Check 不等于程序强制门禁；静态检查通过不等于浏览器或教学内容通过。
+
+## 第 277 批：FTP 已读内容与最终控制响应分离
+
+实际对照确认：数据连接已读完合法 JSON 后，控制连接返回 451，Python 在 ftpwrapper.endtransfer 中吞掉收尾错误并保留响应，TS 的统一传输 Promise 原先拒绝整次请求。现以独立数据连接读取内容，控制连接继续消费最终响应；数据读取错误仍拒绝，最终控制错误按原 endtransfer 规则抑制，任务取消仍优先。没有改变 HTTP 路径、提示词、门禁或生成产物。
+
+五项最终响应对照（正常、451、立即 451、控制连接关闭、收尾超时）全部保留与 Python 相同的响应 ID；上一批八项文件/目录/回退/拒绝/读取超时/取消/重连检查也已在本次编译上复查。类型检查及编译通过；仅 http.ts 和两个编译文件相对第 276 批变化，未重复未受影响的 HTTP 用例或真实模型实验。证据：`../experiments/notale-ts/ftp-final-b277-20260913/`，保留修复前 451 失败记录及修复后原始结果。
+
+加载历史另行核对：第 220 批原日志仅保留 waitForFunction 30000ms 超时；当前代码有 editorReady 和 runtimeReady 两个同超时等待，原记录未标明失败阶段，也没有保留该次页面状态。不能据此定位 Monaco/Pyodide 根因，亦不能拿第 269 批误选外层 iframe 的驱动问题追溯解释它。第 268 批完整回归及第 269/273 批实际加载成功仍只证明各自记录的有效路径。第 276 批明确的 FTP 收尾差异已关闭；整体完成审计仍开放，不虚构历史加载根因或追加无依据的重试。
+
+## 第 276 批：当前验收核对与 Messages FTP 重定向
+
+重新核对当前生产接线：CLI 的 createModelPipeline 是 createBaselinePipeline 的导出别名，后者实际调用 planRun、Director、buildRun、媒体与最终审计，不是初始表中的简化实现。5,777 个 Python 基线文件及 5,642 个资源/配置文件仍匹配冻结哈希；本批修改前，相对同题神经网络实验的 182 个记录文件只有 guidance.ts 及两个编译文件发生变化，已有第 274/275 批定向验证。第 268 批 45 项全通过、第 269 批 Viewer/取消/恢复/移动/导入，以及第 271–273 批同题 22 页交付，各自证据仍有效，不能把它们改写为本批新传输代码的完整实验。
+
+核对旧传输备注时实际复现 HTTP 302 → FTP：Python Messages 经 urllib 读取本地 FTP JSON 成功，TS 原生 fetch 报 unknown scheme。现在仅为原生 Messages 的 FTP 路径接入固定版本 basic-ftp 6.2.1；普通 HTTP 和自定义 fetch 继续走原路径。保留匿名登录、IPv4/控制连接地址的被动传输、目录与 type 参数、RETR 550 后目录回退、TYPE 失败后一次重连、读取续期和任务取消。未启动真实模型任务或替换候选服务。
+
+八项隔离检查覆盖文件、ASCII、目录、550 回退、拒绝、超时、取消和 TYPE 重连。拒绝/超时两侧都进入连接错误家族，TS 取消保留 AbortSignal 原因；取消是 TS 服务能力，不冒称 Python 具有该信号接口。重连检查曾发现本批提前监听 data 导致丢失初始字节，已改成在实际消费数据时续期，并复查受影响样本。类型检查/编译通过；现有模型 HTTP 重试及三协议状态保留两项通过，37 项未运行。FTP 库版本与 lockfile 已固定，没有新增仓库测试或脚本。
+
+证据：`../experiments/notale-ts/ftp-redirect-b276-20260913/`。preservation.json 明确是本批传输修改前的核对；source-sha256.json 为修改后版本。此次关闭的是已复现的 FTP 无法读取及所测分支；FTP 最终传输响应/异常关闭的行为仍须与 urllib 核对，不能将库支持 FTP 当作全部协议语义一致。历史第 134/220 批加载超时仍无完整根因证据，后续成功不算追溯修复。整体验收保持开放。
+
+## 第 275 批：关闭已确认的别名键冒号解析差异
+
+原解析器把 `*x:` 当成一个 alias token，无法接受 Python 可用的 `{y: &x =, *x: 12}`。保留正常 parseDocument 快速路径，仅在原解析失败且出现候选别名冒号时，用公开 Lexer/Parser/Composer 接口拆分 alias 尾部冒号；所有 token 字符数总和保持不变，不通过插空格改写源文本。重组必须恰好得到一个无解析错误的文档，否则沿用原诊断；schema 复用本次 Python 兼容设置。
+
+此前原始八项上下文对照现全部匹配 Python，包括不带空格的失败项。类型检查、项目编译、指导资源/配置两项通过，37 项未运行。首次类型标注不匹配被 tsc 拦截，改用 Document.Parsed 后才得到有效编译及差分结果。证据：`../experiments/notale-ts/alias-colon-b275-20260913/`。本批关闭第 274 批具体解析失败，不将此推广为所有 YAML 词法行为等价。没有新增仓库测试/脚本、模型任务或重启预览服务；同题 22 页产物保留原样，整体最终验收仍待完成。
+
+## 第 274 批：核销已改 value 构造上下文
+
+只完成第 270 批已准备但因用户转向同题质量对照而暂停的八项上下文检查，不扩展新的随机样本。构造阶段确认合法 `{y: &x =, *x : 12}` 的 value 标签应在 flatten_mapping 期间先转成字符串，TS 逐个键构造时才转换导致提前拒绝。现把转换移至映射预处理，保留标签/别名节点身份。八项直接/包装/omap/pairs/合并/别名对照全部匹配；类型检查、项目编译、指导资源/配置两项通过。
+
+仍有一个具体未修复项：同一输入不留别名与冒号之间空格，即 `{y: &x =, *x: 12}`，PyYAML 接受，而 yaml 库在词法/解析阶段拒绝，尚未进入上述构造。证据：`../experiments/notale-ts/value-context-b274-20260913/`，分别保留不带空格的解析差异及带空格的构造修复结果。第 271/273 批真实神经网络产物与服务仍冻结，不把此次仅配置边界的更新算入旧源码哈希。整体目标未完成。
+
+## 第 273 批：同题神经网络产物移动与整体导入
+
+继续使用第 271 批同一 22 页讲义，未新增生成或改动源码/作者内容。完整 run 移到 real-neural-b271-relocated-20260913，原路径消失；554 输出哈希在移动、逐页检查、导入后保持一致，输出无 symlink，work 八个相对链接有效。45345 预览服务改为新根目录，原预览 URL 保持可用。
+
+22 页移动后全部通过技术检查，两张代码页执行真实代码门禁，44 张状态截图。整体导入隔离编辑器 `99ac1eb0-0654-47e1-8f19-910ec0298b82`：22 页、501 资源、124,342,227 字节。实际打开第 22 页内容和第 10 页代码工作台，代码三项测试/七帧执行完成。驱动最初以外层 iframe src 判断导航过早，改为等待实际 frame 导航后无需刷新继续；一次字体请求 ERR_ABORTED、无 pageerror，不声称零失败请求。
+
+182 记录实现哈希与第 271 批启动时一致。证据位于 `../experiments/notale-ts/real-neural-b271-relocated-20260913/20260913t065924z-25b8bd28/validation/`，尤其 delivery-b273.json、relocation-b273.json、moved-pages.json 和 editor-browser-b273.json。技术交付通过不替代全部教学事实/视觉正确性，也不关闭其他未核销迁移契约；整体目标未完成。
+
+## 第 272 批：同一作者代码页的布局归因
+
+针对第 271 批前向传播代码初态底部文字拥挤，在独立浏览器上下文中保留同一作者 lesson，替换 Python 原始 workbench/native-view-host/native-view.css/styles.css 并关闭 TS 颜色主题；另一个上下文保持 TS 原样。未改磁盘作者文件，保留 TS 按需 NumPy 运行时，本次仅检查初态布局。
+
+两侧原生视图 viewport、全部测得后代节点的位置/尺寸/字体、五个关键标签记录完全相同；Python 配色截图同样重叠。作者 .compute-line 使用 bottom:72px，而 .annotation 使用 bottom:30px，后者换行至 48px 高，两个文本区分别覆盖 y=695.8125..719 和 y=713..761，存在交叠。此处可归因于作者绝对定位布局，而非 TS 颜色映射导致的几何回归。
+
+证据：`../experiments/notale-ts/code-layout-b272-20260913/` 的 geometry.json、两侧截图及 summary.json。关闭的是该页初态的迁移归因疑点，不代表全部代码页或所有运行态布局等价；未修改产物、提示词或门禁，也未新建模型任务/仓库脚本测试。整体迁移仍未完成。
+
+## 第 271 批：按旧神经网络原 query 做同条件内容对照
+
+用户指出持续配置边界核查没有回答实验质量问题，暂停边界扩展。提取 Python `original-prompt-neural-0911-162519` 的原始 query、60 分钟和学习者输入，Planner 完整 2,363 字符逐字相同。匹配 profile/model/adapter/effort、各工作流 profile、视觉输入、mini/aux samples、sampleShots、visualFocus、notesMode、refShots 等记录设置。用原 notes 模式启动 TS 完整任务 `20260913t065924z-25b8bd28`，22 页自然完成，原 Python 为 21 页；最终两版 Builder 审计均无致命错误/视觉警告。
+
+TS 总耗时见 summary.json，约 322 秒；Builder 阶段 290.1 秒，Python Builder 为 814.1 秒。两版 Builder 输出 token 分别 291,285/280,040，调用 213/230，Check 78/83。非代码页最后 Check 的画面字数中位 219/228，讲稿总字数 5,142/5,233（TS/Python）；两版都有超过 200 字的页面，不能将提示词要求说成强制程序门禁。
+
+关键诊断：此前拿 45 分钟恒星 notes-off 与 60 分钟神经网络 notes-on 比页数/耗时，比较条件不一致。notes 不只增加讲稿，也增加 <=200 可见字符要求及 Check 字数反馈。匹配条件后 22 对 21 页，且输出 token 未减少，没有证据支持“TS 被限制成九页或整体缩水”。不把速度差异归因于语言，也不把总 token 当作质量证明。
+
+内容核查：两版页表覆盖神经元、XOR/隐层、激活、前向、损失、梯度、链式法则/反向传播、双月训练、过拟合及正则化。代表反向传播页保留完整公式关系及讲稿，TS 有四步演示；Python 另设前向传播概念页，TS 集中到代码页，组织并非逐页相同。TS 前向代码初态仍有拥挤标签；未修改作者产物或擅自提高门禁。此为代表页内容审阅，不是全套事实/交互验收。证据：`../experiments/notale-ts/neural-baseline-b271-20260913/` 和同一 run 的 validation/。当前新 API 预览端口 45345，旧候选及 Python 稳定入口保留。整体迁移仍未完成。
+
+第 270 批在用户转向质量核查前已完成直接 null/裸 value/merge 修复及 16 项定向对照、指导资源/配置检查；扩展上下文检查暂停，未冒称全部覆盖。第 271 批使用该源码，182 个记录文件在本次真实生成前后不变；第 268 批组合回归早于第 270 批修复。
+
+## 第 269 批：当前版本真实生成、恢复、移动和导入
+
+本次真实任务使用第 268 批回归通过的实现，182 个记录文件在生成、移动、检查、导入结束后哈希一致。Viewer 创建 45 分钟恒星课程 `20260913t064249z-19cdc4b4`，331.726 秒完成 9 页，全部 Builder 自然 no_tool_use 结束，最终审计无致命错误/视觉警告。Planner 实际调用 ImageSearch 和 ImageGen；保存六张搜索图片及一张生成图，page-02 引用搜索图，最终 HTML 未直接引用生成图。
+
+独立 90 分钟任务 `20260913t064317z-5f8bdb3c` 同时运行。首次 SIGTERM 优雅退出保留旧 SSE，只有取消页观察到断线，未当作两页恢复成功；结束两个已确认的实验 Viewer 进程后，两页均观察到断线，重启后在原页面自动恢复。取消页随后刷新并注入实际 snapshot 503，记录 response 503 后自动取得 200；任务运行 136.304 秒时 UI 取消返回 200，刷新后取消按钮消失，333 文件在 88.21 秒观察期未变，只有一个 run.cancelled 终态。
+
+同一主产物整体移动到 real-b269-relocated-20260913，旧路径消失；374 输出哈希保持不变，输出无 symlink，work 四个相对链接有效。Viewer 刷新从新位置恢复九页。九页/18 张截图的移动后技术检查通过，代码原 Python 门禁也通过。整体导入隔离编辑器 `84d26ae8-a7f5-4650-bc19-d73ab74327e8`，9 页、348 资源、94,061,052 字节。首次检查驱动误选外层 page-04.html，等待 CodeLab 超时；真实工作台在内层 page-04/index.html，选择已有内层后无需刷新即可运行，4 个作者测试和作者提供的 1 帧 trace 完成。一个字体请求 ERR_ABORTED、无 pageerror；不声称零失败请求或历史加载问题已根治。
+
+目视发现代码图表标签有重叠，原 Python 门禁对原样产物也通过；曲线有限、长度非零。另查看 page-02/page-06 初态，未做全套事实审查。未修改作者产物或新增门禁。证据：`../experiments/notale-ts/real-b269-relocated-20260913/20260913t064249z-19cdc4b4/validation/`，尤其 chain-summary.json、recovery.json、editor-browser.json 和 editor-code-final.png。此批刷新当前源码的真实链路证据，剩余迁移边界仍开放，整体目标未完成。
+
+## 第 268 批：当前组合回归与入口复核
+
+截至第 267 批配置/共享数值修复，现有 45 项组合回归全部通过，无失败或跳过。182 个记录源码/编译/配置/测试/依赖文件在测试开始后首次采集至结束未变，本次未修改生产源码。5,777 个 Python 基线文件、5,642 个提示词/skill 资源及配置文件、374 个冻结第 235 批输出文件哈希一致。耗时与原始日志见 `../experiments/notale-ts/validation-b268-20260913/result.json` 和 combined.log。
+
+当前 CLI/API 默认入口直接使用 createBaselinePipeline；生产 baselineRuntime 接入配置模型、Planner、Director、Builder、媒体及 trace，生成入口先 planRun 后 buildRun。初始差异表中的“无 Director/工具循环”等是已修复的历史状态，不代表当前缺口。
+
+真实链路仍是第 235 批冻结实现，不能以本次回归宣称最新配置源码已经跑过真实生成；取消/Viewer 重启证据仍为第 232 批。剩余配置构造/对象排序、传输覆盖缺口及历史代码就绪超时尚未全部核销，整体目标未完成。scope-audit.json 区分了当前接线证据与历史实验来源；未新增仓库测试/脚本或真实模型任务。
+
+## 第 267 批：整数构造位数限制与错误截断
+
+确认未使用配置字段中的 4301 位十进制数被 TS 接受，而 Python 在 YAML 构造阶段拒绝。显式及隐式整数现在都执行原构造规则，十进制及六十进制的每个十进制部分复用现有 pythonInteger，恢复冻结 Python 默认 4300 位限制，二/八/十六进制不误加该限制。复用既有实现并补齐 int 错误 repr 最多 200 字符的截断，而非新增一套位数规则。
+
+七项边界从两项匹配恢复全部匹配，包括 4300/4301 位、显式/包装、长十六进制、六十进制和非法长文本。第 263 批五十项数值差分仍全部匹配。类型检查、项目编译、指导资源/配置两项及 model wire/usage 定向项通过。证据：`../experiments/notale-ts/integer-limit-b267-20260913/`。没有新增仓库测试/脚本或真实任务，不改变基线文件或服务入口；其他未核销构造和迁移契约仍开放，整体目标未完成。
+
+## 第 266 批：时间戳构造与末尾 LF
+
+显式时间戳非法文本此前保留为字符串，现复用已有日期/时区/微秒构造验证，语法不匹配按 Python 抛 AttributeError。日期验证在节点构造时执行，避免统一转换阶段才校验。已有日期范围校验、时区归一化及微秒元数据保持使用；包装时间戳仍沿用 Python 的 list TypeError。
+
+十三项实际 profile 结果/错误全部匹配；补查十项初始两项末尾 LF 不符，修复 Python 正则 $ 接受最后单个 LF 的行为后十项全部匹配。类型检查、编译及指导资源/配置两项通过；LF 修复后编译及配置项通过，未重复整套回归。证据：`../experiments/notale-ts/timestamp-scalars-b266-20260913/`。无新仓库测试/脚本、模型任务或服务重启；复杂构造错误优先级及其他未核销契约仍开放，整体目标未完成。
+
+## 第 265 批：binary surrogate 转义诊断
+
+关闭第 264 批已复现的 binary Unicode 错误范围差异。双引号原始标量中的 surrogate 转义通过不与已解码文本冲突的临时字符保留边界，沿用 YAML 解码处理其他转义/折行；ASCII 编码诊断分别统计这些字符。实际非 BMP 字符及大写 U 的完整码点仍按单字符处理，包装节点使用原始值标量但错误仍定位包装节点。
+
+十四项直接/包装对照涵盖双 surrogate、小写/大写转义、实际 emoji、转义反斜线及临时字符碰撞；全部匹配。原七十项补查也全部匹配。类型检查、项目编译、指导资源/配置两项通过，37 项未运行。证据：`../experiments/notale-ts/binary-unicode-b265-20260913/`。首次正则编写错误被类型检查拦截，修复后才完成编译及有效差分。此修复针对 binary 诊断，不证明所有字符串操作或所有 YAML 构造等价；超长数值、时间戳及其他未核销契约仍开放。未新增仓库脚本/测试或真实任务，候选服务保持冻结，整体目标未完成。
+
+## 第 264 批：binary 解码拒绝与填充
+
+修复 Node Base64 宽松解码静默接受缺失填充和非法数据长度的问题。直接/包装 binary 使用同一构造，先检查 ASCII，再按 Python 非 strict 解码规则忽略非字母字符、处理有效填充终止，保留 bytes 结果；错误使用原 YAML 节点位置的 ConstructorError。
+
+原 28 项实际模型 profile 对照从 16 项匹配恢复为全部匹配。填充排列及非 ASCII 补查 70 项中 69 项匹配；JSON 生成的 \ud83d\ude00 两个 YAML 转义在 PyYAML 保留两个 surrogate，TS 合为一个码点，导致 ASCII 编码错误的范围/文本不同，两版都拒绝。该项明确开放，不能声称 Unicode 标量或 binary 全部等价。类型检查、项目编译、指导资源/配置两项定向检查通过，37 项跳过。证据：`../experiments/notale-ts/binary-scalars-b264-20260913/`。未新增仓库测试/脚本或模型任务，候选服务及真实产物保持冻结，整体目标未完成。
+
+## 第 263 批：显式整数与数值空白
+
+将直接与 = 包装整数改为 Python 构造规则：去下划线后按原始首字符决定符号、二/八/十六进制或六十进制，使用 bigint 保留数值，非法文本抛对应 ValueError 或 IndexError。float/int 共享数值文本归一化，接受 Python 数值转换允许的 Unicode 空白和十进制数字，拒绝 JS trim 会误接受的 BOM；不把 Python str.isspace 的全部控制字符误作数值空白。
+
+实际模型 profile 的 40 项整数直接/包装与 10 项 int/float 空白差分共 50 项全部匹配 Python，包含不安全整数和错误文本。类型检查、项目编译及指导资源/配置两项定向检查通过，37 项未运行。证据：`../experiments/notale-ts/numeric-scalars-b263-20260913/`。超长十进制的 Python 位数限制、binary/timestamp 构造及其他未核销契约仍需核查，不将所测结果扩为整个解析器等价。没有新增仓库脚本/测试、模型任务或重启候选服务；真实链路仍使用第 235 批冻结实现，整体目标未完成。
+
+## 第 262 批：显式浮点构造
+
+实际 profile 差分确认显式 int/float 的非法文本会被 TS 留作字符串，合法的浮点指数、下划线和空白也未正确转换。本批将直接及 = 包装 float 使用同一构造函数，保留 Python 的符号处理、六十进制累加、特殊值、Unicode 十进制数字及 ValueError/IndexError；复用原布尔错误的字符串表示。
+
+十三种值、直接/包装共 26 项实际 profile 结果和异常与 Python 一致。类型检查、项目编译通过；清理一次误用默认 tsc 产生的 135 个未跟踪相邻编译文件后重新运行指导资源/配置定向检查。最初差分误读旧 dist，不计作当前实现结果。证据：`../experiments/notale-ts/float-scalars-b262-20260913/`。特殊空白字符的 Python/JS trim 差异尚待核查，显式整数错误已证实但仍未修复；不宣称全部数值契约完成。没有新增仓库测试/脚本、真实任务或重启候选服务，整体目标未完成。
+
+## 第 261 批：显式布尔文本拒绝与大小写
+
+修复显式 !!bool 的非法文本被静默转换为 false；直接标量和 = 包装均按 Python 的小写键表读取，非法值抛 KeyError，保留空白、引号和控制字符的错误表示。合法混合大小写 TrUe 初次对照仍被底层解析器留下字符串，已将构造后的标量值回写为真正 boolean，不能只校验而保留原值。
+
+最终十四项实际 profile 成功/错误对照全部匹配，初始 13/14 记录保留。类型检查、编译、指导资源/模型配置两项通过；修正回写后只重跑配置项通过。证据：`../experiments/notale-ts/bool-invalid-b261-20260913/`。非法数值等其他构造契约仍开放，未新增仓库测试/脚本或模型任务，候选服务及第 235 批产物保持冻结，整体目标未完成。
+
+## 第 260 批：非字符串标量的 = 包装
+
+将已解包文本交给当前同一 YAML schema 的显式标量解析，保留 int 的 BigInt 中间值、float/负零、bool 和 binary；null 按 Python 构造器忽略文本并返回 None。包装结果可作为映射键与嵌套值。对照发现 timestamp 构造器虽先调用 construct_scalar，随后仍将原 MappingNode.value 列表传给正则，因此合法包装按基线抛 TypeError，未擅自扩展为日期支持。
+
+十二个实际 profile 成功/错误对照全部匹配，涵盖大整数、负零、bool、null、binary、timestamp 拒绝、数值键和嵌套浮点。初始 oracle 未逐项捕获 timestamp 拒绝，已纠正驱动后比较全部场景。类型检查、编译及指导资源/模型配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/wrapped-scalars-b260-20260913/`。
+
+非法数值/布尔文本的具体错误路径及其他未核销契约仍开放，不把合法包装结果扩为全部标量行为等价。无新增仓库测试/脚本或模型任务，第 255 批组合回归早于近期修改，候选服务和第 235 批产物保持冻结，整体目标未完成。
+
+## 第 259 批：标量结构拒绝与 str 的 = 包装
+
+标准标量标签现在按 SafeConstructor.construct_scalar 拒绝不合结构节点；先递归识别未加引号的 = 或显式 value 键，保留合法包装。!!str 包装返回内部标量原文本，支持嵌套、bool 文本和作为映射键；不把 true 文本变为 True。九个独立进程解析/错误及 stderr 对照匹配，另两个实际 profile 字符串匹配。初始驱动用原生 JSON.stringify 将 TS Map 写成 {}，已保留该失真记录并改用生产 jsonText 比较；不是产品映射键失败。
+
+类型检查、编译及指导资源/配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/scalar-shapes-b259-20260913/`。目前仅实现 str 的包装值转换；int/bool/float 等合法 = 包装还需转换，不能声称所有标量构造等价。无新增仓库测试/脚本或模型任务，第 255 批组合回归早于修改，候选服务及第 235 批产物保持冻结，整体目标未完成。
+
+## 第 258 批：标准 map/seq 标签结构
+
+复现 !!map/!!seq 使用错误结构时 TS 警告后接受。两种标签现进入延迟容器构造和不可哈希键检查；四个结构错误、两个键拒绝、两个合法控制组共八项接受/错误全文与 Python 匹配。类型检查、编译及现有指导资源/配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/standard-containers-b258-20260913/`。
+
+同批确认标量标签仍开放：!!str []、!!int {} 应拒绝而 TS 接受；!!str {=: hello} 则被 Python SafeConstructor.construct_scalar 合法解包成 hello，TS 仍返回映射。后续必须保留该 = 包装规则，不能一律拒绝标量标签的映射节点。具体输入/结果见 remaining-scalar.json。无新增仓库测试/脚本或模型任务，候选服务和第 235 批产物保持冻结，整体目标未完成。
+
+## 第 257 批：被忽略标签的额外警告
+
+构造校验已经拒绝实际被构造的未知标签；对仍留在 merge/pairs 承载映射上的未知标签，不再输出 yaml 库的 TAG_RESOLVE_FAILED 警告。其余警告保留。三个独立 Python/Node 进程场景比较解析值或错误全文及真实 stderr，merge/pairs 的标签忽略和普通值的未知标签拒绝全部匹配，stderr 均为空。此前八个未知标签对照仍匹配。
+
+类型检查、编译及现有指导资源用例通过，38 项按名称跳过。证据：`../experiments/notale-ts/ignored-tags-b257-20260913/`。本批关闭第 256 批确认的额外警告，不扩成任意 YAML 警告或其他标准标签行为等价。无新增仓库测试/脚本或真实任务，第 255 批组合回归早于近期修改，候选服务和第 235 批产物保持冻结，整体目标未完成。
+
+## 第 256 批：未知 YAML 标签拒绝
+
+复现 !custom 标量、映射、序列及键被 TS 警告后接受，Python SafeLoader 拒绝。现依据 SafeLoader 的十二种注册标签在实际构造时拒绝未知标签，并让映射在展开 merge 后按真实 pair 构造键值；仅作为 merge 来源的节点标签按基线可被忽略，若该节点另作为普通值出现仍拒绝。八项接受/错误全文对照匹配，包含嵌套优先级和 merge 控制组；前批四项递归丢值差分复查一致。
+
+类型检查、编译及现有指导资源/模型配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/unknown-tags-b256-20260913/`。merge 中被忽略的未知标签仍可能产生 yaml 库警告，该 stderr 差异未关闭，不能把接受结果匹配扩大为全输出等价。其他标准标签形状及未核销契约继续开放。第 255 批组合回归早于本次改动，无新增仓库测试/脚本或真实任务，候选服务/第 235 批产物保持冻结，整体目标未完成。
+
+## 第 255 批：递归合并回填与当前组合回归
+
+第 254 批四个丢字段/循环引用的真实 profile 差异已修复。转换时记录 AST 容器对应的实际对象，全部容器建立后按完整展开 pair 回填合并映射；循环值引用使用同一容器身份，不从尚未完成的别名对象推断最终字段。原始 merge pair 单独复制，避免重复 merge 的兼容改写影响展开来源。四个实际模型配置字符串全部匹配 Python，独立检查确认 child 自引用、共享数组、值和外层/child 独立身份。
+
+类型检查、编译、指导资源/模型配置两项定向检查通过。随后现有 45 项组合回归全部通过，无失败/跳过，153.63 秒；182 个记录文件前后不变。5,777 个 Python 基线文件、5,641 个提示词/skill 资源及配置文件、374 个第 235 批产物哈希一致。证据：`../experiments/notale-ts/validation-b255-20260913/`。未新增仓库测试/脚本或真实模型任务。
+
+此结果刷新当前自动化回归与四项递归合并差分，不证明所有集合顺序、未知 YAML 标签、特殊构造组合及其他未核销契约等价。第 235 批真实链路及候选服务继续冻结，不冒称新源码已经跑过新真实讲义；整体目标未完成。
+
+## 第 254 批：递归合并中间映射丢值（待修复）
+
+扩大检查到尚未完成的外层映射被内部 child 合并的实际 profile 配置，四项均有差异：Python child 保留自身循环引用及外层随后定义的 x，TS child 缺少 child/x，插入顺序不同只影响缺失范围。包括共享数组 x 的情况。第 251–252 批仅恢复最终键序/类型，没有覆盖此次中间映射字段丢失，不能据此宣称递归合并等价。
+
+原因是 TS 从正在构造的别名对象读取当前已存在条目，而 Python 先展开 AST 映射并延迟填充容器。修复需要让合并值按完整展开后的 pair 来源解析，保留容器身份和循环引用；单独重排键不足。证据：`../experiments/notale-ts/recursive-values-b254-20260913/`。本批无实现修改、构建、回归或真实任务，四个差异保持开放，整体目标未完成。
+
+## 第 253 批：映射键负零
+
+实际 profile.model 对照复现 Map 将首个 -0.0 键规范为 +0，三个普通/覆盖/merge 场景的字符串错误。TypedYamlMap 现保留首零键符号，keys/entries/迭代/forEach 返回原符号，覆盖保留首键，delete/clear 清理。五个配置对照全部匹配 Python；七项独立操作检查覆盖迭代、覆盖、删除清空和 iterable 构造，全部通过。
+
+类型检查、编译及现有指导资源/模型配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/map-zero-b253-20260913/`。其他复杂合并、集合排列及尚未核销契约继续开放；当前组合回归仍是第 241 批旧版本。无新增仓库测试/脚本或模型任务，第 235 批产物和候选服务保持冻结，整体目标未完成。
+
+## 第 252 批：递归合并的 typed Map 键顺序与类型
+
+实际 profile 对照发现数字、bool、float、日期键的递归 merge 顺序均不同，等值 1/1.0 还保留了错误的首次键类型。Map 构造后现按已推导的 Python 展开顺序原地重排，使用首个原始 scalar 键、保留原值和同一 Map 身份，余键按既有顺序补入。五个原差异全部匹配 Python；独立循环 Map/共享数组样本确认 self 和数组锚点身份、值不变。
+
+类型检查、编译及现有指导资源/模型配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/recursive-typed-b252-20260913/`。复杂递归 merge 的其他优先级、特殊数值键及尚未核销集合/配置契约仍开放；第 241 批组合回归早于近期修改。无新增仓库测试/脚本或模型任务，第 235 批产物及候选服务保持冻结，整体目标未完成。
+
+## 第 251 批：递归合并的字符串键顺序修复
+
+按 Python flatten_mapping 在独立 pair 列表上模拟“先删除 merge 项、递归展开、合并项前置”的顺序，原 AST/别名对象转换保留。普通对象构造后使用推导的首次字符串键顺序，修复第 250 批两个实际 model.name 差异；五个递归 merge profile 对照全匹配。独立检查确认共享数组身份、显式覆盖、递归值及复制顺序、普通合并优先级五项通过。
+
+类型检查、编译及现有指导资源/配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/recursive-merge-b251-20260913/`。该修复针对普通字符串键对象，typed Map 的递归键序及更复杂递归展开仍需核销，不声称全部 YAML merge 等价。无新增仓库测试/脚本或真实任务，第 235 批产物及候选服务保持冻结，整体目标未完成。
+
+## 第 250 批：递归合并的真实配置字符串差异（待修复）
+
+实际 _default_model_profile 对照五个递归 merge 配置：三个自合并/序列/覆盖控制组一致，两个相互引用映射不一致。Python 的 model.name 为 {'x': 1, 'y': 2}，TS 为 {'y': 2, 'x': 1}。差异来自 Python 展开 merge 前先从节点移除 merge 项、递归方因此能看到剩余显式键；TS 从尚未构造完整的别名对象复制，保留了不同的首次键插入顺序。字段值相同仍改变实际模型配置字符串，不能按普通 JSON 无序对象等价忽略。
+
+证据：`../experiments/notale-ts/recursive-merge-b250-20260913/`。本批只定位和保存真实差分，未修改实现、运行构建/回归或新模型任务。下一步修复须同时保留普通合并优先级、锚点对象身份及数值来源，不能简单重新序列化或排序所有键。两个差异仍开放，整体目标未完成。
+
+## 第 249 批：YAML merge 结构错误及优先级
+
+复现非法 << 标量、null、序列中的非映射源只报通用 Error；同一映射另含不可哈希键时，TS 还先报该键而 Python 先拒绝 merge。现按基线在普通键检查前递归验证合并源结构，使用 ConstructorError、对应文案与源码位置。六个错误/嵌套/优先级场景及两个合法接受控制组共八项匹配 Python；合法控制组仅比较接受结果，具体合并值沿用既有配置对照。
+
+类型检查、编译及现有指导资源/配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/merge-errors-b249-20260913/`。递归合并、展开后不可哈希键的上下文和其他混合错误优先级仍未全部核销。未新增仓库测试/脚本或模型任务，第 235 批产物和候选服务保持冻结，整体目标未完成。
+
+## 第 248 批：集合负零及首成员保留
+
+实际 profile.model 对照复现 JS Set 将首个 -0.0 规范成 +0，导致 {-0.0} 变成 {0.0}。TypedYamlSet 现在保留首个零成员的符号，并在 values/keys/entries/迭代/forEach 中返回该值；delete/clear 同步清理符号。五个 -0.0/0/0.0 插入顺序的 profile 字符串与 Python 全部匹配。独立操作检查覆盖各迭代入口、删除后添加正零、清空后添加负零、首个正零及 iterable 构造，八项通过。
+
+类型检查、编译及现有指导资源/模型配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/set-zero-b248-20260913/`。多成员集合排列、数值元数据在任意外部突变后的行为及其他迁移契约仍未全部核销。无新增仓库测试/脚本或真实任务，第 235 批产物及候选服务保持冻结，整体目标未完成。
+
+## 第 247 批：配置集合字符串表示
+
+实际 _default_model_profile 对照复现集合 model.name 及嵌套集合全部被 TS 转成 {}，丢失真实成员。repr 现输出空集合 set() 或成员集合表示；解析时记录集合数值的整数/浮点来源，以保留 1.0/1 区分和首个等值成员类型。空/单成员、bool、日期、bytes、列表/映射嵌套、float/int 两种去重顺序及大整数共十二项 profile.model 字符串与 Python 一致。
+
+类型检查、编译及现有指导资源/模型配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/set-repr-b247-20260913/`。多成员集合顺序、负零等数值特殊性及其他未核销契约仍开放，不能把这些单成员结果扩为全部 set repr 等价。无新增仓库测试/脚本或真实任务，候选服务及第 235 批产物保持冻结，整体目标未完成。
+
+## 第 246 批：特殊容器标签作为键
+
+复现 !!pairs/!!omap/!!set 标在 scalar 键上时 TS 把它当普通字符串接受；Python 已先产生不可哈希容器，占位容器导致映射立即拒绝，先于该标签自身结构错误。映射键校验现识别这三种容器标签，按基线报 found unhashable key。六项对照涵盖三类键、多错误顺序、pairs 中该键的结构错误及普通键控制组，错误全文/接受结果均匹配。
+
+类型检查、编译及现有指导资源/模型配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/tag-keys-b246-20260913/`。未新增仓库测试/脚本或真实任务；merge/其他标签、集合表示顺序等未核销项仍开放，候选服务及第 235 批产物保持冻结，整体目标未完成。
+
+## 第 245 批：特殊集合标签的结构拒绝
+
+复现 !!pairs/!!omap 使用 mapping 或 scalar、!!set 使用 sequence/scalar 时 TS 仅警告并接受，Python 抛 ConstructorError。构造队列现在包含这些带标签的 scalar，按原标签校验容器类型；同一 context/problem 位置只输出一次源码标记，set 的类型错误不添加 Python 没有的 context。错误发生后不再输出库的“未解析标签”警告。
+
+六个错误标签结构、一个嵌套优先级及两个合法控制组共九项匹配 Python；前批六个构造错误顺序复查通过。类型检查、编译及现有指导资源/配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/tag-shapes-b245-20260913/`。没有新增仓库测试/脚本或真实任务。
+
+所测标签位于值位置；异常标签作为键时的可哈希性与延迟构造交互、merge 错误优先级及其他未核销语义仍开放。第 241 批组合回归不覆盖后续修改，第 235 批产物/候选服务保持冻结，整体目标未完成。
+
+## 第 244 批：延迟容器构造的错误顺序
+
+复现前一个属性深层非法 pairs、后一个属性浅层非法 set 时，TS 深度优先先报 pairs，Python 延迟容器构造先报 set。将 AST 的即时遍历校验改为去重的容器队列，pairs/omap 只将实际二元组键值入队，普通映射/集合仍先检查键，再将值入队；别名指向的容器按实际构造身份去重，不需要依赖遍历位置的 pairs 豁免。
+
+三个多错误深度/容器组合与三个原构造错误共六项错误全文一致；此前五个别名合法/拒绝场景复查一致。类型检查、编译及现有指导资源/模型配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/construct-order-b244-20260913/`。没有新增仓库测试/脚本或模型任务。
+
+这覆盖所测延迟构造顺序，不证明 merge 展开、未知/形状不符标签与标量解析错误交织时的全部优先级。第 241 批组合回归仍为历史版本，候选服务和第 235 批真实产物保持冻结，整体目标未完成。
+
+## 第 243 批：pairs 映射别名的使用上下文
+
+复现 pairs 中带列表键的单项映射被别名作为普通映射使用时 TS 放行、Python 拒绝。现在仅对直接作为 pairs/omap 元素的别名保留承载二元组规则；其他映射别名执行可哈希键检查，包括 set 的被丢弃值。两个拒绝场景的 ConstructorError 全文/位置与 Python 一致，三个合法控制组（同 pairs 重用、跨 pairs 重用、普通合法映射别名）保持接受，共五项匹配。
+
+类型检查、编译及现有指导资源/模型配置两项通过，37 项按名称跳过。证据：`../experiments/notale-ts/alias-construct-b243-20260913/`。没有新增仓库测试/脚本或真实模型任务。该结果只覆盖所列别名上下文，多个构造错误顺序、特殊标签形状及其他配置语义仍未全部核销；第 241 批组合回归早于本批，真实产物/候选服务保持冻结，整体目标未完成。
+
+## 第 242 批：YAML 构造拒绝与位置诊断
+
+对第 241 批三个已复现输入补上 AST 构造校验：普通映射/集合不接受集合类型键；即使 set 值最终被丢弃，内含非法 pairs/omap 或不可哈希键也会拒绝。ordered pairs 的单项映射只承载二元组，保留其合法列表键，不误按 dict 限制。错误采用 ConstructorError 和 Python 风格源码片段、Unicode 字符列号。
+
+原三项错误类型/全文匹配；另五项覆盖多行标签、中文/emoji 列号、合法 pairs 列表键、pairs 多项映射及 omap 标量项，全部匹配。类型检查、编译及现有指导资源/模型配置两项通过（37 项按名称跳过）。证据：`../experiments/notale-ts/constructors-b242-20260913/`。没有新增仓库测试/脚本或真实模型任务。
+
+此校验不证明多个构造错误同时存在时的 PyYAML 延迟构造顺序、所有标签/锚点位置以及跨上下文别名都等价；其他特殊标签形状与集合表示/顺序仍开放。第 241 批组合回归早于此改动，第 235 批产物和候选服务保持冻结，整体目标未完成。
+
+## 第 241 批：共享配置修改后的组合回归
+
+现有 45 项全部通过，无失败或跳过，耗时 153.59 秒；182 个记录文件在回归期间无变化。5,777 个 Python 基线文件、5,641 个提示词/skill 资源及配置文件、374 个第 235 批产物哈希一致。没有新增仓库测试/脚本、修改产物或重跑真实生成。证据：`../experiments/notale-ts/validation-b241-20260913/`。
+
+补充审计已复现三种未关闭的构造差异：!!set 的列表键、被丢弃值中的非法 !!pairs、被丢弃值中的含非法键集合，Python 抛 ConstructorError，TS 接受。保留具体输入/结果，下一步针对构造阶段处理；不能用组合通过掩盖这些已知差异。当前真实链路仍为第 235 批冻结实现，后续变化七个源码/编译文件只涉及 profiles/guidance，整体目标未完成。
+
+## 第 240 批：YAML set 非空值
+
+PyYAML SafeLoader 接受 !!set 映射的非 null 值，最终集合取键；yaml 库默认 resolver 却以 Set items must all have null values 拒绝。现在 set 与 omap/pairs 一样保留原 AST 后走定制转换，取消非基线的 null 值限制。标量、列表、映射值、重复 bool/int 键和 null 控制组共五项集合大小/成员/add/delete 与 Python 一致；类型检查、编译及现有指导资源/模型配置两项检查通过，37 项按名称跳过。证据：`../experiments/notale-ts/set-values-b240-20260913/`。
+
+此处只验证合法非空值；Python 仍会构造被丢弃的值，而 JS Set 转换可能跳过它，嵌套非法值的错误传播尚未核销。不可哈希键、特殊标签形状诊断和集合顺序亦保持开放。未新增仓库测试/脚本或真实模型任务，稳定入口及第 235 批产物未变，整体目标未完成。
+
+## 第 239 批：解析层集合键相等
+
+直接对比 yaml.safe_load 与 parseYaml 返回集合的大小、has、add、delete，发现 true/1、等值日期、bytes 和等时刻时区日期没有去重；workflow 的后续 TypedYamlMap 曾遮蔽该问题。YAML set 现在通过 YAMLMap 的原转换上下文创建 TypedYamlSet，复用 pythonKeysEqual，并保留别名构造路径及此前的大整数处理。四个原差异及一个大整数控制组共五项全匹配。
+
+实际 profile request_options 对照另确认四个重复键集合正确因长度 1 被拒绝，大整数双键集合仍可转换；五项结果/错误与 Python 一致（成功项只比较构造成功，不声称集合 pair 的键值方向固定）。类型检查、编译及现有指导资源/模型配置两项检查通过，37 项按名称跳过。证据：`../experiments/notale-ts/set-equality-b239-20260913/`。无新增仓库测试/脚本或真实任务。
+
+本批不关闭不可哈希键的构造错误、集合 repr/浮点来源和迭代顺序，也不声称任意 Python set 操作等价。第 235 批产物和候选服务继续冻结，整体迁移未完成。
+
+## 第 238 批：YAML 集合的大整数精度
+
+真实 workflow 配置差分发现 Set 归一化把 9007199254740993 与 9007199254740992 转成同一个 Number，丢失一个未知 workflow 键。现与 Map 键处理一致，集合中的非安全整数保留 BigInt。正/负超大整数及重复值场景修正，连同 bool/int、int/float、等值日期及 bytes 的 workflow 消费路径共七项与 Python 匹配。类型检查、编译及现有指导资源/配置两项检查通过（37 项按名称跳过，8.68 秒）。证据：`../experiments/notale-ts/set-keys-b238-20260913/`。
+
+此处比较的是 workflowModels 消费集合后的结果，不能证明 parseYaml 返回 Set 的全部 has/add/delete、原始大小及迭代顺序与 Python 一致；该消费者已有 TypedYamlMap 去重，可能遮蔽解析层差异。本批只关闭已经复现的大整数丢失，不扩大结论。无新增仓库测试/脚本或真实任务，候选服务和第 235 批产物保持冻结，整体目标未完成。
+
+## 第 237 批：日期配置键排序
+
+实际 Python workflow_runtimes 与 TS workflowModels 对照复现八个差异：日期、无时区时间、有时区时间、带/不带时区微秒差异、混合有/无时区拒绝、日期/时间混用拒绝、元组内日期排序。profiles.compareKeys 现在按日期类型与时区状态检查，按实际时间及剩余微秒排序；八个结果/错误全部匹配。类型检查、编译及现有模型 profile 配置用例通过，其他用例按名称跳过；没有新增仓库测试/脚本或真实模型实验。证据：`../experiments/notale-ts/date-sort-b237-20260913/`。
+
+这关闭所测日期排序路径，不代表所有日期解析、YAML 特殊诊断或集合迭代顺序等价。第 235 批产物及候选服务仍保持原冻结版本，真实链路不冒称覆盖第 236–237 批配置边界改动。整体目标未完成。
+
+## 第 235–236 批：真实链路补证与字节键排序
+
+第 235 批最新真实讲义经 Viewer 创建，45 分钟、8 页、244.075 秒；同一输出移动后逐页检查及整体导入编辑器完成，374 输出哈希不变。代码页原 Python 与修正后 TS 门禁均通过，编辑器四个课程测试及十六帧执行完成，三条曲线有限且可见；一次字体请求 ERR_ABORTED 保留。Planner trace 与磁盘元数据确认一次 ImageSearch（六张图片）和一次 ImageGen（一张图片）；最终 HTML 没有直接引用生成图。详见 ACCEPTANCE.md 及该 run 的 validation/media-evidence.json，不以工具成功冒称图片最终使用。
+
+第 236 批修复 profiles.compareKeys 对两个 bytes 键报不可比较的问题，按 Python 的无符号字节字典序排序，元组内比较复用同一逻辑。五个同类/去重/元组场景与 Python 一致。混合 bytes/str 的错误参数先后仍随 Python set 哈希种子变化：种子 0/2 匹配，种子 1 文案顺序不同，保留该差异，不声称六项全匹配。类型检查、编译、现有 Planner 配置及模型 profile 配置用例分别通过；没有新增仓库测试/脚本文件或真实模型任务。证据：`../experiments/notale-ts/bytes-sort-b236-20260913/`。
+
+第 235 批真实链路使用第 233–234 批冻结实现；本批配置比较改动未在新真实生成中执行，运行服务保持原版本。日期比较、特殊 YAML 错误诊断、集合顺序及其他未核销契约仍开放，整体目标未完成。
+
+## 最新真实链路与关键修复（第 232–233 批）
+
+第 232 批当前冻结版本经 Viewer 创建 45 分钟恒星讲义，198.105 秒完成 8 页，实际调用 ImageSearch/ImageGen。Viewer 中断/重启后两个原页面自动重连；90 分钟任务从注入 snapshot 503 恢复后于 151.946 秒取消，371 个文件在约 88 秒观察期内不变且只有一个取消终态。同一主产物整体移动，371 个输出哈希不变，四个 work 相对链接有效；8 页/14 状态完成检查，并导入隔离编辑器 8904e6fb-abe0-4e03-99a9-eecc2ff56de2（8 页、347 资源、90,910,410 字节）。首次代码加载无请求失败/页面异常，三个课程测试与十帧执行完成。
+
+**该链路不能验收通过。** 代码页三条曲线 points 含 NaN、长度为零；第 6 页实际引用的生成图重复标注 Convective Zone。原 Python 门禁拒绝同一原样代码页，而 TS 当时通过。根因已确认：JS Playwright 的 evaluate/waitForFunction 不会自动调用字符串箭头函数，三个调用点的切文件、切帧及等待条件无效，检查三次实际始终停在第 0 帧。此前 TS “完整代码执行帧门禁通过”的结论不成立，不能靠旧通过记录关闭该契约。不同驱动及绘制等待均不是根因。
+
+第 233 批将三个调用点改为真正函数回调；检查其余生产 evaluate 调用，保留已显式调用的 IIFE/表达式。修复后 TS 与原 Python 都拒绝该真实 NaN 页面。现有代码 scaffold 用例增加只在后续帧报错的作者样本，定向通过；类型检查与编译通过。没有修改失败讲义，也未放宽或增加基线门禁条件。该修复后已有第 234 批组合回归和第 235 批真实链路，详见 ACCEPTANCE.md。其他 YAML/配置边界及历史就绪超时仍未全部核销，整体目标保持未完成。
+
+第 234 批组合回归：现有 45 项全部通过，无失败/跳过，测试运行耗时 153.50 秒；182 个记录实现/编译/配置/测试文件前后不变，5,777 个 Python 文件和 5,641 个复制资源哈希一致。额外独立双入口作者样本确认 Python 与 TS 都切换到 second.py，并因该文件的实际 RuntimeError 拒绝；未增加仓库测试文件或修改实现。证据：`../experiments/notale-ts/validation-b234-20260913/`。这恢复当前自动化回归证据，不把第 232 批失败讲义改记为验收通过，也不证明未核销的所有迁移边界。
+
+证据：`../experiments/notale-ts/real-b232-relocated-20260913/20260913t044958z-c600aefe/validation/`（chain-summary、visual-findings、python-code-gate、gate-frame-comparison、ts-code-gate-fixed）及 `../experiments/notale-ts/code-gate-b233-20260913/`。182 个记录文件相对链路冻结版本仅在之后修改 code-check 源码/编译结果及现有测试，共四个文件；七个 Viewer 文件和输出哈希保持一致。
+
+## 第 220–231 批验证入口（历史版本范围）
+
+第 220 批现有 45 项组合回归耗时 179.19 秒：44 项通过，一项代码工作台故意拒绝用例在就绪等待阶段超时；实现未变时单独复查通过（9.32 秒），首次超时原因未查明，不能把原组合结果改为全绿。182 个文件在运行中快照至结束无变化，5,777 个 Python 基线及 5,641 个提示词/skill 资源哈希仍一致。证据：`../experiments/notale-ts/validation-b220-20260913/`。
+
+第 221 批随后修复 Planner 与 respondCanonical 的空容器 effort 回退：Python 对空列表/字典使用模型默认值，TS 原先直接保留空容器；九项实际 respond 请求体差分全部匹配，类型检查、编译及两个现有 Planner/重试用例通过。证据：`../experiments/notale-ts/effort-b221-20260913/`。该改动不在第 220 批组合结果内。完整真实链路仍为第 203 批冻结版本；未核销契约与代码就绪超时均不能视为完成。
+
+第 222 批就绪诊断：Python/TS 等待条件与 30 秒限制一致。临时隔离讲义的三次复用浏览器检查、两次独立浏览器检查均未复现超时；编辑器就绪耗时 444–578 ms，随后运行时就绪等待 1355–1468 ms，无页面异常/请求失败，故意失败课程按预期被拒绝。证据：`../experiments/notale-ts/readiness-b222-20260913/`。未修改代码或延长超时，首次失败原因仍开放，不重复全量回归。
+
+第 223 批修复配置 repr 的循环别名栈溢出：四种自引用输入原先 RangeError，现按 Python 使用 [...]/{...} 表示回边；连同普通共享别名五项实际 profile 差分全部匹配，类型检查、编译和两个现有配置/资源用例通过（37 项未运行）。证据：`../experiments/notale-ts/recursive-repr-b223-20260913/`。此改动在第 220 批组合回归之后，不关闭其他 YAML 契约或就绪超时。
+
+第 224 批修复 typed-map 配置 repr 的数值来源丢失：原先 1.0/2.0 变整数，9007199254740993 被舍入，负零丢失；现同时保留首键数值类型及最新值的精确表示。八项实际 profile 差分全部匹配，类型检查、编译和两个现有配置/资源用例通过（37 项未运行）。证据：`../experiments/notale-ts/map-number-repr-b224-20260913/`；完整回归与真实链路版本范围不变。
+
+第 225 批修复 Builder 运行时误合并：profile 键 1 与字符串 "1" 在 Python 中独立，TS 原先按转换后的 profile.id 合并，导致不同页型实际选错模型。配置解析缓存现遵循 typed-map 键比较，运行时缓存按已解析 profile 对象复用；数字/日期/bytes 与对应字符串键三组配置的四路模型和实例共享矩阵全部匹配 Python。类型检查、编译及两个现有配置/三协议状态用例通过（37 项未运行）。证据：`../experiments/notale-ts/profile-cache-b225-20260913/`；本批在最后组合回归和真实链路之后。
+
+第 226 批修复 YAML 合并优先级：中间普通 Map 未识别 Python 等值键，导致 << 多来源合并错误保留低优先级值。中间合并改用 TypedYamlMap，保留首键身份和显式字段覆盖规则。五项实际 profile 差分（布尔/整数、浮点/整数、日期、bytes、显式覆盖）全部匹配，类型检查、编译及两个现有配置/资源用例通过（37 项未运行）。证据：`../experiments/notale-ts/merge-priority-b226-20260913/`；不更新完整回归或真实链路版本范围。
+
+第 227 批修复 workflow_profiles 迭代类型：集合遍历元素、bytes 遍历字节整数、日期直接报不可迭代，去重使用 Python 等值键规则。七项实际 workflow_runtimes 差分全部匹配，类型检查、编译及现有配置用例通过（38 项未运行）。证据：`../experiments/notale-ts/workflow-types-b227-20260913/`。其他排序/特殊对象及完整链路边界不由本次定向检查核销。
+
+第 228 批确认尚未修复的 YAML 有序键值对差异：Python !!omap/!!pairs 返回 list[tuple]，TS 分别返回 Map/list[dict]。实际 request_options 五项差分中四项不匹配：重复 omap 键被错误拒绝，三种 pairs 转 dict 错误报长度不足；非重复 omap 经 dict 转换的结果碰巧一致，不能据此视为解析等价。证据：`../experiments/notale-ts/yaml-pairs-b228-20260913/`。下一修复应统一这两种标签的解析并保留元组表示、顺序、重复项和别名身份，不能仅在 request_options 里补丁转换。本批只确认差异，无实现变更或回归重跑。
+
+第 229 批修复上述有效 omap/pairs 的解析结构：两者均生成带元组标记的列表，保留顺序、重复项、数值来源、自引用和原映射节点的锚点；配置 repr 保留元组表示。五项 request_options 及五项表示/别名差分全部匹配；类型检查、编译和两个现有配置/资源用例通过（37 项未运行）。证据：`../experiments/notale-ts/yaml-pairs-b229-20260913/`。非法项仍拒绝，但其 ConstructorError 的精确类型/定位文本、元组作为其他容器键时的全部语义尚未核销，不宣称整个 YAML 契约完成。
+
+第 230 批修复元组工作流键比较：相同元组按元素去重，排序按首个不同元素比较，元组内大整数使用保留的精确整数来源，避免先舍入再比较；包含 list 的不可哈希元组继续拒绝。七项实际 workflow_runtimes 差分全部匹配，类型检查、编译及两个现有配置/资源用例通过（37 项未运行）。证据：`../experiments/notale-ts/tuple-workflow-b230-20260913/`。其他特殊元素排序和非法 YAML 定位信息仍未全部核销；完整链路范围不变。
+
+第 231 批检查 omap/pairs 的实际三协议请求：十二项请求次数、错误及 JSON 值/数值类型匹配，包括 1.0、超安全整数、循环引用和带时区微秒日期。Python json.loads/dumps 保留数值类型后仅排序对象字段作比较；六项成功 SDK 请求的顶层字段字节顺序不同，原始差异保留，未宣称请求字节完全相同。证据：`../experiments/notale-ts/pairs-wire-b231-20260913/`。本批无实现变更、无真实模型调用或全套回归重跑。
+
+## 第 211 批及以前验证入口（历史版本范围）
+
+第 212–219 批随后修改特殊 JSON 键的失败顺序、日期范围校验、日期/二进制配置字符串、映射键相等比较、可哈希判断及特殊顶层配置的订阅错误，有对应定向验证；完整组合结果保持其原版本范围。
+
+版本说明：第 204–210 批随后修复 Planner 必填配置、求值顺序及真实配置加载错误，这些修复已有第 211 批组合检查：44 项直接通过，一项无效夹具修正后单独通过。真实模型链路仍限定于第 203 批冻结实现。
+
+当前 182 个记录实现/编译/配置/测试/依赖文件在第 202 批 45 项组合回归及第 203 批真实链路期间未变化；七个候选 Viewer 文件也未变。45 分钟真实讲义 10 页耗时 1159.864 秒完成，包含实际 ImageSearch/ImageGen，全部 Builder 自然结束且最终技术审计无错误或警告。Viewer 进程断线/重启及 snapshot 503 恢复、独立长任务取消、同一产物整体移动后 19 个页面状态检查和编辑器导入均已验证。378 个输出文件哈希保持不变，旧位置不存在；编辑器首次代码加载无请求失败或页面异常，三个课程测试及 21 帧运行完成。
+
+不能把该链路记为内容质量全部通过：代码图曲线峰位与表格峰值不同，原 Python 门禁对最终原样产物也通过。两版 `_notale_safe` 相同，截断 500 样本后作者仍将前 160 个样本索引映射到完整波长区间，造成横轴错误。生成图资源还有 Core 引线定位问题，但页面 HTML 未直接引用它，不能说最终页使用了该错误图。九张非代码初态已目视查看，不代表全套教学事实审查。其他尚未核销的迁移契约仍开放，整体目标未完成。证据：`../experiments/notale-ts/real-b203-relocated-20260913/20260913t031506z-574ce9d3/validation/`。
+
+## 历史核销入口（第 186/187 批，后续修复与最新证据见上）
+
+本次以当前文件重新核对，证据：`../experiments/notale-ts/validation-b186-20260913/{preservation.json,result.json,real-source-comparison.json}`。下表区分已验证路径与剩余工作，不能从历史通过项推定当前版本完成。
+
+| 要求 | 当前证据 | 剩余工作或限制 |
+|---|---|---|
+| Python 基线、提示词及资源 | 5,777 个基线文件、5,641 个复制资源 SHA 全部匹配，无缺失 | 继续保持原文；组装与运行分支须依赖相应差分，不能仅凭文件相同证明行为 |
+| 规划、Director、Builder、工具及门禁 | 第 186 批当前 45 项组合回归全部通过，92 个记录源码/编译/配置/测试文件前后未变 | 现有用例不是任意输入的等价证明；未核销契约仍见下列项 |
+| 配置与数值 | 已验证 YAML 浮点识别、所测合并/别名/键序、请求数值来源、媒体数量、输出上限、用量截断/合计及 Builder/trace 落盘的精确整数路径 | 非字符串键、YAML 特有对象、复杂递归/内联合并、其他整数入口和畸形 SDK 数据仍未全面核销；不能把已测路径推广为任意 Python 对象语义 |
+| 模型与媒体失败恢复 | 已对照重试/取消、读取续期、整体生图期限、常见编码与错误结构；已修复 Node 长定时器溢出、原生 fetch 隐含限时和所测上传阶段续期 | 第 167/174 批验证部分响应头及连接池，第 175 批对照可信 TLS 分段读取、握手停滞、不可信证书拒绝；第 177 批修复 DNS 并验证复用/取消/并发隔离，第 178 批补查新连接器下 httpx/urllib/TS 的 TLS 结果；其他 TLS 阶段、内核缓冲排空及自定义 transport 仍开放 |
+| 模型重定向与会话 | 第 180–185 批已对齐所测方法/内容头/循环限制、重复 Location、跨端口鉴权及实例 Cookie；响应体超时仍保存 Cookie。第 186 批包含现有回归 | 特殊 URL/协议、Cookie 日期及畸形属性、Set-Cookie2、其他取消时序与自定义 transport 未全面核销；这些主要是覆盖缺口，不能自动认定实现一致 |
+| 真实生成及 Viewer | 第 187 批当前冻结版本 45 分钟十页任务完成，206.114 秒；真实搜索返回六项。长任务 136.483 秒后取消；Viewer 断线/重启及一次实际 503 恢复通过 | 本次模型未调用 ImageGen，其真实工具/流程证据仍为历史批次；未验证运行中后端接管 |
+| 同一产物移动、逐页及导入 | 第 187 批十页输出移动后 377 个 SHA 匹配、19 个初态/after 状态及代码门禁通过，导入 402eafda-0a80-4866-b794-5190c059850b（10 页/349 资源） | output 无符号链接；work 有四个相对链接，移动后均有效；不把工作目录链接误报为输出依赖失效 |
+| 初次编辑器代码页加载 | 第 187 批新上下文首次加载及运行成功，无请求失败或页面异常；4 项课程测试、16 帧和三条曲线正常 | 新成功不证明历史第 134 批首次超时原因已修复 |
+| 作者内容与门禁限制 | 第 187 批代码图 x 轴标签超出 SVG 右边界；同一讲义原 Python 门禁也通过。九张非代码初态截图已目视检查 | 保留作者视觉缺陷，不擅改产物或增加门禁；未进行全套教学事实核查，旧第 134/165 批曲线缺陷保留历史记录 |
+
+第 187 批完整链路证据：`../experiments/notale-ts/real-b187-relocated-20260913/20260913t021402z-1479521f/validation/`。该次实验期间 92 个记录实现/配置/测试文件及七个 Viewer 文件未变化；同一产物检查和导入后 377 个输出 SHA 仍匹配。之后第 188–202 批继续修正 Cookie、YAML 和配置转换，有相应定向证据，不能宣称第 187 批真实实验或第 186 批组合回归覆盖了后续修复。整体目标未完成；本次真实链路不能关闭未核销的迁移契约。
+
+## 修复顺序与完成标准
+
+1. 固定 Python 基线，保留 prompts/skills/references/samples 原文，移植组装与路由；仅规范化必要的语言和目录路径差异。
+2. 对齐 Planner/FinalizePlan、Director、Builder、工具、模型配置、失败处理；移除未经授权的页数、媒体和轮次限制。不能硬编码 27 页掩盖规划差异。
+3. 对齐 Check 探针、交互状态、代码作者层和底盘协议，在 npm/可移动包装变更下保持行为。
+4. 复用少量夹具，对照最终模型消息、工具 schema/输出、门禁通过与拒绝、错误恢复及产物契约；集中维护差分验证，避免扩建脚本体系。
+5. 再以相同输入和模型完成 45–90 分钟生成、Viewer 全链路、长任务取消恢复、同一最终产物移动与编辑器导入。完成前保持候选状态。
+
+## 修复进度（2026-09-12，第一批）
+
+- `resources/python-baseline.json` 固定当前 Python 核心/工具/底盘/配置及资源的版本和 SHA-256；prompts 与 skills 的 5,641 个受版本控制资源已原样复制到 `resources/`。现有原始目录无修改。
+- `src/core/guidance.ts` 移植 skill 路由、样本模式、辅助样本目录、共享指令及字面插值；`builder-context.ts` 移植指令块顺序、章节上下文、主题接口和技术契约组装。原内联指令常量保存在 `resources/builder-instructions.json`。
+- `src/core/planner-contract.ts` 已移植页表解析、连续页号/标签校验、媒体归属校验和 FinalizePlan 提交逻辑；Planner 循环与工具接线尚未完成。
+- 集中于 `test/parity.test.ts` 的差分验证已通过：资源逐字节对照、四个工作流的样本模式及错误分支、Builder 指令及顺序、章节/环境上下文、页表解析和拒绝消息（含 30/60/61 页边界）。比较时仅规范化 skill 根路径。媒体文件/路径门禁的完整差分仍待补齐。
+- 以上模块尚未接入生成入口，不代表现有 `model-pipeline.ts` 的差异已经解决。下一批继续 Planner/Director、原工具及模型运行契约，然后接入 Builder；最终实际发送的完整模型消息仍需验证。真实模型和完整验收尚未重跑。
+
+## 修复进度（2026-09-13，第二批）
+
+- `src/core/planning.ts` 实现原 Planner 自由工具循环和原始 deck 提示词组装；使用原工具 schema（`resources/planner-instructions.json`）。保留三次交付拒绝预算，不给工具调用加任意轮数上限；本轮媒体下一轮才可提交、多个 FinalizePlan 以最后一次为准，图片排在本轮全部工具结果后。
+- `src/core/director.ts` 移植选样/主题连续历史、一次完整 Write、混合读写拒绝、技术门禁修复和复用/修改/参考路由。字体、图片、主题导入及浏览器门禁通过必须提供的接口接入；实际实现仍待迁移，不能把测试替身当成运行时能力。
+- `resources/config.yaml` 保留原配置；`src/adapters/models/profiles.ts` 对齐全部模型 profile 解析和 workflow override，包括 build-code 的独立 profile。尚未替换现有模型传输实现，多 wire、原请求/回放/重试策略仍待迁移。
+- 本批一次收尾差分检查 9 组通过，类型检查通过。新覆盖包括脚本化响应驱动的 Python/TS Planner 和 Director 循环对照、拒绝/修复/无提交/媒体失败/复用/关闭视觉输入分支、四种 deck 提示词组合及全部实际配置 profile。门禁与媒体在循环测试中使用显式替身；不能由此推断真实浏览器/媒体门禁已经迁移。
+- 生成入口仍未切换。接下来需要真实主题解析/资源/浏览器门禁、风格目录和字体支持、模型传输层、Builder 工具和状态机，再集成主流程。完整模型实验、Viewer/取消恢复、移动产物和编辑器验收仍未完成。
+
+## 修复进度（2026-09-13，第三批）
+
+- `src/adapters/models/runtime.ts` 移植 canonical 请求、chat/messages 转换、responses 传输、原生响应回放、usage/cache/truncation 和原退避阶梯。Gemini thought_signature、推理字段和 Anthropic thinking/signature 保留；Anthropic 连续角色合并、两处 cache_control 和 effort 转换与 Python 差分一致。
+- `ModelRuntime.respond` 为当前 TS Planner/Director 提供桥接，内部 replay 元数据不会发给服务商；`workflowModels` 按原 profile 配置为各工作流建立运行实例。该路径尚未接入默认简化 model-pipeline；真实端点、环境加载和最终 CLI 接线仍待后续集成验证。
+- 通过模拟 HTTP 覆盖 429/503/特定 400 重试、一般 400 不重试、原阶梯耗尽，以及退避中取消；修复等待结束后取消仍可能多发请求的问题。没有真实模型请求。
+- `src/core/trace.ts` 恢复原 transcript 字段、父子关系、工具证据和按内容哈希保存的图片；`redact.ts` 恢复原命名脱敏标记、Bearer 和 Unicode 边界规则。已与 Python 记录和脱敏结果对照。
+- 一次组合差分检查 13 组通过，类型检查通过；之后补充 Unicode 边界仅重跑对应脱敏/记录检查并通过。转换检查使用 Python oracle，传输检查使用模拟 HTTP，不能解释为服务商端到端验证。
+- 下一批重点仍是 Director 的真实主题解析/资源导入/字体/浏览器门禁、风格目录，以及 Builder 的工具与状态机。默认生成入口、完整实验和 Viewer/移动/编辑器验收尚未完成。
+
+## 修复进度（2026-09-13，第四批）
+
+- `style-assets.ts` 提供真实风格索引、详情、字体声明、字体 allowlist/hash/不可覆盖复制和参考图输入。字体按 manifest 打包并保留许可证；90 份原风格参考图缩略图沿用 Python 生成字节，以免 JPEG 重编码改变原模型输入。新上传图片当前由 sharp 重采样，尚未证明与 Pillow 一致。
+- `theme.ts` / `theme-runtime.ts` 提供主题静态契约检查、CSS URL 资源边界、导入重定位、用户参考、字体/图片解码、主题变体、舞台/hidden/品牌机制和无图状态的真实浏览器门禁，并保留原子发布。浏览器探针来自原 Python 字符串；修复了 Playwright JS 字符串表达式需要显式调用的问题。
+- `directorPorts` 将真实资源和门禁接入 Director，要求显式提供当前运行的模型、媒体和记录依赖，不提供跳过门禁的默认实现。默认生成 pipeline 尚未替换。
+- 新增差分验证通过：静态主题边界、三种真实风格详情及图像字节、全部字体声明、主题导入、字体不可覆盖和路径越界，以及三个真实浏览器主题样本的通过/拒绝结果。浏览器检查使用临时目录，未修改原讲义。
+- **仍有明确差异待处理**：CSS 解析器使用 PostCSS（错误诊断/错误恢复尚未完全对齐 tinycss2）；自定义上传图片重采样尚未对齐 Pillow。以上资源/主题检查不能据此宣称全部主题行为已等价。
+- 后续继续解决这些差异，并迁移 Builder 工具/状态机、媒体和产物底盘；完整生成、Viewer 取消恢复及最终同一产物移动/编辑器验收仍未完成。
+
+## 修复进度（2026-09-13，第五批）
+
+- `src/tools/workspace.ts` 移植原工具 schema/页型选择、工作区与跨页边界、完整 reference/sample/LIBS 读取、字符截断、Write/Edit/Patch/Bash。Patch 保留先在原文件验证整批 old、再顺序替换、原命中计数及 miss 分类记录；媒体和 Check 仍由显式依赖提供。
+- `src/core/builder.ts` 移植 canonical 模型循环、逐工具执行/记录、代码页权限、图片反馈顺序、150000 token 触发的历史淘汰、自然结束和结束后的独立 audit。没有新增轮数熔断，也没有将截图报告自动当作批准；code scaffold 和专用代码检查仍需接入真实实现。
+- 基线核对补充：首轮 Read/首次 Write 顺序属于 IDENTITY 提示词要求，当前 Python build_one 并没有另设强制顺序状态机；11 次响应是目标统计。此次移植保留实际代码行为，不把提示词文字误当成已有程序门禁。
+- 新增差分通过：工具结果及全部 schema、跨页拒绝、整批 Patch 失败和原顺序计数、SequenceMatcher miss 分类、完整资源读取、图片淘汰边界、audit 致命/视觉分类，以及普通页/代码页/无视觉/超过 14 轮/上下文超限的 Builder 循环历史和最终状态。
+- Builder 循环测试的 Check、代码 scaffold 和媒体仍使用显式替身。真正缺口现在主要是完整页面 selfcheck、代码工作台 scaffold/检查、媒体执行和产物底盘，以及默认 pipeline/Viewer 的整合；默认入口仍未切换。
+
+## 修复进度（2026-09-13，第六批）
+
+- `src/tools/selfcheck.ts` 移植原完整页面探针及编排：初态/末步测量、逐步和回退截图、独立小视口契约检查、after 逐状态重测、裁图/缩图，以及以首个有效测量为基线的报告压缩。探针原文保存在 `resources/selfcheck-probe.json`；关闭截图仍执行 after。
+- `src/tools/check.ts` 提供原 Check 参数处理、工作流提示和首末图反馈路径。普通页面完整检查已有真实实现；代码页专用检查、Builder 生产依赖及默认 pipeline 仍待接入，不能把新模块存在视作入口已修复。
+- `image-resample.ts` 用 TS 移植 Pillow 12.1.0 的 RGB Lanczos 系数和舍入，sharp 只负责编解码；保留 Pillow 许可证。六组缩小/放大/单轴/单像素边界及裁图对照得到相同 RGB 像素。PNG 压缩字节不要求相同；这不证明自定义图片的 alpha、色彩模式及 Director thumbnail 路径已经对齐。
+- 真实浏览器差分发现 TS 回退启动完整 Chrome，Python 默认使用 headless shell；改为优先使用对应 headless shell。修复后同一代表页的分步、回退、初态及两次 after 的全部 9 张整页/裁图逐像素一致，原始测量（除 TS 内部裁图尺寸缓存）和报告文本一致。检查在临时目录进行，没有修改原讲义。
+- 截图选择/内联的完整工具反馈仍需端到端对照；代码工作台、媒体、主流程集成与既定真实验收未完成。Python 稳定入口保留，尚未启动新的完整模型实验。
+- 浏览器启动调整后的定向检查通过：真实主题导入/字体/浏览器门禁，以及不截图时的完整页面状态和报告对照。未扩大为全套回归。
+
+## 修复进度（2026-09-13，第七批）
+
+- `resources/code-workbench` 保留原工作台 JS/CSS/HTML 和课程 starter/tests/trace/view；这些本来就是浏览器资源，没有改写成简化模板。`code-scaffold.ts` 移植 7 个作者文件、占位符配置、外层页面、受管目录/幂等规则及返回内容。相同版本 Monaco/Pyodide 和新增的固定版本 `@vscode/codicons` 从 npm 依赖打包，运行资源位于产物内，lesson 只链接产物内的共享运行时。
+- `code-check.ts` 移植实际课程入口执行、测试结果、trace 帧和源码位置、首/中/末帧原生视图、重置及外部资源/浏览器错误检查；保留 420 秒外层超时和内部等待。诊断由 TS 执行，缺失运行时报告以受管 lesson manifest 为准；失败堆栈为 JS 诊断，不伪造 Python traceback，成功报告文本一致。
+- 定向差分通过：原排序课程的 scaffold 返回值/7 个作者文件、重复调用保留作者编辑、外层页面更新、产物整体移动后的真实 Pyodide/Monaco 执行门禁；故意写入失败的课程测试得到拒绝。真实门禁成功报告与 Python 一致。未验证代码课程全部入口模式、超时/取消和截图反馈，不能据此宣称代码页完整验收。
+- `builderPorts` 已将原工作区工具、完整 Check、图像读取、CodeScaffold 和专用代码检查组合成真实依赖；模型和媒体仍须明确提供。默认 `model-pipeline.ts` 尚未切换。
+- 该恢复版工作台仍沿用基线启动时加载 NumPy；已确认的按需 NumPy、代码主题映射需要移植到此工作台，不能复用旧简化工作台上的验证结论。媒体、产物主流程集成、CSS/自定义图片差异及最终全部真实验收继续待办。
+
+## 修复进度（2026-09-13，第八批）
+
+- `image-search.ts` 恢复原 Gemini grounded search 请求原文/schema、执行证据检查、需求索引/候选格式门禁、去重、Commons 主图解析和 provider 记录。没有恢复旧 TS 的 count≤4 或每份讲义仅一页搜索限制。
+- `media-transport.ts` 恢复逐跳公网校验、固定已校验 IP 建立连接、原 Host/TLS、6 次重定向、流式下载及私有临时文件清理；IP 网段按当前 Python ipaddress 基线冻结。图片通过真实解码器校验格式/尺寸，没有沿用仅看文件头或任意 20 MB 上限的简化路径。
+- `media-execution.ts` 恢复 Seedream 模型/尺寸/请求、私有调用目录、文件名和路径归属、图片反馈、attribution/search/illustrations 和 CREDITS；`mediaPorts` 适配 Planner/Director 及 Builder 的接口。默认生成入口仍未切换，不能据此认为原 `src/tools/media.ts` 的简化已经从生产路径移除。
+- 差分通过：搜索请求、公网 IP 边界和 8 种响应门禁；共享执行的 7 个下载结果（含同一需求 6 个候选和 Commons 主图）、来源记录/credits、图片反馈像素。生图 3 张的模拟请求和产物验证通过；私网重定向拒绝及在途取消验证通过。以上服务响应均为替身，未调用真实搜索或生图服务。
+- 仍需验证：真实服务请求与失败恢复、DNS 固定连接的集成证据、全部 HTTP/JSON/图像解码异常诊断，以及自定义 `--skills` 下的旧 ImageGen 脚本扩展契约。当前 JSON/网络异常会带 JS 诊断，sharp 与 Pillow 对损坏图/特殊色彩模式的错误行为尚未证明一致；不得宣称媒体完全等价。
+- 下一步转向产物准备和默认主流程集成，同时保留前述 CSS/图像、按需 NumPy/主题及既定完整验收待办。
+
+## 修复进度（2026-09-13，第九批）
+
+- `orchestration.ts` 提供 seed、planRun、briefs 和 buildRun，将现有 Planner/Director/Builder 模块串起来。原 6.3 MB 浏览器库及 LIBS.md 随资源保留并在 seed 时复制；原路径 `pages/plan/pages.md`、逐页 `pNN.md` 和 briefs 结构保持一致。完整 Check 在 TS 宿主执行，暂未提供原产物 `assets/selfcheck.py` 对应的独立 TS 命令入口。
+- 规划时 Director 与页表独立并行；Builder 恢复四路共享指令、章节/环境拼装、默认并发 100、absent-target 防覆盖、逐页异常及独立审计、schemaVersion 3 manifest/results 和 token/Check 统计。取消/失败时等待已启动 worker 退出，避免后台继续写入被误认为已经停止。
+- 精简交接差分通过：两页规划文件和 briefs、最终 Builder system/user 消息、自然结束后的逐页结果和完整汇总字段，以及重复构建拒绝。只有时间、run label、运行路径和 skill 根路径被规范化。Planner/模型响应使用替身，没有产生真实讲义；并行 Director、逐页异常和全量运行仍需集成验证。
+- `publishOutput` 将内部相对链接物化为普通文件并发布独立目录，解决 RunService 拒绝软链接与恢复版代码工作台的冲突。检查通过：内部链接复制、移动后读取、保留源工程、非空输出防覆盖、外部/循环链接拒绝。
+- 默认 CLI/Viewer 仍调用旧简化 `model-pipeline.ts`。下一步必须完成真实配置/环境和 trace 接线、输出入口及事件映射，并切换默认 pipeline；不能把本批交接对照当作生产入口已完成迁移。此前全部未验证项及最终真实验收仍保留。
+
+## 修复进度（2026-09-13，第十批）
+
+- 默认 `createModelPipeline` 已改为 `baseline-pipeline.ts`，CLI 与 API 不再执行原短提示词/单次 JSON/3–30 页/媒体配额的简化生成路径。显式 `--starter` 仍只是无模型演示，不计入迁移验收。
+- 服务适配器使用真实 profiles、模型传输、媒体、Planner/Director/Builder 和 Check；原工作文件保存在运行目录的 `work/`，最终 `output/` 经独立物化发布。未填写风格时不再凭空加入旧 TS 默认风格句；默认保留 Director 选样流程。运行结束的 API 状态依据缺失产物/致命审计报告映射，未增加 Builder 修复轮数或重试门禁。
+- 加载 TS `.env.local`，缺省时读取现有 Python `.env.local`，环境变量优先；修复 workflow profile 的 base_url_env 未使用当前运行环境的问题。Planner/Director 的 trace 接入原 Writer 格式，Builder/媒体/trace 使用同一运行的脱敏环境。dotenv 全部特殊语法和 Director 混合反馈 trace 仍需更完整差分，不能由此宣称所有配置/日志分支等价。
+- 页面生成完即发 page.ready，预览在最终发布前读取 `work/pages`；检查真实链接仍在运行产物内，最终完成后不以工作目录掩盖缺失产物。发布后继续使用同一预览 URL。
+- 定向组合回归 8 项通过，类型检查通过：profiles、原生多 wire 回放、脱敏/trace、事件和协议、生成中预览边界，以及关闭 Director/复用主题 Director 两条服务集成路径。后两项使用模拟模型端点，实际执行文件工具、浏览器审计与产物发布。新主题 Director 自由模型回合、真实媒体/模型、Viewer 全链路和既定全部验收仍未完成。
+- 当前已经进入生产入口集成阶段，但仍有之前列出的按需 NumPy、代码主题映射、CSS/图片/自定义工具/独立检查入口及实验恢复待办；不能将默认入口切换解释为行为等价和整体目标已完成。
+
+## 修复进度（2026-09-13，第十一批）
+
+- 恢复版代码工作台改为浏览器按需加载 NumPy：检查所有课程源码、trace/tests 的 AST，直接导入 NumPy 时准备依赖；常见动态导入、eval/exec 和内省路径采取保守预加载。不会通过先执行失败、再重跑课程来发现依赖，因此不重复用户副作用。NumPy wheel 仍随可移动产物打包，使用时从本地产物加载。
+- 依赖准备与课程执行分别计时：准备阶段有 30 秒保护，收到 executing 才启动原 lesson 执行预算（默认 5000ms）。准备失败会返回运行错误；原超时终止/重建 Worker 路径保留。
+- 实际浏览器检查通过：普通原始排序课程启动和运行均零 NumPy 请求；添加 NumPy 后一次下载并输出正确求和结果，第二次运行复用；模拟 1.2 秒下载延迟超过课程 1 秒执行预算仍成功。无限循环仍在 1 秒上限被终止，重建/重置后普通课程恢复且无额外 NumPy 下载。
+- 原 scaffold/课程执行门禁对照继续通过，类型检查通过。没有修改已有讲义。仍需覆盖依赖下载失败/取消和非常规动态导入（例如反序列化触发模块加载）；不能将静态导入识别解释为已覆盖任意 Python 元编程。代码主题映射、其他差异及全部真实模型/Viewer/移动导入验收继续待办。
+
+## 修复进度（2026-09-13，第十二批）
+
+- `code-theme.ts` 从最终讲义主题的浏览器计算值取得背景/正文/强调色及可用语义色，为代码工作台、Monaco 和原生可视化生成自包含配色文件。复用已有 Monaco 主题映射函数及 VS Code 内置亮/暗基底，不引入新的模型字段或提示词。缺少次级 token 时派生代码页局部颜色，讲义共享 CSS 保持不变。
+- 配色文件放在产物内部的共享 code-runtime/assets；代码外层页面、固定工作台、原生 view 默认变量均接入。作者 view CSS 继续按原契约覆盖默认变量。没有讲义主题时保留原暗色工作台，7 个作者文件和 scaffold 返回契约不变。
+- 实际浏览器检查通过：浅/深两种主题、Monaco 背景和基底、原生视图变量、两组课程执行；检查了浅色截图可读性。原 scaffold/执行门禁对照继续通过。修复了 tsx 函数序列化注入辅助符号的问题，浏览器颜色提取使用独立脚本。
+- 映射用于新生成的产物，未改写既有讲义。本批并未覆盖任意第三方 VS Code 扩展主题导入；当前能力为讲义语义色到 Monaco/工作台颜色的映射。此前其余差异、真实媒体/模型与完整 Viewer/恢复/移动导入验收仍未完成。
+
+
+## 修复进度（2026-09-13，第十三批）
+
+- 迁移后的首个真实 45 分钟实验为 `experiments/notale-ts/parity-live-20260913/20260912t173854z-e967dbcd`：集成学习，Planner/普通页 Gemini、代码页 DeepSeek，Director 选择 Bento Grid，规划并留下 12 页，运行约 234 秒。两张代码页的实际执行门禁通过；这次受众/场景与历史 Python 实验不同，不能用 12 页或耗时宣称严格对照通过。
+- 检查原始 `builder-results.json` 发现 page-03/page-08 均为 `agent_exception`：原范围检查会解析 Check.after 参数，TS 的 realpath 抛出 ENAMETOOLONG，而 Python Path.resolve(strict=False) 保留该长字符串继续执行。修复 TS 非严格解析的长路径/权限错误处理，保留范围门禁；长 after、其中出现其他页名、外部页面路径的 Python 差分通过。page-08 另有公式区域裁切警告。原始实验未修改，不计为完整生成验收通过。
+- API 完成状态现在同时检查 Builder 的自然结束标志；异常终止或超时即使留下 HTML 也报告失败，保留部分产物及逐页诊断。这是状态报告修正，没有增加 Builder 重试或将视觉警告改成致命门禁。模拟提供商在写出有效 HTML 后拒绝请求的用例证明：产物保留、审计无 fatal，但服务适配器仍拒绝宣告完成。
+- RunStore.update 与事件写入使用同一运行队列，避免并发状态更新覆盖 lastSequence/phase。并发事件和状态持久化检查通过。
+- 本批定向 5 项通过（范围契约、三条服务集成分支、并发持久化），未跑全套回归。修复后的完整真实生成、Viewer 全链路及取消/重连/重启组合、同一最终产物移动逐页检查和编辑器整体导入仍待完成；此前其他差异仍保留。
+
+
+## 修复进度（2026-09-13，第十四批，验收进行中）
+
+- RunService 取消等待实际执行及清理退出后再持久化 cancelled；重复取消共享同一任务，完成持久化开始前的取消优先，之后的请求返回已确定的终态。修复取消后继续完成、重复终态，以及 worker 未退出就宣告取消的问题。不属于当前服务的活动任务不再伪报取消成功；跨后端进程接管/恢复仍未实现。
+- SSE 游标取有效 query.after 与 Last-Event-ID 的较大值，避免 after=0 覆盖浏览器重连游标。Viewer 首次快照失败和断线会重试，按已收到序号恢复；卸载后忽略响应，较旧快照不覆盖较新/终态记录。
+- Viewer 创建表单移除遗漏的默认风格句；开放时长、受众和场景，空风格原样提交。原有硬编码 45 分钟与 CLI 输入不一致，已撤销。
+- 定向 4 项通过：持久化/可移动基础契约、并发序号、worker/manifest 两处取消与重复取消、SSE 重连游标。前后端类型检查及编译/Viewer 生产构建通过。未新增测试文件。
+- 通过真实浏览器表单创建 90 分钟任务 `experiments/notale-ts/viewer-parity-20260913/20260912t175200z-83eabad2`，请求记录证明时长 90 且 style 为空；真实模型正在生成，尚未验收。浏览器离线后恢复观察到新连接 after=3，页面回到实时同步且无 pageerror。随后重启独立 Viewer（旧 PID 3682327，新 PID 3709908；旧进程因 SSE 保留连接而强制结束），后端一直运行；恢复与最终预览结果待核实。以上未证明后端重启恢复或长任务取消真实全链路通过。
+
+- 主 90 分钟任务在 Viewer 重启后自动重连；刷新前后均显示 12 页就绪，浏览器 pageerror 为零。随后创建独立取消任务 `20260912t175416z-35d0d050`（90 分钟概率图模型），经历 Viewer 强制重启及首次快照请求故意失败后自动恢复，已有 4 页就绪时点击取消，约 96 秒时返回 HTTP 200/cancelled；刷新仍为结束且无取消按钮。原生 offline 模拟在该第二任务上没有触发断线提示，25 秒观察超时，不计为成功证据；真实 Viewer 进程断开与请求失败恢复单独得到验证。
+- 取消任务仅有 sequence=26 的 run.cancelled 一个终态，随后检查全部 378 个文件大小/mtime 未变化，事件尾仍为取消。主任务两张代码页仍在运行，未将取消实验当作完整生成验收。
+
+
+## 修复进度（2026-09-13，第十五批，真实链路证据）
+
+- 90 分钟真实任务 `20260912t175200z-83eabad2` 最终 18 页全部自然结束，约 447.7 秒；最终审计无 fatal/visual warning，两个 NumPy 代码课程执行门禁通过。模型自行修复课程错误，未人工改写最终产物。
+- Viewer 最终预览列出 18 页；整份实验目录移动到 `experiments/notale-ts/viewer-parity-relocated-20260913` 后，544 个产物文件哈希一致、无软链接，旧路径不存在。API 使用新目录重启后，同一 Viewer 地址恢复完整讲义。移动后逐页重放 37 个初态/after 状态及分步检查、两个完整代码门禁均通过，文件哈希未变。
+- 同一移动后的产物完整导入隔离编辑器作用域：18 页、500 资源，文档 `5033d3c6-475e-4318-a57a-2a80b23f7b1f` v1；实际编辑器可见全部页面，并实际运行导入后的代码页得到成功课程测试。首个状态断言使用不存在的 selector 超时，修正为读取现有 CodeLab 状态后确认成功，未改课程。
+- 详细证据与范围见 ACCEPTANCE.md；验证数据保存在移动后运行目录的 validation 下。正常/取消的持久记录恢复不等于活动后端任务接管。45 分钟修复后成功样本、严格同输入真实差分、真实媒体与此前剩余契约差异仍待处理，整体目标未完成。
+
+- 目视补查发现 page-08 代码页原生图表文字对比度偏低：作者 CSS 保留深色半透明背景，浅色主题映射将 viz 文本设为深色，组合后可读性不足。自动尺寸/执行门禁没有覆盖此问题；不能将无 visual warning 等同于视觉验收全部通过。保留原产物，后续应修复主题映射与作者背景的组合行为并重新验证，不能只手工改这份课程。
+
+
+## 修复进度（2026-09-13，第十六批，代码主题背景映射）
+
+- 原生视图渲染时，识别基线 native-view.css 中的颜色 token，并把 base/author CSS 中相同的固定颜色绑定到对应变量；保留 alpha。CSSOM 遍历声明，跳过自定义变量、字符串和 URL，自定义颜色保持原样。没有主题时仍使用原 CSS。课程文件和讲义共享主题不改写。
+- 修复已知深色面板背景与浅色文本映射相冲突的问题；覆盖完整基线颜色表而非特定课程选择器。两种主题的透明面板实际合成色/文字对比度均达到 4.5，定向课程执行及无主题 scaffold 门禁通过，类型检查通过。
+- 使用 90 分钟 page-08 的独立完整副本验证，仅替换三份运行时 native-view-host.js；真实 NumPy 课程执行/tests/trace/view/reset 通过，目视确认灰暗面板变为浅色且文字可读。原始已导入产物保留，不将此副本冒充已经完成移动与导入的新版最终产物。作者自定义的非基线颜色不强制重映射；这不是任意 CSS 自动对比度修复器。
+
+- 已启动修复后的 45 分钟同输入真实对照：Python `experiments/runs/notale-v2/parity-stellar-45-20260913`，TS `experiments/notale-ts/parity-stellar-45-20260913/20260912t181057z-7b3a7db8`。主题为恒星颜色/光谱/演化，显式要求真实观测图、原创示意图和 Python 黑体辐射练习；时长/受众/场景相同，风格留空，config.yaml 逐字节一致。启动时两进程均存活，Python Planner 已选择 ImageSearch 和 ImageGen；结果尚未核实。
+
+
+## 修复进度（2026-09-13，第十七批，45 分钟对照与可选反馈）
+
+- 同输入真实恒星课程完成：Python `parity-stellar-45-20260913` 为 9 页，TS `20260912t181057z-7b3a7db8` 为 10 页、213.7 秒；两边全部 no_tool_use，最终 fatal/visual warning 均为零，代码执行门禁通过。共同选择 14-dark-tech。一次随机模型执行不能证明输出逐页相同或稳定性能差异。
+- 从两边 trace 逐字比较首轮 Planner 用户消息，相同；Style Director 选择消息在仅规范化运行根和 skills 根后相同，其中原始参考图 SHA 相同。config.yaml 字节相同。后续规划/工具参数由不同模型响应决定，未伪称后续整个对话字节一致。
+- 两边均真正执行 ImageSearch 和 Seedream ImageGen，生成可解码图像，search/provider/attribution/illustrations 记录和 briefs 媒体交接存在；TS 采用真实太阳谱图（NOIRLab/Commons）与原创能量传输示意图，先前“未调用真实媒体服务”的缺口已有成功路径证据。特殊失败诊断、DNS 重绑定定向证据、自定义 skills 扩展仍待处理。
+- 补齐可选工具反馈：notes 非 off 时将 textReport 经 buildRun/buildOne/Workspace 传到 Check，包含画面/讲稿字数；sampleShots 通过同一路径启用 Read 对应样本拼图，保留原路径规则、附图文字与默认关闭行为，API pipeline 的 build 选项支持 sampleShots。CLI 所有原实验参数尚未完整暴露。
+- 定向差分通过：Python/TS 相同测量的普通报告与 notes 报告、真实 Check 的字数行、Read 开关前后文本/拼图交接（图片端口替身）；类型检查通过。未修改正在运行的实验资源，本批可选反馈默认为 off，因此真实实验未覆盖启用模式的模型响应。
+
+
+## 修复进度（2026-09-13，第十八批，CLI 配置入口）
+
+- `build` 接入原 Builder 已移植的 profile/uniform/concurrency/samples/notes/sample-shots/visual-focus/aux-samples 配置，以及 Style Director 开关和 template。正反开关按命令行最后一次取值，samples=none 时默认关闭辅助样本，与 Python argparse 差分一致。
+- CLI 默认时长恢复为 90 分钟，受众和空场景恢复 Python Planner 默认值；显式输入及 Viewer 表单设置不受影响。workflows/prompts 同时传入规划与 Builder；chassis/lib 传入 seed；可显式选择 config/env-file。原 README 中已经失效的简化模型环境变量说明已移除。
+- 参数定向差分通过：默认值、none、讲稿/截图/统一模型、正反开关顺序和非法枚举/并发。未启动模型实验。原独立 plan/build 命令、label/only 生命周期、Planner 单独模型覆盖、custom skills 媒体入口及其他契约差异仍未宣称完成。
+
+
+## 修复进度（2026-09-13，第十九批，独立规划和构建）
+
+- 新增 `plan --label` 和 `build --label [--only ...]`，直接使用 `<runs>/<label>` 的原产物布局。plan 拒绝已存在目录；build 沿用 buildRun 的原 manifest/目标页防覆盖和仅首次筛选规则，不伪装成增量恢复。完整 `build --query` 和 Viewer 仍走原服务适配器。
+- 抽取 baselineRuntime 供服务/CLI 共用模型、媒体和 trace/工具接线。分阶段规划接线发现空风格被显式传入门禁而错误拒绝，已改为未填写时省略，与完整入口一致。
+- 定向验证：三条服务适配分支通过；独立子进程 plan 两页、build 只选 page-02，真实文件工具及浏览器审计执行成功；再次 plan/build 拒绝且没有额外模型请求。模型端点为替身，不是另一轮真实生成。测试驱动前两次失败分别为 tsx 提前解析不存在 env-file 和夹具缺少 adapter，修正后才暴露并修复实际空风格问题。
+- 独立阶段目前共用完整配置加载；仅含 Planner 或仅含 Builder 的自定义最小配置、Planner 独立覆盖参数、custom skills 媒体扩展仍需补齐。此前其他差异和修正后浅色最终产物全链路验证继续保留。
+
+
+## 修复进度（2026-09-13，第二十批，分阶段配置隔离）
+
+- workflowModels 与 baselineRuntime 按需构造阶段模型/端口；独立 plan 不再读取 builder.profiles，独立 build 不再要求顶层 Planner model。完整服务入口仍在开始规划前取得并验证全部阶段端口。
+- plan 接入 --model/--effort/--base-url/--key-env/--wire，保留原模型名 Anthropic 特征词自动 messages 的选择及显式 wire 优先规则；覆盖在运行内组装，不改写配置，不影响 Builder profile。build 接收这些 Planner 专属参数会明确拒绝，避免静默忽略。
+- 5 项定向检查通过：原 Python override 得到的完整 profile 对照及配置不变；真实 CLI 子进程用 Planner-only 配置和实际模型/端点/key 覆盖完成两页规划，再以 Builder-only 配置只构建第二页；三条服务集成分支继续通过。模型 HTTP 为替身，文件/浏览器/防覆盖为真实执行，未新增模型实验或测试文件。
+- 未将以上解释为所有配置和命令行诊断逐字一致；自定义 skills 媒体扩展、CSS/图像/异常分支及修正后浅色最终产物全链路等已有待办仍保留。
+
+
+## 修复进度（2026-09-13，第二十一批，自定义媒体扩展）
+
+- CLI --skills 验证目录与原 `make-illustration/scripts/gen.py` 路径，并传入当前运行。显式指定旧 bundled tools 根仍选 TS 原生实现；其他自定义根执行其 Python 插件，保持 prompt/--n/--out 参数与 illustrations.json 返回契约。默认工作流不调用该 Python 扩展。
+- 自定义脚本无 shell 参数展开，300 秒超时，失败优先 stderr 末 1500 字、其次 stdout、再无结果提示；取消会终止子进程组并等待退出。超时/进程异常的语言诊断并未宣称逐字相同。自定义脚本自身的 Python 依赖由其运行环境提供。
+- 修复 baselineRuntime 媒体端口忽略当前 config.media.image_search_backend、误回退全局配置的问题。
+- 定向真实子进程/原 Python 函数对照通过：含特殊字符的参数、返回记录、非零退出和缺 manifest；阻塞脚本启动后取消，没有后续文件写入。自定义错误后端配置得到预期拒绝，不调用远端。类型检查/编译通过；没有启动新的真实媒体或模型实验。
+- 此前 CSS/特殊图像/其余异常分支、独立产物检查入口及修正后浅色最终产物链路等待办仍保留，不将扩展契约验证视作整体完成。
+
+
+## 修复进度（2026-09-13，第二十二批，宿主页检查命令）
+
+- `check` 暴露原 selfcheck 的页面选择、默认扫描、连续 after、shot/shot-dir、crop、zoom、wait、json 和 text-report；crop 隐含截图，诊断有问题仍返回 0，无现存页面返回 2，与 Python 入口一致。
+- 复用既有 selfcheck 差分夹具验证真实 CLI：不截图/裁图两分支，JSON 字段、初态与交互后测量、讲稿报告、截图裁图像素及无页面退出状态通过；类型检查通过。定向测试约 39.5 秒，其他 35 项未运行，没有启动模型实验或新增测试文件。
+- 此命令依赖安装好的 TS harness 与 Chromium。移动产物内的独立诊断入口尚未补齐，不能据此宣称原 assets/selfcheck.py 契约已全部迁移。既有 CSS/特殊图像/异常分支和修正后浅色最终产物链路待办继续保留。
+
+
+## 修复进度（2026-09-13，第二十三批，环境配置解析）
+
+- 替换 Node parseEnv：保留原 python-dotenv 的有序重复绑定、单双引号与转义、多行值、行内注释、export、BOM、无值键、变量默认值和 override=False 的外部环境优先规则。无值键不会导入环境，但参与后续展开；坏行跳过并报告起始行，继续解析后续绑定。
+- runtimeEnvironment 保持运行内副本，不修改宿主 process.env；支持原 PYTHON_DOTENV_DISABLED 真值开关。
+- 使用无密钥夹具调用实际 Python load_dotenv，与 TS 解析和文件入口完整字典对照通过，含重复键前后引用及坏行恢复；类型检查与编译通过。没有读取或打印真实环境凭据，没有启动模型实验。
+- 这一结果仅关闭已覆盖的环境内容语法差异，不代表其余 CSS/图像/媒体异常、产物独立检查入口及修正后浅色产物验收等待办完成。
+
+
+## 修复进度（2026-09-13，第二十四批，符号链接与路径边界）
+
+- resolvePath 改为逐段解析符号链接，再处理后续父目录，保留 Python Path.resolve(strict=False) 对缺失、非目录及过长路径分量的行为。原先先 path.resolve 再 realpath 的做法会把 link/../target 错认到链接所在目录，影响访问目标及越界判断。
+- Workspace、Builder 目标检查、主题本地 URL、样式索引和媒体文件入口不再提前折叠用户路径；传入基目录由同一解析器处理。
+- Python 真实文件系统差分覆盖跨目录链接、悬空链接、缺失分量、普通文件后路径、循环链接拒绝和链接基目录；目录外 Read 被拒绝，解析后回到目录内的路径允许。连同既有工具、规划页表、静态主题、媒体执行定向检查共 5 项通过，34 项未运行；类型检查通过。初次类型检查发现旧调用仍需 realpathSync 导入，恢复后通过。
+- 这些定向证据不代替最终生成/移动/编辑器验收，其他尚未关闭的迁移差异继续保留。
+
+
+## 修复进度（2026-09-13，第二十五批，特殊模式图片反馈）
+
+- 修正 Check/Read 图片反馈的 16 位单通道灰度图处理：宽图先按 Pillow I;16 → RGB 的整数截断规则转换，再用既有 Lanczos 缩放，避免 libvips 默认按 16 位动态范围缩小导致图像变暗；无需缩放的图保留 16 位 PNG 样本。
+- 在既有 RGB 差分用例内增加 RGBA、LA、L、带透明调色板 P、I;16 五种真实 PNG；Python 转换/缩放与 TS 输出 RGB 像素哈希一致。小图真实 imageOutput 入口保留 ushort 及原样本值。原缩放/裁切用例同时通过，类型检查及编译通过，没有新建测试文件或启动模型实验。
+- 不将此解释为所有图片编码完全一致：自定义 Director 缩略图、色彩配置/特殊编解码模式等仍需对照；此前产物独立检查入口与修正后浅色产物全链路等待办仍保留。
+
+
+## 修复进度（2026-09-13，第二十六批，主题标识符门禁）
+
+- CSS 解析前按上下文解码可直接表示的转义 at-keyword，修正 PostCSS 将转义 @import 拆成 name/params、导致未命中禁止导入规则的问题；转义 @media 等容器也进入原嵌套规则检查。注释、字符串和函数内 URL 不被改写。
+- 主题接口 class/token/variant 与具名 .nt-* 的标识符识别支持 Python 正则所覆盖的 Unicode 字母数字，修复中文类名误拒绝及接口 class 前缀误匹配。
+- 新增输入仍在既有主题差分用例内：转义 import/media、中文公共作用域与接口名、类名前缀、字符串和 URL 不变；原 Python 报告完整对照通过。相关主题导入、字体复制和真实浏览器门禁一起通过，类型检查/编译通过。没有启动模型实验。
+- 这不是完整 CSS 解析器等价声明：异常语法的恢复/报错位置、选择器转义序列化等仍待处理；其余既有验收缺口保留。
+
+
+## 修复进度（2026-09-13，第二十七批，移动产物独立检查器）
+
+- 宿主 check 的参数和报告入口抽为同一实现；构建时打包 assets/selfcheck.mjs，嵌入原检查 probes，运行不读取 harness 资源目录。共享 JSON 报告格式函数拆离 Planner，避免诊断包加载模型工作流依赖。
+- seed 随产物复制检查器、Playwright/sharp 固定直接版本的 npm package.json、使用说明和 Pillow 许可。依赖只在手动检查时安装，页面预览无新增安装步骤。显式自定义 chassis 若附 selfcheck.py，继续保留该扩展文件。默认入口由 python assets/selfcheck.py 改为 node assets/selfcheck.mjs，是实现语言转换；此前已经生成的产物不自动改写。
+- 仓库外独立验证：seed 后移动整个目录，旧路径不存在；npm --offline --ignore-scripts 从缓存独立安装声明依赖（13 个包），实际 Node 检查初态和 after 后 JSON 与原 Python CLI 完全一致，依赖无外部软链接。证据 /tmp/notale-portable-check-{ts,python}.json，临时产物 /tmp/notale-portable-check-j0AZb7/moved。
+- 既有不截图 selfcheck 差分增加打包入口报告，连同规划产物交接共 2 项通过（约 28.8 秒）；类型检查、宿主编译和诊断打包通过。本轮未重建未修改的浏览器运行时，也未启动模型实验。
+- 本次是代表性独立产物检查器验证，不替代用户要求的最终完整讲义移动/逐页/编辑器导入验收。CSS 恢复、自定义 Director 图片、其余异常分支及修正后浅色最终产物验收仍待完成。
+
+
+## 修复进度（2026-09-13，第二十八批，修正后浅色产物链路）
+
+- Viewer 真实 45 分钟任务 20260912t185100z-87bd3aaa 自然生成 12 页，544.955 秒；最终审计无致命/视觉警告，两页 NumPy 代码门禁通过。随机森林页的实际执行错误由原循环中的模型自行修复，未降低门禁。
+- 修正后的 native-view-host 与本次生成文件哈希相同，浅色主题真实进入产物。整份移动后 532 个文件哈希不变；12 页/24 个初态及 after 状态（另含 steps）和两页完整代码门禁重查通过；同一产物整体导入隔离编辑器 12 页、500 资源，代码页在编辑器内实际运行和测试通过。
+- 目视发现 page-05 自身散点绘图把半径 3 用于约 5.68 单位宽 viewBox，导致严重重叠。保留原产物并如实记录，不将自动门禁通过宣称为完整视觉质量通过，也不修改原提示词/门禁来掩盖模型内容问题。
+- Viewer 的生产 API rewrite 在 build 时固化；初始候选实际连接较早验收 host，因此本轮证明修正后浏览器运行时链路，不证明最新 CLI/配置/独立检查器端到端。另行在临时目录构建正确 API 目的地的 Viewer，用于移动后验证；仓库既有生产构建未替换。Viewer README 已说明配置时机。
+- 详细产物/编辑器 ID、哈希及验证限制见 ACCEPTANCE.md。其余 CSS 恢复、自定义 Director 缩略图、媒体失败/DNS 等未关闭项继续保留，整体 goal 未完成。
+
+
+## 修复进度（2026-09-13，第二十九批，DNS 固定地址与取消）
+
+- 在既有媒体重定向用例中补充受控 DNS/HTTP 传输边界验证：检查后 DNS 答案改变，连接回调仍只返回已校验的首地址；每次重定向重新解析并检查；任一 DNS 答案为内网地址则整次拒绝，没有第二次连接或残留文件。真实远端媒体成功路径已有此前实验，本轮使用传输替身，不声称开展真实 DNS 重绑定攻击实验。
+- 修复 DNS 查询阶段不响应取消的问题：publicGet 的等待现在接受同一取消/超时信号；操作系统查询本身不能中断，其迟到结果被丢弃，不会再开启连接。
+- 定向取消测试通过：挂起 DNS 后立即取消，调用及时拒绝；再人为完成 DNS 查询，没有产生迟到 HTTP 请求。原重定向内网拒绝、媒体供应商取消及文件清理同一用例通过；类型检查/编译通过。初次类型检查发现测试 Promise 推断为 unknown，补全类型后通过。
+- 未扩大为真实模型重跑，也未新增测试文件；其他 CSS/Director 图像/媒体异常诊断差异和最终内容质量问题仍保留。
+
+
+## 修复进度（2026-09-13，第三十批，媒体 JSON 错误反馈）
+
+- 修复 ImageSearch 对模型生成的无效 JSON 返回 JS SyntaxError、而 Python 返回 JSONDecodeError 的差异。共享 JSON 工具加入 Python 风格解析与行/列/字符位置诊断，保留 Unicode 位置、单双义转义错误、尾随内容、BOM 拒绝、重复键后值覆盖及 Python 接受 NaN/Infinity 的行为。对象属性用自有数据属性写入，__proto__ 不改变解析对象的原型。
+- 在既有媒体协议差分用例中加入错误 JSON、Unicode、特殊数值、重复键和 __proto__ 输入；实际原 Python ImageSearch 与 TS 返回记录/错误列表对照通过。HTTP 429 的错误输出及 Retry-After（整数、零、负数、小数、日期、缺省）也与原 shared._error 对照一致，不向反馈加入响应正文或请求头。
+- 类型检查与编译通过，定向用例通过；初次类型检查要求为解析数组明确标注类型，补全后通过。没有远端模型/媒体调用或新建测试文件。
+- 此处不宣称 JS 数值范围、极深嵌套或所有非对象载荷异常都已与 Python 完全等价；其余既有 CSS/Director 图像和内容质量差异继续保留。
+
+
+## 修复进度（2026-09-13，第三十一批，工作流工具参数错误）
+
+- Planner 参数、Director 提交/其他工具参数、Builder 执行与审计标签解析共用 Python JSON 诊断实现；修正此前仅改错误名称、仍向模型返回 JS SyntaxError 内容的问题。提示词、工具顺序、重试计数和结束条件未改。
+- 原 Python 真实循环差分覆盖不完整 FinalizePlan、Director Write/Read 错误 JSON、Builder 多个坏调用后重新 Read：反馈、后续调用、历史与结果对照通过。Director 一次通过；Planner 的夹具下标断言因插入场景失效，改为按实际 ImageSearch 场景选择；Builder 的 null 场景在 Python 审计标签阶段就终止，不能作为坏 JSON 恢复夹具，已从该恢复场景移除。其余两个失败用例修正驱动后通过，未重跑已通过的 Director。
+- 类型检查及编译通过，未启动模型实验或新增测试文件。非对象参数在原 _tag_of 先于执行校验报错属于另一个基线异常边界，本批不宣称覆盖其全部语言诊断；其他迁移待办保留。
+
+
+## 修复进度（2026-09-13，第三十二批，自定义参考图缩略图）
+
+- 未命中内置缓存的 Director 参考图改用 Pillow 的尺寸选择、RGB Bicubic、reducing_gap=2 整数预缩小及分数源范围，不再使用 sharp 的近似 cubic/inside 缩放。既有 Lanczos 缩放继续共用过滤底层，默认算法不变。
+- JPEG quality=82、4:2:0 时关闭 sharp 默认编码优化，并补入 Pillow 默认 JFIF 标记。测试样本中 JPEG 不仅解码像素相同，整份字节及反馈 SHA-256 也一致。
+- 6 个非缓存 RGB PNG 对照包括不缩小、横/竖图、尺寸取整、5 倍与更大整数预缩小、边缘非整除：实际 Python thumbnail/JPEG 与 TS helper 及真实 images 入口的尺寸、字节哈希和反馈文本一致。既有 RGB 裁切/缩放及特殊图片模式用例通过；内置风格缓存差分通过且未重跑未变缓存。
+- 首次大倍率样本失败揭示普通平均值四舍五入与 Pillow 定点乘法不同；按原 Reduce.c 的整数修正量和 24 位乘法修复后通过。原实现来源：https://raw.githubusercontent.com/python-pillow/Pillow/12.1.0/src/libImaging/Reduce.c；既有 Pillow 许可继续适用。
+- 类型检查、宿主编译及独立检查器重新打包通过；没有重建未变浏览器或启动模型实验。带 ICC/其他编解码模式的参考图仍不能由这批 RGB PNG 证据推定全部一致，其余已列迁移差异保留。
+
+
+## 修复进度（2026-09-13，第三十三批，默认请求契约）
+
+- 发现并移除 HTTP schema 遗留的默认 45 分钟、360 分钟上限、主题/受众/场景/风格长度上限及自动 trim；默认时长、受众和空场景与 Python Planner 对齐。CLI 经该 schema 时也不再被额外裁剪或拒绝；保留类型/整数校验。
+- Viewer 表单默认改为相同的 90 分钟/原受众/空场景，去掉时间 min/max，发送原始字符串；空白主题的界面禁用提示仍是表单交互，HTTP/CLI 对 Python 接受的空字符串不另加拒绝。
+- 原 Python argparse 与 API/CLI 对照覆盖默认、999 分钟、零时长、超过旧上限的文本和首尾空白。首次测试引用不存在 parse_args，改为截获真实 main 内 argparse 返回（进入生成前停止）后通过；原类型错误拒绝用例通过。
+- 隔离 Viewer 生产构建和真实浏览器提交验证默认值、999 分钟无 HTML 上限、主题/风格空白原样保留；POST 被测试路由截获，未启动模型。后端类型检查/编译、Viewer 构建通过。仅更新自有候选 API 45341，旧验收入口 45321 和仓库原 Viewer 构建保持原状；新表单候选端口 45344。
+- 其他尚未关闭的 CSS/图像/异常分支与内容质量问题继续保留，不能以本次请求契约修复宣称整体完成。
+
+
+## 修复进度（2026-09-13，第三十四批，Director trace 接线）
+
+- WorkflowTrace 显式携带本轮提交内容；Director 修复/连续工具轮次没有本轮内容时，按 Python _call 记录最近 5 个工具反馈，不再推断历史末尾的用户消息就是本轮新内容。文本和图片占位沿用原版规则；Planner deck 记录方式保持原样。
+- 既有 Director 循环差分增加原 log.add 实际收到的 trace 文本对照，选样、修复、连续读取、无提交等场景通过；三条生产服务适配测试通过，共 4 项，约 9.9 秒。类型检查与编译通过，无真实模型重跑。
+- 初始差异表标明历史性质，避免把已移植模块误读为当前缺失。其他已列 CSS/特殊图片/异常边界及内容质量等未关闭项继续保留。
+
+
+## 修复进度（2026-09-13，第三十五批，CLI 负数形式参数）
+
+- 对齐 argparse 将负数形式 token 当作字符串参数值的行为：`--minutes -1`、`--query -1`、`-q -1` 以及受众/场景/风格中的负小数不再被 Node 参数解析器提前拒绝。只转换已知字符串选项的紧邻负数值，保留 `--` 分隔符和既有选项校验。
+- 在既有 CLI 差分用例加入实际 Python Planner argparse 对照；长选项通过后，短选项暴露 Node 将 `-q=-1` 中等号保留的问题，统一转成长选项附值后通过。该定向用例通过（其余 38 项未运行），类型检查和宿主编译通过；无模型调用、新测试文件或服务重启。
+- 仅关闭这一参数分词差异，未据此宣称所有 Python int 字面量、Unicode 数字、超大整数及 CLI 错误文本等价；其他迁移待办保留。
+
+
+## 修复进度（2026-09-13，第三十六批，转义选择器门禁）
+
+- 修复普通名称字符的 CSS 转义导致门禁漏检/误报：`#st\61 ge` 的 width/overflow 覆盖现在命中 #stage 禁令；转义 :root 的默认 token、公共承载面限制及转义 .nt-* 的局部作用域/接口 class 定义与 Python 对齐。
+- 门禁比较时归一化名称，不修改产物 CSS；保留注释、字符串和仍需 CSS 转义的名称字符。没有添加新的设计禁令或改提示词。
+- 既有静态门禁差分用例加入 5 个原 Python 对照场景，全部通过；原 URL/静态边界场景同一用例通过。类型检查及编译通过。无新增测试文件、浏览器/模型实验或服务重启。
+- 这不是完整 tinycss2 解析器替代；错误恢复、错误定位和其他 token 序列化边界仍待对齐，不能据此宣称 CSS 门禁完全等价。
+
+
+## 修复进度（2026-09-13，第三十七批，转义资源函数与字符串续行）
+
+- 修复 value-parser 将 `\75 rl(...)`、`\69 mage-set(...)` 的转义分隔空格误认为 token 分隔、导致资源提取遗漏的问题。解析前只在函数名位置归一化普通名称字符，注释和字符串内容不作为函数解析。
+- URL / image-set 的字符串参数按 CSS 规则移除反斜杠续行，再解码字符转义；不再将合法跨行文件名错误识别为带反斜杠的路径。
+- 既有静态 CSS 差分用例覆盖原 Python 对转义 url、转义 image-set、嵌套 URL、字符串中的伪函数以及 LF/CRLF 续行的实际提取结果；逐项改写成本地路径后重新解析，引用全部保留且值正确。定向用例、类型检查和编译通过；无新测试文件或模型实验。
+- CSS 错误恢复、异常 token 及完整序列化仍未全部对齐；本批不将资源提取的定向通过扩大为完整解析器等价。
+
+
+## 修复进度（2026-09-13，第三十八批，资源 URL 解码）
+
+- 本地资源解析对齐 urllib.urlsplit 的前导 C0/空格清理、全局 TAB/CR/LF 清理；协议/路径分类使用清理结果，错误反馈保留原输入。以 # 开头的 fragment 仍按原版原样返回。
+- 百分号解码对齐 urllib.unquote：有效编码与坏转义混排时继续解码有效部分，无效 UTF-8 按替换字符处理，不再因 decodeURIComponent 抛错而退回整条未解码路径。
+- 既有静态 CSS 差分用例使用临时资源，13 个路径场景与原 Python 实际 local_url 返回值/错误文本对照通过，包括控制字符、混合坏编码、片段、空/非空 query、外部 URL 和编码越界路径。类型检查、编译通过；没有新测试文件或模型调用。
+- 不据此宣称完整 urllib URL 异常诊断或 tinycss2 解析等价；其他未关闭项保留。
+
+
+## 修复进度（2026-09-13，第三十九批，公开包入口）
+
+- 整体入口复查发现：CLI/API 已使用 baseline，但 src/index.ts 仍公开导出旧 runAgent（默认 14 轮）及 ChatModel/modelFromEnvironment（默认 32K、单 chat、旧配置）。仓库 TS/Viewer 中没有这些旧运行函数的调用者，残余依赖为内部类型引用。
+- 从公开包入口撤下简化运行 API，改为导出已迁移的 ModelRuntime/workflowModels 和原配置解析接口；保留共享消息类型及 createModelPipeline。README 明确新入口，旧内部文件暂未删除，不将撤销 export 说成整个旧工具源码已清理。
+- 既有模型 profiles 差分用例验证公共出口指向真实迁移实现、旧出口不存在；原 Python 配置/profile 差分同一用例通过。类型检查、编译通过，另直接通过包名导入编译产物验证出口。没有服务重启、新测试文件或真实模型调用。
+- 这是修正公开入口的迁移遗漏；不改变已经切换的 CLI/Viewer 行为，也不关闭其他未验证项。
+
+
+## 修复进度（2026-09-13，第四十批，NumPy 准备失败与取消验证）
+
+- 复查实际资源 python-worker.js/runtime-client.js：依赖 AST 检查与 loadPackage/import 在 runner 之前；准备失败进入运行错误，numpyReady 仅成功后设置；reset 取消当前调用并终止/重建 Worker。
+- 在既有按需 NumPy 浏览器用例中注入首次 wheel 下载 503，确认错误结束、没有课程帧/成功输出；恢复下载后同一页面点击重试成功，慢准备不消耗课程执行预算，后续运行复用 NumPy。此分支运行通过，无需修改产品代码。
+- 同一用例增加准备中的真实 reset：观察 wheel 请求后重置，runtimeGeneration 增加并重新 ready；普通课程恢复成功，没有被取消课程的输出，也没有为普通代码另起 NumPy 请求。既有执行超时/Worker 重建场景同批通过。扩展后的定向用例约 9.3 秒，类型检查通过；首次失败恢复验证约 7.7 秒，追加取消场景后才重跑同一用例。
+- 使用临时独立讲义，未修改原始工程、未新增测试文件、未启动模型实验。只关闭上述按需包失败/重试/取消证据缺口，不宣称覆盖全部 Python 动态导入或整体迁移验收。
+
+
+## 修复进度（2026-09-13，第四十一批，间接动态导入）
+
+- 发现 `_notale_needs_numpy` 漏判通过 sys.modules 中 builtins 对象的 __dict__、拼接键名取得导入函数的课程；原依赖检查实测返回 False，原版预加载 NumPy 不存在此缺包路径。
+- 内省触发集合补充 __dict__、__globals__、__getattribute__、__subclasses__ 及 attrgetter/methodcaller，以执行前保守预加载覆盖这些间接调用；不执行课程来探测依赖、不改变原执行器与门禁。
+- 既有浏览器用例在取消重建后的无 NumPy Worker 上追加真实间接导入，输出 indirect-numpy 6 并成功结束；同一用例的普通课程零加载、下载失败重试、慢准备/执行超时及取消恢复均通过，约 11.3 秒。类型检查通过，资源源码由 scaffold 直接复制，无需重建未变浏览器包。
+- 没有新测试文件、模型调用或改写现有讲义；本批不声称静态识别能证明任意 Python 动态代码路径，其他迁移待办继续保留。
+
+
+## 修复进度（2026-09-13，第四十二批，模型错误正文与重试分类）
+
+- 修复三种 wire 统一截断前 600 个 JS 字符的简化。Chat/Responses 保留完整错误正文参与网关提示判断；Messages 按原 _post_messages_for 保留前 600 个原始字节并 UTF-8 替换解码。普通响应仍使用与 Response.text 相同的 TextDecoder/BOM 处理。
+- 既有退避用例增加 700 字符后提示、多字节中文后提示，分别使用真实 Python OpenAI SDK + httpx MockTransport、原 Messages 函数 + urllib HTTPError 得到判断；明确断言 oracle 真正抛出 HTTP 400，避免其他异常冒充非重试结果。TS 的重试/不重试及请求次数一致，原退避/取消用例同批通过。
+- 类型检查与编译通过；最终仅将响应解码改为 TextDecoder 保持原 fetch.text 语义后重新编译。没有真实远端模型调用、新测试文件或服务重启。
+- 本批关闭长正文/字节截断导致的恢复差异，不宣称所有 SDK 异常名称、格式化正文或畸形 JSON 都已等价；其他未关闭项保留。
+
+
+## 修复进度（2026-09-13，第四十三批，JSON 错误中的网关提示）
+
+- 修复 Chat/Responses 用原始 JSON 文本匹配网关提示的差异：Python SDK 的异常文本来自解码后的 JSON，Unicode 转义的字母/空格也会命中提示。TS 现在使用解码后的内容作重试分类，保留原错误正文反馈；Messages 仍按原裸 HTTP 路径使用截断文本，不擅自解码改变判断。
+- 扩展既有模型退避用例：转义首字母、转义空格、普通无效 schema，加上前批长正文场景，3 种 wire 共 15 个判断与原 Python SDK/Messages 实际错误路径一致；确认 HTTP 400 类型与请求次数。原阶梯耗尽、请求不变及退避取消仍同一用例通过。
+- 类型检查及编译通过，无真实模型调用、新测试文件或服务重启。异常名称与完整错误格式的其他差异仍未据此关闭，整体迁移未验收。
+
+
+## 修复进度（2026-09-13，第四十四批，CLI 整数字面量）
+
+- 时长和并发参数按 Python int 的十进制语法解析：符号、下划线、Unicode 十进制数字及前后空白；拒绝此前 Number 接受的空串、1.0、十六进制和科学计数法。负数分词识别同步支持 Unicode 数字，-0 归一化为 Python 整数 0。
+- 撤销 CLI 对非正并发数的提前拒绝，参数进入运行层后仍由已有 max_workers 门禁拒绝，与 Python argparse/ThreadPoolExecutor 分工一致；没有开放非正 worker 执行。
+- 既有 CLI 差分增加原 Python Builder argparse 并发写法对照、7 种时长字面量与 int 对照，以及无效形式拒绝。首次差分发现负零差异，修正并补齐负 Unicode 数字后定向用例、类型检查、编译通过；未启动模型或新增测试文件。
+- JS 安全整数范围与 Python 任意精度整数及完整命令行错误文本仍未宣称等价；其他迁移待办保留。
+
+
+## 修复进度（2026-09-13，第四十五批，Director ICC 参考图）
+
+- Director 自定义参考图缩略图解码显式忽略嵌入 ICC，与原 Pillow convert('RGB') 不自动执行 ICC 色彩变换的行为对齐。只在 thumbnailJpeg 路径开启，原 Check PNG 路径保持原状，避免未对照元数据保留时改变另一条反馈路径。
+- 在既有图片差分用例加入带真实 Display-P3 ICC 的 RGB PNG，原 Python 解码/thumbnail/JPEG 与 TS 缩略图字节 SHA-256 一致；实际 Director images 入口也使用同一样本并对照反馈 JPEG 哈希。原无 ICC 缩略图、特殊模式和 RGB 缩放样本同批通过，约 2.8 秒；类型检查、编译通过。
+- 无模型调用、服务重启或新测试文件。Check PNG 的 ICC 元数据保留、CMYK/JPEG 等其他模式仍需独立处理；不能把本批带 ICC RGB PNG 的通过说成全部图片解码等价。
+
+
+## 修复进度（2026-09-13，第四十六批，Check PNG 的 ICC 保留）
+
+- 按原 tools/shared/image.py 对齐图片反馈：未缩放时保留原 ICC 且不自动改色；缩放时使用原 RGB 像素做 Pillow 对齐的滤波，并将原 ICC 写回 PNG iCCP 块。CRC/压缩使用 Node 自带 zlib，不增加依赖或临时配置文件。
+- 既有图像用例增加带 Display-P3 配置的普通宽度和 1701px 图片，直接调用原 Python _image；TS imageOutput 的反馈文本、原始像素及 ICC 配置字节均一致。此前 Director JPEG、灰度/透明/16bit 和滤波样本同批通过，约 2.9 秒。
+- 类型检查、编译及独立 selfcheck 重新打包通过。没有新增测试文件、完整浏览器重建、真实模型调用或修改已有讲义。
+- 本批不宣称所有色彩模式、其他 PNG 元数据或损坏图片诊断已等价；其他迁移待办仍保留。
+
+
+## 修复进度（2026-09-13，第四十七批，CMYK 图像输入）
+
+- RGB 解码分支保留原 CMYK 通道，并使用 Pillow 对齐的 CMYK→RGB 整数转换；不让 libvips 先经色彩空间变换再转回 CMYK。首次缩略图差分失败后，临时样本确认默认管线 106,778 个通道字节不同；设置 pipelineColourspace('cmyk') 后原始通道与 Pillow 完全相同，转换公式逐像素一致。
+- 原 Python 对宽度不超过 1600 的 CMYK 图片直接保存 PNG 会抛 OSError；TS imageOutput 保留同一异常名称/文本，不擅自改成成功。较宽图片仍先转 RGB 缩放，Director 则始终转 RGB 生成缩略图。
+- 既有图像差分用例增加两张 CMYK JPEG：Director 缩略图字节、真实 images 反馈哈希与 Python 一致，RGB 缩放像素一致；小 CMYK 图片错误与原 _image 实际调用对照一致。最终定向用例约 3.1 秒，类型检查、编译及独立检查器打包通过。
+- 没有新测试文件、模型实验或现有讲义写入；其他格式/损坏图诊断、CSS 解析等尚未关闭项继续保留。
+
+
+## 修复进度（2026-09-13，第四十八批，CSS 文件末尾恢复）
+
+- inspect 对未闭合块/注释按 tinycss2 的 EOF 恢复行为继续解析：既有显式平衡检查仍拒绝输入，同时保留其余规则检查。修正此前 PostCSS 异常直接返回、遗漏底盘覆盖/公共承载面/必需 token 提示的问题；不自动发布修补后的 CSS。
+- 既有静态 CSS 差分加入 6 个场景：根块未闭合、#stage 属性覆盖、嵌套 media 未闭合、注释未闭合、公共面 token 及缺少必需字体 token。错误列表与原 Python 完全一致；原静态/URL 边界同一用例通过，约 0.5 秒。类型检查、编译通过。
+- 没有浏览器/模型重跑或新测试文件。这里只关闭块/注释 EOF 恢复，其余 CSS 声明错误、token 级错误定位和序列化仍待对齐。
+
+
+## 修复进度（2026-09-13，第四十九批，声明值中的冒号）
+
+- 修复 PostCSS 将声明值中的冒号判断为缺分号、恢复解析器又擅自拆出新声明的差异。使用已固定版本 safe-parser 的恢复钩子关闭 precheckMissedSemicolon；保持原输入及单条声明，不凭猜测插入属性。
+- 既有静态差分覆盖 #stage 中 color:red width:1px 不应误报 width 覆盖、普通 .nt-* 同样保留声明，以及缺分号的根 token 不应凭空算成已定义。与原 tinycss2 错误列表一致，原 CSS/URL 场景同一用例通过，约 0.5 秒。
+- 首次类型检查因内部 parser 没有声明而失败，补充限定的构造器/parse/root 类型后类型检查和编译通过；测试未因类型补充重复运行。内部钩子依赖固定的 postcss-safe-parser 7.0.1，升级时需要复核。
+- 没有新文件、浏览器或模型重跑。缺冒号/孤立文本的声明诊断和其余解析差异仍待关闭，整体迁移未验收。
+
+
+## 修复进度（2026-09-13，第五十批，缺冒号/孤立文本诊断）
+
+- 恢复解析器记录规则体内无法构成声明的文本，按 tinycss2 报告行号以及 Stop token/EOF reached before {} block 的区别；inspect 不再因这类 PostCSS Unknown word 提前结束。
+- 将声明错误与有效声明按源位置合并检查，保留原版错误/底盘覆盖提示的顺序与去重。解析树仍保留原始文本，不插入修复声明；已有资源解析与静态检查使用同一恢复器。
+- 既有差分用例加入 6 个真实 Python 对照：缺冒号、结尾孤立词、标点碎片、多行错误、错误前后 #stage 属性及连续坏声明。错误列表完全一致；原 CSS/URL 边界同一用例通过，约 0.5 秒。类型检查、编译通过。
+- 没有新测试文件、浏览器或模型实验。复杂非法属性、顶层语法、token 错误恢复及完整序列化等仍未由这些场景证明全部等价；其他迁移待办保留。
+
+
+## 修复进度（2026-09-13，第五十一批，属性下划线前缀）
+
+- 门禁恢复 PostCSS 放进 raws.before 的下划线，按 tinycss2 的原属性名判断。修复 _--bg 被误算成必需 --bg 的漏检，以及 _width/_overflow、_--panel 被误判为底盘覆盖/公共承载面的情况；不改写原 CSS。
+- 既有静态差分用例增加必需 token、底盘属性、公共 token 和 Unicode 接口 token 共 4 个场景，错误列表与原 Python 完全一致。原 CSS/URL 场景同一用例通过，约 0.6 秒；类型检查、编译通过。
+- 没有新测试文件、浏览器或模型调用；星号等其他非法属性前缀与其余解析差异仍未由本批证明等价，整体迁移继续进行。
+
+
+## 修复进度（2026-09-13，第五十二批，YAML 配置语义）
+
+- loadConfig 改为匹配 PyYAML SafeLoader 的 YAML 1.1 标量规则及重复键后值覆盖；布尔解析单独对齐 PyYAML，支持 yes/no/on/off 等大小写形式，但不把单字母 y/N 或混合 YEs 错当布尔。
+- 修复 vision_input: off/replay_reasoning: no 被当作非空字符串从而开启能力的问题，并对齐前导零八进制、数字下划线、锚点合并与显式覆盖。原固定 config.yaml 的全部模型/workflow profiles 同一用例仍与 Python 一致。
+- 既有配置差分使用实际 YAML 文件，比较原 yaml.safe_load 的完整对象及 llm._default_model_profile 的最终 profile；定向用例约 2.4 秒，类型检查及编译通过。无真实模型调用、新测试文件或服务重启。
+- 不把这批常用配置语义通过扩大为所有 YAML 标签、时间戳、循环别名或错误文本完全等价；其他迁移待办保留。
+
+
+## 修复进度（2026-09-13，第五十三批，YAML 版本与别名限制）
+
+- 显式固定配置 scalar schema，使 %YAML 1.2 不改变原 PyYAML 对前导零数字、合并键等内容的解析；沿用上一批的 PyYAML 布尔细则。
+- 移除 TS YAML 库默认的别名引用计数限制，保持原 SafeLoader 允许的共享配置；110 次同一小对象引用的原默认解析确实被拒绝，修正后正常读取并保留引用身份，没有复制展开共享对象。
+- 既有配置差分覆盖无版本、1.1、1.2 声明，分别与实际 yaml.safe_load 的对象对照，并确认最终模型 profile 一致；新增共享引用场景后同一用例通过，约 2.4 秒。类型检查、编译通过；未启动真实模型或新增测试文件。
+- 这不代表所有 YAML 类型、循环对象及异常文本已经等价；其他迁移待办继续保留。
+
+
+## 修复进度（2026-09-13，第五十四批，profile 布尔转换）
+
+- Planner/Director 默认 profile 和 Builder profile 的 vision_input/replay_reasoning 使用 Python 布尔语义，修复空列表、空映射在 JS 中被判断为真的差异；保留缺省值与非空字符串（包括字符串 false）在原版中的行为。
+- 既有模型配置差分加入 10 类输入，比较原 llm._default_model_profile/resolve_builder_profile 的完整结果，而非只断言转换 helper。原配置、YAML 版本/别名及 workflow 映射同一用例通过，约 3.2 秒；类型检查、编译通过。
+- 没有真实模型调用、新测试文件或服务重启。其他配置字段的 Python 类型/数值转换及异常契约仍未由本批证明等价，整体迁移继续进行。
+
+
+## 修复进度（2026-09-13，第五十五批，模型端点 fragment）
+
+- 对齐 Chat/Responses SDK 的接口路径拼接：suffix 位于 fragment 前，避免 TS 将 /chat/completions 或 /responses 放入 fragment 而不发送到服务端。Messages 继续保持原 urllib 字符串拼接路径。
+- 原 SDK 对带 query 的 base_url 本身也存在特殊拼接行为；实际对照后保留该行为，没有以“修正 URL”为由改变原版请求。
+- 既有三 wire 用例增加 4 类 base_url，共 12 个最终 URL 与真实 Python SDK/httpx MockTransport、原 Messages/urllib 请求对象对照一致；原多轮原生状态回放同一用例通过，约 1.6 秒。类型检查、编译通过，无真实服务调用或新测试文件。
+- 不据此宣称所有非法 URL/编码/SDK 异常格式等价；其他迁移待办仍保留。
+
+
+## 修复进度（2026-09-13，第五十六批，request_options 实际合并验证）
+
+- 核对原 SDK 后确认 request_options 应为浅合并，当前 TS 实现无需修改。补充此前仅配置对象对照之外的实际请求证据。
+- 既有三 wire 用例使用原 Python ModelRuntime + OpenAI SDK/httpx MockTransport 或 Messages/urllib 传输替身，捕获完整请求；覆盖 model 覆盖、空 tools 数组、嵌套 reasoning/metadata、temperature=0 和 stop=null。TS 三条传输实际发送对象与原版完全一致。
+- 同一用例的 URL 拼接和原生多轮状态回放通过，约 2.8 秒；类型检查通过。生产代码未修改，因此复用已有编译结果，没有真实模型请求或新增测试文件。
+- 只关闭上述请求合并证据缺口，不将局部协议一致宣称为整体迁移验收；其余未关闭项保留。
+
+
+## 修复进度（2026-09-13，第五十七批，文件工具通用换行）
+
+- Read、Edit、Patch 的文件读取对齐 Python read_text 的通用换行处理，将 CRLF/CR 转为 LF 后返回或匹配；修复模型按 Read 内容提交多行编辑却找不到原文的差异。Write 的输入字节不作额外归一化，Patch 失败仍不写文件。
+- 既有工具差分加入混合 CRLF/CR/LF 文件的 Read、多行 Edit、整批 Patch 和工作流资源全文读取；所有反馈及最终文件原始字节与原 Python runtime.run 对照一致。原 schema/作用域/资源分支同一用例通过，约 0.6 秒。
+- 类型检查及编译通过，无新增测试文件、浏览器或模型实验。其他文本入口、UTF-8 错误诊断与此前未关闭项继续待办，不由本批推定全部文本 I/O 等价。
+
+
+## 修复进度（2026-09-13，第五十八批，提示词/资源通用换行）
+
+- guidance、Builder 上下文和 Planner 模板读取对齐 Python 通用换行规则。修复 CRLF SKILL frontmatter 无法匹配，以及提示词/章节/库说明中的 CRLF 原样进入模型而与原版不同的问题；磁盘资源原文未改写。
+- 复用既有 Builder 上下文用例，以临时 CRLF 底盘/库说明、页表/逐页摘要、4 个 SKILL 副本及 CR/CRLF 混合 Planner 模板对照原 Python。发现元信息、四路 samples=none 工作流、Planner 最终模板及完整 Builder blocks/章节上下文均一致。
+- 原全部工作流/sample 模式与扩展上下文 2 个用例通过，约 1.2 秒；类型检查、编译通过。没有复制整套样本、新建测试文件或真实模型调用。
+- 其他文件入口和 UTF-8 错误边界仍待核对；不据此宣称所有文本 I/O 或整体迁移完全等价。
+
+
+## 修复进度（2026-09-13，第五十九批，Bash 文本与信号退出）
+
+- Bash stdout/stderr 在完成后按 Python subprocess text=True 的规则转换 CRLF/CR，再拼接 stderr 标记和去除首尾空白。
+- 子进程因信号结束且没有输出时，反馈负信号编号而非 Node 的 null code；与原 subprocess.returncode 一致。任务取消仍沿原 AbortSignal 分支拒绝，超时/进程组清理未改。
+- 既有工具差分增加实际 shell 混合换行 stdout/stderr，以及仅终止自身测试 shell 的 SIGTERM；原 runtime.run 与 TS 反馈一致。该用例约 0.6 秒，类型检查、编译通过；未新增测试文件或启动模型。
+- UTF-8 非法输出的严格解码等异常边界仍待处理，不能由本批推定所有子进程行为完全等价。
+
+
+## 修复进度（2026-09-13，第六十批，严格 UTF-8 工具边界）
+
+- 共享 core/text.ts 提供 UTF-8 严格校验、Python UnicodeDecodeError 的字节位置/原因及通用换行。Edit/Patch、库说明全文 Read 和 Bash 使用严格模式；普通/工作流资源 Read 仍按原版替换非法字符。
+- Bash 收集原始字节后按 stdout、stderr 顺序解码，不再提前由 Node 字符串流吞掉非法字节。取消/超时分支仍先处理，进程组清理未改。
+- 既有工具差分覆盖 6 类非法序列（起始字节、错误续字节、截断、代理码点、超范围和过长编码）的 Read/Edit/Patch 共 18 项反馈与最终原始字节；另有真实 shell 非法 stdout/stderr。原 Python runtime.run 与 TS 一致，失败编辑未修改文件。定向用例约 0.8 秒，类型检查、编译通过。
+- 新增的是供运行时复用的文本解码模块，没有新测试文件或脚本。其他严格文本入口及语言异常格式尚未全部接入，不据此宣称整体迁移验收。
+
+
+## 修复进度（2026-09-13，第六十一批，提示词解码与读取顺序）
+
+- guidance 的发现元信息/样本目录/direction，以及 Planner 模板、Builder 库索引/普通技术模板/CHASSIS 使用原版严格 UTF-8；路由 SKILL 正文、教学原则、反风格指令、页表、主题接口和代码技术说明继续保留原 errors=replace。
+- 普通页 sharedPreload 恢复先读取 CHASSIS、再技术契约/主题接口/页表的原执行顺序；代码页保持其独立顺序。修正多文件同时损坏时首个错误来源不同的问题，不改变正常拼装输出。
+- 既有上下文用例增加 6 个真实 Python 函数对照，覆盖严格错误、SKILL 正文替换字符及同时损坏 CHASSIS/库索引时的首错。正常四路资源/完整上下文、CRLF 场景同批 2 个用例通过，约 2.1 秒；类型检查、编译通过。
+- 无新测试文件、浏览器或模型实验。其他文本入口和已列迁移差异仍保留，整体未验收。
+
+
+## 修复进度（2026-09-13，第六十二批，共享 YAML 与配置解码）
+
+- 将已对齐的 PyYAML 解析规则复用于 SKILL frontmatter 与模型配置，修复发现元信息仍使用 YAML 1.2/拒绝重复字段的遗漏；没有维护第二份解析策略或新增文件。
+- 模型配置读取接入严格 UTF-8 + 通用换行，非法字节先按 Python read_text 报错，不再替换后继续交给 YAML。
+- 既有自定义工作流副本加入重复 name/description 与前导零名称，原 page_skill_descriptions 和路由正文对照通过；配置非法 UTF-8 名称/消息与 Python 文件读取一致。正常工作流、完整 Builder 上下文和全部 profile/YAML 场景共 3 个定向用例通过，约 5 秒；类型检查、编译通过。
+- 未新增测试文件、浏览器或模型实验；复杂 YAML 类型/异常及其他已列迁移待办继续保留，整体尚未验收。
+
+
+## 修复进度（2026-09-13，第六十三批，CLI 显式空参数）
+
+- CLI 区分未传 --style 与显式空值，在 plan／完整 build 入口按原 check_options 拒绝空风格及禁用 Director 时的冲突；--template 空字符串按 Python Path 解析为当前目录，不再被丢弃。已有计划的 build 阶段不增加规划检查。
+- 复用现有 CLI 用例，以 Python argparse + check_options 对照 9 组参数在两个 TS 入口的结果，包括空值、等号形式、空白、正常值与冲突。定向用例通过（约 2.4 秒），类型检查和编译通过；没有新测试文件、脚本或模型实验。
+- 此项仅证明上述参数语义，其他 CLI 错误格式及已列迁移差异仍待核对，整体未验收。
+
+
+## 修复进度（2026-09-13，第六十四批，风格资源文本读取）
+
+- 核对模型 CLI 覆盖空值：Python llm.override 本身过滤空值，TS 当前行为一致，未作改动。
+- 风格索引、详情、概览 README、字体清单和导入 theme.css 接入共享严格 UTF-8 与通用换行。索引分行覆盖 Python splitlines 的额外分隔符，不再仅按 LF 分行。
+- 复用风格差分用例，保留正常目录／三份详情与图像／字体声明对照，增加 10 类行分隔符及原 Python 四个真实入口的非法字节错误对照。定向测试约 3.3 秒，类型检查和编译通过；无新脚本或测试文件。
+- 本批未启动浏览器或真实模型任务；风格名称 Unicode casefold、CSS 解析及其他已列差异仍未据此验收。
+
+
+## 修复进度（2026-09-13，第六十五批，字体 URL 与复制）
+
+- 字体 URL 恢复 urlsplit 的前导控制字符/空格及 TAB/换行处理，按非空 query/fragment 判断冲突；空 ?/# 不再误拒绝。百分号解码复用主题本地 URL 的容错实现，非法 UTF-8 替换字符、非法百分号保留，不再抛 Node URIError。
+- 复用风格差分测试，对照原 font_library.prepare 的 16 组真实 CSS URL，覆盖正常与编码字体、空/非空查询片段、scheme/远端、无关非法百分号和未登记路径；比较反馈和已复制字体/许可证 SHA-256，全部通过。现有主题静态/本地 URL 用例亦通过；类型检查、编译通过，未新增脚本或测试文件。
+- 验证约 4 秒，无浏览器或模型实验。复杂 netloc 的 urllib 异常校验仍未完整迁移，不能由本批推定任意 URL 或整套迁移完全等价。
+
+
+## 修复进度（2026-09-13，第六十六批，Planner／Builder 交接入口）
+
+- orchestration 的主题、CHASSIS、briefs 文件改用原版严格 UTF-8 与通用换行；briefs 接入已有 Python JSON 解析器。routePage 保留原版替换非法字节的策略并补齐换行。
+- 工作流 SKILL 检查要求实际文件，目录不再通过。工作流缺失、规划页缺失、已有 manifest／页面产物的异常名称恢复 FileNotFoundError／FileExistsError。
+- 既有完整交接用例继续对照正常提示词、产物、manifest 和 results，另以真实 Python builder.main 对照六类早期失败（UTF-8、JSON、SKILL 目录、缺规划页、已有 manifest、已有页面）。首次差分发现缺规划页的异常名称遗漏并修复；最终用例约 6.4 秒通过，类型检查、编译通过，受保护产物字节未变。
+- 未新增脚本或测试文件。此轮没有真实模型／Viewer 全链路验收；任意输入类型、异常格式及其他已列差异仍待核对。
+
+
+## 修复进度（2026-09-13，第六十七批，页型路由语义）
+
+- Builder 页标题匹配恢复 Python 的 Unicode 十进制数字与空白集合、仅 LF 的多行边界；页正文 strip 保留 BOM、移除 Python 定义的空白。代码 scaffold 标题按 Python splitlines/strip 提取。复用 core/text.ts，无新源文件。
+- 路由的标题数量／页 ID 不匹配恢复 ValueError；路径中的 page- 替换与原 str.replace 一致。
+- 既有交接用例增加 15 组实际 Python route_page／_page_entries／_lesson_title 对照，覆盖四页型、CRLF、信息分隔符、BOM、Unicode 行分隔与数字、多标题和错误 ID；完整交接、上下文两项定向测试约 8.8 秒通过，类型检查和编译通过。
+- 未新增测试文件、脚本或模型实验；其他调用点的 Unicode／异常行为及总体迁移仍未验收。
+
+
+## 组合回归（2026-09-13，第六十七批代码状态）
+
+- 在上述源码状态运行 npm test：contracts.test.ts 与 parity.test.ts 全部 46 个用例通过，0 失败/跳过，115.6 秒。日志 /tmp/notale-combined-20260913.log；本轮未修改产品代码，复用上一批已通过的类型检查和编译。
+- 覆盖现有全部服务持久化/取消/SSE、Python 差分、真实浏览器自检、NumPy 故障恢复与取消、移动代码产物、媒体模拟传输、完整交接及 CLI 测试。模型端点使用测试替身，这不是最新代码的真实长任务或 Viewer/编辑器全链路验收。
+- 源码引用检查确认旧简化 core/agent.ts 与 tools/generation.ts 的执行入口没有现行生产调用者，但旧实现仍保留，部分输出/消息类型仍被使用。清理前须保留共享类型与现有浏览器工具，并核对旧文件工具测试的实际覆盖；本轮未删除。
+- 已列 CSS/图片/语言边界差异和整体验收缺口仍开放，不能由全套现有测试通过推出任意行为等价。
+
+
+## 修复进度（2026-09-13，第六十八批，简化实现归档）
+
+- 将无生产调用者的 core/agent.ts、tools/generation.ts、tools/files.ts、tools/media.ts 移入外层 legacy/notale-ts-simplified；归档 chat-model.ts / visual-check.ts 的原完整快照。当前前者仅保留消息/响应接口，后者保留共享浏览器、静态服务和生命周期管理，移除旧简化检查函数。
+- 清除对应四个已删除源码的陈旧 dist 文件并重新编译，确认源码/编译输出无旧执行器、旧模型实例或旧工具依赖。重新打包独立 selfcheck。归档遵循既有 legacy ignore，不进入当前 TS 构建。
+- contracts 中删除仅调用旧文件工具的重复断言，生产权限/Patch 验证继续由现有 workspace Python 差分承担；运行时按需包检查保留并补齐临时目录清理，没有新测试文件。
+- 类型检查首次发现新增清理遗漏 rm 导入，修复后类型检查、编译、检查器打包通过。6 项定向检查约 11.9 秒通过（运行时包、生产工具、全部模型 profile、三种服务路径），40 项未重跑；上一轮全套证据仍明确对应清理前状态。
+- 已更新 README。清理不等于完成剩余 CSS/图像/语言差异和真实最新代码验收；整体目标保持开放。
+
+
+## 修复进度（2026-09-13，第六十九批，CSS 声明标识符）
+
+- PostCSS 的星号 hack（*width、*--panel）不再被当成合法属性参与舞台/token 门禁；数字开头、错误字符等非 CSS 标识符按 tinycss2 的声明错误反馈，区分 Stop token / EOF 并保留行号及检查顺序。下划线、自定义 --、转义数字标识符仍按原版处理。
+- 既有静态 CSS 用例增加 13 类声明，包括后续合法声明、important、换行及嵌套 qualified rule；与原 inspect 输出一致。修复一次编辑中的正则转义语法问题后，定向用例约 0.45 秒通过，类型检查、编译通过。无新测试文件或脚本。
+- 同轮探测保留的具体未对齐项：顶层 h1/h1; 的 EOF 错误诊断；多余右花括号；字符串中的原始换行/EOF；@media 内无块规则；未闭合方括号；CDO/CDC。此批仅修正声明名，不据此宣称 CSS 解析完成或整体迁移验收。
+
+
+## 修复进度（2026-09-13，第七十批，嵌套 at-rule 尾部恢复）
+
+- safe parser 记录 Unknown word 所在层级。仅嵌套 at-rule 的尾部无块规则允许继续原版检查，不再由 PostCSS 错误提前返回；顶层无块规则未按此豁免。
+- 既有 CSS 差分增加八种 at-rule 的纯残缺尾部、前方舞台规则、后方舞台规则共 24 组，验证原 rules_of 的递归白名单及后续门禁仍生效。定向用例约 0.54 秒通过，类型检查、编译通过。无新测试文件、脚本或模型实验。
+- 顶层 EOF、错误字符串/括号及残缺前缀并入后续 selector 的完整恢复仍待迁移，整体未验收。
+
+
+## 修复进度（2026-09-13，第七十一批，选择器分支）
+
+- 用 CSS 组件块感知的逗号拆分替换 PostCSS list.comma，保留首部/连续/尾部空分支；函数、属性、括号块、字符串、注释、转义逗号不拆开。选择器边界 strip 复用 Python 空白语义。
+- 修复空分支被丢弃后共享样式门禁漏报的问题。既有 CSS 用例增加 11 组真实 Python inspect 对照，涵盖空分支、承载面 token、属性逗号、注释、函数和转义；定向检查约 0.54 秒通过，类型检查、编译通过。
+- 没有新测试文件、脚本或模型实验；错误字符串/括号与顶层规则恢复等仍待对齐，整体未验收。
+
+
+## 修复进度（2026-09-13，第七十二批，主题接口空白）
+
+- INTERFACE 边界采用 Python 空白集合；主题首部检查、style 空值使用共享 stripText。接口 token 声明改用 Python splitlines 与空白匹配，避免 Unicode 分隔符后的声明漏检及 BOM 被误当空白。
+- 既有静态 CSS 用例增加 7 个接口边界/声明分隔场景；CLI 现有 Python 参数差分增加信息分隔符、NEL、BOM 风格值。三项定向用例（CSS、CLI、Builder 上下文）约 4.3 秒通过，类型检查、编译通过。
+- 新确认的未修项：文件首部 BOM 在 tinycss2 中参与首个 selector，PostCSS Input 自动去除，默认 token 判定仍可能不同。本批未宣称任意 BOM CSS 等价；顶层/字符串/括号恢复及其他差异继续开放。
+
+
+## 修复进度（2026-09-13，第七十三批，CSS 首部 BOM）
+
+- 使用固定 PostCSS 版本公开的 parser 子路径和显式 Input，在 tokenization 前恢复被 Input 默认去除的 U+FEFF/U+FFFE；严格与恢复解析共用此入口。BOM 按 tinycss2 字符串输入参与首个选择器，不再让 :root 错误满足默认 token，也不会在序列化时重复添加。
+- 既有 CSS 用例增加三种 BOM 前缀（含双 BOM）与正常/舞台门禁/嵌套恢复组合，共 9 组 Python 差分，并检查原文 round-trip。静态用例约 0.53 秒通过；共享入口影响的主题导入、字体复制和真实浏览器门禁用例约 2.64 秒通过；类型检查、编译通过。
+- 无新测试文件或脚本。该修复未解决顶层 EOF/字符串/括号的完整 tinycss2 语义，整体迁移尚未验收。
+
+
+## 修复进度（2026-09-13，第七十四批，顶层简单 EOF 反馈）
+
+- 记录恢复解析中顶层无块规则的 token；对边界可确定的标识符/空白/分号尾部，恢复 tinycss2 的最终 token 位置与 EOF 错误，并继续必需 token/已有规则门禁。已有节点位于残缺 token 后或 PostCSS 合并复杂标点时不套用此分支。
+- 既有静态 CSS 差分新增八种残缺尾部与独立/有效主题后/舞台规则后三种组合共 24 组，约 0.55 秒通过。类型检查发现 findLast 超出当前 lib 声明后改为等价 reverse/find，随后类型检查、编译通过。
+- 此项是顶层恢复的部分修复：复杂选择器、函数、at-rule、CDO/CDC 等完整 tokenizer 语义仍需迁移；不得解释为顶层 CSS 已完全等价或整体目标已完成。无新测试文件、脚本或模型实验。
+
+
+## 修复进度（2026-09-13，第七十五批，原生 CSS 组件分词）
+
+- 依据当前 Python tinycss2 1.5.1 tokenizer.py 移植 css-tokenizer.ts：Unicode 码点位置、NUL/CR/FF 预处理、标识符/转义、数字/单位/百分比、hash/at-keyword、Unicode range、URL/字符串及异常、注释/CDO/CDC、嵌套组件块。原 BSD-3-Clause 许可证保留于 resources/licenses/tinycss2-LICENSE。没有引入 Python 运行时依赖。
+- 顶层残缺规则的 EOF 位置改用原生组件 token，删除上一批仅允许标识符/分号尾部的临时限制。复杂选择器、函数、属性块、Unicode range、单位及注释尾部新增 18 组真实 inspect 对照通过。
+- 在既有 CSS 用例内，对全部现有 CSS 夹具及额外词法边界与 tinycss2.parse_component_value_list 的类型、值、位置、嵌套、单位和错误逐字段比较；定向检查约 0.62 秒通过，类型检查、编译通过。没有新测试文件或实验脚本。
+- 组件的 representation 序列化未在本批实现；原生完整规则/声明解析尚未接替 PostCSS。吞并 at-rule/前缀的规则恢复、错误字符串/括号反馈及其他清单差异仍开放，不据此宣称 CSS 或整体迁移完成。
+
+
+## 修复进度（2026-09-13，第七十六批，CSS 序列化与规则划分）
+
+- 在已保留 BSD 许可证的原生 CSS 模块移植组件 representation、标识符/name/string/URL 转义、数字单位消歧、相邻 token BAD_PAIRS、函数 EOF-string 尾部、组件块/错误序列化；数字原文本保留，整数负零按 Python 转为 0。
+- 移植 parse_stylesheet / parse_rule_list 的 qualified/at-rule 消费与 CDO/CDC 差异。两种规则树对当前完整词法样本逐字段对照通过；声明解析与整套门禁尚未接替 PostCSS。
+- 生产选择器与分支改用原生组件序列化，删除上一批手写逗号扫描。既有静态用例覆盖全部当前 CSS 夹具、独立词法样本的原文表示、保留/跳过注释的序列化、两种规则树。补充邻接 token/单位/负零后定向用例约 0.77 秒通过；类型检查通过，产品源码编译已通过且后续仅补测试。
+- 没有新测试文件或脚本。原生规则树还未接入完整 inspect；声明解析、产物重定位/序列化及剩余行为差异继续开放，整体未验收。
+
+
+## 修复进度（2026-09-13，第七十七批，原生声明与 inspect 接入）
+
+- 移植 tinycss2 parse_blocks_contents 的声明/嵌套规则回退、分号消费、important 状态和简单块行为，补齐声明序列化。生产 inspect 改用原生 stylesheet / rule_list / blocks_contents 及组件遍历，不再由 PostCSS 的声明/恢复结果决定语法、import、舞台和 token 门禁。
+- 删除累计的 Unknown word/顶层 EOF 标记、声明错误元数据、星号/下划线 hack 修补及残缺规则特判。保留 PostCSS parseCss 仅供现行 URL 重写等接口，资源层尚未整体迁移。
+- 既有 CSS 夹具和词法边界同时对照 Python 三类规则/声明树。新增 13 类实际 inspect 场景覆盖被残缺前缀吞入的 import/selector、坏字符串、错误括号、CDO/CDC、important 和自定义属性块；静态差分约 0.81 秒通过。类型检查、编译通过；主题导入/字体复制/真实浏览器门禁及三种服务路径共 4 项约 11 秒通过。
+- 无新测试文件或脚本。资源 URL 遍历/重写仍使用 PostCSS，Unicode 正则及任意词法输入的覆盖并非穷尽，最新真实长任务链路也尚未验收；不能从本批推定整体目标完成。
+
+
+## 修复进度（2026-09-13，第七十八批，原生 CSS 资源树）
+
+- parseCss / inspect 返回原生 CssRoot，URL 和 image-set 遍历、参数错误、replace_url、主题导入及浏览器候选 CSS 序列化统一使用 tinycss2 移植树。删除 PostCSS Input/Parser/safe-parser、转义 at-keyword 与 value-parser 等剩余兼容代码。
+- 复用既有资源用例：新增 13 组 URL/错误/嵌套/残缺前缀输入，与真实 Python urls + replace_url 对照原始值、异常名称/消息及完整重写 CSS，包含替换值中的引号和反斜杠。静态 CSS、风格资源、主题导入/字体复制/浏览器门禁及三种服务路径均定向通过；最后一组约 9.6 秒，类型检查通过，当前产品源码编译通过。
+- 全源码确认已无 PostCSS 引用，离线更新 package.json/package-lock 移除四个已无用的直接运行/类型依赖；原 node_modules 未做清空重装。无新测试文件或脚本。
+- CSS 主路径已不依赖 PostCSS，但现有差分样本不是任意输入的穷尽证明；URL 网络地址解析、Unicode/语言边界及最新真实长任务/Viewer/同产物移动编辑器链路等验收仍开放。
+
+
+## 修复进度（2026-09-13，第七十九批，固定组合差分）
+
+- 复用现有 CSS 用例，以固定 LCG 种子生成 256 组短组件组合，覆盖括号/字符串/转义/注释/URL/at-rule/数字及 Unicode 的交互；逐字段比较 token、两种规则树、声明树、保留/去除注释的序列化，并比较完整 inspect 反馈。用例可重复，无额外脚本、测试文件或服务。
+- 差分发现选择器报错输出仍调用 JS trim，导致 BOM 被删掉；改为共享 Python strip。最终全部定向比较约 0.79 秒通过，类型检查、编译通过。未扩大成浏览器或模型实验。
+- 此次组合覆盖提供了原生 CSS 实现的补充证据，仍不是任意输入的穷尽证明。URL 地址语义、其他已列语言/图片边界及最新真实任务链路等待办继续开放。
+
+
+## 修复进度（2026-09-13，第八十批，共享资源 URL 拆分）
+
+- 主题 localUrl 与字体 prepareFonts 共用 splitResourceUrl，去掉重复拆分逻辑。按原资源调用使用的 urlsplit 字符串路径处理 scheme/netloc/path/query/fragment、C0/TAB/换行、IPv6 方括号/IPvFuture/scope、NFKC 地址异常，并保留不主动校验端口值的原行为。非法主机名的非打印字符使用 Python repr 形式反馈。
+- 35 组 URL 分量/异常与真实 urllib.parse.urlsplit 对照通过，含 Unicode 非打印字符和代理字符；字体既有实际复制差分增加三种网络地址正常/失败场景。两项定向用例约 3.8 秒通过，补充异常表示后仅重跑对应静态用例约 0.95 秒；类型检查、编译通过。
+- 无新测试文件、脚本、浏览器或模型实验。本 helper 针对原资源路径的字符串调用，不宣称覆盖 urllib 全部 API/默认 scheme/bytes 参数。其他已列语言/图片边界和最新真实任务链路仍待验收。
+
+
+## 验收进度（2026-09-13，第八十一批，最新版完整产物链路）
+
+- 第八十批源码与编译产物的 105 项指纹在真实任务前后完全一致。Viewer 创建的 45 分钟恒星课任务完成 10 页，327.952 秒，全部自然结束、最终审计无 fatal/warning，包含真实 ImageSearch、Seedream ImageGen 和完整代码执行门禁。沿用已有相同输入 Python 对照证据，不把随机页数差异当成策略差异或性能结论。
+- 同轮 90 分钟长任务经历 Viewer 停止/重启、可见断线恢复及首次快照 503 恢复后，在 117.980 秒、11 页就绪时通过 UI 取消；刷新保持终态，38 秒内 347 个文件不变，唯一取消终态。未声称支持活跃后端进程接管。
+- 同一完整主任务目录整体移位，377 个输出文件 SHA-256 不变且无软链接；新父目录启动 API 后 Viewer 正常恢复预览。逐页复查 10 页、15 个初始/显式 after 状态及代码执行门禁均通过；整体导入隔离编辑器得到 10 页、349 资源、92,266,141 字节依赖，浏览器实际运行代码并查看末帧成功。未修改生成内容、Python 入口或用户工程。
+- 证据路径和限制见 ACCEPTANCE.md 顶部最新章节；本批未改 harness 实现、未新增仓库测试/脚本，复用现有临时检查器和导入器。真实链路完成不自动关闭其他语言/图片/异常契约差异，整体等价审计仍开放。
+
+
+## 修复进度（2026-09-13，第八十二批，主题 Unicode 门禁）
+
+- 修正 variants/classes/references 的 Python re.M 行边界（仅 LF）、Python 空白及 dot 语义；引用正文中的 CR/Unicode 分隔符不再被 JS dot 截断，BOM 不冒充空白。data-variant 和 #stage 末尾空白使用同一 Python 空白集合。
+- html/body 的词边界改为 Python Unicode 字母/数字/下划线集合，避免汉字/Unicode 数字相邻的选择器被错误放行；SURFACE 忽略大小写匹配补齐长 s、带点/无点 I 的 Python 语义。
+- 复用原静态主题用例，增加 38 个 Unicode 接口/选择器/token 场景，对照真实 Python variants、references、inspect；现有词法/规则/URL 差分同时通过，定向运行约 0.92 秒。类型检查和编译通过。无新测试文件、脚本或真实模型实验。
+- 第八十一批真实链路证据对应第八十批源码；本批仅门禁字符边界修正，没有改写既有产物或重启其服务。其他尚未核销的语言、图片和异常契约继续开放，整体目标未验收。
+
+
+## 修复进度（2026-09-13，第八十三批，导入引用重定位）
+
+- 发现上一批主题接口解析修正后，importInput 仍独立使用 JS 空白/多行正则，可能识别了参考图却未重定位。导出并共用 REFERENCE，使引用提取与导入重写使用相同 Python 行边界/空白规则，保留 match 位置及倒序替换行为。
+- CSS 本地资源 URL 编码补齐 Python quote(safe='/') 对 !、单引号、括号和星号的编码；之前 encodeURIComponent 会保留这些字符，导致导入 CSS 字节和 Python 不同。
+- 原主题导入用例增加四组 Unicode 引用分隔符与中文/特殊文件名组合，实际生成图片、复制资源并逐字比较 Python 导入 CSS/参考路径。静态主题差分及主题导入/字体/浏览器门禁两项约 3.25 秒通过，类型检查和编译通过；无新测试文件、脚本或模型实验。
+- 另确认 localUrl/checkOptions 等部分直接抛出异常的 name 仍是 JS Error，与 Python ValueError 不同；此前部分对照仅比较消息，尚未覆盖该维度。这项继续开放，不以本批通过掩盖。第八十批真实产物保持不变，整体等价审计未结束。
+
+
+## 修复进度（2026-09-13，第八十四批，主题显式异常契约）
+
+- localUrl、checkOptions 与主题导入/参考图的显式校验失败恢复 Python ValueError 名称。validate 仅捕获 ValueError 并加入门禁消息，其他异常继续抛出，与原版 catch 范围一致，避免吞掉非校验故障。
+- 原本只比较 localUrl 消息的差分升级为同时比较 name/message，增加缺文件、非法扩展名；四组 checkOptions 与两组真实导入失败直接调用 Python oracle 对照，另确认缺失 CSS 资源仍以门禁消息返回。原静态与导入/字体/浏览器两项约 3.51 秒通过，补充导入失败后仅重跑对应一项约 2.77 秒通过；类型检查和编译通过。
+- 本批不宣称 Node 文件系统底层异常、图片解码器或 Director 所有终止异常均已等价；这些需独立对照。没有新增测试文件/脚本、没有改写既有产物，真实模型链路证据仍对应第八十批。
+
+
+## 修复进度（2026-09-13，第八十五批，Director 提交与终止）
+
+- oneWrite 空内容判断、选样 ID splitlines/strip 以及保存选样文本使用 Python 字符语义；Unicode 空白不再作为有效 CSS 提交，BOM 也不再被误删。未增加额外轮数或重试限制。
+- 选样耗尽、无有效 Write 结束、主题校验耗尽的显式异常恢复 RuntimeError；复用主题拒绝、禁用视觉输入和显式工具参数拒绝恢复 ValueError。连续历史和已有提示词保持不变。
+- 原 Director 流程差分新增七种提交/分行边界，终止结果由仅比较消息升级为 name/message；整套该用例同时核对调用次数、完整历史/反馈、发布 CSS 和返回结果，约 1.51 秒通过，类型检查与编译通过。无新测试文件/脚本或真实模型实验。
+- 当前 Director 部分 catch 仍宽于原 Python 的异常分类，其他 port 中尚存未分类 JS Error；本批只对齐明确抛出的异常和文本处理，不声称任意依赖故障的恢复分支已完全等价。既有第八十批真实产物没有重写，整体审计继续。
+
+
+## 修复进度（2026-09-13，第八十六批，Director 资源故障分类）
+
+- 选样图片读取和提交后字体/引用/主题门禁的 catch 限定为原版 ValueError/OSError 家族（含已有 Unicode/JSON 子类名称与 Node 系统错误码）；TypeError、RuntimeError 等非资源故障不再作为模型修复反馈继续重试。
+- 字体/风格目录显式校验错误统一使用 ValueError；参考图 thumbnailJpeg 的普通解码/编码失败标为 OSError，以维持原 Pillow 故障进入资源恢复分支的行为。该分类未声称 sharp 的具体诊断文字或 Pillow 特定异常子类已一致。
+- 原 Director 用例注入 ValueError/OSError/TypeError/RuntimeError 四种 gate 故障，真实 Python 对照重试耗尽或立即终止、调用次数、历史反馈和最终 name/message；连同风格资源差分两项约 4.09 秒通过，类型检查、编译通过。无新测试文件、脚本或模型实验。
+- 非 Write 工具调用和 oneWrite 的 catch 分类仍需继续核对，图片诊断和底层文件系统等未完成项继续开放；不能把本批局部分支对齐解释为整体目标完成。
+
+
+## 修复进度（2026-09-13，第八十七批，Director 工具异常与循环软链接）
+
+- 非 Write 工具 catch 对齐原 ValueError/OSError/KeyError/TypeError 集合，不再把 RuntimeError 等任意故障作为模型反馈。oneWrite 仅捕获原 ValueError/TypeError/OSError 集合。
+- pathlib.resolve 对循环软链接抛 RuntimeError；TS 路径解析此前仅为 Error。补齐名称后，循环 Write 路径按原版直接终止而不是进入修复重试；未改路径解析规则或文件内容。
+- 既有 Director 用例新增五类 Read 依赖异常及真实循环软链接 Write，比较 Python 的最终 name/message、调用次数与完整反馈；与既有路径解析用例两项约 1.56 秒通过，类型检查、编译通过。无新增测试文件/脚本或模型实验。
+- 这些场景证明 Director 已核对的异常捕获范围，但不替代媒体实现内部异常、底层文件系统具体诊断、图片格式边界等剩余审计。KeyError 用例使用已对齐的 Python 引号消息，未宣称通用 JS 到 Python KeyError 构造转换已实现。整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第八十八批，风格匹配与目录字符）
+
+- StyleCatalog.match 使用 Python casefold 与 strip：在现有 text.ts 内保存 Python Unicode 15.0.0 的 297 个 casefold/lower 差异映射，按码点 lowercase 后覆盖；避免 Straße/STRASSE、希腊 sigma 等明确同名请求被当成自动选样。未改原目录和提示词。
+- INDEX 行过滤采用 Unicode Nd 两位数字，列与名称使用 Python 空白，行切分复用 splitLines。自定义目录的全角编号、NEL 包围名称与 BOM 边界恢复原行为。
+- 现有风格资源用例对照全部 297 个特殊折叠字符及补充组合字符串；真实临时 INDEX 对照 rows 与八个名称请求。该用例含原详情/字体/图像证据约 3.56 秒通过，类型检查、编译通过。无新测试文件、脚本或模型实验。
+- 该映射依据当前 Python 基线 Unicode 版本；不是对未来运行时新增 Unicode 字符的跨版本保证。其他媒体、数值与文件系统等待办继续开放，整体目标尚未验收。
+
+
+## 修复进度（2026-09-13，第八十九批，多选风格加载顺序）
+
+- selectedInputs 去掉 Promise.all，按去重后的输入顺序逐项加载，与 Python selected_inputs 一致。此前首项读取尚未完成就会启动后项，可能让后项失败抢先成为返回异常；现在首项失败后不会再读取后项。
+- 复用风格资源用例，四组 Python 对照覆盖正常合并、重复去重、首项/后项失败和空输入，除输出及异常还比较实际 detail 调用顺序。该用例约 3.57 秒通过，类型检查、编译通过；未新增测试文件/脚本或真实模型任务。
+- 这是资料选择的执行顺序修正，没有改变 Builder 并发或任何生成限制。剩余媒体/图片/底层异常等待办保持开放，整体迁移尚未验收。
+
+
+## 修复进度（2026-09-13，第九十批，自定义 ImageGen 子进程输出）
+
+- 自定义脚本 stdout/stderr 按原 subprocess.run(text=True) 收集字节、严格 UTF-8 解码并统一换行，再按 Python 顺序选 stderr/stdout/default 和截取末尾 1500 字符。非法字节不再由 Node setEncoding 静默替换。
+- illustrations.json 使用共享严格文本与 Python JSON 解析；信号终止时 close 的 null code 不再被当成零退出码，即使已写清单仍报告失败。
+- 原自定义 ImageGen 用例增加换行失败、非法输出字节、残缺 JSON、非法清单 UTF-8、已写清单后 SIGTERM 五种真实子进程场景，直接对照 Python 原工具的 name/message 或返回结果；原取消场景同时通过，约 1.26 秒。类型检查与编译通过。
+- 初版夹具转义过多仅产生字面反斜杠，已改为实际 CR/LF/非法字节后重跑；未把初版通过算作这些字节场景的证据。无新测试文件/脚本或模型实验。超时完整异常表示、原生媒体及图片其他未关闭边界继续开放，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第九十一批，原生 ImageGen 诊断正文）
+
+- HTTP 错误正文按 Unicode 码点截取前 400 字符；空图片响应按 Python json.dumps 默认 ASCII 转义后截取 300 字符，修复中文/emoji 诊断与原生 Python gen.generate 的差异。
+- 原媒体整合用例增加三种本地响应（长 emoji HTTP 错误、中文空响应、空 data），直接调用 Python gen.generate 对照 SystemExit 正文，并检查 TS 原生桥接的 RuntimeError 正文。完整外层子进程 stderr 的末尾换行/traceback 表示未在本批对齐，不据此宣称所有异常完全等价。
+- 发现旧 Python 夹具 next(iterdir()) 偶尔选到 CREDITS.md；改为明确选择 planner 结果目录，修正后媒体整合用例约 1.59 秒通过，类型检查和产品编译通过（之后仅修改夹具目录选择）。无新测试文件、脚本或模型请求。
+- 响应 JSON 编码/解码、base64 非法输入、网络异常与其他未核销边界继续开放，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第九十二批，原生 ImageGen base64）
+
+- 原生图片返回不再直接依赖 Buffer.from 的宽松/URL-safe 行为。按 Python base64.b64decode(validate=False) 处理 ASCII 限制、忽略非字母字符、有效填充终止和不足四字符组的错误；例如 ab 不再被默默当作合法图片字节，-/_ 不作为标准字母表。
+- 复用媒体整合用例，以 17 个边界加 128 个固定种子短组合对照 Python 原始解码字节和异常 name/message；正常三张生成图的请求与返回也继续通过，约 1.64 秒。类型检查和编译通过；无新测试文件/脚本或真实模型请求。
+- 此项针对 provider b64_json 字符串。非字符串异常以及旧 subprocess 外层包装的 traceback/换行、响应 JSON/网络错误和图片格式等待办未由该检查证明，整体目标仍开放。
+
+
+## 修复进度（2026-09-13，第九十三批，原生 ImageGen JSON 语法）
+
+- 原生成功响应由 Response.json 改为共享 parsePythonJson，恢复 Python 接受的 NaN/Infinity/-Infinity 及原 JSONDecodeError 类型、字符/行列位置。保留 Response.text 对 UTF-8 BOM 的处理，与本轮 Python 字节响应样例一致。
+- 原媒体整合用例增加九组真实 Response 夹具：空/残缺/尾随文本/emoji 错位/裸 CRLF、带非有限元数据的有效图片和 UTF-8 BOM；直接调用 Python gen.generate 对照最终图片字节或异常 name/message。媒体整合约 1.67 秒通过，类型检查和编译通过，无新测试文件、脚本或模型实验。
+- 这只对齐已解码文本的 JSON 语法；Response.text 仍为 Web UTF-8 解码，与 Python json.loads(bytes) 的 UTF-16/UTF-32 自动识别、surrogatepass 及非法字节行为存在待办。旧脚本外层异常包装和非有限值序列化也未由本批关闭。整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第九十四批，ImageGen JSON 字节编码）
+
+- 新增共享 parsePythonJsonBytes，按 Python json.detect_encoding 的 BOM/零字节规则选择 UTF-8、UTF-16/32 大小端，保留原换行与 surrogatepass，恢复截断/越界码点的 UnicodeDecodeError 位置和消息。ImageGen 直接读取 response.arrayBuffer，不再由 Response.text 替换非法 UTF-8。
+- decodeText 增加显式 surrogatePass/universalNewlines 选项，既有调用默认行为保持；只对完整有效的三字节代理码点启用 surrogatepass，截断代理序列按原严格诊断处理。
+- 67 组 Python 字节解析对照包括八种编码、中文/emoji/孤立代理字符、CRLF/残缺 JSON、BOM 与非法/截断字节。八种编码的有效图片另经真实 Response → generate → 文件落盘验证。媒体、自定义脚本及 workspace 文本用例三项约 2.74 秒通过；新增八种集成响应后仅重跑媒体项约 1.70 秒通过，类型检查、编译通过。
+- 初始 Python 夹具被 JS 模板解释反斜杠导致语法错误，改为 String.raw 后才进行有效对照；发现截断 surrogatepass 诊断差异后已修正并重跑。无新测试文件/脚本或模型实验；未宣称任意编码/异常组合、非有限值序列化或旧脚本外层诊断均已等价，整体仍开放。
+
+
+## 修复进度（2026-09-13，第九十五批，ImageGen 请求超时范围）
+
+> 更正：本批对内部 gen.generate 请求预算的检查遗漏了 tool.generate 的 subprocess.run(timeout=300) 外层总上限，不能据此取消工具整体截止时间；第一百一十八批已恢复。
+
+- 撤销原生 ImageGen 隐含的整链路 300 秒上限：生成接口的计时信号仅用于该响应，后续每张下载各自使用 180 秒并共享用户取消信号。已完成请求的计时器不再中断下一张下载或产物落盘。
+- 原媒体取消/重定向用例增加 Python gen.generate 的实际 urlopen timeout 记录对照（300、180、180），使用可控 AbortSignal 模拟前序计时器到期，确认后续下载仍成功。原主动取消、公共地址/DNS 场景继续通过，约 0.74 秒；类型检查和编译通过，无新测试文件/脚本或真实等待。
+- 这修复的是额外总时限；urllib socket 每次阻塞操作超时与 fetch 单请求 deadline 的细粒度语义仍需单独评估，不能宣称所有网络超时/诊断已完全等价。其他未核销项及整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第九十六批，非有限值 JSON 输出）
+
+- 共享 jsonText 对 JSON 数据递归序列化，保留 Python 默认 NaN/Infinity/-Infinity 和分隔空格；不再让 JSON.stringify 把非有限值（包括嵌套值）改成 null。字符串中的这些单词与标点保持普通字符串。
+- 原媒体请求用例增加六组 Python json.loads/dumps 对照，ImageGen 空响应增加非有限字段，模型 wire/媒体请求/媒体整合三项约 3.53 秒通过，类型检查、编译通过。更新独立 selfcheck bundle，使新发布的诊断程序使用同一输出逻辑；没有重写历史产物。
+- 此修复针对 JSON 数据，不声称已经解决 Python 浮点文本形式、超大整数、数字形键顺序或非 JSON 对象类型等剩余差异。无新测试文件、脚本或模型实验，整体目标仍待核销。
+
+
+## 验证进度（2026-09-13，第九十七批，当前组合回归）
+
+- 对第九十六批代码统一运行一次现有 npm test：46 项通过、0 失败、0 跳过，116.57 秒；包含当前 Python 提示词/skills 字节核对、Python 差分、真实浏览器/代码门禁、模拟模型服务与取消/协议/发布集成。
+- 运行前后的 51 项源码/测试/配置指纹一致。持久证据位于 experiments/notale-ts/validation-b96-20260913/combined.log 与 source-sha256.json；没有增加测试文件、脚本、模型请求或改写任何真实讲义。
+- 本轮不改 harness 实现；现有组合回归已更新到当前版本，不代表此前已列出的未覆盖/未修复契约全部关闭。最近真实任务及同产物移动/编辑器链路仍是第八十批来源，整体等价验收继续开放。
+
+
+## 修复进度（2026-09-13，第九十八批，媒体后端默认值）
+
+- baselineRuntime 保留显式 image_search_backend，不再按 truthy 丢弃空字符串；mediaCall/fetchMedia 共用解析，只在配置字段缺失时回退 gemini。显式空值字符串恢复 Python 的未知后端反馈，避免错误配置意外启动 Gemini 请求。
+- ImageGen 路径不再无条件读取图片检索配置。验证发现仅改 fetchMedia 仍被 mediaCall 的旧回退覆盖，已统一两层后通过实际生产 Builder 端口检查；空后端 errors 与 Python media.fetch 直接对照一致。
+- 媒体整合及自定义 ImageGen/生产端口两项约 3.06 秒通过，类型检查和编译通过；修正 exactOptionalPropertyTypes 的缺省参数表示后未重复运行不受影响的实测。没有新测试文件/脚本或模型请求。
+- 第九十七批完整组合回归对应第九十六批代码，本批只做相关定向检查。非字符串配置值诊断、网络/图片/数值等待办继续开放，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第九十九批，ImageGen 密钥回退文本）
+
+- 回退文件解析复用 Python splitlines/strip/空白集合与 UTF-8 errors=replace，保留首个匹配值和原引号剥离行为，包括明确空引号值；环境变量优先级和文件位置没有改变。
+- 原自定义 ImageGen 用例使用十个临时假配置对照 Python gen.api_key，覆盖普通/引号/空值/重复键、CR/NEL/BOM、Unicode 空白与非法 UTF-8。未读取或输出真实密钥。该用例及原子进程/取消/后端检查约 2.19 秒通过，类型检查、编译通过。
+- 未新增测试文件/脚本或真实模型请求。回退文件本身的底层读取异常、媒体/图片/数值等其余待办继续开放，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百批，媒体整数参数门禁）
+
+- JSON 对象字段保留整数/浮点原文来源于 WeakMap，数值仍是原 JS number，不添加可枚举字段或改变工具 schema。媒体 count/n 门禁读取该信息，恢复 Python type(count) is int：1.0、1e0 不再因 Number.isInteger 为真而被放行。
+- 通过实际 objectArguments → fetchMedia 路径，对照 Python 八种参数（整数、浮点/指数、布尔、零、缺省和两种重复键覆盖）的接受/拒绝结果。媒体、Planner 和 Director 三项约 3.54 秒通过，类型检查、编译通过，并同步独立诊断 bundle。
+- 本批只处理 JSON 解析对象直接流入媒体参数的类型判定；不声称任意对象复制/修改后的类型来源、数组标量、浮点重新序列化或超大整数均已解决。无新测试文件/脚本或模型实验，整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第一百零一批，JSON 浮点输出）
+
+- JSON 浮点来源扩展到数组元素，jsonText 根据对象/数组字段来源保留 1.0 与 -0.0；普通非整数 number 使用 Python repr 的科学计数法区间（指数小于 -4 或至少 16）及带符号、至少两位指数。整数 -0 仍输出 0。
+- 原 JSON 差分增加七组嵌套和极值样例，覆盖整数值浮点、负零、科学计数法切换、最小非正规数/正常数和最大有限数等；模型 wire、媒体请求、媒体整合三项约 3.62 秒通过，类型检查、编译通过，独立诊断 bundle 同步。
+- 该实现复用 JS 最短十进制有效数字，当前样例通过不等于证明所有 binary64 舍入边界；顶层整数值浮点的来源、对象复制/修改、超大整数和数字键顺序仍待处理。未增加测试文件/脚本或模型实验，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百零二批，JSON 对象键序）
+
+- 共享 JSON 解析器用 WeakMap 记录对象键首次出现的顺序，jsonText 依此输出；重复键覆盖值但不改变位置，数字形键不再被 JS Object.entries 提前按数字排序。元数据不进入工具参数或产物的可枚举字段。
+- 原序列化对照增加四组数字键/嵌套/重复值/__proto__/数组索引边界，与 Python json.loads/dumps 逐字比较。模型 wire、媒体请求和媒体整合三项约 3.64 秒通过，类型检查、编译通过，独立诊断 bundle 同步。
+- 此项限于共享解析器保留的来源对象；其他 JSON.parse/SDK 解析入口、对象复制或删除重加字段会丢失/改变来源，仍需核对。未新增测试文件/脚本或模型实验，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百零三批，模型 JSON 入口接线）
+
+- 发现 adapters/models/runtime.ts 仍保留独立 jsonText 和 JSON.parse，前几批共享数值/键序修正没有覆盖该入口。删除重复 serializer，模型响应使用 parsePythonJsonBytes，canonical → Messages 的工具参数解析使用 parsePythonJson。
+- 通过真实 ModelRuntime.respond 的本地 Messages 响应，直接对照 Python _adapt_messages 输出的工具 arguments 字符串：保留整数值浮点、负零、科学计数法、数字键原顺序和非有限值。原三个 wire 请求/回放及 HTTP 重试检查继续通过，三项约 5.37 秒，类型检查、编译通过。
+- 仍须核对后续对象复制和出站请求 JSON 编码、畸形响应结构、顶层数值/超大整数及其他待办，不把本批入口修复解释为所有模型分支已完全等价。未新增测试文件/脚本或模型请求，整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第一百零四批，模型出站 JSON 编码）
+
+- 模型出站请求改用共享 jsonText，按 Python 原传输区分：Messages 使用默认 ASCII 转义及带空格分隔，允许 NaN/Infinity；Chat/Responses 使用紧凑 UTF-8 JSON，拒绝非有限数值。编码发生在传输异常捕获之前，避免把本地编码错误包装成连接错误并重试。
+- 原传输用例直接调用 Python httpx.Request，对照 NaN、正负无穷的 ValueError 名称和消息，确认 Chat/Responses 均未发请求、未等待重试；Messages 检查中文、emoji、DEL 的 ASCII 转义及 NaN。模型 wire、HTTP 重试、三个传输及媒体请求四项约 6.58 秒通过（其余 35 项未运行），类型检查、编译及独立诊断 bundle 构建通过。
+- 复用现有测试文件，未新增脚本或真实模型请求。本批没有复跑完整回归和真实验收链；对象复制后的数值来源、异常响应及其他已列待办仍开放，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百零五批，回放复制的 JSON 来源）
+
+- 回放递归复制及 Chat/Messages 的浅复制现在保留未改变字段的 JSON 浮点来源和键序；仅继承仍存在且数值相同的浮点字段，不增加可枚举属性。修复 opaque 内容在下一轮请求中把 1.0/-0.0 改成整数、数字形键重排的问题。
+- 同一份原始 Messages JSON 经 Python adapt → ModelRuntime.replay → replay_item → to_messages，与 TS 最终序列化逐字对照，覆盖嵌套对象/数组、数值、数字键、status/null 清理及原响应不被 cache_control 污染。初次 oracle 漏掉 Python 调用方的 replay_item，修正验证驱动后仅重跑失败项，约 1.81 秒通过；另一项三适配器回放检查已通过，产品代码未再改变。类型检查、编译及独立诊断 bundle 构建通过。
+- 本批修复已检查的回放复制路径，不代表任意对象修改或全部 JSON 来源均已覆盖。未新增测试文件/脚本或模型实验，未重复完整回归；其他待办及整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第一百零六批，模型正文及空值回退）
+
+- Chat/Messages 正文存在性判定复用 Python strip 空白集合；Chat effort 的 strip 同步。恢复 NEL/控制分隔符属于空白、BOM 不属于空白的原行为，正文原文仍完整保留。
+- 增加 JSON 值的 Python 真假判定，用于 Messages 空 input、空工具 parameters 的 schema 回退及 tool_use input 的空值回退，保留 NaN 在 Python 中为真的行为。空字符串 input 不再凭空生成 user 文本块，空数组工具参数按原版转为 {}。
+- 原 wire 用例直接对照 Python：五种正文、八种工具 input，以及空输入/空 schema/特殊空白 effort。两个相关模型用例约 5.94 秒通过，类型检查、编译、独立诊断 bundle 构建通过。未新增测试文件或脚本，没有真实模型请求。
+- 该修复覆盖上述明确路径，不宣称全部畸形类型、usage 数值转换或其他条件分支已等价；完整回归和最终验收未在本批重跑，整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第一百零七批，ImageGen 请求与失败正文）
+
+- 原生 ImageGen 请求体使用共享 jsonText 的 Python 默认 ASCII 编码和分隔符，恢复中文/emoji/DEL 的实际 wire 字节。没有图片的诊断复用同一 ASCII 编码，消除旧手写正则遗漏 DEL 的差异。
+- HTTP 失败正文按 Python UTF-8 errors=replace 解码，保留 BOM 和原 CRLF，再按 Unicode 字符截取 400；不再经过会吞掉 BOM 的 Response.text。
+- 扩展原媒体用例，捕获 Python gen.generate 的实际 urllib 请求体并逐字对照 TS，六种失败正文直接比较，包括新增 BOM/CRLF 和 DEL。该用例约 1.82 秒通过；类型检查与编译通过。未新增测试文件/脚本或真实模型请求。
+- 该检查证明原生请求及所列失败正文一致，不证明 subprocess 外层 traceback、网络超时及所有图片格式诊断已完成；其他待办与整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第一百零八批，组合回归）
+
+- 对第一百零七批有效代码状态运行一次完整既有组合回归：46 项全部通过，无失败或跳过，119.69 秒；运行前后 53 个源码/配置/测试 SHA-256 一致。涵盖资源原文、Python 差分、真实浏览器/代码门禁及模拟模型服务集成。
+- 日志与指纹保存在 experiments/notale-ts/validation-b107-20260913，ACCEPTANCE.md 已更新最新版自动验证证据。本批没有实现改动、新增测试文件或真实模型请求。
+- 第八十批真实讲义及移动/Viewer/编辑器验收仍只是对应版本证据；本轮回归不关闭未覆盖契约，也不替代最终版本的完整真实验收。整体目标继续进行。
+
+
+## 修复进度（2026-09-13，第一百零九批，ImageGen 历史记录保留）
+
+- 原生 ImageGen 写图后读取已有 illustrations.json，再追加本次记录并返回完整列表，与 Python gen.main → tool.generate 的文件协议一致；原实现每次覆盖列表。既有产物未改写。
+- 在两个临时目录分别调用 Python gen.main 与 TS generate，先两张再一张，比较两次完整返回记录及清单文件文本，包含中文/emoji prompt。原 JSON 响应夹具改为各自独立目录，避免把历史累积误算为单次 provider 返回图片数量；测试路径隔离不改变产品语义。
+- 媒体整合及取消/下载检查两项约 2.01 秒通过，类型检查与编译通过，无新增测试文件/脚本或真实模型请求。第一百零八批完整回归仍对应第一百零七批代码，本批只做相关验证。损坏历史清单的异常名称及任意外部扩展字段数值格式尚未核销，整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第一百一十批，历史媒体记录序列化）
+
+- 共享 jsonText 增加缩进输出，原无缩进请求行为保持；ImageGen 清单写入复用该 serializer，避免追加时通过 JSON.stringify 丢失旧字段的浮点来源、负零、非有限值和数字键顺序。
+- 现有重复生成夹具预置带扩展字段的旧清单，与 Python gen.main 两次追加后的完整返回记录及文件文本对照，覆盖嵌套数组/对象、空容器和数值。媒体整合与模型 wire 两项约 4.21 秒通过，类型检查、编译和独立诊断 bundle 构建通过。
+- 无新增测试文件/脚本或真实模型请求；超大整数、顶层标量来源及损坏清单异常等尚未核销。第一百零七批完整回归与第八十批真实链路保留原版本范围，整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第一百一十一批，Planner 媒体解析与终止诊断）
+
+- Planner 媒体结果入口由 JSON.parse 改为共享 parsePythonJson，避免独立解析丢失数值来源，恢复坏 JSON 的 Python JSONDecodeError 反馈。未提交计划与交付拒绝耗尽显式使用 RuntimeError 名称。
+- 原 Planner 循环差分增加损坏媒体 JSON 后继续提交场景，并将两类终止比较从消息扩展至异常名称；对照 Python 实际工具反馈、调用次数和最终结果。该用例约 1.21 秒通过，类型检查与编译通过。
+- 无新增测试文件/脚本或真实模型请求，未重复全量回归。此项没有证明任意畸形媒体结构或所有剩余异常分支等价；整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第一百一十二批，当前真实链路）
+
+- 第一百一十一批源码与编译产物固定后，通过真实 Viewer 创建同输入 45 分钟恒星课：8 页，213.853 秒，全部自然结束、最终审计无 fatal/warning，实际 ImageSearch 六张图，代码门禁通过。本次模型未调用 ImageGen，不将其计为该工具真实验收。
+- 独立 90 分钟任务经历 Viewer 中断/重启、一次快照 503 恢复后，于 118.439 秒取消；刷新仍为终态，只有一个取消事件，399 文件约 54 秒未变化。
+- 主任务整体移动后 373 文件哈希一致，8 页 17 个初态/after 状态及完整代码检查通过，同一产物整体导入隔离编辑器（8 页/349 资源）；实际运行代码页通过两项测试、922 帧，最终 5864 K。101 源码/编译/配置指纹和产物哈希前后不变。证据与限制已更新 ACCEPTANCE.md。
+- 本批未改实现或 authored 产物，未新增仓库测试/脚本。此前未关闭契约和当前 ImageGen 真实覆盖继续开放；这次链路完成不等同于整体迁移已完全等价。
+
+
+## 修复进度（2026-09-13，第一百一十三批，当前 ImageGen 实际调用）
+
+- 通过当前生产 mediaPorts.workspace 路径发起一次真实 Seedream ImageGen 请求：7.301 秒，单张 2048×1152，生成记录/来源清单与 PNG 模型反馈完整。服务商实际返回 JPEG，沿用原版 image.png 命名，不修改字节或擅改命名协议。
+- 独立产物与证据保存在 experiments/notale-ts/imagegen-b111-20260913；101 源码/编译/配置哈希仍对应第一百一十一批。图片可正常解码，目视发现构图不充分符合恒星剖面要求，因此只作为真实工具路径验证，未插入讲义，不计为教学内容验收。
+- 未改实现、提示词或原讲义，未新增仓库测试/脚本。本次不是全链路内模型自主选图的证据，也不关闭剩余语言/图片/异常契约；整体目标继续进行。
+
+
+## 修复进度（2026-09-13，第一百一十四批，媒体来源读回）
+
+- mediaSources 的清单读取改用 Python 文本解码及共享 JSON 解析器，避免前几批写出的含 NaN 清单被原生 JSON.parse 整份跳过，同时保留浮点/键序来源。
+- 现有重复生成夹具接到真实 assets/img 目录布局，增加旧文件及扩展字段，直接对照 Python media.sources/describe：四条来源记录的完整序列化与 CREDITS 内容一致。媒体整合用例约 2.07 秒通过，类型检查、编译通过。
+- 无新增测试文件/脚本或真实请求，未改已有产物。第一百一十一批真实链路保留对应版本证据，本批不重复生成实验；来源读取的其他异常/格式及其余未核销契约仍开放，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百一十五批，检索 JSON 全路径）
+
+- 检索 HTTP 请求/响应、provider 日志、脱敏后的模型反馈、attribution/search 日志统一使用共享 JSON 编解码；复制现有媒体字段时继承数值/键序来源。计时计算和原字段筛选规则未改变。
+- 检索结果 query_index 使用 Python 整数来源门禁，拒绝 0.0/0e0 和布尔值，接受整数 0。原 Gemini 反馈差分新增上述四种结果，媒体反馈/来源/CREDITS 整合检查继续通过；两项约 3.08 秒，类型检查与编译通过。
+- 无新增测试文件/脚本或真实请求；该组检查不证明任意损坏外层响应、数值范围和时钟舍入均已等价。第一百一十一批真实链路仍保留原版本范围，其他未核销契约与整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第一百一十六批，检索空值门禁）
+
+- ImageSearch 查询空白判定复用 Python strip；thought 过滤、grounding.webSearchQueries 执行记录及 image_url 回退使用 Python JSON 真假判定，避免空容器和非零标志导致不同接受/拒绝结果。未增加新的 provider 字段限制。
+- 原媒体差分新增 11 种查询与 12 种 thought/grounding 组合，直接对照 Python 查询结果/异常和搜索反馈；媒体门禁及整合两项约 3.18 秒通过，类型检查与编译通过。
+- 无新增测试文件/脚本、真实模型请求或既有产物修改。其余异常类型、图片与数值等待办仍需核销，整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第一百一十七批，模型读取超时）
+
+- 模型传输不再把 profile.http_timeout_sec 当作整段响应的总耗时上限；响应体按流读取，每次等待下一段数据前重新启动超时，结束/失败后清理计时器。真正读取停顿仍中止请求，沿用连接异常重试和用户取消路径。
+- 在现有 HTTP 重试用例内启动一个临时本地 HTTP 服务，持续分段响应总时长超过 200ms、单段间隔小于 200ms，以及中途停顿 500ms；直接对照 Python urllib/httpx 和 TS 三适配器的成功/超时结果。原重试/取消及三传输回放检查一并通过，两项约 7.69 秒，类型检查与编译通过。
+- 未新增测试文件/脚本或真实模型请求。此项关闭响应读取总超时差异，不宣称 DNS/connect/write 各阶段或媒体传输的所有超时语义已完全相同；整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第一百一十八批，纠正 ImageGen 外层超时遗漏）
+
+- 重新核对 tools/image_gen/tool.py 确认 subprocess.run(timeout=300) 限制整个原生工具调用。第九十五批只比较内部 urllib 请求预算，移除全流程限制的结论错误，现已纠正并标注原记录。
+- 原生 ImageGen 的 300 秒信号覆盖响应、全部下载及发布检查；每次下载仍保留 180 秒自身预算。整体超时按 TimeoutExpired 上报，用户取消原因优先；已完成下载的局部时钟不影响后续下载。
+- 原媒体超时用例直接捕获 Python tool.generate 的外层 timeout，并模拟下载期间整体时钟到期，确认当前下载中止、后续下载未启动。媒体整合、下载/取消、自定义 ImageGen 三项约 3.61 秒通过，类型检查和编译通过。
+- 未新增测试文件/脚本或真实请求。完整 TimeoutExpired 文本与网络各阶段等其他未核销差异继续开放，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百一十九批，共享 HTTP 读取）
+
+- 将上一批模型传输的按段读取/计时器清理收敛为 core/http.ts，模型、ImageSearch 和原生 ImageGen 复用。每次等待响应段重新计时；调用方取消和 ImageGen 300 秒总截止时间独立保留。检索读取预算 120 秒，生成 300 秒、下载 180 秒，原请求/错误适配仍由各调用方负责。
+- 模型 HTTP 重试及真实分段服务对照、三适配器回放、媒体门禁/整合、下载与整体截止时间五项约 10.83 秒通过，类型检查与编译通过。未新增测试文件或脚本；新增的是供三个生产调用方共用的底层实现，替换重复读取逻辑。
+- 本批没有真实模型请求或修改旧产物；DNS/connect/write 分阶段预算、异常完整文本及其他未核销差异继续开放，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百二十批，用量整数转换）
+
+- 模型用量统计和缓存写入计数由 Number 转为 Python JSON 标量整数转换：有限小数向零截断，支持 Unicode 十进制数字及合法下划线，拒绝十进制小数字符串/科学计数字符串/十六进制字面量；NaN/Infinity 按 Python 报错。空值回退仍先按原 Python 真假规则执行。
+- 原模型差分直接对照 Python _adapt_messages/cache_write_of 的 21 种用量输入，包括正负小数、布尔、容器、空值、Unicode 空白/数字、格式错误和非有限数值；模型 wire 与三适配器整合两项约 6.76 秒通过，类型检查、编译、独立诊断 bundle 构建通过。
+- 未新增测试文件/脚本或真实请求。转换结果仍受 JS number 精度约束，超大整数及 Python 最大数字串长度限制尚未核销；本批不将这些边界宣称已解决，整体目标继续开放。
+
+
+## 修复进度（2026-09-13，第一百二十一批，整数数字串上限）
+
+- 核对当前 Python sys.get_int_max_str_digits() 为 4300，整数转换及 JSON 整数词法同步该上限，超限按 ValueError 名称和原消息拒绝；符号与下划线不计入数字位数，JSON 前导零仍按原语法拒绝。
+- 原模型差分增加六种长串（4300/4301 位零、正负超长数字、Unicode 数字、下划线），分别对照 Python int/json.loads 的值或异常。模型 wire 与媒体请求两项约 4.52 秒通过，类型检查、编译及独立诊断 bundle 构建通过。
+- 未新增测试文件/脚本或真实请求。此项仅关闭当前基线的数字串长度门禁，不证明 4300 位以内超大整数已精确表示，也不支持运行时修改 Python 上限；数值精度及其余待办继续开放，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百二十二批，超大整数往返保存）
+
+- JSON 对象/数组用 WeakMap 保留超出安全整数范围的原始整数文本；序列化优先恢复未改变值的原文，复制字段继承来源。重复键改为浮点或其他值会清除旧整数来源。没有增加可枚举字段或改变工具 schema。
+- 原 JSON 对照增加正负 2^53 附近、整数/指数区分、4300 位整数和重复键覆盖；原模型 opaque 回放及媒体记录读写也加入大整数，最终文本与 Python 逐字一致。三项约 6.16 秒通过，类型检查、编译及独立诊断 bundle 构建通过。
+- 未新增测试文件/脚本或真实请求。本批只解决带来源字段的往返编码，直接数值运算/比较、顶层标量与未保留来源的任意复制仍受 JS number 限制，不据此关闭整个数值待办；整体目标继续进行。
+
+
+## 修复进度（2026-09-13，第一百二十三批，CLI 整数入口收敛）
+
+- 核对任务入口仍保留 Python 的 90 分钟、原受众、空场景/风格默认值，未恢复旧 TS 的页数/时长配额。CLI 时长与并发删除重复数字转换，复用共享 Python 整数规则，继承 4300 位上限；同时修正字符串 -0/Unicode 负零应为整数 0 的差异。
+- 既有 CLI 对照增加两参数的 4300/4301 位、控制空白、Unicode 负零边界，与 Python argparse 的接受/拒绝及数值对照；模型用量增加负零字符串。两项约 5.42 秒通过，类型检查、编译及独立诊断 bundle 构建通过。
+- 未新增测试文件/脚本或真实请求，原数值精度及其他未核销契约继续开放，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百二十四批，当前组合回归）
+
+- 第一百二十三批代码执行一次完整既有组合回归：46 项全部通过，无失败或跳过，124.50 秒；运行前后 54 个源码/配置/测试指纹一致。涵盖本组新增 HTTP 读取/取消、JSON/整数及 CLI 差分，并保留真实浏览器/代码门禁和服务集成检查。
+- 证据保存在 experiments/notale-ts/validation-b123-20260913，ACCEPTANCE.md 已更新；未改实现、增加仓库测试/脚本或发出真实模型请求。第一百一十一批真实验收仍保留版本范围，未覆盖契约继续开放，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百二十五批，图片门禁顺序）
+
+- imageInfo 将解码安全尺寸门禁放在浏览器格式拒绝之前，与 Python Image.open 先触发 DecompressionBombWarning/Error 的顺序一致；未改变尺寸阈值或支持格式列表。
+- 使用三个 123 字节 TIFF 文件头夹具（1×1、10000×10000、20000×20000），直接对照 Python image_info 的完整异常名称/消息；不分配对应超大像素缓冲。原媒体整合用例约 2.22 秒通过，类型检查和编译通过。
+- 无新增测试文件/脚本、真实请求或旧产物修改；其他图像格式/损坏文件诊断与未核销契约继续开放，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百二十六批，网关错误 BOM）
+
+- 直接对照本地 Python OpenAI SDK 的状态错误构造：它对 response.text 做 JSON 解析，不使用成功响应的字节编码识别。因此保留现有错误文本路径；新增 UTF-16LE（含/不含 BOM）与 UTF-32BE 的可重试提示/普通错误对照，三适配器一致。
+- 发现 UTF-8 BOM 加转义网关提示会在 TS 被误重试：TextDecoder 默认去除 BOM，Python httpx 保留 BOM 后 JSON 解析失败。现显式保留 BOM；既有差分用例先复现失败，修复后通过（约 4.32 秒，含原重试/取消/读取超时检查），类型检查与编译通过。
+- 未新增测试文件/脚本或真实请求。HTTP 显式 charset 等其他未核销契约仍需检查；该定向结果不代表全量验收，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百二十七批，ImageGen 空值分支）
+
+- ImageGen 的 data、b64_json、url 判断复用已有 Python JSON 真值函数：空数组/空对象不再被当成有效 base64 或下载地址；空 data 对象进入原“没有返回图片”错误，空 base64 可继续选择有效 URL。未调整服务请求、图片数量或工具配额。
+- 在既有媒体用例加入两种无图响应和两种 URL 回退响应，与 Python gen.generate 对照异常消息及实际返回字节；先复现 TS TypeError，再修复通过。定向检查约 2.22 秒，类型检查和编译通过，无新增测试文件、脚本或真实模型请求。
+- 非空畸形响应字段的类型诊断等其他未核销项继续开放，整体等价性尚未完成验收。
+
+
+## 修复进度（2026-09-13，第一百二十八批，模型 HTTP charset）
+
+- Chat/Responses 的 HTTP 错误文本现读取 Content-Type charset，保留 Messages 原始 UTF-8/600 字节行为；UTF-16LE、带 BOM 的 UTF-16、UTF-8-SIG 和未知编码回退已直接对照 Python SDK 的重试判定。此前 UTF-16LE 网关提示被漏掉，已复现后修复。
+- 文本解码移到连接异常捕获之外：无 BOM 的 UTF-16 与 Python 一样报 UnicodeError，且只请求一次，不因误包装 ModelConnectionError 而重试。初次 Python 夹具缺 BOM 导致 oracle 报错，之后明确区分正常 HTTP 状态错误与解码异常，两类均有断言。
+- 原 HTTP 组合用例约 4.51 秒通过，实现类型检查和编译通过；未新增测试文件/脚本或真实请求。UTF-32/其他 Python 专有 codec、复杂 charset 参数和各网络阶段的剩余差异仍开放，不能由这组常见编码对照推断全编码等价。
+
+
+## 修复进度（2026-09-13，第一百二十九批，入口隐含整数上限）
+
+- 重新核对 Viewer→协议→CLI→规划链路，90 分钟/原受众/空场景风格默认值保持不变。发现 Zod .int() 隐含 ±MAX_SAFE_INTEGER 时长配额，以及 CLI 对并发的同类显式限制，均非 Python argparse 约束；已移除，时长仍要求有限整数。Builder 保留运行阶段 max_workers 校验，实际工作单元数量仍取并发与页数的较小值。
+- 使用可被 JS 精确表示但超出安全整数区间的 2^53、±10^16 对照 Python argparse，覆盖 minutes/concurrency；协议同时检查普通/负/零时长与小数、NaN、Infinity 拒绝。首次差分揭示并发限制后，仅重跑该失败 CLI 用例，约 2.39 秒通过；此前协议检查通过，最终类型检查和编译通过。
+- 这是去除额外入口拒绝，不是任意大整数精度修复。不可精确表示或超出有限 number 范围的整数及最终记录仍属待核销范围。没有新测试文件/脚本、模型请求或旧入口/产物修改。
+
+
+## 修复进度（2026-09-13，第一百三十批，当前组合回归）
+
+- 对第一百二十九批代码运行一次现有完整组合回归：46 项通过、无失败或跳过，测试用时 124.99 秒（含 npm 启动 125.23 秒）。55 个源码/测试/配置文件运行前后 SHA 全部一致。
+- 覆盖入口整数限制、模型 charset/重试、媒体空值和图像门禁修复，以及原浏览器/代码工作台/服务契约。证据保存至 experiments/notale-ts/validation-b129-20260913，ACCEPTANCE.md 已更新；无新测试文件、脚本或真实请求。
+- 该结果不替代第 111 批之后尚需更新的真实链路证据，也不关闭未覆盖契约；整体目标继续进行。
+
+
+## 修复进度（2026-09-13，第一百三十一批，UTF-32 网关错误）
+
+- Chat/Responses 的状态错误文本支持 UTF-32LE/BE 与带 BOM 的通用 UTF-32；通用编码缺失 BOM 时保留 Python UnicodeError，不作为连接错误重试。Messages 继续忽略 charset、按原始 UTF-8 截断读取。成功响应 JSON 字节解码没有改动，其 strict/surrogatepass 语义不能替代 HTTP text 的替换语义。
+- 既有 HTTP 差分增加大小端各三种响应（显式端序、通用 BOM、通用缺 BOM），直接对照 Python SDK 的重试/异常名称消息及请求次数。先复现 UTF-32 网关提示被漏判，修复后原组合用例约 4.36 秒通过；类型检查和编译通过。
+- 不新增测试文件/脚本或真实请求。其余 codec 别名、复杂 charset 参数、畸形字节完整诊断与网络阶段边界仍需核销；第 129 批完整回归保持原版本范围，整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百三十二批，错误参数与文本清理）
+
+- 状态错误 JSON 解析前复用 stripText，与 Python SDK response.text.strip() 顺序一致；原控制空白包裹的转义网关提示可被正确识别。Messages 保持原分支。
+- Content-Type 参数从简单正则改用 Node 内建 MIMEType 参数解析；不再误取其他参数引号中的伪 charset，保留首个重复声明及大小写/引号处理。仅借用参数部分，不因无效主媒体类型而额外拒绝。
+- 既有三适配器差分增加控制/Unicode 空白及四种参数排列，直接比较 Python SDK 重试和请求次数；先复现空白分支失败，统一修复后约 4.45 秒通过，类型检查和编译通过。未新增测试文件、依赖或真实请求。
+- Node MIME 参数语法不等于完整 Python email.message/RFC2231 扩展语义，其余 codec/畸形响应和网络边界仍开放；整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百三十三批，ImageGen base64 字段类型）
+
+- 原生 ImageGen 的 base64 解码入口先检查字符串类型，拒绝 JSON 数组、对象、布尔、空值和数值，并恢复 Python base64 的 TypeError 消息；非空畸形字段不再被 JS 迭代/隐式转换成图片内容。空字段仍遵循第 127 批的 Python 真值与 URL 回退规则。
+- 既有媒体差分增加八种直接解码类型输入和四种实际 ImageGen JSON 响应，与 Python base64/gen.generate 对照异常类型、完整消息及返回字节。先复现数组被错误解码，修复后约 2.22 秒通过，类型检查和编译通过。
+- 无新增测试文件/脚本、真实请求或旧产物修改。范围是 JSON 服务响应，不声称覆盖 Python bytes-like 任意对象协议；整数形浮点的错误类型名、其余畸形响应/历史清单和网络诊断仍需核销。
+
+
+## 修复进度（2026-09-13，第一百三十四批，ImageGen 结构与清单失败）
+
+- ImageGen 顶层响应、data 迭代及各图片条目的 get 访问恢复 Python 类型诊断；非空字典 data 按键迭代后报原属性错误，标量 data 报不可迭代错误，不再使用 JS 的属性读取/for-of 异常代替。共享类型名称函数也用于 base64 错误，减少重复实现。
+- illustrations.json 不是列表时恢复 append 属性错误；保留 Python 的先写图片、后追加清单顺序，失败时原清单不被改写、已写图片仍存在。
+- 既有媒体差分增加 13 种响应结构及 4 种损坏清单，直接对照 Python 异常名称/消息、清单原文和图片字节。先复现响应差异，统一修复后约 2.25 秒通过，类型检查和编译通过，无新测试文件/脚本或真实请求。整数形浮点类型来源、URL 畸形字段和其余网络/图像边界仍开放。
+
+
+## 修复进度（2026-09-13，第一百三十五批，当前真实链路与未通过项）
+
+- 第 134 批代码完成 Viewer 创建的 45 分钟真实任务 20260912t231540z-106507bd：10 页、234.474 秒，移动后 376 个文件哈希一致、10 页 19 状态及代码门禁通过，同一产物整体导入编辑器并实际执行成功。103 个源码/编译/配置指纹未变；具体证据和限制已更新 ACCEPTANCE.md。
+- 独立长任务经 Viewer 断线/重启、一次快照 503 恢复后于 142.083 秒取消，13 页就绪、一个取消终态，396 个文件 56.01 秒不变。之前同输入任务因模型把 Write 写成普通文本而缺页，被原最终门禁拒绝并保留；它使用了真实 ImageGen，成功的后一任务使用真实 ImageSearch，不能合并称为同一次成功生图链路。
+- 编辑器首次代码加载超时（两脚本 resource status 0），重新载入 iframe 和一次正常重开均成功；根因仍未确认，不能标为已修复。目视发现作者 SVG polyline 错用 d 属性及小 viewBox 中字号过大，执行测试未发现；原产物保留，视觉质量未通过。未改提示词、门禁、作者页面或新增仓库测试/脚本。整体目标继续进行。
+
+
+## 后续核对（第 134 批产物，编辑器冷启动）
+
+- 在全新 Playwright 浏览器上下文从工程首页选择代码页并进入体验互动，Monaco/Python 正常就绪；全程提前记录请求失败，观察到的中止属于离开的封面资源，未复现代码模块加载失败。结果保存在同产物 validation/editor-cold-open.json。
+- 仅做这一次相关冷启动检查，无源码或产物修改；保留首次超时未定位的结论，不以成功重开或未复现宣称已修复，也不据此添加没有根因证据的重试逻辑。
+
+
+## 修复进度（2026-09-13，第一百三十六批，ImageGen URL 类型）
+
+- ImageGen 对非字符串的非空 URL 在下载前恢复 Python urllib 的 AttributeError，避免 fetch 隐式转换地址。既有媒体差分增加 bool/int/float/list/dict 五种真实响应，并通过原 urllib（在类型错误处结束、不联网）核对异常；错误响应均只允许最初的一次服务请求。
+- 先复现错误值进入 TS 下载并产出错误内容，修复后定向检查约 2.37 秒通过，类型检查和编译通过。无新增测试文件/脚本或真实请求；第 134 批真实产物保持不变。整数形浮点类型来源、字符串 URL 解析及其余未核销契约继续开放。
+
+
+## 后续核对（第 134 批产物，原 Python 代码门禁）
+
+- 将原 vendor/code-workbench/check.py 模块的 PAGES 指向同一份未修改代码页，执行原 main 探针；执行、课程测试、trace、native view、reset 全部通过。376 个产物哈希仍一致，原输出见 validation/python-code-gate.log。
+- 因此该 polyline/d 与字号缺陷属于 Python 同样未检出的作者内容问题，不能作为“TS 漏迁移对应检查”的证据，也不为得到通过而追加新门禁。具体视觉缺陷仍保留，其他迁移契约和首次编辑器加载问题未据此关闭。
+
+
+## 修复进度（2026-09-13，第一百三十七批，媒体浮点来源）
+
+- ImageGen 的 data、数组条目、base64 和 URL 类型诊断使用共享解析器已有的整数/浮点来源标记，避免将 1.0/1e0 按 JS 数值判断误写为 Python int。未改变数值、门禁或正常图片处理。
+- 既有媒体差分增加两个浮点字面量在四个位置的八种响应，先复现 int/float 消息差异，修复后约 2.30 秒通过，类型检查和编译通过。无新增测试文件/脚本或真实请求；顶层标量来源与超大整数的其余路径继续开放。
+
+
+## 修复进度（2026-09-13，第一百三十八批，顶层数值来源）
+
+- 共享 JSON 文本/字节解析器可将顶层值及其整数/浮点来源记录到可选容器的 value 字段，复用既有 WeakMap；仍在原文本上解析，不包装输入或改变报错坐标。ImageGen 顶层响应与历史清单错误已接入，1.0/1e0 不再误报 int。
+- 既有媒体对照增加两种顶层响应和两种清单值，先复现类型消息差异；媒体及三模型传输两项检查约 5.60 秒通过，类型检查、编译和独立诊断 bundle 构建通过。
+- 未增加测试文件/脚本或真实请求。该能力需要调用方保留来源容器，不意味着脱离容器的 primitive 自动具备来源；超大整数运算和其他调用路径继续待核销。
+
+
+## 修复进度（2026-09-13，第一百三十九批，JSON 整数负零）
+
+- JSON 整数 -0 解析为普通零，与 Python int 一致；浮点 -0.0/-0e0 继续保留负零。此前序列化文本已一致，本次修正的是解析值符号，不声称先前 JSON 文本错误。
+- 既有媒体 JSON 对照增加五种零字面量，比较 Python 类型、符号和来源容器序列化；先复现整数负零符号差异，修复后媒体两项约 3.43 秒通过，类型检查、编译及独立诊断 bundle 构建通过。无新测试文件/脚本或真实请求；其余数值路径仍需核销。
+
+
+## 修复进度（2026-09-13，第一百四十批，模型配置整数转换）
+
+- Planner 默认模型及 Builder profile 的 http_timeout_sec/max_output_tokens 按 Python 真值逐级回退，再复用共享 pythonInteger；移除 Number/Math.trunc 对空数组、下划线/Unicode 数字及非法整数字符串的错误转换，避免额外发送 0/NaN 或接受 Python 拒绝的配置。
+- 既有配置差分增加 16 种值、两个模型入口，比较完整 profile 或异常类型/消息；先复现空数组产生 0 而不是默认值，修复后原配置/workflow/YAML 组合用例约 4.04 秒通过，类型检查和编译通过。
+- 未更改实际 config.yaml、增加测试文件/脚本或发出真实请求。request_options 的 dict 转换、其他配置字符串/类型边界与超大整数仍需核销；整体目标未完成。
+
+
+## 修复进度（2026-09-13，第一百四十一批，request_options 字典转换）
+
+- Planner/Builder 的 request_options 支持 Python 的映射与键值对序列转换，重复键保留最后值；无效序列、条目长度和不可哈希键恢复对应错误。普通映射复制保留已有 JSON 来源标记，__proto__ 作为普通字段处理。
+- 复用上一批配置对照框架，加入 18 种 request_options，不另建测试体系。先复现键值对被展开成数字下标字段，修复后原配置/workflow/YAML 用例约 3.88 秒通过，类型检查和编译通过。实际配置、提示词和既有产物未变，无真实请求。
+- 当前范围为 JSON 形配置；非字符串键的 Python kwargs 身份、YAML 专有对象/集合及其他配置转换仍需核销，不能把普通字典通过解释为任意 Python 对象协议等价。
+
+
+## 修复进度（2026-09-13，第一百四十二批，Builder profile 转换顺序）
+
+- Builder profile 先复用 configuredDict 转换，再检查必填字段，与 Python raw=dict(...) 顺序一致；合法键值对不再误报缺字段。配置校验异常使用原 ValueError 类型，覆盖未知 profile/workflow、缺字段、非法 adapter 和缺 base_url。
+- 既有配置差分增加 10 种原始 profile，包括重复键覆盖、空/畸形结构和字段校验；先复现合法 pair profile 被拒绝，修复后原配置/workflow/YAML 用例约 4.77 秒通过，类型检查和编译通过。未新增测试文件/脚本或修改实际配置；其他配置值字符串转换和未核销契约继续开放。
+
+
+## 修复进度（2026-09-13，第一百四十三批，配置回退真值）
+
+- 默认模型 adapter/wire_api 按 Python 真值回退，空列表或字典不再阻止 responses 默认值。Builder base_url_env 的条件判断及最终 base_url 缺失校验使用相同真值，空列表/字典地址恢复原 ValueError。
+- 既有配置差分增加两种 wire_api 回退与四种空地址配置；先复现空列表导致 adapter 为空字符串，修复后配置/workflow/YAML 用例约 4.38 秒通过，类型检查和编译通过。未新增文件、脚本或真实模型请求。
+- 本批不代表配置转换整体闭环；Python 字符串表示、YAML 特有值、超大整数及既有未核销契约仍开放。最近真实实验对应旧代码批次，不能当作当前全链路验收。
+
+
+## 修复进度（2026-09-13，第一百四十四批，配置字符串与异常表示）
+
+- 模型配置使用 Python 风格的 str/repr，覆盖 None、布尔值、JSON 形列表/字典、字符串引用与转义；模型名、地址、环境变量名、adapter 和 reasoning_effort 不再直接采用 JavaScript String。默认 reasoning_effort 按 Python 真值回退到 medium。
+- 既有配置用例加入 12 种值的字段/adapter 两组输入，比较两个入口的完整 profile 或异常类型与消息；先复现 null 被发为 null 字符串而不是 None，修复后原用例约 4.68 秒（含测试进程）通过，类型检查和编译通过。未新增测试文件/脚本，也未发送真实请求。
+- 本实现针对 JSON 形配置；浮点整值及大整数来源、非字符串映射键、YAML 特有对象和缺字段异常仍需核销，不能以此声称任意 Python 对象转换等价。
+
+
+## 修复进度（2026-09-13，第一百四十五批，默认配置缺失及错误结构）
+
+- 默认模型入口对 None/空配置恢复读取配置文件；缺少 model、name、base_url、api_key_env 时使用 Python KeyError，而不是继续使用缺失值的字符串。非映射 model 块恢复访问 get 时的 AttributeError，保留原校验顺序。
+- 既有配置差分增加 12 组默认入口输入，涵盖空配置、缺块、六种错误块类型和三个缺字段；先复现 None 配置直接触发 JS TypeError，修复后原用例约 5.36 秒（含进程）通过，类型检查和编译通过。无新文件/脚本或真实请求。
+- 此批关闭 JSON 形默认模型块的上述缺失路径；其他配置特殊类型、数值来源及最终版本整体核销仍未完成。
+
+
+## 修复进度（2026-09-13，第一百四十六批，当前代码组合回归）
+
+- 依据最近跨模块修复，对当前代码执行一次已有组合回归：46 项全通过、无跳过，测试耗时 127.87 秒，含 npm 启动 128.10 秒；55 个源码/配置/测试指纹前后一致。复用第 145 批未变代码上的类型检查和编译结果。证据：../experiments/notale-ts/validation-b146-20260913。
+- 核对最近真实实验的 103 个源码/编译/config 指纹，只有 profiles、json、media-execution 三个源模块及其编译结果变化。没有把旧真实链路当成当前版本验收；ACCEPTANCE.md 的组合回归入口已更新。
+- 本轮未改实现、扩大测试体系或启动真实模型任务。未核销契约、首次编辑器加载原因和最终版本真实链路证据继续开放；作者图形缺陷仍保留为 Python 门禁也未检出的基线限制。
+
+
+## 修复进度（2026-09-13，第一百四十七批，YAML 浮点隐式识别）
+
+- 发现实际 YAML 入口比 PyYAML 多接受 1e3、1.0e3、+.1 等隐式浮点；将浮点标签的隐式匹配限制为原 SafeLoader 规则，保留底层数值解析、显式标签和既有布尔规则。避免把原本的字符串配置静默转换为数字。
+- 在既有 YAML 配置样本中加入 17 个浮点/字符串边界，覆盖无声明及声明 YAML 1.1/1.2；先复现数值/字符串差异，修复后配置与 guidance 组装两项约 5.57 秒（含进程）通过，类型检查和编译通过。没有增加测试文件或脚本。
+- 本批修正词法识别，不代表整值浮点/大整数的来源已经保留；该数值问题与其他 YAML 专有类型仍需继续处理。第 146 批完整回归对应修改前状态，当前只有本批针对性验证，不声称当前代码已完整回归。
+
+
+## 修复进度（2026-09-13，第一百四十八批，YAML 数值来源与配置序列化）
+
+- YAML 整数先由解析器以 BigInt 读取，再在保留对象/普通别名图的遍历中转换为 JS number；原整数十进制文本与浮点标记复用 JSON 来源表。默认/Builder 配置字符串及嵌套容器表示读取来源，request_options 的现有复制继续保留标记。浮点 1.0、负零及超安全整数的字符串/请求序列化不再仅取 JS 舍入值。
+- 既有 YAML 配置差分加入同一份默认与 Builder 配置，比较完整 Python json.dumps(profile) 文本，覆盖合并配置、普通重复别名、浮点、负零、十进制/十六进制大整数及嵌套列表。最终配置用例约 6.27 秒（含进程）通过；同批 guidance 及媒体 JSON 定向项通过，类型检查、编译和独立诊断 bundle 构建通过。
+- 初次验证新增的跨合并别名引用断言失败。独立核对原 YAML.parse 在 intAsBigInt=false/true 下均会复制该对象，确认是原有库合并语义差异；本批仅验证普通重复别名和实际序列化文本，跨合并引用身份仍开放，没有把它作为已修复项。
+- JS 数值运算/整数转换的精度、顶层原始数值来源、非字符串键与 YAML 专有集合仍未闭环。本批只修复可观察的配置文本与请求序列化，不声称任意大整数运算等价。无新测试文件或脚本、无真实模型请求。
+
+
+## 修复进度（2026-09-13，第一百四十九批，YAML 合并别名共享对象）
+
+- 定位上一批跨合并别名差异：YAML 库原 mergeValue 对别名来源调用 source.toJSON 重新转换，覆盖子锚点缓存。通过现有 merge 标签扩展接口复用 alias.toJSON 的共享结果，保持原内联映射处理；没有改依赖源码或新建解析器。
+- 恢复上批失败的跨合并引用断言，验证默认模型、Builder 合并配置及重复别名共享同一 request_options；同一 YAML/Python 对照增加三种多来源优先级/显式覆盖顺序。配置差分最终约 6.17 秒（含进程）通过；同批 guidance 组装通过。初次类型检查发现库标签联合类型未收窄，修复后类型检查和编译通过。
+- 本批关闭已复现的映射别名对象复制问题；递归合并、非字符串键及 Python 字典键顺序仍不由本批断言证明，其他数值/特殊类型契约继续核销。未新增测试文件/脚本或真实模型请求。
+
+
+## 修复进度（2026-09-13，第一百五十批，重复 YAML 合并覆盖）
+
+- 小型直接差分确认两种直接自合并一致，但重复 << 原先错误地保留先前值，PyYAML 允许后项覆盖。改用同一 YAML 库的 document/visit/toJS 接口，将重复 merge 条目归一为按相应优先级排列的单一合并序列；显式字段覆盖仍保留，解析错误及警告继续传出。
+- 原配置样本增加四种重复合并/显式覆盖组合及两个直接自合并，对照 Python 内容；已有跨合并引用与数值文本断言继续通过。配置与 guidance 两项约 6.50 秒（含进程）通过，类型检查和编译通过。无新文件/脚本、无真实请求。
+- 同次直接差分还确认合并后的字典插入顺序不同，可能影响序列化文本；本批仅修复值覆盖，键顺序未关闭。更复杂递归合并与非字符串键也不由两个自合并样本证明。
+
+
+## 修复进度（2026-09-13，第一百五十一批，合并字段插入顺序）
+
+- 合并序列按 Python 的反向插入/正向优先语义收集键值，并在保留对象身份的归一化阶段将合并字段放到显式新增字段之前；嵌套合并读取此前记录的字段顺序。没有重排原 YAML 节点或移动锚点定义，避免改变别名可见性。
+- 对既有合并样本改为同时比较完整 json.dumps 文本，先复现 b/a 插入顺序差异；增加一层含前后显式字段的嵌套别名合并。普通/重复/显式覆盖、跨合并身份及数值文本继续通过。配置与 guidance 定向项通过，嵌套补充后配置约 6.51 秒（含进程）通过；类型检查和编译通过。
+- 覆盖普通字符串键及所列嵌套别名路径；数字形字符串键的 JS 枚举顺序、非字符串键、任意内联/递归合并仍需另行核销，不将本批文本对照推及所有 YAML 对象。无新测试文件/脚本或真实请求。
+
+
+## 修复进度（2026-09-13，第一百五十二批，数字形字符串键顺序）
+
+- 从 YAML 映射节点记录字符串键的来源顺序，与合并键顺序一起进入共享 JSON 来源表；普通对象仍保持原类型。配置字典复制继承顺序，JSON 序列化和配置容器 repr 使用来源键枚举，避免 JS 将数字形字符串键自动升序后改变请求文本。
+- 同一默认/Builder YAML 对照在 request_options 中加入按 10、2、0 排列的字符串键，再验证含 9/3 显式键的合并结果；比较完整 profile JSON 与合并 JSON 文本，既有数值与别名断言保留。配置、guidance 和媒体 JSON 三项约 7.56 秒（含进程）通过，类型检查、编译及独立诊断 bundle 构建通过。
+- 本批针对字符串键，非字符串键的 Python 字典/kwargs 身份、复杂内联和递归合并仍需核销，不把来源序列化顺序等同于原生 Object.keys 顺序。未新增测试文件/脚本或真实请求。
+
+
+## 修复进度（2026-09-13，第一百五十三批，溢出整数的类型判定）
+
+- JSON 整数字面量超过 JS 有限范围时，isPythonIntegerField 根据保留的原始整数来源判定类型，避免因 Number 值为 Infinity 而误判 float；浮点指数溢出仍保持 float。
+- 先复现 400 位整数媒体响应错误消息为 float 而非 Python int。既有媒体差分增加正/负大整数与正/负浮点指数溢出，覆盖顶层、data、候选项、base64/url 字段和历史清单；两项媒体定向检查约 3.36 秒通过，类型检查、编译和独立诊断 bundle 构建通过。无实际网络请求或新测试文件/脚本。
+- 此批只修复类型/异常语义，不改变数值运算或 count 的有限数值限制；任意大整数运算与相关工具入口仍需核销，不能把类型保真当作数值精度闭环。
+
+
+## 修复进度（2026-09-13，第一百五十四批，媒体数量精确传递）
+
+- 媒体入口在离开参数来源对象之前恢复超安全整数，以内部 BigInt 传给搜图提示、生图请求和自定义脚本参数；移除 JS Number.isInteger 对来源明确但溢出的正整数的额外拒绝。搜索 requested_count 记录也使用精确值。JSON 输出支持内部 BigInt 的原整数文本，并保留 Python 4300 位限制。
+- 既有媒体差分增加普通值、9007199254740993 与 400 位正整数；用 Python 原 gen.generate 截取请求、原 request_body 构建搜图请求，与 TS 本地替身收到的请求比较。数量校验继续覆盖负数、浮点指数、布尔值及重复 JSON 字段。媒体两项及自定义 ImageGen 脚本共三项约 5.26 秒通过，类型检查、编译和独立诊断 bundle 构建通过。
+- 全部供应商请求由本地替身拦截，生图每次仅返回一个字节样本，搜图返回 HTTP 500；不触发大规模真实生成或下载。没有新增测试文件/脚本。此批修复媒体数量路径，不代表模型配置、统计等其他大整数运算已闭环。
+
+
+## 修复进度（2026-09-13，第一百五十五批，模型请求最终合并来源）
+
+- 追踪 max_output_tokens 使用路径时发现实际发送前的 request_options 展开丢失数值来源。最终请求合并改为继承 options 来源，并显式保留基础字段与覆盖字段的合并顺序，避免 1.0 被写成 1、9007199254740993 被写成 9007199254740992。
+- 升级已有三接口真实适配层替身对照：Python SDK/urllib 与 TS 均截取请求文本，经保留数值来源的解析比较；先复现上述数值丢失，修复后用例约 3.69 秒（含进程）通过，类型检查和编译通过。无真实模型请求或新测试文件/脚本。
+- Python SDK 会调整顶层字段顺序（例如 chat 的 messages/model），对照明确规范化顶层键序及 JSON 表示格式，不宣称原始字节完全一致；嵌套结构和数值精度仍比较。max_output_tokens 配置整数转换及其他数值统计路径尚未闭环，本批先修正已确认的实际发送缺口。
+
+
+## 修复进度（2026-09-13，第一百五十六批，输出 token 上限精确整数）
+
+- 默认与 Builder max_output_tokens 使用精确整数转换：保留来源整数文本，字符串沿共享 Python int 词法验证；超安全整数以内建 BigInt 传递，普通数值仍为 number。浮点转整数按其实际浮点值截断。CanonicalBody 和 Chat 截断比较接受该内部类型，三种请求适配继续使用原参数名称。http_timeout_sec 与用量统计转换本批未改。
+- 同一 YAML 配置加入 9007199254740993，完整默认/Builder profile JSON 与 Python 对照通过，并从该配置驱动三种模型接口，本地截取 max_tokens/max_output_tokens 与 Python 原 profile 的整数文本相同。配置、wire-body、三接口组约 12.80 秒通过；补充实际发送断言后配置项约 6.33 秒通过。类型检查、编译和独立诊断 bundle 构建通过。
+- 未新增测试文件/脚本或真实模型请求。此批证明所测配置到发送路径；超时、用量统计和其他记录入口仍需核销，不声称所有任意整数路径完成。
+
+
+## 修复进度（2026-09-13，第一百五十七批，trace 数值落盘）
+
+- TraceWriter 的脱敏往返改用保留来源的 JSON 读写；最终落盘支持内部精确整数，并按 Python Pydantic Writer 的默认行为将非有限浮点写成 null。整数原文优先于非有限浮点处理，避免将溢出整数文本误写为 null。父子游标、同步追加和图片证据流程未改变。
+- 既有 Writer 直接差分加入请求/tag 中的整值浮点、负零、大整数及 NaN/Infinity，并在 usage 中传入内部 BigInt；比较 Python 与 TS 的 message/tag 序列化文本。trace、Builder 循环及媒体 JSON 三项约 2.93 秒通过，类型检查、编译和独立诊断 bundle 构建通过。
+- 这是 Writer 边界的数值保真验证；不声称当前模型用量统计已恢复任意整数精度，也不把内部值测试说成真实模型运行。其他记录与数值路径继续核销；无新测试文件/脚本或真实请求。
+
+
+## 修复进度（2026-09-13，第一百五十八批，跨模块修复组合回归）
+
+- 对截至第 157 批的当前代码执行一次已有完整组合回归：46 项全通过、无跳过；测试 128.48 秒，含 npm 128.72 秒。55 个源码/配置/测试指纹前后一致，复用第 157 批未变代码上的类型检查、编译和诊断 bundle 结果。证据位于 ../experiments/notale-ts/validation-b158-20260913。
+- 与最近真实链路记录的 103 个文件比较，有七个源模块及六个编译文件变化（image-search 仅 TS 数量类型签名变化）；更新 ACCEPTANCE.md 当前回归入口，不将第 134 批实验当作当前最终验收。
+- 本轮未改实现或运行真实模型。未核销的整数统计、超时/传输、特殊配置及最终真实链路要求仍开放。
+
+
+## 修复进度（2026-09-13，第一百五十九批，长超时定时器溢出）
+
+- 复现共享 requestBytes 的 30 天超时被 Node setTimeout 截断为 1 毫秒，原 Python urllib/httpx 对同一本地短请求成功。超时按单调时钟截止时间分段安排，每段不超过 Node 定时器范围；每次读取仍重新计算空闲截止时间，结束时清除当前定时器。
+- 复用已有本地慢响应服务，在三种模型接口中加入长配置/短请求，并保留短超时失败与持续读取成功对照。HTTP 重试/读取与媒体取消两项约 6.26 秒通过，类型检查和编译通过。没有等待真实长周期、增加新服务脚本或调用外部模型。
+- 此批仅修复 Node 定时器溢出；DNS/connect/write 阶段、底层 fetch 自带超时及超大配置数值转换仍须核销，不能由当前对照推定整个网络超时契约等价。
+
+
+## 修复进度（2026-09-13，第一百六十批，底层 fetch 隐含超时）
+
+- 核对当前 Node 内置 Undici 及安装包源码，默认连接 10 秒、响应头/响应体 300 秒会独立于 profile 截断等待。原生 fetch 现在使用本模块独立 Agent 关闭这些隐含计时器，由共享 requestBytes 的配置截止时间和调用方取消控制；没有修改全局 dispatcher，也不替换显式注入的 transport。npm 固定 undici 6.28.1，保留 Node 20 兼容性。
+- 复用已有本地服务增加 1.2 秒延迟响应头，Python 配置 2 秒成功；TS 测试临时设置极短的全局底层超时，先复现提前失败，再证明独立 dispatcher 避免该截断。测试结束恢复全局 dispatcher 并关闭测试 Agent。三接口 HTTP 读取/重试与媒体取消两项约 13.54 秒通过，类型检查和编译通过。
+- 该实验用缩短的底层阈值验证机制，不宣称真的等待 300 秒；DNS/connect/write 阶段的 Python 细节和自定义 transport 自带规则仍需核销。没有外部模型请求或新增测试脚本，依赖文件变化意味着旧组合回归不能自动视为当前版本通过。
+
+
+## 修复进度（2026-09-13，第一百六十一批，上传与响应等待阶段）
+
+- 共享原生 fetch 的请求级 dispatcher 转发原 handler，并在连接建立、上传块发送、请求发送完成、响应头完成时重置空闲计时。请求 finally 标记结束，后续网络回调不能重新建立定时器；调用方取消及整体生图期限仍独立生效。
+- 复用已有本地服务，增加两次间隔 120ms 上传再等待 120ms 响应的对照；Python httpx 的 200ms 分阶段超时成功，修复前 TS 总等待窗口失败，修复后成功。原三接口短/长超时、延迟头与媒体取消两项约 14.48 秒通过，类型检查和编译通过。
+- 此批验证所列上传进展/完整响应头事件，不证明 DNS、TLS、部分响应头或内核大缓冲排空的全部时间语义相同；这些边界继续核销。无新测试文件/脚本或外部请求。
+
+
+## 修复进度（2026-09-13，第一百六十二批，用量判定与 Builder 汇总）
+
+- 模型用量读取保留来源整数，Chat 截断比较和 Messages 输入/缓存合计使用精确整数。AssistantTurn、Builder 计数与图片淘汰阈值允许内部 BigInt；累加在即将超出安全范围时转为精确加法，Builder 结果与总清单通过共享 JSON 写出，避免精确值落盘失败或再被舍入。缓存写入读取保留相应来源。
+- 原适配器差分加入 9007199254740993 与 400 位整数，核对 Chat 截断状态、用量和 Messages 三项输入合计。既有两页 Python/TS handoff 用精确大整数验证逐页结果与总清单文本，Builder 普通循环继续覆盖原行为。文本检查发现 seconds 的整数/浮点表示不同，按原 round(float,1) 保留浮点来源后通过。
+- 首次运行因新增测试重复声明失败，修正后适配器/Builder 通过；handoff 约 7.28 秒、三接口桥接约 3.69 秒通过，类型检查、编译和诊断 bundle 构建通过。没有新增测试文件/脚本或真实模型请求。
+- 本批不代表用量中未映射扩展字段、所有 Responses SDK 类型边界或超时配置数值已核销；共享类型和记录路径变化后仍需最终组合与真实链路验证。
+
+
+## 修复进度（2026-09-13，第一百六十三批，Responses 用量扩展字段）
+
+- Responses 用量及 input_tokens_details 的浅复制继承 JSON 来源，保留未转换字段的整数文本、浮点类型及来源顺序。先复现 total_tokens/cache_write_tokens 的 9007199254740993 被写为 9007199254740992，以及扩展浮点 1.0 写为 1；缓存写入的计算值上一批已正确，本批补齐返回对象中的原值。
+- 既有 wire 用例通过真实 Python OpenAI SDK + MockTransport 读取两个 Responses 样本（超安全整数及 400 位整数），对照 TS ModelRuntime 的 usage 与 cache_write_of；覆盖已映射字段、明细、total_tokens、扩展浮点。对照规范化 SDK 定义导致的字段顺序，不规范化数值。约 5.64 秒通过，类型检查和编译通过。
+- 无外部模型请求或新测试文件/脚本；此批不证明所有畸形 SDK 数据或所有模型统计入口等价，剩余契约与最终版本验收继续开放。
+
+## 第 166 批：确认部分响应头读取超时差异（2026-09-13）
+
+- 本地 TCP 服务每 120ms 发送一段响应头，最后发送空 JSON，读取超时 200ms。Python httpx 成功（含启动约 417ms），当前 TS `requestBytes` 在约 218ms 抛出 TimeoutError。证据：`../experiments/notale-ts/partial-headers-b166-20260913.json`。没有调用额外模型。
+- 原因定位：`onHeaders` 在完整响应头解析后才执行，不能观察部分响应头的 socket 读活动；当前外层定时器提前到期。需要按实际网络读取进度续期，并保留停滞超时、取消与连接复用，不通过增大默认超时掩盖。
+- 本轮未改运行时。第 165 批真实任务 `20260913t005207z-9071d523` 仍在原候选进程运行，七页已就绪，代码页等待后续模型响应；未重启、未重复提交，移动与导入尚未开始。原 46 项通过不能覆盖这处已确认的新差异。
+
+## 第 167 批：修复分段响应头的读取续期（2026-09-13）
+
+- `requestBytes` 通过 Undici 的 request:create/sendHeaders 诊断事件把当前请求与其池内 socket 对应，在 socket 收到数据时续期，包括 fetch 尚未暴露的部分响应头和 chunk 帧。请求结束、超时、取消时移除监听；不替换全局 dispatcher，不新建每请求连接池，不增大默认时限。
+- 复用现有网络差分用例：messages/urllib 与 chat、responses/httpx 对照持续分段和停滞响应头；原读取续期、长时间配置、隐藏 dispatcher 限时及上传阶段检查仍通过。额外核对响应头未完整时主动取消。最终定向用例通过，类型检查和编译通过；未重跑不相关用例或完整模型实验。证据：`../experiments/notale-ts/partial-headers-b167-20260913/`。
+- 第 165 批真实讲义继续使用原进程加载的旧 HTTP 模块；其代码页已收到模型输出并执行 Edit/Check，不是停滞终态。此处源码及 dist 已更新，因此不能将该实验冒充第 167 批新读取续期实现的真实网络验证；新边界有上述本地 Python 差分证据。
+
+## 第 168 批：移出仍被构建的旧简化浏览器底盘（2026-09-13）
+
+- 入口核对发现正式 CodeScaffold 使用 `resources/code-workbench` 和 npm 依赖，但构建仍在打包初版简化编辑器、worker、chassis；旧 `installCodeRuntime` 仅被过时测试调用。将七个旧源码、原构建脚本及对应旧编译产物移入 `../legacy/notale-ts-simplified/`。主题映射仍使用的 `theme.ts` 保留，显式 `--starter` 离线服务夹具保留，不改默认模型入口。
+- 构建只准备便携诊断与正式底盘所用离线 Python wheel，已存在 wheel 必须通过 lock SHA 校验才复用。删除仅验证旧安装器的过时测试，正式 scaffold/移动/NumPy 按需加载用例仍保留；现有用例总数由 46 变为 45，不把删除旧用例算作通过。
+- 类型检查、构建、六项服务契约测试、两项正式代码底盘定向检查通过；后者包含移动后的完整执行门禁及 NumPy 按需加载，耗时约 20 秒。没有重跑无关全套回归或重新生成讲义。证据：`../experiments/notale-ts/cleanup-b168-20260913/`。本批未改生成提示词、模型、工具门禁或已生成产物。
+
+## 第 169 批：拒绝非映射 Builder 配置，避免静默改用默认工作流（2026-09-13）
+
+- 差分复现 `builder: true` 时 Python 报 AttributeError，TS 却在 workflowProfiles 中静默使用默认 profile。数字、非空字符串和列表存在同类差异。
+- Builder profile 和 workflow override 的配置读取现在按 Python mapping.get 规则拒绝这些值；仍按 Python 真值规则回退空值，`uniform=true` 仍短路忽略覆盖。没有修改实际配置、默认 profile 或正常工作流。
+- 在现有配置差分用例中加入 11 种 Builder 值，分别比较 profile、workflow 和 uniform 三条入口的结果/异常；修复前失败、修复后全部一致，现有配置用例通过，类型检查和编译通过。证据：`../experiments/notale-ts/config-b169-20260913/`。未扩大回归或重跑真实生成；YAML 特有类型、非字符串键等尚未核销项保持开放。
+
+## 第 170 批：按原短路顺序读取模型默认值（2026-09-13）
+
+- 已复现 `model: true` 且 Builder 未显式提供超时/输出上限时，TS 静默选择 900/128000，Python 报 AttributeError。现在仅在当前字段需回退时调用默认块的 mapping.get，并保持先超时、后输出上限的求值顺序；两个字段均已显式提供时，不因未使用的默认块而新增拒绝。
+- 现有配置差分中比较 11 种默认块与四种显式字段组合（44 个场景）；修复前失败、修复后结果及异常均匹配 Python。配置定向用例、类型检查与编译通过。证据：`../experiments/notale-ts/config-b170-20260913/`。没有修改实际模型配置或重跑完整生成；其他未核销边界仍开放。
+
+## 第 172 批：拒绝不可迭代的工作流覆盖值（2026-09-13）
+
+- 复现 `workflow_profiles: true`、整数或小数时，TS 静默退回全部默认 profile，而 Python 在 `set(overrides)` 报 TypeError。现按相同位置拒绝不可迭代标量；空值按原真值规则回退，uniform 模式继续忽略覆盖。
+- 现有配置差分覆盖九种值及普通/uniform 两条路径，修复前失败、修复后通过；类型检查与编译通过。证据：`../experiments/notale-ts/config-b172-20260913/`。没有新增测试文件、改变正常配置或重跑全套回归；第 171 批组合回归早于这次 profile/test 修改，不能宣称它覆盖当前修复。
+
+## 第 173 批：工作流覆盖的集合、排序与不可哈希参数（2026-09-13）
+
+- 修复字符串被 JS Object.keys 当作字符索引、列表被当作下标键的问题。现在映射遍历键，字符串/列表遍历内容，按 Python set 的布尔/整数相等关系去重，未知名称按 Unicode 码点排序，数字按数值排序；不可迭代标量仍拒绝。
+- 原流程在列举未知项后调用 mapping.get，现对只包含已知 workflow 的列表保留对应 AttributeError；嵌套列表/字典键及作为 profile ID 的列表/字典在使用前报不可哈希 TypeError，不进入别的回退分支。
+- 将现有覆盖值夹具扩展为 20 种值，比较普通/uniform 两种入口，包含字符串、重复元素、补充平面字符、数字、布尔/整数去重及不可哈希值。修复前差异已复现，修复后配置差分、类型检查和编译通过。证据：`../experiments/notale-ts/config-b173-20260913/`。混合不可排序元素的具体比较顺序、YAML 特有对象和非字符串映射键等仍未全面核销；没有把 JSON 形态夹具结果推广为任意 Python 对象语义。
+
+## 第 174 批：读取续期在连接池中的隔离与清理（2026-09-13）
+
+- 本地 TCP 探针直接调用当前编译的原生 fetch/requestBytes：八次顺序请求复用一个连接，每次结束后 socket data 监听数均为零，没有累积监听。
+- 两条并发请求中，响应头每 80ms 到达一段、150ms 读取限时的请求成功；另一条无响应数据的请求仍以 TimeoutError 结束。分段响应在 120ms 主动取消后，后续普通请求返回 HTTP 200/空 JSON。
+- 证据：`../experiments/notale-ts/http-pool-b174-20260913.json`，包含条件与源码/编译文件 SHA。本轮未修改实现或测试文件，没有重复组合回归/调用模型；此结果补充第 167 批修复的连接池隔离证据，不宣称核销 DNS/TLS 等其他开放边界。
+
+## 第 175 批：本地 TLS 握手与分段响应对照（2026-09-13）
+
+- 使用临时自签 IP SAN 证书，仅在指定客户端显式信任。Python httpx 与当前 TS requestBytes 对照：80ms 握手延迟加 120ms 一段响应头，在 200ms 阶段/读取限时下都成功；400ms 握手停滞都超时；未信任证书时都拒绝。证书验证始终启用，未改全局信任或环境。
+- 底层类名分别为 httpx ConnectTimeout/ConnectError 与 fetch TimeoutError/TypeError；这里证明成功/失败行为，不宣称底层错误文本一致。现有模型适配器把连接失败归入可重试异常，原代码映射保留，但本探针未重新执行完整模型重试链。
+- 证据：`../experiments/notale-ts/tls-b175-20260913.json`，包含条件和源码 SHA。没有修改实现、测试文件或调用真实模型。本次只核销这些 TLS 场景，不代表 DNS、所有握手碎片/阶段边界、urllib 分支或其他开放项已经完成。
+
+## 第 176 批：确认 DNS 解析超时阶段差异（2026-09-13）
+
+- 隔离进程内仅把测试域名解析延迟 350ms 后指向 loopback，HTTP 服务立即返回空 JSON；连接/读取限时 200ms。Python 同步 httpx 成功（含启动约 400ms），当前 TS 原生 fetch/requestBytes 约 202ms 抛 TimeoutError。没有外部 DNS 或模型请求。证据：`../experiments/notale-ts/dns-b176-20260913.json`。
+- 当前 requestBytes 在 fetch 前启动计时，因此把同步 Python 不计入连接超时的 DNS 等待也计入。需要在实际建立新连接时区分解析与 TCP/TLS 阶段，并保留独立 caller signal；不能增大默认超时、在每次复用连接前强行解析，或暂停同 origin 其他活跃请求的计时来掩盖差异。
+- 本轮确认差异及连接器路径，未改实现，不能将第 175 批 TLS 通过或第 171 批回归推广为 DNS 已等价。该项保持明确未修复状态。
+
+## 第 177 批：分离 DNS 等待与连接超时（2026-09-13）
+
+- Agent 保留 Pool 连接复用，在各实际 Client 的 lookup 阶段暂停该连接所承载请求的计时，解析结束后重新进入连接期限。以 handler 关联请求时钟，完成/错误/取消后解除关联；原 caller signal 不暂停。复用连接不额外解析，其他连接的时钟不受影响。
+- 原 350ms DNS/200ms 限时复现现在成功；同一连接再次请求只解析一次。DNS 等待中 50ms 取消返回 AbortError，解析回调结束后没有迟到 HTTP 请求。同域另一新连接等待 DNS 时，已有停滞连接仍约 203ms 超时，新连接成功。
+- 在现有网络测试中补入延迟 DNS 后的持续读取检查；原三种适配器、分段响应头/停滞/长配置、上传及取消检查全部通过，类型检查和编译通过。证据：`../experiments/notale-ts/dns-b177-20260913.json`、`dns-pool-b177-20260913.json` 及 `dns-b177-20260913/`。没有新增测试文件或模型实验；其他已列未核销项仍开放。
+
+## 第 178 批：DNS 修复后的 HTTPS 与 urllib 补查（2026-09-13）
+
+- 在第 177 批当前连接创建实现上，对照 Python httpx、urllib 与 TS：可信证书、80ms 握手延迟及 120ms 分段响应在 200ms 限时下均成功；400ms 握手停滞均失败；不可信证书均拒绝。临时证书只由指定客户端显式信任，未关闭证书验证或改全局设置。
+- 底层异常类别分别保留：握手停滞为 ConnectTimeout/URLError/TimeoutError，证书拒绝为 ConnectError/URLError/fetch TypeError；本证据验证连接结果，不宣称类名或文本相同。
+- 证据：`../experiments/notale-ts/tls-b178-20260913.json`，包含场景条件及当前源码/编译 SHA。本轮无实现/测试文件改动、无模型请求，补查范围由第 177 批连接器变更直接触发。其他列出的开放项未据此关闭。
+
+## 第 179 批：确认 messages POST 重定向策略不等价（2026-09-13）
+
+- 本地 HTTP 服务对照 301/302/303/307/308。Python messages 使用的 urllib 对 POST 307/308 抛 HTTPError，没有访问目标；当前 TS ModelRuntime 却跟随并对目标再次 POST，最终成功。已保存每次实际请求的方法与路径。其余所测重定向结果及方法一致；chat/responses 的已安装 OpenAI 默认 HTTP 客户端启用重定向。
+- 证据：`../experiments/notale-ts/redirect-b179-20260913.json`。这是尚未修复的真实工具/模型传输差异，不是仅错误文本不同。需要保留各适配器策略，不能统一禁止重定向而破坏原来允许的 301/302/303。后续还须检查连续重定向、方法/请求体和头部规则；本探针仅覆盖上述本地状态码。
+- 本轮未改实现或调用真实模型，现有绿色回归并未覆盖此策略，不能据此宣称 HTTP 行为全部等价。
+
+## 第 180 批：按各原适配器规则处理重定向（2026-09-13）
+
+- 模型传输显式处理重定向。messages POST 遇 307/308 返回原错误，不向目标再次 POST；301/302/303 转 GET 并移除内容头，GET 可继续跟随 307/308。保留 urllib 对单 URL 四次、不同目标十个的循环限制及 URI 头回退。
+- 扩展对照发现 chat/responses 转 GET 后 Python HTTP 客户端保留 Content-Type，而 fetch 默认删除。现保留 SDK 路径的内容类型、307/308 请求体和二十次跳转限制；跨 origin Authorization 按 httpx 的同源/标准 HTTP→HTTPS 升级规则处理。
+- 复用现有网络差分，三种适配器各八种场景（五种状态码、连续 GET 跳转、重复地址环、不同地址链）对照成功/失败、方法及内容头；全部通过。原网络用例和三种模型传输状态保留检查通过，类型检查及编译通过。证据：`../experiments/notale-ts/redirect-b180-20260913/`，含检查中发现的 Content-Type 差异。
+- 本次不证明所有重定向 URL 编码、重复 Location 头、FTP、跨源请求头及底层错误文本已完整等价；这些未覆盖项继续核销。没有新增测试文件或模型实验，提示词、配置默认值和门禁未改变。第 179 批已确认的 POST 307/308 行为差异已修复。
+
+## 第 181 批：重复重定向头保留 urllib 首值语义（2026-09-13）
+
+- 本地差分复现 messages 将两个 Location 合并为 `/redirect-target,%20/redirect-other`，而 Python 实际请求 `/redirect-target`。共享 HTTP 返回原始响应头，messages 使用第一个 Location（或 URI）；chat/responses 保留 HTTP 客户端的合并语义，不按逗号拆分合法 URL。自定义 fetch 没有原始头时仍使用其 Headers，不能从已合并值恢复重复边界。
+- 在现有网络用例中补入重复头、单个含逗号 URL，三适配器各十种重定向场景及原超时/取消检查通过（1 项通过、38 项按名称跳过，19.18 秒）；类型检查和编译通过。证据：`../experiments/notale-ts/redirect-b181-20260913/`。未新增测试文件、未启动真实模型或替换运行服务。
+- 本次关闭所测原生 fetch 重复 Location 差异；其他 URL 编码、FTP、跨源请求头及自定义 transport 边界继续开放，既有真实实验不能代替当前版本全链路验收。
+
+## 第 182 批：跨源重定向鉴权与请求体对照（2026-09-13）
+
+- 当前编译实现对照 urllib / OpenAI 默认 httpx 客户端，使用本地两端口，覆盖 messages/chat/responses × 同源/跨端口 × 302/307，共 12 场景；成功或拒绝、实际目标、请求方法、Authorization、x-api-key、anthropic-version、Content-Type 及请求体有无全部一致。messages 跨源 302 保留原显式鉴权头；SDK 路径跨源移除 Authorization；messages POST 307 拒绝，SDK 307 保留 POST 和请求体。
+- 证据：`../experiments/notale-ts/cross-redirect-b182-20260913.json`，含逐请求结果及四个当前源码/编译文件 SHA。本轮无实现修改、无新仓库测试/脚本、无真实模型请求；只关闭所测同源/跨端口分支，不推广到跨主机、HTTP→HTTPS、HTTPS→HTTP、含用户信息 URL 或自定义 transport。
+
+## 第 183 批：发现 SDK Cookie 会话尚未迁移（2026-09-13）
+
+- 当前 TS 的手动模型请求没有 Cookie 存储。两个本地端口对照三适配器 × 同源/跨端口 × 302/307：messages 的四场景与原 urllib 一致；chat/responses 的八场景中，Python 会向跳转目标发送 `gateway=session`，TS 不发送。使用同一客户端连续调用时，Python 下一次初始请求仍携带 Cookie，TS 仍遗漏。受 Path 限制及 Secure Cookie 在所测 HTTP 路径没有发出。
+- 原因已定位：Python ChatAdapter/ResponsesAdapter 持有长期 SDK 客户端，httpx.Cookies 使用 http.cookiejar.CookieJar；TS ModelRuntime 没有对应状态。修复需要以模型运行实例保存 Cookie，处理每次响应（含重定向/错误）和后续调用，保留域、路径、过期与安全协议规则；messages 不添加 Cookie 会话。不能仅复制一次 Set-Cookie 文本或跨实例共享 Cookie。
+- 证据：`../experiments/notale-ts/{cookie-b183-20260913.json,cookie-session-b183-20260913.json}`，含实际请求和当前源码/编译 SHA。此差异尚未修复。本轮未修改实现、未新增仓库测试/脚本、未使用真实凭证或调用模型。第 182 批鉴权头通过不覆盖 Cookie，不能视为整个重定向契约已等价。
+
+## 第 184 批：恢复 SDK 模型实例的 Cookie 会话（2026-09-13）
+
+- Chat/Responses 的 ModelRuntime 现在各自保存 Cookie，发请求前按 URL 选取，接收响应后更新；覆盖重定向、HTTP 错误及后续调用，实例之间不共享。messages 保留原 urllib 无 Cookie 会话的行为。新增生产模块 `src/adapters/models/cookies.ts`，无新增依赖或仓库测试/脚本文件。
+- 按默认 CookieJar 策略实现域/路径匹配及路径排序、Secure、Port、Max-Age/Expires 删除、同名替换、裸值/带引号值和 RFC2109 version 1 降级；复用现有网络用例，对照十组 Cookie 输入与七个目标 URL。原网络检查及三适配器模型状态检查通过（各一次定向运行，19.32 秒/3.56 秒），类型检查及编译通过。
+- 原失败的 12 个本地重定向/连续调用场景现全部一致；额外三适配器检查确认 500 响应设置的 Cookie 在下一次调用保留，新实例不携带旧 Cookie。证据：`../experiments/notale-ts/cookie-b184-20260913/`、`cookie-session-b184-20260913.json`、`cookie-error-b184-20260913.json`。
+- 第 183 批已复现的会话遗漏已修复。特殊日期解析、畸形/重复属性的所有 Python 分支、Set-Cookie2、读取响应体失败时的更新时机仍未全面对照，不能称 Cookie 任意输入完全等价。未启动新的真实讲义或替换运行服务；最终当前版本全链路仍待验收。
+
+## 第 185 批：响应体失败前保存模型 Cookie（2026-09-13）
+
+- 差分复现：响应头带 Set-Cookie，响应体随后停滞超时，Python chat/responses 下一次调用携带 Cookie，TS 原先丢失。共享 HTTP 新增可选的响应头到达回调；模型 Cookie 在读取响应体前提取，与已测 Python 时机一致。messages 仍不保存 Cookie。
+- 在现有网络用例复用本地服务，三适配器对照首次超时/第二次成功及两次实际 Cookie 头；修复后通过。网络与三种模型状态保留的两项定向检查通过，其他 37 项按名称跳过；类型检查及编译通过。证据：`../experiments/notale-ts/cookie-timeout-b185-20260913/`，含失败/修复日志及七个源码/编译/测试 SHA。
+- 本次关闭所测响应体超时时的 Cookie 更新差异，不推广为全部畸形 Cookie、读取失败或取消时序均已核销。没有新增测试文件或真实模型实验，运行服务及 Python 基线未替换；整体迁移仍待验收。
+
+## 第 186 批：当前版本组合回归及基线保护复核（2026-09-13）
+
+- 当前 45 项既有测试全部通过，无跳过或失败，包含第 172–185 批配置、DNS、重定向及 Cookie 修复；含 npm 启动共 151.10 秒。92 个记录源码/编译/配置/测试文件前后 SHA 未变。没有新增测试或脚本文件。
+- 重新核对 5,777 个 Python 基线文件、5,641 个复制资源及第 165 批最终产物的 372 个文件，全部匹配、无缺失，原产物位置仍不存在。旧真实任务所记录的 103 个实现文件中，10 个已变化；16 个删除位置的文件在 legacy 字节一致；新增 Cookie 模块不在旧快照内。
+- 证据：`../experiments/notale-ts/validation-b186-20260913/`。本次更新当前组合回归证据，不将旧真实生成冒称为当前版本实验；顶部表格保留未核销契约、旧加载原因及基线门禁的视觉局限。整体目标未完成。
+
+## 第 187 批：当前冻结版本真实链路（2026-09-13）
+
+- Viewer 创建 45 分钟恒星讲义，10 页在 206.114 秒完成，全部 Builder 自然结束、最终技术审计无错误或警告；真实 ImageSearch 六项，无搜索错误。本次没有 ImageGen 调用。
+- 独立 90 分钟图算法任务经过 Viewer 进程中断/重启、一次实际状态请求 503 后自动恢复，运行 136.483 秒后通过 UI 取消；仅一个终态事件，刷新无取消按钮，406 文件在 55.094 秒内不再变化。
+- 同一完整任务移动后 377 输出 SHA 一致、旧目录不存在；全部十页完成 19 初态/after 状态及 authored traversal，代码完整门禁通过。导入隔离编辑器 402eafda-0a80-4866-b794-5190c059850b，10 页/349 资源/92,622,910 字节。新上下文首次加载无请求失败或异常，代码四项测试通过、16 帧完成、三曲线实际显示。
+- 代码 x 轴标签超出 viewBox 右界（668+78.015625>700），目视裁切；原 Python 门禁对同一未修改讲义也通过。九张非代码初态截图正常渲染，但未进行全套事实审查。早期 iframe 定位发生测试驱动时机错误，等待原 frame 导航后继续成功，没有刷新代码 iframe。工作目录四个相对链接移动后仍有效，输出无链接；初始“全目录不得有链接”的过宽断言已澄清。
+- 92 个实现/配置/测试快照与七个 Viewer 文件无变化，最终输出哈希保持一致。证据在上述任务 `validation/`，以 `chain-summary.json`、`provenance.json`、`relocation.json`、`editor-browser.json`、`visual-findings.json` 及原始检查日志为准。整体等价性仍未验收。
+
+## 第 188 批：Cookie 重复过期属性顺序（2026-09-13）
+
+- 复现同一 Cookie 的 `Max-Age=3600; Max-Age=0`：Python 删除，TS 原先保留。现在每个 Max-Age 按序转换并覆盖 expires；任一个无效数值会拒绝该 Cookie。无效 Expires 不占用首值位置，后续有效 Expires 仍可决定过期。
+- 在现有 Cookie oracle 增补五组输入，对照正反顺序、前/后无效 Max-Age 和先无效后有效 Expires；包含原网络分支的定向用例通过（1 通过，38 按名称跳过，22.43 秒），类型检查及编译通过。证据：`../experiments/notale-ts/cookie-attributes-b188-20260913/`。无新测试文件或讲义实验。
+- 本次关闭所测重复属性差异，不证明所有日期格式、畸形属性及 Set-Cookie2 已等价。第 187 批真实实验使用修复前冻结版本；既有候选服务和生成产物保持不变。
+
+## 第 189 批：Cookie HTTP 日期解析（2026-09-13）
+
+- 差分复现 `Expires=01 Jan 1969 00:00:00 GMT`：Python 忽略无效日期、保留会话 Cookie，TS 的 Date.parse 原先将它删除。现在按 http.cookiejar 的严格/宽松 HTTP 日期格式、1970 下界、两位年份选择、支持的 UTC/数值时区和时钟范围解析，不再使用 JavaScript 的通用日期语法。保留 Python 许可证和移植说明。
+- 现有 Cookie oracle 补入 18 种日期，在七个目标 URL 上对照最终 Cookie 携带/删除结果，包括 EST、ISO 形式、两位年份、无时间、闰秒、24 时、数值时区和日期范围。包含原网络分支的定向检查通过，类型检查及编译通过。证据：`../experiments/notale-ts/cookie-dates-b189-20260913/`。这组结果检查不等于逐秒过期时刻或任意输入的完整证明。
+- 无新增测试/脚本文件或模型实验。第 187 批真实链路仍使用当时冻结版本，当前 Cookie 日期修复只有定向证据；其他畸形属性、Set-Cookie2 等边界继续核销。
+
+## 第 190 批：同一响应的 Cookie 批处理顺序（2026-09-13）
+
+- 复现同一响应内先设置 `a=one`、再以 Max-Age=0 删除同名 Cookie：Python 最后保留新 Cookie，TS 原先逐条写入后删除。现在先解析整批、即时处理已有状态的过期删除，再保存本批接受的新 Cookie，与 CookieJar 的阶段顺序一致。
+- 复用原全部 33 组 Cookie 样本，各自按多个响应/同一响应两种模式，与 Python 在七个目标 URL 上对照结果；包含原网络分支的定向检查通过（1 通过、38 按名称跳过，22.76 秒），类型检查及编译通过。证据：`../experiments/notale-ts/cookie-batch-b190-20260913/`。初次类型检查发现测试 Headers 元组类型缺失，已修正。
+- 无新增测试文件或模型实验。此修复不关闭整批解析异常回退、Set-Cookie2 等未测分支；第 187 批真实链路和运行服务继续保持原冻结版本。整体迁移目标未完成。
+
+## 第 191 批：Set-Cookie2 与普通头混合时的处理（2026-09-13）
+
+- 原 Python 在默认 RFC2965 关闭时忽略仅含 Set-Cookie2 的响应，但存在普通 Set-Cookie 时仍解析旧头并接受 Version=0；TS 原先一律忽略。现在保留这个入口条件、旧头先于普通头的顺序和 RFC 2109/2965 版本区别；旧头按带引号值/转义/逗号分隔解析，过期删除先于版本策略拒绝。
+- 现有网络用例补入七组旧头/混合头差分，包含独立/混合 Version=0/1、多 Cookie 和同名覆盖；原 Cookie 单响应/多响应及网络检查通过，类型检查及编译通过。另一个本地直接差分确认引号内分号、逗号和转义双引号保持 Python 的结果。证据：`../experiments/notale-ts/cookie-legacy-b191-20260913/`、`cookie-quoted-b191-20260913.json`。
+- 本次关闭所测 Set-Cookie2 混合入口，不证明全部畸形旧属性（包括 Expires 类型）、批解析异常回退及所有版本边界已核销。无新增测试/脚本文件或真实模型实验；原候选服务和第 187 批产物保持不变。
+
+## 第 192 批：Cookie 保存的过期时间戳差分（2026-09-13）
+
+- 对照 Python httpx CookieJar 与当前 TS 存储的 expires 值，50 个输入全部一致；覆盖 UTC/GMT/Z、正负数值时区（含三位/宽范围偏移）、两位/三位年份、24 时、60/61 秒、二月日期进位及严格格式。比较实际保存的秒级时间戳或过期删除后的空集合，不只比较当前是否携带 Cookie。
+- 当前源码/编译文件与第 191 批快照一致。证据：`../experiments/notale-ts/cookie-expiry-b192-20260913.json`，含逐项输入、Python/TS 值和源码/编译 SHA。本轮无实现修改、无新仓库测试/脚本、无模型实验，不重复已通过回归。
+- 这项证据补足所测日期的保存值核对；其他畸形输入、解析异常回退、时钟跨年及端到端实际到期时序不由此推广为通过。整体目标继续保持未完成。
+
+## 第 193 批：确认 Cookie 整批解析失败的回退差异（2026-09-13）
+
+- 在预置 `old=keep` 的隔离会话中，对照同一响应的新 Cookie、畸形属性及删除旧 Cookie：五组中三组不一致。缺值 Max-Age 导致 Python 放弃普通头整批规范化，旧 Cookie 保留；TS 原先只跳过单条并继续删除旧 Cookie。严格日期匹配到无效月份 Jxx 同样使 Python 放弃普通头解析，TS 却把它当会话日期。混合 Set-Cookie2 的 Expires 类型异常使 Python 放弃旧头的新 Cookie，但普通头仍可保存；TS 原先保留错误旧头。
+- 非数值 Max-Age=invalid 仅拒绝当前 Cookie，已与 Python 一致；Domain 缺值先触发单条拒绝时，后面的缺值 Max-Age 不再导致整批失败，也已一致。因此不能把所有错误都统一扩大或缩小处理范围。
+- 证据：`../experiments/notale-ts/cookie-errors-b193-20260913.json`，含初始会话、各响应头对应的结果（初始 old=keep 在探针中固定）、源码/编译 SHA。当前三处差异尚未修复；需区分头解析、整批属性规范化、Cookie 构造及普通/旧头分组，并保留各阶段对既有状态的影响。本轮无实现修改、新仓库测试/脚本或真实模型请求。
+
+## 第 194 批：按阶段与头族恢复 Cookie 解析失败语义（2026-09-13）
+
+- 普通头/Set-Cookie2 分别执行整批头解析、整批属性规范化与 Cookie 构造，最后保存接受的 Cookie。严格格式中的无效月份、缺值 Max-Age 和旧式 Expires 类型错误分别在对应阶段触发头族回退；ValueError 的单条拒绝、先遇 Domain 缺值的短路及构造阶段已发生的删除保持原语义。
+- 第 193 批五组探针现全部与 Python 一致，三处已确认差异修复。现有差分增补预置旧会话的异常头组合，以及旧头先删除后构造失败的副作用；全部 Cookie 单/多响应、旧头及原网络用例通过。网络和三适配器模型状态两项定向检查通过（37 项按名称跳过，26.00 秒），类型检查及编译通过。Python oracle 的预期警告保留在原始日志，不作为测试失败。
+- 证据：`../experiments/notale-ts/cookie-errors-b194-20260913.json`、`cookie-errors-b194-20260913/`。没有新增测试/脚本文件、模型实验或替换现有服务。其他未覆盖输入及整体迁移契约仍需核销；本批不宣布任意 Cookie 行为完全等价。
+
+## 第 195 批：Cookie 超大有效期求和及溢出（2026-09-13）
+
+- 固定时钟 2000000001 秒，对照 CookieJar 保存的精确 expires 整数字符串；Max-Age=9007199254740993 原 TS 提前转浮点使结果少两秒，10^309 原先保存 Infinity 而 Python 放弃该头族新 Cookie。现在整数求和后再转浮点，构造阶段拒绝正向溢出；负向超大值仍先执行过期删除，不改为异常。
+- 五个有效期（两项超过安全整数边界、10^308、正负 10^309）保存值/丢弃结果全部一致。原网络定向用例通过（1 通过、38 按名称跳过，22.41 秒），类型检查及编译通过。证据：`../experiments/notale-ts/cookie-age-b195-{before,after}-20260913.json`、`cookie-age-b195-20260913/`。未新增测试文件或模型实验。
+- 本批关闭已复现的求和顺序和溢出差异，不据此推广所有 Cookie 输入完全等价。当前运行服务与第 187 批产物保留其冻结版本；其他迁移契约继续核销。
+
+## 第 196 批：确认 YAML 键类型影响实际 profile 选择（2026-09-13）
+
+- 用真实 parseYaml → resolveBuilderProfile 入口对照 Python yaml.safe_load → resolve_builder_profile，整数/字符串键及布尔/字符串键交叉选择四组均不一致：Python 拒绝，TS 将键字符串化后错误接受对应 profile。整数键与整数选择器匹配的一组两端均成功。错误类型和最终 profile 已保存在证据中。
+- 证据：`../experiments/notale-ts/yaml-keys-b196-20260913.json`，含完整无敏感配置、结果及四个当前源码/编译 SHA。差异尚未修复；不能以禁止非字符串键代替基线行为，因为合法匹配本来可用。后续须保留 YAML 映射键身份、相应查询/迭代和合并/别名语义，避免整数与字符串的同名键相互覆盖。
+- 本轮无实现修改、无新仓库测试/脚本或真实模型请求。该缺口不在现有配置绿色回归覆盖内；之前的完整真实链路也不证明混合键配置等价。
+
+## 第 197 批：保留 YAML profile 映射的键类型（2026-09-13）
+
+- 含非字符串键（包括合并来源）的 YAML 映射保留为 typed Map；整数/字符串不再合并，布尔与整数按 Python 相等规则查询，保留首次键身份。纯字符串键映射沿用原对象路径。profile 查找、必需字段、choices 排序/错误和 workflow 键迭代适配该结构；skill frontmatter 的名称/描述读取也兼容 typed Map。
+- 第 196 批五组结果及错误文本全部一致；另六组整数/字符串同名键、布尔选择和合并映射对照完整 profile，也全部一致。原配置与 guidance assembly 两项定向用例通过（37 项按名称跳过，8.72 秒），类型检查及编译通过。预检中修正 YAML 泛型调用类型与局部变量重名，没有替换服务或改动旧产物。
+- 证据：`../experiments/notale-ts/yaml-keys-b197-20260913.json`、`yaml-mixed-keys-b197-20260913.json`、`yaml-keys-b197-20260913/`。这是已复现 profile 选择差异的修复，不代表全部 typed Map 消费者已适配；request_options 的展开/序列化、数值来源、其他顶层/嵌套配置访问及复杂键/别名仍需检查。现有候选服务保留第 187 批版本。
+
+## 第 198 批：typed YAML 映射的模型参数展开和 JSON 编码（2026-09-13）
+
+- 模型请求合并在存在 typed Map 时按键更新，JSON 编码前保留键身份和顺序；jsonText 支持嵌套 Map、标量键转换和编码后的同名键，不再把 Map 当成空对象。YAML Map 记录整数/浮点来源，保留超大整数值、整数浮点表示及键类型；profile 数值读取也使用这些来源。普通对象合并继续原路径。
+- 三种实际 Python 适配器（urllib 拦截及 OpenAI SDK 的 httpx mock）对照 TS 请求：整数 1 与字符串 '1' 同名键、temperature=1.0、精确 seed=9007199254740993、嵌套数值/布尔/空键均保留。请求解码结构、同名键出现顺序和 seed 原始数字一致；独立 YAML JSON 文本逐字相同。顶层 SDK 字段顺序按既有约定不要求相同。
+- 原配置、guidance、模型 wire 和三适配器状态四项定向检查通过（35 项按名称跳过，17.44 秒），类型检查及编译通过。证据：`../experiments/notale-ts/yaml-wire-b198-20260913.json` 和同名目录。没有新增测试/脚本文件、模型实验或替换当前候选服务。
+- 这修复了第 197 批引入 typed Map 后的参数丢失路径；其他配置消费者、dict 成对序列入口、特殊 YAML 类型及复杂键仍需核销。第 187 批真实实验不覆盖后续实现变化，整体目标继续未完成。
+
+## 第 199 批：Planner 与媒体配置消费者适配 typed Map（2026-09-13）
+
+- 复现顶层配置或 model 含非字符串键时 Planner 克隆丢失模型字段，以及 planner 含非字符串键时 high 错误回退为 medium。现在按映射读取 model/planner 并保留 typed Map 克隆；共享合并支持左右两侧映射，保留原字段和数值来源。baselineRuntime 与媒体执行的 image_search_backend 读取使用同一配置字段访问规则。
+- 三种配置的完整 Planner profile 与 Python 全部一致。原配置、Planner override、共享媒体执行与三适配器状态四项定向检查通过（35 项按名称跳过，14.66 秒），类型检查及编译通过；源码搜索未再发现 config/cfg 对 model/planner/media/builder 的直接属性读取。证据：`../experiments/notale-ts/config-consumers-b199-{before,after}-20260913.json` 和同名目录。
+- 没有新增测试/脚本文件、真实模型实验或替换候选服务。本批关闭已复现的配置消费者丢失路径，不证明成对序列 dict 构造、任意特殊 YAML 对象或所有错误分支等价。整体目标继续未完成。
+
+## 第 200 批：配置成对序列的字典转换（2026-09-13）
+
+- 复现 request_options 成对序列中整数/字符串及 null/字符串键被合并、布尔/整数键未按 Python 合并、浮点和大整数来源丢失，以及 typed Map 作为二元素迭代项被误判为空。转换现在保留键身份与数值来源，复用 YAML 映射的键相等规则；数值来源表同步使用对应键相等规则并保留首次插入的键来源。
+- 七种最终 JSON 参数对照全部与 Python 一致（修复前六种不一致）。类型检查、编译及原配置/模型状态两项定向检查通过，37 项按名称跳过，测试耗时 12.13 秒。证据：../experiments/notale-ts/pairs-b200-{before,after}-20260913.json 及 pairs-b200-20260913/。
+- 无新增仓库测试或脚本、真实模型实验或候选服务替换。成对序列的字符串数字键顺序、作为迭代项的特殊映射键数值来源、映射复制及特殊 YAML 对象仍需核销；本批不证明所有 dict 输入等价。第 187 批实验不覆盖后续变更，整体目标未完成。
+
+## 第 201 批：配置字典的顺序、键来源与浅复制（2026-09-13）
+
+- 成对序列现在记录字符串键插入顺序，避免 JS 对数字字符串键排序；映射作为二元素迭代项时保留其键的数值来源。typed Map 的 dict 转换改为浅复制，保留原映射键相等规则及数值来源，嵌套值保持共享，符合 Python dict(mapping)。
+- 复现两个输出差异及原映射被修改的别名问题后，九种最终 JSON 参数与 Python 逐字一致；另一个 Python 对照验证顶层独立、嵌套共享及浮点/大整数来源保留。类型检查和编译通过，原配置与模型状态两项检查通过（37 项按名称跳过，12.09 秒）。证据：../experiments/notale-ts/pairs-b201-{before,after}-20260913.json、mapping-copy-b201-20260913.json 及 pairs-b201-20260913/。
+- 未新增仓库测试/脚本或真实模型实验，候选服务未替换。特殊 YAML 对象、其他未核销迁移契约及最终版本完整验收仍开放；这些结果只关闭所列字典转换路径。
+
+## 第 202 批：共享配置合并修复及组合回归（2026-09-13）
+
+- 复现普通对象合并仅继承右侧数值来源，导致 Planner 未覆盖的浮点字符串表示及大整数输出上限变化。合并现在按最终字段所属来源保留数值元数据；含 typed Map 的合并保留其键相等规则，避免布尔/整数相等键变成两个键。
+- 四种最终合并 JSON 及真实 workflowModels Planner profile 的模型名/输出上限与 Python 一致；配置、Planner override 和模型状态三项定向检查通过，类型检查与编译通过。对照证据：../experiments/notale-ts/merge-b202-{before,after}-20260913.json。
+- 近期修复涉及共享配置/请求路径，执行一次现有组合回归：45 项全部通过、无跳过和失败，含 npm 启动 151.12 秒。182 个源码/编译/配置/测试/依赖文件哈希前后一致；5,777 个 Python 基线文件及 5,641 个复制提示词/skills 资源无变化或缺失。证据：../experiments/notale-ts/validation-b202-20260913/。
+- 无新增测试/脚本文件或模型请求，运行服务未替换。第 187 批真实链路仍属于旧冻结版本；当前组合回归不代替剩余迁移契约及最新版完整实验验收，整体目标未完成。
+
+## 第 203 批：最新版真实链路进行中（2026-09-13）
+
+- 在第 202 批组合回归通过且 182 个实现/配置/测试/依赖指纹未变的版本上，通过既有 Viewer 创建 45 分钟恒星讲义 20260913t031506z-574ce9d3。本次已实际产生 ImageSearch 和 ImageGen 资源；目前九页就绪，代码页曾被原门禁以 NaN 曲线坐标拒绝，仍在模型修复流程。观察等待超时不作为任务失败或重启依据，服务仍运行。
+- 同一候选 Viewer 进程中断后，两个原页面于 03:15:58Z 自动恢复，无页面刷新；独立 90 分钟图算法任务另经过一次实际 snapshot 503 后重连。该任务于创建约 143.6 秒后通过 UI 取消（HTTP 200），只有一个取消终态，刷新后取消按钮为零；466 个文件在 72.31 秒内无变化。
+- 进行中证据及服务句柄：../experiments/notale-ts/validation-b203-20260913/，主任务在 real-b203-20260913/20260913t031506z-574ce9d3。尚未完成整个讲义、移动逐页检查或编辑器导入，不作为完整验收通过；旧产物和稳定入口保持原状。
+
+- 第 203 批进行中补查：原 Python vendor/code-workbench/check.py 对当前未修改的 page-05 同样以 polyline points 中的 NaN 拒绝；10 个记录课程文件前后哈希一致。证据：validation-b203-20260913/python-code-gate-in-progress.{json,log}。这只确认当前页面的拒绝在两版门禁中均成立，不代表模型已修复或完整链路通过。
+
+### 第 203 批最终结果
+
+主任务于 03:34:26.563Z 完成，1159.864 秒，10 页全部自然结束。Viewer 完整预览及移动后重启恢复通过；同一目录移动后 378 输出哈希不变，work 四个相对链接有效。全部十页共 19 个初态/after 状态及代码门禁通过，隔离导入编辑器 34feff87-c1b2-4d50-aec6-7398d9cf6337（10 页、350 资源、92,425,700 字节）。首次代码运行无加载失败、三个课程测试通过，21 帧播放结束；四曲线可见，但峰位不符，详见最新验证入口。182 个实现文件、七个 Viewer 文件和最终输出哈希均复核一致。保留全部缺陷与旧实验，不以此关闭剩余迁移契约。
+
+## 第 204 批：Planner 必填配置不再静默回退（2026-09-13）
+
+- 按 core/planner.py 对 config()["planner"]["reasoning_effort"] 的直接读取复现七个差异：缺 planner、缺 reasoning_effort，以及 planner 为 null/list/bool/int/string。旧 TS 均静默使用 medium，现在分别返回基线的 KeyError/TypeError。有效 high 配置仍一致。
+- 八个对照结果全部一致；类型检查、编译及原配置/Planner override 两项定向检查通过，37 项按名称跳过。修正现有 Planner oracle 中 cfg.get(...).get(...) 的宽松预期，改用基线的直接字段读取。未新增测试/脚本文件或模型实验。证据：../experiments/notale-ts/planner-required-b204-{before,after}-20260913.json 及同名证据目录。
+- 此批只关闭所测必填字段错误路径，不证明多个配置同时损坏时的求值/报错顺序、所有 CLI override 与特殊 YAML 类型均等价。运行中的候选服务继续使用第 203 批冻结版本；第 202 批完整回归和第 203 批真实链路不覆盖本批后续修改，整体目标未完成。
+
+## 第 205 批：Planner 必填字段求值顺序（2026-09-13）
+
+- 复现 planner/model 同时缺失或损坏时 TS 提前读取模型 name，Python 则先计算传给 llm.respond 的 planner.reasoning_effort 参数。现在先读取 Planner 推理配置，再构造默认模型 profile，四个原有差异消除。
+- 十三种配置的错误或 effort 与 Python 一致，现有 Planner override 检查通过，类型检查及编译通过。对照脚本显式先读取 effort、再始终创建默认 profile，避免真值 effort 短路跳过 Python profile 验证。证据：../experiments/notale-ts/planner-order-b205-{before,after}-20260913.json 和 planner-order-b205-20260913/。
+- 无新增仓库测试/脚本或模型请求；候选服务和第 203 批产物保持冻结。其他 CLI override、特殊配置类型与未核销契约仍开放，历史组合回归和真实链路不冒称覆盖本批修改。
+
+## 第 206 批：真实配置加载入口的 model.update 契约（2026-09-13）
+
+- 直接调用原 core.llm.config()，仅将 ROOT 指向临时配置目录，不改动原配置。确认 Python 加载时始终执行 c["model"].update(_OVERRIDE)，即使 overrides 为空；旧 TS loadConfig 仅解析 YAML，缺 model 或 model 为 null/list/bool/int/string 都被放过。现在在加载阶段保留必需订阅及 update 能力校验，普通映射/typed Map 可加载；Set 的 update 能力也保留，不人为要求所有 model 都是字典。
+- 九个真实文件加载结果全部与 Python 一致，原配置与 Planner override 两项检查、类型检查和编译通过。证据：../experiments/notale-ts/config-load-b206-{before,after}-20260913.json 和 config-load-b206-20260913/。未新增仓库测试/脚本或模型请求。
+- 纠正证据范围：第 204–205 批是直接注入配置后的读取路径，不能替代真实 config()。文件中 model 本身损坏时，原 config() 的 update 失败发生在 Planner 字段读取之前；本批补齐这条加载入口，不把不同入口的错误顺序混为一谈。特殊 YAML 对象及数值类型名称等未全面覆盖；候选服务仍为第 203 批冻结版本，整体目标未完成。
+
+## 第 207 批：真实配置加载的 YAML 类型名称（2026-09-13）
+
+- 直接对照原 config()，复现 model 为 7.0、binary、date、datetime 时的错误类型名称不一致。配置类型诊断现在读取已有整数/浮点来源；YAML 日期保留 date/datetime 区分，识别 bytes/set，避免把特殊对象统称 dict。
+- 十五个文件加载场景与 Python 全部一致，涵盖前批正常与失败路径及新增类型；配置/指导资源两项已有检查通过（37 项按名称跳过，8.77 秒），类型检查与编译通过。证据：../experiments/notale-ts/config-types-b207-{before,after}-20260913.json 与 config-types-b207-20260913/。无新增仓库测试/脚本或模型实验。
+- 本批对齐所测类型诊断，不证明日期的所有取值、序列化、可哈希性或其他对象协议已等价；不得将名称修正扩大为全部 YAML 行为通过。候选服务及第 203 批讲义仍为冻结版本，整体目标未完成。
+
+## 第 208 批：特殊 YAML 值的模型参数转换（2026-09-13）
+
+- 复现日期/日期时间 request_options 被静默转为空字典、bytes 被展开成数字字段、Set 被丢弃，以及空 bytes/Set 被当作真值。配置字典转换现在仅直接复制真实映射，其他支持的可迭代值走序列转换；日期按基线报不可迭代错误，bytes 中的整数按基线报非二元素序列错误，单元素字符串集合可构造字典。映射 get 也不再把特殊对象当普通字典。
+- 六种参数结果/错误与 Python 全部一致；原配置和三适配器状态两项检查通过（37 项按名称跳过，12.10 秒），类型检查与编译通过。证据：../experiments/notale-ts/special-options-b208-{before,after}-20260913.json 和 special-options-b208-20260913/。
+- 无新增仓库测试/脚本或模型实验。未据此证明多元素集合的迭代顺序、特殊键可哈希性、日期字符串表示及所有 YAML 对象协议等价。第 203 批候选服务及讲义保持冻结，整体目标仍未完成。
+
+## 第 209 批：特殊对象的实际模型请求编码差异（2026-09-13，待修复）
+
+- 对照实际 Python ModelRuntime：messages 使用 urllib 拦截，chat/responses 使用已安装 OpenAI SDK 和 httpx.MockTransport；不发外部请求。嵌套 request_options.metadata 的 date、datetime、bytes、set 共十二个适配器场景均有差异。Python 对 date/bytes/set 及 messages 的 datetime 在发送前抛 TypeError；TS 却将其变为 {} 或字节数字字段并发送。SDK 的 chat/responses 对 datetime 会发送 ISO 字符串，TS 发出的仍是 {}，不能仅比较请求次数。
+- 已安装 openai/_utils/_json.py 的 _CustomEncoder.default 明确对 datetime 调用 isoformat()，而不是对 date/bytes/set 统一序列化。后续修复必须区分适配器并保留 datetime 的时区和小数秒，不能简单统一拒绝所有特殊对象或默认采用 JS Date.toISOString()。
+- 证据：../experiments/notale-ts/special-wire-b209-before-20260913.json（包含实际 metadata、请求次数及错误）与 special-wire-b209-20260913/source-sha256.json。此批未改实现、未新增仓库测试/脚本或重复构建/真实实验，十二处对照差异尚未修复，整体目标继续未完成。
+
+## 第 210 批：特殊对象的适配器编码修复（2026-09-13）
+
+- JSON 编码识别 date/datetime/bytes/set，不再将其展开为 {} 或数字字段。默认按 Python JSON 报不可序列化错误；仅模型 chat/responses 开启 SDK datetime 编码，messages 保持拒绝 datetime。YAML 日期元数据统一放在 JSON 层，保留原时区、无时区状态及六位微秒精度，避免 JS Date 的 UTC/毫秒转换改写请求值。
+- 第 209 批十二个差异场景均已修复；加入正负时区、无时区、微秒截断及零小数秒后，共二十四个实际 Python 适配器对照全部一致，比较错误、请求次数和真实 metadata 内容。类型检查与编译通过，原配置、指导资源、wire 与三适配器状态四项检查通过（35 项按名称跳过，17.02 秒）。证据：../experiments/notale-ts/special-wire-b210-after-20260913.json、special-wire-datetime-b210-20260913.json 与 special-wire-b210-20260913/。
+- 无新增仓库测试/脚本或外部模型请求，候选服务及第 203 批产物不变。本批不证明所有无效日期解析、特殊映射键及其他 SDK 对象协议等价；后续变更尚未纳入完整组合回归，整体目标未完成。
+
+## 第 211 批：共享配置/编码修复后的组合检查（2026-09-13）
+
+- 现有 45 项组合检查用时 148.29 秒：44 项通过，一项独立 CLI 构建测试失败，因为夹具删除了 Python config() 始终要求存在的 model 字段。核对 core/builder.py 从 llm 导入 config 并在构建入口调用，确认是无效夹具，保留生产加载校验。
+- 仅为该夹具补 model: {}，保持独立 Builder、不构造默认模型以及缺失目标保护的原断言；失败项单独重跑通过，另 38 项按名称跳过。实现、配置和依赖没有变化，复用其余 44 项通过结果，不再次跑组合回归。不能把原始组合日志的 44/45 改写为一次性全绿。
+- 182 个记录文件在组合检查期间未变，收尾只有 test/parity.test.ts 的夹具改动。5,777 个 Python 基线文件、5,641 个复制资源及第 203 批 378 个产物文件全部匹配，无缺失，产物旧位置不存在。证据：../experiments/notale-ts/validation-b211-20260913/（combined.log、cli-recheck.log、followup.json、preservation.json、real-source-comparison.json）。
+- 与第 203 批真实链路相比，profiles/runtime/guidance/json 四个源模块及其编译产物和现有测试已变化；没有把旧真实生成当成当前版本新实验。候选服务保留冻结版本，剩余迁移契约与记录的内容缺陷继续如实保留，整体目标未完成。
+
+## 第 212 批：特殊映射键的 JSON 失败顺序（2026-09-13）
+
+- 实际 Python 三适配器对照，日期/日期时间/bytes 映射键的十二个场景均在发送前拒绝，但 TS 将键误称 dict，且键和值均非法时先报值错误。现在在序列化值之前校验键，使用对应的 Python 键类型名称。
+- 十二个错误、请求次数对照全部一致，原 wire 与三适配器状态两项检查、类型检查和编译通过。证据：../experiments/notale-ts/key-errors-b212-{before,after}-20260913.json 和 key-errors-b212-20260913/。无新仓库测试/脚本或模型请求。
+- 第 211 批组合检查早于此修改，不冒称其覆盖最新 JSON 键诊断；候选服务与第 203 批产物未替换。其他未核销契约继续开放，整体目标未完成。
+
+## 第 213 批：YAML 日期范围校验（2026-09-13）
+
+- 复现不存在的日期、month=13、day=0、year=0、hour=24、minute/second=60 及超出 ±24 小时时区被 JS 日期解析接受。现在按 Python 日期构造规则拒绝；datetime 先构造时区再校验年月日和时间，保留时区错误的 timedelta 表示。合法日期的底层 Date 按完整年份构造，避免 JS 的两位年份特殊处理，并继续保留原偏移与微秒来源。
+- 十一个日期解析结果/错误全部与 Python 一致，已有二十四个实际适配器 datetime 编码场景保持一致。配置/指导资源两项检查通过（37 项按名称跳过，8.62 秒），类型检查与编译通过。证据：../experiments/notale-ts/invalid-dates-b213-{before,after}-20260913.json、datetime-wire-b213-20260913.json 与 invalid-dates-b213-20260913/。
+- 无新增仓库测试/脚本、模型调用或候选服务替换。此批覆盖所列日期构造边界，不代表所有 YAML 词法、显式标签错误或其他特殊对象契约均已核销；整体目标未完成。
+
+## 日期配置字符串转换（第 214 批）
+
+实际 Python `_default_model_profile` 对照确认：日期型 model.name 应保留日期/时间文本，TS 原先变成 `{}`。现复用保留时区和微秒的日期表示，按 Python str(datetime) 使用空格分隔。六种日期配置差分全部匹配，24 种现有特殊值请求差分保持匹配；类型检查、编译及现有配置用例通过（其余 38 项未运行）。证据：`../experiments/notale-ts/date-string-b214-20260913/`。本批不覆盖容器内日期 repr 等其他未核销对象语义，不刷新第 203 批真实链路。
+
+## 容器内日期配置表示（第 215 批）
+
+列表、字典值及日期键的配置字符串原先将日期表示为 `{}`，18 个实际 Python profile 差分均复现。现按 Python 日期/时间 repr 保留构造参数、微秒与 timezone/timedelta 表示；扩展零秒和负时区后 27 项全部匹配。类型检查、编译及现有配置用例通过（38 项未运行）。证据：`../experiments/notale-ts/date-string-b215-20260913/`。本批不宣称日期键相等/哈希及其他特殊对象语义完成，不刷新真实链路。
+
+## 二进制配置字符串（第 216 批）
+
+YAML 二进制值原先被配置字符串转换写成索引字典；18 项实际 Python profile 差分复现。现按 Python bytes 的 b 前缀、引号与字节转义处理，直接值/列表/字典值共 21 项匹配（包含全部 256 种字节）；类型检查、编译及现有配置用例通过，其余 38 项未运行。证据：`../experiments/notale-ts/bytes-string-b216-20260913/`。特殊键相等/哈希等未核销契约及完整真实链路版本范围保持不变。
+
+## 日期与二进制映射键比较（第 217 批）
+
+修复 TypedYamlMap 按引用区分等值日期/二进制键的问题，保留首键身份并覆盖其值；带时区日期时间按时刻及微秒比较，无时区/有时区、日期/日期时间保持区分。七项 Python profile 差分从三项匹配变为全部匹配；三种等值键的 has/get/set/delete 检查、类型检查、编译及两个现有配置/资源用例通过（37 项未运行）。证据：`../experiments/notale-ts/key-equality-b217-20260913/`。配置消费者的可哈希判断、集合及其他复杂 YAML 契约未因此视为完成；真实链路证据版本范围不变。
+
+## 配置键可哈希判断（第 218 批）
+
+配置 pair 序列转字典原先错误拒绝日期、日期时间及 bytes 键，现与 Python 一样允许这些键，同时继续拒绝 list/dict/set。六项实际 profile 差分全部匹配（含等值键覆盖和三种拒绝类型），类型检查、编译及现有配置用例通过，38 项未运行。证据：`../experiments/notale-ts/hashable-b218-20260913/`；不扩大到所有集合/复杂 YAML 语义或刷新真实链路验收。
+
+## 特殊顶层配置加载（第 219 批）
+
+实际 Python config() 与 TS loadConfig() 对照发现日期、日期时间、bytes 和 set 顶层输入错误地报 KeyError(model)，现按基线在订阅时报告对应 TypeError。十一种加载输入全部匹配，类型检查、编译及现有配置用例通过（38 项未运行）。证据：`../experiments/notale-ts/config-top-b219-20260913/`。完整回归及真实链路证据不随本次定向检查更新。
+
+2026-09-14：Python 与 TS 同步更新 Builder 结束判定。无工具调用时审计最终文件，仅缺失产物或致命审计错误触发原上下文重试，失败回复及审计反馈不进入模型历史。无次数上限，保留原单页 3600 秒循环边界与取消行为；普通视觉警告不阻止结束。结果增加 premature_stops、last_stop_error，旧记录缺失时分别视为 0、空值。此项是两版共同的容错升级，不将历史实验视为新规则验收。

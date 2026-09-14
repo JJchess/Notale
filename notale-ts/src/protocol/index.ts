@@ -12,17 +12,28 @@ export const runStatusSchema = z.enum([
 export type RunStatus = z.infer<typeof runStatusSchema>;
 
 export const createRunRequestSchema = z.object({
-  query: z.string().trim().min(1).max(10_000),
-  minutes: z.number().int().min(1).max(360).default(45),
-  audience: z.string().trim().max(2_000).default("具备基础知识的学习者"),
-  scenario: z.string().trim().max(2_000).default("课堂讲授与课后复习"),
-  style: z.string().trim().max(2_000).default("根据内容选择克制、清晰的教学视觉"),
+  query: z.string(),
+  // Python argparse imposes no safe-integer quota on duration.
+  minutes: z.number().refine(Number.isInteger, "expected an integer").default(90),
+  audience: z.string().default("学过一点相关基础、但没系统学过这个题目的读者"),
+  scenario: z.string().default(""),
+  style: z.string().default(""),
 });
 export type CreateRunRequest = z.infer<typeof createRunRequestSchema>;
+
+export const pageProgressSchema = z.object({
+  pageId: z.string(), pageTitle: z.string(),
+  state: z.enum(['pending', 'generating', 'checking', 'reworking', 'ready', 'failed', 'cancelled', 'unknown']),
+  message: z.string().optional(), previewUrl: z.string().optional(), updatedAt: z.string().optional(),
+});
+export type PageProgress = z.infer<typeof pageProgressSchema>;
 
 export const runEventKindSchema = z.enum([
   "run.started",
   "phase.changed",
+  "workflow.progress",
+  "plan.ready",
+  "page.progress",
   "page.started",
   "page.ready",
   "artifact.ready",
@@ -40,6 +51,13 @@ export const runEventSchema = z.object({
   kind: runEventKindSchema,
   message: z.string(),
   phase: z.string().optional(),
+  workflow: z.object({
+    module: z.enum(['planner', 'director']), step: z.string(),
+    status: z.enum(['started', 'completed', 'reworking', 'failed', 'skipped']),
+    occurredAt: z.string().datetime(),
+  }).optional(),
+  pages: z.array(pageProgressSchema).optional(),
+  pageState: pageProgressSchema.shape.state.optional(),
   pageId: z.string().optional(),
   pageTitle: z.string().optional(),
   previewUrl: z.string().optional(),
@@ -54,6 +72,7 @@ export const runSnapshotSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSequence: z.number().int().nonnegative(),
+  pages: z.array(pageProgressSchema).optional(),
   phase: z.string().optional(),
   error: z.string().optional(),
   previewUrl: z.string().optional(),

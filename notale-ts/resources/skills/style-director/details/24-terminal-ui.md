@@ -1,0 +1,51 @@
+# Terminal UI · 程序员终端风
+
+稳定 ID：`24-terminal-ui`。本资料是创作参考，不是成品主题或固定版式。
+
+## 核心特征
+
+以字符行列、命令与输出的区分、光标和文本式标记形成界面语言，通过等宽节奏组织信息。
+
+终端不必黑底绿字；字符格与文本状态是辨识线索。中文混排是否等宽需按真实字体处理。
+
+## 参考图观察
+
+等宽节奏、命令行式标签、深底高亮、字符/线框语言。
+
+## 字体建议
+
+| 角色 | 推荐资源 | 字重 | 字姿 |
+| --- | --- | --- | --- |
+| 中文标题 | [noto-sans-sc](../../../vendor/fonts/noto-sans-sc/) | 500 | normal |
+| 英文标题 | [jetbrains-mono](../../../vendor/fonts/jetbrains-mono/) | 500 | normal |
+| 中文正文 | [noto-sans-sc](../../../vendor/fonts/noto-sans-sc/) | 400 | normal |
+| 英文正文 | [jetbrains-mono](../../../vendor/fonts/jetbrains-mono/) | 400 | normal |
+| 数字与标签 | [jetbrains-mono](../../../vendor/fonts/jetbrains-mono/) | 400 | normal |
+
+JetBrains Mono 负责英文和数字；中文以可读 Noto 补齐，必须精确字符格时另选带中文字格的像素方案。
+
+## 可变表达
+
+浅底、深底和强调色均可选择；保留命令、输出和当前状态的层级，不固定绿色。
+
+## 项目应用建议
+
+### 构图与阅读
+
+封面可用命令式短题名；正文保持可选择文字；交互命令或输入必须真实改变状态，不显示虚构执行记录。
+
+### 形状与材质
+
+局部字符边框、行首标记、清楚光标/焦点；不同输出类型靠层级和标签分开。
+
+### 使用边界
+
+普通中文黑体不是严格终端等宽字；需要字符格对齐时改用实际等宽支持或 CSS 网格，不声称自然对齐。
+
+## 来源与定义边界
+
+实际实现参照：[Windows Terminal 配色](https://learn.microsoft.com/en-us/windows/terminal/customize-settings/color-schemes)。终端可配置不同背景和前景，黑底绿字不是必要条件。
+
+原始视觉依据：[用户参考裁图](../shots/24-terminal-ui.png)，原图 05/4。“参考图观察”保留个例；字体、配色组合和 slides 落点属于项目建议，不能反向当作风格定义。静态图不证明动态行为。
+
+字体作者与授权、覆盖范围和混排说明见[字体库说明](../../../vendor/fonts/README.md)及各资源目录。共享行为边界见[创作约定](../GUIDE.md)。

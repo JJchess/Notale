@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, cp, lstat } from "node:fs/promises";
+import { mkdtemp, cp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -7,8 +7,6 @@ import { createRunRequestSchema } from "../src/protocol/index.js";
 import { RunService } from "../src/core/run-service.js";
 import { RunStore } from "../src/core/run-store.js";
 import { starterPipeline } from "../src/core/starter-pipeline.js";
-import { installCodeRuntime } from "../src/core/runtime-assets.js";
-import { executeFileTool } from "../src/tools/files.js";
 
 test("a run persists ordered events and produces movable files without symlinks", async () => {
   const temporary = await mkdtemp(path.join(os.tmpdir(), "notale-ts-"));
@@ -31,24 +29,283 @@ test("a run persists ordered events and produces movable files without symlinks"
   assert.ok(manifest.files.every((file) => !path.isAbsolute(file) && !file.includes("..")));
 });
 
-test("invalid requests fail at the protocol boundary", () => {
-  assert.equal(createRunRequestSchema.safeParse({ query: "" }).success, false);
-  assert.equal(createRunRequestSchema.safeParse({ query: "x", minutes: 999 }).success, false);
+test("concurrent snapshot updates preserve persisted event sequence and status", async () => {
+  const { rm } = await import('node:fs/promises');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-store-concurrency-'));
+  const store = new RunStore(root);
+  try {
+    const run = await store.create(createRunRequestSchema.parse({ query: 'concurrent events' }));
+    const operations: Promise<unknown>[] = [];
+    for (let i = 0; i < 12; i++) {
+      operations.push(store.emit(run.id, 'phase.changed', `phase ${i}`, { phase: 'create' }));
+      operations.push(store.update(run.id, { status: 'running' }));
+    }
+    await Promise.all(operations);
+    await store.update(run.id, { status: 'cancelled' });
+    const events = await store.events(run.id);
+    assert.deepEqual(events.map(event => event.sequence), Array.from({ length: 12 }, (_, i) => i + 1));
+    const snapshot = await store.get(run.id);
+    assert.equal(snapshot.lastSequence, 12);
+    assert.equal(snapshot.status, 'cancelled');
+    assert.equal(snapshot.phase, 'create');
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("page tools enforce ownership and runtime packages stay opt-in", async () => {
-  const temporary = await mkdtemp(path.join(os.tmpdir(), "notale-tools-"));
-  const context = { pagesDir: temporary, pageId: "page-01" };
-  await executeFileTool("Write", { file_path: "page-01.html", content: "ok" }, context);
-  await assert.rejects(() => executeFileTool("Write", { file_path: "page-02.html", content: "no" }, context), /Write scope/);
-  assert.match(await executeFileTool("Patch", { page: "page-01.html", edits: [{ old: "missing", new: "x" }] }, context), /整批未写入/);
-  await executeFileTool("Write", { file_path: "page-01.html", content: '<!doctype html><link rel="stylesheet" href="assets/base.css"><link rel="stylesheet" href="assets/theme.css"><main id="stage"><p data-deck-step="1">ok</p></main><script src="assets/base.js"></script>' }, context);
-  assert.match(await executeFileTool("Check", { page: "page-01.html" }, context), /通过/);
-  const plain = path.join(temporary, "plain");
-  await installCodeRuntime(plain, []);
-  const numpy = "numpy-2.4.6-cp314-cp314-pyemscripten_2026_0_wasm32.whl";
-  await assert.rejects(() => lstat(path.join(plain, "assets/runtime/pyodide", numpy)));
-  const scientific = path.join(temporary, "scientific");
-  await installCodeRuntime(scientific, ["numpy"]);
-  assert.equal((await lstat(path.join(scientific, "assets/runtime/pyodide", numpy))).isFile(), true);
+test("cancellation waits for workers and wins during manifest preparation without contradictory terminal events", async () => {
+  const { writeFile, rm } = await import('node:fs/promises');
+  const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; };
+  for (const phase of ['worker', 'manifest']) {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'notale-cancel-'));
+    const store = new RunStore(root), entered = deferred(), release = deferred(), aborted = deferred();
+    let signal!: AbortSignal;
+    class PausedService extends RunService {
+      override async manifest(id: string) {
+        if (phase === 'manifest') { entered.resolve(); await release.promise; }
+        return super.manifest(id);
+      }
+    }
+    const service = new PausedService(store, async context => {
+      signal = context.signal;
+      signal.addEventListener('abort', aborted.resolve, { once: true });
+      await writeFile(path.join(context.outputDir, 'index.html'), '<p>fixture</p>');
+      if (phase === 'worker') { entered.resolve(); await release.promise; }
+    });
+    try {
+      const run = await service.start(createRunRequestSchema.parse({ query: phase }));
+      await entered.promise;
+      let returned = false;
+      const first = service.cancel(run.id).then(snapshot => { returned = true; return snapshot; });
+      const second = service.cancel(run.id);
+      await aborted.promise;
+      assert.equal(returned, false);
+      assert.equal((await store.get(run.id)).status, 'running');
+      release.resolve();
+      assert.equal((await first).status, 'cancelled');
+      assert.equal((await second).status, 'cancelled');
+      const events = await store.events(run.id);
+      assert.deepEqual(events.filter(event => ['run.completed', 'run.failed', 'run.cancelled'].includes(event.kind)).map(event => event.kind), ['run.cancelled']);
+      assert.equal(events.at(-1)?.kind, 'run.cancelled');
+      assert.equal((await service.cancel(run.id)).status, 'cancelled');
+    } finally { release.resolve(); await rm(root, { recursive: true, force: true }); }
+  }
+});
+
+test("SSE replay honors Last-Event-ID even when the original URL says after=0", async () => {
+  const { rm } = await import('node:fs/promises');
+  const { createApp } = await import('../src/server/app.js');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-reconnect-'));
+  const { app, store } = createApp({ runsRoot: root, useStarterPipeline: true, logger: false });
+  try {
+    const run = await store.create(createRunRequestSchema.parse({ query: 'replay' }));
+    await store.emit(run.id, 'run.started', 'start');
+    await store.emit(run.id, 'page.ready', 'page');
+    await store.update(run.id, { status: 'completed' });
+    await store.emit(run.id, 'run.completed', 'done');
+    for (const [query, header, expected] of [['0', '2', [3]], ['2', '1', [3]], ['Infinity', 'NaN', [1, 2, 3]]] as const) {
+      const result = await app.inject({ url: `/v1/runs/${run.id}/events?after=${query}`, headers: { 'last-event-id': header } });
+      assert.equal(result.statusCode, 200);
+      assert.deepEqual([...result.body.matchAll(/^id: (\d+)$/gm)].map(match => Number(match[1])), expected);
+    }
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("invalid requests fail at the protocol boundary", () => {
+  assert.equal(createRunRequestSchema.safeParse({}).success, false);
+  assert.equal(createRunRequestSchema.safeParse({ query: "x", minutes: 1.5 }).success, false);
+  for (const minutes of [0, -1, 999, 9007199254740992, 10000000000000000, -10000000000000000]) {
+    assert.equal(createRunRequestSchema.parse({ query: "x", minutes }).minutes, minutes);
+  }
+  for (const minutes of [NaN, Infinity, -Infinity]) assert.equal(createRunRequestSchema.safeParse({ query: "x", minutes }).success, false);
+  assert.deepEqual(createRunRequestSchema.parse({ query: " x " }), { query: " x ", minutes: 90, audience: "学过一点相关基础、但没系统学过这个题目的读者", scenario: "", style: "" });
+});
+
+test('preview serves in-progress pages and refuses links outside the working artifact', async () => {
+  const { mkdir, writeFile, symlink, rm } = await import('node:fs/promises');
+  const { createApp } = await import('../src/server/app.js');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-preview-'));
+  const { app, store } = createApp({ runsRoot: root, useStarterPipeline: true });
+  try {
+    const run = await store.create(createRunRequestSchema.parse({ query: 'preview fixture' }));
+    const pages = path.join(store.runDir(run.id), 'work/pages');
+    await mkdir(path.join(pages, 'assets'), { recursive: true });
+    await writeFile(path.join(pages, 'page-01.html'), '<p>in progress</p>');
+    await writeFile(path.join(root, 'outside.txt'), 'outside');
+    await symlink(path.join(root, 'outside.txt'), path.join(pages, 'assets/outside.txt'));
+    const url = `/v1/runs/${run.id}/preview/`;
+    assert.equal((await app.inject({ url: url + 'page-01.html' })).body, '<p>in progress</p>');
+    assert.equal((await app.inject({ url: url + 'assets/outside.txt' })).statusCode, 404);
+    await store.update(run.id, { status: 'completed' });
+    assert.equal((await app.inject({ url: url + 'page-01.html' })).statusCode, 404);
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('lecture archive preserves files and produces an importable editor manifest', async () => {
+  const { writeFile, rm, readFile } = await import('node:fs/promises');
+  const { createHash } = await import('node:crypto');
+  const { unzipSync } = await import('fflate');
+  const { lectureArchive } = await import('../src/server/lecture-archive.js');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-archive-'));
+  const store = new RunStore(root), service = new RunService(store, starterPipeline);
+  try {
+    const run = await store.create(createRunRequestSchema.parse({ query: 'archive fixture' }));
+    await assert.rejects(lectureArchive(service, run.id, {}), /lecture_not_completed/);
+    const output = path.join(store.runDir(run.id), 'output');
+    await writeFile(path.join(output, 'index.html'), '<p>assembled</p>');
+    await writeFile(path.join(output, 'page-02.html'), '<p>second</p>');
+    await writeFile(path.join(output, 'page-01.html'), '<p>first</p>');
+    await writeFile(path.join(output, 'base.js'), 'window.Deck = {};');
+    await store.update(run.id, { status: 'completed' });
+    const files = unzipSync(await lectureArchive(service, run.id, { '.js': 'text/javascript' }));
+    const { document } = JSON.parse(Buffer.from(files['notale-project.json']!).toString());
+    assert.deepEqual(document.slides.map((s: any) => s.sourcePath), ['page-01.html', 'page-02.html']);
+    assert.match(document.slides[0].html, /<p data-notale-id="[\w-]+">first<\/p>/);
+    assert.equal(document.assets['index.html'], undefined, 'editor reserves the assembled entry');
+    assert.equal(document.assets['base.js'].hash, createHash('sha256').update(files['base.js']!).digest('hex'));
+    for (const name of ['index.html', 'page-01.html', 'page-02.html', 'base.js']) {
+      assert.deepEqual(Buffer.from(files[name]!), await readFile(path.join(output, name)));
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('publication serves cached compressed assets without caching mutable work or following compressed symlinks', async () => {
+  const { mkdir, writeFile, symlink, rm } = await import('node:fs/promises');
+  const { gzipSync } = await import('node:zlib');
+  const { createApp } = await import('../src/server/app.js');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-publish-http-'));
+  const { app, store } = createApp({ runsRoot: root, useStarterPipeline: true, logger: false });
+  try {
+    const run = await store.create(createRunRequestSchema.parse({ query: 'cache fixture' }));
+    const working = path.join(store.runDir(run.id), 'work/pages'); await mkdir(working, { recursive: true });
+    await writeFile(path.join(working, 'index.html'), 'working');
+    const url = `/v1/runs/${run.id}/preview/`;
+    assert.equal((await app.inject(url + 'index.html')).headers['cache-control'], 'no-store');
+    const output = path.join(store.runDir(run.id), 'output'), body = 'window.data = "' + 'cached '.repeat(1000) + '";';
+    await writeFile(path.join(output, 'index.html'), 'published');
+    await writeFile(path.join(output, 'shared.js'), body); await writeFile(path.join(output, 'shared.js.gz'), gzipSync(body));
+    await store.update(run.id, { status: 'completed' });
+    const response = await app.inject({ url: url + 'shared.js', headers: { 'accept-encoding': 'gzip' } });
+    assert.equal(response.statusCode, 200); assert.equal(response.headers['content-encoding'], 'gzip');
+    assert.match(String(response.headers['cache-control']), /immutable/);
+    assert.match(String(response.headers.vary), /Accept-Encoding/i);
+    const again = await app.inject({ url: url + 'shared.js', headers: { 'accept-encoding': 'gzip', 'if-none-match': String(response.headers.etag) } });
+    assert.equal(again.statusCode, 304);
+    assert.equal((await app.inject(url + 'index.html')).headers['cache-control'], 'no-cache');
+    await writeFile(path.join(root, 'private.br'), 'private');
+    await symlink(path.join(root, 'private.br'), path.join(output, 'shared.js.br'));
+    assert.equal((await app.inject({ url: url + 'shared.js', headers: { 'accept-encoding': 'br' } })).statusCode, 404);
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('failed publication transforms preserve author files and never expose a partial output', async () => {
+  const { mkdir, writeFile, readFile, readdir, rm } = await import('node:fs/promises');
+  const { publishOutput } = await import('../src/core/orchestration.js');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-publish-atomic-'));
+  try {
+    const pages = path.join(root, 'pages'), output = path.join(root, 'output');
+    await mkdir(pages); await mkdir(output); await writeFile(path.join(pages, 'index.html'), 'original');
+    await assert.rejects(publishOutput(pages, output, async temporary => {
+      await writeFile(path.join(temporary, 'index.html'), 'partial'); throw new Error('cancelled publication');
+    }), /cancelled publication/);
+    assert.equal(await readFile(path.join(pages, 'index.html'), 'utf8'), 'original');
+    assert.deepEqual(await readdir(output), []);
+    assert.deepEqual((await readdir(root)).sort(), ['output', 'pages']);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('planned page progress survives replay and observations preserve tool values and errors', async () => {
+  const { observeBuilder, projectPages } = await import('../src/core/progress.js');
+  const { rm } = await import('node:fs/promises');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-progress-'));
+  const store = new RunStore(root);
+  try {
+    const run = await store.create(createRunRequestSchema.parse({ query: 'progress contract' }));
+    await store.emit(run.id, 'plan.ready', 'planned', { pages: [
+      { pageId: 'page-01', pageTitle: 'first', state: 'pending' }, { pageId: 'page-02', pageTitle: 'second', state: 'pending' },
+    ] });
+    const planned = await store.get(run.id);
+    assert.deepEqual(planned.pages?.map(p => p.state), ['pending', 'pending']);
+    await store.emit(run.id, 'page.started', 'started', { pageId: 'page-01' });
+    await store.emit(run.id, 'page.progress', 'repairing', { pageId: 'page-01', pageState: 'reworking' });
+    assert.equal((await new RunStore(root).get(run.id)).pages?.[0]?.state, 'reworking');
+    await store.emit(run.id, 'page.ready', 'ready', { pageId: 'page-01', previewUrl: '/page-01.html' });
+    await store.emit(run.id, 'page.progress', 'stale observation', { pageId: 'page-01', pageState: 'checking' });
+    await store.emit(run.id, 'run.cancelled', 'cancelled');
+    const final = await store.get(run.id), events = await store.events(run.id);
+    assert.deepEqual(final.pages?.map(p => p.state), ['ready', 'cancelled']);
+    assert.deepEqual(events.reduce(projectPages, []), final.pages);
+    assert.deepEqual(events.concat(events).reduce(projectPages, []), final.pages);
+    const notices: string[] = [], value = { text: '✗ JS 报错', images: [] }, failure = new Error('original tool error');
+    const original = { run: async (name: string) => { if (name === 'Bash') throw failure; return value; }, codeCheck: async () => ({ report: 'ok', shots: [] }) } as unknown as import('../src/core/builder.js').BuilderPorts;
+    const observed = observeBuilder(original, (_pid, state) => { notices.push(state); });
+    assert.equal(await observed.run('Check', {}, { cwd: root, pid: 'page-01' }), value);
+    assert.deepEqual(notices, ['checking', 'reworking']);
+    await assert.rejects(observed.run('Bash', {}, { cwd: root, pid: 'page-01' }), error => error === failure);
+    const brokenNotice = observeBuilder(original, () => { throw new Error('notification failed'); });
+    assert.equal(await brokenNotice.run('Check', {}, { cwd: root, pid: 'page-01' }), value);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+
+test("workflow observers never delay work and preserve result/error identity", async () => {
+  const { observedStep } = await import('../src/core/workflow-progress.js');
+  const events: string[] = [];
+  const result = {};
+  assert.equal(await observedStep(event => { events.push(event.status); return new Promise<void>(() => {}); }, 'planner', 'draft', '规划', async () => result), result);
+  assert.deepEqual(events, ['started', 'completed']);
+  const failure = new Error('original');
+  await assert.rejects(observedStep(event => { events.push(event.status); throw new Error('observer'); }, 'director', 'theme', '主题', async () => { throw failure; }), error => error === failure);
+  assert.deepEqual(events.slice(-2), ['started', 'failed']);
+});
+
+test('Builder premature stops retry identical context, audit latest files, and respect cancellation/time', async () => {
+  const { buildOne, Page } = await import('../src/core/builder.js');
+  const { writeFile, readFile, rm } = await import('node:fs/promises');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-stop-'));
+  type MockItem = { type: 'function_call'; name: string; arguments: string; call_id: string } | { type: 'message'; role: string; content: { type: string; text: string }[] };
+  const output = (calls: boolean, content = 'ok'): MockItem[] => calls
+    ? [{ type: 'function_call', name: 'Write', arguments: JSON.stringify({ content }), call_id: 'write' }]
+    : [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Action:default_api:Read{file_path:references/general.md}' }] }];
+  try {
+    for (const mode of ['missing', 'modified', 'code', 'timeout', 'cancel']) {
+      const target = path.join(root, 'page-01.html'); await rm(target, { force: true });
+      const page = new Page('page-01', 'brief'); page.workflow = mode === 'code' ? 'build-code' : 'build-page';
+      const history: unknown[] = []; let turn = 0, checks = 0, retries = 0, clock = 0;
+      const controller = new AbortController();
+      const sequence = mode === 'modified' || mode === 'code' ? [output(true, 'bad'), output(false), output(true), output(false)] : [...Array.from({length: 5}, () => output(false)), output(true), output(false)];
+      if (mode === 'modified') sequence[0] = [...output(true), { type: 'function_call', name: 'Check', arguments: '{}', call_id: 'check-before-modification' }, ...output(true, 'bad').map(item => ({...item, call_id: 'modify'}))];
+      if (mode === 'code') for (const row of sequence) for (const item of row) if (item.type === 'function_call') item.name = 'CodeScaffold';
+      if (mode === 'missing') sequence[1] = [];
+      const work = buildOne(page, root, path.join(root, `${mode}.jsonl`), 'instructions', {
+        model: { async respondCanonical(instructions, messages, tools) {
+          history.push(structuredClone({ instructions, messages, tools }));
+          return { id: String(++turn), output: sequence[turn - 1]!, replay_items: [], raw: {}, status: 'completed', incomplete_details: null, usage: { input_tokens: 150001, output_tokens: 18, input_tokens_details: { cached_tokens: 0 } } };
+        } },
+        async run(name, args) {
+          if (name === 'Write') { await writeFile(target, args.content); return 'written'; }
+          checks++;
+          return mode !== 'code' && await readFile(target, 'utf8') === 'bad' ? '✗ JS 报错' : '✗ 页面溢出';
+        },
+        codeCheck: async () => ({ report: await readFile(target, 'utf8') === 'bad' ? '失败:代码工作台自检失败' : 'ok', shots: [] }),
+        scaffold: async () => { await writeFile(target, turn === 1 ? 'bad' : 'ok'); return {}; }, image: async () => ({ text: '', images: [] }),
+      }, { signal: controller.signal, now: () => clock, refs: [{type: 'input_image', image_url: 'data:image/png;base64,YQ=='}], onRetry() {
+        retries++;
+        if (mode === 'timeout' && retries === 3) clock = 3601;
+        if (mode === 'cancel') controller.abort();
+        if (mode === 'missing') throw new Error('observer failure');
+      } });
+      if (mode === 'cancel') { await assert.rejects(work, error => error === controller.signal.reason); assert.equal(turn, 1); continue; }
+      await work;
+      assert.equal(page.premature_stops, retries);
+      if (mode === 'timeout') { assert.equal(page.termination, 'max_seconds'); assert.equal(turn, 3); assert.ok(page.last_stop_error.includes('target missing')); }
+      else {
+        assert.equal(page.termination, 'no_tool_use'); assert.equal(page.artifact_present, true); assert.deepEqual(page.audit?.fatal_errors, []);
+        assert.equal(checks, mode === 'missing' ? 1 : mode === 'modified' ? 3 : 2);
+        assert.equal(retries, mode === 'missing' ? 5 : 1);
+      }
+      const a = mode === 'modified' || mode === 'code' ? 1 : 0;
+      const b = mode === 'modified' || mode === 'code' ? 2 : Math.min(5, history.length - 1);
+      assert.deepEqual(history[a], history[b]);
+      assert.equal(page.calls, turn); assert.equal(page.tok_out, turn * 18);
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

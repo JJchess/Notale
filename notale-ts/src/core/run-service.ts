@@ -1,13 +1,13 @@
 import { readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { artifactManifestSchema, protocolVersion, type ArtifactManifest, type CreateRunRequest, type RunEventKind, type RunSnapshot } from "../protocol/index.js";
+import { artifactManifestSchema, protocolVersion, type ArtifactManifest, type CreateRunRequest, type RunEvent, type RunEventKind, type RunSnapshot } from "../protocol/index.js";
 import { RunStore } from "./run-store.js";
 
 export interface GenerationContext {
   run: RunSnapshot;
   outputDir: string;
   signal: AbortSignal;
-  emit(kind: RunEventKind, message: string, details?: Record<string, string>): Promise<void>;
+  emit(kind: RunEventKind, message: string, details?: Partial<Omit<RunEvent, "protocolVersion" | "runId" | "sequence" | "timestamp" | "kind" | "message">>): Promise<void>;
 }
 
 export type GenerationPipeline = (context: GenerationContext) => Promise<void>;
@@ -24,10 +24,12 @@ async function filesBelow(root: string, current = root): Promise<string[]> {
   return rows.sort();
 }
 
+interface RunningTask { controller: AbortController; done: Promise<void>; settling: boolean }
+
 export class RunService {
   readonly store: RunStore;
   readonly pipeline: GenerationPipeline;
-  readonly #controllers = new Map<string, AbortController>();
+  readonly #tasks = new Map<string, RunningTask>();
 
   constructor(store: RunStore, pipeline: GenerationPipeline) {
     this.store = store;
@@ -37,17 +39,26 @@ export class RunService {
   async start(request: CreateRunRequest): Promise<RunSnapshot> {
     const run = await this.store.create(request);
     const controller = new AbortController();
-    this.#controllers.set(run.id, controller);
-    void this.#execute(run, controller).finally(() => this.#controllers.delete(run.id));
+    const task: RunningTask = { controller, done: Promise.resolve(), settling: false };
+    this.#tasks.set(run.id, task);
+    task.done = this.#execute(run, task).finally(() => this.#tasks.delete(run.id));
+    // The request returns before generation; callers of cancel still observe errors.
+    void task.done.catch(() => undefined);
     return run;
   }
 
   async cancel(id: string): Promise<RunSnapshot> {
-    this.#controllers.get(id)?.abort();
+    const task = this.#tasks.get(id);
+    if (task) {
+      // Once terminal persistence starts, completion has won the race.
+      if (!task.settling) task.controller.abort();
+      await task.done;
+    }
     const run = await this.store.get(id);
-    if (["completed", "failed", "cancelled"].includes(run.status)) return run;
-    await this.store.emit(id, "run.cancelled", "生成已取消");
-    return this.store.update(id, { status: "cancelled" });
+    if (!task && !["completed", "failed", "cancelled"].includes(run.status)) {
+      throw new Error("Run is not owned by this service; cancellation cannot be confirmed");
+    }
+    return run;
   }
 
   async manifest(id: string): Promise<ArtifactManifest> {
@@ -63,24 +74,35 @@ export class RunService {
     });
   }
 
-  async #execute(run: RunSnapshot, controller: AbortController): Promise<void> {
-    await this.store.update(run.id, { status: "running", phase: "starting" });
-    await this.store.emit(run.id, "run.started", "开始生成讲义", { phase: "starting" });
+  async #execute(run: RunSnapshot, task: RunningTask): Promise<void> {
+    const { controller } = task;
     try {
+      controller.signal.throwIfAborted();
+      await this.store.update(run.id, { status: "running", phase: "starting" });
+      controller.signal.throwIfAborted();
+      await this.store.emit(run.id, "run.started", "开始生成讲义", { phase: "starting" });
+      controller.signal.throwIfAborted();
       await this.pipeline({
         run: await this.store.get(run.id),
         outputDir: path.join(this.store.runDir(run.id), "output"),
         signal: controller.signal,
-        emit: async (kind, message, details = {}) => { await this.store.emit(run.id, kind, message, details); },
+        emit: async (kind, message, details = {}) => { controller.signal.throwIfAborted(); await this.store.emit(run.id, kind, message, details); },
       });
-      if (controller.signal.aborted) return;
+      controller.signal.throwIfAborted();
       const manifest = await this.manifest(run.id);
       await writeFile(path.join(this.store.runDir(run.id), "artifact.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+      controller.signal.throwIfAborted();
+      task.settling = true;
       await this.store.emit(run.id, "artifact.ready", "讲义产物已经就绪", { previewUrl: `/v1/runs/${run.id}/preview/index.html` });
       await this.store.update(run.id, { status: "completed", phase: "complete", previewUrl: `/v1/runs/${run.id}/preview/index.html` });
       await this.store.emit(run.id, "run.completed", "讲义生成完成", { phase: "complete" });
     } catch (error) {
-      if (controller.signal.aborted) return;
+      task.settling = true;
+      if (controller.signal.aborted) {
+        await this.store.update(run.id, { status: "cancelled" });
+        await this.store.emit(run.id, "run.cancelled", "生成已取消");
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       await this.store.update(run.id, { status: "failed", error: message });
       await this.store.emit(run.id, "run.failed", "讲义生成失败");

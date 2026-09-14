@@ -1,18 +1,21 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { stat, realpath } from "node:fs/promises";
 import path from "node:path";
 import Fastify from "fastify";
+import fastifyStatic from '@fastify/static';
 import { createRunRequestSchema } from "../protocol/index.js";
 import { RunStore } from "../core/run-store.js";
 import { RunService, type GenerationPipeline } from "../core/run-service.js";
 import { starterPipeline } from "../core/starter-pipeline.js";
 import { createModelPipeline } from "../core/model-pipeline.js";
+import { lectureArchive } from './lecture-archive.js';
 
 const contentTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
   ".wasm": "application/wasm", ".zip": "application/zip", ".whl": "application/zip",
+  ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf",
 };
 
 export interface AppOptions {
@@ -24,6 +27,7 @@ export interface AppOptions {
 
 export function createApp(options: AppOptions) {
   const app = Fastify({ logger: options.logger ?? true });
+  app.register(fastifyStatic, { serve: false, preCompressed: true, dotfiles: 'deny' });
   const store = new RunStore(options.runsRoot);
   const service = new RunService(store, options.pipeline ?? (options.useStarterPipeline ? starterPipeline : createModelPipeline()));
 
@@ -47,9 +51,19 @@ export function createApp(options: AppOptions) {
     try { return await service.manifest(request.params.runId); }
     catch { return reply.code(404).send({ error: "artifact_not_found" }); }
   });
+  app.get<{ Params: { runId: string } }>("/v1/runs/:runId/download", async (request, reply) => {
+    let run;
+    try { run = await store.get(request.params.runId); }
+    catch { return reply.code(404).send({ error: 'run_not_found' }); }
+    if (run.status !== 'completed') return reply.code(409).send({ error: 'lecture_not_completed' });
+    const archive = await lectureArchive(service, run.id, contentTypes);
+    return reply.type('application/zip').header('content-disposition', `attachment; filename="${run.id}.zip"`)
+      .send(Buffer.from(archive));
+  });
   app.get<{ Params: { runId: string }; Querystring: { after?: string } }>("/v1/runs/:runId/events", async (request, reply) => {
     const header = request.headers["last-event-id"];
-    const after = Number(request.query.after ?? (Array.isArray(header) ? header[0] : header) ?? 0) || 0;
+    const cursors = [request.query.after, Array.isArray(header) ? header[0] : header].map(Number);
+    const after = Math.max(0, ...cursors.filter(value => Number.isSafeInteger(value) && value >= 0));
     try { await store.get(request.params.runId); }
     catch { return reply.code(404).send({ error: "run_not_found" }); }
     reply.hijack();
@@ -82,10 +96,36 @@ export function createApp(options: AppOptions) {
     const requested = path.resolve(output, request.params["*"] || "index.html");
     if (requested !== output && !requested.startsWith(`${output}${path.sep}`)) return reply.code(400).send({ error: "invalid_path" });
     try {
-      const info = await stat(requested);
+      let target = requested, boundary = output;
+      try { await stat(target); } catch {
+        const run = await store.get(request.params.runId);
+        if (run.status === 'completed') throw new Error('final asset missing');
+        boundary = path.join(store.runDir(request.params.runId), 'work/pages');
+        target = path.resolve(boundary, request.params['*'] || 'index.html');
+      }
+      const resolved = await realpath(target), allowed = await realpath(boundary);
+      if (resolved !== allowed && !resolved.startsWith(allowed + path.sep)) throw new Error('asset outside output');
+      const info = await stat(resolved);
       if (!info.isFile()) throw new Error("not a file");
-      reply.type(contentTypes[path.extname(requested)] ?? "application/octet-stream");
-      return reply.send(createReadStream(requested));
+      const published = boundary === output;
+      // The run URL is immutable after atomic publication. Mutable work files
+      // must never leave a cache entry that survives publication at that URL.
+      if (!published) {
+        reply.header('cache-control', 'no-store');
+        reply.type(contentTypes[path.extname(target)] ?? "application/octet-stream");
+        return reply.send(createReadStream(resolved));
+      }
+      // Validate compressed siblings as well as the original before the static
+      // plugin chooses a negotiated representation.
+      for (const extension of ['.br', '.gz']) {
+        try {
+          const sibling = await realpath(resolved + extension);
+          if (!sibling.startsWith(allowed + path.sep)) throw new Error('compressed asset outside output');
+        } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      }
+      const html = path.extname(target) === '.html';
+      reply.header('cache-control', html ? 'no-cache' : 'public, max-age=31536000, immutable');
+      return reply.sendFile(path.relative(allowed, resolved), allowed, { cacheControl: false, etag: true });
     } catch { return reply.code(404).send({ error: "asset_not_found" }); }
   });
 
