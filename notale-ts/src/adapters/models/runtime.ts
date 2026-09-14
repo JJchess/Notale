@@ -1,7 +1,7 @@
 /** Canonical Responses-shaped model boundary ported from core/llm.py. */
 import { setTimeout as delay } from 'node:timers/promises';
 import { MIMEType } from 'node:util';
-import { parsePythonJson, parsePythonJsonBytes, jsonText, inheritJsonProvenance, pythonJsonTruthy, pythonInteger, rememberKeyOrder, pythonObjectKeys, isPythonIntegerField, pythonNumberText, sumIntegers, mergeJsonMappings, type PythonInt } from '../../core/json.js';
+import { parsePythonJson, parsePythonJsonBytes, jsonText, inheritJsonProvenance, pythonJsonTruthy, pythonInteger, isPythonIntegerField, pythonNumberText, sumIntegers, mergeJsonMappings, type PythonInt } from '../../core/json.js';
 import { requestBytes, requestFtpBytes } from '../../core/http.js';
 import { ModelCookies } from './cookies.js';
 import { stripText } from '../../core/text.js';

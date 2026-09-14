@@ -157,6 +157,14 @@ test('lecture archive preserves files and produces an importable editor manifest
     await store.update(run.id, { status: 'completed' });
     const files = unzipSync(await lectureArchive(service, run.id, { '.js': 'text/javascript' }));
     const { document } = JSON.parse(Buffer.from(files['notale-project.json']!).toString());
+    const native = unzipSync(await lectureArchive(service, run.id, { '.js': 'text/javascript' }, 'notale'));
+    const nativeManifest = JSON.parse(Buffer.from(native['notale-project.json']!).toString());
+    assert.equal(nativeManifest.format, 'notale');
+    assert.equal(nativeManifest.formatVersion, 1);
+    assert.equal(nativeManifest.entry, 'index.html');
+    assert.equal(nativeManifest.document.schemaVersion, 1);
+    assert.equal(JSON.parse(Buffer.from(files['notale-project.json']!).toString()).format, undefined);
+    for (const name of ['index.html', 'page-01.html', 'page-02.html', 'base.js']) assert.deepEqual(native[name], files[name]);
     assert.deepEqual(document.slides.map((s: any) => s.sourcePath), ['page-01.html', 'page-02.html']);
     assert.match(document.slides[0].html, /<p data-notale-id="[\w-]+">first<\/p>/);
     assert.equal(document.assets['index.html'], undefined, 'editor reserves the assembled entry');
@@ -165,6 +173,90 @@ test('lecture archive preserves files and produces an importable editor manifest
       assert.deepEqual(Buffer.from(files[name]!), await readFile(path.join(output, name)));
     }
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('notale exports do not block completion, coalesce downloads, persist cache and recover interrupted jobs', async () => {
+  const { writeFile, readFile, rm } = await import('node:fs/promises');
+  const { LectureExports } = await import('../src/server/lecture-exports.js');
+  const { lectureArchive } = await import('../src/server/lecture-archive.js');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-exports-'));
+  const store = new RunStore(root);
+  let enter!: () => void, release!: () => void, calls = 0;
+  const entered = new Promise<void>(resolve => { enter = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const service: RunService = new RunService(store, async ({ outputDir }) => {
+    await writeFile(path.join(outputDir, 'index.html'), '<p>lecture</p>');
+    await writeFile(path.join(outputDir, 'page-01.html'), '<p>page</p>');
+  }, id => exports.ensure(id));
+  const pack: typeof lectureArchive = async (...args) => { calls++; enter(); await gate; return lectureArchive(...args); };
+  const exports = new LectureExports(service, pack);
+  try {
+    const run = await service.start(createRunRequestSchema.parse({ query: '原生讲义' }));
+    await entered;
+    assert.equal((await store.get(run.id)).status, 'completed');
+    assert.equal((await store.events(run.id)).at(-1)?.kind, 'run.completed');
+    const a = exports.ensure(run.id), b = exports.ensure(run.id);
+    assert.equal(a, b); assert.equal(calls, 1);
+    release();
+    const file = await a, bytes = await readFile(file);
+    assert.equal(await exports.ensure(run.id), file); assert.equal(calls, 1);
+    const restarted = new LectureExports(service, pack);
+    assert.deepEqual(await readFile(await restarted.ensure(run.id)), bytes); assert.equal(calls, 1);
+    await writeFile(path.join(store.runDir(run.id), 'exports/notale.json'), JSON.stringify({ status: 'building' }));
+    await restarted.recover(); await restarted.idle();
+    assert.equal(calls, 2);
+    assert.equal(JSON.parse(await readFile(path.join(store.runDir(run.id), 'exports/notale.json'), 'utf8')).status, 'ready');
+    assert.ok(!(await service.manifest(run.id)).files.some(name => name.endsWith('.notale')));
+  } finally { release(); await exports.idle(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('notale failed exports stay separate from generation and retry on demand', async () => {
+  const { writeFile, readFile, rm } = await import('node:fs/promises');
+  const { LectureExports, notaleFilename } = await import('../src/server/lecture-exports.js');
+  const { lectureArchive } = await import('../src/server/lecture-archive.js');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-export-failed-'));
+  const store = new RunStore(root), service = new RunService(store, starterPipeline);
+  let calls = 0;
+  const exports = new LectureExports(service, async (...args) => { if (++calls === 1) throw new Error('fixture compression failure'); return lectureArchive(...args); });
+  try {
+    const run = await store.create(createRunRequestSchema.parse({ query: 'fixture' }));
+    await writeFile(path.join(store.runDir(run.id), 'output/index.html'), '<p>lecture</p>');
+    await writeFile(path.join(store.runDir(run.id), 'output/page-01.html'), '<p>page</p>');
+    await store.update(run.id, { status: 'completed' });
+    await assert.rejects(exports.ensure(run.id), /fixture compression failure/);
+    assert.equal((await store.get(run.id)).status, 'completed');
+    await assert.rejects(readFile(path.join(store.runDir(run.id), 'exports/lecture.notale')), { code: 'ENOENT' });
+    await exports.recover(); await exports.idle(); assert.equal(calls, 1, 'failed tasks do not retry in the background');
+    await exports.ensure(run.id); assert.equal(calls, 2);
+    assert.equal(notaleFilename(' 你好/世界:课程\r\n', 'fallback'), '你好 世界 课程.notale');
+    assert.equal(notaleFilename('...', 'fallback'), 'fallback.notale');
+  } finally { await exports.idle(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('notale download API preserves ZIP defaults and rejects invalid or unfinished exports', async () => {
+  const { writeFile, rm } = await import('node:fs/promises');
+  const { unzipSync } = await import('fflate');
+  const { createApp } = await import('../src/server/app.js');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-download-'));
+  const { app, store } = createApp({ runsRoot: root, useStarterPipeline: true, logger: false });
+  try {
+    const run = await store.create(createRunRequestSchema.parse({ query: '中文讲义' }));
+    const url = '/v1/runs/' + run.id + '/download';
+    assert.equal((await app.inject(url + '?format=other')).statusCode, 400);
+    assert.equal((await app.inject(url + '?format=notale')).statusCode, 409);
+    await writeFile(path.join(store.runDir(run.id), 'output/index.html'), '<p>lecture</p>');
+    await writeFile(path.join(store.runDir(run.id), 'output/page-01.html'), '<p>page</p>');
+    await store.update(run.id, { status: 'completed' });
+    const native = await app.inject(url + '?format=notale');
+    assert.equal(native.statusCode, 200); assert.match(native.headers['content-disposition']!, /\.notale/);
+    assert.match(native.headers['content-disposition']!, /filename\*=UTF-8''/);
+    assert.ok(native.headers['content-disposition']!.includes(encodeURIComponent(`讲义-${run.id}.notale`)));
+    assert.equal(native.headers['content-type'], 'application/octet-stream');
+    assert.equal(JSON.parse(Buffer.from(unzipSync(native.rawPayload)['notale-project.json']!).toString()).format, 'notale');
+    const zip = await app.inject(url);
+    assert.equal(zip.statusCode, 200); assert.match(zip.headers['content-disposition']!, /\.zip/);
+    assert.equal(zip.headers['content-type'], 'application/zip');
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }); }
 });
 
 test('publication serves cached compressed assets without caching mutable work or following compressed symlinks', async () => {

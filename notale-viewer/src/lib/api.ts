@@ -19,10 +19,6 @@ export async function getRun(runId: string): Promise<RunSnapshot> {
   return json(await fetch(`${base}/runs/${encodeURIComponent(runId)}`, { cache: "no-store" }));
 }
 
-export async function listRuns(): Promise<RunSnapshot[]> {
-  return json(await fetch(`${base}/runs`, { cache: "no-store" }));
-}
-
 export async function cancelRun(runId: string): Promise<RunSnapshot> {
   return json(await fetch(`${base}/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }));
 }

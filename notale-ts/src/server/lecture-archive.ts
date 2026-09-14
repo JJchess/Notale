@@ -6,6 +6,15 @@ import { RESOURCES } from '../core/guidance.js';
 import { parse, serialize, type DefaultTreeAdapterMap } from 'parse5';
 import type { RunService } from '../core/run-service.js';
 
+export type ArchiveFormat = 'zip' | 'notale';
+export const archiveContentTypes: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+  '.wasm': 'application/wasm', '.zip': 'application/zip', '.whl': 'application/zip',
+  '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.otf': 'font/otf',
+};
+
 function editorHtml(html: string): string {
   const root = parse(html), used = new Set<string>();
   const excluded = new Set(['html', 'head', 'body', 'script', 'style', 'link', 'meta', 'title', 'base', 'noscript']);
@@ -27,7 +36,7 @@ function editorHtml(html: string): string {
 }
 
 /** A static lecture plus the editor's existing project manifest; author files stay intact. */
-export async function lectureArchive(service: RunService, id: string, mime: Record<string, string>): Promise<Uint8Array> {
+export async function lectureArchive(service: RunService, id: string, mime: Record<string, string>, format: ArchiveFormat = 'zip'): Promise<Uint8Array> {
   const run = await service.store.get(id);
   if (run.status !== 'completed') throw new Error('lecture_not_completed');
   const manifest = await service.manifest(id);
@@ -37,6 +46,7 @@ export async function lectureArchive(service: RunService, id: string, mime: Reco
   const slides: { id: string; name: string; sourcePath: string; html: string }[] = [];
   const names = new Set(manifest.files);
   for (const name of manifest.files) {
+    if (name.startsWith('/') || name.includes('\\') || /[\x00-\x1f?#]/.test(name) || name.split('/').some(part => !part || part === '.' || part === '..')) throw new Error('unsafe_archive_path');
     // HTTP encodings are delivery caches, not editor assets. Keep their originals.
     if (/\.(br|gz)$/.test(name) && names.has(name.replace(/\.(br|gz)$/, ''))) continue;
     if (name === 'notale-project.json') throw new Error('reserved_project_manifest');
@@ -51,7 +61,9 @@ export async function lectureArchive(service: RunService, id: string, mime: Reco
   }
   if (!slides.length) throw new Error('lecture_has_no_pages');
   slides.sort((a, b) => a.sourcePath.localeCompare(b.sourcePath, 'en', { numeric: true }));
-  files['notale-project.json'] = Buffer.from(JSON.stringify({ document: {
+  files['notale-project.json'] = Buffer.from(JSON.stringify({
+    ...(format === 'notale' ? { format: 'notale', formatVersion: 1, entry: 'index.html' } : {}),
+    document: {
     schemaVersion: 1, id: randomUUID(), title: run.request.query.slice(0, 300) || '讲义',
     width: 1600, height: 900, slides, assets,
   } }));

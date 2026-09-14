@@ -2201,7 +2201,7 @@ test('Builder loop matches Python natural stop, image feedback, code guard and s
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const builder = await import('../src/core/builder.js');
-  const runtime = await import('../src/adapters/models/runtime.js');
+  await import('../src/adapters/models/runtime.js');
   const root = mkdtempSync(path.join(tmpdir(), 'notale-builder-parity-')), pages = path.join(root, 'pages');
   mkdirSync(pages);
   writeFileSync(path.join(pages, 'page-01.html'), '<html>fixture</html>');
@@ -3439,7 +3439,7 @@ test('separate CLI planning and selected-page build preserve absent-target prote
 
 
 test('custom ImageGen roots preserve Python subprocess results and cancellation', async () => {
-  const { mkdtemp, mkdir, writeFile, readFile, rm, access } = await import('node:fs/promises');
+  const { mkdtemp, mkdir, writeFile, rm, access } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { generate, generationScriptFor, generationKeyFromFile } = await import('../src/tools/media-execution.js');
   const root=await mkdtemp(path.join(tmpdir(),'notale-custom-gen-')), custom=path.join(root,'custom'), script=path.join(custom,'make-illustration/scripts/gen.py');

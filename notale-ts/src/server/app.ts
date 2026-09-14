@@ -8,15 +8,10 @@ import { RunStore } from "../core/run-store.js";
 import { RunService, type GenerationPipeline } from "../core/run-service.js";
 import { starterPipeline } from "../core/starter-pipeline.js";
 import { createModelPipeline } from "../core/model-pipeline.js";
-import { lectureArchive } from './lecture-archive.js';
+import { archiveContentTypes } from './lecture-archive.js';
+import { LectureExports, lectureFilename } from './lecture-exports.js';
 
-const contentTypes: Record<string, string> = {
-  ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
-  ".wasm": "application/wasm", ".zip": "application/zip", ".whl": "application/zip",
-  ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf",
-};
+const contentTypes = archiveContentTypes;
 
 export interface AppOptions {
   runsRoot: string;
@@ -29,7 +24,11 @@ export function createApp(options: AppOptions) {
   const app = Fastify({ logger: options.logger ?? true });
   app.register(fastifyStatic, { serve: false, preCompressed: true, dotfiles: 'deny' });
   const store = new RunStore(options.runsRoot);
-  const service = new RunService(store, options.pipeline ?? (options.useStarterPipeline ? starterPipeline : createModelPipeline()));
+  const service: RunService = new RunService(store, options.pipeline ?? (options.useStarterPipeline ? starterPipeline : createModelPipeline()),
+    id => exports.ensure(id).catch(error => { app.log.error({ err: error, runId: id }, 'Lecture export failed'); }));
+  const exports = new LectureExports(service);
+  app.addHook('onReady', () => exports.recover());
+  app.addHook('onClose', () => exports.idle());
 
   app.post("/v1/runs", async (request, reply) => {
     const parsed = createRunRequestSchema.safeParse(request.body);
@@ -51,14 +50,25 @@ export function createApp(options: AppOptions) {
     try { return await service.manifest(request.params.runId); }
     catch { return reply.code(404).send({ error: "artifact_not_found" }); }
   });
-  app.get<{ Params: { runId: string } }>("/v1/runs/:runId/download", async (request, reply) => {
+  app.get<{ Params: { runId: string }; Querystring: { format?: string } }>("/v1/runs/:runId/download", async (request, reply) => {
+    const format = request.query.format ?? 'zip';
+    if (format !== 'zip' && format !== 'notale') return reply.code(400).send({ error: 'invalid_export_format' });
     let run;
     try { run = await store.get(request.params.runId); }
     catch { return reply.code(404).send({ error: 'run_not_found' }); }
     if (run.status !== 'completed') return reply.code(409).send({ error: 'lecture_not_completed' });
-    const archive = await lectureArchive(service, run.id, contentTypes);
-    return reply.type('application/zip').header('content-disposition', `attachment; filename="${run.id}.zip"`)
-      .send(Buffer.from(archive));
+    try {
+      const file = await exports.ensure(run.id, format);
+      const filename = format === 'notale' ? await lectureFilename(service, run.id) : run.id + '.zip';
+      const encoded = encodeURIComponent(filename).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase());
+      return reply.type(format === 'notale' ? 'application/octet-stream' : 'application/zip')
+        .header('content-disposition', `attachment; filename="${run.id}.${format}"; filename*=UTF-8''${encoded}`)
+        .header('content-length', (await stat(file)).size).header('cache-control', 'no-store')
+        .send(createReadStream(file));
+    } catch (error) {
+      app.log.error({ err: error, runId: run.id }, 'Lecture export failed');
+      return reply.code(503).send({ error: 'lecture_export_failed', message: '讲义文件打包失败，预览不受影响，请重试下载。' });
+    }
   });
   app.get<{ Params: { runId: string }; Querystring: { after?: string } }>("/v1/runs/:runId/events", async (request, reply) => {
     const header = request.headers["last-event-id"];

@@ -8,7 +8,7 @@ import path from 'node:path';
 import { loadConfig, configValue, resolveBuilderProfile } from '../adapters/models/profiles.js';
 import { workflowModels, type TransportOptions, type PlannerOverrides } from '../adapters/models/runtime.js';
 import { RESOURCES } from './guidance.js';
-import { planRun, buildRun, publishOutput, type BuildOptions } from './orchestration.js';
+import { planRun, buildRun, type BuildOptions } from './orchestration.js';
 import { builderPorts, lessonTitle, Page } from './builder.js';
 import { directorPorts } from './theme-runtime.js';
 import { inspect } from './theme.js';

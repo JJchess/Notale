@@ -19,6 +19,7 @@ import { RunStore } from "../core/run-store.js";
 import { RunService } from "../core/run-service.js";
 import { starterPipeline } from "../core/starter-pipeline.js";
 import { createModelPipeline } from "../core/model-pipeline.js";
+import { LectureExports } from '../server/lecture-exports.js';
 
 const command = process.argv[2] ?? "help";
 const argv = process.argv.slice(3);
@@ -142,12 +143,17 @@ async function main(): Promise<void> {
     const { request, pipeline, runs, starter } = buildArguments(argv);
     const store = new RunStore(runs);
     const service = new RunService(store, starter ? starterPipeline : createModelPipeline(pipeline));
+    const exports = new LectureExports(service);
     const run = await service.start(request);
     for (;;) {
       const current = await store.get(run.id);
       if (["completed", "failed", "cancelled"].includes(current.status)) {
         process.stdout.write(`${JSON.stringify(current)}\n`);
         process.exitCode = current.status === "completed" ? 0 : 1;
+        if (current.status === 'completed') {
+          try { await exports.ensure(run.id); }
+          catch (error) { process.stderr.write(`讲义已生成，但 .notale 打包失败：${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 1; }
+        }
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 25));

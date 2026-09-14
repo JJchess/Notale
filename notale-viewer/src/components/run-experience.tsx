@@ -93,7 +93,7 @@ export function RunExperience({ runId }: { runId: string }) {
   if (finished) return (
     <main className="linear-lecture">
       <iframe src={previewUrl(runId)} title="讲义预览" allowFullScreen />
-      <details className="lecture-actions"><summary>讲义 ⋯</summary><div><a href={`/notale-api/v1/runs/${encodeURIComponent(runId)}/download`} download>下载 ZIP</a><Link href="/">返回首页</Link></div></details>
+      <details className="lecture-actions"><summary>讲义 ⋯</summary><div><a href={`/notale-api/v1/runs/${encodeURIComponent(runId)}/download?format=notale`} download>下载 .notale</a><Link href="/">返回首页</Link></div></details>
     </main>
   );
 

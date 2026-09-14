@@ -31,7 +31,7 @@ export class RunService {
   readonly pipeline: GenerationPipeline;
   readonly #tasks = new Map<string, RunningTask>();
 
-  constructor(store: RunStore, pipeline: GenerationPipeline) {
+  constructor(store: RunStore, pipeline: GenerationPipeline, private readonly onCompleted?: (id: string) => Promise<unknown>) {
     this.store = store;
     this.pipeline = pipeline;
   }
@@ -96,6 +96,8 @@ export class RunService {
       await this.store.emit(run.id, "artifact.ready", "讲义产物已经就绪", { previewUrl: `/v1/runs/${run.id}/preview/index.html` });
       await this.store.update(run.id, { status: "completed", phase: "complete", previewUrl: `/v1/runs/${run.id}/preview/index.html` });
       await this.store.emit(run.id, "run.completed", "讲义生成完成", { phase: "complete" });
+      // Post-publication work cannot fail or delay the generation lifecycle.
+      void Promise.resolve().then(() => this.onCompleted?.(run.id)).catch(() => undefined);
     } catch (error) {
       task.settling = true;
       if (controller.signal.aborted) {

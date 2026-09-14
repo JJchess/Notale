@@ -1,6 +1,6 @@
 /** Local style inputs and registered font files; original catalogue pictures use frozen Pillow renditions. */
 import { readFileSync, existsSync, statSync, lstatSync } from 'node:fs';
-import { mkdir, copyFile, readdir, readFile } from 'node:fs/promises';
+import { mkdir, copyFile, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { decodeText, stripText, splitLines, caseFold } from './text.js';
