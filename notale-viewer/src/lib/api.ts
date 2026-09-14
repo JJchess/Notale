@@ -37,3 +37,8 @@ export async function uploadTemplate(file: File): Promise<{ id: string; name: st
   const body = new FormData(); body.append('file', file);
   return json(await fetch(`${base}/templates`, { method: 'POST', body }));
 }
+
+export async function uploadFile(file: File, signal?: AbortSignal): Promise<{ id: string; name: string }> {
+  const body = new FormData(); body.append('file', file);
+  return json(await fetch(`${base}/files`, { method: 'POST', body, signal }));
+}

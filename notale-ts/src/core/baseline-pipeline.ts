@@ -97,7 +97,7 @@ export function baselineRuntime(root: string, options: PipelineOptions = {}, sig
         { step, tools: (response.message.tool_calls ?? []).map(call => ({ name: call.function.name, arguments: call.function.arguments })) });
     };
     return { env, cfg, models,
-      get planner() { return { model: models.planner, media: media.workflow, trace, validateCss: (css: string) => inspect(css).bad.join('；') }; },
+      get planner() { return { model: models.planner, visionInput: models.planner.profile.vision_input, media: media.workflow, trace, validateCss: (css: string) => inspect(css).bad.join('；') }; },
       get director() { return directorPorts(models.director, trace, media.workflow, signal); },
       get builders() { return Object.fromEntries(Object.entries(models.builders).map(([workflow, model]) => [workflow, builderPorts(model, media.workspace, env)])); },
     };
@@ -112,7 +112,7 @@ export function createBaselinePipeline(options: PipelineOptions = {}): Generatio
     let notices = Promise.resolve();
     const report: ProgressObserver = workflow => {
       if (signal.aborted) return;
-      notices = notices.then(() => emit('workflow.progress', `${workflow.module === 'planner' ? '课程规划' : '视觉设计'} · ${workflow.message}`, { workflow }))
+      notices = notices.then(() => emit('workflow.progress', `${workflow.module === 'planner' ? '课程规划' : workflow.module === 'sources' ? '资料准备' : '视觉设计'} · ${workflow.message}`, { workflow }))
         .catch(error => { if (!signal.aborted) console.warn('Progress notification unavailable:', error instanceof Error ? error.name : 'error'); });
     };
     const states = new Map<string, string>();
@@ -126,7 +126,7 @@ export function createBaselinePipeline(options: PipelineOptions = {}): Generatio
     const release = acquireVisualChecker();
     try {
       await emit('phase.changed', '正在规划讲义和视觉方向', { phase: 'ideate' });
-      await planRun({ root, query: run.request.query, minutes: run.request.minutes, audience: run.request.audience, scenario: run.request.scenario,
+      await planRun({ root, ...(run.request.fileIds?.length ? { inputDirectory: path.join(path.dirname(outputDir), 'input/files') } : {}), query: run.request.query, minutes: run.request.minutes, audience: run.request.audience, scenario: run.request.scenario,
         ...(run.request.style ? { style: run.request.style } : {}), ...(options.build?.workflowRoot ? { workflowRoot: options.build.workflowRoot } : {}), ...(options.build?.prompts ? { prompts: options.build.prompts } : {}), styleDirector: options.styleDirector ?? true, visualFocus: options.build?.visualFocus ?? false, ...(run.request.templateId ? { template: path.join(path.dirname(outputDir), 'input/template.pptx') } : options.template ? { template: options.template } : {}) },
       { planner: { ...planner, progress: report }, director: { ...director, progress: report } }, { signal, onPlanned(pagesDoc) {
         const pages = Object.entries(splitPages(pagesDoc)).sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true })).map(([number, spec]) => {

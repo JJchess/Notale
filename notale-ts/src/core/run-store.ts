@@ -1,6 +1,7 @@
+import { FileInputs } from './file-input.js';
 import { TemplateInputs } from './template-input.js';
 import { EventEmitter } from "node:events";
-import { appendFile, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { appendFile, rm, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
@@ -59,10 +60,13 @@ export class RunStore {
     };
     const directory = this.runDir(id);
     await mkdir(path.join(directory, "output"), { recursive: true });
-    if (request.templateId) await new TemplateInputs(this.root).snapshot(request.templateId, directory);
-    await writeJsonAtomic(path.join(directory, "run.json"), snapshot);
-    await writeFile(path.join(directory, "events.jsonl"), "", "utf8");
-    return snapshot;
+    try {
+      if (request.fileIds?.length) await new FileInputs(this.root).snapshot(request.fileIds, directory);
+      if (request.templateId) await new TemplateInputs(this.root).snapshot(request.templateId, directory);
+      await writeJsonAtomic(path.join(directory, "run.json"), snapshot);
+      await writeFile(path.join(directory, "events.jsonl"), "", "utf8");
+      return snapshot;
+    } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
   }
 
   async get(id: string): Promise<RunSnapshot> {

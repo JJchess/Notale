@@ -1,6 +1,7 @@
 /** Read-only client view of the versioned Notale HTTP protocol. */
 export interface CreateRunRequest {
   templateId?: string;
+  fileIds?: string[];
   query: string;
   minutes: number;
   audience: string;
@@ -41,7 +42,7 @@ export interface RunEvent {
   kind: "workflow.progress" | "plan.ready" | "page.progress" | "run.started" | "phase.changed" | "page.started" | "page.ready" | "artifact.ready" | "run.completed" | "run.failed" | "run.cancelled";
   message: string;
   phase?: string;
-  workflow?: { module: 'planner' | 'director'; step: string; status: 'started' | 'completed' | 'reworking' | 'failed' | 'skipped'; occurredAt: string };
+  workflow?: { module: 'planner' | 'director' | 'sources'; step: string; status: 'started' | 'completed' | 'reworking' | 'failed' | 'skipped'; occurredAt: string };
   pages?: PageProgress[];
   pageState?: PageProgress["state"];
   pageId?: string;

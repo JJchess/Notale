@@ -1,3 +1,4 @@
+import { FileInputs, inputLimits } from '../core/file-input.js';
 import { TemplateInputs } from '../core/template-input.js';
 import { TEMPLATE_MAX_BYTES } from '../core/pptx-template.js';
 import { createReadStream } from "node:fs";
@@ -44,12 +45,29 @@ export function createApp(options: AppOptions) {
     } catch (error) { return reply.code(400).send({ error: 'invalid_template', message: error instanceof Error ? error.message : '模板上传失败' }); }
   });
 
+  const inputs = new FileInputs(options.runsRoot);
+  app.post('/v1/files', { bodyLimit: inputLimits.bytes + 1024 * 1024 }, async (request, reply) => {
+    try {
+      if (!request.headers['content-type']?.startsWith('multipart/form-data')) return reply.code(415).send({ error: 'invalid_file', message: '请上传资料文件' });
+      const form = await new Response(new Uint8Array(request.body as Buffer), { headers: { 'content-type': request.headers['content-type'] } }).formData();
+      const files = form.getAll('file'), file = files[0];
+      if (files.length !== 1 || !file || typeof file === 'string') throw new Error('每次上传一份资料');
+      return reply.code(201).send(await inputs.save(file.name, Buffer.from(await file.arrayBuffer())));
+    } catch (error) { return reply.code(400).send({ error: 'invalid_file', message: error instanceof Error ? error.message : '资料上传失败' }); }
+  });
+
   app.post("/v1/runs", async (request, reply) => {
     const parsed = createRunRequestSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
     if (parsed.data.templateId) {
       try { await templates.file(parsed.data.templateId); }
       catch { return reply.code(400).send({ error: "invalid_template", message: "模板不存在或校验失败，请重新上传" }); }
+    }
+    if (parsed.data.fileIds?.length) {
+      try {
+        const files = await Promise.all(parsed.data.fileIds.map(id => inputs.get(id)));
+        if (files.reduce((n, f) => n + f.metadata.size, 0) > inputLimits.totalBytes) throw new Error('资料合计不能超过 200 MiB');
+      } catch (error) { return reply.code(400).send({ error: 'invalid_file', message: error instanceof Error ? error.message : '资料不存在，请重新上传' }); }
     }
     const run = await service.start(parsed.data);
     return reply.code(202).send(run);

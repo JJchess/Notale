@@ -13,6 +13,7 @@ export type RunStatus = z.infer<typeof runStatusSchema>;
 
 export const createRunRequestSchema = z.object({
   query: z.string(),
+  fileIds: z.array(z.string().uuid()).max(10).refine(ids => new Set(ids).size === ids.length, "duplicate files").optional(),
   templateId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   // Python argparse imposes no safe-integer quota on duration.
   minutes: z.number().refine(Number.isInteger, "expected an integer").default(90),
@@ -53,7 +54,7 @@ export const runEventSchema = z.object({
   message: z.string(),
   phase: z.string().optional(),
   workflow: z.object({
-    module: z.enum(['planner', 'director']), step: z.string(),
+    module: z.enum(['planner', 'director', 'sources']), step: z.string(),
     status: z.enum(['started', 'completed', 'reworking', 'failed', 'skipped']),
     occurredAt: z.string().datetime(),
   }).optional(),

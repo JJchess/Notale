@@ -1,6 +1,6 @@
 import { parse as parseScript } from 'acorn';
 import { simple as walkScript } from 'acorn-walk';
-import { NOTALE_FORMAT, pageRuntime } from '@notale/format';
+import { NOTALE_FORMAT, pageRuntime, officialCodeWorkbenchHashes, stagedCodeWorkbench } from '@notale/format';
 import { readFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -73,7 +73,8 @@ export async function lectureArchive(service: RunService, id: string, mime: Reco
     // HTTP encodings are delivery caches, not editor assets. Keep their originals.
     if (/\.(br|gz)$/.test(name) && names.has(name.replace(/\.(br|gz)$/, ''))) continue;
     if (name === 'notale-project.json') throw new Error('reserved_project_manifest');
-    const bytes = await readFile(path.join(root, name));
+    let bytes = await readFile(path.join(root, name));
+    if (officialCodeWorkbenchHashes.has(createHash('sha256').update(bytes).digest('hex'))) bytes=Buffer.from(stagedCodeWorkbench(bytes.toString('utf8')));
     files[name] = bytes;
     if (/^page-\d+\.html$/.test(name)) {
       slides.push({ id: randomUUID(), sourcePath: name, ...editorHtml(bytes.toString('utf8')) });

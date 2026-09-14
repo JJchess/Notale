@@ -1,3 +1,4 @@
+import { Sources, publishSources, sourceInstructions } from './sources.js';
 import { TEMPLATE_SPEC } from './pptx-template.js';
 import type { TemplateSpec } from './template-style.js';
 import { observedStep, workflowNotice } from './workflow-progress.js';
@@ -56,7 +57,11 @@ export async function planRun(run: DirectorRequest, ports: { planner: PlannerPor
   // Neither branch consumes the other's planning context. Wait for both even on failure.
   if (run.styleDirector === false) workflowNotice(ports.director.progress, 'director', 'overall', 'skipped', '未启用独立视觉设计，沿用规划主题');
   const director = run.styleDirector === false ? Promise.resolve() : observedStep(ports.director.progress, 'director', 'overall', '视觉设计', () => direct(run, ports.director, options.signal));
-  const planning = observedStep(ports.planner.progress, 'planner', 'overall', '课程规划', () => deckCall(run, ports.planner, options.signal)).then(result => {
+  const planning = (async () => {
+    const sources = run.inputDirectory ? await observedStep(ports.planner.progress, 'sources', 'overall', '资料准备', () => Sources.prepare(run.root, run.inputDirectory!, ports.planner.model, ports.planner.visionInput ?? true, options.signal,
+      message => workflowNotice(ports.planner.progress, 'sources', 'reading', 'started', message))) : undefined;
+    return observedStep(ports.planner.progress, 'planner', 'overall', '课程规划', () => deckCall({ ...run, ...(sources ? { sources } : {}) }, ports.planner, options.signal));
+  })().then(result => {
     try { options.onPlanned?.(result.pagesDoc); } catch {}
     return result;
   });
@@ -64,6 +69,7 @@ export async function planRun(run: DirectorRequest, ports: { planner: PlannerPor
   if (planned.status === 'rejected') throw planned.reason;
   if (styled.status === 'rejected') throw new Error(`style director 失败:${styled.reason instanceof Error ? styled.reason.message : String(styled.reason)}`);
   options.signal?.throwIfAborted();
+  if (planned.value.sourcesByPage) await writeFile(path.join(run.root, 'sources/by-page.json'), JSON.stringify(planned.value.sourcesByPage));
   const { css, pagesDoc, mapping } = planned.value, assets = path.join(run.root, 'pages/assets');
   if (run.styleDirector !== false) decodeText(await readFile(path.join(assets, 'theme.css')));
   await mkdir(path.dirname(path.join(run.root, PAGES_REL)), { recursive: true });
@@ -118,6 +124,8 @@ export async function buildRun(root: string, ports: Record<string, BuilderPorts>
   if (existsSync(manifestFile)) throw Object.assign(new Error(`${manifestFile} 已存在；新实验请使用新的 run label`), { name: 'FileExistsError' });
   for (const page of pages) if (existsSync(path.join(directory, page.pid + '.html')) || existsSync(path.join(directory, 'assets/lessons', page.pid))) throw Object.assign(new Error(`${page.pid} 已有构建产物；新实验必须从 absent target 开始`), { name: 'FileExistsError' });
   await options.onPlan?.(pages);
+  const sources = await Sources.load(root);
+  const sourceMapping: Record<string, string[]> = sources ? JSON.parse(await readFile(path.join(root, 'sources/by-page.json'), 'utf8')) : {};
   const templateSpec = existsSync(path.join(root, TEMPLATE_SPEC)) ? JSON.parse(await readFile(path.join(root, TEMPLATE_SPEC), 'utf8')) as TemplateSpec : undefined;
   const refs = !templateSpec && pages.some(page => page.workflow !== 'build-code') ? await themeReferences(root) : [];
   const profile = options.profile, samples = options.samples ?? 'mini', auxiliary = options.includeAux ?? samples !== 'none';
@@ -129,7 +137,7 @@ export async function buildRun(root: string, ports: Record<string, BuilderPorts>
     pages: pages.map(page => page.pid), startedAt: new Date().toISOString() };
   await writeFile(manifestFile, jsonText(manifest, { indent: 2 }) + '\n');
   const chapters = chapterPreloads(root, raw.length), instructions = Object.fromEntries(PAGE_WORKFLOWS.map(name => [name, Object.values(instructionBlocks(root, raw.length, name, { ...options, includeAux: auxiliary })).join('\n\n')]));
-  for (const page of pages) page.prompt = environmentContext(directory, page.pid, path.join(workflows, page.workflow)) + '\n\n' + page.prompt + '\n\n' + chapters[page.pid];
+  for (const page of pages) page.prompt = environmentContext(directory, page.pid, path.join(workflows, page.workflow)) + '\n\n' + page.prompt + '\n\n' + chapters[page.pid] + (sources ? '\n\n' + sourceInstructions + '\n本页相关资料：\n' + sources.evidence(sourceMapping[page.pid] ?? []) : '');
   const templateRefs: Record<string, Record<string, any>[]> = {};
   if (templateSpec) for (const workflow of PAGE_WORKFLOWS.filter(w => w !== 'build-code')) {
     const sources = [...new Set(templateSpec.layouts.filter(l => (l.workflows as string[]).includes(workflow)).map(l => l.source))];
@@ -157,6 +165,7 @@ export async function buildRun(root: string, ports: Record<string, BuilderPorts>
   }));
   for (const worker of workers) if (worker.status === 'rejected') throw worker.reason;
   try { await writeCredits(directory); } catch (error) { console.warn(`  素材来源汇总失败（不影响页面产物）：${(error as Error).message}`); }
+  await publishSources(root);
   const results = Object.fromEntries(pages.map(page => [page.pid, { calls: page.calls, within_response_target: page.calls <= 11, seconds: Math.round(page.seconds * 10) / 10,
     label: page.label, workflow: page.workflow, profile: options.profiles[page.workflow]!.id, termination: page.termination, premature_stops: page.premature_stops, last_stop_error: page.last_stop_error, artifact_present: page.artifact_present, audit: page.audit,
     steps: page.steps, args: page.steps_arg, reference_reads: page.reference_reads, images: page.images, evicted: page.evicted,

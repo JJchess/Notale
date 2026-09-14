@@ -1,3 +1,4 @@
+import { Sources, sourceTools } from './sources.js';
 import { sumIntegers, type PythonInt } from './json.js';
 import { decodeText, PYTHON_SPACE, stripText, splitLines } from './text.js';
 import { parsePythonJson } from './json.js';
@@ -123,7 +124,9 @@ export async function buildOne(page: Page, pagesDir: string, trace: string, inst
     if (refs.length && !vision && page.workflow !== 'build-code') throw new Error('本次有视觉参考，但 Builder 模型未启用 vision_input；不能声称看过参考');
     history.push({ role: 'user', content: page.prompt });
   }
+  const sources = await Sources.load(path.dirname(pagesDir), page.pid);
   const specs = toolSpecs(page.workflow, vision);
+  if (sources) specs.push(...sourceTools);
   if (page.workflow === 'build-code') specs.unshift(structuredClone(constants.CODE_SCAFFOLD_SCHEMA));
   const now = options.now ?? (() => Date.now() / 1000), start = now(), seen = new Set<string>();
   for (;;) {
@@ -170,7 +173,10 @@ export async function buildOne(page: Page, pagesDir: string, trace: string, inst
       page.steps.push(call.name !== 'Bash' ? call.name : String(args.command ?? '').includes('selfcheck') ? 'SELFCHECK' : 'Bash');
       (page.steps_arg[call.name] ??= []).push(tagOf(call));
       let result: string | ToolOutput;
-      if (call.name === 'CodeScaffold') {
+      if (sources && (call.name === 'SearchSources' || call.name === 'ReadSource')) {
+        try { result = await sources.tool(call.name, args, options.signal, vision); }
+        catch (error) { options.signal?.throwIfAborted(); result = `资料读取失败：${(error as Error).message}`; }
+      } else if (call.name === 'CodeScaffold') {
         try { result = JSON.stringify(await ports.scaffold(pagesDir, page.pid, lessonTitle(page), page.total, options.signal), null, 2); }
         catch (error) { result = `CodeScaffold 失败：${(error as Error).name}: ${(error as Error).message}`; }
       } else {

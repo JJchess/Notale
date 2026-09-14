@@ -1,10 +1,11 @@
 #!/usr/bin/env node
+import { FileInputs } from '../core/file-input.js';
 import { pythonInteger } from "../core/json.js";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { checkCommand } from "./check.js";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { baselineRuntime } from "../core/baseline-pipeline.js";
 import { planRun, buildRun } from "../core/orchestration.js";
 import { resolveBuilderProfile } from "../adapters/models/profiles.js";
@@ -35,6 +36,7 @@ function integerArgument(value: string, option: string): number {
 
 export function buildArguments(args: string[], stage: 'plan' | 'build' = 'build') {
   const options = {
+    file: { type: 'string', multiple: true },
     label: { type: 'string' }, only: { type: 'string', multiple: true },
     query: { type: 'string', short: 'q' }, minutes: { type: 'string', default: '90' },
     audience: { type: 'string', default: '学过一点相关基础、但没系统学过这个题目的读者' },
@@ -82,6 +84,7 @@ export function buildArguments(args: string[], stage: 'plan' | 'build' = 'build'
     checkOptions(values.template !== undefined ? path.resolve(values.template) : undefined, values.style, toggle('style-director', true));
   }
   if (values.skills !== undefined) generationScriptFor(values.skills);
+  if (values.file?.length && (values.starter || stage === 'build' && values.label)) throw new Error('--file 仅用于 plan 或完整生成；分阶段 build 使用已保存的资料快照');
   const pipeline: PipelineOptions = {
     ...(values.skills !== undefined ? { skillsRoot: path.resolve(values.skills) } : {}),
     ...(stage === 'plan' ? { planner: { ...(values.model ? { model: values.model } : {}), ...(values.effort ? { effort: values.effort } : {}), ...(values['base-url'] ? { baseUrl: values['base-url'] } : {}), ...(values['key-env'] ? { keyEnv: values['key-env'] } : {}), ...(values.wire ? { wire: values.wire } : {}) } } : {}),
@@ -95,7 +98,7 @@ export function buildArguments(args: string[], stage: 'plan' | 'build' = 'build'
     },
   };
   const request = createRunRequestSchema.parse({ query: values.query ?? (stage === 'build' && values.label ? '(planned run)' : undefined), minutes: integerArgument(values.minutes, 'minutes'), audience: values.audience, scenario: values.scenario, style: values.style });
-  return { request, pipeline, runs: runsRoot(values.runs), starter: values.starter, label: values.label };
+  return { request, pipeline, files: values.file?.map(f => path.resolve(f)) ?? [], runs: runsRoot(values.runs), starter: values.starter, label: values.label };
 }
 
 async function main(): Promise<void> {
@@ -107,7 +110,7 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "plan" || (command === "build" && argv.some(arg => arg === '--label' || arg.startsWith('--label=')))) {
-    const { request, pipeline, runs, label, starter } = buildArguments(argv, command);
+    const { request, pipeline, files, runs, label, starter } = buildArguments(argv, command);
     if (!label) throw new Error('A separate stage requires --label');
     if (starter) throw new Error('--starter is only supported for complete demo runs');
     const root = path.resolve(runs, label);
@@ -116,13 +119,14 @@ async function main(): Promise<void> {
       // mkdir without recursive guarantees an existing plan is never overwritten.
       await mkdir(path.dirname(root), { recursive: true });
       await mkdir(root);
+      if (files.length) { const inputs = new FileInputs(runs); const ids = []; for (const file of files) ids.push((await inputs.save(path.basename(file), await readFile(file))).id); await inputs.snapshot(ids, root); }
     }
     const release = acquireVisualChecker();
     try {
       const runtime = baselineRuntime(root, pipeline);
       if (command === 'plan') {
         const { style, ...planning } = request;
-        const result = await planRun({ root, ...planning, ...(style ? { style } : {}), styleDirector: pipeline.styleDirector ?? true,
+        const result = await planRun({ root, ...planning, ...(files.length ? { inputDirectory: path.join(root, 'input/files') } : {}), ...(style ? { style } : {}), styleDirector: pipeline.styleDirector ?? true,
           ...(pipeline.template ? { template: pipeline.template } : {}),
           ...(pipeline.build?.prompts ? { prompts: pipeline.build.prompts } : {}),
           ...(pipeline.build?.workflowRoot ? { workflowRoot: pipeline.build.workflowRoot } : {}),
@@ -140,7 +144,8 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "build") {
-    const { request, pipeline, runs, starter } = buildArguments(argv);
+    const { request, pipeline, files, runs, starter } = buildArguments(argv);
+    if (files.length) { const inputs = new FileInputs(runs); request.fileIds = []; for (const file of files) request.fileIds.push((await inputs.save(path.basename(file), await readFile(file))).id); }
     const store = new RunStore(runs);
     const service = new RunService(store, starter ? starterPipeline : createModelPipeline(pipeline));
     const exports = new LectureExports(service);
@@ -171,7 +176,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${JSON.stringify({ run: await store.get(id), events: await store.events(id) }, null, 2)}\n`);
     return;
   }
-  process.stdout.write("Usage: notale <serve|plan|build|check|inspect> [options]\nCheck: [page-*.html ...] [--after JS ...] [--shot] [--shot-dir PATH] [--crop X,Y,W,H] [--zoom 2] [--wait 1200] [--text-report] [--json]\nStages: plan --label NAME --query TEXT; build --label NAME [--only page-01 ...]\nPlanner: [--model NAME] [--effort VALUE] [--base-url URL] [--key-env ENV] [--wire chat|messages|responses]\nBuild: --query TEXT [--minutes 90] [--profile NAME] [--uniform] [--samples mini|none]\n       [--notes off|cap|notes|only (default cap: cover 80, page/interaction 200)]\n       [--sample-shots] [--visual-focus] [--[no-]aux-samples]\n       [--concurrency 100] [--[no-]style-director] [--template PATH]\n       [--skills PATH] [--workflows PATH] [--prompts PATH] [--chassis PATH] [--lib PATH] [--config PATH] [--env-file PATH]\n");
+  process.stdout.write("Usage: notale <serve|plan|build|check|inspect> [options]\nCheck: [page-*.html ...] [--after JS ...] [--shot] [--shot-dir PATH] [--crop X,Y,W,H] [--zoom 2] [--wait 1200] [--text-report] [--json]\nStages: plan --label NAME --query TEXT; build --label NAME [--only page-01 ...]\nPlanner: [--model NAME] [--effort VALUE] [--base-url URL] [--key-env ENV] [--wire chat|messages|responses]\nBuild: --query TEXT [--minutes 90] [--profile NAME] [--uniform] [--samples mini|none]\n       [--notes off|cap|notes|only (default cap: cover 80, page/interaction 200)]\n       [--sample-shots] [--visual-focus] [--[no-]aux-samples]\n       [--concurrency 100] [--[no-]style-director] [--template PATH] [--file PATH ...]\n       [--skills PATH] [--workflows PATH] [--prompts PATH] [--chassis PATH] [--lib PATH] [--config PATH] [--env-file PATH]\n");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch((error) => {

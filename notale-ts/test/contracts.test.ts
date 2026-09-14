@@ -500,3 +500,94 @@ test('template and free Builders share teaching and visual rules without changin
     await rm(path.join(root, 'template-spec.json')); assert.deepEqual(instructionBlocks(root, 1, 'build-page'), before['build-page']);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('content uploads snapshot originals and reject invalid, duplicate and missing files', async () => {
+  const { FileInputs, inspectInput } = await import('../src/core/file-input.js');
+  const { createApp } = await import('../src/server/app.js');
+  const { readFile, rm } = await import('node:fs/promises');
+  const sharp = (await import('sharp')).default;
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-content-'));
+  const { app } = createApp({ runsRoot: root, pipeline: async () => {}, logger: false });
+  try {
+    const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#123456' } }).png().toBuffer();
+    await assert.rejects(inspectInput('x.pdf', bytes));
+    await assert.rejects(inspectInput('x.docx', bytes));
+    const form = new FormData(); form.append('file', new Blob([new Uint8Array(bytes)]), '图.png');
+    const request = new Request('http://localhost', { method: 'POST', body: form });
+    const response = await app.inject({ method: 'POST', url: '/v1/files', headers: { 'content-type': request.headers.get('content-type')! }, payload: Buffer.from(await request.arrayBuffer()) });
+    assert.equal(response.statusCode, 201, response.body);
+    const id = response.json().id as string;
+    assert.equal(createRunRequestSchema.safeParse({ query: 'q', fileIds: [id, id] }).success, false);
+    const store = new RunStore(root), run = await store.create(createRunRequestSchema.parse({ query: 'q', fileIds: [id] }));
+    await rm((await new FileInputs(root).get(id)).file);
+    assert.deepEqual(await readFile(path.join(store.runDir(run.id), 'input/files', id + '.png')), bytes);
+    assert.equal((await app.inject({ method: 'POST', url: '/v1/runs', payload: { query: 'q', fileIds: [id] } })).statusCode, 400);
+    assert.equal(createRunRequestSchema.parse({ query: 'q' }).fileIds, undefined);
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('source reader tracks complete reading, caches recognition and exports only used immutable evidence', async () => {
+  const { FileInputs } = await import('../src/core/file-input.js');
+  const { Sources, publishSources, inputCommand } = await import('../src/core/sources.js');
+  const { readFile, writeFile, mkdir, rm, readdir } = await import('node:fs/promises');
+  const sharp = (await import('sharp')).default;
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-source-reader-'));
+  let calls = 0;
+  const model = { profile: { model: root }, async respond() { calls++; return { id: 'ocr', inputTokens: 1, outputTokens: 1, message: { role: 'assistant' as const, content: JSON.stringify({ text: 'A'.repeat(13000), warnings: ['uncertain symbol'] }) } }; } };
+  try {
+    const inputs = new FileInputs(root), bytes = await sharp({ create: { width: 20, height: 20, channels: 3, background: '#778899' } }).png().toBuffer();
+    const file = await inputs.save('reference.png', bytes); await inputs.snapshot([file.id], root);
+    const work = path.join(root, 'work');
+    const sources = (await Sources.prepare(work, path.join(root, 'input/files'), model, true))!;
+    assert.equal(calls, 1); assert.equal(JSON.parse(sources.preload()).completeText, false);
+    const ref = sources.manifest.pages[0]!.ref;
+    await sources.tool('SearchSources', { query: 'AAAA' });
+    assert.throws(() => sources.validateMapping({ 'page-01': [ref] }, ['page-01']));
+    const first = JSON.parse((await sources.tool('ReadSource', { ref })).text);
+    assert.equal(first.nextOffset, 12000);
+    assert.throws(() => sources.validateMapping({ 'page-01': [ref] }, ['page-01']));
+    await sources.tool('ReadSource', { ref, offset: first.nextOffset });
+    assert.deepEqual(sources.validateMapping({ 'page-01': [ref] }, ['page-01']), { 'page-01': [ref] });
+    await assert.rejects(sources.tool('ReadSource', { ref: '../outside' }));
+    await assert.rejects(sources.tool('ReadSource', { ref, crop: [0.9, 0, 0.9, 1] }));
+    const used = JSON.parse((await sources.tool('ReadSource', { ref, crop: [0, 0, 0.5, 1] })).text).asset as string;
+    const unused = JSON.parse((await sources.tool('ReadSource', { ref, image: true })).text).asset as string;
+    await mkdir(path.join(work, 'pages'), { recursive: true });
+    await writeFile(path.join(work, 'pages/page-01.html'), `<img src="${used}">`);
+    await writeFile(path.join(work, 'sources/by-page.json'), JSON.stringify({ 'page-01': [ref] }));
+    await publishSources(work);
+    assert.deepEqual((await readdir(path.join(work, 'pages/assets/sources'))).sort(), ['CREDITS.md', path.basename(used)].sort());
+    assert.match(await readFile(path.join(work, 'pages/assets/sources/CREDITS.md'), 'utf8'), /reference.png/);
+    await assert.rejects(readFile(path.join(work, 'pages', unused)));
+    await writeFile(path.join(work, 'pages', used), 'modified');
+    await assert.rejects(publishSources(work), /被修改/);
+    await Sources.prepare(path.join(root, 'second'), path.join(root, 'input/files'), model, true); assert.equal(calls, 1);
+    const controller = new AbortController();
+    const command = inputCommand(process.execPath, ['-e', 'setInterval(()=>{},1000)'], controller.signal); controller.abort();
+    await assert.rejects(command, /abort/i);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('source recognition cancellation does not poison another task waiting on the same cache', async () => {
+  const { FileInputs } = await import('../src/core/file-input.js');
+  const { Sources } = await import('../src/core/sources.js');
+  const { rm } = await import('node:fs/promises');
+  const sharp = (await import('sharp')).default;
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-source-cancel-'));
+  const controller = new AbortController(); let entered!: () => void, calls = 0;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const model = { profile: { model: root }, async respond(_messages: unknown, _tools: unknown, signal?: AbortSignal) {
+    if (++calls === 1) { entered(); await new Promise((_, reject) => { signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }); }); }
+    return { id: 'ocr', inputTokens: 1, outputTokens: 1, message: { role: 'assistant' as const, content: JSON.stringify({ text: 'visible evidence', warnings: [] }) } };
+  } };
+  try {
+    const inputs = new FileInputs(root), bytes = await sharp({ create: { width: 10, height: 10, channels: 3, background: '#ddddaa' } }).png().toBuffer();
+    const file = await inputs.save('scan.png', bytes); await inputs.snapshot([file.id], root);
+    const first = Sources.prepare(path.join(root, 'first'), path.join(root, 'input/files'), model, true, controller.signal);
+    const rejected = assert.rejects(first, /abort/i);
+    await started;
+    const second = Sources.prepare(path.join(root, 'second'), path.join(root, 'input/files'), model, true);
+    controller.abort(); await rejected;
+    assert.equal((await second)!.manifest.pages[0]!.text, 'visible evidence'); assert.equal(calls, 2);
+  } finally { controller.abort(); await rm(root, { recursive: true, force: true }); }
+});

@@ -58,6 +58,7 @@ export function outOfBounds(name: string, args: Record<string, any>, context: Wo
     if (key === 'command') outside = [...text.matchAll(/(?:^|[\s'"=(:])(\/[\p{L}\p{N}_./-]+)/gu)].map(match => match[1]!).filter(file => !isWithin(file, root));
     else {
       const target = resolvePath(text, context.cwd);
+      if (['Write', 'Edit', 'Patch'].includes(name) && isWithin(target, path.join(root, 'assets/sources'))) return `${text}(资料原图只读；请用 ReadSource 获取裁图)`;
       const imageRoot = path.join(root, 'assets/img');
       if (['Write', 'Edit', 'Patch'].includes(name) && isWithin(target, imageRoot)) {
         const relative = path.relative(imageRoot, target).split(path.sep);

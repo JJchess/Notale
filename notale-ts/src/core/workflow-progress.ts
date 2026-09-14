@@ -1,6 +1,6 @@
 /** Optional observations: never awaited by generation and never allowed to alter it. */
 export interface WorkflowProgress {
-  module: 'planner' | 'director';
+  module: 'planner' | 'director' | 'sources';
   step: string;
   status: 'started' | 'completed' | 'reworking' | 'failed' | 'skipped';
   occurredAt: string;
