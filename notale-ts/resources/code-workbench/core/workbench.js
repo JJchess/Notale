@@ -657,6 +657,9 @@ function resetAll(options = {}) {
 
 function installPublicApi() {
   window.CodeLab = {
+    contractVersion: 1,
+    pause,
+    resume: play,
     run: runCode,
     reset: resetAll,
     switchFile,

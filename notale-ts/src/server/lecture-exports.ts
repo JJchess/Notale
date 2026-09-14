@@ -5,7 +5,7 @@ import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import type { RunService } from '../core/run-service.js';
 import { archiveContentTypes, lectureArchive } from './lecture-archive.js';
 
-const EXPORT_VERSION = 'notale-export-1';
+const EXPORT_VERSION = 'notale-export-2-author-metadata';
 // Limit memory as well as compression concurrency across service instances.
 let queue: Promise<unknown> = Promise.resolve();
 function serial<T>(work: () => Promise<T>): Promise<T> {
