@@ -157,14 +157,11 @@ test('lecture archive preserves files and produces an importable editor manifest
     await store.update(run.id, { status: 'completed' });
     const files = unzipSync(await lectureArchive(service, run.id, { '.js': 'text/javascript' }));
     const { document } = JSON.parse(Buffer.from(files['notale-project.json']!).toString());
-    const native = unzipSync(await lectureArchive(service, run.id, { '.js': 'text/javascript' }, 'notale'));
-    const nativeManifest = JSON.parse(Buffer.from(native['notale-project.json']!).toString());
+    const nativeManifest = JSON.parse(Buffer.from(files['notale-project.json']!).toString());
     assert.equal(nativeManifest.format, 'notale');
     assert.equal(nativeManifest.formatVersion, 1);
     assert.equal(nativeManifest.entry, 'index.html');
     assert.equal(nativeManifest.document.schemaVersion, 1);
-    assert.equal(JSON.parse(Buffer.from(files['notale-project.json']!).toString()).format, undefined);
-    for (const name of ['index.html', 'page-01.html', 'page-02.html', 'base.js']) assert.deepEqual(native[name], files[name]);
     assert.deepEqual(document.slides.map((s: any) => s.sourcePath), ['page-01.html', 'page-02.html']);
     assert.match(document.slides[0].html, /<p data-notale-id="[\w-]+">first<\/p>/);
     assert.equal(document.assets['index.html'], undefined, 'editor reserves the assembled entry');
@@ -233,7 +230,7 @@ test('notale failed exports stay separate from generation and retry on demand', 
   } finally { await exports.idle(); await rm(root, { recursive: true, force: true }); }
 });
 
-test('notale download API preserves ZIP defaults and rejects invalid or unfinished exports', async () => {
+test('notale download API defaults to v1 and rejects ZIP or unfinished exports', async () => {
   const { writeFile, rm } = await import('node:fs/promises');
   const { unzipSync } = await import('fflate');
   const { createApp } = await import('../src/server/app.js');
@@ -243,6 +240,7 @@ test('notale download API preserves ZIP defaults and rejects invalid or unfinish
     const run = await store.create(createRunRequestSchema.parse({ query: '中文讲义' }));
     const url = '/v1/runs/' + run.id + '/download';
     assert.equal((await app.inject(url + '?format=other')).statusCode, 400);
+    assert.equal((await app.inject(url + '?format=zip')).statusCode, 400);
     assert.equal((await app.inject(url + '?format=notale')).statusCode, 409);
     await writeFile(path.join(store.runDir(run.id), 'output/index.html'), '<p>lecture</p>');
     await writeFile(path.join(store.runDir(run.id), 'output/page-01.html'), '<p>page</p>');
@@ -253,9 +251,11 @@ test('notale download API preserves ZIP defaults and rejects invalid or unfinish
     assert.ok(native.headers['content-disposition']!.includes(encodeURIComponent(`讲义-${run.id}.notale`)));
     assert.equal(native.headers['content-type'], 'application/octet-stream');
     assert.equal(JSON.parse(Buffer.from(unzipSync(native.rawPayload)['notale-project.json']!).toString()).format, 'notale');
-    const zip = await app.inject(url);
-    assert.equal(zip.statusCode, 200); assert.match(zip.headers['content-disposition']!, /\.zip/);
-    assert.equal(zip.headers['content-type'], 'application/zip');
+    const defaultDownload = await app.inject(url);
+    assert.equal(defaultDownload.statusCode, 200);
+    assert.match(defaultDownload.headers['content-disposition']!, /\.notale/);
+    assert.equal(defaultDownload.headers['content-type'], 'application/octet-stream');
+    assert.deepEqual(defaultDownload.rawPayload, native.rawPayload);
   } finally { await app.close(); await rm(root, { recursive: true, force: true }); }
 });
 

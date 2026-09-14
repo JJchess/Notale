@@ -6,7 +6,6 @@ import { RESOURCES } from '../core/guidance.js';
 import { parse, serialize, type DefaultTreeAdapterMap } from 'parse5';
 import type { RunService } from '../core/run-service.js';
 
-export type ArchiveFormat = 'zip' | 'notale';
 export const archiveContentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
@@ -36,7 +35,7 @@ function editorHtml(html: string): string {
 }
 
 /** A static lecture plus the editor's existing project manifest; author files stay intact. */
-export async function lectureArchive(service: RunService, id: string, mime: Record<string, string>, format: ArchiveFormat = 'zip'): Promise<Uint8Array> {
+export async function lectureArchive(service: RunService, id: string, mime: Record<string, string>): Promise<Uint8Array> {
   const run = await service.store.get(id);
   if (run.status !== 'completed') throw new Error('lecture_not_completed');
   const manifest = await service.manifest(id);
@@ -62,7 +61,7 @@ export async function lectureArchive(service: RunService, id: string, mime: Reco
   if (!slides.length) throw new Error('lecture_has_no_pages');
   slides.sort((a, b) => a.sourcePath.localeCompare(b.sourcePath, 'en', { numeric: true }));
   files['notale-project.json'] = Buffer.from(JSON.stringify({
-    ...(format === 'notale' ? { format: 'notale', formatVersion: 1, entry: 'index.html' } : {}),
+    format: 'notale', formatVersion: 1, entry: 'index.html',
     document: {
     schemaVersion: 1, id: randomUUID(), title: run.request.query.slice(0, 300) || '讲义',
     width: 1600, height: 900, slides, assets,

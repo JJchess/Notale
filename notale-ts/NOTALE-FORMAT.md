@@ -9,7 +9,7 @@ Frozen for editor integration on 2026-09-14. Changes to generation prompts, code
 - `document.assets` maps package-relative paths to `{ hash, size, mime }`, where `hash` is SHA-256 of the resource bytes. Resolve relative URLs from the referring file. Preserve paths and resource bytes when round-tripping; do not hard-code font/player filenames or their internal directories.
 - For playback, `entry` and page files provide the assembled static lecture. The editable source is the HTML in `document`; do not independently merge the playback copy into it. A future editor exporter must render playback from edited content rather than retain stale page files.
 - Pages, fonts, pictures, interaction/code runtimes and license notices are included. HTTP encoding sidecars may be omitted when their original exists. Export caches and generation work/logs remain outside the package. `publication.json` is diagnostic information, not an import dependency.
-- Optional metadata may be added without breaking v1. Readers should tolerate unknown optional container fields, reject unsupported container/document versions, and validate safe relative paths, required files, resource sizes and hashes before importing. An old ZIP without container markers remains a separate legacy input.
+- Optional metadata may be added without breaking v1. Readers should tolerate unknown optional container fields, reject unsupported container/document versions, and validate safe relative paths, required files, resource sizes and hashes before importing. Packages without the v1 format markers are unsupported; do not infer v1 from old ZIP content or a renamed extension.
 
 ## Code pages and future inputs
 
@@ -19,7 +19,7 @@ Prompt, reasoning and audit changes do not alter the container contract. Changes
 
 ## Download and identity
 
-`/v1/runs/:id/download?format=notale` is the native endpoint. `/download` and `?format=zip` retain legacy ZIP export. Native downloads use `application/octet-stream` and a UTF-8 filename derived from the cover heading, then its title, then `讲义-<runId>.notale`.
+`/v1/runs/:id/download` exports `.notale` v1; `?format=notale` is equivalent. Other formats, including `?format=zip`, are rejected. Native downloads use `application/octet-stream` and a UTF-8 filename derived from the cover heading, then its title, then `讲义-<runId>.notale`.
 
 The filename is a display label, not an identity or type check. Use the manifest to identify type/version and document identity. Importing a copy may create a new document ID; stable identity across independently rebuilt exports is not a v1 guarantee.
 

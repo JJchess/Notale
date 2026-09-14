@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/p
 import path from 'node:path';
 import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import type { RunService } from '../core/run-service.js';
-import { archiveContentTypes, lectureArchive, type ArchiveFormat } from './lecture-archive.js';
+import { archiveContentTypes, lectureArchive } from './lecture-archive.js';
 
 const EXPORT_VERSION = 'notale-export-1';
 // Limit memory as well as compression concurrency across service instances.
@@ -17,7 +17,7 @@ async function atomic(file: string, data: string | Uint8Array): Promise<void> {
   finally { await rm(temporary, { force: true }); }
 }
 type ExportState = { status: 'queued' | 'building' | 'ready' | 'failed'; key?: string; bytes?: number; error?: string };
-type Pack = (service: RunService, id: string, mime: Record<string, string>, format: ArchiveFormat) => Promise<Uint8Array>;
+type Pack = typeof lectureArchive;
 
 export function notaleFilename(title: string, id: string): string {
   const clean = title.replace(/[\x00-\x1f\x7f<>:"/\\|?*]/g, ' ').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '');
@@ -54,15 +54,16 @@ export class LectureExports {
   private readonly pending = new Map<string, Promise<string>>();
   constructor(private readonly service: RunService, private readonly pack: Pack = lectureArchive) {}
 
-  ensure(id: string, format: ArchiveFormat = 'notale'): Promise<string> {
-    const job = id + ':' + format, existing = this.pending.get(job);
+  ensure(id: string): Promise<string> {
+    const job = id, existing = this.pending.get(job);
     if (existing) return existing;
-    const promise = this.prepare(id, format).finally(() => { this.pending.delete(job); });
+    const promise = this.prepare(id).finally(() => { this.pending.delete(job); });
     this.pending.set(job, promise);
     return promise;
   }
 
-  private async prepare(id: string, format: ArchiveFormat): Promise<string> {
+  private async prepare(id: string): Promise<string> {
+    const format = 'notale';
     const run = await this.service.store.get(id);
     if (run.status !== 'completed') throw new Error('lecture_not_completed');
     const directory = path.join(this.service.store.runDir(id), 'exports');
@@ -84,8 +85,8 @@ export class LectureExports {
     return serial(async () => {
       try {
         await save({ status: 'building', key });
-        for (const name of await readdir(directory)) if (/^lecture\.(zip|notale)\.[\w-]+\.tmp$/.test(name)) await rm(path.join(directory, name), { force: true });
-        const bytes = await this.pack(this.service, id, archiveContentTypes, format);
+        for (const name of await readdir(directory)) if (/^lecture\.notale\.[\w-]+\.tmp$/.test(name)) await rm(path.join(directory, name), { force: true });
+        const bytes = await this.pack(this.service, id, archiveContentTypes);
         await atomic(destination, bytes);
         await save({ status: 'ready', key, bytes: bytes.length });
         return destination;
@@ -102,12 +103,10 @@ export class LectureExports {
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      for (const format of ['notale', 'zip'] as const) {
-        try {
-          const state: ExportState = JSON.parse(await readFile(path.join(this.service.store.runDir(entry.name), 'exports', format + '.json'), 'utf8'));
-          if (state.status === 'queued' || state.status === 'building') void this.ensure(entry.name, format).catch(() => undefined);
-        } catch { /* Historical runs are exported on demand; no bulk backfill. */ }
-      }
+      try {
+        const state: ExportState = JSON.parse(await readFile(path.join(this.service.store.runDir(entry.name), 'exports/notale.json'), 'utf8'));
+        if (state.status === 'queued' || state.status === 'building') void this.ensure(entry.name).catch(() => undefined);
+      } catch { /* Existing published runs are exported on demand; no bulk backfill. */ }
     }
   }
 

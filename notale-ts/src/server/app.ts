@@ -51,18 +51,17 @@ export function createApp(options: AppOptions) {
     catch { return reply.code(404).send({ error: "artifact_not_found" }); }
   });
   app.get<{ Params: { runId: string }; Querystring: { format?: string } }>("/v1/runs/:runId/download", async (request, reply) => {
-    const format = request.query.format ?? 'zip';
-    if (format !== 'zip' && format !== 'notale') return reply.code(400).send({ error: 'invalid_export_format' });
+    if (request.query.format !== undefined && request.query.format !== 'notale') return reply.code(400).send({ error: 'invalid_export_format' });
     let run;
     try { run = await store.get(request.params.runId); }
     catch { return reply.code(404).send({ error: 'run_not_found' }); }
     if (run.status !== 'completed') return reply.code(409).send({ error: 'lecture_not_completed' });
     try {
-      const file = await exports.ensure(run.id, format);
-      const filename = format === 'notale' ? await lectureFilename(service, run.id) : run.id + '.zip';
+      const file = await exports.ensure(run.id);
+      const filename = await lectureFilename(service, run.id);
       const encoded = encodeURIComponent(filename).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16).toUpperCase());
-      return reply.type(format === 'notale' ? 'application/octet-stream' : 'application/zip')
-        .header('content-disposition', `attachment; filename="${run.id}.${format}"; filename*=UTF-8''${encoded}`)
+      return reply.type('application/octet-stream')
+        .header('content-disposition', `attachment; filename="${run.id}.notale"; filename*=UTF-8''${encoded}`)
         .header('content-length', (await stat(file)).size).header('cache-control', 'no-store')
         .send(createReadStream(file));
     } catch (error) {
