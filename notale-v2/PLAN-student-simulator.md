@@ -1,73 +1,96 @@
-# 学生模拟器类 benchmark 调研：能不能量出"交互讲义更助理解"
+# 学生模拟器类 benchmark 调研 v2：交互式学习环境里的模拟学生
 
-2026-09-14 · 只读调研 · 回答两个问题：(1) 现有 student-simulator benchmark 有哪些、能不能直接用；(2) "HTML 交互比静态 slide 更助学生理解"这个产品假设，怎么量、现有证据怎么说。
+2026-09-14 · 只读调研 · v1 只看了"slide 类教材"的模拟学生，结论"没人做过代理操作交互环境再测学习"是错的；v2 补上交互环境那一支，重写结论。
 
-## 0. 一句话结论
+## 0. 结论（改过）
 
-**没有一个现成 benchmark 能测我们的差异化。** 现有学生模拟器全部把教材当**静态图片或文本**喂给"学生"，交互页会被拍成一张图，差异化在输入端就被抹掉了。要量这件事得自己搭一个"会操作页面的学生代理 + 前后测"的实验，SLATE 提供了协议模板，EE-Eval 提供了交互结构的量法，但"代理操作交互页然后测学习增益"这一步文献里还没人做过，是空白也是机会。
+1. **模拟学生在交互环境里学，是一个有 20 年积累的方向**，分两代：
+   - 机理派：SimStudent、Apprentice Learner（AL）。学生是认知架构，从演示和反馈里归纳技能，在几十个智能导学系统（ITS）里复现了真人学习曲线；已经被用来**在电脑里做教学设计的 A/B**（分数导学的替代干预、钢琴学习的视觉辅助）。
+   - LLM 派：TutorGym（2025）让 LLM 当学生逐步操作 CTAT / Apprentice / OATutor 三类 ITS 的界面，223 个域，学习曲线和 192 名真人对比"惊人地像"；Hyp-Mix（2024）在开放式物理学习环境里模拟学生动作，是 LLM 在开放交互环境里模拟学习行为的第一份证据。
+2. **但它们的"环境"都是 ITS：有符号化状态、有限动作集、每步有对错反馈。** 没有一个把"任意生成的 HTML 讲义页"当环境。TutorGym 加新环境要按它三种导学范式之一建模，不能直接塞网页。
+3. 所以对 Notale 的正确路线不是"找一个 benchmark 跑"，而是**把 Notale 的页面做成 TutorGym 式的环境**（导出状态 JSON + 选择-动作-输入三元组），然后复用 TutorGym 的学生代理和学习曲线工具，再套 SLATE 的前后测协议。这条路的每一段都有先例，拼起来是新的。
+4. 人类实证对"交互更助理解"的支持是有条件的，且最新的几项研究都在警告：交互带来的**主观投入感与实际学习脱钩**。实验必须能出否定结果。
 
-同时要诚实：教育研究支持的是"**有引导的**交互模拟 + 讲解"优于纯讲解，不是"交互本身"优于静态。我们 09-05 的研究循环已经量到交互页 14 页里 12 页被判 AI 味、滑块"几乎没有一页是从知识结构长出来的"。所以这个实验必须设计成**能给出否定结果**的，否则量了也白量。
+## 1. 交互环境里的模拟学生：谁做了什么
 
-## 1. 现有 benchmark 清单
-
-| Benchmark | 学生是什么 | 教材怎么进去 | 量什么 | 对 Notale 的可用性 |
+| 工作 | 学生是什么 | 环境 | 怎么验证 | 对 Notale 的可用性 |
 |---|---|---|---|---|
-| **SLATE**（2609.06212） | VLM（Qwen3-VL-8B）当学习代理 | 幻灯片**渲染成 PNG** 逐页看 | 前测→学→后测→近/远迁移，学习增益 | 协议最贴近，可直接抄；但输入是静态图，交互页无效。数据是语言学奥赛的低资源语言，为的是前测基线只有 23.8%（无泄漏） |
-| **EE-Eval**（2606.31012） | 无学生 | AI 生成的 explorable explanation | 把交互抽成有限状态机（状态/动作/反馈），与理想 FSM 比图相似度；127 概念、6 模型 | **唯一直接量交互结构的**。不量学习结果，但可以做我们交互页的"过程指标"，且和人判交互性/教学性的一致性比基线强 |
-| **EduClaw-Bench**（2608.03206） | 知识追踪模型（真实学生数据训练）驱动的模拟学生 | 30 天对话式辅导 | 学习增益、响应性、有用性 + Gagné/Rosenshine 课程设计轴 | 测的是**对话辅导 agent**，不是教材；学生模型的"掌握度"由 KT 驱动，不看页面内容。不适用 |
-| **LecEval**（2505.02078） | 无学生，8B 多模态奖励模型 | 2000+ 真实课程幻灯片截图 | 四 rubric：内容相关、表达清晰、逻辑结构、受众参与（基于 Mayer 多媒体学习理论） | 是"看图打分"的 judge，不是学习结果；可当 G2 的第三个外部 judge |
-| StudentSim（2609.01591）、TutorGym、TeachBench、EducationQ、Teach2Eval | LLM 扮学生 | 对话 | 教师 LLM 的教学能力 | 全部是**对话式**，教材不是一等公民。Teach2Eval 的思路（教弱模型、看弱模型涨多少）可借 |
+| **TutorGym**（2505.01563，MIT 协议，github Teachable-AI-Lab/tutor_gym） | LLM 代理，每步被问"作为学生你会做什么" | CTAT / Apprentice Tutors / OATutor 三类 ITS，223 个域；状态默认 JSON，可附浏览器渲染截图；动作是 (selection, action_type, input) 三元组 | 学习曲线（按技能的首次尝试错误率，DataShop 口径）对比 192 名真人；ICL 训练的学生曲线"remarkably human-like" | **最可复用的骨架**：`llm_stu_eval.py` 已能跑 LLM 学生；缺的是把我们的页面接成它认的环境 |
+| **Apprentice Learner / SimStudent**（MacLellan & Koedinger 2020 等） | 认知架构：how/where/when 三个学习机制从演示和反馈归纳产生式 | ITS | 几十个域复现真人学习曲线 | 机理派学生不会"预先知道"内容，没有泄漏问题；但它学的是程序性技能，不适合概念理解类讲义 |
+| **在电脑里做教学设计 A/B**：分数导学替代干预（2408.13684，ACS 2023）、钢琴视觉辅助（AIED 2025） | 按个体校准的 AL 模型 | 分数导学 / 钢琴练习 | 模拟预测与已有真人发现一致，并给出可检验的新预测 | **方法论范本**：这正是我们要做的事——比较两种教学设计，先在模拟学生上跑 |
+| **Hyp-Mix**（2410.02110） | GPT-4 Turbo 按"可检验假设"组合出的学生模型 | 开放式物理学习环境 | 学生模型换了、行为仍校准；警告对提示词敏感、可能是记忆 | 证明 LLM 能在开放交互环境里模拟学习行为；但作者自己说结果可能来自训练数据记忆 |
+| **SLATE**（2609.06212） | Qwen3-VL-8B | 幻灯片 PNG（静态） | 30 人人测，方向一致 85.7%，系统排序 ρ=1.0 | 前测-学-后测-近/远迁移协议；泄漏靠低资源语言绕开 |
+| **EE-Eval**（2606.31012） | 无学生 | AI 生成的 explorable | 抽有限状态机，与理想 FSM 比 | 交互结构的过程指标 |
+| 可控"不完美学生"（2605.25601）、SOEI、Agent4Edu、EduAgent、Student Development Agent、Edu-Theater | LLM 扮学生，重点在**控制知识水平和错误模式** | 答题 / 对话 | 与真人答题分布对比 | 解决"学生太聪明"的工具箱：技能向量指定掌握与缺失 |
+| EduClaw-Bench、TutorGym 的 tutor 侧、TeachBench、EducationQ、Teach2Eval | — | 对话辅导 | — | 测的是辅导 agent，不是教材 |
 
-## 2. 三个硬问题，决定了不能直接套用
+## 2. 人类实证：交互到底帮不帮
 
-**(a) 泄漏 / 能力悖论。** 学习代理是大模型，PresentBench 那些主流教材内容它本来就会，前测就接近满分，后测增益无从观察。SLATE 的解法是只用低资源语言的语言学题；"Towards Valid Student Simulation"（2601.05473）把这叫 competence paradox，主张显式规定代理"能接触到什么"（Epistemic State Specification）。**对我们的含义：测学习增益的题必须是代理不可能预先知道的**——虚构规则系统、材料里自定义的机制、编造的数据集、反事实设定。这正好是我们 `--materials` 通道能承载的：材料定义规则，讲义教规则，代理凭讲义答题。
+**支持（有条件）**
+- D'Angelo et al. 2014（SRI 元分析）：交互模拟 vs 同内容无模拟 g=0.67；模拟加脚手架 vs 裸模拟 g=0.43。
+- Rutten et al. 2012：模拟增强传统教学，效应量最高到 1.54。
+- ICAP（Chi & Wylie 2014）：每上一档约多学 8–10%；"Interactive"指对话式共同建构，拖滑块只算 Active。
+- **Learn Your Way**（Google，2509.18664 / Frontiers 2026）：60 名高中生 RCT，交互多模态平台 vs 电子教材。即时回忆 77% vs 68%，3–7 天后 78% vs 67%，r≈0.25，p≈0.03。作者把效果归到**分块、随堂小测和反馈、多表征**，不是滑块；对照组没有配平这些脚手架，所以说的是"脚手架"不是"交互"。
+- Distill "Communicating with Interactive Articles"（Hohman 2020）综述：有证据的是**先预测再看**（You Draw It 提升回忆）、分段控速、低风险测验；没证据的是版式（滚动 vs 翻页无差异）、社交对比。作者原话："interactive articles 的有效性缺少实证评估"，呼吁找出"交互值得其成本"的情形。
 
-**(b) 静态代理看不见交互。** SLATE 的代理"学"的是 PNG。把 Notale 的交互页拍成图，滑块、分步、仿真全没了，量出来的是"我们的静态截图 vs 别人的静态 slide"。要量交互，代理必须**操作页面**：一个 computer-use 式的 VLM 代理，给它动作预算（点、拖、看），记录它看过的状态序列，再后测。文献里没有现成的，但 Playwright + VLM 循环我们已经有（selfcheck 和 Check 工具就是这个骨架）。
+**警告**
+- de Jong & van Joolingen 1998：无引导的模拟探索效率差，学生不会提假设、设计实验、解读结果。
+- "Games That Teach, Chats That Convince"（2602.17905，2026）：文字游戏组**自评学到更少**，24 小时后测却更高；"互动时长、话多"这类投入代理**只和主观体验相关，不和学习相关**。
+- 反事实解释界面研究（2026）：交互界面与静态对照常常把"用户能动性"和"信息量不等"混在一起；更多控制权提高心理负荷和挫败感，成绩不涨。
+- SLATE：教学设计与增益 ρ=0.72，内容正确性 ρ=0.38 不显著；有系统增益为负。
 
-**(c) 模拟学生的保真度本身有争议。** "Simulated Students in Tutoring Dialogues: Substance or Illusion?"（2601.04025）的结论：提示词扮学生在错误模式、知识获取动态上都不像真学生，微调好一些但仍有限。SLATE 用 30 人的人测校准，方向一致率 85.7%、系统排序 Spearman 1.0，说明**排序**可信、绝对增益不可信。对我们：代理只能用来做 A/B 排序（交互臂 vs 静态臂），不能报"学生学会了 X%"。
+**对产品假设的判断**：文献支持的是"**有引导的、要求预测和解释的**交互 + 反馈"，不是"页面可交互"。我们 09-05 量到交互页 14 页里 12 页被判 AI 味、滑块几乎没有一页从知识结构长出来。假设合理，现在的产物大概率没兑现它。
 
-## 3. 教育研究怎么说"交互更助理解"
+## 3. 三个硬问题与各自的先例解法
 
-支持的部分：
-- D'Angelo et al. 2014（SRI，K-12 STEM 元分析）：交互模拟 vs 同内容无模拟，g = 0.67；模拟再加脚手架 vs 裸模拟，g = 0.43。
-- Rutten et al. 2012（Computers & Education 十年综述）：模拟增强传统教学，尤其替代/补充实验课，效应量最高到 1.54。
-- ICAP（Chi & Wylie 2014）：Interactive > Constructive > Active > Passive，225 项课堂研究支持前三者优于纯听讲；每上一档约多学 8–10%。
-- PhET 元分析（2018–2023，20 项研究 4,563 人）：对概念理解 d = 0.83。
+| 问题 | 先例给的解法 |
+|---|---|
+| 泄漏 / 能力悖论：大模型本来就会 | SLATE 用低资源语言；机理派学生天然不会；2605.25601 用技能向量显式指定"缺哪些"。我们：题目用材料自定义的规则 / 虚构机制 / 私有数据，走 `--materials` |
+| 静态代理看不见交互 | TutorGym 的环境接口：状态 JSON + 可选截图 + SAI 动作。我们的 chassis 本来就有 `Deck.step`、带 id 的控件，导出一份状态 JSON 和动作表是小工程 |
+| 模拟学生保真度 | 只做**两臂排序**不报绝对值（SLATE 的校准结论）；学习曲线对比真人（TutorGym 口径）；最后做 20–30 人人测校准方向 |
 
-要警惕的部分：
-- de Jong & van Joolingen 1998：**无引导的模拟探索学习效率差**，学习者不会提假设、不会设计实验、不会解读结果；模拟必须配指令性支持。D'Angelo 的第二个数（加脚手架 +0.43）说的是同一件事。
-- ICAP 的"Interactive"指**与人或系统的对话式建构**，不是"页面上有滑块"。拖一个滑块看曲线变化，在 ICAP 里最多是 Active；只有当学生要预测、解释、修正时才到 Constructive。
-- SLATE 自己的发现：**教学设计与增益 ρ = 0.72，内容正确性与增益 ρ = 0.38（不显著）**；GPT-5.4 内容分最高、增益只排第四；Gemini-3.1-Pro 增益为负。漂亮和正确都不等于学到。
+## 4. 建议的实验：Notale 交互消融 v2
 
-结论：**假设成立的条件是"交互是从知识结构长出来的、带预测-验证的引导"**。我们现在的交互页多数不满足这个条件，这也是为什么实验必须能出否定结果。
+**环境侧（工程）**
+- chassis 导出 `Deck.state()`：当前步、每个交互控件 (id, 类型, 当前值, 可选值域)、可见的关键文本。
+- 动作三元组 (selection, action_type, input)：`step_next`、`set_slider(id, v)`、`click(id)`、`read(region)`。
+- 这就是 TutorGym 的 SAI 接口。先不改它的仓库，写一个薄适配把 Notale 页面暴露成同形状的环境，复用它的 `llm_stu_eval.py` 循环和日志格式。
 
-## 4. 建议的实验：Notale 交互消融（自建，借 SLATE 协议 + EE-Eval 量法）
+**学生侧**
+- 主学生：Qwen3-VL-8B（SLATE 同款，便宜、有余量、可复现），每题 3 个种子。
+- 对照学生：Qwen3-VL-4B（看效应是否随能力单调，SLATE 的消融就是这么做的）。
+- 不用 3.8-flash 级模型当学生。
 
-**设计**
-- 题目：10 个"代理不可能预先知道"的主题。三类来源：虚构机制（自定义物理/经济规则）、材料自带的私有数据集、低资源领域。材料走 `--materials`。
-- 同一份 Planner 页表出两臂：
-  - **A 静态臂**：`?all` 全展开截图，代理逐页看（= SLATE 协议）。
-  - **B 交互臂**：代理用 Playwright 操作页面，动作预算 N（如每页 6 次），每次动作后截图进上下文；讲稿区文本两臂都给。
-  - 可选 **C 静态+讲稿臂**，分离"交互"与"信息量"的效应（09-05 的 judge 教训：不分离就会把信息量当效果）。
-- 学习代理：SLATE 同款 Qwen3-VL-8B（有余量、便宜、可复现），每题 3 个种子；不用 3.8-flash 当学生（太强，天花板效应）。
-- 测量：前测（材料相关但不给讲义）→ 学 → 后测 → 近迁移 / 远迁移。主指标 = B − A 的增益差及其置信区间。
-- 过程指标：EE-Eval 式 FSM 抽取（每页可控状态数、转移数、反馈数），看"交互结构丰富度"是否与增益差相关；如果不相关，就是"交互没长在知识上"的量化证据。
-- 校准：跑通后做一次 20–30 人的人测（SLATE 规模），只验方向一致性和排序。
+**题目**
+- 10 个代理不可能预先知道的主题：材料里自定义的机制或规则、编造的数据集、低资源领域。同一份 Planner 页表出三臂。
 
-**成本与阶段**
-- 阶段 1（约 1 周）：10 题 × 2 臂 × 3 种子，代理是 8B 本地模型，主要成本是 Playwright 时间和搭协议。产出：能不能观察到 B − A > 0。
-- 阶段 2：若阶段 1 有信号，扩到 30 题并做人测；若无信号，先回去改交互页的生成契约（预测-验证式引导），再量。
+**三臂**
+- A 静态：`?all` 全展开截图逐页看（= SLATE）。
+- B 交互：代理操作页面，动作预算每页 6 次，每次动作后截图入上下文。
+- C 静态 + 讲稿：分离"交互"与"信息量"（09-05 的 judge 教训；反事实界面研究也指出这个混淆）。
+
+**测量**
+- 前测 → 学 → 后测 → 近迁移 / 远迁移（SLATE 协议）。主指标 = B − A、B − C 的增益差及置信区间。
+- 过程指标：EE-Eval 式 FSM（可控状态数、转移数、反馈数）；代理动作日志里"预测-验证"行为的比例。
+- 学习曲线：如果交互页有多次尝试的活动，按 TutorGym 口径画首次尝试错误率曲线。
+- 校准：20–30 人人测，只验方向和排序。
+
+**阶段**
+- 阶段 0（2–3 天）：chassis 状态导出 + SAI 适配 + 跑通一页。
+- 阶段 1（1 周）：10 题 × 3 臂 × 3 种子，看 B − A 有没有信号。
+- 阶段 2：有信号则扩题并人测；无信号则先改交互页契约（预测-验证式引导，见 §2 有证据的那几种交互），再量。
 
 **不做的**
-- 不跑 SLATE 原题（语言学奥赛，与产品无关）。
-- 不接 EduClaw / TutorGym 这类对话辅导 benchmark，除非产品加 AI 助教对话线。
-- 不用 GPT/Gemini 级模型当学生（泄漏 + 天花板）。
+- 不跑 SLATE 原题、TutorGym 原域（都不是我们的内容）。
+- 不接对话辅导类 benchmark，除非产品加助教线。
+- 不用投入时长、动作次数当效果指标（2602.17905 已证明它们只和主观体验相关）。
 
-## 5. 回答用户的两个判断
+## 5. v1 → v2 改了什么
 
-- "我们的讲义比传统 slide 的区别是交互更助理解"——**这是假设，不是已被量到的事实**；文献给它的前提条件是"有引导的交互"，我们当前的交互页多数还不满足。
-- "应该测 student-simulator 类 benchmark"——**应该，但没有现成的能直接跑**；要借 SLATE 的协议自建一个会操作页面的学生代理实验，先在 10 题上看有没有信号。这个实验一旦搭起来，也是唯一能区分"Notale 的交互"与"任何人的静态 slide"的仪器，比 PresentBench 更接近产品价值。
+- 撤回"代理操作交互环境再测学习没人做过"：TutorGym、Apprentice Learner 系、Hyp-Mix 都做了，还用它来做过教学设计的 A/B。
+- 新增 Learn Your Way 这份直接对着产品假设的人类 RCT，以及 2026 年两项"交互 ≠ 学习"的警告。
+- 实验设计从"自己发明学生代理"改成"把页面接成 TutorGym 式环境，复用现成学生和曲线工具"。
 
 ## 来源
 
-SLATE arXiv 2609.06212 · EE-Eval arXiv 2606.31012 · EduClaw-Bench arXiv 2608.03206 · LecEval arXiv 2505.02078 · StudentSim arXiv 2609.01591 · Towards Valid Student Simulation arXiv 2601.05473 · Simulated Students: Substance or Illusion? arXiv 2601.04025 · Simulating Students with LLMs (review) arXiv 2511.06078 · TutorGym arXiv 2505.01563 · TeachBench arXiv 2601.21375 · Teach2Eval arXiv 2505.12259 · EducationQ arXiv 2504.14928 · D'Angelo et al. 2014, SRI "Simulations for STEM Learning" · Rutten, van Joolingen & van der Veen 2012, Computers & Education · Chi & Wylie 2014, Educational Psychologist (ICAP) · de Jong & van Joolingen 1998, Review of Educational Research · PhET 元分析 2018–2023（iJOE）
+TutorGym arXiv 2505.01563 · github.com/Teachable-AI-Lab/tutor_gym · Apprentice Learner（MacLellan & Koedinger 2020；chrismaclellan.com/projects/apprentice_learning） · 分数导学替代干预 arXiv 2408.13684 · 钢琴视觉辅助（AIED 2025，Springer 978-3-032-13174-4_12） · Hyp-Mix arXiv 2410.02110 · SLATE arXiv 2609.06212 · EE-Eval arXiv 2606.31012 · 可控不完美学生 arXiv 2605.25601 · SOEI arXiv 2410.15701 · Agent4Edu arXiv 2501.10332 · EduAgent arXiv 2404.07963 · Student Development Agent arXiv 2510.09183 · Towards Valid Student Simulation arXiv 2601.05473 · Substance or Illusion? arXiv 2601.04025 · Learn Your Way arXiv 2509.18664 / Frontiers in AI 2026 · Games That Teach, Chats That Convince arXiv 2602.17905 · Hohman et al. 2020, Distill "Communicating with Interactive Articles" · D'Angelo et al. 2014 SRI · Rutten et al. 2012 · Chi & Wylie 2014 · de Jong & van Joolingen 1998
