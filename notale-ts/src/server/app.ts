@@ -1,3 +1,5 @@
+import { TemplateInputs } from '../core/template-input.js';
+import { TEMPLATE_MAX_BYTES } from '../core/pptx-template.js';
 import { createReadStream } from "node:fs";
 import { stat, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -30,9 +32,25 @@ export function createApp(options: AppOptions) {
   app.addHook('onReady', () => exports.recover());
   app.addHook('onClose', () => exports.idle());
 
+  const templates = new TemplateInputs(options.runsRoot);
+  app.addContentTypeParser('multipart/form-data', { parseAs: 'buffer', bodyLimit: TEMPLATE_MAX_BYTES + 1024 * 1024 }, (_request, body, done) => done(null, body));
+  app.post('/v1/templates', { bodyLimit: TEMPLATE_MAX_BYTES + 1024 * 1024 }, async (request, reply) => {
+    try {
+      if (!request.headers['content-type']?.startsWith('multipart/form-data')) return reply.code(415).send({ error: 'invalid_template', message: '请上传 PPTX 文件' });
+      const form = await new Response(new Uint8Array(request.body as Buffer), { headers: { 'content-type': request.headers['content-type'] } }).formData();
+      const files = form.getAll('file'), file = files[0];
+      if (files.length !== 1 || !file || typeof file === 'string' || file.size > TEMPLATE_MAX_BYTES) throw new Error('请选择一份小于 50 MiB 的 PPTX');
+      return reply.code(201).send(await templates.save(file.name, Buffer.from(await file.arrayBuffer())));
+    } catch (error) { return reply.code(400).send({ error: 'invalid_template', message: error instanceof Error ? error.message : '模板上传失败' }); }
+  });
+
   app.post("/v1/runs", async (request, reply) => {
     const parsed = createRunRequestSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
+    if (parsed.data.templateId) {
+      try { await templates.file(parsed.data.templateId); }
+      catch { return reply.code(400).send({ error: "invalid_template", message: "模板不存在或校验失败，请重新上传" }); }
+    }
     const run = await service.start(parsed.data);
     return reply.code(202).send(run);
   });

@@ -20,7 +20,7 @@ export interface CheckState {
   viewport_issues?: string[]; result?: unknown; js_error?: string | null; crop?: string | null;
   cropSize?: [number, number];
 }
-export interface CheckOptions { shotDir?: string; wait?: number; after?: string[]; crop?: number[]; zoom?: number; signal?: AbortSignal }
+export interface CheckOptions { pageAudit?(page: Page): Promise<string[]>; shotDir?: string; wait?: number; after?: string[]; crop?: number[]; zoom?: number; signal?: AbortSignal }
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/^page\./, 'Page.');
 const shorten = (text: string, max: number) => [...text].slice(0, max).join('');
 async function viewportContract(active: Browser, file: string, wait: number, signal?: AbortSignal): Promise<string[]> {
@@ -106,6 +106,7 @@ export async function runSelfcheck(files: string[], options: CheckOptions = {}):
           // Observe early rejection while the primary page continues its after states.
           void viewport.catch(() => {});
         }
+        if (options.pageAudit) errors.push(...(await options.pageAudit(page)).map(error => '底盘契约:模板：' + error));
         const states: CheckState[] = [{ label: null, probe, errs: [...errors], bad: [...bad], png: null, steps: maximum, step_pngs: stepPngs, rewind_png: rewind, step_issues: issues }];
         if (options.shotDir) {
           const dest = path.join(options.shotDir, `${stem}.png`);
@@ -123,6 +124,7 @@ export async function runSelfcheck(files: string[], options: CheckOptions = {}):
             state.probe = await page.evaluate(`(${probes.PROBE})()`);
             if (options.shotDir) Object.assign(state, await shoot(page, path.join(options.shotDir, `${stem}-after${index + 1}.png`), options));
           }
+          if (options.pageAudit) errors.push(...(await options.pageAudit(page)).map(error => '底盘契约:模板：' + error));
           state.errs = errors.slice(errorCursor); state.bad = bad.slice(badCursor); errorCursor = errors.length; badCursor = bad.length;
           states.push(state);
         }

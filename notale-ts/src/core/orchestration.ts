@@ -1,3 +1,5 @@
+import { TEMPLATE_SPEC } from './pptx-template.js';
+import type { TemplateSpec } from './template-style.js';
 import { observedStep, workflowNotice } from './workflow-progress.js';
 /** Plan publication and Builder handoff from Python's plan_run/main. */
 import { existsSync, statSync } from 'node:fs';
@@ -116,7 +118,8 @@ export async function buildRun(root: string, ports: Record<string, BuilderPorts>
   if (existsSync(manifestFile)) throw Object.assign(new Error(`${manifestFile} 已存在；新实验请使用新的 run label`), { name: 'FileExistsError' });
   for (const page of pages) if (existsSync(path.join(directory, page.pid + '.html')) || existsSync(path.join(directory, 'assets/lessons', page.pid))) throw Object.assign(new Error(`${page.pid} 已有构建产物；新实验必须从 absent target 开始`), { name: 'FileExistsError' });
   await options.onPlan?.(pages);
-  const refs = pages.some(page => page.workflow !== 'build-code') ? await themeReferences(root) : [];
+  const templateSpec = existsSync(path.join(root, TEMPLATE_SPEC)) ? JSON.parse(await readFile(path.join(root, TEMPLATE_SPEC), 'utf8')) as TemplateSpec : undefined;
+  const refs = !templateSpec && pages.some(page => page.workflow !== 'build-code') ? await themeReferences(root) : [];
   const profile = options.profile, samples = options.samples ?? 'mini', auxiliary = options.includeAux ?? samples !== 'none';
   const manifest: Record<string, any> = { schemaVersion: 3, label: options.label, profile: profile.id, model: profile.model, baseUrl: profile.base_url,
     apiKeyEnv: profile.api_key_env, adapter: profile.adapter, reasoningEffort: profile.reasoning_effort, visionInput: profile.vision_input,
@@ -127,6 +130,11 @@ export async function buildRun(root: string, ports: Record<string, BuilderPorts>
   await writeFile(manifestFile, jsonText(manifest, { indent: 2 }) + '\n');
   const chapters = chapterPreloads(root, raw.length), instructions = Object.fromEntries(PAGE_WORKFLOWS.map(name => [name, Object.values(instructionBlocks(root, raw.length, name, { ...options, includeAux: auxiliary })).join('\n\n')]));
   for (const page of pages) page.prompt = environmentContext(directory, page.pid, path.join(workflows, page.workflow)) + '\n\n' + page.prompt + '\n\n' + chapters[page.pid];
+  const templateRefs: Record<string, Record<string, any>[]> = {};
+  if (templateSpec) for (const workflow of PAGE_WORKFLOWS.filter(w => w !== 'build-code')) {
+    const sources = [...new Set(templateSpec.layouts.filter(l => (l.workflows as string[]).includes(workflow)).map(l => l.source))];
+    templateRefs[workflow] = (await images(sources.map(id => ({ id, shot: path.join(root, 'template-input', id + '.png') })))).map(block => block.type === 'text' ? { type: 'input_text', text: block.text } : { type: 'input_image', image_url: block.image_url.url });
+  }
   const started = performance.now(), concurrency = options.concurrency ?? 100;
   if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error('max_workers must be greater than 0');
   let cursor = 0;
@@ -137,7 +145,7 @@ export async function buildRun(root: string, ports: Record<string, BuilderPorts>
       const port = ports[page.workflow]!, runtime = options.profiles[page.workflow]!;
       await options.onPage?.(page, 'started');
       try { await buildOne(page, directory, path.join(root, 'trace.jsonl'), instructions[page.workflow]!, port,
-        { ...(options.onRetry ? { onRetry: options.onRetry } : {}), workflowRoot: workflows, visionInput: runtime.vision_input, textReport: ['notes', 'only'].includes(options.notes ?? 'cap'), sampleShots: options.sampleShots ?? false, refs, ...(options.signal ? { signal: options.signal } : {}) }); }
+        { ...(options.onRetry ? { onRetry: options.onRetry } : {}), workflowRoot: workflows, visionInput: runtime.vision_input, textReport: ['notes', 'only'].includes(options.notes ?? 'cap'), sampleShots: options.sampleShots ?? false, refs: templateRefs[page.workflow] ?? refs, ...(options.signal ? { signal: options.signal } : {}) }); }
       catch (error) {
         if (options.signal?.aborted) throw options.signal.reason;
         const exception = error as Error; page.why = `${exception.name}: ${[...exception.message].slice(0, 160).join('')}`; page.termination = 'agent_exception';

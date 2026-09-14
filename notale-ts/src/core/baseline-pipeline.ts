@@ -127,7 +127,7 @@ export function createBaselinePipeline(options: PipelineOptions = {}): Generatio
     try {
       await emit('phase.changed', '正在规划讲义和视觉方向', { phase: 'ideate' });
       await planRun({ root, query: run.request.query, minutes: run.request.minutes, audience: run.request.audience, scenario: run.request.scenario,
-        ...(run.request.style ? { style: run.request.style } : {}), ...(options.build?.workflowRoot ? { workflowRoot: options.build.workflowRoot } : {}), ...(options.build?.prompts ? { prompts: options.build.prompts } : {}), styleDirector: options.styleDirector ?? true, visualFocus: options.build?.visualFocus ?? false, ...(options.template ? { template: options.template } : {}) },
+        ...(run.request.style ? { style: run.request.style } : {}), ...(options.build?.workflowRoot ? { workflowRoot: options.build.workflowRoot } : {}), ...(options.build?.prompts ? { prompts: options.build.prompts } : {}), styleDirector: options.styleDirector ?? true, visualFocus: options.build?.visualFocus ?? false, ...(run.request.templateId ? { template: path.join(path.dirname(outputDir), 'input/template.pptx') } : options.template ? { template: options.template } : {}) },
       { planner: { ...planner, progress: report }, director: { ...director, progress: report } }, { signal, onPlanned(pagesDoc) {
         const pages = Object.entries(splitPages(pagesDoc)).sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true })).map(([number, spec]) => {
           const page = new Page('page-' + number, ''); page.spec_text = spec;

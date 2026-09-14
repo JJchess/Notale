@@ -117,7 +117,7 @@ export async function buildOne(page: Page, pagesDir: string, trace: string, inst
   const vision = options.visionInput ?? true, refs = options.refs ?? [];
   const history: Item[] = [];
   if (refs.length && vision && page.workflow !== 'build-code') {
-    history.push({ role: 'user', content: [{ type: 'input_text', text: page.prompt + '\n\n' + constants.REF_SHOTS_NOTE }, ...refs] });
+    history.push({ role: 'user', content: [{ type: 'input_text', text: page.prompt + '\n\n' + (existsSync(path.join(pagesDir, '../template-spec.json')) ? '以下是模板原始版式预览。保留固定骨架，用新内容替换示例文字；不照抄旧主题。' : constants.REF_SHOTS_NOTE) }, ...refs] });
     page.images += refs.filter(block => block.type === 'input_image').length;
   } else {
     if (refs.length && !vision && page.workflow !== 'build-code') throw new Error('本次有视觉参考，但 Builder 模型未启用 vision_input；不能声称看过参考');

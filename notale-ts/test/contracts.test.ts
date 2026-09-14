@@ -401,3 +401,85 @@ test('Builder premature stops retry identical context, audit latest files, and r
     }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('PPTX uploads validate input and snapshot it before the task starts', async () => {
+  const { createApp } = await import('../src/server/app.js');
+  const { zipSync } = await import('fflate');
+  const { readFile, rm } = await import('node:fs/promises');
+  const { inspectPptx } = await import('../src/core/pptx-template.js');
+  const { TemplateInputs } = await import('../src/core/template-input.js');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-template-input-'));
+  const bytes = Buffer.from(zipSync({ '[Content_Types].xml': Buffer.from('<Types/>'), 'ppt/presentation.xml': Buffer.from('<p:presentation><p:sldSz cx="12192000" cy="6858000"/><p:sldIdLst><p:sldId id="1"/></p:sldIdLst></p:presentation>') }));
+  const { app } = createApp({ runsRoot: root, pipeline: async () => {}, logger: false });
+  try {
+    assert.equal(inspectPptx(bytes).pages, 1);
+    assert.throws(() => inspectPptx(Buffer.from('invalid')));
+    assert.throws(() => inspectPptx(zipSync({ '../escape.xml': Buffer.from('x') })), /路径/);
+    const form = new FormData(); form.append('file', new Blob([bytes]), '示例.pptx');
+    const request = new Request('http://localhost', { method: 'POST', body: form });
+    const response = await app.inject({ method: 'POST', url: '/v1/templates', headers: { 'content-type': request.headers.get('content-type')! }, payload: Buffer.from(await request.arrayBuffer()) });
+    assert.equal(response.statusCode, 201, response.body);
+    const id: string = response.json().id;
+    const store = new RunStore(root), run = await store.create(createRunRequestSchema.parse({ query: '测试', templateId: id }));
+    assert.deepEqual(await readFile(path.join(store.runDir(run.id), 'input/template.pptx')), bytes);
+    await rm(await new TemplateInputs(root).file(id));
+    assert.deepEqual(await readFile(path.join(store.runDir(run.id), 'input/template.pptx')), bytes, 'snapshot survives removal of upload');
+    assert.equal((await app.inject({ method: 'POST', url: '/v1/runs', payload: { query: '测试', templateId: id } })).statusCode, 400);
+  } finally { await app.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('template layout submission and idempotent assembly reject invalid or changed artifacts', async () => {
+  const { mkdir, writeFile, readFile, rm } = await import('node:fs/promises');
+  const { validateTemplateSubmission } = await import('../src/core/template-style.js');
+  const { digest } = await import('../src/core/pptx-template.js');
+  const { assembleTemplatePage } = await import('../src/core/template-page.js');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-template-page-')), pages = path.join(root, 'pages');
+  const prepared = { schemaVersion: 1 as const, sha256: 'sample', width: 1600, height: 900, slides: [{ id: 'slide-1', svg: 'slide-1.svg', preview: 'slide-1.png', objects: [] }], warnings: [], fontCss: '' };
+  const submission = { themeCss: 'css', layouts: [{ id: 'content', source: 'slide-1', workflows: ['build-cover', 'build-page', 'build-interaction'], replaceObjects: [], slots: [{ id: 'title', purpose: 'title', x: 20, y: 20, width: 1200, height: 100, required: true }, { id: 'body', purpose: 'body', x: 20, y: 140, width: 1400, height: 700, required: true }] }] };
+  try {
+    const parsed = validateTemplateSubmission(submission, prepared);
+    assert.throws(() => validateTemplateSubmission({ ...submission, layouts: [{ ...submission.layouts[0], replaceObjects: ['unknown'] }] }, prepared), /替换对象/);
+    assert.throws(() => validateTemplateSubmission({ ...submission, layouts: [{ ...submission.layouts[0], slots: [{ ...submission.layouts[0]!.slots[0], x: 1000 }] }] }, prepared), /越出画布/);
+    const fixed = '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><text x="1450" y="30">品牌</text></svg>';
+    await mkdir(path.join(pages, 'assets/template'), { recursive: true });
+    await writeFile(path.join(pages, 'assets/template/content.svg'), fixed);
+    await writeFile(path.join(root, 'template-spec.json'), JSON.stringify({ schemaVersion: 1, mode: 'template', sourceHash: 'sample', layouts: parsed.layouts.map(l => ({ ...l, fixedPath: 'assets/template/content.svg', fixedHash: digest(fixed) })) }));
+    const source = '<!doctype html><html><head></head><body><main id="stage" data-notale-template="content"><section data-notale-slot="title"><h1>主题</h1></section><section data-notale-slot="body"><p data-deck-step="1">步骤</p></section></main></body></html>';
+    await writeFile(path.join(pages, 'page-01.html'), source);
+    assert.deepEqual(await assembleTemplatePage(pages, 'page-01.html', 'build-page'), []);
+    const first = await readFile(path.join(pages, 'page-01.html'), 'utf8');
+    assert.match(first, /品牌/); assert.match(first, /data-deck-step="1"/);
+    assert.deepEqual(await assembleTemplatePage(pages, 'page-01.html', 'build-page'), []);
+    assert.equal(await readFile(path.join(pages, 'page-01.html'), 'utf8'), first);
+    await writeFile(path.join(pages, 'page-01.html'), source.replace('data-notale-slot="body"', 'data-notale-slot="unknown"'));
+    assert.ok((await assembleTemplatePage(pages, 'page-01.html', 'build-page')).length);
+    await writeFile(path.join(pages, 'page-01.html'), source);
+    await writeFile(path.join(pages, 'assets/template/content.svg'), fixed + 'changed');
+    assert.match((await assembleTemplatePage(pages, 'page-01.html', 'build-page')).join(''), /被修改/);
+    assert.deepEqual(await assembleTemplatePage(pages, 'page-01.html', 'build-code'), []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('template mode keeps Planner input identical and changes only Builder visual modules', async () => {
+  const { mkdir, writeFile, rm } = await import('node:fs/promises');
+  const { deckPrompt } = await import('../src/core/planning.js');
+  const { instructionBlocks } = await import('../src/core/builder-context.js');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-template-prompts-'));
+  try {
+    const request = { root, query: '种子发芽', minutes: 15, audience: '小学生' };
+    assert.equal(deckPrompt(request), deckPrompt({ ...request, ...{ template: 'input.pptx' } }));
+    await mkdir(path.join(root, 'pages/assets/lib'), { recursive: true }); await mkdir(path.join(root, 'pages/plan'), { recursive: true });
+    await writeFile(path.join(root, 'pages/assets/CHASSIS.md'), '共享底盘');
+    await writeFile(path.join(root, 'pages/assets/lib/LIBS.md'), '## 按「要做的事」查\n本地依赖');
+    await writeFile(path.join(root, 'pages/assets/theme.css'), '/* ==== INTERFACE ====\n主题\n==== /INTERFACE ==== */');
+    await writeFile(path.join(root, 'pages/plan/pages.md'), '## Audience\n小学生\n\n# page-01 [标题页]\n种子发芽');
+    const before = instructionBlocks(root, 1, 'build-page'), code = instructionBlocks(root, 1, 'build-code');
+    await writeFile(path.join(root, 'template-spec.json'), JSON.stringify({ layouts: [{ id: 'body', workflows: ['build-page'], slots: [] }] }));
+    const after = instructionBlocks(root, 1, 'build-page');
+    assert.equal(after.notes, before.notes); assert.equal(after.steps, before.steps); assert.equal(after.philosophy, before.philosophy);
+    assert.match(after.shared!, /template_layouts/); assert.doesNotMatch(after.shared!, /## 构图/);
+    assert.doesNotMatch(after.anti_slop!, /anti_ai_slop_visual/); assert.doesNotMatch(after.workflow!, /aux_sample_catalog/);
+    assert.deepEqual(instructionBlocks(root, 1, 'build-code'), code);
+    await rm(path.join(root, 'template-spec.json')); assert.deepEqual(instructionBlocks(root, 1, 'build-page'), before);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

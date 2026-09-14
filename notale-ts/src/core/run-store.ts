@@ -1,3 +1,4 @@
+import { TemplateInputs } from './template-input.js';
 import { EventEmitter } from "node:events";
 import { appendFile, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -58,6 +59,7 @@ export class RunStore {
     };
     const directory = this.runDir(id);
     await mkdir(path.join(directory, "output"), { recursive: true });
+    if (request.templateId) await new TemplateInputs(this.root).snapshot(request.templateId, directory);
     await writeJsonAtomic(path.join(directory, "run.json"), snapshot);
     await writeFile(path.join(directory, "events.jsonl"), "", "utf8");
     return snapshot;

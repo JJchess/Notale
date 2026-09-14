@@ -3,7 +3,7 @@ import type { CreateRunRequest, RunEvent, RunSnapshot } from "./protocol";
 const base = "/notale-api/v1";
 
 async function json<T>(response: Response): Promise<T> {
-  if (!response.ok) throw new Error(`请求失败（${response.status}）`);
+  if (!response.ok) { const detail = await response.json().catch(() => ({})); throw new Error(detail.message || `请求失败（${response.status}）`); }
   return response.json() as Promise<T>;
 }
 
@@ -32,3 +32,8 @@ export function previewUrl(runId: string, file = "index.html"): string {
 }
 
 export type { RunEvent, RunSnapshot };
+
+export async function uploadTemplate(file: File): Promise<{ id: string; name: string }> {
+  const body = new FormData(); body.append('file', file);
+  return json(await fetch(`${base}/templates`, { method: 'POST', body }));
+}

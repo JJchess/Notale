@@ -1,5 +1,6 @@
 /** Read-only client view of the versioned Notale HTTP protocol. */
 export interface CreateRunRequest {
+  templateId?: string;
   query: string;
   minutes: number;
   audience: string;

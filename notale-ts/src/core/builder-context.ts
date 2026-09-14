@@ -1,3 +1,5 @@
+import { TEMPLATE_SPEC } from './pptx-template.js';
+import type { TemplateSpec } from './template-style.js';
 /** Prompt assembly port of core/builder.py; ordering is part of the model contract. */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -81,9 +83,10 @@ export function environmentContext(pagesDir: string, pid: string, resourceRoot: 
 export interface InstructionOptions { workflowRoot?: string; prompts?: string; samples?: string; includeAux?: boolean; notes?: string; visualFocus?: boolean }
 export function instructionBlocks(root: string, total: number, workflow: string, options: InstructionOptions = {}): Record<string, string> {
   const workflowRoot = options.workflowRoot ?? skills.WORKFLOWS;
-  const blocks: Record<string, string> = { identity: constants.IDENTITY, philosophy: skills.philosophyBlock('page'), anti_slop: skills.antiSlopBlock(workflowRoot, workflow !== 'build-code') };
+  const template = existsSync(path.join(root, TEMPLATE_SPEC)) && workflow !== 'build-code';
+  const blocks: Record<string, string> = { identity: constants.IDENTITY, philosophy: skills.philosophyBlock('page'), anti_slop: skills.antiSlopBlock(workflowRoot, workflow !== 'build-code' && !template) };
   if (workflow !== 'build-code') {
-    if (options.visualFocus) blocks.visual_focus = constants.VISUAL_FOCUS_BLOCK;
+    if (options.visualFocus && !template) blocks.visual_focus = constants.VISUAL_FOCUS_BLOCK;
     const notesMode = options.notes ?? 'cap';
     if (!(constants.NOTES_MODES as string[]).includes(notesMode)) throw new Error(`unknown notes mode ${options.notes}`);
     const notes: string[] = [];
@@ -96,7 +99,14 @@ export function instructionBlocks(root: string, total: number, workflow: string,
     blocks.steps = workflow === 'build-cover' ? constants.COVER_STEPS_BLOCK : constants.STEPS_BLOCK;
   }
   blocks.shared = sharedPreload(root, total, options.prompts, workflow);
-  blocks.workflow = skills.routedWorkflow(workflow, workflowRoot, options);
+  blocks.workflow = template ? '<workflow_skill name="' + workflow + '">\n' + read(path.join(skills.PROMPTS, 'build-template.md'), true) + '\n</workflow_skill>' : skills.routedWorkflow(workflow, workflowRoot, options);
+  if (template) {
+    const spec = JSON.parse(read(path.join(root, TEMPLATE_SPEC))) as TemplateSpec;
+    const layout = spec.layouts.filter(layout => (layout.workflows as string[]).includes(workflow)).map(({ id, slots }) => ({ id, slots }));
+    const common = techBlock(root, total, options.prompts);
+    const technical = common.split('## 构图')[0]! + '## 库' + common.split('## 库')[1]!;
+    blocks.shared = blocks.shared.replace(/<tech>[\s\S]*?<\/tech>/, () => technical) + '\n\n<template_layouts>\n' + JSON.stringify(layout) + '\n</template_layouts>';
+  }
   if (workflow === 'build-code') return blocks;
   return Object.fromEntries(['identity', 'workflow', 'shared', 'philosophy', 'anti_slop', 'notes', 'visual_focus', 'steps'].filter(key => key in blocks).map(key => [key, blocks[key]!]));
 }

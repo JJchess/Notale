@@ -1,3 +1,4 @@
+import { assembleTemplatePage, templatePageAudit } from '../core/template-page.js';
 /** Check's public tool contract: full measurement, selective image feedback, original guidance. */
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -42,8 +43,11 @@ export async function check(args: Record<string, any>, context: Workspace, signa
   const images: Array<[string, string]> = [];
   if (!existsSync(path.resolve(context.cwd, page))) text = `失败:${page} 不存在。页面文件名形如 page-07.html`;
   else {
+    const templateErrors = await assembleTemplatePage(context.cwd, page, context.resourceRoot ? path.basename(context.resourceRoot) : undefined);
+    if (templateErrors.length) return failure(templateErrors.map(error => '失败:模板契约：' + error).join('\n'));
+    const pageAudit = await templatePageAudit(context.cwd, page);
     const timeout = AbortSignal.timeout(300000), combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    const states = await runSelfcheck([path.resolve(context.cwd, page)], { ...(shot || box ? { shotDir: path.join(path.dirname(context.cwd), '.shots') } : {}), after: args.after || [], ...(box ? { crop: box } : {}), zoom, signal: combined });
+    const states = await runSelfcheck([path.resolve(context.cwd, page)], { ...(shot || box ? { shotDir: path.join(path.dirname(context.cwd), '.shots') } : {}), after: args.after || [], ...(box ? { crop: box } : {}), zoom, signal: combined, ...(pageAudit ? { pageAudit } : {}) });
     text = states.map(([name, states]) => report(name, states, context.textReport ?? false)).join('').trim();
   }
   if (shot) {

@@ -64,6 +64,11 @@ export function oneWrite(calls: ToolCall[], target: string): { css: string | und
   } catch (error) { if (!resourceFailure(error) && !(error instanceof TypeError) && (error as Error)?.name !== 'TypeError') throw error; return { css: undefined, bad: [(error as Error).message] }; }
 }
 export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?: AbortSignal) {
+  if (run.template && path.extname(run.template).toLowerCase() === '.pptx') {
+    ports.theme.checkOptions(run.template, run.style, run.styleDirector ?? true);
+    const { directTemplate } = await import('./template-style.js');
+    return directTemplate(run, ports, signal);
+  }
   const assets = path.join(run.root, 'pages/assets');
   const target = path.join(assets, 'theme.css');
   const workflowRoot = run.workflowRoot ?? guidance.WORKFLOWS;

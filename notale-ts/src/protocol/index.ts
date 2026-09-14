@@ -13,6 +13,7 @@ export type RunStatus = z.infer<typeof runStatusSchema>;
 
 export const createRunRequestSchema = z.object({
   query: z.string(),
+  templateId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   // Python argparse imposes no safe-integer quota on duration.
   minutes: z.number().refine(Number.isInteger, "expected an integer").default(90),
   audience: z.string().default("学过一点相关基础、但没系统学过这个题目的读者"),
