@@ -8,7 +8,7 @@ import type { DirectorRequest, DirectorPorts } from './director.js';
 import type { ChatMessage, ChatInputBlock } from '../adapters/models/chat-model.js';
 import { chatTools, objectArguments } from './planning.js';
 import { inventory } from './style-assets.js';
-import { RESOURCES, visualSlopBlock } from './guidance.js';
+import { RESOURCES, visualSlopBlock, fill, FONT_FLOOR } from './guidance.js';
 import { workflowNotice, observedStep } from './workflow-progress.js';
 
 const id = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/);
@@ -45,7 +45,8 @@ export async function directTemplate(run: DirectorRequest, ports: DirectorPorts,
   await cp(path.join(input, 'assets'), path.join(imported, 'assets'), { recursive: true });
   const fontRows = Object.entries(inventory()).filter(([key]) => /noto-sans-sc|noto-serif-sc|inter|source-han|source-sans/.test(key));
   const fonts = fontRows.map(([key, row]) => ({ id: key, ...row }));
-  const instructions = [await readFile(path.join(run.prompts ?? path.join(RESOURCES, 'prompts'), 'style-template.md'), 'utf8'), visualSlopBlock(run.workflowRoot)].join('\n\n');
+  const templatePrompt = await readFile(path.join(run.prompts ?? path.join(RESOURCES, 'prompts'), 'style-template.md'), 'utf8');
+  const instructions = [fill(templatePrompt, { font_floor: FONT_FLOOR }, 'style-template.md'), visualSlopBlock(run.workflowRoot)].join('\n\n');
   const history: ChatMessage[] = [{ role: 'user', content: [
     { type: 'text', text: `课程：${run.query}\n学习者：${run.audience}\n场合：${run.scenario || '未指定'}\n额外视觉要求：${run.style || '遵循模板'}\n模板对象（坐标已映射到 1600×900；没有列出的背景仍会保留）：\n${JSON.stringify(prepared.slides.map(({ id, objects, placeholders }) => ({ id, objects, placeholders })))}\n可用完整字体（CSS URL 用 fonts/library/<id>/<file>）：\n${JSON.stringify(fonts)}\n转换说明：${prepared.warnings.join('；')}` },
     ...await ports.images(prepared.slides.map(s => ({ id: s.id, shot: path.join(input, s.preview) }))),

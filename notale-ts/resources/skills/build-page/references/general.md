@@ -18,7 +18,7 @@ Use these questions to refine the claim and evidence already chosen in the first
 | Signature | Which subject-specific visual event makes this page memorable? |
 | First view | What subject, objects, and starting evidence are visible at step 0, and what relationship will subsequent steps establish? |
 
-Remove material that does not serve the claim. If it cannot fit, cut supporting explanation or disclose useful detail through interaction; preserve readable type and the decisive evidence.
+Remove material that does not serve the claim. If it cannot fit, remove repetition and secondary material while preserving readable type, decisive evidence and necessary conditions. Steps and interaction serve understanding, not capacity avoidance.
 
 ## Choose representation from intent
 

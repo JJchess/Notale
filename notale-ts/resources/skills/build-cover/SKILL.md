@@ -6,7 +6,7 @@ description: "Builds course covers and chapter-opening pages using static compos
 # Build Cover
 
 <!--teaching:start-->
-Compose the title and a subject-specific main visual as one opening. Use only the current topic and necessary learning context; do not pack the cover with body content or invent an author or date. Keep clear hierarchy, readable type and open space.
+Compose a concise title and a subject-specific main visual as one opening that establishes the topic or question. Keep only necessary learning context; do not preempt the following pages with a dashboard of results or invent an author or date. Keep clear hierarchy, readable type and open space.
 <!--teaching:end-->
 
 Choose the visual system that would still identify the opening without its other layers:

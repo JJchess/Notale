@@ -84,7 +84,7 @@ export interface InstructionOptions { workflowRoot?: string; prompts?: string; s
 export function instructionBlocks(root: string, total: number, workflow: string, options: InstructionOptions = {}): Record<string, string> {
   const workflowRoot = options.workflowRoot ?? skills.WORKFLOWS;
   const template = existsSync(path.join(root, TEMPLATE_SPEC)) && workflow !== 'build-code';
-  const blocks: Record<string, string> = { identity: constants.IDENTITY, philosophy: skills.philosophyBlock('page'), anti_slop: skills.antiSlopBlock(workflowRoot, workflow !== 'build-code') };
+  const blocks: Record<string, string> = { identity: constants.IDENTITY, philosophy: skills.philosophyBlock('page', options.prompts), anti_slop: skills.antiSlopBlock(workflowRoot, workflow !== 'build-code') };
   if (workflow !== 'build-code') {
     if (options.visualFocus && !template) blocks.visual_focus = constants.VISUAL_FOCUS_BLOCK;
     const notesMode = options.notes ?? 'cap';

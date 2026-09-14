@@ -7,6 +7,8 @@ import test from 'node:test';
 import * as guidance from '../src/core/guidance.js';
 
 const pythonRoot = path.resolve(guidance.RESOURCES, '../../notale-v2');
+// Compare assembly using the same explicitly updated configuration on both sides.
+const nativeBuilder = JSON.parse(readFileSync(path.join(guidance.RESOURCES, 'builder-instructions.json'), 'utf8'));
 
 test('path resolution follows symlinks before parent traversal like Python', async () => {
   const { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync } = await import('node:fs');
@@ -118,7 +120,7 @@ print(json.dumps(out,ensure_ascii=False))
 `], { cwd: pythonRoot, encoding: 'utf8' }));
   assert.equal(guidance.pageSkillDescriptions(), reference.descriptions);
   assert.equal(guidance.philosophyBlock('deck'), reference.deck);
-  assert.equal(guidance.philosophyBlock('page'), reference.page);
+  assert.equal(guidance.philosophyBlock('page', path.join(pythonRoot, 'prompts')), reference.page);
   assert.equal(guidance.directionBlock(), reference.direction);
   assert.equal(guidance.themeSlopBlock(), reference.theme);
   assert.equal(guidance.antiSlopBlock(path.join(pythonRoot, 'skills')), reference.visual);
@@ -167,6 +169,9 @@ test('builder prompt blocks, order and chapter context match Python on baseline 
 import json,sys
 from pathlib import Path
 from core import builder,skills,planner
+skills.FONT_FLOOR = ${JSON.stringify(guidance.FONT_FLOOR)}
+builder.TEXT_CAP_TEMPLATE = ${JSON.stringify(nativeBuilder.TEXT_CAP_TEMPLATE)}
+builder.STEPS_BLOCK = ${JSON.stringify(nativeBuilder.STEPS_BLOCK)}
 from types import SimpleNamespace
 root=Path(sys.argv[1]); out={'chapters':builder.chapter_preloads(root,5),'blocks':{}}
 out['descriptions']=skills.page_skill_descriptions(root/'workflows')
@@ -276,6 +281,7 @@ test('plan audience and scoped continuity reach only intended Builders in Python
 import json,sys
 from pathlib import Path
 from core import planner,builder,skills
+skills.FONT_FLOOR = ${JSON.stringify(guidance.FONT_FLOOR)}
 p=json.load(sys.stdin);root=Path(p['root']);parsed=[]
 for text in p['cases']:
  try:parsed.append(planner.plan_context(text))
@@ -293,7 +299,7 @@ print(json.dumps(dict(parsed=parsed,chapters=builder.chapter_preloads(root,4),sh
     assert.ok(chapters['page-03']!.includes('id="dataset"') && chapters['page-03']!.includes('id="training"'));
     assert.ok(!chapters['page-04']!.includes('id="dataset"') && chapters['page-04']!.includes('id="training"'));
     for (const workflow of guidance.PAGE_WORKFLOWS) {
-      const shared = builder.sharedPreload(root, 4, undefined, workflow);
+      const shared = builder.sharedPreload(root, 4, path.join(pythonRoot, 'prompts'), workflow);
       assert.equal(shared, expected.shared[workflow]);
       assert.equal(shared.match(/<audience>/g)?.length, 1);
       assert.ok(shared.includes('x &lt; 18 &amp; y &gt; 0'));
@@ -438,6 +444,7 @@ import json,sys,io,contextlib
 from pathlib import Path
 from types import SimpleNamespace as NS
 from core import director,planner,llm,skills
+skills.FONT_FLOOR = ${JSON.stringify(guidance.FONT_FLOOR)}
 payload=json.load(sys.stdin);root=Path(payload['root']);result=[]
 llm.usage_of=lambda r:(0,0,0);llm.text_of=lambda r:''
 llm.replay_item=lambda x:vars(x);llm.ModelRuntime.replay=lambda r:r.output
@@ -937,13 +944,14 @@ print(json.dumps(out))
   assert.throws(()=>buildArguments(['--query','x','--label','x','--wire','invalid'],'plan'),/--wire/);
 });
 
-test('Planner prompts match Python with both Director branches and visual focus', async () => {
+test('Planner assembly matches Python on baseline resources with current font configuration', async () => {
   const { deckPrompt } = await import('../src/core/planning.js');
   const reference = JSON.parse(execFileSync('python', ['-c', `
 import json
 from pathlib import Path
 from types import SimpleNamespace as NS
 from core import planner,skills
+skills.FONT_FLOOR = ${JSON.stringify(guidance.FONT_FLOOR)}
 out=[]
 for enabled in (True,False):
  for focus in (True,False):
@@ -953,7 +961,7 @@ print(json.dumps(out,ensure_ascii=False))
 `], { cwd: pythonRoot, encoding: 'utf8' }));
   let index = 0;
   for (const styleDirector of [true, false]) for (const visualFocus of [true, false]) {
-    assert.equal(deckPrompt({ root: '/fixture', query: '主题', minutes: 45, audience: '读者', styleDirector, visualFocus }), reference[index++]);
+    assert.equal(deckPrompt({ root: '/fixture', query: '主题', minutes: 45, audience: '读者', styleDirector, visualFocus, prompts: path.join(pythonRoot, 'prompts'), workflowRoot: path.join(pythonRoot, 'skills') }), reference[index++]);
   }
 });
 
@@ -3176,7 +3184,7 @@ print(json.dumps({'requests':budgets,'total':total}))
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('plan publication and complete Builder handoff preserve Python messages and result records', async () => {
+test('plan publication and Builder handoff preserve Python records with aligned prompt resources', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { planRun, buildRun } = await import('../src/core/orchestration.js');
@@ -3193,6 +3201,9 @@ import sys,json,io,contextlib
 from pathlib import Path
 from types import SimpleNamespace as NS
 from core import planner,builder,skills,llm
+skills.FONT_FLOOR = ${JSON.stringify(guidance.FONT_FLOOR)}
+builder.TEXT_CAP_TEMPLATE = ${JSON.stringify(nativeBuilder.TEXT_CAP_TEMPLATE)}
+builder.STEPS_BLOCK = ${JSON.stringify(nativeBuilder.STEPS_BLOCK)}
 p=json.load(sys.stdin);root=Path(p['root']);assets=root/'pages/assets';assets.mkdir(parents=True)
 run=NS(root=root,pages=root/'pages',assets=assets,label='test',query='讲义主题',minutes=45,audience='学生',scenario='',canvas=(1600,900),prompts=skills.PROMPTS,style_director=False,visual_focus=False)
 run.prompt=lambda name,**kw:planner.Run.prompt(run,name,**kw)
@@ -3234,7 +3245,7 @@ print(json.dumps(dict(files=files,manifest=json.loads((root/'builder-manifest.js
         return { id: 'test', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'done' }] }], replay_items: [], raw: {}, status: 'completed', incomplete_details: null, usage: { input_tokens: 9007199254740993n, output_tokens: 9007199254740993n, input_tokens_details: { cached_tokens: 10 } } };
       } }, run: async () => 'ok', scaffold: async () => { throw new Error('unused'); }, codeCheck: async () => { throw new Error('unused'); }, image: async () => { throw new Error('unused'); },
     };
-    await buildRun(tsRoot, Object.fromEntries(guidance.PAGE_WORKFLOWS.map(name => [name, port])), { label: 'typescript', profile, profiles });
+    await buildRun(tsRoot, Object.fromEntries(guidance.PAGE_WORKFLOWS.map(name => [name, port])), { label: 'typescript', profile, profiles, workflowRoot: path.join(pythonRoot, 'skills'), prompts: path.join(pythonRoot, 'prompts') });
     const normalize = (value: unknown) => jsonText(value).replaceAll(pyRoot, '<run>').replaceAll(tsRoot, '<run>').replaceAll(path.join(pythonRoot, 'skills'), '<skills>').replaceAll(guidance.WORKFLOWS, '<skills>');
     for (const [file, value] of Object.entries(expected.files)) assert.equal(normalize(readFileSync(path.join(tsRoot, file), 'utf8')), normalize(value), file);
     const results = parsePythonJson(readFileSync(path.join(tsRoot, 'builder-results.json'), 'utf8'));

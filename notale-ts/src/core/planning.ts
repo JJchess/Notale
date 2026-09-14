@@ -27,7 +27,7 @@ export function deckPrompt(run: PlanningRequest): string {
     css_path: path.join(run.root, CSS_REL), pages_path: path.join(run.root, PAGES_REL),
     philosophy: guidance.philosophyBlock('deck', prompts), page_skills: guidance.pageSkillDescriptions(workflowRoot),
     direction: guidance.directionBlock(prompts), theme_bans: guidance.themeSlopBlock(workflowRoot),
-    font_floor: guidance.FONT_FLOOR, visual_focus: run.visualFocus ? plannerInstructions.visualFocus : '',
+    font_floor: guidance.FONT_FLOOR, font_tokens: guidance.FONT_TOKENS, visual_focus: run.visualFocus ? plannerInstructions.visualFocus : '',
   }, run.styleDirector ?? true, prompts);
 }
 export interface MediaOutput { text: string; images: Array<{ mime: string; data: string }> }

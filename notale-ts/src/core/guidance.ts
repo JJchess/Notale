@@ -10,7 +10,9 @@ export const RESOURCES = fileURLToPath(new URL('../../resources/', import.meta.u
 export const WORKFLOWS = path.join(RESOURCES, 'skills');
 export const PROMPTS = path.join(RESOURCES, 'prompts');
 export const PAGE_WORKFLOWS = ['build-cover', 'build-page', 'build-interaction', 'build-code'] as const;
-export const FONT_FLOOR = '正文与成句说明 ≥16px，控件标签、图例、图注和提示 ≥14px，纯数字刻度 ≥12px，多行文字行高 ≥1.35。';
+export const FONT_SCALE = { h1: 40, h2: 30, lead: 26, body: 24, sec: 24, label: 20, tick: 18 } as const;
+export const FONT_FLOOR = `按 1600×900 逻辑画布：普通页标题默认 ${FONT_SCALE.h1}px（主题可选 36–44px）；正文与成句说明 ≥${FONT_SCALE.body}px，控件标签、图例、图注和提示 ≥${FONT_SCALE.label}px，纯数字刻度 ≥${FONT_SCALE.tick}px，多行文字行高 ≥1.35。数学上下标按相对比例；模板固定文字、原始图片与独立代码工作台不套此字号要求。不得缩放整个内容组绕过阅读尺度。`;
+export const FONT_TOKENS = Object.entries(FONT_SCALE).map(([role, size]) => `--fs-${role}: ${size}px`).join('; ');
 const read = (file: string, strict = false) => decodeText(readFileSync(file), strict);
 const mergedKeyOrders = new WeakMap<object, string[]>();
 

@@ -464,11 +464,14 @@ test('template and free Builders share teaching and visual rules without changin
   const { mkdir, writeFile, rm } = await import('node:fs/promises');
   const { deckPrompt } = await import('../src/core/planning.js');
   const { instructionBlocks } = await import('../src/core/builder-context.js');
-  const { routedWorkflow, WORKFLOWS } = await import('../src/core/guidance.js');
+  const { routedWorkflow, WORKFLOWS, FONT_FLOOR, FONT_TOKENS } = await import('../src/core/guidance.js');
   const root = await mkdtemp(path.join(os.tmpdir(), 'notale-template-prompts-'));
   try {
     const request = { root, query: '种子发芽', minutes: 15, audience: '小学生' };
     assert.equal(deckPrompt(request), deckPrompt({ ...request, ...{ template: 'input.pptx' } }));
+    const fallback = deckPrompt({ ...request, styleDirector: false });
+    assert.ok(fallback.includes(FONT_TOKENS) && fallback.includes(FONT_FLOOR));
+    assert.doesNotMatch(fallback, /\{font_(?:floor|tokens)\}|--fs-body 18/);
     await mkdir(path.join(root, 'pages/assets/lib'), { recursive: true }); await mkdir(path.join(root, 'pages/plan'), { recursive: true });
     await writeFile(path.join(root, 'pages/assets/CHASSIS.md'), '共享底盘');
     await writeFile(path.join(root, 'pages/assets/lib/LIBS.md'), '## 按「要做的事」查\n本地依赖');
@@ -482,6 +485,9 @@ test('template and free Builders share teaching and visual rules without changin
       for (const key of ['notes', 'steps', 'philosophy', 'anti_slop']) assert.equal(after[key], original[key]);
       assert.ok(after.shared!.startsWith(original.shared!));
       assert.match(after.shared!, /## 构图/); assert.match(after.shared!, /## 主题承接/);
+      assert.ok(after.shared!.includes(FONT_FLOOR));
+      assert.doesNotMatch(after.notes!, /解释、推导、背景不上画面/);
+      assert.match(after.notes!, /关键推导、条件和单位/);
       assert.match(after.anti_slop!, /border-left/);
       assert.equal(after.anti_slop!.split('<anti_ai_slop_visual>').length, 2);
       const teaching = routedWorkflow(workflow, WORKFLOWS, { template: true }).split('\n').slice(1, -1).join('\n');
