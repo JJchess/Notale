@@ -12,7 +12,7 @@ export async function readDeckTheme(path=defaultTheme, variant='') {
   const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;');
   const css=await response.text();
   frame.srcdoc=`<!doctype html><html${variant?` data-variant="${esc(variant)}"`:''}><head>
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; base-uri 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'self'">
     <base href="${esc(url.href)}"><style>${css.replace(/<\/style/gi,'<\\/style')}</style>
     </head><body><main id="stage"><span id="probe"></span></main></body></html>`;
   try {

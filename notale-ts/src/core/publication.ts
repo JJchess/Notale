@@ -202,6 +202,8 @@ export async function preparePublicationAssets(): Promise<void> {
   await Promise.all([0, 1].map(async () => { while (cursor < files.length) await compress(files[cursor++]!, undefined, false); }));
 }
 export async function publishLecture(pages: string, output: string, options: { signal?: AbortSignal } = {}) {
+  pages = path.resolve(pages);
+  output = path.resolve(output);
   const start = performance.now();
   await publishOutput(pages, output, async temporary => {
     options.signal?.throwIfAborted();
