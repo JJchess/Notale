@@ -644,15 +644,16 @@ function auxSampleCatalog(name: string, root: string): string {
   ].join('\n');
 }
 
-const READ_BOTH = 'then issue parallel `Read` calls for exactly one reference and one Main from the same category. Do not read any other sample.';
-const READ_REFERENCE_ONLY = 'then `Read` exactly one reference for that category. This run supplies no worked sample; do not look for one, and build from the reference alone.';
-
-function applySampleMode(name: string, body: string, mode: string): string {
-  if (mode === 'mini') return body;
-  if (!body.includes(READ_BOTH)) throw new Error(`${name}/SKILL.md no longer carries the Main-read sentence`);
-  const start = body.indexOf('## Samples');
-  if (start < 0) throw new Error(`${name}/SKILL.md has no '## Samples' section`);
-  return body.slice(0, start).trimEnd().replace(READ_BOTH, READ_REFERENCE_ONLY);
+function sampleReadPolicy(name: string, samples: string, aux: boolean): string {
+  return [
+    '<sample_read_policy>',
+    samples === 'none'
+      ? 'In the same first response, Read exactly one reference for the selected category. This run supplies no worked sample; do not look for one.'
+      : 'In the same first response, choose Main by the transferable pattern, not topic similarity; issue parallel Read calls for exactly one reference and one Main from that category. '
+        + (aux ? 'Follow the appended <aux_sample_catalog> for additional samples.' : 'Do not read any other sample.'),
+    ...(name === 'build-interaction' ? ['The 3d category has no approved sample; read only its reference.'] : []),
+    '</sample_read_policy>',
+  ].join('\n');
 }
 
 export function routedWorkflow(name: string, root = WORKFLOWS, options: { includeAux?: boolean; samples?: string; template?: boolean } = {}): string {
@@ -665,21 +666,21 @@ export function routedWorkflow(name: string, root = WORKFLOWS, options: { includ
   if (!existsSync(file)) throw new Error(`routed workflow is not installed: ${file}`);
   let body = read(file).trim();
   if (name === 'build-code') return `<workflow_skill name="build-code">\n${body.replace(/^---\n.*?\n---\s*/s, '')}\n</workflow_skill>`;
-  if (options.template && name !== 'build-code') {
+  if (options.template && name !== 'build-interaction') {
     const sections = [...body.matchAll(/<!--teaching:start-->\s*([\s\S]*?)\s*<!--teaching:end-->/g)];
     if (sections.length !== 1 || !sections[0]![1]!.trim()) throw new Error(`${file} needs exactly one teaching section`);
     return `<workflow_skill name="${name}">\n${sections[0]![1]}\n</workflow_skill>`;
   }
-  body = body.replace(/<!--teaching:(?:start|end)-->\n?/g, '');
-  body = applySampleMode(name, body, samples).replace(/^---\n.*?\n---\s*/s, '');
-  const aux = includeAux ? auxSampleCatalog(name, root) : '';
-  if (aux) {
-    const marker = 'Do not read any other sample.';
-    if (!body.includes(marker)) throw new Error(`${file} is missing the main-only sample policy`);
-    body = body.replace(marker, 'Follow the appended `<aux_sample_catalog>` in the same first response.');
+  body = body.replace(/<!--teaching:(?:start|end)-->\n?/g, '').replace(/^---\n.*?\n---\s*/s, '');
+  if (samples === 'none') {
+    const start = body.indexOf('## Samples');
+    if (start < 0) throw new Error(`${file} has no '## Samples' section`);
+    body = body.slice(0, start).trimEnd();
   }
+  const aux = includeAux ? auxSampleCatalog(name, root) : '';
   body = body.replaceAll('<skill-dir>/', '').replaceAll('<skill-dir>', path.resolve(root, name));
-  return `<workflow_skill name="${name}">\n${body}\n</workflow_skill>` + (aux ? `\n\n${aux}` : '');
+  return `<workflow_skill name="${name}">\n${body}\n</workflow_skill>\n\n${sampleReadPolicy(name, samples, Boolean(aux))}`
+    + (aux ? `\n\n${aux}` : '');
 }
 
 export function philosophyBlock(scope: string, root = PROMPTS): string {

@@ -463,7 +463,7 @@ test('template layout submission and idempotent assembly reject invalid or chang
 });
 
 test('template and free Builders share teaching and visual rules without changing Planner or code', async () => {
-  const { mkdir, writeFile, rm } = await import('node:fs/promises');
+  const { mkdir, writeFile, readFile, rm } = await import('node:fs/promises');
   const { deckPrompt } = await import('../src/core/planning.js');
   const { instructionBlocks } = await import('../src/core/builder-context.js');
   const { routedWorkflow, WORKFLOWS, FONT_FLOOR, FONT_TOKENS } = await import('../src/core/guidance.js');
@@ -492,10 +492,12 @@ test('template and free Builders share teaching and visual rules without changin
       assert.match(after.notes!, /关键推导、条件和单位/);
       assert.match(after.anti_slop!, /border-left/);
       assert.equal(after.anti_slop!.split('<anti_ai_slop_visual>').length, 2);
-      const teaching = routedWorkflow(workflow, WORKFLOWS, { template: true }).split('\n').slice(1, -1).join('\n');
+      const teaching = (await readFile(path.join(WORKFLOWS, workflow, 'SKILL.md'), 'utf8')).match(/<!--teaching:start-->\s*([\s\S]*?)\s*<!--teaching:end-->/)![1]!;
       for (const text of [after.workflow!, original.workflow!]) assert.equal(text.split(teaching).length, 2, `${workflow} teaching occurs exactly once`);
-      assert.match(original.workflow!, /Choose Main/);
-      assert.doesNotMatch(after.workflow!, /aux_sample_catalog|Choose Main|<!--teaching/);
+      assert.match(original.workflow!, /choose Main/);
+      if (workflow === 'build-interaction') assert.ok(after.workflow!.startsWith(original.workflow!));
+      else assert.doesNotMatch(after.workflow!, /aux_sample_catalog|choose Main/);
+      assert.doesNotMatch(after.workflow!, /<!--teaching/);
       assert.match(after.workflow!, /template_constraints/);
       assert.match(after.workflow!, /color:var\(--text\)/);
       assert.match(after.workflow!, /color:var\(--muted\)/);
@@ -631,4 +633,61 @@ test('Check structured diagnostics survive the tool envelope and preserve fatal 
     const missing = await auditDelivery(context, page, {run: async () => ({text: 'looks fine', images: []})} as unknown as import('../src/core/builder.js').BuilderPorts);
     assert.equal(missing.fatal_errors.length, 1);
   } finally { await rm(root, {recursive: true, force: true}); }
+});
+
+
+test('sample policy keeps Main and Aux modes explicit in free and template interaction inputs', async () => {
+  const { routedWorkflow, PAGE_WORKFLOWS } = await import('../src/core/guidance.js');
+  for (const name of PAGE_WORKFLOWS.filter(n => n !== 'build-code')) {
+    const main = routedWorkflow(name, undefined, { includeAux: false });
+    assert.match(main, /exactly one reference and one Main/);
+    assert.doesNotMatch(main, /<aux_sample_catalog workflow=/);
+    const without = routedWorkflow(name, undefined, { samples: 'none' });
+    assert.doesNotMatch(without, /## Samples|samples\/bundles|choose Main/);
+    assert.match(without, /no worked sample/);
+    assert.throws(() => routedWorkflow(name, undefined, { samples: 'none', includeAux: true }));
+    const defaults = routedWorkflow(name);
+    assert.equal(defaults, routedWorkflow(name, undefined, { includeAux: true }));
+    assert.equal((defaults.match(/^<sample_read_policy>$/gm) ?? []).length, 1);
+    if (name === 'build-interaction') {
+      assert.match(defaults, /zero to three/);
+      for (const options of [{}, { includeAux: false }, { samples: 'none' }]) {
+        assert.equal(routedWorkflow(name, undefined, options), routedWorkflow(name, undefined, { ...options, template: true }));
+      }
+    }
+  }
+});
+
+test('Check reports identifiable evidence without anonymous repair counts or mutating raw measurements', async () => {
+  const { report, checkDiagnostics } = await import('../src/tools/selfcheck.js');
+  const state = { label: null, errs: ['real script error'], bad: ['missing.png'], png: 'page.png', result: { measured: 0.498, conclusion: 'falling' },
+    probe: { sizes: [], escaped: [], clipped: [], overlap: 7, overlap_pairs: [['Loss', 'Epoch']], intrude: [{ el: '#caption', band: 'footer', px: 12, text: 'caption' }] } };
+  const before = structuredClone(state), text = report('page', [state]);
+  assert.match(text, /Loss.*Epoch/); assert.match(text, /#caption.*12px/);
+  assert.doesNotMatch(text, /文字叠压 7 处|侵入页眉页脚带 1 处/);
+  assert.match(text, /0.498/); assert.match(text, /page.png/);
+  assert.ok(checkDiagnostics([state]).fatal_errors.length >= 2);
+  assert.deepEqual(state, before);
+});
+
+test('chassis protects inherited SVG text stroke while preserving explicit styles and Deck/control navigation', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { RESOURCES } = await import('../src/core/guidance.js');
+  const { browser, acquireVisualChecker } = await import('../src/tools/visual-check.js');
+  const release = acquireVisualChecker();
+  try {
+    const page = await (await browser()).newPage({ viewport: { width: 1600, height: 900 } });
+    try {
+      await page.setContent(`<style>:root{--bg:white;--text:black;--font-sans:Arial}svg{stroke:blue;stroke-width:2.5px}.intentional{stroke:green}</style><div id="stage"><svg><path id="line" d="M0 0L100 100"/><text id="plain" fill="red">Label</text><text id="attr" stroke="red">Attribute</text><text id="css" class="intentional">CSS</text></svg><span data-deck-step="1">Evidence</span><input aria-label="value" type="range" min="0" max="10" value="4"></div>`);
+      await page.addStyleTag({ content: await readFile(path.join(RESOURCES, 'chassis/base.css'), 'utf8') });
+      await page.addScriptTag({ content: await readFile(path.join(RESOURCES, 'chassis/base.js'), 'utf8') });
+      await page.evaluate('Deck.init({index:1,total:2})');
+      assert.deepEqual(await page.evaluate(() => ['plain','attr','css','line'].map(id => getComputedStyle(document.getElementById(id)!).stroke)), ['none','rgb(255, 0, 0)','rgb(0, 128, 0)','rgb(0, 0, 255)']);
+      assert.equal(await page.locator('#plain').evaluate(el => getComputedStyle(el).fill), 'rgb(255, 0, 0)');
+      await page.keyboard.press('ArrowRight'); assert.equal(await page.evaluate('Deck.step'), 1);
+      await page.keyboard.press('ArrowLeft'); assert.equal(await page.evaluate('Deck.step'), 0);
+      await page.locator('input').focus(); await page.keyboard.press('ArrowRight');
+      assert.equal(await page.locator('input').inputValue(), '5'); assert.equal(await page.evaluate('Deck.step'), 0);
+    } finally { await page.close(); }
+  } finally { await release(); }
 });

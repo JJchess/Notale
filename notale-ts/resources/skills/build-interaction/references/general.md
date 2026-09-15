@@ -195,7 +195,7 @@ Pointer, keyboard, touch, form controls, autoplay, external actions, retry, and 
 
 Separate lifecycle from model values. Define legal phases and transitions. Repeated Start, Play, Submit, or Retry must not create another loop or bypass a locked phase.
 
-Derive legal actions, constraints, evidence, progress, completion, feedback, and fixed/variable copy from the same state. An impossible action preserves model validity while producing a local rule-specific explanation.
+Preserve the supplied model equations and architecture; a convenient surrogate is a different model, not evidence about the prescribed one. Derive measurements and feedback from the same model predictions or events that produce the scene, using the stated data and units. Sharing control values is not enough: do not author a separate desired curve and call it measured performance. Decide improvement, failure or reversal from the actual computed evidence, not a control setting or elapsed time. Purely illustrative curves must be visibly labelled as schematic, without claiming experimental measurements. An impossible action preserves model validity and gives a local rule-specific explanation.
 
 ## Implement direct manipulation
 
@@ -312,15 +312,13 @@ Use one primary engine. A physics engine plus a custom view is acceptable when o
 - Create one stage and a few role-based layers.
 - Create shapes once, index by stable entity ID, and update attributes from state.
 - Dispatch constrained drag actions; do not leave truth in node coordinates.
-- Use one verified scaling approach and `batchDraw()` grouped updates.
-- Destroy the stage and owned listeners on teardown.
+- Use the host LIBS.md Konva API for scaling, grouped drawing and disposal.
 
 ### Matter.js
 
 - Use it only when physical behavior carries the target relationship.
 - Set mass, friction, drag, restitution, gravity, constraints, and initial velocity explicitly.
 - Generate bodies in stable semantic order from canonical definitions and seed.
-- Use one fixed-step clock; never combine `Runner.run()` with another model clock.
 - Render recognizable functional objects from body poses when debug primitives are not the lesson.
 - Reset by constructing a fresh world, not reversing accumulated physics.
 
@@ -331,7 +329,6 @@ Use one primary engine. A physics engine plus a custom view is acceptable when o
 - Pool records and sprites; reuse textures and geometry.
 - Restrict filters to bounded regions that communicate state.
 - Keep instructions, labels, measurements, and evidence in DOM.
-- Stop the ticker and release owned resources without destroying shared textures.
 
 ## Design evidence, feedback, and support
 

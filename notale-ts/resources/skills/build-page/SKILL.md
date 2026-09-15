@@ -31,7 +31,7 @@ Choose the medium carrying the decisive evidence:
 - `chart`: quantitative encoding, comparison, distribution, uncertainty, or a data relation carries the claim.
 - `general`: authored HTML, SVG, Canvas, diagrams, mechanisms, maps, bounded objects, or narrative motion carry the claim.
 
-In the first response, name the evidence relation and transferable pattern in one sentence. Choose Main by evidence geometry and state organisation, not topic similarity; then issue parallel `Read` calls for exactly one reference and one Main from the same category. Do not read any other sample. Never combine references or use `general` as a base layer beneath another category.
+In the first response, name the evidence relation and transferable pattern in one sentence. Select the category and follow `<sample_read_policy>` below. Never combine references or use general as a base layer beneath another category.
 
 Develop the same decision with the selected reference; do not write a separate contract.
 

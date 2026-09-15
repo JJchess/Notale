@@ -102,7 +102,7 @@ test('prompt resources retain baseline bytes or explicitly recorded native updat
   }
 });
 
-test('guidance assembly matches Python on baseline resources across workflow and sample modes', () => {
+test('shared guidance resources match Python independently of current workflow policy', () => {
   // Python is an independent comparison oracle for migration tests only.
   const reference = JSON.parse(execFileSync('python', ['-c', `
 import json
@@ -111,11 +111,6 @@ out = dict(descriptions=skills.page_skill_descriptions(),
            deck=skills.philosophy_block('deck'),page=skills.philosophy_block('page'),
            direction=skills.direction_block(),theme=skills.theme_slop_block(),
            visual=skills.anti_slop_block(),code=skills.anti_slop_block(include_visual=False),routes={})
-for name in skills.PAGE_WORKFLOWS:
- for samples,aux in [('mini',None),('mini',False),('mini',True),('none',None),('none',False),('none',True)]:
-  key=f'{name}/{samples}/{aux}'
-  try: out['routes'][key]={'text':skills.routed_workflow(name,samples=samples,include_aux=aux)}
-  except ValueError as e: out['routes'][key]={'error':str(e)}
 print(json.dumps(out,ensure_ascii=False))
 `], { cwd: pythonRoot, encoding: 'utf8' }));
   assert.equal(guidance.pageSkillDescriptions(), reference.descriptions);
@@ -125,15 +120,7 @@ print(json.dumps(out,ensure_ascii=False))
   assert.equal(guidance.themeSlopBlock(), reference.theme);
   assert.equal(guidance.antiSlopBlock(path.join(pythonRoot, 'skills')), reference.visual);
   assert.equal(guidance.antiSlopBlock(undefined, false), reference.code);
-  for (const name of guidance.PAGE_WORKFLOWS.filter(name => name !== 'build-code')) {
-    for (const [samples, aux] of [['mini', undefined], ['mini', false], ['mini', true], ['none', undefined], ['none', false], ['none', true]] as const) {
-      const key = `${name}/${samples}/${aux === undefined ? 'None' : aux ? 'True' : 'False'}`;
-      const expected = reference.routes[key];
-      const run = () => guidance.routedWorkflow(name, path.join(pythonRoot, 'skills'), { samples, ...(aux === undefined ? {} : { includeAux: aux }) });
-      if (expected.error) assert.throws(run, { message: expected.error }, key);
-      else assert.equal(run().replaceAll(guidance.WORKFLOWS, path.join(pythonRoot, 'skills')), expected.text, key);
-    }
-  }
+
 });
 
 test('literal prompt substitution preserves code braces and warns from original template', () => {
@@ -170,12 +157,12 @@ import json,sys
 from pathlib import Path
 from core import builder,skills,planner
 skills.FONT_FLOOR = ${JSON.stringify(guidance.FONT_FLOOR)}
+builder.IDENTITY = ${JSON.stringify(nativeBuilder.IDENTITY)}
 builder.TEXT_CAP_TEMPLATE = ${JSON.stringify(nativeBuilder.TEXT_CAP_TEMPLATE)}
 builder.STEPS_BLOCK = ${JSON.stringify(nativeBuilder.STEPS_BLOCK)}
 from types import SimpleNamespace
 root=Path(sys.argv[1]); out={'chapters':builder.chapter_preloads(root,5),'blocks':{}}
 out['descriptions']=skills.page_skill_descriptions(root/'workflows')
-out['routes']={name:skills.routed_workflow(name,root/'workflows',samples='none') for name in skills.PAGE_WORKFLOWS}
 out['prompt']=planner.Run.prompt(SimpleNamespace(prompts=root,style_director=True),'deck',query='主题')
 
 for workflow in skills.PAGE_WORKFLOWS:
@@ -189,7 +176,6 @@ print(json.dumps(out,ensure_ascii=False))
 `, root], { cwd: pythonRoot, encoding: 'utf8' }));
     assert.deepEqual(builder.chapterPreloads(root, 5), reference.chapters);
     assert.equal(guidance.pageSkillDescriptions(workflowRoot), reference.descriptions);
-    for (const name of guidance.PAGE_WORKFLOWS.filter(name => name !== 'build-code')) assert.equal(guidance.routedWorkflow(name, workflowRoot, { samples: 'none' }), reference.routes[name]);
     const { plannerPrompt } = await import('../src/core/planner-contract.js');
     assert.equal(plannerPrompt('deck', { query: '主题' }, true, root), reference.prompt);
 
@@ -198,7 +184,11 @@ print(json.dumps(out,ensure_ascii=False))
       const expected = reference.blocks[`${workflow}/${notes}/${visualFocus ? 'True' : 'False'}`];
       const actual = builder.instructionBlocks(root, 5, workflow, { notes, visualFocus, workflowRoot: path.join(pythonRoot, 'skills'), prompts: path.join(pythonRoot, 'prompts') });
       assert.deepEqual(Object.keys(actual), expected.order);
-      assert.deepEqual(JSON.parse(JSON.stringify(actual).replaceAll(guidance.WORKFLOWS, path.join(pythonRoot, 'skills'))), expected.text);
+      // Workflow policy now has its own mode/teaching contract tests; retain the
+      // independent Python oracle for every other shared input block.
+      const { workflow: _actualWorkflow, ...shared } = actual;
+      const { workflow: _expectedWorkflow, ...expectedShared } = expected.text;
+      assert.deepEqual(JSON.parse(JSON.stringify(shared).replaceAll(guidance.WORKFLOWS, path.join(pythonRoot, 'skills'))), expectedShared);
     }
     const defaults = Object.fromEntries(guidance.PAGE_WORKFLOWS.map(workflow => [workflow, Object.values(builder.instructionBlocks(root, 5, workflow)).join('\n\n')]));
     assert.match(defaults['build-cover']!, /不超过 80 个字符/);
@@ -215,12 +205,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from core import skills,planner,builder
 root=Path(sys.argv[1]);rows=[]
-for call in [lambda:skills.page_skill_descriptions(root/'workflows'),lambda:skills.routed_workflow('build-page',root/'workflows',samples='none'),lambda:skills.direction_block(root),lambda:planner.Run.prompt(SimpleNamespace(prompts=root,style_director=True),'deck',query='主题'),lambda:builder._libs_index(root),lambda:builder.shared_preload(root,5)]:
+for call in [lambda:skills.page_skill_descriptions(root/'workflows'),lambda:skills.direction_block(root),lambda:planner.Run.prompt(SimpleNamespace(prompts=root,style_director=True),'deck',query='主题'),lambda:builder._libs_index(root),lambda:builder.shared_preload(root,5)]:
  try:rows.append({'value':call()})
  except Exception as error:rows.append({'name':type(error).__name__,'message':str(error)})
 print(json.dumps(rows))
 `, root], { cwd: pythonRoot, encoding: 'utf8' }));
-    const checks = [() => guidance.pageSkillDescriptions(workflowRoot), () => guidance.routedWorkflow('build-page', workflowRoot, { samples: 'none' }), () => guidance.directionBlock(root), () => plannerPrompt('deck', { query: '主题' }, true, root), () => builder.libsIndex(root), () => builder.sharedPreload(root, 5)];
+    const checks = [() => guidance.pageSkillDescriptions(workflowRoot), () => guidance.directionBlock(root), () => plannerPrompt('deck', { query: '主题' }, true, root), () => builder.libsIndex(root), () => builder.sharedPreload(root, 5)];
     checks.forEach((call, index) => {
       let actual;
       try { actual = { value: call() }; } catch (error) { actual = { name: (error as Error).name, message: (error as Error).message }; }
@@ -3009,6 +2999,7 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 from core import planner,builder,skills,llm
 skills.FONT_FLOOR = ${JSON.stringify(guidance.FONT_FLOOR)}
+builder.IDENTITY = ${JSON.stringify(nativeBuilder.IDENTITY)}
 builder.TEXT_CAP_TEMPLATE = ${JSON.stringify(nativeBuilder.TEXT_CAP_TEMPLATE)}
 builder.STEPS_BLOCK = ${JSON.stringify(nativeBuilder.STEPS_BLOCK)}
 p=json.load(sys.stdin);root=Path(p['root']);assets=root/'pages/assets';assets.mkdir(parents=True)

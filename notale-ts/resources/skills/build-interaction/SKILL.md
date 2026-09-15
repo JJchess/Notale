@@ -18,7 +18,7 @@ Choose one category:
 - `3d`: acting on depth, orientation, occlusion, assembly, volume, terrain, or geographic space changes the model or evidence.
 - `general`: every other consequential browser interaction.
 
-In the first response, name the action → state → evidence loop and transferable pattern in one sentence. Choose Main by that loop, not topic similarity; then issue parallel `Read` calls for exactly one reference and one Main from the same category. Do not read any other sample. The `3d` category currently has no approved sample and reads only its reference.
+In the first response, name the action → state → evidence loop and transferable pattern in one sentence. Select the category and follow `<sample_read_policy>` below.
 
 Develop the same decision with the selected reference; do not write a separate contract.
 
