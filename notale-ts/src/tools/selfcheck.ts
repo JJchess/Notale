@@ -202,10 +202,14 @@ function stateLines(state: CheckState, textReport: boolean): string[] {
   }
   if (textReport && probe.text) lines.push(`   文字 画面 ${probe.text.chars ?? 0} 字（汉字 ${probe.text.cjk ?? 0}）· 讲稿 ${probe.text.notes ?? 0} 字`);
   if (probe.theme?.invalidTokens?.length) lines.push('   参考 根上缺失或不可用于对应属性的必需主题值：' + probe.theme.invalidTokens.join('、') + '；页面无权改共享资产，不能据此断言 CSS 语法损坏');
-  const flags: string[] = [];
-  if (probe.overlap) flags.push(`文字叠压 ${probe.overlap} 处`);
-  if (probe.intrude?.length) flags.push(`侵入页眉页脚带 ${probe.intrude.length} 处`);
-  if (flags.length) lines.push('        ' + flags.join(' / '));
+  // Counts alone cannot guide a repair. Keep the raw probe, and report only
+  // existing text pairs / element identities that can be checked in the image.
+  for (const [a, b] of probe.overlap_pairs ?? []) {
+    if (a && b) lines.push(`   疑似文字叠压 «${a}» / «${b}»；结合截图确认`);
+  }
+  for (const item of probe.intrude ?? []) {
+    if (item.el) lines.push(`   侵入${item.band} ${item.el} ${item.px}px «${item.text}»`);
+  }
   if (state.png) {
     for (const [index, shot] of (state.step_pngs ?? []).entries()) lines.push(`   截图 ${shot}  (第 ${index} 步)`);
     if (state.rewind_png) lines.push(`   截图 ${state.rewind_png}  (回退到第 0 步，供核对状态)`);
