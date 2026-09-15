@@ -1,11 +1,12 @@
-/** Code lesson execution gate, ported from vendor/code-workbench/check.py. */
+/** Observer course execution, frame and reset checks. */
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from 'playwright';
 import { lessonRoot } from './code-scaffold.js';
 import { acquireVisualChecker, browser, staticServer } from './visual-check.js';
+import { CODE_RUNTIME_VERSION } from '../core/code-observer.js';
 
 async function checkView(page: Page, index: number): Promise<void> {
   const iframe = page.locator('#visualizer iframe.native-view-frame');
@@ -34,10 +35,7 @@ async function lessonCoverage(page: Page, shots?: string): Promise<void> {
     for (const index of [...new Set([0, Math.floor(state.frameCount / 2), state.frameCount - 1])].sort((a, b) => a - b)) {
       await page.evaluate((index: number) => {
         const CodeLab = (globalThis as any).CodeLab;
-        const from = CodeLab.getState().frameIndex;
-        const button = document.querySelector<HTMLButtonElement>(index < from ? '#previousButton' : '#nextButton')!;
-        for (let n = 0; n < Math.abs(index - from); n++) button.click();
-        if (CodeLab.getState().frameIndex !== index) throw new Error('无法选择课程执行帧 ' + index);
+        CodeLab.selectFrame(index);
       }, index);
       const current = await page.evaluate('CodeLab.getState().currentStep') as Record<string, any>, source = current.source;
       assert.ok(source.file in sources, JSON.stringify(source));
@@ -58,6 +56,8 @@ async function lessonCoverage(page: Page, shots?: string): Promise<void> {
 export async function runBrowserCheck(pages: string, pid: string, shot = false, signal?: AbortSignal): Promise<{ report: string; shots: string[] }> {
   const root = lessonRoot(pages, pid), marker = path.join(root, '.notale-code-lesson.json');
   if (!existsSync(marker)) return { report: `失败:代码工作台尚未生成，找不到 ${marker}`, shots: [] };
+  const version = JSON.parse(readFileSync(marker, 'utf8')).runtimeVersion;
+  if (version !== CODE_RUNTIME_VERSION) return { report: `失败:旧版或未知代码页协议 ${version ?? 'legacy'} 不再支持，请重新生成新版页面`, shots: [] };
   const shotDir = path.join(path.dirname(pages), '.shots/code', pid);
   const combined = AbortSignal.any([AbortSignal.timeout(420000), ...(signal ? [signal] : [])]);
   const release = acquireVisualChecker();
@@ -66,7 +66,7 @@ export async function runBrowserCheck(pages: string, pid: string, shot = false, 
   combined.addEventListener('abort', abort, { once: true });
   try {
     combined.throwIfAborted();
-    const active = await browser(), { origin } = await staticServer(root);
+    const active = await browser(), { origin } = await staticServer(pages);
     page = await active.newPage({ viewport: { width: 1600, height: 900 } });
     combined.throwIfAborted();
     const errors: string[] = [], external: string[] = [];
@@ -78,9 +78,11 @@ export async function runBrowserCheck(pages: string, pid: string, shot = false, 
       const url = new URL(request.url());
       if (!['data:', 'blob:', 'about:'].includes(url.protocol) && !['127.0.0.1', 'localhost'].includes(url.hostname)) external.push(request.url());
     });
-    await page.goto(origin + '/index.html', { waitUntil: 'domcontentloaded' });
+    const suffix = `/assets/lessons/${pid}/index.html${existsSync(path.join(pages, 'assets/theme.css')) ? '?theme=../../theme.css' : ''}`;
+    await page.goto(origin + suffix, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction('window.CodeLab && CodeLab.getState().editorReady', undefined, { timeout: 30000 });
     await page.waitForFunction('CodeLab.getState().runtimeReady', undefined, { timeout: 30000 });
+    await page.waitForFunction('window.__prototype?.initialized', undefined, { timeout: 30000 });
     await checkView(page, -1);
     if (shot) { await mkdir(shotDir, { recursive: true }); await page.screenshot({ path: path.join(shotDir, 'initial.png') }); }
     await lessonCoverage(page, shot ? shotDir : undefined);

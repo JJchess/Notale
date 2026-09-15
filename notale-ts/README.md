@@ -1,5 +1,29 @@
 # Notale TypeScript Harness
 
+## Code pages: observer-v1 (2026-09-15)
+
+New `build-code` pages use the integrated observer workbench. The host creates the
+scaffold before the first request and preloads all four full samples. Authors write
+only starter.py, observe.py, tests.py and view/render.js, using the normal TS
+Read/Write/Edit/Check loop. Default: Paratera GLM-5.3-Flash low, 300 s/request,
+480 s/page, 128000 output-token ceiling; `PARATERA_API_KEY` is required.
+Visual-page profiles and Planner/Director are unchanged. `--samples` and auxiliary
+sample switches continue to affect visual pages; code pages always preload four.
+
+The runtime and samples are shipped in `resources/code-observer` and
+`resources/skills/build-code/observer-samples`; no experiment directory or Python
+subprocess is required. Themes map deterministically from Director CSS. NumPy is
+loaded on demand, with editor/view/Python startup overlapped. Catppuccin palette
+license notices accompany the derived syntax colors; no VS Code theme catalogue
+is loaded. Only observer-v1 is supported for generation and Check. The retired
+trace pipeline is archived under `../legacy/notale-ts-build-code-trace/`;
+historical output is untouched but no longer carries a compatibility promise.
+
+Run `npx tsx --test test/code-observer.test.ts` for the offline contract and browser/
+archive regression (no paid model requests). See [architecture](ARCHITECTURE.md)
+for ownership and compatibility boundaries. Runtime passes do not imply complete
+algorithm/visualization semantic correctness or a two-minute generation guarantee.
+
 **Status (2026-09-13, batch 278): migration acceptance completed.** Current differential checks, completed 45/60-minute real generation, cancellation of a separate 90-minute task, Viewer recovery, movable outputs and editor import are recorded in [ACCEPTANCE.md](ACCEPTANCE.md). The requirement index and retained content/loading limitations are in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 TypeScript generation backend for Notale. It exposes the same core through a library, CLI, and durable HTTP/SSE run service. The Python `notale-v2` remains available as the stable reference.
@@ -64,7 +88,7 @@ These dependencies are only needed for diagnostics; viewing the lecture does not
 
 The package entry exports `createModelPipeline`, `ModelRuntime`, `workflowModels`, and the baseline profile resolvers. The initial simplified executor, file/media tools, model transport and Check implementation are archived in `../legacy/notale-ts-simplified/`; `chat-model.ts` now contains types only. The `runAgent`, `ChatModel`, and `modelFromEnvironment` runtime APIs have been removed; use the migrated workflow and configured model runtime so generation retains the Python prompts, tools, retries, and gates.
 
-The obsolete simplified browser workbench, worker, chassis and runtime installer are also archived under `../legacy/notale-ts-simplified/`. Production CodeScaffold uses `resources/code-workbench` with npm runtime dependencies; `src/browser/code-workbench/theme.ts` remains active for the approved theme mapping. Build reuses a cached Python wheel only after verifying its lockfile SHA-256.
+The initial simplified workbench remains archived under `../legacy/notale-ts-simplified/`; the later trace workbench and theme installer are archived under `../legacy/notale-ts-build-code-trace/`. Production scaffold uses only `resources/code-observer`, including its outer HTML and deterministic theme mapper. Build reuses a cached Python wheel only after verifying its lockfile SHA-256.
 
 Native lecture export uses a ZIP container with the `.notale` extension. `notale-project.json` adds `format: "notale"`, `formatVersion: 1`, and `entry: "index.html"` alongside the existing `document` (`schemaVersion: 1`). Container and editor document versions are independent. `document.slides` defines page order and editable HTML; the unchanged page files and `index.html` provide playback. Assets, fonts with full fallback coverage, runtimes and license notices are preserved. Only published output is packaged; redundant HTTP encodings are omitted. Generated logs and export caches stay outside the archive. External dependencies in authored pages are not rewritten.
 

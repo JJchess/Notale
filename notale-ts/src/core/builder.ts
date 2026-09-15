@@ -16,6 +16,7 @@ import { runBrowserCheck } from '../tools/code-check.js';
 import { pageEntries } from './builder-context.js';
 import { resolvePath } from './planner-contract.js';
 import { isWithin } from './theme.js';
+import { CODE_FILES, CODE_PAGE_SECONDS, CODE_REQUEST_SECONDS } from './code-observer.js';
 
 const constants = JSON.parse(readFileSync(path.join(RESOURCES, 'builder-instructions.json'), 'utf8'));
 type Item = Record<string, any>;
@@ -71,6 +72,12 @@ export function codeGuard(name: string, args: Item, context: Workspace): string 
     if (name === 'Read' && isWithin(target, path.join(context.cwd, 'assets/img')) && ['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(path.extname(target).toLowerCase())) return undefined;
     if (name === 'Read' && context.resourceRoot && isWithin(target, context.resourceRoot)) return undefined;
     if (!isWithin(target, editable)) return `${target} is fixed or belongs to another page; edit only ${editable}`;
+    if (name !== 'Read') {
+      if (!CODE_FILES.some(file => {
+        const allowed = path.join(editable, file);
+        return target === allowed && resolvePath(allowed) === allowed;
+      })) return 'Only the four declared observer course files are editable';
+    }
     return undefined;
   }
   if (name === 'Check') return String(args.page || '') === `${context.pid}.html` ? undefined : `check only ${context.pid}.html`;
@@ -105,18 +112,37 @@ export async function auditDelivery(context: Workspace, page: Page, ports: Build
 function tagOf(call: Item): string {
   let args: Item;
   try { args = parsePythonJson(call.arguments || '{}'); } catch { return ''; }
-  if (call.name === 'CodeScaffold') return 'fixed-python-workbench';
   if (call.name === 'Bash') return [...String(args.command ?? '')].slice(0, 120).join('');
   if (call.name === 'Check') return String(args.page ?? '') + (args.after?.length ? ` +after×${args.after.length}` : '') + (args.shot ? ' +shot' : '') + (args.box ? ` @[${args.box.join(', ')}]` : '');
   if (call.name === 'Patch') return `${args.page ?? ''} ×${args.edits?.length ?? 0}`;
   return String(args.file_path ?? '').split('/').at(-1)!;
 }
-export async function buildOne(page: Page, pagesDir: string, trace: string, instructions: string, ports: BuilderPorts, options: { workflowRoot?: string; visionInput?: boolean; textReport?: boolean; sampleShots?: boolean; refs?: Item[]; signal?: AbortSignal; now?: () => number; onRetry?(page: Page): void } = {}): Promise<Page> {
+export async function buildOne(...args: Parameters<typeof buildOneLoop>): Promise<Page> {
+  const [page, pagesDir, trace, instructions, ports, options = {}] = args;
+  if (page.workflow !== 'build-code') return buildOneLoop(...args);
+  const deadline = AbortSignal.timeout(CODE_PAGE_SECONDS * 1000), started = performance.now();
+  const signal = AbortSignal.any([deadline, ...(options.signal ? [options.signal] : [])]);
+  try { return await buildOneLoop(page, pagesDir, trace, instructions, ports, { ...options, signal }); }
+  catch (error) {
+    if (options.signal?.aborted) throw options.signal.reason;
+    if (!deadline.aborted) throw error;
+    page.termination = 'max_seconds'; page.why = `超过单页时限 ${CODE_PAGE_SECONDS}s`;
+    page.artifact_present = existsSync(path.join(pagesDir, page.pid + '.html'));
+    page.audit = { fatal_errors: [page.why], visual_warnings: [], code_result: null };
+    return page;
+  } finally { page.seconds = (performance.now() - started) / 1000; }
+}
+async function buildOneLoop(page: Page, pagesDir: string, trace: string, instructions: string, ports: BuilderPorts, options: { workflowRoot?: string; visionInput?: boolean; textReport?: boolean; sampleShots?: boolean; refs?: Item[]; signal?: AbortSignal; now?: () => number; onRetry?(page: Page): void } = {}): Promise<Page> {
   const log = new TraceWriter(trace, randomUUID(), ports.env);
   const root = options.workflowRoot ?? WORKFLOWS;
   const context: Workspace = { cwd: pagesDir, pid: page.pid, resourceRoot: resolvePath(page.workflow ? path.join(root, page.workflow) : root), ...(options.textReport ? { textReport: true } : {}), ...(options.sampleShots ? { sampleShots: true } : {}) };
   const vision = options.visionInput ?? true, refs = options.refs ?? [];
   const history: Item[] = [];
+  if (page.workflow === 'build-code') {
+    const created = await ports.scaffold(pagesDir, page.pid, lessonTitle(page), page.total, options.signal);
+    page.prompt = page.prompt.replace('<target_state>absent</target_state>', '<target_state>host scaffold ready</target_state>')
+      + '\n\nCURRENT FILES (host-created; use these exact paths):\n' + JSON.stringify(created, null, 2);
+  }
   if (refs.length && vision && page.workflow !== 'build-code') {
     history.push({ role: 'user', content: [{ type: 'input_text', text: page.prompt + '\n\n' + (existsSync(path.join(pagesDir, '../template-spec.json')) ? '以下是模板原始版式预览。保留固定骨架，用新内容替换示例文字；不照抄旧主题。' : constants.REF_SHOTS_NOTE) }, ...refs] });
     page.images += refs.filter(block => block.type === 'input_image').length;
@@ -127,13 +153,14 @@ export async function buildOne(page: Page, pagesDir: string, trace: string, inst
   const sources = await Sources.load(path.dirname(pagesDir), page.pid);
   const specs = toolSpecs(page.workflow, vision);
   if (sources) specs.push(...sourceTools);
-  if (page.workflow === 'build-code') specs.unshift(structuredClone(constants.CODE_SCAFFOLD_SCHEMA));
   const now = options.now ?? (() => Date.now() / 1000), start = now(), seen = new Set<string>();
   for (;;) {
     options.signal?.throwIfAborted();
     if (now() - start > constants.MAX_SECONDS) { page.why = `超过单页时限 ${constants.MAX_SECONDS}s` + (page.last_stop_error ? `；最近结束检查：${page.last_stop_error}` : ''); page.termination = 'max_seconds'; break; }
     const started = new Date().toISOString();
-    const response = await ports.model.respondCanonical(instructions, history, specs, options.signal ? { signal: options.signal } : {});
+    const requestSignal = page.workflow === 'build-code'
+      ? AbortSignal.any([AbortSignal.timeout(CODE_REQUEST_SECONDS * 1000), ...(options.signal ? [options.signal] : [])]) : options.signal;
+    const response = await ports.model.respondCanonical(instructions, history, specs, requestSignal ? { signal: requestSignal } : {});
     page.calls++;
     const usage = response.usage, cached = usage.input_tokens_details.cached_tokens;
     page.tok_in = sumIntegers(page.tok_in, usage.input_tokens); page.tok_out = sumIntegers(page.tok_out, usage.output_tokens); page.tok_write = sumIntegers(page.tok_write, cacheWriteOf(response)); page.tok_max = page.tok_max >= usage.input_tokens ? page.tok_max : usage.input_tokens;
@@ -150,7 +177,11 @@ export async function buildOne(page: Page, pagesDir: string, trace: string, inst
         page.premature_stops++;
         page.last_stop_error = page.audit.fatal_errors.join('；');
         try { Promise.resolve(options.onRetry?.(page)).catch(() => {}); } catch {}
-        // Reject this response without replay, feedback, or context eviction.
+        if (page.workflow === 'build-code') {
+          history.push(...ModelRuntime.replay(response));
+          history.push({ role: 'user', content: '交付检查结果：\n' + page.last_stop_error });
+        }
+        // Preserve legacy visual-page natural-stop behavior.
         continue;
       }
       page.why = [...textOf(response).trim()].slice(0, 200).join(''); page.termination = 'no_tool_use'; break;
@@ -176,9 +207,6 @@ export async function buildOne(page: Page, pagesDir: string, trace: string, inst
       if (sources && (call.name === 'SearchSources' || call.name === 'ReadSource')) {
         try { result = await sources.tool(call.name, args, options.signal, vision); }
         catch (error) { options.signal?.throwIfAborted(); result = `资料读取失败：${(error as Error).message}`; }
-      } else if (call.name === 'CodeScaffold') {
-        try { result = JSON.stringify(await ports.scaffold(pagesDir, page.pid, lessonTitle(page), page.total, options.signal), null, 2); }
-        catch (error) { result = `CodeScaffold 失败：${(error as Error).name}: ${(error as Error).message}`; }
       } else {
         const actual = { ...args };
         if (call.name === 'Check') {

@@ -358,14 +358,15 @@ test('Builder premature stops retry identical context, audit latest files, and r
     ? [{ type: 'function_call', name: 'Write', arguments: JSON.stringify({ content }), call_id: 'write' }]
     : [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Action:default_api:Read{file_path:references/general.md}' }] }];
   try {
-    for (const mode of ['missing', 'modified', 'code', 'timeout', 'cancel']) {
+    // Observer code-page feedback is covered by code-observer.test.ts; this is
+    // the unchanged visual-page natural-stop contract.
+    for (const mode of ['missing', 'modified', 'timeout', 'cancel']) {
       const target = path.join(root, 'page-01.html'); await rm(target, { force: true });
-      const page = new Page('page-01', 'brief'); page.workflow = mode === 'code' ? 'build-code' : 'build-page';
+      const page = new Page('page-01', 'brief'); page.workflow = 'build-page';
       const history: unknown[] = []; let turn = 0, checks = 0, retries = 0, clock = 0;
       const controller = new AbortController();
-      const sequence = mode === 'modified' || mode === 'code' ? [output(true, 'bad'), output(false), output(true), output(false)] : [...Array.from({length: 5}, () => output(false)), output(true), output(false)];
+      const sequence = mode === 'modified' ? [output(true, 'bad'), output(false), output(true), output(false)] : [...Array.from({length: 5}, () => output(false)), output(true), output(false)];
       if (mode === 'modified') sequence[0] = [...output(true), { type: 'function_call', name: 'Check', arguments: '{}', call_id: 'check-before-modification' }, ...output(true, 'bad').map(item => ({...item, call_id: 'modify'}))];
-      if (mode === 'code') for (const row of sequence) for (const item of row) if (item.type === 'function_call') item.name = 'CodeScaffold';
       if (mode === 'missing') sequence[1] = [];
       const work = buildOne(page, root, path.join(root, `${mode}.jsonl`), 'instructions', {
         model: { async respondCanonical(instructions, messages, tools) {
@@ -375,7 +376,7 @@ test('Builder premature stops retry identical context, audit latest files, and r
         async run(name, args) {
           if (name === 'Write') { await writeFile(target, args.content); return 'written'; }
           checks++;
-          return mode !== 'code' && await readFile(target, 'utf8') === 'bad' ? '✗ JS 报错' : '✗ 页面溢出';
+          return await readFile(target, 'utf8') === 'bad' ? '✗ JS 报错' : '✗ 页面溢出';
         },
         codeCheck: async () => ({ report: await readFile(target, 'utf8') === 'bad' ? '失败:代码工作台自检失败' : 'ok', shots: [] }),
         scaffold: async () => { await writeFile(target, turn === 1 ? 'bad' : 'ok'); return {}; }, image: async () => ({ text: '', images: [] }),
@@ -394,8 +395,8 @@ test('Builder premature stops retry identical context, audit latest files, and r
         assert.equal(checks, mode === 'missing' ? 1 : mode === 'modified' ? 3 : 2);
         assert.equal(retries, mode === 'missing' ? 5 : 1);
       }
-      const a = mode === 'modified' || mode === 'code' ? 1 : 0;
-      const b = mode === 'modified' || mode === 'code' ? 2 : Math.min(5, history.length - 1);
+      const a = mode === 'modified' ? 1 : 0;
+      const b = mode === 'modified' ? 2 : Math.min(5, history.length - 1);
       assert.deepEqual(history[a], history[b]);
       assert.equal(page.calls, turn); assert.equal(page.tok_out, turn * 18);
     }

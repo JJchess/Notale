@@ -19,4 +19,3 @@ export interface PageRuntime {
 export function pageRuntime(nativeStepMax: number, workbenches: PageRuntime['workbenches']): PageRuntime {
   return {version:1,kind:workbenches.length?'code-workbench':'slide',nativeStepMax,workbenches};
 }
-export {officialCodeWorkbenchHashes,stagedCodeWorkbench} from './code-workbench.js';

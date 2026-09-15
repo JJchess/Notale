@@ -133,7 +133,7 @@ async function optimizeFonts(root: string, files: string[], signal?: AbortSignal
   const characters = new Set<number>(Array.from({ length: 95 }, (_, i) => 32 + i));
   for (const file of files) {
     const relative = path.relative(root, file).replaceAll('\\', '/');
-    if (!/\.(html|css|js|json)$/.test(file) || /\/(lib|code-runtime|preview|fonts)\//.test(relative)) continue;
+    if (!/\.(html|css|js|json)$/.test(file) || /\/(lib|code-runtime(?:-observer-v1)?|preview|fonts)\//.test(relative)) continue;
     for (const character of await readFile(file, 'utf8')) characters.add(character.codePointAt(0)!);
   }
   const allowed = new Map(Object.entries(inventory()).flatMap(([name, row]) => row.files.map(face => [face.sha256, path.join(FONT_ROOT, name, face.file)])));
@@ -197,7 +197,7 @@ async function compress(file: string, signal?: AbortSignal, emit = true) {
 }
 export async function preparePublicationAssets(): Promise<void> {
   const packageRoot = path.resolve(RESOURCES, '..');
-  const roots = [path.join(RESOURCES, 'chassis/lib'), path.join(RESOURCES, 'code-workbench'), path.join(packageRoot, 'node_modules/monaco-editor/min'), path.join(packageRoot, 'node_modules/pyodide')];
+  const roots = [path.join(RESOURCES, 'chassis/lib'), path.join(RESOURCES, 'code-observer'), path.join(packageRoot, 'node_modules/monaco-editor/min'), path.join(packageRoot, 'node_modules/pyodide')];
   const files = (await Promise.all(roots.filter(existsSync).map(publicationFiles))).flat(); let cursor = 0;
   await Promise.all([0, 1].map(async () => { while (cursor < files.length) await compress(files[cursor++]!, undefined, false); }));
 }

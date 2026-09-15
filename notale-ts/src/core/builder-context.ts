@@ -6,6 +6,7 @@ import path from 'node:path';
 import { decodeText, PYTHON_SPACE, stripText } from './text.js';
 import * as skills from './guidance.js';
 import { planContext } from './planner-contract.js';
+import { CODE_IDENTITY, codeReferences } from './code-observer.js';
 
 const constants = JSON.parse(readFileSync(path.join(skills.RESOURCES, 'builder-instructions.json'), 'utf8'));
 const read = (file: string, strict = false) => decodeText(readFileSync(file), strict);
@@ -83,6 +84,11 @@ export function environmentContext(pagesDir: string, pid: string, resourceRoot: 
 export interface InstructionOptions { workflowRoot?: string; prompts?: string; samples?: string; includeAux?: boolean; notes?: string; visualFocus?: boolean }
 export function instructionBlocks(root: string, total: number, workflow: string, options: InstructionOptions = {}): Record<string, string> {
   const workflowRoot = options.workflowRoot ?? skills.WORKFLOWS;
+  if (workflow === 'build-code') return {
+    identity: CODE_IDENTITY,
+    shared: sharedPreload(root, total, options.prompts, workflow),
+    workflow: codeReferences(path.join(workflowRoot, 'build-code')),
+  };
   const template = existsSync(path.join(root, TEMPLATE_SPEC)) && workflow !== 'build-code';
   const blocks: Record<string, string> = { identity: constants.IDENTITY, philosophy: skills.philosophyBlock('page', options.prompts), anti_slop: skills.antiSlopBlock(workflowRoot, workflow !== 'build-code') };
   if (workflow !== 'build-code') {
@@ -106,6 +112,5 @@ export function instructionBlocks(root: string, total: number, workflow: string,
     const layout = spec.layouts.filter(layout => (layout.workflows as string[]).includes(workflow)).map(({ id, slots }) => ({ id, slots }));
     blocks.shared += '\n\n<template_layouts>\n' + JSON.stringify(layout) + '\n</template_layouts>';
   }
-  if (workflow === 'build-code') return blocks;
   return Object.fromEntries(['identity', 'workflow', 'shared', 'philosophy', 'anti_slop', 'notes', 'visual_focus', 'steps'].filter(key => key in blocks).map(key => [key, blocks[key]!]));
 }

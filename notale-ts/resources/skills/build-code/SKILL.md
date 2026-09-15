@@ -5,16 +5,12 @@ description: "Builds Python learning workbenches where learners edit and run cod
 
 # Build Code
 
-The learner edits runnable Python; execution, tests, trace, output, and a code-derived native view provide the evidence. Do not build a read-only listing or invent another editor/runtime shell.
+The host has already created the workbench and preloaded the current files,
+references/observer.md and all four observer-samples. Begin implementation directly.
+Only starter.py, observe.py, tests.py and view/render.js are author-owned; use the
+exact paths in CURRENT FILES. Write the first implementation, Edit local fixes,
+then Check this page. Read remains available for concrete issues, not mandatory.
 
-In your first response, issue these three calls in parallel:
-
-- `Read(<skill-dir>/references/code.md)`
-- `Read(<skill-dir>/samples/bundles/code/code-core-bundle.one.md)`
-- `CodeScaffold()`
-
-The sample bundle carries one worked author layer. Transfer its state/trace/evidence architecture to this page's algorithm; do not copy its learner code, data, labels, or styling.
-
-`CodeScaffold` returns every editable lesson path with its current content. Edit only those lesson files. The outer page and fixed runtime are host-owned. The scaffold is idempotent, so an accidental repeat returns the same working set.
-
-Follow the reference as the complete learning and runtime contract.
+The observer records real execution; it must not recompute answers or hide errors.
+Keep the same conversation for Check feedback and fixes. Host-owned configuration,
+HTML, theme, editor, runtime and playback must not be rewritten.

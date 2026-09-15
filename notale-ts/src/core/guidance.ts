@@ -646,26 +646,9 @@ function auxSampleCatalog(name: string, root: string): string {
 
 const READ_BOTH = 'then issue parallel `Read` calls for exactly one reference and one Main from the same category. Do not read any other sample.';
 const READ_REFERENCE_ONLY = 'then `Read` exactly one reference for that category. This run supplies no worked sample; do not look for one, and build from the reference alone.';
-const CODE_ONE = `In your first response, issue these three calls in parallel:
-
-- \`Read(<skill-dir>/references/code.md)\`
-- \`Read(<skill-dir>/samples/bundles/code/code-core-bundle.one.md)\`
-- \`CodeScaffold()\`
-
-The sample bundle carries one worked author layer. Transfer its state/trace/evidence architecture to this page's algorithm; do not copy its learner code, data, labels, or styling.`;
-const CODE_NONE = `In your first response, issue these two calls in parallel:
-
-- \`Read(<skill-dir>/references/code.md)\`
-- \`CodeScaffold()\`
-
-This run supplies no worked sample. Build the state/trace/evidence architecture from the reference alone.`;
 
 function applySampleMode(name: string, body: string, mode: string): string {
   if (mode === 'mini') return body;
-  if (name === 'build-code') {
-    if (!body.includes(CODE_ONE)) throw new Error('build-code/SKILL.md no longer carries the三-call block');
-    return body.replace(CODE_ONE, CODE_NONE);
-  }
   if (!body.includes(READ_BOTH)) throw new Error(`${name}/SKILL.md no longer carries the Main-read sentence`);
   const start = body.indexOf('## Samples');
   if (start < 0) throw new Error(`${name}/SKILL.md has no '## Samples' section`);
@@ -681,6 +664,7 @@ export function routedWorkflow(name: string, root = WORKFLOWS, options: { includ
   const file = path.join(root, name, 'SKILL.md');
   if (!existsSync(file)) throw new Error(`routed workflow is not installed: ${file}`);
   let body = read(file).trim();
+  if (name === 'build-code') return `<workflow_skill name="build-code">\n${body.replace(/^---\n.*?\n---\s*/s, '')}\n</workflow_skill>`;
   if (options.template && name !== 'build-code') {
     const sections = [...body.matchAll(/<!--teaching:start-->\s*([\s\S]*?)\s*<!--teaching:end-->/g)];
     if (sections.length !== 1 || !sections[0]![1]!.trim()) throw new Error(`${file} needs exactly one teaching section`);
