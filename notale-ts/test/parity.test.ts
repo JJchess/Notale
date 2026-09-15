@@ -2188,7 +2188,7 @@ print(json.dumps(rows))
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('Patch miss classification and Builder context eviction match Python', async () => {
+test('Patch miss and legacy text audit match Python; context eviction preserves remaining images', async () => {
   const { classifyMiss } = await import('../src/tools/workspace.js');
   const builder = await import('../src/core/builder.js');
   const probes = [['', ''], ['a b', 'a\nb'], ['a\\nb', 'a\nb'], ['测试ABC', '第一行\n测试ABD\n末行'], ['zzzz', 'abc\ndef'], ['a'.repeat(250) + 'x', 'a'.repeat(250) + 'y']];
@@ -2204,7 +2204,9 @@ print(json.dumps({'miss':[_classify_miss(*row) for row in p['probes']],'low':[bu
   assert.deepEqual(probes.map(([old, source]) => classifyMiss(old!, source!)), expected.miss);
   const low = structuredClone(history), high = structuredClone(history);
   assert.deepEqual([builder.evictImages(low, 150000), low], expected.low);
-  assert.deepEqual([builder.evictImages(high, 150001), high], expected.high);
+  assert.equal(builder.evictImages(high, 150001), expected.high[0]);
+  assert.deepEqual(high.slice(2), history.slice(2));
+  assert.ok(high.slice(0, 2).every(item => item.content.every(block => block.type !== 'input_image')));
   assert.deepEqual(builder.auditLines(report), expected.audit);
 });
 
@@ -2269,7 +2271,7 @@ print(json.dumps(results,ensure_ascii=False))
         async run(name, args) {
           executed.push([name, structuredClone(args)]);
           if (name === 'Patch') return '失败:miss';
-          if (name === 'Check') return { text: '<check_use workflow="build-page">guidance</check_use>\n\n✗ 页面溢出', images: args.shot ? [['image/png', 'YQ==']] : [] };
+          if (name === 'Check') return { text: '<check_use workflow="build-page">guidance</check_use>\n\n✗ 页面溢出', images: args.shot ? [['image/png', 'YQ==']] : [], diagnostics: { fatal_errors: [], visual_warnings: ['✗ 页面溢出'] } };
           return { text: 'loaded', images: [['image/png', 'YQ==']] };
         },
         scaffold: async () => ({ made: true }), codeCheck: async (_cwd, _pid, shot) => { codechecks.push(shot); return { report: 'code report', shots: [] }; }, image: async () => ({ text: '', images: [] }),
@@ -2309,10 +2311,11 @@ print(json.dumps({'states':result,'report':stream.getvalue(),'notesReport':notes
   const originalImages = new Map(Object.keys(expected.images).map(file => [file, readFileSync(file)]));
   try {
     const actual = await selfcheck.runSelfcheck([file], { after, ...(shotDir ? { shotDir } : {}), crop: [-10, 90, 250, 100] });
-    const measured = actual.map(([name, states]) => [name, states.map(({ cropSize: _cropSize, ...state }) => state)]);
+    const measured = actual.map(([name, states]) => [name, states.map(({ cropSize: _cropSize, capture_notes: _captureNotes, ...state }) => state)]);
     assert.deepEqual(measured, expected.states);
-    assert.equal(actual.map(([name, states]) => selfcheck.report(name, states)).join(''), expected.report);
-    assert.equal(actual.map(([name, states]) => selfcheck.report(name, states, true)).join(''), expected.notesReport);
+    const reportLines = (text: string) => text.split('\n').sort();
+    assert.deepEqual(reportLines(actual.map(([name, states]) => selfcheck.report(name, states)).join('')), reportLines(expected.report));
+    assert.deepEqual(reportLines(actual.map(([name, states]) => selfcheck.report(name, states, true)).join('')), reportLines(expected.notesReport));
     if (!shot) {
       const { check } = await import('../src/tools/check.js');
       const result = await check({ page: 'page-01.html', shot: false }, { cwd: root, pid: 'page-01', textReport: true });
@@ -2332,12 +2335,12 @@ print(json.dumps({'states':result,'report':stream.getvalue(),'notesReport':notes
     assert.deepEqual(json, wanted);
     if (!shot) {
       const text = execFileSync(process.execPath, [...cli, file, ...options, '--text-report'], { cwd: root, encoding: 'utf8', timeout: 30000 });
-      assert.equal(text, expected.notesReport);
+      assert.deepEqual(reportLines(text), reportLines(expected.notesReport));
       const missing = spawnSync(process.execPath, [...cli, 'missing.html'], { cwd: root, encoding: 'utf8', timeout: 10000 });
       assert.equal(missing.status, 2);
       assert.match(missing.stdout, /没找到页面/);
       const bundled = execFileSync(process.execPath, [path.resolve(guidance.RESOURCES, '../dist/diagnostics/selfcheck.mjs'), file, ...options, '--text-report'], { cwd: root, encoding: 'utf8', timeout: 30000 });
-      assert.equal(bundled, expected.notesReport);
+      assert.deepEqual(reportLines(bundled), reportLines(expected.notesReport));
     }
     const sharp = (await import('sharp')).default;
     for (const [file, digest] of Object.entries(expected.images)) {

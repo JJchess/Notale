@@ -8,6 +8,7 @@ import type { Page, Browser } from 'playwright';
 import { acquireVisualChecker, browser } from './visual-check.js';
 import { jsonText } from '../core/json.js';
 import { recordPreviewSnapshot } from '../core/preview-snapshot.js';
+import type { CheckDiagnostics } from './workspace.js';
 
 declare const BUNDLED_SELFCHECK_PROBES: Record<string, any>;
 const probes = typeof BUNDLED_SELFCHECK_PROBES === 'undefined'
@@ -18,7 +19,7 @@ export interface CheckState {
   label: string | null; probe: Probe | null; errs: string[]; bad: string[]; png: string | null;
   steps?: number; step_pngs?: string[]; rewind_png?: string | null; step_issues?: string[];
   viewport_issues?: string[]; result?: unknown; js_error?: string | null; crop?: string | null;
-  cropSize?: [number, number];
+  cropSize?: [number, number]; capture_notes?: string[];
 }
 export interface CheckOptions { pageAudit?(page: Page): Promise<string[]>; shotDir?: string; wait?: number; after?: string[]; crop?: number[]; zoom?: number; signal?: AbortSignal }
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/^page\./, 'Page.');
@@ -34,6 +35,25 @@ async function viewportContract(active: Browser, file: string, wait: number, sig
     return await small.evaluate(`(${probes.CONTRACT})()`);
   } catch (error) { if (signal?.aborted) throw signal.reason; return [`缩放检查未完成: ${shorten(errorText(error), 160)}`]; }
   finally { signal?.removeEventListener('abort', abort); await small.close().catch(() => {}); }
+}
+/** Observe finite browser/chart transitions; never stop a continuous simulation. */
+export async function settleCapture(page: Page): Promise<string | null> {
+  try {
+    await page.waitForFunction(() => {
+      const finite = document.getAnimations().some(a => a.playState === 'running' && a.effect?.getComputedTiming().endTime !== Infinity);
+      const echarts = (window as any).echarts;
+      const charts = echarts && [...document.querySelectorAll('[_echarts_instance_]')].some(el => {
+        const animation = echarts.getInstanceByDom(el)?.getZr()?.animation;
+        return animation?.isFinished && !animation.isFinished();
+      });
+      return !finite && !charts;
+    }, undefined, { timeout: 3000, polling: 'raf' });
+    await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+    return null;
+  } catch (error) {
+    if ((error as Error).name !== 'TimeoutError') throw error;
+    return '有限动画等待超过 3 秒，此状态截图可能仍在变化；不据此判断数据绘制错误';
+  }
 }
 async function shrink(png: Buffer, dest: string): Promise<void> {
   await mkdir(path.dirname(dest), { recursive: true });
@@ -76,10 +96,12 @@ export async function runSelfcheck(files: string[], options: CheckOptions = {}):
       try {
         const stem = path.basename(file, path.extname(file));
         let probe: Probe, maximum = 0, rewind: string | null = null;
-        const stepPngs: string[] = [], issues: string[] = [];
+        const stepPngs: string[] = [], issues: string[] = [], captureNotes: string[] = [];
+        const settle = async (label: string) => { const note = await settleCapture(page); if (note) captureNotes.push(label + ': ' + note); };
         try {
           await page.goto(pathToFileURL(path.resolve(file)).href, { waitUntil: 'load' });
           await page.waitForTimeout(wait);
+          await settle('初态');
           const contract = await page.evaluate(`(${probes.CONTRACT})()`) as string[];
           maximum = contract.length ? 0 : await page.evaluate('(window.Deck && Deck.stepMax) || 0');
           if (maximum) {
@@ -89,11 +111,12 @@ export async function runSelfcheck(files: string[], options: CheckOptions = {}):
             for (let i = 0; i < maximum; i++) {
               options.signal?.throwIfAborted();
               await page.evaluate(`Deck.stepTo(${i})`); await page.waitForTimeout(350);
-              if (options.shotDir) { const dest = path.join(options.shotDir, `${stem}-step${i}.png`); await shrink(await page.screenshot(), dest); stepPngs.push(dest); if (i === 0) await recordPreviewSnapshot(page, file, dest); }
+              if (options.shotDir) { await settle('第 ' + i + ' 步'); const dest = path.join(options.shotDir, `${stem}-step${i}.png`); await shrink(await page.screenshot(), dest); stepPngs.push(dest); if (i === 0) await recordPreviewSnapshot(page, file, dest); }
             }
             await page.evaluate(`Deck.stepTo(${maximum}); Deck.stepTo(0)`); await page.waitForTimeout(350);
-            if (options.shotDir) { rewind = path.join(options.shotDir, `${stem}-step0-back.png`); await shrink(await page.screenshot(), rewind); }
+            if (options.shotDir) { await settle('回退初态'); rewind = path.join(options.shotDir, `${stem}-step0-back.png`); await shrink(await page.screenshot(), rewind); }
             await page.evaluate(`Deck.stepTo(${maximum})`); await page.waitForTimeout(350);
+            await settle('完整末态');
           }
           probe = await page.evaluate(`(${probes.PROBE})()`);
         } catch (error) {
@@ -107,7 +130,7 @@ export async function runSelfcheck(files: string[], options: CheckOptions = {}):
           void viewport.catch(() => {});
         }
         if (options.pageAudit) errors.push(...(await options.pageAudit(page)).map(error => '底盘契约:模板：' + error));
-        const states: CheckState[] = [{ label: null, probe, errs: [...errors], bad: [...bad], png: null, steps: maximum, step_pngs: stepPngs, rewind_png: rewind, step_issues: issues }];
+        const states: CheckState[] = [{ label: null, probe, errs: [...errors], bad: [...bad], png: null, steps: maximum, step_pngs: stepPngs, rewind_png: rewind, step_issues: issues, capture_notes: captureNotes }];
         if (options.shotDir) {
           const dest = path.join(options.shotDir, `${stem}.png`);
           Object.assign(states[0]!, await shoot(page, dest, options));
@@ -121,6 +144,7 @@ export async function runSelfcheck(files: string[], options: CheckOptions = {}):
           catch (error) { if (options.signal?.aborted) throw options.signal.reason; state.js_error = shorten(errorText(error).split(/\s+/).join(' '), 160); }
           if (!state.js_error) {
             await page.waitForTimeout(600);
+            const note = await settleCapture(page); if (note) state.capture_notes = [note];
             state.probe = await page.evaluate(`(${probes.PROBE})()`);
             if (options.shotDir) Object.assign(state, await shoot(page, path.join(options.shotDir, `${stem}-after${index + 1}.png`), options));
           }
@@ -140,26 +164,36 @@ export async function runSelfcheck(files: string[], options: CheckOptions = {}):
   } finally { await release(); }
 }
 const at = (item: Probe) => item.at ? `@${item.at[0]},${item.at[1]} ${item.at[2]}×${item.at[3]}` : '';
+export function checkDiagnostics(states: CheckState[]): CheckDiagnostics {
+  const fatal_errors: string[] = [], visual_warnings: string[] = [];
+  for (const state of states) {
+    const probe = state.probe;
+    if (state.js_error) fatal_errors.push('这段 JS 报错了，这个状态没测到: ' + state.js_error);
+    else if (!probe || probe.fatal) fatal_errors.push('无法渲染: ' + (probe?.fatal ?? '没有有效检查结果'));
+    fatal_errors.push(...state.errs, ...state.bad.map(x => '资源加载失败 ' + x),
+      ...[...(probe?.contract ?? []), ...(state.viewport_issues ?? [])].map(x => '底盘契约: ' + x));
+    if (!probe || probe.fatal || probe.contract?.length) continue;
+    for (const item of probe.escaped ?? []) {
+      const side = ['左', '上', '右', '下'].filter((_, i) => item.out[i]).join(', ') || '?';
+      visual_warnings.push(`超出画布 ${item.el} 往${side}出去 ${Math.max(...item.out)}px ${at(item)} «${item.text}»`);
+    }
+    for (const item of probe.clipped ?? []) visual_warnings.push(`被裁 ${item.el} 内容 ${jsonText(item.need)} 容器只有 ${jsonText(item.have)} ${at(item)} «${item.text}»`);
+    visual_warnings.push(...(state.step_issues ?? []));
+  }
+  return { fatal_errors: [...new Set(fatal_errors)], visual_warnings: [...new Set(visual_warnings)] };
+}
 function stateLines(state: CheckState, textReport: boolean): string[] {
   const lines: string[] = [];
-  if (state.js_error) return [`   ✗ 这段 JS 报错了,**这个状态没测到**: ${state.js_error}`];
+  const diagnostic = checkDiagnostics([state]);
+  lines.push(...diagnostic.fatal_errors.map(x => '   ✗ ' + x), ...diagnostic.visual_warnings.map(x => '   ✗ ' + x));
+  lines.push(...(state.capture_notes ?? []).map(x => '   截图时序: ' + x));
   if (state.result != null) lines.push('   返回值 ' + jsonText(state.result));
-  const probe = state.probe!, errors = state.errs, bad = state.bad;
-  if (probe.fatal) return [...lines, `   打不开: ${probe.fatal}`];
-  for (const error of errors.slice(0, 6)) lines.push('   ✗ ' + error);
-  for (const failure of bad.slice(0, 6)) lines.push('   ✗ 资源加载失败 ' + failure);
-  const contract = [...(probe.contract ?? []), ...(state.viewport_issues ?? [])];
-  for (const issue of contract) lines.push('   ✗ 底盘契约: ' + issue);
+  const probe = state.probe;
+  if (state.js_error || !probe || probe.fatal) return lines;
   if (probe.contract?.length) { if (state.png) lines.push('   截图 ' + state.png); return lines; }
   const sizes = [...probe.sizes].sort((a: number, b: number) => a - b);
-  for (const item of probe.escaped.slice(0, 6)) {
-    const side = ['左', '上', '右', '下'].filter((_, i) => item.out[i]).join(', ') || '?';
-    lines.push(`   ✗ 超出画布 ${item.el} 往${side}出去 ${Math.max(...item.out)}px ${at(item)} «${item.text}»`);
-  }
-  for (const item of probe.clipped.slice(0, 6)) lines.push(`   ✗ 被裁 ${item.el} 内容 ${jsonText(item.need)} 容器只有 ${jsonText(item.have)} ${at(item)} «${item.text}»`);
-  if (!errors.length && !bad.length && !contract.length && !probe.escaped.length && !probe.clipped.length) lines.push('   渲染无报错,没有元素超出画布或被裁');
+  if (!diagnostic.fatal_errors.length && !probe.escaped.length && !probe.clipped.length) lines.push('   渲染无报错,没有元素超出画布或被裁');
   if (state.steps) lines.push(`   分步 0..${state.steps}（${state.steps + 1} 个状态），以上判定按末步`);
-  for (const issue of state.step_issues ?? []) lines.push('   ✗ ' + issue);
   if (sizes.length) lines.push(`   canvas ${probe.canvases} 个;有文字的元素 ${sizes.length} 个,字号最小 ${sizes[0]}px 中位 ${sizes[Math.floor(sizes.length / 2)]}px 最大 ${sizes.at(-1)}px`);
   const minor = probe.minor ?? {};
   if (minor.all) {

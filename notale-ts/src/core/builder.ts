@@ -51,7 +51,7 @@ export function evictImages(history: Item[], tokens: PythonInt): number {
   if (tokens <= constants.CONTEXT_SOFT) return 0;
   const indexes = history.flatMap((item, index) => item.role === 'user' && Array.isArray(item.content) && item.content.some((block: Item) => block?.type === 'input_image') ? [index] : []);
   const removed = indexes.slice(0, Math.max(0, indexes.length - constants.KEEP_IMAGES));
-  for (const index of removed) history[index] = { role: 'user', content: [{ type: 'input_text', text: '（这里原来有一张图，为了不撑爆上下文已经拿掉了。要再看就重新 Check，需要局部细节时指定 box。）' }] };
+  for (const index of removed) history[index] = { ...history[index], content: history[index]!.content.map((block: Item) => block.type === 'input_image' ? { type: 'input_text', text: '（旧图片已移除，文字保留；需要时重新 Read 原图或 Check 当前页面。）' } : block) };
   return removed.length;
 }
 export function auditLines(report: string): [string[], string[]] {
@@ -101,7 +101,8 @@ export async function auditDelivery(context: Workspace, page: Page, ports: Build
   const target = path.join(context.cwd, page.pid + '.html');
   if (!existsSync(target) || !statSync(target).isFile() || statSync(target).size === 0) return { fatal_errors: [`target missing: ${target}`], visual_warnings: [], code_result: null };
   const checked = await ports.run('Check', { page: path.basename(target), shot: false }, context, signal);
-  const [fatal, visual] = auditLines(typeof checked === 'string' ? checked : checked.text);
+  const diagnostic = typeof checked === 'string' ? undefined : checked.diagnostics;
+  const [fatal, visual] = diagnostic ? [[...diagnostic.fatal_errors], [...diagnostic.visual_warnings]] : [[typeof checked === 'string' ? checked : 'Check 未返回有效检查结果'], []];
   let codeResult: string | null = null;
   if (page.workflow === 'build-code') {
     codeResult = (await ports.codeCheck(context.cwd, page.pid, false, signal)).report;

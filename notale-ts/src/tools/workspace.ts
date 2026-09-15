@@ -10,7 +10,8 @@ import { resolvePath } from '../core/planner-contract.js';
 import { isWithin } from '../core/theme.js';
 
 const constants = JSON.parse(readFileSync(path.join(RESOURCES, 'builder-instructions.json'), 'utf8'));
-export interface ToolOutput { text: string; images: Array<[string, string]> }
+export interface CheckDiagnostics { fatal_errors: string[]; visual_warnings: string[] }
+export interface ToolOutput { text: string; images: Array<[string, string]>; diagnostics?: CheckDiagnostics }
 export interface Workspace { cwd: string; pid: string; resourceRoot?: string; textReport?: boolean; sampleShots?: boolean }
 export interface WorkspacePorts {
   image(file: string): Promise<ToolOutput>;
@@ -229,7 +230,7 @@ export async function runTool(name: string, args: Record<string, any>, context: 
     else if (name === 'Check') result = await ports.check(actual, context, signal);
     else result = `未知工具 ${name}`;
     const maximum = name === 'Read' && actual.file_path && (isWorkflowResource(actual.file_path, context.resourceRoot) || resolvePath(actual.file_path) === resolvePath(path.join(context.cwd, 'assets/lib/LIBS.md'))) ? 160000 : 30000;
-    return typeof result === 'string' ? cap(result, maximum) : { text: cap(result.text, maximum), images: result.images };
+    return typeof result === 'string' ? cap(result, maximum) : { ...result, text: cap(result.text, maximum) };
   } catch (error) {
     if (signal?.aborted) throw signal.reason;
     return toolError(error);

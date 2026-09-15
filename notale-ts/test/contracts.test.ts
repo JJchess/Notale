@@ -376,7 +376,8 @@ test('Builder premature stops retry identical context, audit latest files, and r
         async run(name, args) {
           if (name === 'Write') { await writeFile(target, args.content); return 'written'; }
           checks++;
-          return await readFile(target, 'utf8') === 'bad' ? '✗ JS 报错' : '✗ 页面溢出';
+          const bad = await readFile(target, 'utf8') === 'bad';
+          return { text: bad ? '✗ JS 报错' : '✗ 页面溢出', images: [], diagnostics: { fatal_errors: bad ? ['JS 报错'] : [], visual_warnings: bad ? [] : ['页面溢出'] } };
         },
         codeCheck: async () => ({ report: await readFile(target, 'utf8') === 'bad' ? '失败:代码工作台自检失败' : 'ok', shots: [] }),
         scaffold: async () => { await writeFile(target, turn === 1 ? 'bad' : 'ok'); return {}; }, image: async () => ({ text: '', images: [] }),
@@ -597,4 +598,37 @@ test('source recognition cancellation does not poison another task waiting on th
     controller.abort(); await rejected;
     assert.equal((await second)!.manifest.pages[0]!.text, 'visible evidence'); assert.equal(calls, 2);
   } finally { controller.abort(); await rm(root, { recursive: true, force: true }); }
+});
+
+
+test('Check structured diagnostics survive the tool envelope and preserve fatal errors', async () => {
+  const { checkDiagnostics } = await import('../src/tools/selfcheck.js');
+  const { selectCheckShots } = await import('../src/tools/check.js');
+  const { runTool } = await import('../src/tools/workspace.js');
+  const { auditDelivery, evictImages, Page } = await import('../src/core/builder.js');
+  const { writeFile, rm } = await import('node:fs/promises');
+  const base = { label: null, probe: {}, errs: [], bad: [], png: 'full.png', step_pngs: ['initial.png', 'middle.png'] };
+  assert.deepEqual(selectCheckShots([base]), ['initial.png', 'full.png']);
+  assert.deepEqual(selectCheckShots([base, {...base, png: 'after.png'}]), ['full.png', 'after.png']);
+  assert.deepEqual(selectCheckShots([base, {...base, png: null}]), ['full.png']);
+  const history = [{role: 'user', content: [{type: 'input_text', text: 'task and continuity'}, {type: 'input_image', image_url: 'reference'}]}, ...['a','b'].map(image_url => ({role: 'user', content: [{type: 'input_image', image_url}]}))];
+  assert.equal(evictImages(history, 150000), 0);
+  assert.equal(evictImages(history, 150001), 1);
+  assert.equal(history[0]!.content[0]!.text, 'task and continuity');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-diagnostic-'));
+  try {
+    await writeFile(path.join(root, 'page-01.html'), '<html></html>');
+    const context = {cwd: root, pid: 'page-01'}, page = new Page('page-01', 'brief');
+    for (const state of [{...base, probe: {fatal: 'navigation failed'}}, {...base, js_error: 'after failed'}, {...base, errs: ['console.error: broken']}, {...base, bad: ['missing.js']}, {...base, probe: {contract: ['invalid Deck']}}]) {
+      const diagnostics = checkDiagnostics([state]);
+      assert.equal(diagnostics.fatal_errors.length, 1);
+      const out = await runTool('Check', {page: 'page-01.html'}, context, {check: async () => ({text: 'human wording is not the gate', images: [], diagnostics})} as unknown as import('../src/tools/workspace.js').WorkspacePorts);
+      const ports = {run: async () => out} as unknown as import('../src/core/builder.js').BuilderPorts;
+      assert.deepEqual((await auditDelivery(context, page, ports)).fatal_errors, diagnostics.fatal_errors);
+    }
+    const warnings = checkDiagnostics([{...base, step_issues: ['visual concern']}]);
+    assert.deepEqual(warnings, {fatal_errors: [], visual_warnings: ['visual concern']});
+    const missing = await auditDelivery(context, page, {run: async () => ({text: 'looks fine', images: []})} as unknown as import('../src/core/builder.js').BuilderPorts);
+    assert.equal(missing.fatal_errors.length, 1);
+  } finally { await rm(root, {recursive: true, force: true}); }
 });
