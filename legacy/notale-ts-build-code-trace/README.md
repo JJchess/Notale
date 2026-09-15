@@ -7,6 +7,9 @@ Explicit user decision: **no legacy code-page compatibility**. Active code lives
 
 - `notale-ts/resources/code-workbench/`: old template and runtime.
 - `notale-ts/resources/skills/build-code/`: old reference and sample catalogue/bundles.
+- `notale-ts/resources/skills/build-code/observer-samples/*/lesson.js`: unused
+  prototype sample configuration, archived after integration. Active samples load
+  only the four CODE_FILES; scaffold owns the shared lesson configuration.
 - `notale-ts/resources/code-scaffold.json`: retired editable list and old outer template;
   the still-used outer HTML now lives in the active observer resources.
 - `notale-ts/src/`: retired theme installer and mapper.
