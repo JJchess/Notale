@@ -162,11 +162,13 @@
     document.documentElement.dataset.previousSequence = safePacket?.previousStep
       ? String(safePacket.previousStep.sequence ?? "")
       : "";
+    delete document.documentElement.dataset.renderedFrameIndex;
     const result = renderer({state:safePacket.step.state,previousState:safePacket.previousStep?.state ?? null,
       playback:safePacket.playback,environment:safePacket.environment});
     if (result && typeof result.then === "function") {
       throw new TypeError("renderNotaleView 必须同步完成渲染，不能返回 Promise。");
     }
+    document.documentElement.dataset.renderedFrameIndex = String(playback.index ?? -1);
     send("rendered", { playback });
   }
 

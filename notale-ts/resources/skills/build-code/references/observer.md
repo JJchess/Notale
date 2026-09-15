@@ -62,6 +62,6 @@ if context.function == "partition" and "arr" in context.locals:
 
 ## 检查与结束
 
-Write／Patch 后 Check 当前文件。Check 提供执行错误、课程测试与渲染／重置结果，以及帧证据；更完整的状态可 Read frames.json。运行通过不是语义验收：仍需按 query 核对过程顺序、对象身份与实际数值。
+Write／Patch 后 Check 当前文件。Check 返回执行错误、课程测试与渲染／重置结果；按错误定位当前课程文件，不读取宿主内部文件。初始上下文的 limits 是实际运行预算，观察状态应在预算内保留真实过程和必要语义。运行通过不是语义验收：仍需按 query 核对过程顺序、对象身份与实际数值。
 
 最终文件已检查且没有具体违约时结束，不写额外说明、报告或旁路测试文件。

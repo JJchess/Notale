@@ -8,25 +8,52 @@ import { lessonRoot } from './code-scaffold.js';
 import { acquireVisualChecker, browser, staticServer } from './visual-check.js';
 import { CODE_RUNTIME_VERSION } from '../core/code-observer.js';
 
+async function assertHealthy(page: Page): Promise<void> {
+  const state = await page.evaluate('window.CodeLab?.getState()') as Record<string, any> | undefined;
+  if (state?.executionError) {
+    const error = state.executionError;
+    throw new Error(`[${error.kind}] ${error.message}${error.source ? `\n位置：${error.source.file}:${error.source.line}` : ''}${error.context ? `\n观察上下文：${JSON.stringify(error.context)}` : ''}`);
+  }
+  if (state?.viewError) throw new Error(`可视化渲染失败：${state.viewError}`);
+  if (['error', 'warning'].includes(state?.outputKind)) throw new Error(state!.output || '课程运行或测试失败');
+}
+
+async function waitForState(page: Page, condition: string, phase: string, timeout = 30000): Promise<void> {
+  try {
+    await page.waitForFunction(`(() => { const s = window.CodeLab?.getState(); return s?.executionError || s?.viewError || ['error','warning'].includes(s?.outputKind) || (${condition}); })()`, undefined, { timeout });
+    await assertHealthy(page);
+  } catch (error) {
+    await assertHealthy(page);
+    throw new Error(`阶段：${phase}\n${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 async function checkView(page: Page, index: number): Promise<void> {
+  await assertHealthy(page);
   const iframe = page.locator('#visualizer iframe.native-view-frame');
   assert.equal(await iframe.count(), 1);
   const handle = await iframe.elementHandle(); assert.ok(handle);
   const frame = await handle.contentFrame(); assert.ok(frame);
-  await frame.waitForFunction((index: number) => document.documentElement.dataset.frameIndex === String(index), index, { timeout: 5000 });
+  const deadline = performance.now() + 5000;
+  while (!await frame.evaluate((index: number) => document.documentElement.dataset.renderedFrameIndex === String(index), index)) {
+    await assertHealthy(page);
+    if (performance.now() >= deadline) throw new Error(`阶段：可视化帧 ${index} 渲染确认；等待超过 5000ms`);
+    await page.waitForTimeout(50);
+  }
+  await assertHealthy(page);
   assert.ok(await frame.locator('body > *').count() > 0, 'lesson view is empty');
   assert.equal(await page.locator('#visualizerError').isVisible(), false, await page.locator('#visualizerError').innerText());
 }
 const stateOf = (page: Page): Promise<Record<string, any>> => page.evaluate('CodeLab.getState()');
 const sourcesOf = (page: Page): Promise<Record<string, string>> => page.evaluate('Object.fromEntries(CodeLab.getLesson().files.map(file => [file.filename, CodeLab.getModel(file.filename).getValue()]))');
-async function lessonCoverage(page: Page, shots?: string): Promise<void> {
+async function lessonCoverage(page: Page, capture: (name: string) => Promise<void>): Promise<void> {
   const lesson = await page.evaluate('CodeLab.getLesson()') as Record<string, any>, initial = await stateOf(page), sources = await sourcesOf(page);
   const entries = lesson.entryMode === 'active' ? lesson.files.filter((file: any) => Object.hasOwn(file, 'runnable') ? file.runnable : true).map((file: any) => file.filename) : [lesson.entry];
   assert.ok(entries.length, 'lesson has no runnable entry');
   for (const filename of entries) {
     await page.evaluate((name: string) => (globalThis as any).CodeLab.switchFile(name, { focus: false }), filename);
     await page.click('#runButton');
-    await page.waitForFunction('!CodeLab.getState().running', undefined, { timeout: 15000 });
+    await waitForState(page, '!CodeLab.getState().running', '课程执行与测试', 15000);
     const state = await stateOf(page);
     assert.equal(state.outputKind, 'success', state.output);
     assert.ok(state.frameCount > 0, JSON.stringify(state));
@@ -43,9 +70,9 @@ async function lessonCoverage(page: Page, shots?: string): Promise<void> {
       if (lines.at(-1) === '') lines.pop();
       assert.ok(source.line >= 1 && source.line <= lines.length + 1, JSON.stringify(source));
       await checkView(page, index);
-      if (shots && index === Math.floor(state.frameCount / 2)) await page.screenshot({ path: path.join(shots, 'active.png') });
+      if (index === Math.floor(state.frameCount / 2)) await capture('active');
     }
-    if (shots) await page.screenshot({ path: path.join(shots, 'final.png') });
+    await capture('final');
     await page.evaluate('CodeLab.reset()');
     const reset = await stateOf(page);
     for (const key of ['activeFile', 'frameIndex', 'frameCount', 'currentStep', 'output', 'outputKind', 'playing']) assert.deepEqual(reset[key], initial[key], key);
@@ -61,7 +88,13 @@ export async function runBrowserCheck(pages: string, pid: string, shot = false, 
   const shotDir = path.join(path.dirname(pages), '.shots/code', pid);
   const combined = AbortSignal.any([AbortSignal.timeout(420000), ...(signal ? [signal] : [])]);
   const release = acquireVisualChecker();
-  let page: Page | undefined, report = '';
+  let page: Page | undefined, report = '', phase = '打开代码工作台';
+  const errors: string[] = [], external: string[] = [], shots: string[] = [];
+  const capture = async (name: string): Promise<void> => {
+    if (!shot || !page) return;
+    try { await mkdir(shotDir, { recursive: true }); const file = path.join(shotDir, name + '.png'); await page.screenshot({ path: file, timeout: 3000 }); shots.push(file); }
+    catch { /* Screenshot evidence must not replace the execution diagnosis. */ }
+  };
   const abort = () => { void page?.close().catch(() => {}); };
   combined.addEventListener('abort', abort, { once: true });
   try {
@@ -69,7 +102,6 @@ export async function runBrowserCheck(pages: string, pid: string, shot = false, 
     const active = await browser(), { origin } = await staticServer(pages);
     page = await active.newPage({ viewport: { width: 1600, height: 900 } });
     combined.throwIfAborted();
-    const errors: string[] = [], external: string[] = [];
     page.on('pageerror', error => errors.push(`pageerror: ${error.message}`));
     page.on('console', message => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
     page.on('requestfailed', request => errors.push(`request failed: ${request.url()}`));
@@ -80,12 +112,15 @@ export async function runBrowserCheck(pages: string, pid: string, shot = false, 
     });
     const suffix = `/assets/lessons/${pid}/index.html${existsSync(path.join(pages, 'assets/theme.css')) ? '?theme=../../theme.css' : ''}`;
     await page.goto(origin + suffix, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction('window.CodeLab && CodeLab.getState().editorReady', undefined, { timeout: 30000 });
-    await page.waitForFunction('CodeLab.getState().runtimeReady', undefined, { timeout: 30000 });
-    await page.waitForFunction('window.__prototype?.initialized', undefined, { timeout: 30000 });
+    phase = '编辑器就绪'; await waitForState(page, 'window.CodeLab?.getState().editorReady', phase);
+    phase = 'Python 运行时就绪'; await waitForState(page, 'window.CodeLab?.getState().runtimeReady', phase);
+    phase = '初次课程执行与测试'; await waitForState(page, 'window.__prototype?.initialized', phase);
+    assert.ok(await page.evaluate('CodeLab.getState().currentStep'), '课程执行没有产生可渲染的观察帧；请检查 observe.py 的观察条件');
+    phase = '初始可视化帧';
     await checkView(page, -1);
-    if (shot) { await mkdir(shotDir, { recursive: true }); await page.screenshot({ path: path.join(shotDir, 'initial.png') }); }
-    await lessonCoverage(page, shot ? shotDir : undefined);
+    await capture('initial');
+    phase = '课程运行、选帧与重置';
+    await lessonCoverage(page, capture);
     assert.deepEqual(external, []); assert.deepEqual(errors, []);
     report = '✓ 代码工作台自检通过\nok  lesson execution, tests, trace, native view, reset\n';
     if (shot) report += `  screenshots  ${path.join(shotDir, 'initial.png')}, active.png, final.png\n`;
@@ -93,9 +128,12 @@ export async function runBrowserCheck(pages: string, pid: string, shot = false, 
   } catch (error) {
     if (combined.aborted) throw combined.reason;
     report = `✗ 代码工作台自检失败（退出码 1）\n${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`;
+    report += `\n检查阶段：${phase}`;
+    if (errors.length) report += '\n' + errors.slice(0, 5).join('\n');
+    await capture('failure');
   } finally {
     combined.removeEventListener('abort', abort);
     await page?.close().catch(() => {}); await release();
   }
-  return { report, shots: ['initial.png', 'active.png', 'final.png'].map(name => path.join(shotDir, name)).filter(existsSync) };
+  return { report, shots };
 }

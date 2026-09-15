@@ -1,15 +1,7 @@
 import { loadPyodide } from "../assets/lib/pyodide/pyodide.mjs";
+import { CODE_LIMITS as DEFAULT_LIMITS } from './limits.js';
 
 const PYODIDE_BASE = new URL("../assets/lib/pyodide/", import.meta.url).href;
-const DEFAULT_LIMITS = Object.freeze({
-  maxFrames: 2400,
-  maxPayloadBytes: 4_000_000,
-  maxOutputChars: 80_000,
-  maxSourceChars: 200_000,
-  maxItems: 160,
-  maxDepth: 7,
-  maxString: 1200,
-});
 
 const RUNNER_SOURCE = String.raw`
 import json, sys, math, types, traceback, time, random
@@ -27,7 +19,11 @@ def _notale_run(files_json, entry, observe_source, tests_source, limits_json, se
     last_sent = time.monotonic()
     observation_error = None
     positions, exceptional = {}, set()
-    max_frames = limits.get('maxFrames', 2400)
+
+    def within(path, actual, key):
+        maximum = limits[key]
+        if actual > maximum:
+            raise TraceLimit(f'{path}: {key} exceeded (actual={actual}, limit={maximum})')
 
     def error(exc, kind):
         stack = traceback.extract_tb(exc.__traceback__)
@@ -37,7 +33,7 @@ def _notale_run(files_json, entry, observe_source, tests_source, limits_json, se
                 'traceback': ''.join(traceback.format_exception(type(exc),exc,exc.__traceback__))}
 
     def safe(value, path='state', depth=0, seen=None):
-        if depth > limits.get('maxDepth',7): raise TraceLimit(path + ': nesting limit')
+        within(path, depth, 'maxDepth')
         if seen is None: seen=set()
         if np is not None and isinstance(value, np.ndarray): value=value.tolist()
         elif np is not None and isinstance(value, np.generic): value=value.item()
@@ -46,11 +42,11 @@ def _notale_run(files_json, entry, observe_source, tests_source, limits_json, se
             if not math.isfinite(value): raise ValueError(path + ': non-finite number')
             return value
         if isinstance(value,str):
-            if len(value)>limits.get('maxString',1200): raise TraceLimit(path + ': string limit')
+            within(path, len(value), 'maxString')
             return value
         if not isinstance(value,(dict,list,tuple)): raise TypeError(path + ': unsupported ' + type(value).__name__)
         if id(value) in seen: raise ValueError(path + ': cyclic value')
-        if len(value)>limits.get('maxItems',160): raise TraceLimit(path + ': item limit')
+        within(path, len(value), 'maxItems')
         seen.add(id(value))
         try:
             if isinstance(value,dict):
@@ -82,7 +78,8 @@ def _notale_run(files_json, entry, observe_source, tests_source, limits_json, se
             step={'sequence':len(frames),'source':{'file':entry,'line':max(1,line),'column':1},'state':state}
             encoded=json.dumps(step,ensure_ascii=False).encode()
             bytes_used+=len(encoded)
-            if len(frames)>=max_frames or bytes_used>limits.get('maxPayloadBytes',4000000):raise TraceLimit('trace resource limit')
+            within('trace.frames', len(frames) + 1, 'maxFrames')
+            within('trace.bytes', bytes_used, 'maxPayloadBytes')
             frames.append(step);batch.append(step);previous=state
             if len(frames)==1 or len(batch)>=16 or time.monotonic()-last_sent>=.05:flush()
         except TraceLimit:raise

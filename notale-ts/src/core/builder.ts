@@ -66,12 +66,14 @@ export function auditLines(report: string): [string[], string[]] {
 export function codeGuard(name: string, args: Item, context: Workspace): string | undefined {
   if (['ImageSearch', 'ImageGen'].includes(name)) return undefined;
   const editable = path.join(context.cwd, 'assets/lessons', context.pid, 'lesson');
-  if (['Read', 'Write', 'Edit'].includes(name)) {
+  if (['Read', 'Write', 'Patch'].includes(name)) {
     const raw = String(args.file_path || ''); if (!raw) return 'file_path is required';
-    const target = resolvePath(raw, context.cwd);
+    const target = name === 'Read' ? resolveReadPath(raw, context.cwd, context.resourceRoot) : resolvePath(raw, context.cwd);
     if (name === 'Read' && isWithin(target, path.join(context.cwd, 'assets/img')) && ['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(path.extname(target).toLowerCase())) return undefined;
     if (name === 'Read' && context.resourceRoot && isWithin(target, context.resourceRoot)) return undefined;
-    if (!isWithin(target, editable)) return `${target} is fixed or belongs to another page; edit only ${editable}`;
+    if (!isWithin(target, editable)) return name === 'Read'
+      ? `${target} 不在当前课程的可读范围内；执行证据由 Check 返回。`
+      : `${target} 不可修改；只能修改当前课程声明的四份文件。`;
     if (name !== 'Read') {
       if (!CODE_FILES.some(file => {
         const allowed = path.join(editable, file);
@@ -115,7 +117,7 @@ function tagOf(call: Item): string {
   try { args = parsePythonJson(call.arguments || '{}'); } catch { return ''; }
   if (call.name === 'Bash') return [...String(args.command ?? '')].slice(0, 120).join('');
   if (call.name === 'Check') return String(args.page ?? '') + (args.after?.length ? ` +after×${args.after.length}` : '') + (args.shot ? ' +shot' : '') + (args.box ? ` @[${args.box.join(', ')}]` : '');
-  if (call.name === 'Patch') return `${args.page ?? ''} ×${args.edits?.length ?? 0}`;
+  if (call.name === 'Patch') return `${String(args.file_path ?? '').split('/').at(-1)} ×${args.edits?.length ?? 0}`;
   return String(args.file_path ?? '').split('/').at(-1)!;
 }
 export async function buildOne(...args: Parameters<typeof buildOneLoop>): Promise<Page> {

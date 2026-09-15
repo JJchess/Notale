@@ -1,3 +1,4 @@
+import { CODE_LIMITS } from '../runtime/limits.js';
 import { codeTheme } from "./theme-map.js";
 import { createNativeView } from "./native-view-host.js?v=20260830-native-view";
 import { RuntimeFailure, WorkerRuntimeAdapter } from "./runtime-client.js?v=20260830-fourier";
@@ -64,7 +65,7 @@ function fallbackLesson(error) {
     runtime: "python",
     entry: "starter.py",
     files: [],
-    limits: { timeoutMs: 5000 },
+    limits: CODE_LIMITS,
     initialStep: {
       sequence: 0,
       source: { file: "lesson.js", line: 1, column: 1 },
@@ -834,7 +835,7 @@ async function initialize() {
   }
   runtime = new WorkerRuntimeAdapter({
     workerUrl: new URL('runtime/python-worker.js', RUNTIME_BASE).href,
-    timeoutMs: Number(lesson.limits?.timeoutMs) || 5000,
+    timeoutMs: Number(lesson.limits?.timeoutMs) || CODE_LIMITS.timeoutMs,
     onStatus(status) {
       setRuntimeStatus(status.kind, status.message);
       updateRunAvailability();

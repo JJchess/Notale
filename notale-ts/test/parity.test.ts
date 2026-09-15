@@ -2079,9 +2079,8 @@ test('workspace tools and schemas match Python on edits, scope and full resource
   const operations = [
     ['Write', { file_path: 'page-01.html', content: '甲 a a\n乙 b\n' }],
     ['Read', { file_path: 'page-01.html', offset: 2, limit: 1 }],
-    ['Edit', { file_path: 'page-01.html', old_string: 'a', new_string: 'x' }],
-    ['Patch', { page: 'page-01.html', edits: [{ old: 'a', new: 'b' }, { old: 'b', new: '$&' }] }],
-    ['Patch', { page: 'page-01.html', edits: [{ old: '甲', new: '丙' }, { old: '不存在', new: 'x' }] }],
+    ['Patch', { file_path: 'page-01.html', edits: [{ old: 'a', new: 'b' }, { old: 'b', new: '$&' }] }],
+    ['Patch', { file_path: 'page-01.html', edits: [{ old: '甲', new: '丙' }, { old: '不存在', new: 'x' }] }],
     ['Read', { file_path: 'page-01.html' }],
     ['Read', { file_path: 'references/data.md', offset: 99, limit: 1 }],
     ['Write', { file_path: 'page-02.html', content: '不得写' }],
@@ -2093,9 +2092,9 @@ test('workspace tools and schemas match Python on edits, scope and full resource
     ['Bash', { command: "printf 'ok'; printf '\\342\\202' >&2" }],
     ['Write', { file_path: 'page-01.html', content: '甲\r\n乙\r丙\n' }],
     ['Read', { file_path: 'page-01.html' }],
-    ['Edit', { file_path: 'page-01.html', old_string: '甲\n乙', new_string: '新甲\n新乙' }],
+    ['Patch', { file_path: 'page-01.html', edits: [{ old: '甲\n乙', new: '新甲\n新乙' }] }],
     ['Write', { file_path: 'page-01.html', content: '甲\r\n乙\r丙\n' }],
-    ['Patch', { page: 'page-01.html', edits: [{ old: '甲\n乙', new: '丁' }] }],
+    ['Patch', { file_path: 'page-01.html', edits: [{ old: '甲\n乙', new: '丁' }] }],
     ['Read', { file_path: 'page-01.html' }],
   ];
   const oracle = JSON.parse(execFileSync('python', ['-c', `
@@ -2104,6 +2103,7 @@ from pathlib import Path
 from tools import runtime
 p=json.load(sys.stdin);cwd=Path(p['cwd']);root=Path(p['resources']);out=[]
 for name,args in p['operations']:
+ if name=='Patch':args={'page':args['file_path'],'edits':args['edits']}
  r=runtime.run(name,args,cwd,root,'page-01');out.append(r.text if isinstance(r,runtime.Out) else r)
 print(json.dumps({'outputs':out,'text':(cwd/'page-01.html').read_text(),'bytes':(cwd/'page-01.html').read_bytes().hex(),'schemas':{f'{workflow}/{vision}':runtime.specs(workflow,vision_input=vision) for workflow in (None,'build-cover','build-page','build-interaction','build-code') for vision in (True,False)}},ensure_ascii=False))
 `], { cwd: pythonRoot, input: JSON.stringify({ cwd, resources, operations }), encoding: 'utf8' }));
@@ -2154,7 +2154,7 @@ print(json.dumps(out))
     assert.equal(readFileSync(path.join(cwd, 'page-01.html'), 'utf8'), oracle.text);
     assert.equal(readFileSync(path.join(cwd, 'page-01.html')).toString('hex'), oracle.bytes);
     const malformed = ['61ff', 'e28278', 'e282', 'eda080', 'f4908080', 'c080'];
-    const byteActions = [['Read', { file_path: 'page-01.html' }], ['Edit', { file_path: 'page-01.html', old_string: 'a', new_string: 'b' }], ['Patch', { page: 'page-01.html', edits: [{ old: 'a', new: 'b' }] }]];
+    const byteActions = [['Read', { file_path: 'page-01.html' }], ['Patch', { file_path: 'page-01.html', edits: [{ old: 'a', new: 'b' }] }]];
     const byteOracle = JSON.parse(execFileSync('python', ['-c', `
 import json,sys
 from pathlib import Path
@@ -2162,6 +2162,7 @@ from tools import runtime
 p=json.load(sys.stdin);cwd=Path(p['cwd']);rows=[]
 for value in p['bytes']:
  for name,args in p['actions']:
+  if name=='Patch':args={'page':args['file_path'],'edits':args['edits']}
   file=cwd/'page-01.html';file.write_bytes(bytes.fromhex(value))
   result=runtime.run(name,args,cwd,None,'page-01')
   rows.append({'text':result.text if isinstance(result,runtime.Out) else result,'bytes':file.read_bytes().hex()})
@@ -2174,7 +2175,14 @@ print(json.dumps(rows))
       assert.deepEqual({ text: typeof result === 'string' ? result : result.text, bytes: readFileSync(file).toString('hex') }, byteOracle[byteIndex++]);
     }
 
-    for (const workflow of [undefined, ...guidance.PAGE_WORKFLOWS]) for (const vision of [true, false]) assert.deepEqual(tools.toolSpecs(workflow, vision), oracle.schemas[`${workflow ?? 'None'}/${vision ? 'True' : 'False'}`]);
+    // The TS authoring API intentionally uses file_path/Patch; compare unchanged tool contracts to Python.
+    for (const workflow of [undefined, ...guidance.PAGE_WORKFLOWS]) for (const vision of [true, false]) {
+      const specs = tools.toolSpecs(workflow, vision);
+      assert(!specs.some(s => s.name === 'Edit'));
+      assert.deepEqual(specs.find(s => s.name === 'Patch')!.parameters.required, ['file_path', 'edits']);
+      for (const spec of specs.filter(s => !['Write', 'Patch'].includes(s.name)))
+        assert.deepEqual(spec, oracle.schemas[`${workflow ?? 'None'}/${vision ? 'True' : 'False'}`].find((s: any) => s.name === spec.name));
+    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -2211,7 +2219,7 @@ test('Builder loop matches Python natural stop, image feedback, code guard and s
   const call = (name: string, args: object) => ({ name, arguments: JSON.stringify(args) });
   const scenarios = [
     { workflow: 'build-page', rows: [[{ name: 'Write', arguments: '{\"content\":' }, { name: 'Read', arguments: '[1,]' }], [call('Read', { file_path: 'page-01.html' })], []] },
-    { workflow: 'build-page', rows: [[call('Write', { file_path: 'page-01.html', content: 'page' }), call('Check', { page: 'page-01.html' })], [call('Patch', { page: 'page-01.html', edits: [] }), call('Check', { page: 'page-01.html' })], []] },
+    { workflow: 'build-page', rows: [[call('Write', { file_path: 'page-01.html', content: 'page' }), call('Check', { page: 'page-01.html' })], [call('Patch', { file_path: 'page-01.html', edits: [] }), call('Check', { page: 'page-01.html' })], []] },
     { workflow: 'build-page', rows: [...Array.from({ length: 16 }, () => [call('Read', { file_path: 'page-01.html' })]), []] },
     // Observer code-loop behavior has dedicated tests, not old CodeScaffold-call parity.
     { workflow: 'build-page', vision: false, rows: [[call('Check', { page: 'page-01.html', shot: true, box: [0, 0, 100, 100], zoom: 2 })], []] },
@@ -2223,6 +2231,13 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 from core import builder,llm,skills
 p=json.load(sys.stdin);root=Path(p['root']);results=[]
+# Adapt only the renamed Patch argument; keep the Python loop as an independent oracle.
+legacy_tag=builder._tag_of
+def tag(c):
+ if c.name=='Patch':
+  a=json.loads(c.arguments);c=NS(name='Patch',arguments=json.dumps({'page':a['file_path'],'edits':a['edits']}))
+ return legacy_tag(c)
+builder._tag_of=tag
 for ix,scenario in enumerate(p['scenarios']):
  count=[0];histories=[];executed=[];codechecks=[]
  def respond(instructions,history,specs,**kw):

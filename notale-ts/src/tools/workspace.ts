@@ -25,14 +25,13 @@ export function cap(text: string, maximum = 30000): string {
 }
 export function toolSpecs(workflow?: string, visionInput = true): Record<string, any>[] {
   let specs: Record<string, any>[] = constants.TOOL_SCHEMAS.map((spec: Record<string, unknown>) => ({ type: 'function', ...structuredClone(spec) }));
-  if (workflow === 'build-code') specs = specs.filter(spec => ['Read', 'Write', 'Edit', 'Check'].includes(spec.name));
-  else if (workflow) specs = specs.filter(spec => spec.name !== 'Edit');
+  if (workflow === 'build-code') specs = specs.filter(spec => ['Read', 'Write', 'Patch', 'Check'].includes(spec.name));
   for (const spec of specs) {
     if (spec.name === 'Check' && !visionInput) {
       delete spec.parameters.properties.box; delete spec.parameters.properties.zoom;
       spec.description = spec.description.replace('默认返回整页截图；需要看局部细节时用 box 指定区域，裁图不改变整页检查范围。', '');
     }
-    if (spec.name === 'Write' && workflow) spec.description = `写完整文件，用于创建或整体重构；局部修正用 ${workflow === 'build-code' ? 'Edit' : 'Patch'}。`;
+    if (spec.name === 'Write' && workflow) spec.description = '写完整文件，用于创建或整体重构；局部修正用 Patch。';
   }
   if (visionInput) specs.push(...structuredClone(constants.MEDIA_SCHEMAS));
   return specs;
@@ -40,6 +39,9 @@ export function toolSpecs(workflow?: string, visionInput = true): Record<string,
 export function isWorkflowResource(file: string, resourceRoot?: string): boolean {
   if (!resourceRoot || !isWithin(file, resourceRoot)) return false;
   const parts = path.relative(resolvePath(resourceRoot), resolvePath(file)).split(path.sep);
+  if (path.basename(resourceRoot) === 'build-code') return parts.join('/') === 'SKILL.md'
+    || (parts.length === 2 && parts[0] === 'references' && path.extname(file) === '.md')
+    || (parts[0] === 'observer-samples' && /\.(py|js)$/.test(file));
   return path.extname(file).toLowerCase() === '.md' && ((parts.length === 2 && parts[0] === 'references') || (parts.length >= 3 && parts[0] === 'samples' && parts[1] === 'bundles'));
 }
 export function resolveReadPath(file: string, cwd: string, resourceRoot?: string): string {
@@ -53,19 +55,19 @@ export function resolveReadPath(file: string, cwd: string, resourceRoot?: string
 export function outOfBounds(name: string, args: Record<string, any>, context: Workspace): string | undefined {
   const root = resolvePath(context.cwd);
   for (const [key, value] of Object.entries(args)) {
-    if (['content', 'old_string', 'new_string', 'edits'].includes(key)) continue;
+    if (['content', 'edits'].includes(key)) continue;
     const text = typeof value === 'string' ? value : JSON.stringify(value);
     let outside: string[];
     if (key === 'command') outside = [...text.matchAll(/(?:^|[\s'"=(:])(\/[\p{L}\p{N}_./-]+)/gu)].map(match => match[1]!).filter(file => !isWithin(file, root));
     else {
       const target = resolvePath(text, context.cwd);
-      if (['Write', 'Edit', 'Patch'].includes(name) && isWithin(target, path.join(root, 'assets/sources'))) return `${text}(资料原图只读；请用 ReadSource 获取裁图)`;
+      if (['Write', 'Patch'].includes(name) && isWithin(target, path.join(root, 'assets/sources'))) return `${text}(资料原图只读；请用 ReadSource 获取裁图)`;
       const imageRoot = path.join(root, 'assets/img');
-      if (['Write', 'Edit', 'Patch'].includes(name) && isWithin(target, imageRoot)) {
+      if (['Write', 'Patch'].includes(name) && isWithin(target, imageRoot)) {
         const relative = path.relative(imageRoot, target).split(path.sep);
         if (!relative[0]?.startsWith(context.pid + '-')) return `${text}(共享或其他页面的素材只读)`;
       }
-      const resource = name === 'Read' && (isWorkflowResource(target, context.resourceRoot) || isWithin(target, path.join(path.dirname(root), '.shots')));
+      const resource = name === 'Read' && (isWorkflowResource(resolveReadPath(text, context.cwd, context.resourceRoot), context.resourceRoot) || isWithin(target, path.join(path.dirname(root), '.shots')));
       outside = isWithin(target, root) || resource ? [] : [text];
     }
     if (outside.length) return `${outside[0]}(在本页的 run 目录之外)`;
@@ -146,8 +148,9 @@ export function classifyMiss(old: string, source: string): [string, string, numb
   return [score >= 0.6 ? '近似' : '不存在', near, Math.round(score * 1000) / 1000];
 }
 export async function patch(context: Workspace, args: Record<string, any>): Promise<string> {
-  const page = String(args.page), file = path.resolve(context.cwd, page);
-  if (!existsSync(file)) return `失败:${page} 不存在。页面文件名形如 page-07.html`;
+  if (typeof args.file_path !== 'string' || !args.file_path) return '失败:file_path is required';
+  const page = args.file_path, file = path.resolve(context.cwd, page);
+  if (!existsSync(file)) return `失败:${page} 不存在。请使用当前文件的实际路径。`;
   const edits = args.edits || [];
   if (!edits.length) return '失败:edits 是空的,没有要改的东西';
   let text = decodeText(await readFile(file));
@@ -211,20 +214,17 @@ export async function runTool(name: string, args: Record<string, any>, context: 
     try { return await ports.media(name, args, context, signal); } catch (error) { if (signal?.aborted) throw signal.reason; return toolError(error); }
   }
   const outside = outOfBounds(name, args, context);
-  if (outside) return `拒绝:\`${outside}\` 不在当前页面的工作范围内。只能修改 \`${context.pid}.html\` 及宿主明确授予的代码 lesson 文件；当前 workflow 资源只读。`;
+  if (outside) return name === 'Read'
+    ? `拒绝读取：\`${outside}\` 不在当前页面及工作流资源的可读范围内。`
+    : `拒绝:\`${outside}\` 不在当前页面的工作范围内。只能修改 \`${context.pid}.html\` 及宿主明确授予的代码 lesson 文件；当前 workflow 资源只读。`;
   const actual = { ...args };
-  if (['Read', 'Write', 'Edit'].includes(name) && actual.file_path) actual.file_path = name === 'Read' ? resolveReadPath(String(actual.file_path), context.cwd, context.resourceRoot) : path.isAbsolute(actual.file_path) ? actual.file_path : resolvePath(actual.file_path, context.cwd);
+  if (['Read', 'Write'].includes(name) && actual.file_path) actual.file_path = name === 'Read' ? resolveReadPath(String(actual.file_path), context.cwd, context.resourceRoot) : path.isAbsolute(actual.file_path) ? actual.file_path : resolvePath(actual.file_path, context.cwd);
   try {
     let result: string | ToolOutput;
     if (name === 'Read') result = await readText(actual, context, ports);
     else if (name === 'Write') {
       await mkdir(path.dirname(actual.file_path), { recursive: true }); await writeFile(actual.file_path, actual.content, 'utf8');
       result = `已写入 ${actual.file_path}(${characters(actual.content).length.toLocaleString('en-US')} 字符)`;
-    } else if (name === 'Edit') {
-      const text = decodeText(await readFile(actual.file_path)), n = count(text, actual.old_string);
-      if (!n) result = '失败:old_string 在文件里找不到。先 Read 确认当前内容。';
-      else if (n > 1 && !actual.replace_all) result = `失败:old_string 出现了 ${n} 次,不唯一。加长上下文,或用 replace_all。`;
-      else { await writeFile(actual.file_path, actual.replace_all ? actual.old_string === '' ? characters(text).map(char => actual.new_string + char).join('') + actual.new_string : text.replaceAll(actual.old_string, () => actual.new_string) : text.replace(actual.old_string, () => actual.new_string), 'utf8'); result = `已替换 ${actual.replace_all ? n : 1} 处`; }
     } else if (name === 'Patch') result = await patch(context, actual);
     else if (name === 'Bash') result = await shell(actual.command, context.cwd, signal);
     else if (name === 'Check') result = await ports.check(actual, context, signal);

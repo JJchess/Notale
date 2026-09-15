@@ -2,6 +2,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { RESOURCES } from '../core/guidance.js';
 import { resolvePath } from '../core/planner-contract.js';
 import { CODE_FILES, CODE_RUNTIME_VERSION } from '../core/code-observer.js';
@@ -84,7 +85,8 @@ export async function scaffold(pagesDir: string, pid: string, title: string, tot
     writeFileSync(marker, JSON.stringify({ schemaVersion: 1, runtimeVersion: CODE_RUNTIME_VERSION, page: pid,
       title: configuredTitle, editable, fixedRuntime: prefix.slice(0, -1) }, null, 2) + '\n');
   }
-  return { page: path.join(pages, pid + '.html'), workbench: path.join(target, 'index.html'),
+  const { lesson } = await import(pathToFileURL(path.join(target, 'lesson/lesson.js')).href);
+  return { page: path.join(pages, pid + '.html'), workbench: path.join(target, 'index.html'), limits: lesson.limits,
     editable_root: path.join(target, 'lesson'), fixed_runtime: shared,
     editable: editable.map(file => ({ path: path.join(target, file), content: readFileSync(path.join(target, file), 'utf8') })) };
 }

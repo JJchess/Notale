@@ -1,3 +1,5 @@
+import { CODE_LIMITS } from '../runtime/limits.js';
+
 export class RuntimeFailure extends Error {
   constructor(kind, message, detail = {}) {
     super(message);
@@ -10,7 +12,7 @@ export class RuntimeFailure extends Error {
 export class WorkerRuntimeAdapter {
   constructor(options = {}) {
     this.workerUrl = options.workerUrl || "../runtime/python-worker.js";
-    this.timeoutMs = Number(options.timeoutMs) || 5000;
+    this.timeoutMs = Number(options.timeoutMs) || CODE_LIMITS.timeoutMs;
     this.onStatus = options.onStatus || (() => {});
     this.worker = null;
     this.generation = 0;
