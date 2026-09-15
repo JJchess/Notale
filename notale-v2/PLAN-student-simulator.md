@@ -94,3 +94,26 @@
 ## 来源
 
 TutorGym arXiv 2505.01563 · github.com/Teachable-AI-Lab/tutor_gym · Apprentice Learner（MacLellan & Koedinger 2020；chrismaclellan.com/projects/apprentice_learning） · 分数导学替代干预 arXiv 2408.13684 · 钢琴视觉辅助（AIED 2025，Springer 978-3-032-13174-4_12） · Hyp-Mix arXiv 2410.02110 · SLATE arXiv 2609.06212 · EE-Eval arXiv 2606.31012 · 可控不完美学生 arXiv 2605.25601 · SOEI arXiv 2410.15701 · Agent4Edu arXiv 2501.10332 · EduAgent arXiv 2404.07963 · Student Development Agent arXiv 2510.09183 · Towards Valid Student Simulation arXiv 2601.05473 · Substance or Illusion? arXiv 2601.04025 · Learn Your Way arXiv 2509.18664 / Frontiers in AI 2026 · Games That Teach, Chats That Convince arXiv 2602.17905 · Hohman et al. 2020, Distill "Communicating with Interactive Articles" · D'Angelo et al. 2014 SRI · Rutten et al. 2012 · Chi & Wylie 2014 · de Jong & van Joolingen 1998
+
+## 6. v3 补充（2026-09-15）：以"观众答题"为量尺的教学视频类 benchmark
+
+第三轮换了搜索面（教学视频生成、代码生成动画、论文讲解视频），找到一支之前漏掉的：**让 VLM 当观众看完生成的讲解视频后答题，用答对率的提升当学习指标**。它们的产物形态比 slide 类更接近我们（从一个主题出发、代码生成、多场景、带讲解），量尺是学生模拟器本身，但输入仍是线性视频，交互依旧进不去。
+
+| Benchmark | 输入 → 输出 | 学生怎么当量尺 | 其他指标 | 人测 | 代码 |
+|---|---|---|---|---|---|
+| **Code2Video / MMMC**（2510.01174，showlab） | 主题词 → Manim 代码 → 讲解视频 | **TeachQuiz**：Gemini-2.5-Pro 先用"遗忘提示"屏蔽该主题知识答 10 道 MCQ 得基线，再看视频重答；分 = 看后准确率 − 遗忘基线 | 美学 5 维各 0–100（版式、吸引力、逻辑流、视觉一致、准确与深度），Gemini-2.5-Pro 判 | 中学生 + 本科生；美学分与 TeachQuiz 相关 r=0.97 | github.com/showlab/Code2Video，`eval_TQ.py` / `eval_AES.py`，MMMC 456 段视频 13 学科 |
+| **Paper2Video**（2510.05096） | 论文 → 讲解视频 | **PresentQuiz**：LLM 从论文出四选一题，VideoLLM 看视频作答，准确率 = 信息传达度；**PresentArena**：VideoLLM 当观众成对比较，正反序各一次 | Meta Similarity（与真人 slide/字幕/语音相似）、IP Memory（看 5 秒片段后能否把讲者和内容对上） | 10 人排序 | 开源承诺，101 篇论文 |
+| **PresentAgent / PresentEval**（2507.04036） | 长文档 → 叙述式演示视频 | 观众答题准确率 | VLM 判内容保真、视觉清晰 | 30 对样本 | github.com/AIGeeksGroup/PresentAgent |
+| **Teaching Monster Challenge**（2608.08852） | 主题 + 学习者画像 → 完整教学视频 | 无模拟学生；学习者画像是评判标准 | LLM 初筛 → 众包成对投票 → 专家终审 | 有众包与专家 | 发布 benchmark、rubric、人判 |
+| TheoremExplainBench（2502.19400） | 定理 → Manim 视频 | 无 | VLM 判 5 维：准确深度、视觉相关、逻辑流、元素版式、视觉一致 | — | 有 |
+| VisualEDU（EMNLP 2025 Findings） | 教育解题 → Manim 视频 | 无 | 时序一致、逻辑正确、视觉清晰 | — | 有 |
+
+**对 Notale 的意义**
+- 我们的 deck 可以无损投影成视频：`?all` 或分步截图序列 + 讲稿区文本（或 TTS）。这个投影比 PDF 保留得多：分步顺序、讲解与画面的对应都在，只丢"用户可操作"这一层。
+- TeachQuiz 的协议能直接套：主题 → 我们的 deck 视频 → 遗忘基线 → 看后答题。缺点是"遗忘提示"的效度存疑（模型并没有真忘），SLATE 用低资源题目绕开这个问题更严谨；可以两种都做，看结论是否一致。
+- PresentArena 的"VideoLLM 观众成对比较"可以直接用于 G2（对齐金样本）的成对盲评，替代现在只看单张图的 judge。
+- Teaching Monster Challenge 的"LLM 初筛 → 众包 → 专家"三级流程是人测协议的现成模板。
+
+**仍然没有的**：把"用户能操作"当输入的学生模拟器。EE-Eval 量交互结构但不量学习；TeachQuiz 量学习但不看交互。交互消融实验（§4）还是要自己搭，但现在 A 静态臂可以升级成"视频臂"（TeachQuiz 协议），比 PNG 臂更接近真实使用。
+
+**修正 v2 的一句话**：v2 说"没有一个把任意生成的 HTML 讲义当环境"仍然成立；但"教材级、学生模拟器当量尺、产物是代码生成的多模态讲解"这个组合，Code2Video 已经做了，我们不用从 SLATE 的 PNG 起步。
