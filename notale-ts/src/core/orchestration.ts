@@ -14,7 +14,7 @@ import { deckCall, type PlannerPorts } from './planning.js';
 import { direct, type DirectorPorts, type DirectorRequest } from './director.js';
 import { plannerPrompt, splitPages, PAGES_REL } from './planner-contract.js';
 import { mediaSources, writeCredits } from '../tools/media-execution.js';
-import { Page, routePage, buildOne, auditDelivery, type BuilderPorts } from './builder.js';
+import { Page, routePage, buildOne, auditDelivery, delivered, type BuilderPorts } from './builder.js';
 import { chapterPreloads, environmentContext, instructionBlocks, type InstructionOptions } from './builder-context.js';
 import { referenceImages } from './theme-runtime.js';
 import { images } from './style-assets.js';
@@ -142,34 +142,55 @@ export async function buildRun(root: string, ports: Record<string, BuilderPorts>
   const started = performance.now(), concurrency = options.concurrency ?? 100;
   if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error('max_workers must be greater than 0');
   let cursor = 0;
+  const attempt = async (page: Page): Promise<void> => {
+    const port = ports[page.workflow]!, runtime = options.profiles[page.workflow]!;
+    try { await buildOne(page, directory, path.join(root, 'trace.jsonl'), instructions[page.workflow]!, port,
+      { ...(options.onRetry ? { onRetry: options.onRetry } : {}), workflowRoot: workflows, visionInput: runtime.vision_input, textReport: ['notes', 'only'].includes(options.notes ?? 'cap'), sampleShots: options.sampleShots ?? false, refs: templateRefs[page.workflow] ?? refs, ...(options.signal ? { signal: options.signal } : {}) }); }
+    catch (error) {
+      if (options.signal?.aborted) throw options.signal.reason;
+      const exception = error as Error; page.why = `${exception.name}: ${[...exception.message].slice(0, 160).join('')}`; page.termination = 'agent_exception';
+      const target = path.join(directory, page.pid + '.html'); page.artifact_present = existsSync(target) && (await stat(target)).isFile() && (await stat(target)).size > 0;
+      page.audit = await auditDelivery({ cwd: directory, pid: page.pid, resourceRoot: path.join(workflows, page.workflow), textReport: ['notes', 'only'].includes(options.notes ?? 'cap') }, page, port, options.signal);
+    }
+  };
+  // A second attempt starts from a clean slate: same brief, fresh history, no artifacts left over from the first.
+  const clearArtifacts = async (pid: string) => {
+    await rm(path.join(directory, pid + '.html'), { force: true });
+    await rm(path.join(directory, 'assets/lessons', pid), { recursive: true, force: true });
+    const shots = path.join(root, '.shots');
+    if (existsSync(shots)) for (const name of await readdir(shots)) if (name.startsWith(pid)) await rm(path.join(shots, name), { recursive: true, force: true });
+    await rm(path.join(shots, 'code', pid), { recursive: true, force: true });
+  };
   const workers = await Promise.allSettled(Array.from({ length: Math.min(concurrency, pages.length) }, async () => {
     for (;;) {
       options.signal?.throwIfAborted();
-      const page = pages[cursor++]; if (!page) return;
-      const port = ports[page.workflow]!, runtime = options.profiles[page.workflow]!;
+      const index = cursor++, page = pages[index]; if (!page) return;
       await options.onPage?.(page, 'started');
-      try { await buildOne(page, directory, path.join(root, 'trace.jsonl'), instructions[page.workflow]!, port,
-        { ...(options.onRetry ? { onRetry: options.onRetry } : {}), workflowRoot: workflows, visionInput: runtime.vision_input, textReport: ['notes', 'only'].includes(options.notes ?? 'cap'), sampleShots: options.sampleShots ?? false, refs: templateRefs[page.workflow] ?? refs, ...(options.signal ? { signal: options.signal } : {}) }); }
-      catch (error) {
-        if (options.signal?.aborted) throw options.signal.reason;
-        const exception = error as Error; page.why = `${exception.name}: ${[...exception.message].slice(0, 160).join('')}`; page.termination = 'agent_exception';
-        const target = path.join(directory, page.pid + '.html'); page.artifact_present = existsSync(target) && (await stat(target)).isFile() && (await stat(target)).size > 0;
-        page.audit = await auditDelivery({ cwd: directory, pid: page.pid, resourceRoot: path.join(workflows, page.workflow), textReport: ['notes', 'only'].includes(options.notes ?? 'cap') }, page, port, options.signal);
+      await attempt(page);
+      if (!delivered(page)) {
+        options.signal?.throwIfAborted();
+        await clearArtifacts(page.pid);
+        const fresh = new Page(page.pid, page.prompt);
+        fresh.label = page.label; fresh.workflow = page.workflow; fresh.spec_text = page.spec_text; fresh.total = page.total;
+        fresh.attempts = page.attempts + 1; fresh.stop_reasons = [...page.stop_reasons, ...(page.why ? [page.why] : [])];
+        try { Promise.resolve(options.onRetry?.(fresh)).catch(() => {}); } catch {}
+        await attempt(fresh);
+        pages[index] = fresh;
       }
-      await options.onPage?.(page, 'finished');
+      await options.onPage?.(pages[index]!, 'finished');
     }
   }));
   for (const worker of workers) if (worker.status === 'rejected') throw worker.reason;
   try { await writeCredits(directory); } catch (error) { console.warn(`  素材来源汇总失败（不影响页面产物）：${(error as Error).message}`); }
   await publishSources(root);
   const results = Object.fromEntries(pages.map(page => [page.pid, { calls: page.calls, within_response_target: page.calls <= 11, seconds: Math.round(page.seconds * 10) / 10,
-    label: page.label, workflow: page.workflow, profile: options.profiles[page.workflow]!.id, termination: page.termination, premature_stops: page.premature_stops, last_stop_error: page.last_stop_error, artifact_present: page.artifact_present, audit: page.audit,
+    label: page.label, workflow: page.workflow, profile: options.profiles[page.workflow]!.id, termination: page.termination, premature_stops: page.premature_stops, last_stop_error: page.last_stop_error, attempts: page.attempts, stop_reasons: page.stop_reasons, artifact_present: page.artifact_present, audit: page.audit,
     steps: page.steps, args: page.steps_arg, reference_reads: page.reference_reads, images: page.images, evicted: page.evicted,
     tok_in: page.tok_in, tok_cached: page.tok_cached, tok_write: page.tok_write, tok_out: page.tok_out, tok_max: page.tok_max, cache_reported: page.cache_seen, why: page.why }]));
   for (const result of Object.values(results)) rememberNumber(result, 'seconds', result.seconds, '0.0');
   await writeFile(path.join(root, 'builder-results.json'), jsonText(results, { indent: 2 }) + '\n');
   Object.assign(manifest, { completedAt: new Date().toISOString(), wallSeconds: Math.round((performance.now() - started) / 100) / 10, artifacts: pages.filter(page => page.artifact_present).length,
-    attempted: pages.length, fatalAuditPages: pages.filter(page => page.audit?.fatal_errors.length).map(page => page.pid), visualWarningPages: pages.filter(page => page.audit?.visual_warnings.length).map(page => page.pid), overResponseTargetPages: pages.filter(page => page.calls > 11).map(page => page.pid),
+    attempted: pages.length, rebuiltPages: pages.filter(page => page.attempts > 1).map(page => page.pid), fatalAuditPages: pages.filter(page => page.audit?.fatal_errors.length).map(page => page.pid), visualWarningPages: pages.filter(page => page.audit?.visual_warnings.length).map(page => page.pid), overResponseTargetPages: pages.filter(page => page.calls > 11).map(page => page.pid),
     inputTokens: sumIntegers(...pages.map(page => page.tok_in)), outputTokens: sumIntegers(...pages.map(page => page.tok_out)), checkCalls: pages.reduce((sum, page) => sum + page.steps.filter(step => step === 'Check').length, 0) });
   await writeFile(manifestFile, jsonText(manifest, { indent: 2 }) + '\n');
   return pages;

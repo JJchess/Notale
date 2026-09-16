@@ -349,7 +349,7 @@ test("workflow observers never delay work and preserve result/error identity", a
   assert.deepEqual(events.slice(-2), ['started', 'failed']);
 });
 
-test('Builder premature stops retry identical context, audit latest files, and respect cancellation/time', async () => {
+test('Builder premature stops are retried with the audit reason, bounded, and respect cancellation/time', async () => {
   const { buildOne, Page } = await import('../src/core/builder.js');
   const { writeFile, readFile, rm } = await import('node:fs/promises');
   const root = await mkdtemp(path.join(os.tmpdir(), 'notale-stop-'));
@@ -358,14 +358,15 @@ test('Builder premature stops retry identical context, audit latest files, and r
     ? [{ type: 'function_call', name: 'Write', arguments: JSON.stringify({ content }), call_id: 'write' }]
     : [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Action:default_api:Read{file_path:references/general.md}' }] }];
   try {
-    // Observer code-page feedback is covered by code-observer.test.ts; this is
-    // the unchanged visual-page natural-stop contract.
-    for (const mode of ['missing', 'modified', 'timeout', 'cancel']) {
+    // Every page type now hears why the audit rejected it; the same-context repair is bounded by MAX_PREMATURE_STOPS.
+    for (const mode of ['missing', 'modified', 'timeout', 'cancel', 'max_stops']) {
       const target = path.join(root, 'page-01.html'); await rm(target, { force: true });
       const page = new Page('page-01', 'brief'); page.workflow = 'build-page';
       const history: unknown[] = []; let turn = 0, checks = 0, retries = 0, clock = 0;
       const controller = new AbortController();
-      const sequence = mode === 'modified' ? [output(true, 'bad'), output(false), output(true), output(false)] : [...Array.from({length: 5}, () => output(false)), output(true), output(false)];
+      const sequence = mode === 'modified' ? [output(true, 'bad'), output(false), output(true), output(false)]
+        : mode === 'max_stops' ? Array.from({ length: 12 }, () => output(false))
+        : [...Array.from({length: 5}, () => output(false)), output(true), output(false)];
       if (mode === 'modified') sequence[0] = [...output(true), { type: 'function_call', name: 'Check', arguments: '{}', call_id: 'check-before-modification' }, ...output(true, 'bad').map(item => ({...item, call_id: 'modify'}))];
       if (mode === 'missing') sequence[1] = [];
       const work = buildOne(page, root, path.join(root, `${mode}.jsonl`), 'instructions', {
@@ -390,15 +391,18 @@ test('Builder premature stops retry identical context, audit latest files, and r
       if (mode === 'cancel') { await assert.rejects(work, error => error === controller.signal.reason); assert.equal(turn, 1); continue; }
       await work;
       assert.equal(page.premature_stops, retries);
+      assert.equal(page.stop_reasons.length, retries);
+      if (mode === 'max_stops') { assert.equal(page.termination, 'max_stops'); assert.equal(turn, 10); assert.equal(page.artifact_present, false); assert.match(page.why, /连续 10 次/); continue; }
       if (mode === 'timeout') { assert.equal(page.termination, 'max_seconds'); assert.equal(turn, 3); assert.ok(page.last_stop_error.includes('target missing')); }
       else {
         assert.equal(page.termination, 'no_tool_use'); assert.equal(page.artifact_present, true); assert.deepEqual(page.audit?.fatal_errors, []);
         assert.equal(checks, mode === 'missing' ? 1 : mode === 'modified' ? 3 : 2);
         assert.equal(retries, mode === 'missing' ? 5 : 1);
       }
-      const a = mode === 'modified' ? 1 : 0;
-      const b = mode === 'modified' ? 2 : Math.min(5, history.length - 1);
-      assert.deepEqual(history[a], history[b]);
+      // Each rejection adds the audit verdict to the same conversation instead of replaying an identical request.
+      const verdicts = (history.at(-1) as { messages: Array<{ role?: string; content?: unknown }> }).messages.filter(m => m.role === 'user' && String(m.content).startsWith('交付检查结果')).length;
+      // The verdict after the final rejection is pushed but never sent when the time budget ends the loop.
+      assert.equal(verdicts, mode === 'timeout' ? retries - 1 : retries);
       assert.equal(page.calls, turn); assert.equal(page.tok_out, turn * 18);
     }
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -723,4 +727,65 @@ test('header intrusion needs overlap on both axes, not just vertical', async () 
     // The same aside moved under the band is a real collision and must still be reported.
     assert.deepEqual(await intrusions(band + '<aside style="position:absolute;left:200px;top:10px;width:400px;height:60px">Beside</aside>'), ['Beside']);
   } finally { await release(); }
+});
+
+test('buildRun rebuilds a page that did not deliver from a clean slate and keeps every reason', async () => {
+  const { buildRun } = await import('../src/core/orchestration.js');
+  const { loadConfig, resolveBuilderProfile, workflowProfiles } = await import('../src/adapters/models/profiles.js');
+  const { mkdir, writeFile, readFile, rm } = await import('node:fs/promises');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'notale-rebuild-'));
+  try {
+    await mkdir(path.join(root, 'pages/plan'), { recursive: true }); await mkdir(path.join(root, 'pages/assets/lib'), { recursive: true });
+    await writeFile(path.join(root, 'pages/plan/pages.md'), '## Audience\n学生\n\n# page-01 [内容页]\n一个概念\n');
+    await writeFile(path.join(root, 'briefs.json'), JSON.stringify([{ description: 'Build page-01', prompt: 'brief' }]));
+    await writeFile(path.join(root, 'pages/assets/CHASSIS.md'), '底盘');
+    await writeFile(path.join(root, 'pages/assets/theme.css'), '/* ==== INTERFACE ====\n主题\n==== /INTERFACE ==== */');
+    await writeFile(path.join(root, 'pages/assets/lib/LIBS.md'), '## 按「要做的事」查\n无\n');
+    const cfg = loadConfig(), profile = resolveBuilderProfile(cfg), profiles = workflowProfiles(cfg, profile);
+    const target = path.join(root, 'pages/page-01.html');
+    let attempt = 0, calls = 0; const started: string[] = [];
+    const port: import('../src/core/builder.js').BuilderPorts = {
+      model: { async respondCanonical(_instructions, history) {
+        calls++;
+        if (history.length === 1) attempt++;
+        // First attempt: the model refuses and never writes. Second attempt: a clean history, it writes and stops.
+        if (attempt === 1) throw Object.assign(new Error('provider closed the stream at /var/run/provider.sock'), { name: 'ModelConnectionError' });
+        const output = calls === 2 ? [{ type: 'function_call', name: 'Write', call_id: 'w', arguments: JSON.stringify({ file_path: 'page-01.html', content: '<html>ok</html>' }) }] : [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'done' }] }];
+        return { id: String(calls), output, replay_items: [], raw: {}, status: 'completed', incomplete_details: null, usage: { input_tokens: 1, output_tokens: 1, input_tokens_details: { cached_tokens: 0 } } };
+      } },
+      async run(name, args) { if (name === 'Write') { await writeFile(target, String(args.content)); return '已写入'; } return { text: 'ok', images: [], diagnostics: { fatal_errors: [], visual_warnings: [] } }; },
+      scaffold: async () => { throw new Error('unused'); }, codeCheck: async () => { throw new Error('unused'); }, image: async () => ({ text: '', images: [] }),
+    };
+    const pages = await buildRun(root, Object.fromEntries(['build-cover', 'build-page', 'build-interaction', 'build-code'].map(name => [name, port])), { label: 'rebuild', profile, profiles, onPage: async (page, state) => { started.push(`${state}:${page.attempts}`); } });
+    assert.equal(pages.length, 1);
+    const page = pages[0]!;
+    assert.equal(page.attempts, 2); assert.equal(page.termination, 'no_tool_use'); assert.equal(page.artifact_present, true); assert.deepEqual(page.audit?.fatal_errors, []);
+    assert.equal(page.stop_reasons.length, 1); assert.match(page.stop_reasons[0]!, /ModelConnectionError/);
+    assert.equal(await readFile(target, 'utf8'), '<html>ok</html>');
+    assert.deepEqual(started, ['started:1', 'finished:2']);
+    const results = JSON.parse(await readFile(path.join(root, 'builder-results.json'), 'utf8'));
+    assert.equal(results['page-01'].attempts, 2); assert.equal(results['page-01'].stop_reasons.length, 1);
+    const manifest = JSON.parse(await readFile(path.join(root, 'builder-manifest.json'), 'utf8'));
+    assert.deepEqual(manifest.rebuiltPages, ['page-01']); assert.deepEqual(manifest.fatalAuditPages, []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('public failure text never carries paths, stacks, tool text or model prose', async () => {
+  const { publicReason, publicMessage } = await import('../src/core/public-text.js');
+  const cases: Array<[Record<string, unknown>, string]> = [
+    [{ why: '', last_stop_error: 'target missing: /data1/home/zhuyifan/ws2/Notale/runs/x/pages/page-02.html', audit: null }, '未生成页面文件'],
+    [{ why: '', last_stop_error: '', audit: { fatal_errors: ['✗ 代码工作台自检失败（退出码 1）', 'Traceback (most recent call last):', "AssertionError: ('starter.py', …)"], visual_warnings: [], code_result: null } }, '课程代码运行或测试未通过'],
+    [{ why: '', last_stop_error: 'JS 报错: TypeError: Cannot read properties of undefined at draw (page-05.html:88)', audit: null }, '页面运行检查未通过'],
+    [{ why: '超过单页时限 480s', last_stop_error: '', audit: null }, '生成超时'],
+    [{ why: '交付检查连续 10 次未通过', last_stop_error: 'x', audit: null }, '多次修正后仍未通过交付检查'],
+    [{ why: 'I will not generate that content, and I want to be direct about why: no such system prompt exists.', last_stop_error: 'call:default_api:Read{file_path:assets/theme.css}', audit: null }, '未通过交付检查'],
+  ];
+  for (const [page, expected] of cases) {
+    const text = publicReason(page as any);
+    assert.equal(text, expected);
+    assert.doesNotMatch(text, /\/data1|Traceback|TypeError|default_api|system prompt/);
+  }
+  const message = publicMessage(new Error('ENOENT: no such file or directory, open \'/data1/home/zhuyifan/ws2/Notale/x.md\'\n    at readFileSync (node:fs:448:20)'));
+  assert.doesNotMatch(message, /\/data1|node:fs|\n/);
+  assert.equal(publicMessage(new Error('')), '讲义生成失败');
 });

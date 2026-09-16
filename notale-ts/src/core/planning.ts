@@ -4,6 +4,7 @@ import { workflowNotice, type ProgressObserver } from './workflow-progress.js';
 import { jsonText, parsePythonJson } from './json.js';
 /** Planner tool loop and submission order from core/planner.py. */
 import { readFileSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AssistantTurn, ChatMessage, ChatInputBlock, ToolDefinition, ChatModel } from '../adapters/models/chat-model.js';
 import * as guidance from './guidance.js';
@@ -116,6 +117,13 @@ export async function deckCall(run: PlanningRequest, ports: PlannerPorts, signal
         workflowNotice(ports.progress, 'planner', name === 'FinalizePlan' ? 'validation' : name, 'reworking', name === 'FinalizePlan' ? '页表校验未通过，继续调整' : '本次工具请求未完成，继续处理');
         output = errorOutput(error);
         if (name !== 'ImageSearch' && name !== 'ImageGen') rejected++;
+        if (name === 'FinalizePlan') {
+          // Traces log planner tool results as "(tool results)"; the rejection itself is kept here, like style.rejected.json.
+          let submitted = '';
+          try { submitted = String((parsePythonJson(call.function.arguments || '{}') as Record<string, unknown>).pages_md ?? '').slice(0, 400); } catch { /* unparseable arguments are the reason itself */ }
+          await mkdir(run.root, { recursive: true });
+          await writeFile(path.join(run.root, 'plan.rejected.json'), JSON.stringify({ bad: output, submissions: rejected, pages_md: submitted }, null, 2), 'utf8');
+        }
       }
       history.push({ role: 'tool', tool_call_id: call.id, content: output });
     }

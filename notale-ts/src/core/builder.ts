@@ -23,13 +23,15 @@ type Item = Record<string, any>;
 export interface DeliveryAudit { fatal_errors: string[]; visual_warnings: string[]; code_result: string | null }
 export class Page {
   calls = 0; steps: string[] = []; steps_arg: Record<string, string[]> = {}; reference_reads: string[] = [];
-  premature_stops = 0; last_stop_error = '';
+  premature_stops = 0; last_stop_error = ''; stop_reasons: string[] = []; attempts = 1;
   why = ''; seconds = 0; images = 0; evicted = 0;
   tok_in: PythonInt = 0; tok_cached: PythonInt = 0; tok_write: PythonInt = 0; tok_out: PythonInt = 0; tok_max: PythonInt = 0;
   artifact_present = false; audit: DeliveryAudit | null = null; cache_seen = false;
   label = ''; workflow = ''; spec_text = ''; total = 0; termination = '';
   constructor(readonly pid: string, public prompt: string) {}
 }
+/** A page is delivered when its file exists and the delivery audit found nothing fatal; how the loop ended is a record, not a verdict. */
+export const delivered = (page: Page): boolean => page.artifact_present && page.audit !== null && page.audit.fatal_errors.length === 0;
 export function routePage(root: string, page: Page): Page {
   const file = path.join(root, PAGES_REL);
   if (!existsSync(file) || !statSync(file).isFile()) throw Object.assign(new Error(`cannot route ${page.pid}: missing planner spec ${file}`), { name: 'FileNotFoundError' });
@@ -184,12 +186,12 @@ async function buildOneLoop(page: Page, pagesDir: string, trace: string, instruc
       if (rejected) {
         page.premature_stops++;
         page.last_stop_error = page.audit.fatal_errors.join('；');
+        page.stop_reasons.push(page.last_stop_error);
         try { Promise.resolve(options.onRetry?.(page)).catch(() => {}); } catch {}
-        if (page.workflow === 'build-code') {
-          history.push(...ModelRuntime.replay(response));
-          history.push({ role: 'user', content: '交付检查结果：\n' + page.last_stop_error });
-        }
-        // Preserve legacy visual-page natural-stop behavior.
+        if (page.premature_stops >= constants.MAX_PREMATURE_STOPS) { page.why = `交付检查连续 ${page.premature_stops} 次未通过`; page.termination = 'max_stops'; break; }
+        // The model stopped early; tell it what the audit found and let it continue in the same context.
+        history.push(...ModelRuntime.replay(response));
+        history.push({ role: 'user', content: '交付检查结果：\n' + page.last_stop_error });
         continue;
       }
       page.why = [...textOf(response).trim()].slice(0, 200).join(''); page.termination = 'no_tool_use'; break;

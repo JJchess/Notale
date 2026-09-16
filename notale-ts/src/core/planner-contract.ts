@@ -32,7 +32,7 @@ export function resolvePath(file: string, cwd = process.cwd()): string {
 export const N_CEIL = 60;
 export const PAGE_LABELS = new Set(['标题页', '内容页', '交互页', '代码页']);
 export const PAGES_REL = 'pages/plan/pages.md';
-export const DECK_TRIES = 3;
+export const DECK_TRIES = 10;
 export const PLANNER_IDENTITY = '你在为一套内容做规划。只输出被要求的东西,不写说明、不写总结、不加围栏。';
 
 export function plannerPrompt(name: string, values: Record<string, string | number>, prompts = PROMPTS): string {

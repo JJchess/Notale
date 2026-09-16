@@ -372,7 +372,7 @@ print(json.dumps(result,ensure_ascii=False))
             return { text: JSON.stringify({ results: [{ path: 'assets/img/a.png', query_index: 0 }] }), images: [{ mime: 'image/png', data: 'ZmFrZQ==' }] };
           },
           trace: () => {},
-        });
+        }, undefined, 3); // Python oracle stops at 3; production allows DECK_TRIES
         result = { final: [final.pagesDoc, final.mapping] };
       } catch (error) { result = { error: (error as Error).message, name: (error as Error).name }; }
       result.calls = count;
@@ -503,7 +503,7 @@ print(json.dumps(result,ensure_ascii=False))
             prepareFonts: async () => [], referenceImages: async () => [], references: () => [],
             gates: async candidate => { if (scenario.fault) throw Object.assign(new Error('fixture fault'),{name:scenario.fault}); return candidate === 'bad' ? ['gate failed'] : []; }, publish: async css => { published.push(css); },
           },
-        });
+        }, undefined, 3); // Python oracle stops at 3; production allows 10
         result = { final };
       } catch (error) { result = { error: {name:(error as Error).name,message:(error as Error).message} }; }
       Object.assign(result, { calls: count, published, traceInputs, feedback: history.filter(message => message.role === 'tool').map(message => message.content), userTexts: history.filter(message => message.role === 'user').map(message => typeof message.content === 'string' ? message.content : message.content?.filter(block => block.type === 'text').map(block => block.type === 'text' ? block.text : '')) });
@@ -2278,7 +2278,8 @@ print(json.dumps(results,ensure_ascii=False))
         },
         scaffold: async () => ({ made: true }), codeCheck: async (_cwd, _pid, shot) => { codechecks.push(shot); return { report: 'code report', shots: [] }; }, image: async () => ({ text: '', images: [] }),
       }, { visionInput: scenario.vision ?? true });
-      const { seconds: _seconds, ...state } = page;
+      // attempts / stop_reasons are TS-only retry records; Python's page has no counterpart.
+      const { seconds: _seconds, attempts: _attempts, stop_reasons: _stopReasons, ...state } = page;
       assert.deepEqual({ page: state, histories, executed, codechecks }, expected[index], `Builder ${index}`);
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -3065,11 +3066,12 @@ print(json.dumps(dict(files=files,manifest=json.loads((root/'builder-manifest.js
       assert.equal(normalize(readFileSync(path.join(tsRoot, file), 'utf8')), normalize(value), file);
     }
     const results = parsePythonJson(readFileSync(path.join(tsRoot, 'builder-results.json'), 'utf8'));
-    for (const row of Object.values(results) as any[]) row.seconds = 0;
+    // attempts / stop_reasons are TS-only retry records; Python's rows have no counterpart.
+    for (const row of Object.values(results) as any[]) { row.seconds = 0; delete row.attempts; delete row.stop_reasons; }
     for (const row of Object.values(expected.results) as any[]) row.seconds = 0;
     assert.equal(normalize(results), normalize(expected.results));
     const manifest = parsePythonJson(readFileSync(path.join(tsRoot, 'builder-manifest.json'), 'utf8'));
-    for (const row of [manifest, expected.manifest]) for (const key of ['startedAt', 'completedAt', 'wallSeconds', 'label']) delete row[key];
+    for (const row of [manifest, expected.manifest]) for (const key of ['startedAt', 'completedAt', 'wallSeconds', 'label', 'rebuiltPages']) delete row[key];
     assert.deepEqual(manifest, expected.manifest);
     assert.equal(normalize(manifest), normalize(expected.manifest));
     // Sample policy is TS-native (see the blocks comparison above); compare every other part of the handoff.
@@ -3191,7 +3193,7 @@ test('portable publication materializes internal links and rejects external or c
 });
 
 for (const fail of [false, true]) test(`baseline service adapter runs model transport, browser audit and portable publication (failure=${fail})`, async () => {
-  const { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } = await import('node:fs');
+  const { mkdtempSync, rmSync, mkdirSync, writeFileSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { createBaselinePipeline } = await import('../src/core/baseline-pipeline.js');
   const { createRunRequestSchema } = await import('../src/protocol/index.js');
@@ -3217,19 +3219,15 @@ for (const fail of [false, true]) test(`baseline service adapter runs model tran
     mkdirSync(output);
     const execution = pipeline({ run: { protocolVersion: 1, id: 'fixture-run', status: 'running', request: createRunRequestSchema.parse({ query: '课程主题', style: '' }), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastSequence: 0 }, outputDir: output,
       signal: new AbortController().signal, emit: async kind => { events.push(kind); } });
-    if (fail) await assert.rejects(execution, /1 页异常终止/);
-    else await execution;
+    // The provider failing after the page passed its audit no longer discards the deck: the delivered page is published.
+    await execution;
     const result = JSON.parse(readFileSync(path.join(root, 'work/builder-results.json'), 'utf8'))['page-01'];
     assert.equal(result.termination, fail ? 'agent_exception' : 'no_tool_use');
-    if (fail) {
-      assert.equal(existsSync(path.join(output, 'index.html')), false);
-      assert.equal(readFileSync(path.join(root, 'work/pages/page-01.html'), 'utf8'), html);
-    } else {
-      assert.equal(readFileSync(path.join(output, 'page-01.html'), 'utf8'), html);
-      assert.match(readFileSync(path.join(output, 'index.html'), 'utf8'), /page-01.html/);
-    }
+    assert.equal(result.attempts, 1);
+    assert.equal(readFileSync(path.join(output, 'page-01.html'), 'utf8'), html);
+    assert.match(readFileSync(path.join(output, 'index.html'), 'utf8'), /page-01.html/);
     assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'work/builder-results.json'), 'utf8'))['page-01'].audit.fatal_errors, []);
-    assert.deepEqual(events.filter(kind => !['workflow.progress', 'plan.ready', 'page.progress'].includes(kind)), ['phase.changed', 'phase.changed', 'page.started', ...fail ? [] : ['page.ready'], 'phase.changed']);
+    assert.deepEqual(events.filter(kind => !['workflow.progress', 'plan.ready', 'page.progress'].includes(kind)), ['phase.changed', 'phase.changed', 'page.started', 'page.ready', 'phase.changed']);
     assert.equal(bodies.length, 3);
     assert.equal(bodies[0].max_tokens, 128000);
     assert.ok(bodies[1].messages[0].content.includes('build-cover'));

@@ -9,7 +9,7 @@ import { loadConfig, configValue, resolveBuilderProfile } from '../adapters/mode
 import { workflowModels, type TransportOptions, type PlannerOverrides } from '../adapters/models/runtime.js';
 import { RESOURCES } from './guidance.js';
 import { planRun, buildRun, type BuildOptions } from './orchestration.js';
-import { builderPorts, lessonTitle, Page } from './builder.js';
+import { builderPorts, delivered, lessonTitle, Page } from './builder.js';
 import { directorPorts } from './theme-runtime.js';
 import { TraceWriter } from './trace.js';
 import { jsonText, type WorkflowTrace } from './planning.js';
@@ -19,6 +19,7 @@ import { lecturePreview, queueLectureThumbnail } from './lecture-preview.js';
 import type { GenerationPipeline } from './run-service.js';
 import { observeBuilder } from './progress.js';
 import { publishLecture } from './publication.js';
+import { publicReason } from './public-text.js';
 
 export interface PipelineOptions {
   planner?: PlannerOverrides; config?: Record<string, any>; env?: NodeJS.ProcessEnv; envFile?: string; profile?: string;
@@ -140,26 +141,25 @@ export function createBaselinePipeline(options: PipelineOptions = {}): Generatio
           onRetry(page) {
             if (signal.aborted) return;
             states.set(page.pid, 'reworking');
-            const reason = page.last_stop_error.includes('target missing:') ? '目标文件尚未生成或为空' : page.last_stop_error;
-            notices = notices.then(() => emit('page.progress', `${page.pid.replace('page-', '第 ')} 页 · ${page.label}：模型未调用工具，${reason}，正在按原上下文重试`, { pageId: page.pid, pageTitle: lessonTitle(page), pageState: 'reworking' }))
+            notices = notices.then(() => emit('page.progress', `${page.pid.replace('page-', '第 ')} 页 · ${page.label}：${publicReason(page)}，正在修正`, { pageId: page.pid, pageTitle: lessonTitle(page), pageState: 'reworking' }))
               .catch(error => { if (!signal.aborted) console.warn('Progress notification unavailable:', error instanceof Error ? error.name : 'error'); });
           },
           async onPage(page, state) {
             if (state === 'started') await emit('page.started', `正在生成 ${lessonTitle(page)}`, { pageId: page.pid, pageTitle: lessonTitle(page) });
-            else if (page.artifact_present && page.termination === 'no_tool_use' && page.audit && page.audit.fatal_errors.length === 0) {
+            else if (delivered(page)) {
               await emit('page.ready', `${lessonTitle(page)} 已生成`, { pageId: page.pid, pageTitle: lessonTitle(page), previewUrl: `/v1/runs/${run.id}/preview/${page.pid}.html` });
               thumbnails.push(queueLectureThumbnail(path.join(root, 'pages'), page.pid, signal).catch(error => { thumbnailErrors.push(error); }));
             }
-            else await emit('page.progress', `${page.pid} · ${page.label} · ${lessonTitle(page)} 未完成交付检查：${page.why || page.last_stop_error}`, { pageId: page.pid, pageTitle: lessonTitle(page), pageState: 'failed' });
+            else await emit('page.progress', `${page.pid.replace('page-', '第 ')} 页 · ${page.label} · ${lessonTitle(page)}：${publicReason(page)}，本页未收录`, { pageId: page.pid, pageTitle: lessonTitle(page), pageState: 'failed' });
           } });
       signal.throwIfAborted();
       await emit('phase.changed', '正在整理讲义产物与审计结果', { phase: 'polish' });
-      const available = pages.filter(page => page.artifact_present);
+      const available = pages.filter(delivered);
       await Promise.all(thumbnails);
       if (thumbnailErrors.length) throw thumbnailErrors[0];
       await writeFile(path.join(root, 'pages/index.html'), lecturePreview(run.request.query, available.map(page => page.pid), Object.fromEntries(available.map(page => [page.pid, lessonTitle(page)])), available.filter(page => page.workflow === 'build-code').map(page => page.pid)));
-      const incomplete = pages.filter(page => page.termination !== 'no_tool_use' || !page.artifact_present || page.audit?.fatal_errors.length);
-      if (incomplete.length) throw new Error(`生成已结束，但 ${incomplete.length} 页异常终止、缺少产物或存在致命审计错误：${incomplete.map(page => `${page.pid} · ${page.label}：${page.why || page.last_stop_error || page.audit?.fatal_errors.join('；')}`).join('；')}；详见 work/builder-results.json`);
+      // A deck with some pages is a deliverable; the missing ones are reported per page and kept in work/builder-results.json.
+      if (!available.length) throw new Error(`生成未完成：${pages.length} 页均未通过交付检查`);
       await publishLecture(path.join(root, 'pages'), outputDir, { signal });
     } finally { await notices; await Promise.all(thumbnails); await release(); }
   };

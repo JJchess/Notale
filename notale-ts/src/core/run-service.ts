@@ -1,4 +1,5 @@
 import { readdir, stat, writeFile } from "node:fs/promises";
+import { publicMessage } from './public-text.js';
 import path from "node:path";
 import { artifactManifestSchema, protocolVersion, type ArtifactManifest, type CreateRunRequest, type RunEvent, type RunEventKind, type RunSnapshot } from "../protocol/index.js";
 import { RunStore } from "./run-store.js";
@@ -105,8 +106,7 @@ export class RunService {
         await this.store.emit(run.id, "run.cancelled", "生成已取消");
         return;
       }
-      const message = error instanceof Error ? error.message : String(error);
-      await this.store.update(run.id, { status: "failed", error: message });
+      await this.store.update(run.id, { status: "failed", error: publicMessage(error) });
       await this.store.emit(run.id, "run.failed", "讲义生成失败");
     }
   }

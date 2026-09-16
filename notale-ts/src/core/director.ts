@@ -10,7 +10,7 @@ import { stripText, splitLines } from './text.js';
 import { valueError } from './theme.js';
 import * as guidance from './guidance.js';
 
-const TRIES = 3;
+const TRIES = 10;
 const resourceFailure = (error: unknown): boolean => error instanceof Error && (['ValueError', 'UnicodeDecodeError', 'UnicodeEncodeError', 'JSONDecodeError', 'OSError', 'FileNotFoundError', 'PermissionError', 'IsADirectoryError', 'NotADirectoryError', 'FileExistsError', 'TimeoutError'].includes(error.name) || /^E[A-Z]+$/.test((error as NodeJS.ErrnoException).code ?? ''));
 const runtimeError = (message: string): Error => Object.assign(new Error(message), { name: 'RuntimeError' });
 export interface DirectorRequest extends PlanningRequest { style?: string; template?: string }
@@ -63,7 +63,7 @@ export function oneWrite(calls: ToolCall[], target: string): { css: string | und
     return { css: input.content, bad: [] };
   } catch (error) { if (!resourceFailure(error) && !(error instanceof TypeError) && (error as Error)?.name !== 'TypeError') throw error; return { css: undefined, bad: [(error as Error).message] }; }
 }
-export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?: AbortSignal) {
+export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?: AbortSignal, tries = TRIES) {
   if (run.template && path.extname(run.template).toLowerCase() === '.pptx') {
     ports.theme.checkOptions(run.template, run.style);
     const { directTemplate } = await import('./template-style.js');
@@ -116,7 +116,7 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
     const body = prompt('style-pick', { query: run.query, audience: run.audience, scenario: run.scenario || '（没写）', request: run.style || '按本次交流目的选择', index: selection.text, out_path: out, theme_bans: guidance.themeSlopBlock(workflowRoot) });
     const by = new Set(ports.catalog.rows().map(row => row[0]));
     let bad: string[] = [];
-    for (let attempt = 0; attempt < TRIES; attempt++) {
+    for (let attempt = 0; attempt < tries; attempt++) {
       const calls = await request(attempt === 0 ? [{ type: 'text', text: body }, ...selection.images] : undefined, writeSpec(out), 'style-pick');
       const submission = oneWrite(calls, out);
       bad = submission.bad;
@@ -137,7 +137,7 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
       }
       workflowNotice(ports.progress, 'director', 'selection', 'reworking', '参考风格未通过检查，继续调整');
       if (!calls.length) history.push({ role: 'user', content: bad.join('；') });
-      if (attempt === TRIES - 1) throw runtimeError('选参照失败: ' + bad.join('；'));
+      if (attempt === tries - 1) throw runtimeError('选参照失败: ' + bad.join('；'));
     }
   }
   const match = ports.catalog.match(run.style);
@@ -159,7 +159,7 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
   const tools = [...writeSpec(target), ...chatTools([...plannerInstructions.media, plannerInstructions.styleRead])];
   let rejected = 0;
   let bad: string[] = [];
-  while (rejected < TRIES) {
+  while (rejected < tries) {
     const calls = await request(content, tools, 'style-theme');
     content = undefined;
     if (!calls.length) throw runtimeError('Director 结束但没有有效 Write');
