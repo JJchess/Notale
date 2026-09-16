@@ -41,6 +41,10 @@ function ensureDependencies(pages: string): void {
   for (const name of ['codicon.css', 'codicon.ttf']) copy(path.join(modules, '@vscode/codicons/dist', name), path.join(libraries, 'vscode-codicons', name));
   for (const name of ['LICENSE', 'LICENSE-CODE', 'package.json']) copy(path.join(modules, '@vscode/codicons', name), path.join(libraries, 'vscode-codicons', name));
 }
+export function runtimeRevision(directory:string):string {
+  const hash=createHash('sha256');
+  const visit=(dir:string)=>{for(const entry of readdirSync(dir,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))){const file=path.join(dir,entry.name);if(entry.isDirectory())visit(file);else if(!/\.(br|gz)$/.test(entry.name)){hash.update(path.relative(directory,file));hash.update(readFileSync(file));}}};visit(directory);return hash.digest('hex');
+}
 const escapeText = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 export function outerPage(pid: string, title: string, total: number): string {
   lessonRoot('', pid);
@@ -70,9 +74,10 @@ export async function scaffold(pagesDir: string, pid: string, title: string, tot
     }
     copy(path.join(source, 'scaffold'), path.join(target, 'lesson'));
     copy(path.join(source, 'view-shell.html'), path.join(target, 'lesson/view/index.html'));
+    writeFileSync(path.join(target,'lesson/preview.json'),JSON.stringify({sourceRevision:'',initialStep:null}));
     const configuredTitle = title.trim() || pid;
     const config = readFileSync(path.join(source, 'lesson.js'), 'utf8')
-      .replace('"code-page"', JSON.stringify(pid)).replace('"代码实验"', JSON.stringify(configuredTitle));
+      .replace('"code-page"', JSON.stringify(pid)).replace('"代码实验"', JSON.stringify(configuredTitle)).replace('export const lesson = {','export const lesson = {\n  runtimeRevision: '+JSON.stringify(runtimeRevision(shared))+',');
     writeFileSync(path.join(target, 'lesson/lesson.js'), config);
     const prefix = '../../code-runtime-' + CODE_RUNTIME_VERSION + '/';
     let shell = readFileSync(path.join(source, 'workbench.html'), 'utf8').replaceAll('{{TITLE}}', escapeText(configuredTitle));

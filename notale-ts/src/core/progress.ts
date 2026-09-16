@@ -44,9 +44,9 @@ export function observeBuilder(ports: BuilderPorts, notice: (pid: string, state:
       if (name === 'Check') safe(() => report(context.pid, typeof result === 'string' ? result : result.text));
       return result;
     },
-    async codeCheck(cwd, pid, shot, signal) {
+    async codeCheck(cwd, pid, shot, signal, outer) {
       safe(() => notice(pid, 'checking', '正在检查代码演示'));
-      const result = await ports.codeCheck(cwd, pid, shot, signal);
+      const result = await ports.codeCheck(cwd, pid, shot, signal, outer);
       safe(() => report(pid, result.report));
       return result;
     },

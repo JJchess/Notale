@@ -10,10 +10,11 @@ function createChannel() {
   return `view-${Date.now().toString(36)}-${channelSerial.toString(36)}`;
 }
 
-async function fetchText(url, label, cache = "no-store") {
-  const response = await fetch(url, { cache });
-  if (!response.ok) throw new Error(`${label} 载入失败（HTTP ${response.status}）。`);
-  return response.text();
+const resources=new Map();
+async function fetchText(url,label,cache="default") {
+  const key=String(url);let request=resources.get(key);
+  if(!request){request=fetch(url,{cache}).then(response=>{if(!response.ok)throw Error(`${label} 载入失败（HTTP ${response.status}）。`);return response.text();});resources.set(key,request);request.catch(()=>resources.delete(key));}
+  return request;
 }
 
 function escapeAttribute(value) {
@@ -97,6 +98,7 @@ export function createNativeView(host, options = {}) {
   let resolveReady = null;
   let rejectReady = null;
   let firstError = null;
+  const renderWaiters=new Set();
 
   const readyPromise = new Promise((resolve, reject) => {
     resolveReady = resolve;
@@ -107,6 +109,8 @@ export function createNativeView(host, options = {}) {
     if (firstError) return;
     const error = message instanceof Error ? message : new Error(String(message || "未知视图错误"));
     firstError = error.message;
+    rejectReady?.(error);
+    for(const waiter of renderWaiters)waiter.reject(error);renderWaiters.clear();
     options.onError?.(error);
   }
 
@@ -146,6 +150,7 @@ export function createNativeView(host, options = {}) {
     }
     if (message.type === "rendered") {
       renderCount += 1;
+      for(const waiter of renderWaiters)waiter.resolve();renderWaiters.clear();
       options.onRendered?.(message.playback || null);
       return;
     }
@@ -161,16 +166,20 @@ export function createNativeView(host, options = {}) {
     if (mounted) return readyPromise;
     if (disposed) throw new Error("原生视图已经销毁。");
     mounted = true;
+    readyPromise.catch(()=>{});
+    if(options.signal?.aborted)throw new Error("视图更新已取消");
+    options.signal?.addEventListener("abort",dispose,{once:true});
     window.addEventListener("message", handleMessage);
 
     try {
-      const [baseCss, bridgeSource, markup, authorSource, courseCss] = await Promise.all([
+      const [baseCss, bridgeSource, markup, authorSource, courseCss] = await Promise.race([Promise.all([
         fetchText(new URL("native-view.css", fixedBaseUrl), "native-view.css", "default"),
         fetchText(new URL("native-view-bridge.js", fixedBaseUrl), "native-view-bridge.js", "default"),
         fetchText(new URL("index.html", viewBaseUrl), "view/index.html"),
-        fetchText(new URL("render.js", viewBaseUrl), "view/render.js"),
+        options.authorSource !== undefined ? Promise.resolve(options.authorSource) : fetchText(new URL("render.js", viewBaseUrl), "view/render.js"),
         fetchText(new URL("course-view.css", fixedBaseUrl), "course-view.css", "default"),
-      ]);
+      ]),readyPromise]);
+      if(disposed)throw Error('视图更新已取消');
       validateMarkup(markup);
 
       iframe = document.createElement("iframe");
@@ -186,7 +195,8 @@ export function createNativeView(host, options = {}) {
         authorSource,
         channel,
       });
-      host.replaceChildren(iframe);
+      if(options.staged){iframe.style.cssText='position:absolute;inset:0;width:100%;height:100%;visibility:hidden;pointer-events:none';host.append(iframe);}
+      else host.replaceChildren(iframe);
     } catch (error) {
       rejectReady?.(error);
       reportError(error);
@@ -219,6 +229,9 @@ export function createNativeView(host, options = {}) {
   function dispose() {
     if (disposed) return;
     disposed = true;
+    const error=new Error("视图更新已取消");rejectReady?.(error);
+    for(const waiter of renderWaiters)waiter.reject(error);renderWaiters.clear();
+    options.signal?.removeEventListener("abort",dispose);
     ready = false;
     pendingPacket = null;
     lastPacket = null;
@@ -227,8 +240,17 @@ export function createNativeView(host, options = {}) {
     iframe = null;
   }
 
+  function renderConfirmed(packet){
+    return new Promise((resolve,reject)=>{
+      const waiter={resolve:()=>{clearTimeout(timer);resolve();},reject:error=>{clearTimeout(timer);reject(error);}};
+      const timer=setTimeout(()=>{renderWaiters.delete(waiter);reject(Error("可视化渲染超时"));},READY_TIMEOUT_MS);
+      if(firstError||disposed){waiter.reject(Error(firstError||"视图更新已取消"));return;}
+      renderWaiters.add(waiter);render(packet);
+    });
+  }
+  function commit(){if(disposed)throw Error("视图更新已取消");iframe?.removeAttribute('style');options.signal?.removeEventListener('abort',dispose);}
   return {
-    mount,
+    mount,renderConfirmed,commit,
     render,
     dispose,
     getState() {

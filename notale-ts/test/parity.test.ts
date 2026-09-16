@@ -291,7 +291,11 @@ print(json.dumps(dict(parsed=parsed,chapters=builder.chapter_preloads(root,4),sh
     assert.ok(!chapters['page-04']!.includes('id="dataset"') && chapters['page-04']!.includes('id="training"'));
     for (const workflow of guidance.PAGE_WORKFLOWS) {
       const shared = builder.sharedPreload(root, 4, path.join(pythonRoot, 'prompts'), workflow);
-      assert.equal(shared, expected.shared[workflow]);
+      if (workflow !== 'build-code') assert.equal(shared, expected.shared[workflow]);
+      else {
+        assert.ok(!shared.includes('<tech>'));
+        assert.equal(shared, expected.shared[workflow].split('\n\n<tech>')[0]);
+      }
       assert.equal(shared.match(/<audience>/g)?.length, 1);
       assert.ok(shared.includes('x &lt; 18 &amp; y &gt; 0'));
       assert.ok(!shared.includes('初始权重') && !shared.includes('样本 [['));
@@ -2180,7 +2184,8 @@ print(json.dumps(rows))
       const specs = tools.toolSpecs(workflow, vision);
       assert(!specs.some(s => s.name === 'Edit'));
       assert.deepEqual(specs.find(s => s.name === 'Patch')!.parameters.required, ['file_path', 'edits']);
-      for (const spec of specs.filter(s => !['Write', 'Patch'].includes(s.name)))
+      // Code pages run the lesson on every write; their Check is a bare re-run and no longer mirrors the visual Check.
+      for (const spec of specs.filter(s => !['Write', 'Patch'].includes(s.name) && !(workflow === 'build-code' && s.name === 'Check')))
         assert.deepEqual(spec, oracle.schemas[`${workflow ?? 'None'}/${vision ? 'True' : 'False'}`].find((s: any) => s.name === spec.name));
     }
   } finally { rmSync(root, { recursive: true, force: true }); }

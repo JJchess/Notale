@@ -139,7 +139,37 @@ function nsPaint() {
     ? "激活与预测保留本轮更新前的实测值；高亮参数已更新"
     : "圆环表示激活值 · 连线表示权重（虚线为负）";
 }
+// Check the data this view consumes; a malformed row must not silently disappear.
+function nsExpect(state, name, dimensions) {
+  function check(value, shape, field) {
+    const valid = shape.length ? Array.isArray(value) && value.length === shape[0]
+      : typeof value === 'number' && Number.isFinite(value);
+    if (!valid) {
+      const expected = shape.length ? `number${shape.map(n => `[${n}]`).join('')}` : '有限数值';
+      const actual = Array.isArray(value) ? `数组[${value.length}]` : String(value);
+      throw Error(`阶段 ${state.stage}：${field} 预期 ${expected}，实际 ${actual}`);
+    }
+    if (shape.length) value.forEach((item, i) => check(item, shape.slice(1), `${field}[${i}]`));
+  }
+  check(state[name], dimensions, `state.${name}`);
+}
 window.renderNotaleView = (packet) => {
+  const s = packet.state;
+  if (s?.stage) {
+    if (!Object.hasOwn(nsCopy, s.stage)) throw Error(`未知阶段：${s.stage}`);
+    const rows = Array.isArray(s.X) ? s.X.length : 0;
+    if (!rows) throw Error(`阶段 ${s.stage}：state.X 需要非空二维输入，实际为空或缺失`);
+    nsExpect(s, 'X', [rows, 2]); nsExpect(s, 'Y', [rows, 1]);
+    nsExpect(s, 'W1', [2, 3]); nsExpect(s, 'W2', [3, 1]);
+    nsExpect(s, 'b1', [3]); nsExpect(s, 'b2', [1]);
+    nsExpect(s, 'a1', [rows, 3]); nsExpect(s, 'a2', [rows, 1]);
+    if (s.stage === 'loss') nsExpect(s, 'sample_loss', [rows, 1]);
+    if (s.stage === 'update') {
+      const shape = {W1:[2,3], W2:[3,1], b1:[3], b2:[1]}[s.param];
+      if (!shape) throw Error(`阶段 update：未知参数 ${s.param}`);
+      nsExpect(s, 'before', shape); nsExpect(s, 'after', shape);
+    }
+  }
   NL.packet = packet;
   nsPaint();
 };

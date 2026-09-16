@@ -18,7 +18,8 @@ def _notale_run(files_json, entry, observe_source, tests_source, limits_json, se
     bytes_used = 0
     last_sent = time.monotonic()
     observation_error = None
-    positions, exceptional = {}, set()
+    exceptional = set()
+    truncated = None
 
     def within(path, actual, key):
         maximum = limits[key]
@@ -32,7 +33,7 @@ def _notale_run(files_json, entry, observe_source, tests_source, limits_json, se
         return {'kind':kind, 'message':str(exc), 'source': {'file':at.filename,'line':at.lineno,'column':1} if at else None,
                 'traceback': ''.join(traceback.format_exception(type(exc),exc,exc.__traceback__))}
 
-    def safe(value, path='state', depth=0, seen=None):
+    def safe(value, path='state', depth=0, seen=None, sampled=None):
         within(path, depth, 'maxDepth')
         if seen is None: seen=set()
         if np is not None and isinstance(value, np.ndarray): value=value.tolist()
@@ -46,13 +47,18 @@ def _notale_run(files_json, entry, observe_source, tests_source, limits_json, se
             return value
         if not isinstance(value,(dict,list,tuple)): raise TypeError(path + ': unsupported ' + type(value).__name__)
         if id(value) in seen: raise ValueError(path + ': cyclic value')
+        if sampled is not None and isinstance(value,(list,tuple)) and len(value)>limits['maxItems']:
+            # A long sequence is the host's capacity problem, not the lesson's: keep evenly spaced items and say so.
+            total, n = len(value), limits['maxItems']
+            value=[value[round(i*(total-1)/(n-1))] for i in range(n)]
+            sampled.append({'path':path,'from':total,'to':n})
         within(path, len(value), 'maxItems')
         seen.add(id(value))
         try:
             if isinstance(value,dict):
                 if any(not isinstance(k,str) for k in value): raise TypeError(path + ': keys must be strings')
-                return {k:safe(v,path+'.'+k,depth+1,seen) for k,v in value.items()}
-            return [safe(v,path+'['+str(i)+']',depth+1,seen) for i,v in enumerate(value)]
+                return {k:safe(v,path+'.'+k,depth+1,seen,sampled) for k,v in value.items()}
+            return [safe(v,path+'['+str(i)+']',depth+1,seen,sampled) for i,v in enumerate(value)]
         finally: seen.remove(id(value))
 
     def flush():
@@ -63,8 +69,8 @@ def _notale_run(files_json, entry, observe_source, tests_source, limits_json, se
             last_sent=time.monotonic()
 
     def capture(frame,event,line,arg=None):
-        nonlocal previous, bytes_used, observation_error
-        if observation_error: return
+        nonlocal previous, bytes_used, observation_error, truncated
+        if observation_error or truncated: return
         ctx=types.SimpleNamespace(function=frame.f_code.co_name,event=event,
             source={'file':entry,'line':max(1,line),'text':source_lines[line-1] if 0<line<=len(source_lines) else ''},
             locals=types.MappingProxyType(frame.f_locals),globals=types.MappingProxyType(frame.f_globals),
@@ -73,13 +79,17 @@ def _notale_run(files_json, entry, observe_source, tests_source, limits_json, se
             raw=observe(ctx)
             if raw is None:return
             if not isinstance(raw,dict):raise TypeError('observe must return dict or None')
-            state=safe(raw)
+            sampled=[]
+            state=safe(raw,sampled=sampled)
             if state==previous:return
             step={'sequence':len(frames),'source':{'file':entry,'line':max(1,line),'column':1},'state':state}
+            if sampled: step['sampled']=sampled
             encoded=json.dumps(step,ensure_ascii=False).encode()
+            if len(frames)>=limits['maxFrames'] or bytes_used+len(encoded)>limits['maxPayloadBytes']:
+                # Capacity, not correctness: keep what was recorded and report where recording stopped.
+                truncated={'frame':len(frames),'bytes':bytes_used,'limit':'maxFrames' if len(frames)>=limits['maxFrames'] else 'maxPayloadBytes'}
+                return
             bytes_used+=len(encoded)
-            within('trace.frames', len(frames) + 1, 'maxFrames')
-            within('trace.bytes', bytes_used, 'maxPayloadBytes')
             frames.append(step);batch.append(step);previous=state
             if len(frames)==1 or len(batch)>=16 or time.monotonic()-last_sent>=.05:flush()
         except TraceLimit:raise
@@ -87,20 +97,18 @@ def _notale_run(files_json, entry, observe_source, tests_source, limits_json, se
             observation_error=error(exc,'observation')
             observation_error['context']={'function':ctx.function,'event':event,'locals':list(ctx.locals)[:24]}
 
+    # The observer sees a function's interface only: its arguments at call, its value at return.
+    # Line events exposed half-updated locals and made observers depend on statement shapes.
     def trace(frame,event,arg):
         if frame.f_code.co_filename!=entry:return None
         key=id(frame)
-        if event=='call':positions[key]=None;return trace
-        if event=='line':
-            if key in exceptional:exceptional.discard(key)
-            elif positions.get(key) is not None:capture(frame,'line',positions[key])
-            positions[key]=frame.f_lineno
+        if event=='call':capture(frame,'call',frame.f_lineno)
         elif event=='exception':
             capture(frame,'exception',frame.f_lineno)
             exceptional.add(key)
         elif event=='return':
             if key not in exceptional:capture(frame,'return',frame.f_lineno,arg)
-            exceptional.discard(key);positions.pop(key,None)
+            exceptional.discard(key)
         return trace
 
     ns={'__name__':'__main__','__file__':entry}
@@ -132,7 +140,7 @@ def _notale_run(files_json, entry, observe_source, tests_source, limits_json, se
                     'message':str(item.get('message','')),'expected':safe(item.get('expected'),f'tests[{test_index}].expected'),'observed':safe(item.get('observed'),f'tests[{test_index}].observed')})
         except BaseException as exc:runtime_error=error(exc,'tests')
     failure=runtime_error or observation_error
-    return json.dumps({'ok':failure is None,'error':failure,'observationError':observation_error,'frames':frames,'tests':tests},ensure_ascii=False)
+    return json.dumps({'ok':failure is None,'error':failure,'observationError':observation_error,'frames':frames,'tests':tests,'truncated':truncated},ensure_ascii=False)
 `;
 
 let pyodide = null;
@@ -246,6 +254,7 @@ async function runSource(message) {
       frames: Array.isArray(result.frames) ? result.frames : [],
       tests: Array.isArray(result.tests) ? result.tests : [],
       error: result.error || null,
+      truncated: result.truncated || null,
       stdout: stdoutText,
       stderr: stderrText,
       outputTruncated: outputLength >= limits.maxOutputChars,

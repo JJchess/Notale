@@ -12,7 +12,7 @@ import { TraceWriter } from './trace.js';
 import { firstGuidanceOnly, resolveReadPath, runTool, toolSpecs, type ToolOutput, type Workspace, type WorkspacePorts } from '../tools/workspace.js';
 import { check, imageOutput } from '../tools/check.js';
 import { scaffold } from '../tools/code-scaffold.js';
-import { runBrowserCheck } from '../tools/code-check.js';
+import { runBrowserCheck, selectCodeShots } from '../tools/code-check.js';
 import { pageEntries } from './builder-context.js';
 import { resolvePath } from './planner-contract.js';
 import { isWithin } from './theme.js';
@@ -59,7 +59,7 @@ export function auditLines(report: string): [string[], string[]] {
   for (const raw of report.split('\n')) {
     const line = raw.trim(); if (!line) continue;
     if (/^(?:失败:|拒绝[：:]|Traceback|TimeoutExpired:|[A-Za-z]+Error:)/.test(line) || /✗.*(?:JS 报错|console\.error|资源加载失败|无法渲染|代码工作台自检失败|底盘契约)/.test(line)) fatal.push(line);
-    else if (line.startsWith('✗')) visual.push(line);
+    else if (line.startsWith('✗') || line.startsWith('⚠')) visual.push(line);
   }
   return [fatal, visual];
 }
@@ -90,7 +90,7 @@ export interface BuilderPorts {
   model: Pick<ModelRuntime, 'respondCanonical'>;
   run(name: string, args: Item, context: Workspace, signal?: AbortSignal): Promise<string | ToolOutput>;
   scaffold(cwd: string, pid: string, title: string, total: number, signal?: AbortSignal): Promise<unknown>;
-  codeCheck(cwd: string, pid: string, shot: boolean, signal?: AbortSignal): Promise<{ report: string; shots: string[] }>;
+  codeCheck(cwd: string, pid: string, shot: boolean, signal?: AbortSignal, outer?: boolean): Promise<{ report: string; shots: string[] }>;
   image(file: string): Promise<ToolOutput>;
 }
 /** Real Builder dependencies; media remains mandatory until its migration is wired. */
@@ -102,15 +102,15 @@ export function builderPorts(model: BuilderPorts['model'], media: WorkspacePorts
 export async function auditDelivery(context: Workspace, page: Page, ports: BuilderPorts, signal?: AbortSignal): Promise<DeliveryAudit> {
   const target = path.join(context.cwd, page.pid + '.html');
   if (!existsSync(target) || !statSync(target).isFile() || statSync(target).size === 0) return { fatal_errors: [`target missing: ${target}`], visual_warnings: [], code_result: null };
+  if (page.workflow === 'build-code') {
+    const report = (await ports.codeCheck(context.cwd, page.pid, false, signal, true)).report;
+    const [fatal, visual] = auditLines(report);
+    return { fatal_errors: fatal, visual_warnings: visual, code_result: report };
+  }
   const checked = await ports.run('Check', { page: path.basename(target), shot: false }, context, signal);
   const diagnostic = typeof checked === 'string' ? undefined : checked.diagnostics;
   const [fatal, visual] = diagnostic ? [[...diagnostic.fatal_errors], [...diagnostic.visual_warnings]] : [[typeof checked === 'string' ? checked : 'Check 未返回有效检查结果'], []];
-  let codeResult: string | null = null;
-  if (page.workflow === 'build-code') {
-    codeResult = (await ports.codeCheck(context.cwd, page.pid, false, signal)).report;
-    const [codeFatal, codeVisual] = auditLines(codeResult); fatal.push(...codeFatal); visual.push(...codeVisual);
-  }
-  return { fatal_errors: fatal, visual_warnings: visual, code_result: codeResult };
+  return { fatal_errors: fatal, visual_warnings: visual, code_result: null };
 }
 function tagOf(call: Item): string {
   let args: Item;
@@ -131,7 +131,10 @@ export async function buildOne(...args: Parameters<typeof buildOneLoop>): Promis
     if (!deadline.aborted) throw error;
     page.termination = 'max_seconds'; page.why = `超过单页时限 ${CODE_PAGE_SECONDS}s`;
     page.artifact_present = existsSync(path.join(pagesDir, page.pid + '.html'));
-    page.audit = { fatal_errors: [page.why], visual_warnings: [], code_result: null };
+    // The budget ran out, not the lesson: audit what is on disk so a passing artifact is recorded as passing.
+    const context: Workspace = { cwd: pagesDir, pid: page.pid };
+    try { page.audit = await auditDelivery(context, page, ports, AbortSignal.timeout(60000)); }
+    catch { page.audit = { fatal_errors: [page.why], visual_warnings: [], code_result: null }; }
     return page;
   } finally { page.seconds = (performance.now() - started) / 1000; }
 }
@@ -191,6 +194,7 @@ async function buildOneLoop(page: Page, pagesDir: string, trace: string, instruc
     }
     history.push(...ModelRuntime.replay(response));
     const pending: Array<[string, string]> = [];
+    let wrote = -1, checked = false;
     for (const call of calls) {
       options.signal?.throwIfAborted();
       const toolStarted = new Date().toISOString(), toolClock = performance.now();
@@ -219,13 +223,12 @@ async function buildOneLoop(page: Page, pagesDir: string, trace: string, instruc
         const denied = page.workflow === 'build-code' ? codeGuard(call.name, actual, context) : undefined;
         if (denied) result = '拒绝：' + denied;
         else {
-          result = await ports.run(call.name, actual, context, options.signal);
           if (page.workflow === 'build-code' && call.name === 'Check') {
-            const text = typeof result === 'string' ? result : result.text, images = typeof result === 'string' ? [] : [...result.images];
             const extra = await ports.codeCheck(pagesDir, page.pid, Boolean(actual.shot) && vision, options.signal);
-            for (const shot of extra.shots.slice(0, Math.max(0, 2 - images.length))) images.push(...(await ports.image(shot)).images);
-            result = { text: text + '\n\n' + extra.report, images };
-          }
+            const images: Array<[string, string]> = [];
+            if (vision && actual.shot) for (const shot of selectCodeShots(extra.shots)) images.push(...(await ports.image(shot)).images);
+            result = { text: extra.report, images };
+          } else result = await ports.run(call.name, actual, context, options.signal);
         }
       }
       if (call.name === 'Read' && args.file_path) {
@@ -240,9 +243,27 @@ async function buildOneLoop(page: Page, pagesDir: string, trace: string, instruc
       if (images.length && !vision) { images = []; output += '\n\n（当前模型不接收图片输入；仅保留文本报告。）'; }
       log.tool({ rid, call_id: call.call_id, page: page.pid, name: call.name, arguments: call.arguments, output, images, started: toolStarted, finished: new Date().toISOString(), seconds: (performance.now() - toolClock) / 1000 });
       history.push({ type: 'function_call_output', call_id: call.call_id, output }); pending.push(...images);
+      if (page.workflow === 'build-code') {
+        if (call.name === 'Check') checked = true;
+        else if (['Write', 'Patch'].includes(call.name) && !/^(?:失败|拒绝)/.test(output)) wrote = history.length - 1;
+      }
+    }
+    if (page.workflow === 'build-code' && wrote >= 0 && !checked) {
+      // A write without its check is half a round trip; run the lesson now and attach the result to the write.
+      const started = new Date().toISOString(), clock = performance.now();
+      const extra = await ports.codeCheck(pagesDir, page.pid, vision, options.signal);
+      const images: Array<[string, string]> = [];
+      if (vision) for (const shot of selectCodeShots(extra.shots)) images.push(...(await ports.image(shot)).images);
+      const passed = extra.report.includes('全部通过');
+      (history[wrote] as Item).output += '\n\n[自动检查]\n' + extra.report
+        + (passed ? '\n检查通过。若还要修改，先在正文写出对照截图或任务发现的具体违约；没有就直接结束，不再调用工具。' : '');
+      page.steps.push('AutoCheck');
+      log.tool({ rid, call_id: `${rid}-autocheck`, page: page.pid, name: 'AutoCheck', arguments: '{}', output: extra.report, images, started, finished: new Date().toISOString(), seconds: (performance.now() - clock) / 1000 });
+      pending.push(...images);
     }
     for (const [mime, encoded] of pending) { history.push({ role: 'user', content: [{ type: 'input_image', image_url: `data:${mime};base64,${encoded}` }] }); page.images++; }
-    page.evicted += evictImages(history, page.tok_max);
+    // Every screenshot is superseded by the next run of the same lesson; on an uncached line each stale one is paid every turn.
+    page.evicted += evictImages(history, page.workflow === 'build-code' && pending.length ? Infinity : page.tok_max);
   }
   const target = path.join(pagesDir, page.pid + '.html');
   page.artifact_present = existsSync(target) && statSync(target).isFile() && statSync(target).size > 0;

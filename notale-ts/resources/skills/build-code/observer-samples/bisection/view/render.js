@@ -1,18 +1,20 @@
 // Camera is a pure function of the recorded interval, so seeking needs no history.
-const F=x=>x*x*x-x-2; // Static reference curve, never used to solve the root.
+// The reference curve comes from the frame (sampled by the lesson's own f); nothing here knows the formula.
 const mix=(a,b,t)=>a+(b-a)*t;
 const ease=t=>t*t*(3-2*t);
 const fmt=x=>Number.isFinite(x)?(Math.abs(x)>0&&Math.abs(x)<1e-4?x.toExponential(2):x.toFixed(7)):'—';
 const text=(x,y,value,anchor='start',color='var(--code-muted)')=>
  '<text x="'+x+'" y="'+y+'" text-anchor="'+anchor+'" font-family="inherit" font-size="13" style="fill:'+color+'">'+value+'</text>';
 function camera(s){
+ if(!Array.isArray(s.curve)||s.curve.length<2)throw new Error('state.curve 应为 [[x,y],…] 至少 2 点，实际 '+JSON.stringify(s.curve)?.slice(0,40));
  const width=s.b-s.a;
  const span=s.initial[1]-s.initial[0];
  const level=Math.max(0,Math.floor(Math.log(span/width)/Math.log(4)+1e-8));
  const cell=span*4**-level;
  const origin=s.initial[0]+Math.floor((s.a-s.initial[0])/cell+1e-8)*cell;
  const left=origin-cell*.1,right=origin+cell*1.1;
- const ymin=Math.min(F(left),F(right),0),ymax=Math.max(F(left),F(right),0);
+ const ys=s.curve.map(p=>p[1]);
+ const ymin=Math.min(...ys,0),ymax=Math.max(...ys,0);
  const padding=(ymax-ymin)*.12;
  return {left,right,low:ymin-padding,high:ymax+padding,zoom:4**level};
 }
@@ -24,10 +26,7 @@ function diagram(s,c,range){
  const y=v=>280-(v-c.low)/(c.high-c.low)*230;
  const decimals=Math.max(2,Math.min(10,Math.ceil(-Math.log10(c.right-c.left))+2));
  let curve='';
- for(let i=0;i<=120;i++){
-  const v=mix(c.left,c.right,i/120);
-  curve+=(i?'L':'M')+x(v).toFixed(3)+' '+y(F(v)).toFixed(3);
- }
+ s.curve.forEach(([px,py],i)=>{curve+=(i?'L':'M')+x(px).toFixed(3)+' '+y(py).toFixed(3);});
  let g='<defs><clipPath id="plot-clip"><rect x="72" y="50" width="588" height="230"/></clipPath></defs>';
  g+=text(72,22,'y = x³ − x − 2');
  g+=text(660,22,'局部放大 ×'+Math.round(1.2*(s.initial[1]-s.initial[0])/(c.right-c.left)).toLocaleString('en-US'),'end','var(--code-accent)');

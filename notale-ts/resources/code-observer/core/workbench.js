@@ -1,10 +1,22 @@
 import { CODE_LIMITS } from '../runtime/limits.js';
+import { AuthorScheduler } from "./author-scheduler.js";
 import { codeTheme } from "./theme-map.js";
 import { createNativeView } from "./native-view-host.js?v=20260830-native-view";
 import { RuntimeFailure, WorkerRuntimeAdapter } from "./runtime-client.js?v=20260830-fourier";
 
 const RUNTIME_BASE = new URL('../', import.meta.url);
 const MONACO_BASE = new URL('assets/lib/monaco-editor/min/vs', RUNTIME_BASE).href;
+const query = new URLSearchParams(location.search);
+const renderMode = window.__NOTALE_RENDER_MODE__ ?? query.get('notaleMode') ?? 'play';
+let presentationRole = query.get('notaleRole') || '';
+try { presentationRole ||= new URLSearchParams(parent.location.search).get('notaleRole') || ''; } catch {}
+function currentPresentationRole(){try{return parent!==window?(parent.document.documentElement.dataset.notalePresentation||presentationRole):presentationRole;}catch{return presentationRole;}}
+const mirrorOnly = () => ['audience','preview','following'].includes(currentPresentationRole());
+let roleObserver;
+const AUTHOR_FILES = ['starter.py','observe.py','tests.py','view/render.js'];
+let authorSourcesValue = {}, activeSourceRevision = '', initialPreview = null;
+let interactivePromise, pendingSession, runIntent = 0, runtimeEpoch = 0;
+const sourceDigest = async sources => [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(AUTHOR_FILES.map(f=>[f,sources[f]])))))].map(v=>v.toString(16).padStart(2,'0')).join('');
 const DEFAULT_OUTPUT_HEIGHT = 138;
 const MIN_OUTPUT_HEIGHT = 88;
 const MAX_OUTPUT_HEIGHT = 360;
@@ -106,6 +118,7 @@ function setOutput(kind, text) {
 }
 
 function updateRunAvailability() {
+  if (!interactivePromise && !editorReady) { elements.runButton.disabled=mirrorOnly(); elements.runButtonIcon.className="codicon codicon-run-all";elements.runButtonLabel.textContent="运行并播放"; elements.runButton.title="运行并播放"; return; }
   const ready = Boolean(editorReady && visualizerReady && runtime?.ready && !runtime?.getState().running && files.size);
   elements.runButton.disabled = !ready;
   elements.runButtonIcon.className = ready ? "codicon codicon-run-all" : "codicon codicon-loading codicon-modifier-spin";
@@ -141,6 +154,7 @@ function normalizeStep(step, index = 0) {
     },
     kind: String(step?.kind || "generic"),
     state: step?.state && typeof step.state === "object" ? step.state : {},
+    sampled: Array.isArray(step?.sampled) ? step.sampled : [],
     focus: Array.isArray(step?.focus) ? step.focus : [],
     changes: Array.isArray(step?.changes) ? step.changes : [],
     metrics: step?.metrics && typeof step.metrics === "object" ? step.metrics : {},
@@ -168,7 +182,7 @@ function clearLineDecoration() {
 
 function decorateSource(source) {
   clearLineDecoration();
-  if (!source || !models.has(source.file)) return;
+  if (!editor || !monacoApi || !source || !models.has(source.file)) return;
   if (activeFilename !== source.file) switchFile(source.file, { focus: false, renderInitial: false });
   const model = models.get(source.file);
   const line = Math.min(Math.max(1, source.line), model.getLineCount());
@@ -341,6 +355,10 @@ function formatResult(data) {
   const output = [data.stdout, data.stderr].filter((text) => String(text || "").trim()).join("\n");
   if (output) sections.push(output.trim());
   if (data.outputTruncated) sections.push("[输出已达到长度上限并被截断]");
+  if (data.truncated) sections.push(`[轨迹在第 ${data.truncated.frame} 帧达到 ${data.truncated.limit} 上限，之后的帧未记录]`);
+  const sampled = new Map();
+  for (const item of (data.frames || []).flatMap((frame) => frame.sampled || [])) if (!sampled.has(item.path)) sampled.set(item.path, item);
+  if (sampled.size) sections.push("[" + [...sampled.values()].map((item) => `${item.path} 由 ${item.from} 抽样到 ${item.to}`).join("；") + "]");
   if (data.error) {
     sections.push(`${data.error.message}${data.error.source ? `\n位置：${data.error.source.file}:${data.error.source.line}` : ""}`);
   }
@@ -361,13 +379,18 @@ let prototypeAutoPlay = false;
 let prototypeInitial = false;
 let prototypeGeneration = 0;
 let executionError = null;
+let runTruncated = null;
 window.__prototype = {initialized:false, firstBatchBeforeResult:false, batches:0};
 async function runCode() {
+  const intent=++runIntent;
+  await ensureInteractive();
+  if(disposed || intent!==runIntent)return;
   if (!runtime?.ready || runtime.getState().running || !editorReady) return;
   pause();
   const generation=++prototypeGeneration;
-  executionError = null;
+  executionError = null; runTruncated = null;
   prototypeAutoPlay=!prototypeInitial;
+  const previousPlayback={frames:playback.frames,index:playback.index,currentStep:playback.currentStep};
   playback.frames=[];playback.index=-1;playback.currentStep=null;
   window.__prototype.batches=0;
   window.__prototype.firstBatchBeforeResult=false;
@@ -398,12 +421,13 @@ async function runCode() {
       updatePlaybackControls();
     });
     if(generation!==prototypeGeneration)return;
-    executionError = data.error || null;
+    executionError = data.error || null; runTruncated = data.truncated || null;
     if (data.error) {
       pause(); if(playback.frames.length)showFrame(playback.frames.length-1,true);
     }
-    if (!playback.frames.length) resetPlayback({keepOutput:true});
-    if(runCounter === 1 && playback.frames.length && !data.error){
+    if (!playback.frames.length) {Object.assign(playback,previousPlayback);updatePlaybackControls();}
+    if(playback.frames.length && !data.error && (models.get(lesson.entry)?.getValue() ?? files.get(lesson.entry).originalSource)===authorSourcesValue['starter.py']){
+      initialPreview={sourceRevision:activeSourceRevision,runtimeRevision:lesson.runtimeRevision,initialStep:structuredClone(playback.frames[0])};
       lesson.initialStep=structuredClone(playback.frames[0]);
     }
     if (data.error) {
@@ -619,7 +643,7 @@ function initOutputSash() {
 }
 
 function bindEvents() {
-  elements.runButton.addEventListener("click", runCode);
+  elements.runButton.addEventListener("click", () => { void runCode().catch(error=>setOutput("error",error.message)); });
   elements.resetButton.addEventListener("click", () => resetAll({ focus: true }));
   elements.clearOutputButton.addEventListener("click", () => setOutput("idle", ""));
   elements.previousButton.addEventListener("click", () => {
@@ -657,7 +681,7 @@ function bindEvents() {
 }
 
 function resetAll(options = {}) {
-  ++prototypeGeneration;prototypeAutoPlay=false;
+  ++runIntent; ++prototypeGeneration;prototypeAutoPlay=false;
   runtime?.cancel();
   pause();
   clearMarkers();
@@ -680,7 +704,10 @@ function resetAll(options = {}) {
 function installPublicApi() {
   window.CodeLab = {
     contractVersion: 2,
-    ensureInteractive: () => initialization,
+    ensureInteractive,
+    applyAuthorDraft,
+    getPreview: () => initialPreview,
+    getSources: () => ({...authorSourcesValue}),
     pause,
     resume: play,
     captureSession,
@@ -720,6 +747,8 @@ function installPublicApi() {
         output: elements.outputContent.textContent,
         outputKind: elements.outputPanel.dataset.kind,
         executionError,
+        truncated: runTruncated,
+        sampled: playback.frames.flatMap((frame) => frame.sampled || []),
         outputHeight: Number(elements.panelSash.getAttribute("aria-valuenow")) || DEFAULT_OUTPUT_HEIGHT,
         actionCounter,
         runCounter,
@@ -748,12 +777,13 @@ function installPublicApi() {
 }
 
 async function loadCourseFiles() {
-  const [fileRows, observer, tests] = await Promise.all([Promise.all(lesson.files.map(async (spec) => {
+  const [fileRows, observer, tests, renderer] = await Promise.all([Promise.all(lesson.files.map(async (spec) => {
     const source = spec.source ?? await fetchText(spec.sourceUrl, spec.filename);
     return { ...spec, originalSource: String(source) };
   })),
-    fetchText(lesson.traceUrl || "./lesson/trace.py", "trace.py"),
+    fetchText(lesson.traceUrl || "./lesson/observe.py", "observe.py"),
     lesson.testsUrl === null ? Promise.resolve("") : fetchText(lesson.testsUrl || "./lesson/tests.py", "tests.py"),
+    fetchText("./lesson/view/render.js", "view/render.js"),
   ]);
   for (const file of fileRows) {
     if (!file.filename || files.has(file.filename)) throw new Error(`课程文件名无效或重复：${file.filename || "<empty>"}`);
@@ -762,12 +792,17 @@ async function loadCourseFiles() {
   if (!files.has(lesson.entry)) throw new Error(`入口文件不在 files 中：${lesson.entry}`);
   traceSource = observer;
   testsSource = tests;
+  activeFilename=lesson.entry;
+  authorSourcesValue={'starter.py':files.get(lesson.entry).originalSource,'observe.py':observer,'tests.py':tests,'view/render.js':renderer};
+  activeSourceRevision=await sourceDigest(authorSourcesValue);
 }
 
 function dispose() {
   if (disposed) return;
   saveSession(); stopSessionAdapter?.(); clearTimeout(sessionTimer); sessionListeners.clear();
   disposed = true;
+  roleObserver?.disconnect();
+  authorScheduler?.dispose();
   pause();
   runtime?.dispose();
   nativeView?.dispose();
@@ -794,26 +829,9 @@ async function initialize() {
   }
   configureCopy();
 
-  nativeView = createNativeView(elements.visualizer, {
-    onReady() { visualizerReady = true; updateRunAvailability(); },
-    onRendered(packet) {
-      visualizerReady = true;
-      if (packet?.index >= 0 && packet.reason !== 'initial' && !performance.getEntriesByName('notale-code:first-render').length)
-        performance.mark('notale-code:first-render');
-      if (packet?.index === playback.index && packet.decorate !== false)
-        decorateSource(playback.currentStep?.source);
-    },
-    onError(error) {
-      elements.visualizerError.hidden = false;
-      elements.visualizerError.textContent = `可视化错误：${error?.message || String(error)}`;
-    },
-  });
-  const viewReady = nativeView.mount().then(() => {
-    renderStep(lesson.initialStep, { reset: true, reason: "initial", decorate: false });
-  }).catch((error) => {
-    visualizerReady = false;
-    elements.visualizerError.hidden = false;
-    elements.visualizerError.textContent = `原生视图载入失败：${error?.message || String(error)}`;
+  await loadCourseFiles();
+  const viewReady = mountView(authorSourcesValue['view/render.js']).catch(error=>{
+    visualizerReady=false;elements.visualizerError.hidden=false;elements.visualizerError.textContent=error.message;
   });
   installPublicApi();
 
@@ -824,35 +842,82 @@ async function initialize() {
     return;
   }
 
-  if ((window.__NOTALE_RENDER_MODE__ ?? new URLSearchParams(location.search).get('notaleMode')) === 'poster') {
-    await Promise.all([viewReady, loadCourseFiles()]);
-    const pre = document.createElement('pre');
-    pre.dataset.notaleCodePoster = '';
-    pre.textContent = files.get(lesson.entry)?.originalSource || '';
-    pre.style.cssText = 'margin:0;padding:16px 24px;white-space:pre;overflow:hidden;height:100%;box-sizing:border-box;font:14px/22px var(--font-mono,monospace);color:var(--text);background:var(--editor)';
-    elements.editor.replaceChildren(pre); elements.editorLoading.hidden = true;
-    return;
+  await viewReady;
+  const pre=document.createElement('pre');pre.dataset.notaleCodePoster='';
+  pre.style.cssText='margin:0;padding:16px 24px;white-space:pre;overflow:hidden;height:100%;box-sizing:border-box;font:14px/22px var(--font-mono,monospace);color:var(--text);background:var(--editor)';
+  pre.textContent=files.get(lesson.entry).originalSource;
+  elements.editor.replaceChildren(pre);elements.editorLoading.hidden=true;
+  const previewResponse=await fetch(new URL('./lesson/preview.json',document.baseURI)).catch(()=>null);
+  if(previewResponse?.ok){try{const value=await previewResponse.json();if(value.sourceRevision===activeSourceRevision&&value.runtimeRevision===lesson.runtimeRevision){initialPreview=value;lesson.initialStep=value.initialStep;renderStep(value.initialStep,{reset:true,reason:'initial',decorate:false});}}catch{}}
+  if(renderMode==='author'){
+    const style=document.createElement('style');style.textContent='#stage{position:relative!important;width:100vw!important;height:100vh!important;transform:none!important;left:0!important;top:0!important;margin:0!important}.workbench{width:100%;height:100%;grid-template-rows:minmax(0,1fr)!important}.workspace{grid-template-columns:1fr!important}#editorPane,.titlebar{display:none!important}.visualization-pane{min-height:0}';document.head.append(style);
   }
-  runtime = new WorkerRuntimeAdapter({
-    workerUrl: new URL('runtime/python-worker.js', RUNTIME_BASE).href,
-    timeoutMs: Number(lesson.limits?.timeoutMs) || CODE_LIMITS.timeoutMs,
-    onStatus(status) {
-      setRuntimeStatus(status.kind, status.message);
-      updateRunAvailability();
-    },
+  setRuntimeStatus('ready','');updateRunAvailability();
+}
+
+let mountedRenderer;
+async function mountView(renderer, options={}) {
+  if(nativeView&&mountedRenderer===renderer)return;
+  const previous=nativeView;
+  const candidate=createNativeView(elements.visualizer,{
+    authorSource:renderer,staged:Boolean(previous),signal:options.signal,
+    onRendered(packet){if(nativeView!==candidate)return;visualizerReady=true;if(packet?.index>=0&&packet.reason!=='initial'&&!performance.getEntriesByName('notale-code:first-render').length)performance.mark('notale-code:first-render');if(packet?.index===playback.index&&packet.decorate!==false)decorateSource(playback.currentStep?.source);},
+    onError(error){if(nativeView===candidate){elements.visualizerError.hidden=false;elements.visualizerError.textContent=error.message;}},
   });
-  await Promise.all([
-    viewReady,
-    runtime.start().then(() => performance.mark('notale-code:python-ready')),
-    loadCourseFiles().then(() => { createTabs(); return initMonaco(); }),
-  ]);
-  if(window.__NOTALE_AUTO_RUN__ !== false && [...files.values()].every(file=>models.get(file.filename)?.getValue()===file.originalSource)){
-    prototypeInitial=true;
-    await runCode();
-    prototypeInitial=false;
-    if(lesson.initialStep)resetAll({focus:false});
-  }
-  window.__prototype.initialized=true;
+  try{
+    await candidate.mount();
+    if(options.current&&!options.current())throw Error('视图更新已取消');
+    const raw=playback.currentStep||lesson.initialStep;
+    if(raw)await candidate.renderConfirmed({step:normalizeStep(raw),previousStep:null,playback:{index:playback.index,count:playback.frames.length,playing:false,speed:playback.speed,transitionMs:0,decorate:false,reason:'preview'},environment:viewEnvironment()});
+    if(options.current&&!options.current())throw Error('视图更新已取消');
+    candidate.commit();nativeView=candidate;mountedRenderer=renderer;previous?.dispose();visualizerReady=true;elements.visualizerError.hidden=true;updateRunAvailability();
+  }catch(error){candidate.dispose();throw error;}
+}
+
+function ensureInteractive() {
+  if(mirrorOnly())return initialization;
+  if(interactivePromise)return interactivePromise;
+  let owned;const epoch=runtimeEpoch;
+  const pending=initialization.then(async()=>{
+    if(disposed||epoch!==runtimeEpoch)throw Error('运行已取消');
+    owned=runtime=new WorkerRuntimeAdapter({workerUrl:new URL('runtime/python-worker.js',RUNTIME_BASE).href,timeoutMs:Number(lesson.limits?.timeoutMs)||CODE_LIMITS.timeoutMs,onStatus(status){setRuntimeStatus(status.kind,status.message);updateRunAvailability();notifySession();}});
+    const editing=renderMode==='author'?Promise.resolve().then(()=>{editorReady=true;}):(async()=>{
+      if(!window.require?.config)await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=MONACO_BASE+'/loader.js';script.onload=resolve;script.onerror=()=>reject(Error('代码编辑器加载失败'));document.head.append(script);});
+      if(disposed)return;elements.editor.replaceChildren();createTabs();await initMonaco();
+    })();
+    await Promise.all([owned.start(),editing]);
+    if(disposed||runtime!==owned)return;
+    if(pendingSession)applySession(pendingSession);
+    updateRunAvailability();notifySession();
+  }).catch(error=>{owned?.dispose();if(runtime===owned){runtime=null;if(interactivePromise===pending)interactivePromise=undefined;setRuntimeStatus('error',error.message);}throw error;});
+  interactivePromise=pending;return pending;
+}
+function validateAuthorSources(sources){
+  if(renderMode!=='author')throw Error('仅课程编辑预览可应用草稿');
+  if(!sources||AUTHOR_FILES.some(f=>typeof sources[f]!=='string'||sources[f].length>200000))throw Error('课程源码不完整或超过长度限制');
+}
+async function applyAuthorDraft(sources,options={}) {
+  await initialization;validateAuthorSources(sources);
+  const next={...sources},revision=await sourceDigest(next);
+  if(options.current&&!options.current())return;
+  await mountView(next['view/render.js'],options);
+  if(options.current&&!options.current())return;
+  if(revision!==activeSourceRevision)initialPreview=null;
+  authorSourcesValue=next;activeSourceRevision=revision;
+  files.get(lesson.entry).originalSource=next['starter.py'];traceSource=next['observe.py'];testsSource=next['tests.py'];executionError=null;
+}
+async function renderAuthorDraft(sources,options){
+  await initialization;validateAuthorSources(sources);
+  const next={...authorSourcesValue,'view/render.js':sources['view/render.js']},revision=await sourceDigest(next);
+  if(!options.current())return;
+  await mountView(next['view/render.js'],options);
+  if(!options.current())return;
+  authorSourcesValue=next;activeSourceRevision=revision;
+  if(initialPreview)initialPreview={...initialPreview,sourceRevision:revision};
+}
+function stopAuthorRun(reason){
+  ++runIntent;++prototypeGeneration;pause();
+  if(reason==='stop'||!runtime&&interactivePromise||runtime&&(runtime.getState().running||!runtime.ready)){++runtimeEpoch;const old=runtime;runtime=null;interactivePromise=undefined;old?.dispose();}
 }
 
 // The editor's existing CodeLab v2 adapter boundary, implemented natively rather
@@ -862,22 +927,23 @@ let stopSessionAdapter;
 let sessionReady = false;
 const sessionListeners = new Set();
 function sessionKey() {
-  try { return 'notale-observer-v1:' + location.pathname + ':' + (frameElement?.getAttribute('data-notale-id') || 'standalone'); }
+  try { return 'notale-observer-v1:' + (query.get('notaleSession') || location.pathname) + ':' + (frameElement?.getAttribute('data-notale-id') || 'standalone'); }
   catch { return 'notale-observer-v1:' + location.pathname; }
 }
-function authorSources() { return JSON.stringify([...files].map(([name, file]) => [name, file.originalSource])); }
+function authorSources() { return query.get('notaleRevision') || activeSourceRevision; }
 function captureSession() {
-  return { files: Object.fromEntries([...files].map(([name, file]) => [name, models.get(name)?.getValue() ?? file.originalSource])),
+  return { files: Object.fromEntries([...files].map(([name, file]) => [name, models.get(name)?.getValue() ?? pendingSession?.files?.[name] ?? file.originalSource])),
     activeFile: activeFilename, view: editor?.saveViewState(), frames: playback.frames, index: playback.index,
     output: elements.outputContent.textContent, outputKind: elements.outputPanel.dataset.kind };
 }
 function applySession(saved) {
-  pause();
+  pause(); pendingSession=saved;
+  if(!editor){const pre=elements.editor.querySelector('pre');if(pre)pre.textContent=saved?.files?.[lesson.entry]??authorSourcesValue['starter.py'];}
   for (const [name, value] of Object.entries(saved?.files || {})) {
     const model = models.get(name); if (model && model.getValue() !== value) model.setValue(String(value));
   }
   if (models.has(saved?.activeFile)) switchFile(saved.activeFile, { focus: false });
-  if (saved?.view) editor.restoreViewState(saved.view);
+  if (saved?.view) editor?.restoreViewState(saved.view);
   if (Array.isArray(saved?.frames)) {
     playback.frames = saved.frames;
     if (saved.index >= 0 && saved.index < playback.frames.length) showFrame(saved.index, true);
@@ -886,7 +952,7 @@ function applySession(saved) {
   setOutput(saved?.outputKind || 'idle', saved?.output || '');
 }
 function saveSession() {
-  if (disposed || !editorReady || !sessionReady) return;
+  if (disposed || !sessionReady || renderMode==='author' || mirrorOnly()) return;
   try {
     const raw = JSON.stringify({ author: authorSources(), value: captureSession() });
     if (raw.length < 1500000) sessionStorage.setItem(sessionKey(), raw);
@@ -901,7 +967,7 @@ function notifySession() {
   }, 80);
 }
 function installSessionAdapter() {
-  if (!editorReady) return;
+  if(renderMode==='author')return;
   sessionReady = true;
   try {
     const saved = JSON.parse(sessionStorage.getItem(sessionKey()) || 'null');
@@ -920,6 +986,30 @@ function installSessionAdapter() {
 window.addEventListener('pagehide', saveSession);
 window.addEventListener("beforeunload", dispose, { once: true });
 const initialization = initialize().then(installSessionAdapter);
+initialization.then(async()=>{
+  if(parent!==window&&renderMode!=='author')try{
+    roleObserver=new MutationObserver(()=>{if(currentPresentationRole()==='controller')void ensureInteractive().catch(error=>setOutput('error',error.message));else if(mirrorOnly())pause();});
+    roleObserver.observe(parent.document.documentElement,{attributes:true,attributeFilter:['data-notale-presentation']});
+  }catch{}
+  if(renderMode==='play'&&!mirrorOnly()){await ensureInteractive();if(window.__NOTALE_AUTO_RUN__!==false&&!pendingSession){prototypeInitial=true;await runCode();prototypeInitial=false;if(lesson.initialStep)resetAll({focus:false});}}
+  window.__prototype.initialized=true;
+}).catch(error=>setOutput('error',error.message));
+function authorReply(message,value,error){
+  if(!message.channel)return;
+  parent.postMessage({source:'notale-course-preview',channel:message.channel,session:message.session,id:message.id,action:message.action,draftRevision:message.draftRevision,...value,...(error?{error:error.message}: {})},query.get('notaleParentOrigin'));
+}
+const authorResult=()=>({state:CodeLab.getState(),preview:initialPreview,previewSources:{...authorSourcesValue}});
+const authorScheduler=new AuthorScheduler({
+  stop:stopAuthorRun,reply:authorReply,
+  run:async(message,options)=>{await applyAuthorDraft(message.sources,options);if(!options.current())return;await runCode();return authorResult();},
+  render:async(message,options)=>{await renderAuthorDraft(message.sources,options);return authorResult();},
+});
+window.addEventListener('message',event=>{
+  if(renderMode!=='author'||event.source!==parent||event.origin!==query.get('notaleParentOrigin')||event.data?.source!=='notale-course-editor'||event.data?.channel!==query.get('notaleAuthorChannel'))return;
+  const message=event.data;
+  if(message.action==='ready'){initialization.then(()=>authorReply(message),error=>authorReply(message,undefined,error));return;}
+  authorScheduler.submit(message);
+});
 initialization.catch((error) => {
   setRuntimeStatus("error", "工作台初始化失败");
   setOutput("error", error?.stack || error?.message || String(error));

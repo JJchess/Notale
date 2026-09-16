@@ -6,18 +6,29 @@ GRAPH = {"A": ["B", "C"], "B": ["D"], "C": ["D", "E"],
 START, TARGET = "A", "F"
 
 
+def dequeue(queue, order):
+    # 取出队首并记入访问顺序。
+    node = queue.popleft()
+    order.append(node)
+    return node
+
+
+def discover(neighbor, node, dist, parent, queue):
+    # 首次遇到的邻居：入队的那一刻就定下距离和前驱。
+    dist[neighbor] = dist[node] + 1
+    parent[neighbor] = node
+    queue.append(neighbor)
+
+
 def bfs(graph, start):
     dist, parent = {start: 0}, {start: None}
     queue = deque([start])
     order = []
     while queue:
-        node = queue.popleft()
-        order.append(node)
+        node = dequeue(queue, order)
         for neighbor in graph.get(node, []):
             if neighbor not in dist:
-                dist[neighbor] = dist[node] + 1
-                parent[neighbor] = node
-                queue.append(neighbor)
+                discover(neighbor, node, dist, parent, queue)
     return {"dist": dist, "parent": parent, "order": order}
 
 

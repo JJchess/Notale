@@ -70,7 +70,7 @@ export function techBlock(root: string, total: number, prompts = skills.PROMPTS)
 export function sharedPreload(root: string, total: number, prompts = skills.PROMPTS, workflow?: string): string {
   const outline = () => deckOutline(path.join(root, 'pages/plan/pages.md'));
   let content: string;
-  if (workflow === 'build-code') content = outline() + '\n\n<tech>\n' + read(path.join(prompts, 'tech-code.md')).trim() + '\n</tech>';
+  if (workflow === 'build-code') content = outline();
   else {
     const chassis = read(path.join(root, 'pages/assets/CHASSIS.md'), true).trim();
     content = [techBlock(root, total, prompts), `<theme_css>\n${themeInterface(path.join(root, 'pages/assets/theme.css')).trim()}\n</theme_css>`, `<chassis>\n${chassis}\n</chassis>`, outline()].join('\n\n');

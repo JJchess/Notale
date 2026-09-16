@@ -1,6 +1,6 @@
 import { parse as parseScript } from 'acorn';
 import { simple as walkScript } from 'acorn-walk';
-import { NOTALE_FORMAT, pageRuntime } from '@notale/format';
+import { NOTALE_FORMAT, pageRuntime, discoverCodeLessons, codeResourcePath } from '@notale/format';
 import { readFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -84,6 +84,7 @@ export async function lectureArchive(service: RunService, id: string, mime: Reco
   }
   if (!slides.length) throw new Error('lecture_has_no_pages');
   slides.sort((a, b) => a.sourcePath.localeCompare(b.sourcePath, 'en', { numeric: true }));
+  const codeLessons=discoverCodeLessons(files,assets,text=>createHash('sha256').update(text).digest('hex'));
   files['notale-project.json'] = Buffer.from(JSON.stringify({
     ...NOTALE_FORMAT,
     pageRuntimes: Object.fromEntries(slides.map(slide => {
@@ -93,11 +94,11 @@ export async function lectureArchive(service: RunService, id: string, mime: Reco
         if ('childNodes' in node) node.childNodes.forEach(visit);
       }
       visit(parse(slide.html));
-      return [slide.id,pageRuntime(slide.nativeStepCount,frames)];
+      return [slide.id,pageRuntime(slide.nativeStepCount,frames.map(frame=>({...frame,lesson:codeLessons[codeResourcePath(frame.entry,slide.sourcePath)]})))];
     })),
     document: {
     schemaVersion: 1, id: randomUUID(), title: run.request.query.slice(0, 300) || '讲义',
-    width: 1600, height: 900, slides, assets,
+    width: 1600, height: 900, slides, assets, codeLessons,
   } }));
   return new Promise((resolve, reject) => {
     const worker = new Worker(path.join(RESOURCES, 'publication/archive-worker.mjs'), { execArgv: [] });

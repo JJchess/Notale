@@ -190,7 +190,7 @@
     }
   }, { capture: true });
 
-  const ready = () => send("ready");
+  const ready = () => {if(typeof window.renderNotaleView!=='function'){report(new Error('view/render.js 必须定义 window.renderNotaleView'), 'script');return;}send("ready");};
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", ready, { once: true });
   } else {

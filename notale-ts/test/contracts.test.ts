@@ -691,3 +691,39 @@ test('chassis protects inherited SVG text stroke while preserving explicit style
     } finally { await page.close(); }
   } finally { await release(); }
 });
+
+test('header intrusion needs overlap on both axes, not just vertical', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { cp, mkdtemp, writeFile } = await import('node:fs/promises');
+  const os = await import('node:os');
+  const { pathToFileURL } = await import('node:url');
+  const { RESOURCES } = await import('../src/core/guidance.js');
+  const { browser, acquireVisualChecker } = await import('../src/tools/visual-check.js');
+  const probes = JSON.parse(readFileSync(path.join(RESOURCES, 'selfcheck-probe.json'), 'utf8'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'intrude-'));
+  await cp(path.join(RESOURCES, 'chassis/base.css'), path.join(root, 'base.css'));
+  await cp(path.join(RESOURCES, 'chassis/base.js'), path.join(root, 'base.js'));
+  const release = acquireVisualChecker();
+  const intrusions = async (body: string) => {
+    const file = path.join(root, 'page.html');
+    await writeFile(file, `<link rel="stylesheet" href="base.css"><script src="base.js"></script><div id="stage">${body}</div>`);
+    const page = await (await browser()).newPage({ viewport: { width: 1600, height: 900 } });
+    try {
+      await page.goto(pathToFileURL(file).href, { waitUntil: 'load' });
+      const probe = await page.evaluate(`(${probes.PROBE})()`) as { contract?: string[]; intrude?: Array<{ text: string }> };
+      assert.deepEqual(probe.contract ?? [], [], 'fixture must satisfy the chassis contract or the probe never measures');
+      assert.ok(probe.intrude, 'probe must reach layout measurement');
+      const old = probes.PROBE.replace('ov > 4 && hov > 4', 'ov > 4');
+      const oldProbe = await page.evaluate(`(${old})()`) as { intrude: Array<{ text: string }> };
+      assert.ok(oldProbe.intrude.some(item => item.text === 'Beside'), 'old implementation must reproduce the false positive');
+      return probe.intrude.map(item => item.text);
+    } finally { await page.close(); }
+  };
+  const band = '<header style="position:absolute;left:0;top:0;width:1000px;height:80px">Title</header>';
+  try {
+    // The band spans x=0..1000; the aside sits beside it at the same height and never touches it.
+    assert.deepEqual(await intrusions(band + '<aside style="position:absolute;left:1100px;top:10px;width:400px;height:60px">Beside</aside>'), []);
+    // The same aside moved under the band is a real collision and must still be reported.
+    assert.deepEqual(await intrusions(band + '<aside style="position:absolute;left:200px;top:10px;width:400px;height:60px">Beside</aside>'), ['Beside']);
+  } finally { await release(); }
+});

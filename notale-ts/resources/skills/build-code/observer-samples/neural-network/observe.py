@@ -20,25 +20,30 @@ def _base(context, stage):
     return {**_forward_snapshot, **_arrays(data), "stage": stage}
 
 
+_updated = {}
+
+
 def observe(context):
-    global _forward_snapshot
+    global _forward_snapshot, _updated
     local = context.locals
-    if context.event == "line" and context.function == "update_params":
-        name, updated = local.get("name"), local.get("updated", {})
-        if name not in updated:
-            return None
+    if context.event != "return":
+        return None
+    if context.function == "update_one":
+        # 一个参数刚更新完：参数在 locals，新值就是返回值。
+        name = local["name"]
+        _updated[name] = context.return_value
         state = _base(context, "update")
-        state.update(_arrays(updated))
+        state.update(_arrays(_updated))
         state.update(_arrays({
-            "before": local["params"][name], "after": updated[name],
+            "before": local["params"][name], "after": context.return_value,
             "grad": local["grads"]["d" + name],
         }))
         return {**state, "param": name, "lr": float(local["lr"]),
-                "updated_names": [key for key in PARAM_NAMES if key in updated]}
+                "updated_names": [key for key in PARAM_NAMES if key in _updated]}
     stages = {"forward": "forward", "binary_cross_entropy": "loss",
               "backward": "backward", "train_loop": "done"}
     stage = stages.get(context.function)
-    if context.event != "return" or stage is None:
+    if stage is None:
         return None
     state = _base(context, stage)
     result = context.return_value
@@ -48,4 +53,5 @@ def observe(context):
         state.update(_arrays(result))
     if stage == "forward":
         _forward_snapshot = dict(state)
+        _updated = {}
     return state

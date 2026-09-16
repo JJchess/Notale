@@ -1,67 +1,47 @@
 # 代码页作者接口
 
-## 职责
+## 一条规则
 
-固定宿主负责 Monaco、Python/Pyodide、标准库与 NumPy、执行和测试、轨迹采集、代码高亮、播放／暂停／步进／重置、主题映射和视图沙箱。不要重写这些设施或引入依赖。
+数据接口只存在于 starter.py 各函数的参数与返回值里。observe.py、tests.py、render.js 只消费它们：不猜局部变量名，不匹配源码行，不重算算法。想让一步的内部可见，就把那一步写成一个返回字典或明确值的小函数——这是自然的教学代码，也是唯一的观察点。
 
-课程必须让学习者修改当前源码并观察真实执行结果。保持学习代码自然，注释解释算法意图，不让学生维护可视化协议。四个必需文件共同构成课程：
+## 四份文件
 
-- `starter.py`：算法与简短可运行例子，不调用 emit、渲染或追踪 API，不为可视化额外积累历史数据。
-- `observe.py`：观察当前代码执行，产生独立可解释的状态。
-- `tests.py`：验证当前输入与算法正确性，不测试固定工作台。
-- `view/render.js`：将观察状态画成清晰的图形。
+- `starter.py`：算法与一个可运行例子。每个值得看的步骤是一个函数；不调用任何追踪或渲染 API，不为可视化积累数据。
+- `observe.py`：`observe(context)`，本质是「函数名 → 阶段」的映射，把参数或返回值整理成一帧。
+- `tests.py`：`run_tests(namespace)`，只验数学性质。
+- `view/render.js`：`window.renderNotaleView(packet)`，把一帧画成一张图。
 
-HTML、公共布局、字体和主题由宿主提供；课程图形的几何与线条直接在 render.js 中通过 SVG 属性或 DOM 样式表达，颜色与字体引用宿主主题，不另写 CSS 文件。
+宿主负责编辑器、Python/NumPy、执行、测试、轨迹、播放／暂停／步进／重置、主题和视图沙箱。HTML、布局、字体、颜色不归课程写。
 
 ## 观察：observe(context)
 
-`context` 有 `function`、`event`、`locals`、`globals`、`return_value`、`source`。`source` 是含 `file`、`line`、`text` 的字典，给出执行位置及对应源码行；没有 `context.line` 别名。`locals/globals` 是只读映射而不是 dict；用 `.get()`、成员检查或索引，不用 `isinstance(..., dict)` 判断可读性。
+`context.event` 只有 `call`、`return`、`exception`。`call` 时 `context.locals` 是函数参数；`return` 时 `context.return_value` 是返回值，`context.locals` 是函数结束时的局部变量；`exception` 指向抛错处，不是成功。另有 `context.function`、`context.globals`（只读映射，用 `.get()`）和 `context.source`。
 
-`event` 为 `line`、`return` 或 `exception`。line 的 source 指向刚执行的位置，locals 是此时的实际值，不代表整个复合语句已经结束；return 提供返回位置和返回值；exception 指向抛错位置，不应解释为成功更新。按任务需要观察比较、交换、更新或回溯，不必每行生成帧，也不要只留下结果。
-
-例如当前算法交换行是 `arr[i], arr[j] = arr[j], arr[i]`，观察器可结合源码和前后快照定位，不能写死行号。以下片段放在观察器中，prev 在函数外初始化为 None：
+返回一个 JSON 安全字典生成一帧，返回 `None` 跳过。NumPy 用 `.tolist()`，非有限数明确编码。每帧独立可画：带 `stage`、当前对象和解释它所需的输入。累积序列（如 history）可在 observe 里持有并放进帧；超过宿主容量时宿主均匀抽样并在检查结果里用 `⚠` 提示，不要为过闸删轮次或删字段。
 
 ```python
-if context.function == "partition" and "arr" in context.locals:
-    arr = list(context.locals["arr"])
-    before, prev = prev, arr
-    if context.event == "line" and context.source["text"].strip() == "arr[i], arr[j] = arr[j], arr[i]":
-        return {"before": before, "after": arr,
-                "swapped": [context.locals["i"], context.locals["j"]]}
+STAGES = {"forward": "forward", "loss": "loss", "backward": "backward",
+          "update_one": "update", "train": "done"}
+
+def observe(context):
+    if context.event != "return" or context.function not in STAGES:
+        return None
+    value = context.return_value          # 接口就在这里，别处不猜
+    return {"stage": STAGES[context.function], **frame_from(value, context.locals)}
 ```
-
-实际 observe 中声明 `global prev`；递归或交错函数的快照要按当前子问题区分。源码行用于定位当前实现，不是通用算法标签；多行语句仍需核对实际变量变化。
-
-返回小型 JSON 安全状态字典，或返回 None 跳过当前事件。NumPy 数组用 `.tolist()`，无穷和缺失值明确编码。测试在轨迹采集后执行，不产生课程帧。
-
-状态必须来自同一次真实计算。变量存在不代表值已更新；等待有关赋值完成，避免新输入配旧结果。需要时在观察器中保留已完成值或上一个快照，但不要重新调用算法来填状态，不以零代替尚未产生的值。
-
-每帧应能独立渲染，包含所需输入、当前对象与结果。对比变化时保留真正的前值和后值；对象身份与位置分开，重复值不能共用身份。只读取当前函数实际拥有的变量，不把其他函数的局部变量当成仍可用。完成态取真实最终结果，并保留图形解释所需上下文。
 
 ## 测试：run_tests(namespace)
 
-返回列表，每项含 `name, passed, expected, observed, message`。namespace 是当前源码执行后的命名空间。expected/observed 同样须 JSON 安全：字典键必须是字符串，Counter 或数字键映射可显式转成键值对列表。
+返回 `[{name, passed, expected, observed, message}]`，`expected/observed` JSON 安全。只验数学性质：独立参照实现、中心差分、恒等式、收敛趋势、少量边界用例；断言随可编辑输入变化。不要为了拿结果形状去调用训练或搜索主函数再读它的返回结构——形状归渲染器校验。测试失败修算法，不删测试、不放宽容差。
 
-使用独立参照、数学性质或可验证结果，不能让被测函数自证。当前运行的断言应随可编辑输入变化；可另加少量固定边界用例。数值计算验证真实数值与合理误差，不能只检查“执行了”。测试失败保留证据，修正算法或数学前提，不删测试、放宽容差来隐藏缺陷。
+## 视图：renderNotaleView(packet)
 
-## 视图：window.renderNotaleView(packet)
+同步函数；`packet.state` 是当前帧，另有 `previousState`、`playback`、`environment`。不重新计算算法、不硬编码答案：画面需要的每个数值都来自帧，缺了就改 starter 让它返回。入口先按 `stage` 校验必需字段的形状，缺失或不符就抛出含字段、预期、实际的错误（如 `state.W1 应为 2 维数组，实际形状 [6]`），不要用空数组或零把图画出来。
 
-同步函数，packet 提供 `state`、`previousState`、`playback`、`environment`。用原生 SVG/DOM 将 state 映射成一张重点明确的图，不重新计算算法、不硬编码答案。
-
-宿主已有 `#code-title`、`#code-controls`、`#code-status`、`#code-plot`、`#code-caption`，更新现有元素即可；空的控件／状态／图注区域会收起。
-
-主题 CSS 变量：`--code-bg`、`--code-ink`、`--code-muted`、`--code-accent`、`--code-secondary`、`--code-line`。CSS/SVG 用 `var(--code-accent)` 这样的完整引用，不再包一层 var。无需生成调色板、字体映射或公共布局。
-
-`patchSvg(container, markup, {animate:true})` 更新已挂载 SVG 的属性、文本与节点。animate 可选，默认 false，支持 stroke/width/opacity/dashes 过渡；稳定 ID 跟随对象身份。
-
-`NotaleMotion.tween(durationMs, draw)` 调用 draw(progress)，进度为 0–1。宿主管理取消；暂停、跳步、重置会取消动画，静态帧调用 draw(1)。时长应落在播放间隔内。`NotaleMotion.animate(element, keyframes)` 也由宿主管理时序。不要自己维护 RAF、计时器或连续循环。
-
-镜头与几何由课程决定：数值范围变化后仍要看清过程，保留必要的全局定位；对象位置、颜色与尺度应有一致含义。中文标签简短，文本留在视图内，小误差用科学记数。避免卡片墙、仪表盘和步骤 tabs。可绘制解析参考曲线，但不能用它替代实际数值迭代。
-
-不支持外部网络、模块导入、额外库或 eval。渲染问题通过当前课程文件解决，不修改宿主。
+用原生 SVG/DOM 更新宿主已有的 `#code-title`、`#code-controls`、`#code-status`、`#code-plot`、`#code-caption`。颜色只用 `var(--code-bg|ink|muted|accent|secondary|line)`。`patchSvg(container, markup, {animate})` 更新已挂载 SVG；`NotaleMotion.tween(ms, draw)` 做过渡，宿主管理取消，不自建计时器。镜头与几何由课程决定，对象位置、颜色、尺度含义一致，标签简短，小误差用科学记数。无网络、无 import、无 eval。
 
 ## 检查与结束
 
-Write／Patch 后 Check 当前文件。Check 返回执行错误、课程测试与渲染／重置结果；按错误定位当前课程文件，不读取宿主内部文件。初始上下文的 limits 是实际运行预算，观察状态应在预算内保留真实过程和必要语义。运行通过不是语义验收：仍需按 query 核对过程顺序、对象身份与实际数值。
+Write／Patch 成功后宿主自动运行课程，把执行、测试、抽样渲染与重置的结果附在返回里；`⚠` 行是容量提示，不是失败。没有新改动想复跑用 Check。运行通过不等于语义正确：按任务核对过程顺序与数值。没有具体违约就结束。
 
-最终文件已检查且没有具体违约时结束，不写额外说明、报告或旁路测试文件。
+其余样例按需 `Read observer-samples/<neural-network|bfs|insertion-sort>/<starter.py|observe.py|tests.py|view/render.js>`。

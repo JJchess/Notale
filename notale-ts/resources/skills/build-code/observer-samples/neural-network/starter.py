@@ -60,11 +60,13 @@ def backward(X, Y, cache, params):
     }
 
 
+def update_one(name, params, grads, lr):
+    # 单个参数的一步梯度下降：θ ← θ − lr · ∂L/∂θ。
+    return params[name] - lr * grads["d" + name]
+
+
 def update_params(params, grads, lr):
-    updated = {}
-    for name in PARAM_NAMES:
-        updated[name] = params[name] - lr * grads["d" + name]
-    return updated
+    return {name: update_one(name, params, grads, lr) for name in PARAM_NAMES}
 
 
 def train_loop(params, X, Y, lr, steps):

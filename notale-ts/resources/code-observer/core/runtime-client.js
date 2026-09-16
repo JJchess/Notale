@@ -36,6 +36,7 @@ export class WorkerRuntimeAdapter {
     this.readyPromise = new Promise((resolve, reject) => {
       resolveReady = resolve;
       rejectReady = reject;
+      this.rejectReady = reject;
     });
 
     this.worker.addEventListener("message", (event) => {
@@ -121,26 +122,26 @@ export class WorkerRuntimeAdapter {
     if (this.disposed) return;
     const error = new RuntimeFailure("cancelled", reason === "timeout" ? "运行超时。" : "运行已取消。");
     this.failCurrent(error);
+    this.rejectReady?.(error);
     this.worker?.terminate();
     this.worker = null;
     this.ready = false;
     this.start().catch(() => {});
   }
 
-  cancel() {
-    if (!this.current) return false;
-    this.restart("cancel");
-    return true;
+  cancel({restart = true} = {}) {
+    const hadWork=Boolean(this.current || this.worker && !this.ready);
+    if(restart){if(hadWork)this.restart("cancel");return hadWork;}
+    if(!this.worker)return false;
+    const error=new RuntimeFailure("cancelled", "运行已取消。");
+    this.failCurrent(error);this.rejectReady?.(error);
+    this.worker.terminate();this.worker=null;this.ready=false;this.readyPromise=null;this.generation++;
+    this.onStatus({kind:'ready',message:''});return hadWork;
   }
 
   dispose() {
     if (this.disposed) return;
-    this.disposed = true;
-    this.failCurrent(new RuntimeFailure("disposed", "运行时已经释放。"));
-    this.worker?.terminate();
-    this.worker = null;
-    this.ready = false;
-    this.generation += 1;
+    this.cancel({restart:false});this.disposed=true;
   }
 
   getState() {
