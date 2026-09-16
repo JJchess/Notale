@@ -1,6 +1,6 @@
 # General Authored Page
 
-The claim must remain understandable without the learner changing a governing model. Rich motion and bounded inspection may expose authored evidence, but they cannot substitute for the decisive initial view.
+The claim must remain understandable without the learner changing a governing model. Step 0 establishes the subject and useful starting evidence; chassis-controlled steps develop the explanation into a complete, inspectable final state.
 
 ## Develop the construction decision
 
@@ -16,7 +16,7 @@ Use these questions to refine the claim and evidence already chosen in the first
 | Reading path | Where does attention begin, what relation follows, and where does it resolve? |
 | Motion role | What hierarchy, correspondence, state, process, or atmosphere benefits from change over time? |
 | Signature | Which subject-specific visual event makes this page memorable? |
-| First view | What complete evidence is visible before hover, playback, or scrolling? |
+| First view | What subject, objects, and starting evidence are visible at step 0, and what relationship will subsequent steps establish? |
 
 Remove material that does not serve the claim. If it cannot fit, cut supporting explanation or disclose useful detail through interaction; preserve readable type and the decisive evidence.
 
@@ -62,7 +62,7 @@ Allocate space in this order:
 1. decisive evidence or mechanism;
 2. labels, values, units, and annotations needed to read it;
 3. claim and short interpretation;
-4. authored-state or playback controls;
+4. genuine comparison or inspection controls, when needed;
 5. supporting context.
 
 The evidence stage should read as one world, not as a collection of independent parts. Place status and values inside or immediately beside the region that produces them. Keep the claim close enough to be tested against the evidence without eye travel across unrelated panels.
@@ -77,7 +77,7 @@ Use geometry to encode relations:
 - repeated identity for correspondence across states;
 - occupied area and contrast for hierarchy.
 
-Group with the lightest sufficient device: proximity, negative space, alignment, a guide, a quiet fill, then an enclosure. A bounded object such as a mock interface may need a distinct surface, but the surrounding page must still provide scale, title, and viewing context rather than leaving the object floating.
+Group explanation with proximity, negative space, alignment, and guides. Do not put individual facts, teaching beats, or comparison cases into decorative cards, including a stack beside the main diagram. Place their labels and evidence in the shared scene. Enclosure must encode a real object or relation, such as a represented interface or physical vessel; it must not merely package a paragraph.
 
 ## Build a subject-specific visual world
 
@@ -190,7 +190,7 @@ Choose logical scene dimensions independent of CSS size. Compute one logical-to-
 
 ## Use motion as page language
 
-Choose motion or a static composition from the content. Motion may establish hierarchy, correspondence, process or atmosphere; preserve useful initial evidence and an inspectable result. Classroom progression may use Deck steps.
+Use Deck steps for the teaching progression, including comparison and evidence focus. Build one stable scene whose objects, paths, differences, and annotations change meaningfully; do not reveal a sequence of boxed sections. Animation can connect states but does not replace keyboard-controlled teaching steps.
 
 Design named states before transitions:
 
@@ -200,7 +200,9 @@ Design named states before transitions:
 - `settled`: a stable inspectable result;
 - `reduced`: the equivalent state without nonessential interpolation.
 
-For an authored sequence, define each beat by what becomes understandable, what remains visible, what changes, and why the reader needs a hold. Preserve IDs, color roles, labels, baselines, and landmarks across beats. If reordering beats would not change interpretation, use a stable composition with restrained entry motion instead.
+For an authored sequence, define each beat by what becomes understandable, what remains visible, what changes, and why the reader needs a hold. Preserve IDs, color roles, labels, baselines, and landmarks across beats. Comparison and progressive focus are useful beats even when their order is not mathematically necessary.
+
+Transfer sample states to the chassis instead of copying sequential tabs, next buttons, or autoplay. DOM/SVG evidence can use `data-deck-step="1"`. For a drawn scene, register `Deck.onStep(renderStep, states.length - 1)`: states 0/1/2 mean maxStep 2. `renderStep(step)` must reconstruct the entire selected state, including labels and earlier evidence, so direct jumps and backward navigation work. Initialize the scene before registering, since the callback runs immediately. Cancel prior transitions before rendering another step.
 
 Choose the smallest motion mechanism that fits the authored behavior:
 
@@ -211,7 +213,7 @@ Choose the smallest motion mechanism that fits the authored behavior:
 
 With GSAP, use labels that match named page states and the position parameter for overlap. Use timeline defaults for shared durations and easing. Own one top-level timeline, cancel or kill it before reconstruction, and do not chain a sequence through scattered `delay` values.
 
-Keep authored playback, direct beat navigation, annotation, and progress indicators synchronized through one controller. A reader must be able to inspect the decisive state without replaying an entire sequence. Under reduced motion, render the decisive or compact key-state composition immediately.
+Let the chassis own teaching navigation; derive annotations and visual state from its step. Keep free inspection controls only for their actual inspection purpose. Continuous motion stays within the current teaching step. Under reduced motion or `?all`, show the complete review state without requiring playback.
 
 Ambient motion is permitted when it reinforces material or spatial depth. Keep it slower and lower contrast than explanatory motion, stop it while hidden, and make no claim depend on it.
 
@@ -262,6 +264,7 @@ Hover, focus, selection, pan, zoom, or filtering may reveal predetermined detail
 - Inspect initial, focus, decisive, settled, and reduced-motion states as still compositions.
 - Test the longest real label and most crowded relation at the target display size.
 - Confirm connector endpoints, callout targets, overlays, and optional hit regions remain aligned after resize.
+- Use the existing Check step states to verify real evidence changes, backward restoration, and a complete final state; zero runtime errors alone does not establish this. Inspect that steps modify one scene rather than introduce separate bordered panels. Reuse the same Check, without adding a separate checking loop.
 - Replay, interrupt, jump, reset, and replay again when authored motion exists; verify one controller and no stale completion.
 - Confirm theme roles remain semantically stable across states.
 - Confirm zero clipped text, hidden evidence, failed resources, runtime errors, duplicate loops, and leaked renderer resources.

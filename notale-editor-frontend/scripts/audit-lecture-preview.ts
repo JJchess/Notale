@@ -3,9 +3,10 @@ type AuditWindow=Window & {NotaleWorkbench:{whenReady:()=>Promise<unknown>;showS
 import { chromium } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 const origin = process.env.EDITOR_PREVIEW_URL ?? 'http://localhost:4312';
-const documentId = process.env.EDITOR_AUDIT_DOCUMENT ?? 'f5d596d1-0584-4de4-ada6-ecf918147cd4';
+const documentId = process.env.EDITOR_AUDIT_DOCUMENT;
+if (!documentId) throw Error('Set EDITOR_AUDIT_DOCUMENT to the document to inspect');
 const baseline:Snapshot = await (await fetch(`${origin}/api/documents/${documentId}`)).json();
-const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH ?? '/data1/home/zhuyifan/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome' });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH });
 await mkdir('.local/lecture-preview-audit', {recursive: true});
 const page = await browser.newPage({viewport: {width:1600,height:1000}});
 const errors:{page:string;message:string}[] = [], requests:{page:string;path:string;error?:string;status?:number}[] = [], slides = [];

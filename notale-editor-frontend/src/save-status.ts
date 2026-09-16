@@ -1,8 +1,8 @@
+import {editorSession,type SaveIndicator} from './state/editor-session.js';
 // The save indicator says one thing at a glance and keeps the detail in its tooltip,
 // the way Google Docs and Figma report saving. The version number moves to the tooltip
 // because it is reference information, not a status.
-type State = 'saved' | 'busy' | 'local' | 'paused' | 'failed';
-type Report = { label: string; detail: string; state: State };
+type Report = SaveIndicator;
 // The sync journal composes its own sentences; map the ones it can produce and fall back
 // to showing whatever it said, so a reworded message degrades instead of disappearing.
 const JOURNAL: Record<string, Report> = {
@@ -21,11 +21,8 @@ export function saveStatusReport(input: { journal?: string; editing?: boolean; b
   return { label: '已保存', detail: input.version ? `已同步到服务器 · 版本 v${input.version}` : '已同步到服务器', state: 'saved' };
 }
 export function setSaveStatus(report: Report) {
-  const node = document.getElementById('save-status');
-  if (!node) return;
-  node.textContent = report.label;
-  node.title = report.detail;
-  node.dataset.state = report.state;
+  const current=editorSession.getSnapshot().save;
+  if(current.label!==report.label||current.detail!==report.detail||current.state!==report.state)editorSession.update({save:report});
 }
 export const showSaveStatus = (input: Parameters<typeof saveStatusReport>[0]) => setSaveStatus(saveStatusReport(input));
 export const PHASES: Record<string, Report> = {

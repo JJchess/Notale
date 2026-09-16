@@ -1,0 +1,75 @@
+name: Editor release candidate
+on:
+  push:
+    branches: [editor-v1]
+    tags: ['v*']
+  pull_request:
+    branches: [editor-v1]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: notale_editor
+          POSTGRES_PASSWORD: local-editor-development
+          POSTGRES_DB: notale_editor
+        ports: ['55439:5432']
+        options: >-
+          --health-cmd "pg_isready -U notale_editor"
+          --health-interval 2s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            notale-editor/package-lock.json
+            notale-editor-frontend/package-lock.json
+      - name: Verify release versions
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          const versions=['notale-editor','notale-editor-frontend'].map(folder=>{
+            const p=JSON.parse(readFileSync(folder+'/package.json'));
+            const lock=JSON.parse(readFileSync(folder+'/package-lock.json'));
+            if(p.version!==lock.version||p.version!==lock.packages[''].version)throw Error('Version/lock mismatch');
+            return p.version;
+          });
+          if(new Set(versions).size!==1)throw Error('Editor versions differ');
+          if(process.env.GITHUB_REF_TYPE==='tag'&&process.env.GITHUB_REF_NAME!=='v'+versions[0])throw Error('Tag/version mismatch');
+          JS
+      - name: Build native format contract
+        working-directory: notale-format
+        run: npm ci && npm run build
+      - name: Build backend
+        working-directory: notale-editor
+        run: npm ci && npm run build
+      - name: Verify export and import
+        working-directory: notale-editor
+        run: node_modules/.bin/tsx --test --test-name-pattern='HTTP authorization, immutable preview grants and portable project round trip' tests/persistence.test.ts
+      - name: Build frontend
+        working-directory: notale-editor-frontend
+        run: npm ci && npm run build
+      - name: Verify frontend authoring state
+        working-directory: notale-editor-frontend
+        run: ../notale-editor/node_modules/.bin/tsx --test tests/notes-editor.test.ts tests/animation-authoring.test.ts
+      - name: Package committed source
+        run: |
+          git archive --format=tar.gz --prefix=notale/ --output=notale-source.tar.gz "$GITHUB_SHA"
+          sha256sum notale-source.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: notale-source
+          path: |
+            notale-source.tar.gz
+            SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14

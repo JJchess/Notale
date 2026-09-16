@@ -15,17 +15,19 @@ The animation panel now authors named teaching steps: insert, duplicate, reorder
 Requires Node >=20.19, npm, and Docker Compose (or PostgreSQL 16).
 
 ```bash
-cd ~/ws2/Notale/notale-editor
+cd notale-editor
 npm ci
 docker compose -p notale-editor up -d --wait
 npm run build
 npm start
 ```
 
-In another terminal, import the final slide output:
+For the full React editor on port 4312, follow [the sibling frontend deployment guide](../notale-editor-frontend/docs/LOCAL-DEPLOYMENT.md). The port 4310 workbench is an integration reference.
+
+Optionally, in another terminal, import your HTML slide directory:
 
 ```bash
-npm run import:slides -- ../runs/notale-v2/ens-trim-full-0907/pages '集成学习 · 完整资源讲义'
+npm run import:slides -- /path/to/your/slides 'My lecture'
 ```
 
 Open **http://127.0.0.1:4310/**. The importer copies resources, including symlinked runtime dependencies, into PostgreSQL; it never modifies the input directory. It prints the imported document URL. Existing source generation code is not invoked.

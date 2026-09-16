@@ -12,7 +12,7 @@ test('lost acknowledgement and later gestures survive reload and retry exactly o
   expect((await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'保存恢复 · 独立验证',width:1600,height:900,slides:[{id:'first',name:'验证',sourcePath:'first.html',html:'<!doctype html><html><body style="margin:0"><main data-notale-id="stage" style="width:1600px;height:900px"><h1 data-notale-id="heading" style="position:absolute;left:180px;top:180px;width:500px;height:80px;margin:0">连续编辑</h1></main></body></html>'}]}})).status()).toBe(201);
   await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});await ready(page);
   let offline=true,committed=false;
-  await page.route('**/api/documents/*/sync',async route=>{
+  await page.route('**/api/documents/*/sync/v2',async route=>{
     if(!offline)return route.continue();
     if(!committed){const response=await route.fetch();expect(response.status()).toBe(200);committed=true;}
     await route.abort('failed');

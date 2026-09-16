@@ -1,3 +1,4 @@
+import { rewriteSrcset } from './srcset.js';
 import valueParser from 'postcss-value-parser';
 import { posix } from 'node:path';
 import { parse, elements, attr, textOf } from './html.js';
@@ -40,8 +41,7 @@ export function references(from: string, source: string, kind: 'html' | 'css'): 
         if (value) urls.push(value);
       }
       const srcset = attr(e, 'srcset');
-      if (srcset && !srcset.startsWith('data:'))
-        for (const item of srcset.split(',')) urls.push(item.trim().split(/\s+/)[0]);
+      if (srcset) rewriteSrcset(srcset, url => { urls.push(url); return url; });
       if (e.tagName === 'style') css(textOf(e));
       if (attr(e, 'style')) css(attr(e, 'style')!);
     }
@@ -56,7 +56,7 @@ export function references(from: string, source: string, kind: 'html' | 'css'): 
       return {
         from,
         url,
-        path: posix.normalize(posix.join(posix.dirname(from), decoded)),
+        path: decoded ? posix.normalize(posix.join(posix.dirname(from), decoded)) : from,
         external: false,
       };
     });

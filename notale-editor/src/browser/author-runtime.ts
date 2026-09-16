@@ -1,3 +1,4 @@
+import { rewriteSrcset } from '../domain/srcset.js';
 import { reconcileAuthorDom } from './author-dom.js';
 import type { Slide, Command } from '../domain/model.js';
 export interface RuntimeAdapter<T> { update(value: T): void | Promise<void> }
@@ -8,7 +9,7 @@ type Context = {
   connectors: RuntimeAdapter<NonNullable<Slide['connectors']>>;
   media: {update:()=>void};canvas:{start:()=>void};
   protect:(el:Element)=>boolean;refresh:()=>void;metadata:()=>void;
-  reload:(reason:string)=>void;error:(e:unknown)=>void;
+  ack?:(requestId:string)=>void;reload:(reason:string)=>void;error:(e:unknown)=>void;
 };
 /** Applies author changes without taking ownership of interactive runtime state. */
 export function createAuthorRuntime(context: Context) {
@@ -21,6 +22,7 @@ export function createAuthorRuntime(context: Context) {
   function url(value:string){if(!value||/^(#|[a-z][\w+.-]*:|\/)/i.test(value))return value;return new URL(value,new URL(slide.sourcePath,assetBase)).href;}
   function resolve(value:string,attribute:string){
     if(['src','href','poster','xlink:href'].includes(attribute))return url(value);
+    if(attribute==='srcset')return rewriteSrcset(value,url);
     if(attribute==='style')return value.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi,(_,quote,path)=>'url("'+url(path)+'")');
     return value;
   }
@@ -28,10 +30,12 @@ export function createAuthorRuntime(context: Context) {
     if(!data.assetBase)return;assetBase=data.assetBase;
     const paths=new Set<string>(data.changedPaths??[]);
     if(!paths.size)return;
-    for(const node of document.querySelectorAll<HTMLElement>('[src],[poster],link[href],[style]')){
+    for(const node of document.querySelectorAll<HTMLElement>('[src],[srcset],[poster],link[href],[style]')){
       for(const name of ['src','poster','href']){const raw=node.getAttribute(name);if(!raw||node.tagName==='SCRIPT')continue;
         try{const u=new URL(raw,location.href),path=decodeURIComponent(u.pathname.split('/').slice(5).join('/'));if(u.origin===location.origin&&paths.has(path))node.setAttribute(name,new URL(path,assetBase).href);}catch{}
       }
+      const srcset=node.getAttribute('srcset');
+      if(srcset){const next=rewriteSrcset(srcset,raw=>{try{const u=new URL(raw,location.href),path=decodeURIComponent(u.pathname.split('/').slice(5).join('/'));return u.origin===location.origin&&paths.has(path)?new URL(path,assetBase).href:raw;}catch{return raw;}});if(next!==srcset)node.setAttribute('srcset',next);}
       if(node.style)for(const key of node.style){const raw=node.style.getPropertyValue(key);if(!raw.includes('url('))continue;
         const next=raw.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi,(whole,quote,path)=>{try{const u=new URL(path,location.href),key=decodeURIComponent(u.pathname.split('/').slice(5).join('/'));return u.origin===location.origin&&paths.has(key)?'url("'+new URL(key,assetBase).href+'")':whole;}catch{return whole;}});
         if(next!==raw)node.style.setProperty(key,next,node.style.getPropertyPriority(key));
@@ -105,6 +109,7 @@ export function createAuthorRuntime(context: Context) {
   }
   return {
     receive(type:string,data:any){
+      if(type==='author-flush'){loading=loading.then(()=>context.ack?.(data.requestId)).catch(context.error);return true;}
       if(type==='author-preview'){preview(data.commands??[]);return true;}
       if(type==='author-resources'){resources(data);return true;}
       if(type==='author-state'){latestState=data;loading=loading.then(()=>state(data)).catch(context.error);return true;}

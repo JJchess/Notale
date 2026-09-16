@@ -45,9 +45,11 @@ export function parseChartSpreadsheet(text: string) {
     if (!cells[0].trim()) throw new Error(`第 ${r + 2} 行缺少分类名称`);
     labels.push(cells[0].trim());
     series.forEach((item, s) => {
-      const value = cells[s + 1].trim();
+      const raw = cells[s + 1].trim();
+      const grouped = /^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d*)?(?:e[+-]?\d+)?$/i.test(raw);
+      const value = grouped ? raw.replace(/,/g, '') : raw;
       if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value) || !Number.isFinite(Number(value)))
-        throw new Error(`第 ${r + 2} 行第 ${s + 2} 列需要数字；不支持公式、百分号或千位分隔符`);
+        throw new Error(`第 ${r + 2} 行第 ${s + 2} 列需要数字；不支持公式或百分号，千位分隔需每组三位`);
       item.values.push(Number(value));
     });
   });

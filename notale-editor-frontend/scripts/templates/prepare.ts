@@ -14,7 +14,7 @@ const titles:Record<string,string>={'P004':'金字塔 · 分层思考','E3-02':'
 const fonts:[string,string,number][]=[['Notale CJK','NotaleCJK-Regular',400],['Notale CJK','NotaleCJK-Bold',700],['Notale CJK','NotaleCJK-Bold',800],['Notale Zen Hei','NotaleZenHei',400],['Notale Droid','NotaleDroid',400]];
 const manifest=JSON.parse(await readFile(resolve(source,'native-template-manifest.json'),'utf8'));
 await mkdir(resolve(out,'assets'),{recursive:true});
-const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH??'/data1/home/zhuyifan/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome'});
+const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH});
 const results=[];
 try {
  for(const code of selected){

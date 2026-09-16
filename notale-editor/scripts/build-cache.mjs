@@ -31,6 +31,11 @@ async function state() {
     node: process.version,
     inputs: await fingerprint([
       ...(await files('src')),
+      ...(await files('../notale-format/src')),
+      '../notale-format/package.json',
+      '../notale-format/tsconfig.json',
+      'LICENSE',
+      'docs/THIRD-PARTY-NOTICES.txt',
       'package.json',
       'package-lock.json',
       'tsconfig.json',

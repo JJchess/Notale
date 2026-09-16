@@ -220,6 +220,11 @@ export const assetSchema = z
     size: z.number().int().min(0).max(50_000_000),
   })
   .strict();
+export const codeLessonSchema = z.object({
+  runtimeVersion: z.literal('observer-v1'), entry: filePath, lessonRoot: filePath, fixedRuntime: filePath,
+  files: z.object({'starter.py':filePath,'observe.py':filePath,'tests.py':filePath,'view/render.js':filePath}).strict(),
+  revision: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
 export const componentDefinitionSchema = z
   .object({
     id: identifier,
@@ -257,10 +262,12 @@ export const documentSchema = z
     width: z.number().int().min(100).max(10000).default(1600),
     height: z.number().int().min(100).max(10000).default(900),
     theme: styleSchema.default({}),
+    themeTokens: styleSchema.optional(),
     layouts: z.array(layoutSchema).max(100).default([]),
     componentLibrary: z.array(componentDefinitionSchema).max(100).optional(),
     slides: z.array(slideSchema).min(1).max(1000),
     assets: z.record(filePath, assetSchema).default({}),
+    codeLessons: z.record(filePath, codeLessonSchema).optional(),
     comments: z.array(commentSchema).max(2000).default([]),
     presentation: z
       .object({ loop: z.boolean().default(false), showSlideNumber: z.boolean().default(true) })
@@ -589,6 +596,7 @@ export const commandSchema = z.discriminatedUnion('type', [
     .strict(),
   z.object({ type: z.literal('binding.set'), ...slideId, binding: bindingSchema }).strict(),
   z.object({ type: z.literal('binding.remove'), ...slideId, id: identifier }).strict(),
+  z.object({type:z.literal('codeLesson.update'),...target,expectedEntry:filePath,expectedRevision:z.string().regex(/^[a-f0-9]{64}$/),lesson:codeLessonSchema,assets:z.record(filePath,assetSchema)}).strict(),
   z.object({ type: z.literal('asset.put'), path: filePath, asset: assetSchema }).strict(),
   z.object({ type: z.literal('asset.remove'), path: filePath }).strict(),
 ]);

@@ -56,6 +56,12 @@ function flatten(html:string){
 function htmlMerge(base:string,next:string,head:string){
   if(base===next)return head;if(base===head)return next;
   const original=flatten(base),desired=flatten(next),latest=flatten(head);
+  for(const [id,node] of Object.entries(desired)){
+    const before=original[id],current=latest[id];
+    if(node.tag!=='iframe'||!String(node.attrs?.class??'').split(/\s+/).includes('code-workbench-frame')||!before||!current)continue;
+    for(const key of ['src','data-src'])if(!equal(before.attrs?.[key],node.attrs?.[key]))invariant(equal(current.attrs?.[key],before.attrs?.[key])||equal(current.attrs?.[key],node.attrs?.[key]),'SYNC_RECOVERY_REQUIRED','课程版本已改变，不能覆盖当前课程',409);
+  }
+
   const parents=(nodes:Record<string,RecordNode>)=>new Map(Object.entries(nodes).flatMap(([id,n])=>(n.children??[]).map(child=>[child,id] as const)));
   const bp=parents(original),hp=parents(latest);
   for(const [id,n] of Object.entries(desired))if(original[id]&&['transform','translate','rotate','scale'].some(k=>!equal(original[id].attrs?.style?.[k],n.attrs?.style?.[k]))){

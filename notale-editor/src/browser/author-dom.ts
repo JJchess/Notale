@@ -55,6 +55,21 @@ export function reconcileAuthorDom(live: Document, beforeHtml: string, afterHtml
     const p = source.parentElement;
     return p?.hasAttribute(ID) ? current.get(p.getAttribute(ID)!) : p?.tagName === 'HEAD' ? live.head : live.body;
   }
+  // Snapshot authored text before moving descendants into new formatting wrappers.
+  // Runtime-only elements remain untouched; divergent runtime text is not overwritten.
+  const textUpdates: { target: Element; source: Element; nodes: Node[]; id: string }[] = [];
+  const directText = (element: Element) => [...element.childNodes].filter(n => n.nodeType !== 1);
+  const textKey = (nodes: Node[]) => JSON.stringify(nodes.map(n => [n.nodeType, n.nodeValue]));
+  for (const [id, source] of next) {
+    const previous = old.get(id), target = current.get(id);
+    if (!previous || !target || previous.tagName !== source.tagName || options.protect?.(target)) continue;
+    if (!previous.children.length && !source.children.length) continue;
+    if ([...previous.children, ...source.children].some(e => !e.hasAttribute(ID))) continue;
+    const beforeText = directText(previous), afterText = directText(source), liveText = directText(target);
+    if (textKey(beforeText) === textKey(afterText) && childIds(previous) === childIds(source)) continue;
+    if (!options.force && textKey(beforeText) !== textKey(liveText)) continue;
+    textUpdates.push({ target, source, nodes: liveText, id });
+  }
   // Parents precede children. Reuse existing descendants during insert/reparent.
   for (const [id, node] of next) {
     const previous = old.get(id), target = current.get(id);
@@ -65,13 +80,18 @@ export function reconcileAuthorDom(live: Document, beforeHtml: string, afterHtml
       current.set(id, replacement); changed.add(id); structure = true;
     }
   }
-  for (const [id, node] of next) {
+  // Place later siblings first, so inserting a copy never moves an unchanged iframe.
+  for (const [id, node] of [...next].reverse()) {
     const previous = old.get(id), target = current.get(id); if (!target) continue;
     const p = node.parentElement, previousParent = previous?.parentElement;
     if (!previous || parentId(previous) !== parentId(node) || p && previousParent && childIds(p) !== childIds(previousParent)) {
       const host = parent(node);
       const following = [...(p?.children ?? [])].slice([...(p?.children ?? [])].indexOf(node) + 1).map(e => current.get(e.getAttribute(ID)!)).find(e => e?.parentElement === host);
-      if (host && (target.parentElement !== host || target.nextElementSibling !== (following ?? null))) host.insertBefore(target, following ?? null);
+      if (host && (target.parentElement !== host || target.nextElementSibling !== (following ?? null))) {
+        const movable = host as Element & {moveBefore?:(node:Node,before:Node|null)=>void};
+        if (movable.moveBefore && host.isConnected && target.isConnected) movable.moveBefore(target, following ?? null);
+        else host.insertBefore(target, following ?? null);
+      }
       structure = true; changed.add(id);
     }
     if (!previous || options.protect?.(target)) continue;
@@ -81,6 +101,18 @@ export function reconcileAuthorDom(live: Document, beforeHtml: string, afterHtml
     }
   }
   for (const [id] of old) if (!next.has(id)) { current.get(id)?.remove(); changed.add(id); structure = true; }
+  for (const { target, source, nodes, id } of textUpdates) {
+    for (const node of nodes) if (node.parentNode === target) target.removeChild(node);
+    const children = [...source.childNodes];
+    for (let i = 0; i < children.length; i++) {
+      const node = children[i];
+      if (node.nodeType === 1) continue;
+      const following = children.slice(i + 1).find(n => n.nodeType === 1) as Element | undefined;
+      const anchor = following ? current.get(following.getAttribute(ID)!) : undefined;
+      target.insertBefore(live.importNode(node, true), anchor?.parentNode === target ? anchor : null);
+    }
+    changed.add(id);
+  }
   attributes(before.body, after.body, live.body);
   attributes(before.documentElement, after.documentElement, live.documentElement);
   // Author stylesheets are distinct from injected editor/runtime stylesheets.

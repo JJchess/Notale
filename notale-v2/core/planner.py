@@ -123,6 +123,49 @@ def split_pages(text: str) -> dict:
     return _split_specs(text, range(1, N_CEIL + 1))
 
 
+def plan_context(text: str, *, require_audience: bool = False) -> dict:
+    """Parse the shared preamble; page files never contain these definitions."""
+    body = strip_fence(text.strip()).replace('\r\n', '\n').replace('\r', '\n')
+    first = re.search(r'(?m)^#\s+page-\d+', body)
+    boundary = first.start() if first else len(body)
+    headings = list(re.finditer(r'(?im)^##[ \t]+(Audience|Continuity)[ \t]*$', body))
+    sections = {}
+    for i, hit in enumerate(headings):
+        key = hit.group(1).lower()
+        if hit.start() >= boundary:
+            raise ValueError('Audience 和 Continuity 必须写在第一个页面之前')
+        if key in sections:
+            raise ValueError(f'{key} 只能定义一次')
+        end = min(headings[i + 1].start() if i + 1 < len(headings) else boundary, boundary)
+        sections[key] = body[hit.end():end].strip()
+    audience = sections.get('audience', '')
+    if (require_audience or headings) and not audience:
+        raise ValueError('页表开头需要非空的 ## Audience')
+    content = sections.get('continuity', '')
+    continuity = []
+    if content and content != '无':
+        entries = list(re.finditer(r'(?m)^###[ \t]+([^\n]*?)[ \t]*$', content))
+        if (not entries or content[:entries[0].start()].strip()
+                or any(not re.fullmatch(r'[a-z][a-z0-9_-]*', hit.group(1)) for hit in entries)):
+            raise ValueError('Continuity 使用 ### 条目ID、Pages: 页号列表和约束正文；无共享约束时写“无”')
+        known = {f'page-{number}' for number in split_pages(text)}
+        ids = set()
+        for i, hit in enumerate(entries):
+            ident = hit.group(1)
+            if ident in ids:
+                raise ValueError(f'continuity 条目重复：{ident}')
+            ids.add(ident)
+            block = content[hit.end():entries[i + 1].start() if i + 1 < len(entries) else len(content)].strip()
+            match = re.fullmatch(r'(?is)Pages:[ \t]*([^\n]+)\n(.+)', block)
+            if not match or not match.group(2).strip():
+                raise ValueError(f'continuity {ident} 需要 Pages: 页号列表和非空约束')
+            pages = re.split(r'[,，\s]+', match.group(1).strip())
+            if any(page not in known for page in pages) or len(set(pages)) != len(pages):
+                raise ValueError(f'continuity {ident} 的页号不存在或重复')
+            continuity.append({'id': ident, 'pages': pages, 'body': match.group(2).strip()})
+    return {'audience': audience, 'continuity': continuity}
+
+
 def _valid_pages(text: str) -> str:
     """Validate only the page-list protocol used for routing and materialization."""
     pages = split_pages(text)
@@ -141,6 +184,10 @@ def _valid_pages(text: str) -> str:
             return f"page-{key} 使用未知标签 `[{label}]`"
         if not topic:
             return f"page-{key} 的主题为空"
+    try:
+        plan_context(text)
+    except ValueError as error:
+        return str(error)
     return ""
 
 

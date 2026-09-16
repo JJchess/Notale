@@ -1,6 +1,6 @@
 # Reference and implementation direction
 
-The user supplied `/data1/home/zhuyifan/ws2/Notale/屏幕录制 2026-09-09 061109.mp4` and requested its overall form as the primary reference. The local video is 28.18 seconds, 2558 × 1346, 30 fps. Representative frames are in `reference/frames/` (4-second sampling, plus additional overview frames). This is implementation reference material, not a UI asset to redistribute inside the product.
+The user supplied `<workspace>/屏幕录制 2026-09-09 061109.mp4` and requested its overall form as the primary reference. The local video is 28.18 seconds, 2558 × 1346, 30 fps. Representative frames are in `reference/frames/` (4-second sampling, plus additional overview frames). This is implementation reference material, not a UI asset to redistribute inside the product.
 
 Observed structure:
 

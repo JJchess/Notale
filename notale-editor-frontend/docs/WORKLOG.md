@@ -200,7 +200,7 @@ Strict build passed. Two focused frontend browser cases passed in 15.7 seconds: 
 
 Added indent/outdent controls to the visual rich-text toolbar. A focused real-lecture clone test converts three paragraphs to a list, nests the middle item, saves and reopens, and checks an existing inline animation target retains its ID and its animation metadata exactly. Strict build and the new browser scenario passed (7.5 seconds). Original lecture response is unchanged. This proves list editing in a flow container and reference preservation; it does not yet prove paragraph-root list conversion or the animation playback itself. Evidence: .local/rich-paragraph-results.json and the rich paragraphs scenario in tests/editor.spec.ts.
 
-Preview request: port 3002 is occupied by the unrelated HALO Next.js service (PID 1537495, cwd /data1/home/zhuyifan/ws3/HALO). Existing service was left running pending the user's port preference.
+Preview request: port 3002 is occupied by the unrelated HALO Next.js service (PID 1537495, cwd <home>/ws3/HALO). Existing service was left running pending the user's port preference.
 
 ## 2026-09-09: visual rich-text editing and link color preservation
 
@@ -278,7 +278,7 @@ Evidence: `.local/context-properties-audit.json`, `.local/browser-results.json`,
 
 ## 2026-09-09: separate frontend and video-led editor shell
 
-The preceding goal turn completed the Canvas evidence audit and clarified frontend readiness, so it was verified progress. This turn shifted implementation to the formal frontend. The user then explicitly required sibling frontend/backend directories and supplied `/data1/home/zhuyifan/ws2/Notale/屏幕录制 2026-09-09 061109.mp4` as the preferred overall reference. Applied frontend-design and video-to-superprompt skills; inspected the 28.18-second, 2558×1346, 30fps video and extracted representative frames. The reference shows a narrow dark creation rail, contextual resource drawers, a dominant canvas, grouped bottom controls and dimmed editor chrome in interaction preview.
+The preceding goal turn completed the Canvas evidence audit and clarified frontend readiness, so it was verified progress. This turn shifted implementation to the formal frontend. The user then explicitly required sibling frontend/backend directories and supplied `<workspace>/屏幕录制 2026-09-09 061109.mp4` as the preferred overall reference. Applied frontend-design and video-to-superprompt skills; inspected the 28.18-second, 2558×1346, 30fps video and extracted representative frames. The reference shows a narrow dark creation rail, contextual resource drawers, a dominant canvas, grouped bottom controls and dimmed editor chrome in interaction preview.
 
 Created sibling `../notale-editor-frontend/` with independent package/lock/build/static host (4312), source and browser tests. The new UI changes were removed from the backend reference workbench. Backend additions are the browser-safe public `@notale/editor/browser` entry and integration documentation. The frontend installs a packed contract artifact and has no relative backend source imports; its browser bundle contains no Node builtins. API/show requests use an HTTP host proxy while authored content remains on the backend's isolated content origin.
 
@@ -286,3 +286,19 @@ Implemented contextual creation drawers backed by real text/media/shape/chart/ta
 
 Validation was consolidated: strict frontend TypeScript and independent browser bundling pass; two final browser workflows pass together in 9.4 seconds. Coverage includes actual real-lecture text insertion/editing, dropping an acknowledged save response then reload/exact retry, zoom/pan without document mutations, keyboard/drag page sorting and undo, native Canvas control redraw, opening the presentation, mobile overflow and drawers. Original lecture snapshot remains identical; both services are healthy. One intermediate test assertion needed an HTMLElement type annotation before the final build passed; no application runtime failure was hidden. Evidence is in sibling `.local/frontend-shell-audit.json`, `.local/browser-results.json`, `.local/editor-canvas.png`, `.local/editor-resources.png`, `.local/editor-preview.png`, `.local/editor-mobile.png`; reference analysis and setup are in the sibling docs/README. A clean lecture copy for hands-on use is recorded in `.local/preview.json`, separate from the edited acceptance sample. No full backend regression was repeated for this frontend-only module.
 
+
+### 2026-09-14 — Page runtime and static previews
+
+Deployed `.next-page-runtime-final` on 4312 with backend `.local/page-runtime-v3` on 4384/4385. The previous frontend build and backend 4394/4395 remain available for rollback.
+
+Page cache identity now separates execution dependencies from save versions and grants. Navigation applies the latest author state before enabling editing, warms both neighbors, and retains frame-owned grants. Sidebar, presentation overview and speaker-next previews use queued WebP screenshots instead of live iframes. CodeLab initializes Monaco on code interaction and Python on Run, retains learner drafts separately, and mirrors results to audience adapters without another Python worker. Recognized official runtime assets are adapted deterministically; authored source and arbitrary custom code are not replaced.
+
+Representative Chromium candidate measurements (1600×1000, same regression document): first open 991 ms; page transitions 167/237/115/216 ms for pages 2/3/2/6. The previous page-2 observation was 1148 ms. Internal cached-page navigation-to-editable measurement was 79.8 ms. These are individual observations, not P95 results. Cold application startup remains roughly one second.
+
+Validated build/type checks, targeted cache/request/presentation contracts, saved-theme persistence with original iframe identity on an isolated document, one successful Python execution, learner draft restoration, audience result mirroring with no Python, and the generated code-page poster. Browser probes recorded no page errors. Poster asset invalidation is conservative; sessionStorage quota failures do not promise recovery after runtime eviction. Renderer deployment prerequisites are in backend docs/NOTALE-V1.md.
+
+### 2026-09-14 — Preserve the active sidebar task
+
+Object selection now refreshes the active panel without navigating to Format. An empty sidebar restores its last inspector (Format by default); explicit panel commands still switch directly. Existing animation selection reconciliation clears the previous object's cue when the target changes. No backend or document protocol changes.
+
+Validated sidebar and animation state transitions, production build, and native canvas clicks on an isolated three-object sample: successive animation additions, saved state, scroll retention, collapsed restoration, layers/insert/pages retention, and deselection. The collapsed-panel browser check waited for layout frames before computing scaled click coordinates; no product workaround was needed. Deployed `.next-sidebar-task` to 4312 with the previous frontend build retained.

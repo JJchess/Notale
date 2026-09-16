@@ -131,7 +131,7 @@ export function transferObjects(
   invariant(
     !sourceNodes.some(
       (el) =>
-        (['script', 'canvas', 'iframe'].includes(el.tagName) &&
+        (['script', 'canvas'].includes(el.tagName) &&
           !(el.tagName === 'canvas' && allowedCanvases.has(attr(el, NODE_ID)!))) ||
         (source.nativeCharts[attr(el, NODE_ID) ?? ''] &&
           !chartSources.has(attr(el, NODE_ID) ?? '') && !source.nativeCharts[attr(el,NODE_ID)??'']?.authoring),
@@ -263,7 +263,7 @@ export function transferObjects(
         invariant(definition, 'MISSING_DEFINITION', `SVG definition ${id} is unavailable`);
         invariant(
           !elements(definition).some((node) =>
-            ['script', 'canvas', 'iframe'].includes(node.tagName),
+            ['script', 'canvas'].includes(node.tagName),
           ),
           'INTERACTION_CLONE',
           'Referenced SVG subtree needs an interaction adapter',

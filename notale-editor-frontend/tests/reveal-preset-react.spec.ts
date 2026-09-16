@@ -1,0 +1,13 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+test.use({baseURL:process.env.ARCHITECTURE_URL??'http://127.0.0.1:4399'});
+test('React reveal preset inserts, retains draft, saves and previews both interaction states',async({page})=>{
+ const id=randomUUID(),errors:string[]=[];page.on('pageerror',cause=>errors.push(cause.message));
+ expect((await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'Reveal preset',width:1600,height:900,slides:[{id:'first',name:'Blank',sourcePath:'first.html',html:'<html><body><main data-notale-id="stage" style="position:absolute;width:1600px;height:900px"></main></body></html>'}]}})).ok()).toBe(true);
+ await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot()?.document.slides.length===1);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
+ await page.locator('[data-tool="insert"]').click();await page.locator('[data-insert-category="interactive"] > summary').click();await page.locator('#insert-reveal').click();await expect(page.locator('#reveal-editor')).toBeVisible();await page.locator('#reveal-answer').fill('不同模型的错误相互抵消。');await page.locator('#reveal-closed-label').fill('揭示要点');await page.locator('#reveal-open-label').fill('收起要点');
+ await page.evaluate(async()=>{const w=(window as any).NotaleWorkbench;await w.commands([{type:'deck.update',title:'Unrelated update'}]);});await expect(page.locator('#reveal-answer')).toHaveValue('不同模型的错误相互抵消。');
+ await page.locator('#save-reveal').click();await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());const saved=await page.request.get('/api/documents/'+id).then(response=>response.json());expect(saved.document.slides).toHaveLength(1);expect(saved.document.slides[0].components).toHaveLength(1);expect(saved.document.slides[0].html).toContain('不同模型的错误相互抵消。');
+ await page.reload();await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot());await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());await page.locator('#interact').click();await expect(page.locator('#preview-loading')).toBeHidden();const card=page.frameLocator('#preview-canvas').locator('[data-notale-preset="reveal"]');
+ await expect(card.locator('[data-notale-role="answer"]')).toBeHidden();await card.getByRole('button',{name:'揭示要点',exact:true}).click();await expect(card.locator('[data-notale-role="answer"]')).toBeVisible();await card.getByRole('button',{name:'收起要点',exact:true}).click();await expect(card.locator('[data-notale-role="answer"]')).toBeHidden();expect(errors).toEqual([]);
+});

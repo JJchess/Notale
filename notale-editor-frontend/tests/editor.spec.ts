@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 const original = 'f5d596d1-0584-4de4-ada6-ecf918147cd4';
 async function openStyle(page:Page,global=false){if(global)await page.evaluate(()=>(window as any).NotaleWorkbench.selectMany([]));if(await page.locator('[data-tool="style"]').getAttribute('aria-pressed')!=='true')await page.locator('[data-tool="style"]').click();}
-async function openPageMaster(page:Page){if(!await page.locator('#page-panel').isVisible())await page.locator('[data-tool="pages"]').click();await page.locator('#open-page-settings').click();if(await page.locator('#page-master-settings').getAttribute('open')===null)await page.locator('#page-master-settings summary').click();}
+async function openPageMaster(page:Page){if(!await page.locator('#page-panel').isVisible())await page.locator('[data-tool="pages"]').click();await page.locator('.slide-card.active').press('F2');if(await page.locator('#page-master-settings').getAttribute('open')===null)await page.locator('#page-master-settings summary').click();}
 
 const ready = (page: Page) => page.evaluate(() => (window as any).NotaleWorkbench.whenReady());
 const version = (page: Page) => page.evaluate(() => (window as any).NotaleWorkbench.getSnapshot().version);
@@ -239,8 +239,7 @@ test('context properties preserve nested interaction and untouched styles/transf
   const object = (id: string) => page.evaluate(id => (window as any).NotaleWorkbench.getObjects().find((o: any) => o.id === id), id);
   expect((await object(ids['context-first'])).style['font-size']).toBe('47px');
   expect((await object(ids['context-first'])).style.color).toBe('#954321');
-  await page.locator('#color').fill('#112233');
-  await change(page, () => page.locator('#apply-typography').click());
+  await change(page, async () => { await page.locator('#color').fill('#112233'); await page.locator('#color').blur(); });
   expect((await object(ids['context-first'])).style['font-size']).toBe('47px');
   expect((await object(ids['context-first'])).style.color).toBe('#112233');
   await choose(['context-second']);
@@ -258,7 +257,7 @@ test('context properties preserve nested interaction and untouched styles/transf
   await page.locator('#property-identity summary').click();
   await change(page, () => page.locator('#lock').click());
   await expect(page.locator('#apply-format')).toBeDisabled();
-  await expect(page.locator('#apply-typography')).toBeDisabled();
+  await expect(page.locator('#font-size')).toBeDisabled();
   await change(page, () => page.locator('#lock').click());
   await page.screenshot({path:'.local/editor-context-properties.png'});
   await page.reload();
@@ -339,8 +338,7 @@ test('typography reads inherited values and preserves mixed styles through edit 
   await expect(page.locator('#line-height')).toHaveValue('68.8');
   await expect(page.locator('#letter-spacing')).toHaveValue('2');
   await expect(page.locator('#text-align')).toHaveValue('center');
-  await page.locator('#letter-spacing').fill('4');
-  await change(page,()=>page.locator('#apply-typography').click());
+  await change(page, async()=>{ await page.locator('#letter-spacing').fill('4'); await page.locator('#letter-spacing').press('Enter'); });
   const style=(id:string)=>page.evaluate(id=>(window as any).NotaleWorkbench.getObjects().find((o:any)=>o.id===id).style,id);
   expect((await style(ids['type-a']))['font-size']).toBeUndefined();
   expect((await style(ids['type-a']))['letter-spacing']).toBe('4px');
@@ -352,15 +350,13 @@ test('typography reads inherited values and preserves mixed styles through edit 
   await choose(['type-a','type-b']);
   await expect(page.locator('#font-size')).toHaveValue('');
   await expect(page.locator('#typography-status')).toContainText('多种值');
-  await page.locator('#text-align').selectOption('left');
-  await change(page,()=>page.locator('#apply-typography').click());
+  await change(page,()=>page.locator('#text-align').selectOption('left'));
   expect((await style(ids['type-b']))['font-size']).toBe('29px');
   expect((await style(ids['type-b'])).color).toBe('#765432');
   expect((await style(ids['type-a']))['font-size']).toBeUndefined();
   await choose(['type-a']);
   await page.locator('#font-family').fill('Arial');
-  await page.locator('#line-height').fill('72');
-  await change(page,()=>page.locator('#apply-typography').click());
+  await change(page, async()=>{ await page.locator('#line-height').fill('72'); await page.locator('#line-height').press('Enter'); });
   await page.screenshot({path:'.local/editor-typography.png'});
   await page.reload(); await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
   await choose(['type-a']);
@@ -808,7 +804,7 @@ test('master workflow publishes shared text while retaining per-page overrides',
   await expect(page.locator('#slide-count')).toHaveText(String(doc.slides.length));
   await expect(page.locator('.slide-card')).toHaveCount(doc.slides.length);
   await expect(page.locator('#page-position')).toHaveText('母版编辑');
-  await expect(page.locator('#delete-slide')).toBeDisabled();
+  await page.locator('.slide-card.active').click({button:'right'});await expect(page.locator('[data-page-action="delete"]')).toBeDisabled();await page.keyboard.press('Escape');
   const caption=page.frameLocator('#canvas').locator('[data-notale-placeholder="caption"]');const target=await caption.getAttribute('data-notale-id');
   await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),target);await openStyle(page);
   await page.locator('#object-text').fill('共同的讲授要点');await change(page,()=>page.locator('#apply-text').click());

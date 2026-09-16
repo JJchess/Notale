@@ -37,6 +37,7 @@ class SampleDefaultsTests(unittest.TestCase):
     def test_cli_defaults_to_mini_plus_aux(self):
         args = builder.parse_args(['--label', 'test'])
         self.assertEqual(args.samples, 'mini')
+        self.assertEqual(args.notes, 'cap')
         self.assertTrue(args.aux_samples)
 
     def test_cli_supports_explicit_sample_overrides(self):
@@ -66,6 +67,20 @@ class PlanningContextTests(unittest.TestCase):
         self.assertIn('只编辑', code)
         self.assertIn('Deck.onStep', cover)
         self.assertNotIn('做成分步并删掉控件', cover)
+
+    def test_default_text_budget_depends_on_workflow_without_notes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = make_run(Path(td))
+            texts = {
+                workflow: '\n\n'.join(builder.instruction_blocks(root, 6, workflow).values())
+                for workflow in builder.skills.PAGE_WORKFLOWS
+            }
+        self.assertIn('不超过 80 个字符', texts['build-cover'])
+        self.assertIn('不超过 200 个字符', texts['build-page'])
+        self.assertIn('不超过 200 个字符', texts['build-interaction'])
+        self.assertNotIn('<text_budget>', texts['build-code'])
+        for text in texts.values():
+            self.assertNotIn('<speaker_notes>', text)
 
     def test_theme_keeps_style_contract_and_drops_director_revision(self):
         with tempfile.TemporaryDirectory() as td:
@@ -235,18 +250,22 @@ class AgentLoopTests(unittest.TestCase):
                     (pages / 'page-01.html').write_text('<html/>')
                 writing = [] if case == 'existing' else [tool_response(builder_call('Write', file_path='page-01.html', content='' if case == 'empty' else '<html/>'))]
                 responses = [tool_response(builder_call('Read', file_path='reference.md'))] + writing + [tool_response(builder_call('Read', file_path='assets/base.js')), done_response()]
+                if case in ('empty', 'failed'):
+                    responses += [tool_response(builder_call('Write', file_path='page-01.html', content='<html/>')), done_response()]
                 events = []
                 normal = self.fake_run_factory(events)
 
                 def execute(name, args, cwd, resource, pid):
-                    if case == 'failed' and name == 'Write':
+                    if case == 'failed' and name == 'Write' and not events.count(('write-failed', {})):
+                        events.append(('write-failed', {}))
                         return 'PermissionError: cannot write'
                     return normal(name, args, cwd, resource, pid)
                 with patch.object(builder, 'respond', side_effect=responses), patch.object(builder.tools, 'run', side_effect=execute):
                     result = builder.build_one(builder_page(), pages, pages / 'trace.jsonl', ROOT / 'skills', 'instructions', 'low')
                 self.assertEqual(result.termination, 'no_tool_use')
                 self.assertEqual(sum((name == 'Read' for name, _ in events)), 2)
-                self.assertEqual(result.artifact_present, case in ('existing', 'unchanged'))
+                self.assertTrue(result.artifact_present)
+                self.assertEqual(result.premature_stops, int(case in ('empty', 'failed')))
                 if not result.artifact_present:
                     self.assertIn('target missing', result.audit['fatal_errors'][0])
 
@@ -267,7 +286,7 @@ class AgentLoopTests(unittest.TestCase):
                 if edit:
                     responses.append(tool_response(builder_call('Edit', file_path=str(source), old_string='x = 1', new_string='x = 2')))
                 responses += [tool_response(builder_call('Read', file_path=str(source))), done_response()]
-                with patch.object(builder, 'respond', side_effect=responses), patch.object(builder.code_runtime, 'scaffold', side_effect=scaffold), patch.object(builder, 'audit_delivery', return_value={}):
+                with patch.object(builder, 'respond', side_effect=responses), patch.object(builder.code_runtime, 'scaffold', side_effect=scaffold), patch.object(builder, 'audit_delivery', return_value={'fatal_errors': [], 'visual_warnings': [], 'code_result': None}):
                     result = builder.build_one(builder_page('page-04', 'build-code', '代码页'), pages, pages / 'trace.jsonl', ROOT / 'skills', 'instructions', 'low')
                 self.assertEqual(result.termination, 'no_tool_use')
                 self.assertEqual(source.read_text(), 'x = 2' if edit else 'x = 1')
@@ -280,7 +299,7 @@ class AgentLoopTests(unittest.TestCase):
             snapshots.append(copy.deepcopy(hist))
             return responses.pop(0)
 
-        with tempfile.TemporaryDirectory() as td, patch.object(builder, 'respond', side_effect=respond) as model, patch.object(builder.code_runtime, 'scaffold', side_effect=[RuntimeError('broken'), {}]) as scaffold, patch.object(builder, 'audit_delivery', return_value={}):
+        with tempfile.TemporaryDirectory() as td, patch.object(builder, 'respond', side_effect=respond) as model, patch.object(builder.code_runtime, 'scaffold', side_effect=[RuntimeError('broken'), {}]) as scaffold, patch.object(builder, 'audit_delivery', return_value={'fatal_errors': [], 'visual_warnings': [], 'code_result': None}):
             result = builder.build_one(builder_page('page-04', 'build-code', '代码页'), Path(td), Path(td) / 'trace.jsonl', ROOT / 'skills', 'instructions', 'low')
         self.assertEqual(model.call_count, 3)
         self.assertEqual(scaffold.call_count, 2)
@@ -336,14 +355,59 @@ class AgentLoopTests(unittest.TestCase):
             return 'ok'
         return fake_run
 
-    def test_no_tool_stops_once_without_delivery_or_nag(self):
-        with tempfile.TemporaryDirectory() as td, patch.object(builder, 'respond', return_value=done_response()) as respond:
+    def test_premature_stop_retries_original_context_until_time_limit(self):
+        snapshots = []
+        clock = [0]
+        def respond(_instructions, history, *_args, **_kwargs):
+            snapshots.append(copy.deepcopy(history))
+            clock[0] += 1000
+            return done_response()
+        with tempfile.TemporaryDirectory() as td, patch.object(builder, 'respond', side_effect=respond), patch.object(builder.time, 'time', side_effect=lambda: clock[0]):
             result = builder.build_one(builder_page(), Path(td), Path(td) / 'trace.jsonl', ROOT / 'skills', 'instructions', 'low')
-        self.assertEqual(result.calls, 1)
-        self.assertEqual(result.termination, 'no_tool_use')
+        self.assertEqual(result.calls, 4)
+        self.assertEqual(result.premature_stops, 4)
+        self.assertEqual(result.termination, 'max_seconds')
         self.assertFalse(result.artifact_present)
-        self.assertIn('target missing', result.audit['fatal_errors'][0])
-        respond.assert_called_once()
+        self.assertIn('target missing', result.last_stop_error)
+        self.assertTrue(all(h == snapshots[0] for h in snapshots))
+
+    def test_stop_retry_recovers_without_changing_context_or_reusing_old_check(self):
+        for mode in ('missing', 'modified', 'code'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as td:
+                pages = Path(td)
+                target = pages / 'page-01.html'
+                snapshots, checks = [], []
+                if mode == 'missing':
+                    responses = [done_response('Action:default_api:Read{file_path:references/general.md}')] * 5 + [tool_response(builder_call('Write', file_path='page-01.html', content='ok')), done_response()]
+                elif mode == 'modified':
+                    responses = [tool_response(builder_call('Write', file_path='page-01.html', content='ok'), builder_call('Check', page='page-01.html'), builder_call('Write', file_path='page-01.html', content='bad')), done_response(), tool_response(builder_call('Write', file_path='page-01.html', content='ok')), done_response()]
+                else:
+                    responses = [tool_response(builder_call('CodeScaffold')), done_response(), tool_response(builder_call('CodeScaffold')), done_response()]
+                def respond(instructions, history, specs, effort, **kw):
+                    snapshots.append(copy.deepcopy((instructions, history, specs, effort)))
+                    return responses.pop(0)
+                def execute(name, args, *_):
+                    if name == 'Write':
+                        target.write_text(args['content'])
+                        return 'written'
+                    checks.append(target.read_text())
+                    return '✗ JS 报错' if mode != 'code' and target.read_text() == 'bad' else '✗ 页面溢出'
+                def scaffold(*_):
+                    target.write_text('bad' if len(snapshots) == 1 else 'ok')
+                    return {}
+                def codecheck(*_):
+                    return ('失败:代码工作台自检失败' if target.read_text() == 'bad' else 'ok'), []
+                with patch.object(builder, 'respond', side_effect=respond), patch.object(builder.tools, 'run', side_effect=execute), patch.object(builder.code_runtime, 'scaffold', side_effect=scaffold), patch.object(builder.code_check, 'run_browser_check', side_effect=codecheck):
+                    result = builder.build_one(builder_page('page-01', 'build-code' if mode == 'code' else 'build-page'), pages, pages / 'trace.jsonl', ROOT / 'skills', 'instructions', 'low')
+                self.assertEqual(result.premature_stops, 5 if mode == 'missing' else 1)
+                self.assertEqual(result.termination, 'no_tool_use')
+                self.assertTrue(result.artifact_present)
+                self.assertEqual(result.audit['fatal_errors'], [])
+                self.assertEqual(len(checks), {'missing': 1, 'modified': 3, 'code': 2}[mode])
+                if mode == 'missing':
+                    self.assertTrue(all(row == snapshots[0] for row in snapshots[:6]))
+                else:
+                    self.assertEqual(snapshots[1], snapshots[2])
 
     def test_response_target_is_not_a_runtime_cap(self):
         responses = [tool_response(builder_call('Read', file_path='reference.md')), tool_response(builder_call('Write', file_path='page-01.html', content='<html/>'))] + [tool_response(builder_call('Read', file_path=f'missing-{index}.md'), index=index) for index in range(builder.RESPONSE_TARGET + 1)] + [done_response()]
@@ -406,7 +470,13 @@ class AgentLoopTests(unittest.TestCase):
     def test_artifact_and_failed_audit_are_recorded_separately(self):
         responses = [tool_response(builder_call('Read', file_path='reference.md')), tool_response(builder_call('Write', file_path='page-01.html', content='<html/>')), done_response()]
         events = []
-        with tempfile.TemporaryDirectory() as td, patch.object(builder, 'respond', side_effect=responses), patch.object(builder.tools, 'run', self.fake_run_factory(events, fatal_audit=True)):
+        clock = [0]
+        def respond(*_args, **_kwargs):
+            response = responses.pop(0)
+            if not responses:
+                clock[0] = builder.MAX_SECONDS + 1
+            return response
+        with tempfile.TemporaryDirectory() as td, patch.object(builder, 'respond', side_effect=respond), patch.object(builder.time, 'time', side_effect=lambda: clock[0]), patch.object(builder.tools, 'run', self.fake_run_factory(events, fatal_audit=True)):
             result = builder.build_one(builder_page(), Path(td), Path(td) / 'trace.jsonl', ROOT / 'skills', 'instructions', 'low')
         self.assertTrue(result.artifact_present)
         self.assertEqual(result.audit['fatal_errors'], ['✗ JS 报错'])

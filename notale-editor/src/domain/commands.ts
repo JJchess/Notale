@@ -1,3 +1,4 @@
+import {validateCodeLessons,updateCodeLesson} from './code-lessons.js';
 import { cleanChartReferences, mergeChartEdit, newChart } from './chart-authoring.js';
 import { applyVectorCommand } from './vector-commands.js';
 import { validateCanvasInstances, correlationHash } from './canvas-instances.js';
@@ -56,6 +57,7 @@ import {
 export function validateDocument(input: unknown): DeckDocument {
   const doc = documentSchema.parse(input);
   validateLibrary(doc);
+  validateCodeLessons(doc);
   for (const definition of doc.componentLibrary ?? [])
     validateDocument({ ...doc, componentLibrary: undefined, slides: [definition.source] });
   invariant(
@@ -507,6 +509,7 @@ export function applyCommands(
       doc.comments = doc.comments.filter((c) => c.id !== cmd.id);
       continue;
     }
+    if (cmd.type === 'codeLesson.update') {updateCodeLesson(doc,cmd);continue;}
     if (cmd.type === 'asset.put') {
       doc.assets[cmd.path] = cmd.asset;
       continue;
@@ -1301,7 +1304,7 @@ export function applyCommands(
       invariant(
         !elements(el).some(
           (e) =>
-            ['script', 'canvas', 'iframe'].includes(e.tagName) ||
+            ['script', 'canvas'].includes(e.tagName) ||
             s.nativeCharts[attr(e, NODE_ID) ?? ''] ||
             inspectChartSources(s).has(attr(e, NODE_ID) ?? ''),
         ),

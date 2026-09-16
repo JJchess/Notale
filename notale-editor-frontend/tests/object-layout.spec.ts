@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {reveal} from './harness/format-panel';
 import {randomUUID} from 'node:crypto';
 import {unzipSync,strFromU8} from 'fflate';
 test.use({baseURL:process.env.OBJECT_TEST_URL??'http://127.0.0.1:4358'});
@@ -6,12 +7,12 @@ test('page geometry, mixed selection, grouping, arrangement, history and export'
  const id=randomUUID(),errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  const result=await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'对象排版独立验证',width:1600,height:900,slides:[{id:'first',name:'排版',sourcePath:'first.html',html:'<!doctype html><html><body style="margin:0"><main id="stage" data-notale-id="stage" style="position:absolute;width:1600px;height:900px"><h1 data-notale-id="text" style="position:absolute;left:100px;top:100px;width:300px;height:80px;margin:0;font-size:32px">文字排版</h1><div data-notale-id="shape" data-notale-shape="rect" style="position:absolute;left:500px;top:280px;width:150px;height:100px;background:purple"></div><img data-notale-id="image" alt="样例" style="position:absolute;left:900px;top:450px;width:120px;height:100px" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22100%22%3E%3Crect width=%22120%22 height=%22100%22 fill=%22orange%22/%3E%3C/svg%3E"></main></body></html>'}]}});
  expect(result.status(),await result.text()).toBe(201);
- await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot());
+ await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot()?.document.slides.length>0);
  const ready=()=>page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
  const select=async(ids:string[])=>{await ready();await page.evaluate(ids=>(window as any).NotaleWorkbench.selectMany(ids),ids);};
  const slide=()=>page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot().document.slides[0]);
  const rect=(id:string)=>page.frameLocator('#canvas').locator('[data-notale-id="'+id+'"]').evaluate(e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};}).catch(error=>{if(String(error).includes('Execution context was destroyed'))return{x:NaN,y:NaN,width:NaN,height:NaN};throw error;});
- await select(['shape']);await page.locator('[data-tool="style"]').click();
+ await select(['shape']);await reveal(page,'#tx');
  await expect.poll(()=>page.locator('#tx').inputValue()).toBe('500');
  await page.locator('#tx').fill('600');await page.locator('#tx').press('Tab');
  await expect.poll(async()=>(await rect('shape')).x).toBeCloseTo(600);
@@ -28,7 +29,9 @@ test('page geometry, mixed selection, grouping, arrangement, history and export'
  await expect.poll(async()=>(await rect('shape')).width).toBeCloseTo(300);
  await page.locator('#selection-name').click();await page.keyboard.press('Control+g');
  await expect.poll(async()=>(await slide()).groups.length).toBe(1);await ready();
- await page.locator('#property-arrange > summary').click();await page.locator('#arrange-left').click();
+ await page.locator('#property-arrange > summary').click();
+ await expect(page.locator('#arrange-left')).toHaveAttribute('title','左对齐');await expect(page.locator('#arrange-left')).toHaveText('');
+ await page.locator('#arrange-left').click();
  await expect.poll(async()=>(await rect('shape')).x).toBeCloseTo(0);
  expect((await rect('image')).x-(await rect('shape')).x).toBeCloseTo(600);
  await page.locator('#property-arrange > summary').click();await page.locator('#selection-name').click();
@@ -41,7 +44,7 @@ test('page geometry, mixed selection, grouping, arrangement, history and export'
  const expected=await Promise.all(['text','shape','image'].map(rect));
  const before=await slide();await page.locator('#undo').click();await ready();await page.locator('#redo').click();await ready();
  expect((await slide()).html).toEqual(before.html);
- await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot());await ready();
+ await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot()?.document.slides.length>0);await ready();
  expect((await slide()).html).toEqual(before.html);
  const exported=await page.request.get('/api/documents/'+id+'/export');expect(exported.ok()).toBe(true);
  const files=unzipSync(new Uint8Array(await exported.body()));expect(JSON.parse(strFromU8(files['notale-project.json'])).document.slides[0].html).toEqual(before.html);

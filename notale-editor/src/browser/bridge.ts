@@ -1,3 +1,4 @@
+import { workbenchLifecycle } from './workbench-lifecycle.js';
 import {presentationRuntime} from './presentation-runtime.js';
 import {createAuthorRuntime} from './author-runtime.js';
 import {textBox,beginBoxResize,previewBoxResize} from './text-box.js';
@@ -66,6 +67,9 @@ declare global {
 }
 const runtimeId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 let runtimeReady = false;
+const cachedAnimations=new Set<Animation>();
+document.addEventListener('play',event=>{if(document.documentElement.dataset.notaleCanvasActive==='false'&&event.target instanceof HTMLMediaElement)event.target.pause();},true);
+const embeddedWorkbenches = workbenchLifecycle(document,state=>send('embedded-state',state));
 const config = window.__NOTALE__,
   slide = config.slide;
 let step = 0,
@@ -109,12 +113,18 @@ const connectors = connectorController(slide.connectors ?? [], {
 const isConnector = (id: string) => (slide.connectors ?? []).some((c) => c.id === id);
 const drawGuides = guideOverlay(config.width, config.height);
 let geometrySequence = 0;
+let vectorIntentGeneration=0;
 let vectorEditor:ReturnType<typeof createVectorEditor>|undefined,vectorLoading:Promise<void>|undefined,vectorActive=false;
 async function vectors(){
  if(vectorEditor)return vectorEditor;if(!config.vectorEditorUrl)throw Error('矢量编辑运行时不可用');
  if(!window.NotaleVectorEditor){vectorLoading??=new Promise<void>((resolve,reject)=>{const script=document.createElement('script');script.src=config.vectorEditorUrl!;script.onload=()=>resolve();script.onerror=()=>{vectorLoading=undefined;reject(Error('矢量工具加载失败，请重试'));};document.head.append(script);});await vectorLoading;}
  if(vectorEditor)return vectorEditor;
  return vectorEditor=window.NotaleVectorEditor!.createVectorEditor({slide,runtimeId,wasmUrl:config.vectorWasmUrl!,enabled:()=>mode==='edit',selection:()=>[...selected],select:ids=>setSelection(ids,true),locked,send,active:value=>{vectorActive=value;handles.cancel();refreshGuides();},refresh:refreshGuides});
+}
+async function runVectorIntent(action:(editor:ReturnType<typeof createVectorEditor>)=>unknown){
+ const generation=vectorIntentGeneration;
+ const editor=await vectors();
+ if(mode==='edit'&&generation===vectorIntentGeneration)return action(editor);
 }
 function commitGeometry(before: {id:string;style:string|null}[], after: {id:string;style:string|null}[]) {
   const commands: unknown[] = [];
@@ -145,7 +155,7 @@ const handles = moveableGestures({
   guides:lines=>{snapLines=lines;paintGuides();},
   start:()=>{rulers.cancel();cancelDrag();endMarquee(true);suppressClick=true;pendingSelectionClick=undefined;},
   commit:commitGeometry,
-  active:active=>send('gesture-active',{active,runtimeId,slideId:slide.id}),
+  active:active=>{send('gesture-active',{active,runtimeId,slideId:slide.id});if(!active)scheduleSelectionNotification();},
 });
 let guidePreview: Guide[] | undefined;
 const rulers = rulerOverlay({
@@ -220,12 +230,12 @@ const components = componentController(
   },
   (target) => nativeCharts.inspect(target).value ?? slide.nativeCharts[target]?.interaction?.value,
 );
-const authorRuntime=createAuthorRuntime({config,charts:nativeCharts,components,connectors,media,canvas:canvasInstances,
+const authorRuntime=createAuthorRuntime({ack:requestId=>send('author-flushed',{requestId}),config,charts:nativeCharts,components,connectors,media,canvas:canvasInstances,
   protect:el=>!!textEditor?.root.contains(el),refresh:()=>{refreshGuides();send('measure',measure());},
   metadata:()=>{cues=timeline(slide);send('step',{step,max:total()});},
   reload:reason=>send('runtime-reload-required',{reason,runtimeId,slideId:slide.id}),error:error=>send('edit-error',{message:String(error)}),
 });
-const presentation=presentationRuntime({slide,send,components,sceneApply:(id,values)=>{
+const presentation=presentationRuntime({slide,send,getStep:()=>step,components,sceneApply:(id,values)=>{
   const scene=config.scenes?.find(s=>s.id===id);for(const parameter of scene?.parameters??[]){if(!parameter.control||!Object.hasOwn(values,parameter.key))continue;const node=get(parameter.control.target) as HTMLInputElement|null;if(node){if(node.type==='checkbox')node.checked=!!values[parameter.key];else node.value=String(values[parameter.key]);node.dispatchEvent(new Event(parameter.control.event,{bubbles:true}));}}
 }});
 function total() {
@@ -286,10 +296,31 @@ function selectionObjects() {
       parent: el.parentElement?.closest<HTMLElement>('[data-notale-id]')?.dataset.notaleId,
     }));
 }
+// Keep host layout changes outside the pointer gesture that selected the object.
+let selectionPointerDown = false;
+let selectionNotificationPending = false;
+let selectionNotificationTimer: ReturnType<typeof setTimeout> | undefined;
+function notifyHostSelection() {
+  if (selectionPointerDown || handles.active()) {
+    selectionNotificationPending = true;
+    return;
+  }
+  selectionNotificationPending = false;
+  send('select', { ids: [...selected], id: [...selected][0], objects: measure(), scope: componentScope });
+}
+function scheduleSelectionNotification() {
+  if (selectionNotificationTimer !== undefined) clearTimeout(selectionNotificationTimer);
+  selectionNotificationTimer = setTimeout(() => {
+    selectionNotificationTimer = undefined;
+    if (selectionNotificationPending) notifyHostSelection();
+  }, 0);
+}
 function setSelection(ids: string[], notify = false) {
   const next = selectIds([], ids, selectionObjects(), componentScope?[]:slide.groups);
   connectors.cancel();
   if (next.length !== selected.size || next.some((id) => !selected.has(id))) {
+    vectorIntentGeneration++;
+    if(pendingTextTarget)endText();
     handles.cancel();
     rulers.cancel();
     if (drag) cancelDrag();
@@ -299,7 +330,7 @@ function setSelection(ids: string[], notify = false) {
   selected = new Set(next);
   for (const id of selected) get(id)?.setAttribute('data-notale-selected', '');
   refreshGuides();
-  if (notify) send('select', { ids: [...selected], id: [...selected][0], objects: measure(),scope:componentScope });
+  if (notify) notifyHostSelection();
   if([...selected].some(id=>get(id)?.namespaceURI==='http://www.w3.org/2000/svg'))void vectors().then(v=>v.refresh()).catch(e=>send('edit-error',{message:String(e)}));
   else send('vector-state',{active:false,slideId:slide.id,runtimeId});
 }
@@ -382,6 +413,9 @@ function captureAuthor(ids: string[], clipboard: boolean) {
     'background',
     'background-color',
     'border-color',
+    'border-width',
+    'border-style',
+    'background-image',
     'color',
     'font-family',
     'font-size',
@@ -635,14 +669,15 @@ function seek(next: number, animate = false, componentStep = next) {
   window.Deck?.stepTo(Math.min(native, window.Deck.stepMax));
   if (!window.Deck) {
     document.documentElement.style.setProperty('--step', String(native));
-    for (const el of document.querySelectorAll<HTMLElement>('[data-step]')) {
-      const hidden = Number(el.dataset.step) > native;
+    for (const el of document.querySelectorAll<HTMLElement>('[data-deck-step],[data-step]')) {
+      const hidden = Number(el.dataset.deckStep ?? el.dataset.step) > native;
       el.style.visibility = hidden ? 'hidden' : '';
       el.inert = hidden;
     }
   }
   components.seek(Math.max(0, Math.min(total(), componentStep)), animate);
   if (mode === 'edit') {
+    for (const el of document.querySelectorAll<HTMLElement>('[data-deck-step],[data-step]')) el.inert = false;
     send('step', { step, max: total() });
     return;
   }
@@ -688,6 +723,8 @@ function seek(next: number, animate = false, componentStep = next) {
   send('step', { step, max: total() });
 }
 function setMode(next: string) {
+  if(next==='play')embeddedWorkbenches.interact();
+  if((next==='edit'?'edit':'play')!==mode)vectorIntentGeneration++;
   if(next!=='edit'){endText();vectorEditor?.exit();}
   connectors.cancel();
   cancelDrag();
@@ -699,10 +736,10 @@ function setMode(next: string) {
   seek(mode === 'edit' ? total() : 0, mode === 'play', 0);
 }
 const style = document.createElement('style');
-style.textContent = `[data-notale-mode="edit"] [data-notale-id]{cursor:default!important}[data-notale-mode="edit"] [data-notale-selected]{outline:2px solid #466ddb!important;outline-offset:3px}html[data-notale-mode="edit"] [data-step]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}`;
+style.textContent = `[data-notale-mode="edit"] [data-notale-id]{cursor:default!important}[data-notale-mode="edit"] [data-notale-selected]{outline:2px solid #466ddb!important;outline-offset:3px}html[data-notale-mode="edit"] [data-deck-step],html[data-notale-mode="edit"] [data-step]{opacity:1!important;visibility:visible!important;pointer-events:auto!important}`;
 document.head.append(style);
 style.textContent += `[data-notale-connector][data-notale-selected]{outline:none!important}html[data-notale-mode="edit"] [data-notale-connector][data-notale-selected] [data-connector-line]{filter:drop-shadow(0 0 3px #466ddb)}`;
-style.textContent += `html[data-notale-mode="edit"] #stage{touch-action:none!important}html[data-notale-mode="edit"] [data-notale-id]{user-select:none!important}html[data-notale-mode="edit"] [contenteditable="true"],html[data-notale-mode="edit"] [contenteditable="true"] *{user-select:text!important}`;
+style.textContent += `html[data-notale-mode="edit"] iframe{pointer-events:none!important}html[data-notale-mode="edit"] #stage{touch-action:none!important}html[data-notale-mode="edit"] [data-notale-id]{user-select:none!important}html[data-notale-mode="edit"] [contenteditable="true"],html[data-notale-mode="edit"] [contenteditable="true"] *{user-select:text!important}`;
 document.addEventListener(
   'dragstart',
   (event) => {
@@ -793,20 +830,31 @@ document.addEventListener(
 let textEditor:ReturnType<typeof createTextEditor>|undefined;
 let textLoader:Promise<void>|undefined;
 let textGeneration=0;
+let pendingTextTarget:HTMLElement|undefined;
 function isTextRoot(el:HTMLElement){return el.namespaceURI==='http://www.w3.org/1999/xhtml'&&/^(P|H[1-6]|SPAN|A|LABEL|BUTTON|LI|BLOCKQUOTE|TD|TH|DIV|SECTION|ARTICLE)$/.test(el.tagName)&&![...el.querySelectorAll('*')].some(n=>!['span','b','strong','i','em','u','s','sub','sup','a','br','p','ul','ol','li'].includes(n.localName));}
+function codeFrameHit(hit:HTMLElement|null,x:number,y:number):HTMLElement|null {
+  for(const frame of [...document.querySelectorAll<HTMLIFrameElement>('iframe.code-workbench-frame[data-notale-id]')].reverse()){
+    const r=frame.getBoundingClientRect(),css=getComputedStyle(frame);
+    if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom&&css.display!=='none'&&css.visibility!=='hidden'&&(!hit||hit===frame||hit.contains(frame)))return frame;
+  }
+  return hit;
+}
 function editableRoot(hit:HTMLElement|null){if(textEditor?.root.contains(hit))return textEditor.root;let node=hit;while(node&&/^(SPAN|A|B|STRONG|I|EM|U|S|SUB|SUP)$/.test(node.tagName)&&node.parentElement?.dataset.notaleId&&isTextRoot(node.parentElement))node=node.parentElement;return node;}
 const textHeads=new Map<string,{sessionId:string;sequence:number}>();
-function endText(){textGeneration++;if(!textEditor)return;textEditor.flush();const sessionId=textEditor.sessionId;textEditor.destroy();textEditor=undefined;send('text-session-end',{sessionId,slideId:slide.id,runtimeId});refreshGuides();}
+function endText(){textGeneration++;pendingTextTarget=undefined;if(!textEditor)return;textEditor.flush();const sessionId=textEditor.sessionId;textEditor.destroy();textEditor=undefined;send('text-session-end',{sessionId,slideId:slide.id,runtimeId});refreshGuides();}
 async function startText(el:HTMLElement){
  if(mode!=='edit'||locked(el)||!isTextRoot(el)||!config.textEditorUrl)return;
- if(textEditor?.root===el){el.focus();return;}
- endText();const generation=++textGeneration;
- if(!window.NotaleTextEditor){textLoader??=new Promise<void>((resolve,reject)=>{const script=document.createElement('script');script.src=config.textEditorUrl!;script.onload=()=>resolve();script.onerror=()=>{textLoader=undefined;script.remove();reject(Error('文字编辑器未能加载，请重试'));};document.head.append(script);});await textLoader;}
- if(generation!==textGeneration||mode!=='edit'||!el.isConnected)return;
+ if(textEditor?.root===el){el.focus();return textEditor;}
+ endText();const generation=++textGeneration;pendingTextTarget=el;
+ if(!window.NotaleTextEditor){textLoader??=new Promise<void>((resolve,reject)=>{const script=document.createElement('script');script.src=config.textEditorUrl!;script.onload=()=>resolve();script.onerror=()=>{textLoader=undefined;script.remove();reject(Error('文字编辑器未能加载，请重试'));};document.head.append(script);});try{await textLoader;}catch(error){if(generation===textGeneration)pendingTextTarget=undefined;throw error;}}
+ if(generation!==textGeneration)return;
+ pendingTextTarget=undefined;
+ if(mode!=='edit'||!el.isConnected||locked(el)||!isTextRoot(el))return;
  setSelection([el.dataset.notaleId!],true);
  const protectedIds=new Set([...slide.animations.flatMap(a=>[a.target,a.triggerTarget].filter(Boolean) as string[]),...slide.bindings.map(b=>b.target),...(slide.groups??[]).flatMap(g=>g.members)]);
  textEditor=window.NotaleTextEditor!.createTextEditor(el,{protectedIds,change:data=>{textHeads.set(data.target,{sessionId:data.sessionId,sequence:data.sequence});send('text-draft',{...data,slideId:slide.id,runtimeId});},context:data=>send('text-context-state',{...data,slideId:slide.id,runtimeId}),history:action=>{textEditor?.flush();send('text-history',{action,slideId:slide.id,runtimeId});},end:endText,error:message=>send('text-error',{message})});
  send('text-session-start',{sessionId:textEditor.sessionId,target:el.dataset.notaleId,slideId:slide.id,runtimeId});
+ return textEditor;
 }
 function contextAt(x:number,y:number){
  const text=textEditor?.freeze();
@@ -819,8 +867,14 @@ document.addEventListener(
   (event) => {
     if (mode !== 'edit') return;
     if((event.target as Element)?.closest('[data-notale-chart-ui]'))return;
-    const hit = document.elementFromPoint(event.clientX, event.clientY);
-    const el = hit?.closest<HTMLElement>('[data-notale-id]') ?? null;
+    const topHit=document.elementFromPoint(event.clientX,event.clientY);
+    const handles=topHit?.closest('[data-notale-handles]');
+    if(handles&&!topHit?.closest('.moveable-area'))return;
+    const hit = handles
+      ? document.elementsFromPoint(event.clientX,event.clientY).find(node=>!node.closest('[data-notale-handles]')&&node.closest('[data-notale-id]'))
+      : topHit;
+    const el = codeFrameHit(hit?.closest<HTMLElement>('[data-notale-id]') ?? null,event.clientX,event.clientY);
+    if(el?.matches('iframe.code-workbench-frame')&&!locked(el)){event.preventDefault();event.stopImmediatePropagation();setSelection([el.dataset.notaleId!],true);send('code-lesson-edit',{target:el.dataset.notaleId,slideId:slide.id,runtimeId});return;}
     const component = componentHit(el);
     if (
       (component && component !== el) ||
@@ -835,7 +889,7 @@ document.addEventListener(
       return;
     }
     const root=editableRoot(el);
-    if(root?.namespaceURI==='http://www.w3.org/2000/svg'){event.preventDefault();event.stopImmediatePropagation();void vectors().then(v=>v.enter(root as unknown as SVGElement)).catch(e=>send('edit-error',{message:String(e)}));return;}
+    if(root?.namespaceURI==='http://www.w3.org/2000/svg'){event.preventDefault();event.stopImmediatePropagation();void runVectorIntent(v=>{if(root.isConnected&&!locked(root))v.enter(root as unknown as SVGElement);}).catch(e=>send('edit-error',{message:String(e)}));return;}
     if(root)void startText(root).catch(e=>send('text-error',{message:String(e)}));
   },
   true,
@@ -862,7 +916,7 @@ document.addEventListener(
       const n=get([...selected][0]);if(n?.namespaceURI==='http://www.w3.org/2000/svg'){
         event.preventDefault();event.stopImmediatePropagation();
         if(['svg','g'].includes(n.localName)){componentScope=n.getAttribute('data-notale-id')!;const child=[...n.children].find(c=>c.hasAttribute('data-notale-id')&&!['defs','title','desc','style'].includes(c.localName));if(child)setSelection([child.getAttribute('data-notale-id')!],true);}
-        else void vectors().then(v=>v.enter(n as unknown as SVGElement)).catch(e=>send('edit-error',{message:String(e)}));return;
+        else void runVectorIntent(v=>{if(n.isConnected&&!locked(n))v.enter(n as unknown as SVGElement);}).catch(e=>send('edit-error',{message:String(e)}));return;
       }
     }
     if (mode === 'edit' && event.key === 'Escape' && componentScope) {
@@ -888,6 +942,7 @@ document.addEventListener(
       }
     }
     if (
+      !document.documentElement.dataset.notalePresentation &&
       ['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', ' ', 'Escape'].includes(event.key) &&
       parent !== window
     ) {
@@ -1008,7 +1063,12 @@ function neighborsFor(ids: string[]) {
 document.addEventListener('pointerdown',()=>send('context-dismiss',{}),true);
 document.addEventListener('contextmenu',event=>{
   if(mode!=='edit'||!(event.target instanceof Element)||event.target.closest('input,textarea,select'))return;
-  const hit=componentHit(event.target.closest<HTMLElement>('[data-notale-id]'),event.ctrlKey||event.metaKey);
+  if(event.target.closest('[data-notale-handles]')&&selected.size){
+    event.preventDefault();event.stopImmediatePropagation();
+    if(textEditor)endText();
+    contextAt(event.clientX,event.clientY);return;
+  }
+  const hit=componentHit(codeFrameHit(event.target.closest<HTMLElement>('[data-notale-id]'),event.clientX,event.clientY),event.ctrlKey||event.metaKey);
   const selectedParent=[...selected].map(id=>get(id)).find(node=>node?.contains(hit));
   const el=textEditor?.root.contains(hit)?textEditor.root:selectedParent??editableRoot(hit);
   if(!el||el.id==='stage')return;
@@ -1018,7 +1078,17 @@ document.addEventListener('contextmenu',event=>{
   contextAt(event.clientX,event.clientY);
 },true);
 document.addEventListener('keydown',event=>{if(mode==='edit'&&(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')){const el=textEditor?.root??get([...selected][0]);if(el){event.preventDefault();event.stopImmediatePropagation();const r=el.getBoundingClientRect();contextAt(r.left+r.width/2,r.top+r.height/2);}}},true);
-document.addEventListener('pointerdown',event=>{if(event.button===0&&textEditor&&!textEditor.root.contains(event.target as Node)&&!(event.target as Element).closest('[data-notale-handles]'))endText();},true);
+document.addEventListener('pointerdown', event => {
+  if (mode === 'edit' && event.button === 0) selectionPointerDown = true;
+}, true);
+function releaseSelectionPointer() {
+  selectionPointerDown = false;
+  scheduleSelectionNotification();
+}
+window.addEventListener('pointerup', releaseSelectionPointer, true);
+window.addEventListener('pointercancel', releaseSelectionPointer, true);
+window.addEventListener('blur', releaseSelectionPointer);
+document.addEventListener('pointerdown',event=>{if(event.button===0&&(textEditor?.root??pendingTextTarget)&&!(textEditor?.root??pendingTextTarget)!.contains(event.target as Node)&&!(event.target as Element).closest('[data-notale-handles]'))endText();},true);
 document.addEventListener('pointerdown', (event) => {
   if (mode !== 'edit' || vectorActive || event.button !== 0 || (event.target instanceof Element && event.target.closest('[data-notale-handles]'))) return;
   connectors.cancel();
@@ -1026,7 +1096,7 @@ document.addEventListener('pointerdown', (event) => {
   const raw =
     event.target instanceof Element ? event.target.closest<HTMLElement>('[data-notale-id]') : null;
   const deep=event.ctrlKey||event.metaKey;
-  const el = componentHit(raw, deep);
+  const el = componentHit(codeFrameHit(raw,event.clientX,event.clientY), deep);
   if(deep&&el)componentScope=el.parentElement?.closest<HTMLElement>('svg[data-notale-id],g[data-notale-id]')?.dataset.notaleId;
   suppressClick = false;
   pendingSelectionClick = undefined;
@@ -1240,6 +1310,14 @@ window.addEventListener('message', (event) => {
     mediaEnabled = data.media !== false;
     seek(data.step, !!data.animate, data.componentStep ?? data.step);
   }
+  if(type==='canvas-visibility') {
+    document.documentElement.dataset.notaleCanvasActive=String(data.visible!==false);
+    embeddedWorkbenches.setVisible(data.visible!==false);
+    if(data.visible===false){
+      for(const media of document.querySelectorAll<HTMLMediaElement>('audio,video'))media.pause();
+      for(const animation of document.getAnimations())if(animation.playState==='running'){cachedAnimations.add(animation);animation.pause();}
+    } else {for(const animation of cachedAnimations)if(animation.playState==='paused')animation.play();cachedAnimations.clear();}
+  }
   if (type === 'state' && runtimeReady)
     send('ready', {
       slideId: slide.id,
@@ -1257,7 +1335,7 @@ window.addEventListener('message', (event) => {
   if (type === 'guide-focus') rulers.focus(data.id);
   if (type === 'resize-mode') handles.textReflow(data.reflow !== false);
   if (type === 'mode') setMode(data.mode);
-  if(type==='vector-action')void vectors().then(v=>v.action(data.action,data)).catch(e=>send('edit-error',{message:String(e)}));
+  if(type==='vector-action')void runVectorIntent(v=>v.action(data.action,data)).catch(e=>send('edit-error',{message:String(e)}));
   if(type==='flush-editor'){
     vectorEditor?.flush();
     const finish=()=>{textEditor?.flush();send('editor-flushed',{id:data.id});};
@@ -1269,7 +1347,7 @@ window.addEventListener('message', (event) => {
   if(type==='text-replace'&&textEditor&&textEditor.sessionId===data.sessionId){try{textEditor.replace(data.text,data.selectionToken);}catch(e){send('text-error',{message:String(e)});}}
   if(type==='text-select-all'&&textEditor&&(!data.sessionId||textEditor.sessionId===data.sessionId))textEditor.selectAll();
   if(type==='text-refocus'&&textEditor&&(!data.sessionId||textEditor.sessionId===data.sessionId))textEditor.root.focus();
-  if(type==='text-object-format'){void (async()=>{for(const id of data.ids??[]){const el=get(id);if(!el||locked(el)||!isTextRoot(el))continue;await startText(el);if(textEditor){const selection=textEditor.selectAll();textEditor.format(data.property,data.value,selection.selectionToken);endText();}}})().catch(e=>send('text-error',{message:String(e)}));}
+  if(type==='text-object-format'){void (async()=>{for(const id of data.ids??[]){const el=get(id);if(!el||locked(el)||!isTextRoot(el))continue;const editor=await startText(el);if(!editor||editor!==textEditor)break;const selection=editor.selectAll();editor.format(data.property,data.value,selection.selectionToken);endText();}})().catch(e=>send('text-error',{message:String(e)}));}
   if(type==='text-confirm'){const head=textHeads.get(data.target);if(data.sessionId&&head&&(head.sessionId!==data.sessionId||head.sequence>data.sequence))return;const el=get(data.target);if(el){if(textEditor?.root===el){if(!data.sessionId||textEditor.sessionId===data.sessionId)textEditor.ack(data.sequence??textEditor.sequence,data.html);}else el.innerHTML=data.html;refreshGuides();}}
 
   if (type === 'focus') {
@@ -1405,5 +1483,11 @@ window.NotaleBridge = {
   capture: (ids: string[]) => capture(ids, true),
   state: () => ({ step, max: total(), mode, components: components.state() }),
 };
-if (document.readyState === 'complete') start();
-else window.addEventListener('load', start, { once: true });
+// Decorative images and media must not gate editing or presentation controls.
+// DOMContentLoaded still waits for authored synchronous/deferred scripts.
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+else start();
+const refreshLateLayout = () => { if(runtimeReady){connectors.refresh();send('measure',measure());} };
+window.addEventListener('load',refreshLateLayout,{once:true});
+void document.fonts?.ready.then(refreshLateLayout);
+

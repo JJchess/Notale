@@ -1,0 +1,20 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+import {importHtml} from '@notale/editor';
+test.use({baseURL:process.env.ARCHITECTURE_URL??'http://127.0.0.1:4399'});
+test('view preferences persist and guide drafts reject conflicts across page changes',async({page})=>{
+ const id=randomUUID(),errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ const html=importHtml('<html><body><main id="stage">参考线</main></body></html>').html;
+ expect((await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'参考线设置',width:1600,height:900,slides:['first','second'].map(id=>({id,name:id,sourcePath:id+'.html',html}))}})).ok()).toBe(true);
+ await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot()?.document.slides.length===2);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
+ const menu=page.locator('.canvas-settings-menu summary');await menu.click();await page.locator('#rulers-visible').check();await page.locator('#snap-enabled').uncheck();await page.locator('#open-guide-settings').click();await page.locator('#snap-grid').fill('100 / 5');await page.locator('#add-guide').click();await expect(page.locator('.guide-row')).toHaveCount(1);
+ const input=page.locator('[data-guide-position]');await input.fill('100 * 2');await page.locator('[data-save-guide]').click();
+ const guides=()=>page.evaluate(()=>(window as any).NotaleWorkbench.getSnapshot().document.slides[0].guides);
+ await expect.poll(async()=>(await guides())[0].position).toBe(200);await input.fill('999');await input.press('Escape');await expect(input).toHaveValue('200');await input.fill('250');
+ await page.evaluate(()=>(window as any).NotaleWorkbench.commands([{type:'deck.update',title:'无关修改'}]));await expect(input).toHaveValue('250');
+ await page.evaluate(()=>{const api=(window as any).NotaleWorkbench,guide=api.getSnapshot().document.slides[0].guides[0];return api.commands([{type:'slide.update',slideId:'first',patch:{guides:[{...guide,position:300}]}}]);});
+ await page.locator('[data-save-guide]').click();await expect(page.locator('.guide-row [role="status"]')).toContainText('参考线已变化');await expect(input).toHaveValue('250');
+ await page.locator('#view-settings-dialog button[aria-label="关闭"]').click();await menu.click();await page.locator('#open-guide-settings').click();await expect(input).toHaveValue('300');await input.fill('');await page.locator('[data-remove-guide]').click();await expect(page.locator('.guide-row')).toHaveCount(0);
+ await page.locator('#add-guide').click();await expect(page.locator('.guide-row')).toHaveCount(1);await page.evaluate(()=>(window as any).NotaleWorkbench.showSlide('second'));await expect(page.locator('.guide-row')).toHaveCount(0);
+ await page.locator('#view-settings-dialog button[aria-label="关闭"]').click();await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot()?.document.slides.length===2);await menu.click();await expect(page.locator('#rulers-visible')).toBeChecked();await expect(page.locator('#snap-enabled')).not.toBeChecked();await page.locator('#open-guide-settings').click();await expect(page.locator('#snap-grid')).toHaveValue('20');expect(errors).toEqual([]);
+});

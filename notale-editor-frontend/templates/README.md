@@ -1,3 +1,11 @@
+# Template catalogs
+
+The editor serves **original/**: eight editable full-page templates and eight standalone diagrams. Run `npm run templates:prepare` to regenerate both catalogs; `npm run diagrams:prepare` is an alias for that same generation. See [original catalog instructions](original/README.md).
+
+The material described below is a **legacy reference reconstruction**, retained locally for review. It is not the active catalog and is excluded from the proposed source release until provenance is established. The old preparation scripts are not used by the public npm commands.
+
+---
+
 # Refined presentation templates
 
 Eight editable page templates and five standalone diagrams, reconstructed against the corresponding PNGs in `../../refs/template/organized`. Original references remain unchanged. The source manifest's watermark exclusions are preserved.

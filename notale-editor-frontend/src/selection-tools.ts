@@ -1,6 +1,9 @@
 import {selectionUnits} from './object-geometry.js';
 type Item = { id: string; parent?: string; locked: boolean };
-export function renderSelectionTools(objects: Item[], selected: Set<string>, groups: {members: string[]}[], ready: boolean) {
+export interface SelectionTool {id:string;disabled:boolean;title:string;}
+const empty:SelectionTool[]=[];let model=empty;const listeners=new Set<()=>void>();
+export const selectionToolsState={subscribe:(fn:()=>void)=>{listeners.add(fn);return()=>{listeners.delete(fn);};},getSnapshot:()=>model,getServerSnapshot:()=>empty};
+export function renderSelectionTools(objects: Item[], selected: ReadonlySet<string>, groups: {members: string[]}[], ready: boolean) {
   const items = objects.filter(object => selected.has(object.id));
   const locked = items.some(object => object.locked);
   const nested = items.some(object => {
@@ -17,11 +20,6 @@ export function renderSelectionTools(objects: Item[], selected: Set<string>, gro
     'align-left': items.length >= 2,
     distribute: selectionUnits(items,groups).length >= 3,
   };
-  for (const [id, visible] of Object.entries(visibility)) {
-    const button = document.getElementById(id) as HTMLButtonElement;
-    button.hidden = !visible;
-    button.disabled = !ready || locked || (id === 'group' && nested);
-    button.title = locked ? '先解锁所选对象' : id === 'group' && nested ? '父对象与内部对象不能同时编组' : '';
-  }
-  document.getElementById('selection-tools-separator')!.hidden = !Object.values(visibility).some(Boolean);
+  const next=Object.entries(visibility).filter(([,visible])=>visible).map(([id])=>({id,disabled:!ready||locked||(id==='group'&&nested),title:locked?'先解锁所选对象':id==='group'&&nested?'父对象与内部对象不能同时编组':''}));
+  if(JSON.stringify(next)!==JSON.stringify(model)){model=next;listeners.forEach(fn=>fn());}
 }

@@ -40,3 +40,8 @@ export {showControl,type ShowControlMode} from './browser/show-control.js';
 export {readShowCheckpoint} from './browser/show-session.js';
 export {mergePresentationRuntime,presentationOrder,validPresentationState} from './domain/presentation.js';
 export type {PresentationRole,PresentationRuntimeState,PresentationRuntimePatch,PresentationSessionState,PresentationViewport} from './domain/presentation.js';
+
+export {runtimeIdentity,authorIdentity} from './domain/page-identity.js';
+
+export {CODE_FILES, CODE_RUNTIME_VERSION, codeResourcePath} from '@notale/format';
+export type {CodeFile,CodeSources,CodeLessonDescriptor} from '@notale/format';

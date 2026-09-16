@@ -5,6 +5,24 @@ description: "Builds pages explaining concepts, mechanisms, or data relationship
 
 # Build Page
 
+## Teach through Deck steps
+
+Organize this page's explanation through chassis-controlled steps. Advance evidence, state changes, comparisons, or attention to a specific relationship within one stable main scene. Each step must make a concrete relationship more understandable; do not merely reveal another paragraph, card, or bordered section.
+
+Comparisons also use steps: add B alongside A on the same baseline, add a difference or residual, or progressively focus relationships with both cases already visible. Preserve object identities, semantic colors, scales, and reference geometry. Accumulate evidence when useful; changing states must retain enough reference to understand the change. Never wrap each step in its own panel or relayout the page into successive cards.
+
+Compose the evidence and its explanations as one scene: place short labels, values, and formulas beside the objects or relationships they explain. A diagram on the left plus a stack of explanatory cards on the right is not this composition, even if the cards have Deck step attributes. Neither are separate boxed cases in a comparison. Use spacing, alignment, leaders, and shared reference geometry instead. Borders may represent actual objects or scientific boundaries; do not use decorative card shells around individual facts, steps, or cases.
+
+Preserve theme colors, typography, and material details, but treat its card, tray, and panel classes as optional. If a theme description or worked sample suggests separate containers, adapt it to this shared-scene composition. For example, two compared vessels stand in the same field, with direct labels and aligned geometry; do not place each vessel inside its own rounded rectangle, shadowed surface, or framed plot. Check the actual enclosure, not whether its CSS class is named “card”.
+
+Step 0 establishes the subject, objects, and useful starting evidence; it need not disclose the final conclusion. The final state must support complete review. Choose meaningful teaching beats without a fixed step quota. The whole-page text budget still applies across the explanation; advancing a step does not grant a new text allowance.
+
+Use `data-deck-step="n"` for element reveals or `Deck.onStep(renderStep, maxStep)` for drawn state changes. The chassis owns forward/backward navigation. Transfer a sample's explanatory states, not its next buttons, sequential tabs, or automatic progression. Preserve controls for genuine free comparison, model input, zoom, and inspection. Continuous motion may explain the current step but must not advance the teaching sequence automatically.
+
+Remove sample step selectors entirely, including numbered pills and clickable teaching titles, even when they also call Deck. A registered step count alone is insufficient: each advance must visibly reveal or focus the relevant evidence in the scene, and going backward must restore it.
+
+Design these states within the existing construction decision and first implementation; do not add a planning document, extra response, or extra Read. Apply this Build Page requirement when the shared chassis describes steps as optional for pages in general.
+
 Choose the medium carrying the decisive evidence:
 
 - `3d`: flattening would remove necessary depth, occlusion, volume, assembly, terrain, or viewpoint evidence.

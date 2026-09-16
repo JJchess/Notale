@@ -10,6 +10,7 @@ import {
   vectorId,
   vectorNode,
   paintVector,
+  rollbackVectorPreview,
 } from './vector-dom.js';
 import { calculatePaths, cancelVectorCalculation, transformPath, curves } from './vector-kernel.js';
 import { portableVector } from './vector-export.js';
@@ -29,10 +30,12 @@ export function createVectorEditor(ctx: {
   refresh: () => void;
 }) {
   curves.setup(new curves.Size(1, 1));
+  let operationEpoch=0;
   let sequence = 0,
     nodes: ReturnType<typeof editVectorNodes> | undefined,
     scope: SVGElement | undefined;
   let sourceGroup: SVGGraphicsElement | undefined, sourceJob: Promise<void> | undefined;
+  let sourcePreviews:{before:Element;after:Element}[]=[];
   let gradientHandles: ReturnType<typeof editVectorGradient> | undefined;
   let draw:
     | {
@@ -71,6 +74,10 @@ export function createVectorEditor(ctx: {
   }
   function available(n: Element) {
     return !ctx.locked(n) && !generated(n);
+  }
+  function assertOperation(epoch:number,r:SVGSVGElement,items:Element[]=[]){
+    if(epoch!==operationEpoch||!ctx.enabled()||!r.isConnected||items.some(n=>!n.isConnected||!available(n)))
+      throw Error('编辑状态已变化，本次图形操作已取消');
   }
   function emitState() {
     const items = selected(),
@@ -144,16 +151,20 @@ export function createVectorEditor(ctx: {
   function commit(before: Element, action?: string) {
     if (sourceGroup && action !== 'source') {
       const group = sourceGroup;
+      const live=vectorNode(vectorId(before));
+      if(live)sourcePreviews.push({before,after:cleanVector(live)});
       if (sourceJob) return;
       sourceJob = recomputeSource(before, group);
       void sourceJob
         .catch((error) => {
-          const r = vectorNode(vectorId(before));
-          if (r) paintVector(vectorDiff(cleanVector(r), before));
-          ctx.send('edit-error', { message: String(error) });
+          let restored=true;
+          for(const preview of sourcePreviews.slice().reverse())restored=rollbackVectorPreview(preview.before,preview.after)&&restored;
+          exit();
+          ctx.send('edit-error', { message: String(error)+(restored?'':'；部分修改与新内容冲突，已保留当前内容，请核对图形') });
         })
         .finally(() => {
           sourceJob = undefined;
+          sourcePreviews=[];
         });
       return;
     }
@@ -198,6 +209,7 @@ export function createVectorEditor(ctx: {
     }
   }
   function exit() {
+    operationEpoch++;
     const previousSource = sourceGroup;
     sourceGroup = undefined;
     gradientHandles?.destroy();
@@ -375,6 +387,7 @@ export function createVectorEditor(ctx: {
     }, 'gradient');
   }
   async function combine(action: string, amount?: number) {
+    const epoch=operationEpoch,selection=ctx.selection().slice();
     const items = selected(),
       r = root();
     if (!r || !items.length) return;
@@ -407,6 +420,7 @@ export function createVectorEditor(ctx: {
     emitState();
     try {
       const d = await calculatePaths(ctx.wasmUrl, source, action, amount);
+      assertOperation(epoch,r,items);
       if (!r.isConnected || cleanVector(r).outerHTML !== before.outerHTML)
         throw Error('图形已变化，请重新执行');
       const g = createSvg('g', {
@@ -420,13 +434,15 @@ export function createVectorEditor(ctx: {
       const css = source[action === 'subtract' ? 0 : source.length - 1];
       g.append(createSvg('path', { d, fill: css.fill === 'none' ? css.stroke : css.fill }));
       commit(before, ['outline', 'offset', 'flatten'].includes(action) ? action : action);
-      ctx.select([vectorId(g)]);
+      const current=ctx.selection();
+      if(current.length===selection.length&&current.every(id=>selection.includes(id)))ctx.select([vectorId(g)]);
     } finally {
       processing = false;
       emitState();
     }
   }
   async function outlineText(font: ArrayBuffer) {
+    const epoch=operationEpoch;
     const n = selected()[0],
       r = root();
     if (!r || !n || n.localName !== 'text' || n.children.length)
@@ -447,6 +463,7 @@ export function createVectorEditor(ctx: {
         spacing: parseFloat(css.letterSpacing) || 0,
         anchor: css.textAnchor,
       });
+      assertOperation(epoch,r,[n]);
       if (cleanVector(r).outerHTML !== before.outerHTML) throw Error('文字已变化，请重试');
       const path = createSvg('path');
       for (const a of n.attributes)
@@ -663,9 +680,11 @@ export function createVectorEditor(ctx: {
     }, 'detach');
   }
   async function snapshot() {
+    const epoch=operationEpoch;
     const r = root();
     if (!r) return;
     const copy = freshVector(await portableVector(r));
+    assertOperation(epoch,r);
     for (const n of [copy, ...copy.querySelectorAll('*')])
       for (const a of [...n.attributes])
         if (a.name.startsWith('data-notale-') && a.name !== VID) n.removeAttribute(a.name);

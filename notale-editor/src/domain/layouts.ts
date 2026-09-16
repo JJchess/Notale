@@ -1,3 +1,4 @@
+import { rewriteSrcset } from './srcset.js';
 import { createHash } from 'node:crypto';
 import { rebaseUrl, rebaseCss } from './urls.js';
 import { expandCss, scopeCss, linkedCss, type Stylesheets } from './layout-css.js';
@@ -30,18 +31,7 @@ export function rebaseElements(nodes: ReturnType<typeof elements>, from: string,
     const style = attr(el, 'style');
     if (style) setAttr(el, 'style', rebaseCss(style, from, to));
     const srcset = attr(el, 'srcset');
-    if (srcset && !srcset.startsWith('data:'))
-      setAttr(
-        el,
-        'srcset',
-        srcset
-          .split(',')
-          .map((part) => {
-            const [url, ...descriptor] = part.trim().split(/\s+/);
-            return [rebaseUrl(url, from, to), ...descriptor].join(' ');
-          })
-          .join(', '),
-      );
+    if (srcset) setAttr(el, 'srcset', rewriteSrcset(srcset, url => rebaseUrl(url, from, to)));
   }
 }
 export function assertStatic(html: string) {

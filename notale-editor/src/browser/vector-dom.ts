@@ -127,6 +127,36 @@ export function paintVector(changes: VectorMutation[]) {
     if (c.op === 'set' && c.text !== undefined) n.textContent = c.text;
   }
 }
+/** Undo a failed local preview without overwriting newer authored changes. */
+export function rollbackVectorPreview(before:Element,preview:Element):boolean {
+  const live=vectorNode(vectorId(before));
+  if(!live)return false;
+  const inverse=vectorDiff(preview,before);
+  if(cleanVector(live).outerHTML===preview.outerHTML){paintVector(inverse);return true;}
+  const expected=new Map(vectorNodes(preview).map(n=>[vectorId(n),n]));
+  let complete=true;
+  for(const change of inverse){
+    if(change.op==='insert'){complete=false;continue;}
+    const node=vectorNode(change.target),was=expected.get(change.target);
+    if(!node||!was){complete=false;continue;}
+    if(change.op==='set'){
+      const attributes:Record<string,string|null>={};
+      for(const [key,value] of Object.entries(change.attributes??{})){
+        if(node.getAttribute(key)===was.getAttribute(key))attributes[key]=value;
+        else complete=false;
+      }
+      let text:string|undefined;
+      if(change.text!==undefined){
+        if(!node.children.length&&node.textContent===was.textContent)text=change.text;
+        else complete=false;
+      }
+      if(Object.keys(attributes).length||text!==undefined)paintVector([{op:'set',target:change.target,attributes,...(text===undefined?{}:{text})}]);
+    }else if(change.op==='replace'&&cleanVector(node).outerHTML===was.outerHTML){
+      paintVector([change]);
+    }else complete=false;
+  }
+  return complete;
+}
 export function freshVector(root: Element) {
   const copy = cleanVector(root),
     ids = new Map<string, string>();

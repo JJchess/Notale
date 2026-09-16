@@ -1,3 +1,4 @@
+import {causalBase} from '../domain/causal-base.js';
 import {authorChanges, type AuthorChangeSet, type AuthorChangesPage, type SyncAcknowledgement} from '../domain/author-changes.js';
 import {withStableIds} from '../domain/html.js';
 import { mergeDocuments } from '../domain/sync-merge.js';
@@ -373,7 +374,7 @@ export class Store {
     const document=withStableIds(input.mutationId,()=>applyCommands(source.document,input.commands,{stylesheets}));
     return authorChanges(source,{...source,document});
   }
-  async syncV2(ctx:Context,id:string,input:Commit & {inverseVersion?:number;restoreVersion?:number;geometry?:boolean;inverseMutationId?:string}):Promise<SyncAcknowledgement> {
+  async syncV2(ctx:Context,id:string,input:Commit & {dependencies?:string[];inverseVersion?:number;restoreVersion?:number;geometry?:boolean;inverseMutationId?:string}):Promise<SyncAcknowledgement> {
     const {inverseMutationId,...request}=input;
     if(inverseMutationId){
       await this.requireDoc(this.pool,ctx,id);
@@ -384,7 +385,7 @@ export class Store {
     const snapshot=await this.sync(ctx,id,request);
     return {mutationId:input.mutationId,committedVersion:snapshot.version,change:await this.revisionChanges(ctx,id,snapshot.version)};
   }
-  async sync(ctx:Context,id:string,input:Commit & {inverseVersion?:number;restoreVersion?:number;geometry?:boolean}) {
+  async sync(ctx:Context,id:string,input:Commit & {dependencies?:string[];inverseVersion?:number;restoreVersion?:number;geometry?:boolean}) {
     return this.change(ctx,id,input.baseVersion,input.mutationId,sha256(JSON.stringify(input)),async(base,c)=>{
       if(input.restoreVersion){const target=await c.query('SELECT document FROM editor_revisions WHERE document_id=$1 AND version=$2',[id,input.restoreVersion]);invariant(target.rowCount,'VERSION_NOT_FOUND','恢复版本不存在',404);return target.rows[0].document;}
       if(input.inverseVersion){
@@ -397,7 +398,14 @@ export class Store {
       // Locks and structural preconditions must also hold on the current head.
       try{withStableIds(input.mutationId,()=>applyCommands(latest.rows[0].document,input.commands,{stylesheets}));}catch(error){if(error instanceof DomainError)throw new DomainError('SYNC_RECOVERY_REQUIRED',error.message,409);throw error;}
       return withStableIds(input.mutationId,()=>applyCommands(base,input.commands,{stylesheets}));
-    },input.restoreVersion?[sha256(JSON.stringify({restore:input.restoreVersion,baseVersion:input.baseVersion}))]:[],true,(doc)=>applyCommands(doc,input.commands.flatMap<Command>(c=>c.type==='element.patch'?(c.patch.style||c.patch.attributes?[{...c,patch:{...(c.patch.style?{style:c.patch.style}:{}),...(c.patch.attributes?{attributes:c.patch.attributes}:{})}}]:[]):input.geometry&&c.type==='element.transform'?[c]:[])));
+    },input.restoreVersion?[sha256(JSON.stringify({restore:input.restoreVersion,baseVersion:input.baseVersion}))]:[],true,(doc)=>applyCommands(doc,input.commands.flatMap<Command>(c=>c.type==='element.patch'?(c.patch.style||c.patch.attributes?[{...c,patch:{...(c.patch.style?{style:c.patch.style}:{}),...(c.patch.attributes?{attributes:c.patch.attributes}:{})}}]:[]):input.geometry&&c.type==='element.transform'?[c]:[])),async(source,c)=>{
+      if(!input.dependencies?.length)return source;
+      const ids=[...new Set(input.dependencies)];
+      invariant(!ids.includes(input.mutationId),'INVALID_DEPENDENCY','操作不能依赖自身',409);
+      const revisions=await c.query('SELECT m.mutation_id,m.actor,m.version,b.document AS before,a.document AS after FROM editor_mutations m JOIN editor_revisions a ON a.document_id=m.document_id AND a.version=m.version JOIN editor_revisions b ON b.document_id=m.document_id AND b.version=m.version-1 WHERE m.document_id=$1 AND m.mutation_id=ANY($2::text[]) ORDER BY m.version',[id,ids]);
+      invariant(revisions.rowCount===ids.length&&revisions.rows.every(row=>row.actor===ctx.actor),'DEPENDENCY_NOT_READY','前序操作尚未确认，修改仍保留在本机',409);
+      return causalBase(source,input.baseVersion,revisions.rows);
+    });
   }
   private async change(
     ctx: Context,
@@ -409,6 +417,7 @@ export class Store {
     compatibleHashes: string[] = [],
     mergeConcurrent = false,
     finishMerge?: (doc:DeckDocument)=>DeckDocument,
+    projectBase?: (doc:DeckDocument,client:PoolClient)=>Promise<DeckDocument>,
   ) {
     const version = await this.transaction(async (c) => {
       const row = await this.requireDoc(c, ctx, id, true);
@@ -439,7 +448,7 @@ export class Store {
         [id, base],
       );
       invariant(current.rowCount,'VERSION_NOT_FOUND','编辑基准版本不存在',404);
-      const source=current.rows[0].document;
+      const source=projectBase?await projectBase(current.rows[0].document,c):current.rows[0].document;
       const intended=await apply(source,c);
       const head=row.head===base?source:(await c.query('SELECT document FROM editor_revisions WHERE document_id=$1 AND version=$2',[id,row.head])).rows[0].document;
       const combined=row.head===base?intended:mergeDocuments(source,intended,head);

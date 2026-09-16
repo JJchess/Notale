@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import {reveal} from './harness/format-panel';
 import { randomUUID } from 'node:crypto';
 // The shared 4312 host is sometimes pointed at another build; INSERT_TEST_URL runs this
 // suite against a server of its own.
@@ -35,9 +36,23 @@ async function pick(page: Page, selector: string) {
   await button.evaluate((el) => { for (let node = el.parentElement; node; node = node.parentElement) if (node instanceof HTMLDetailsElement) node.open = true; });
   await button.click();
 }
+// 导入 and 导出 are menus in the header; open the one holding the action first.
+async function openHeaderMenu(page: Page, key: 'import' | 'export') {
+  const menu = page.locator(`[data-header-menu="${key}"]`);
+  if (!(await menu.evaluate((el) => (el as HTMLDetailsElement).open))) await menu.locator('summary').click();
+}
 // The style tool toggles, so opening it twice in a row would hide the inspector.
 async function openStyle(page: Page) {
-  if ((await page.locator('[data-tool="style"]').getAttribute('aria-pressed')) !== 'true') await page.locator('[data-tool="style"]').click();
+  // Selecting an object can open the inspector on its own, and the tool button toggles,
+  // so only click when the panel is actually closed.
+  if (await page.locator('#property-panel').isVisible()) return;
+  await page.locator('[data-tool="style"]').click();
+  await expect(page.locator('#property-panel')).toBeVisible();
+}
+/** Open the panel and bring the tab that owns this control to the front. */
+async function openStyleAt(page: Page, id: string) {
+  await openStyle(page);
+  await reveal(page, id);
 }
 async function select(page: Page, id: string) {
   if ((await page.locator('[data-tool="objects"]').getAttribute('aria-pressed')) !== 'true') await page.locator('[data-tool="objects"]').click();
@@ -88,8 +103,8 @@ test('insert gallery: shapes recolor, equations render/edit with one stylesheet 
   expect(await fill(page, '[data-notale-shape="star"] path')).toBe('rgb(222, 232, 255)');
   // Page 1's title overlaps the insertion point, so select through the layer list.
   await select(page, (await star.getAttribute('data-notale-id'))!);
-  await page.locator('[data-tool="style"]').click();
-  await expect(page.locator('#property-appearance')).toBeVisible();
+  await openStyle(page);
+  await reveal(page,'#property-appearance');await expect(page.locator('#property-appearance')).toBeVisible();
   await expect(page.locator('#appearance-fill')).toHaveValue('#dee8ff');
   await commit(page, () => page.locator('#appearance-fill').fill('#ff0000'));
   await expect.poll(() => fill(page, '[data-notale-shape="star"] path')).toBe('rgb(255, 0, 0)');
@@ -129,9 +144,9 @@ test('insert gallery: shapes recolor, equations render/edit with one stylesheet 
 
   // Re-edit through the equation dialog: content and source attribute change together in one version.
   await select(page, (await equation.getAttribute('data-notale-id'))!);
-  await page.locator('[data-tool="style"]').click();
+  await openStyle(page);
   await expect(page.locator('#open-equation-editor')).toBeVisible();
-  await page.locator('#open-equation-editor').click();
+  await reveal(page,'#open-equation-editor');await page.locator('#open-equation-editor').click();
   await expect(page.locator('#equation-editor-dialog')).toBeVisible();
   await expect(page.locator('#equation-tex')).toHaveValue(DEFAULT_TEX);
   await page.locator('#equation-tex').fill('E=mc^2');
@@ -210,8 +225,8 @@ test('insert gallery: icons, word art, date, code and layouts', async ({ page })
   const accent = await pageAccent(page);
   expect(await stroke('svg[data-notale-icon="brain"] path')).toBe(accent);
   await select(page, (await icon.getAttribute('data-notale-id'))!);
-  await page.locator('[data-tool="style"]').click();
-  await expect(page.locator('#appearance-stroke')).toBeVisible();
+  await openStyle(page);
+  await reveal(page,'#appearance-stroke');await expect(page.locator('#appearance-stroke')).toBeVisible();
   await expect(page.locator('#appearance-radius-field')).toBeHidden();
   await commit(page, () => page.locator('#appearance-stroke').fill('#ff0000'));
   await expect.poll(() => stroke('svg[data-notale-icon="brain"] path')).toBe('rgb(255, 0, 0)');
@@ -224,8 +239,8 @@ test('insert gallery: icons, word art, date, code and layouts', async ({ page })
   await expect(art).toBeVisible();
   expect(await art.evaluate((el) => (getComputedStyle(el) as any).webkitBackgroundClip)).toBe('text');
   await select(page, (await art.getAttribute('data-notale-id'))!);
-  await page.locator('[data-tool="style"]').click();
-  await expect(page.locator('#object-text')).toHaveValue('艺术字');
+  await openStyle(page);
+  await reveal(page,'#object-text');await expect(page.locator('#object-text')).toHaveValue('艺术字');
 
   // Date and code block.
   const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -238,7 +253,7 @@ test('insert gallery: icons, word art, date, code and layouts', async ({ page })
   await expect(code.locator('span[style*="color"]').first()).toBeVisible();
   expect(await code.locator('span[style*="color"]').count()).toBeGreaterThan(2);
   await select(page, (await code.getAttribute('data-notale-id'))!);
-  await page.locator('[data-tool="style"]').click();
+  await openStyle(page);
   await expect(page.locator('#object-text')).toHaveValue(/def predict/);
   // The code dialog re-highlights in the chosen language.
   await page.locator('#open-code-editor').click();
@@ -258,21 +273,21 @@ test('insert gallery: icons, word art, date, code and layouts', async ({ page })
   const step = frame.locator('p', { hasText: '步骤一' });
   await expect(step).toBeVisible();
   await select(page, (await step.getAttribute('data-notale-id'))!);
-  await page.locator('[data-tool="style"]').click();
+  await openStyle(page);
   await page.locator('#object-text').fill('训练');
   expect(await change(page, () => page.locator('#apply-text').click())).toBe(1);
   await expect(frame.locator('p', { hasText: '训练' })).toBeVisible();
   await expect(process.locator('> *')).toHaveCount(3);
   // Layout items duplicate and delete as whole cards; the accent field recolours the layout.
   await select(page, (await process.locator('> *').nth(1).getAttribute('data-notale-id'))!);
-  await page.locator('[data-tool="style"]').click();
+  await openStyle(page);
   await expect(page.locator('#layout-item-tools')).toBeVisible();
   await change(page, () => page.locator('#layout-item-duplicate').click());
   await expect(process.locator('> *')).toHaveCount(4);
   await change(page, () => page.locator('#layout-item-delete').click());
   await expect(process.locator('> *')).toHaveCount(3);
   await select(page, (await process.getAttribute('data-notale-id'))!);
-  await page.locator('[data-tool="style"]').click();
+  await openStyle(page);
   await expect(page.locator('#appearance-accent-field')).toBeVisible();
   await commit(page, () => page.locator('#appearance-accent').fill('#ff0000'));
   await expect.poll(() => frame.locator('[data-notale-smart="list"], [data-notale-smart="process"]').first().evaluate((el) => getComputedStyle(el).getPropertyValue('--accent').trim())).toBe('#ff0000');
@@ -330,8 +345,8 @@ test('insert gallery: equations stay atomic, survive nested-page paste, export a
 
   // Inline toggle re-renders without display mode and records the choice.
   await select(page, equationId);
-  await page.locator('[data-tool="style"]').click();
-  await page.locator('#open-equation-editor').click();
+  await openStyle(page);
+  await reveal(page,'#open-equation-editor');await page.locator('#open-equation-editor').click();
   await page.locator('#equation-inline').check();
   expect(await change(page, () => page.locator('#save-equation').click())).toBe(1);
   await expect(equation).toHaveAttribute('data-notale-tex-display', '0');
@@ -409,13 +424,14 @@ test('appearance panel paints fills, strokes, gradients, radius, shadow and opac
   await change(page, () => pick(page, '[data-insert="shape:hexagon"]'));
   const shape = frame.locator('[data-notale-shape="hexagon"]');
   await select(page, (await shape.getAttribute('data-notale-id'))!);
-  await page.locator('[data-tool="style"]').click();
-  await expect(page.locator('#property-appearance')).toBeVisible();
+  await openStyle(page);
+  await reveal(page,'#property-appearance');await expect(page.locator('#property-appearance')).toBeVisible();
   await expect(page.locator('#appearance-radius-field')).toBeHidden();
   await commit(page, () => page.locator('#appearance-fill').fill('#ff0000'));
   await expect.poll(() => css('[data-notale-shape="hexagon"]', 'fill')).toBe('rgb(255, 0, 0)');
   await commit(page, () => page.locator('#appearance-stroke-width').fill('9'));
   await expect.poll(() => css('[data-notale-shape="hexagon"]', 'stroke-width')).toBe('9px');
+  await reveal(page,'#appearance-shadow');
   await commit(page, () => page.locator('#appearance-shadow').selectOption('strong'));
   await expect.poll(() => css('[data-notale-shape="hexagon"]', 'filter')).toContain('drop-shadow');
   await commit(page, () => page.locator('#appearance-fill-none').check());
@@ -432,7 +448,7 @@ test('appearance panel paints fills, strokes, gradients, radius, shadow and opac
   const text = frame.locator('p', { hasText: '输入你的内容' });
   const textId = (await text.getAttribute('data-notale-id'))!;
   await select(page, textId);
-  await page.locator('[data-tool="style"]').click();
+  await openStyle(page);
   await expect(page.locator('#appearance-radius-field')).toBeVisible();
   await commit(page, () => page.locator('#appearance-fill').fill('#0000ff'));
   await expect.poll(() => css(`[data-notale-id="${textId}"]`, 'background-color')).toBe('rgb(0, 0, 255)');
@@ -457,7 +473,7 @@ test('appearance panel paints fills, strokes, gradients, radius, shadow and opac
   // Reopening reads the authored values back into the fields, and a mixed selection patches both objects.
   await open(page, doc.id);
   await select(page, textId);
-  await page.locator('[data-tool="style"]').click();
+  await openStyle(page);
   await expect(page.locator('#appearance-radius')).toHaveValue('24');
   await expect(page.locator('#appearance-opacity')).toHaveValue('40');
   await expect(page.locator('#appearance-gradient')).toBeChecked();
@@ -481,6 +497,18 @@ test('insertion lands in view, staggers repeats and follows a drag from the pane
   const frame = page.frameLocator('#canvas');
   const at = (index: number) =>
     frame.locator('[data-notale-shape="star"]').nth(index).evaluate((el) => ({ left: parseFloat((el as HTMLElement).style.left), top: parseFloat((el as HTMLElement).style.top) }));
+
+  // The header carries three entries; the actions live in the 导入 and 导出 menus.
+  expect((await page.locator('.app-header button:visible, .app-header summary:visible').allTextContents()).filter((text) => /导入|导出|放映/.test(text))).toEqual(['导入', '导出', '放映 ↗']);
+  await expect(page.locator('#export-pdf')).toBeHidden();
+  await openHeaderMenu(page, 'export');
+  await expect(page.locator('#export-pdf')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#export-pdf')).toBeHidden();
+  // The save indicator states one thing and keeps the detail in its tooltip.
+  await expect(page.locator('#save-status')).toHaveText('已保存');
+  await expect(page.locator('#save-status')).toHaveAttribute('data-state', 'saved');
+  await expect(page.locator('#save-status')).toHaveAttribute('title', /版本 v\d+/);
 
   // Centred in the visible canvas rather than pinned under the page title.
   await change(page, () => pick(page, '[data-insert="shape:star"]'));
@@ -546,7 +574,7 @@ test('deck theme presets repaint authored pages and inserted objects together', 
 
   // The theme lives with the deck, so it is edited with nothing selected.
   await page.locator('#canvas-viewport').press('Escape');
-  await openStyle(page);
+  await openStyleAt(page, '#deck-theme');
   await expect(page.locator('#deck-theme')).toBeVisible();
   await expect(page.locator('#theme-presets button')).toHaveCount(6);
   await change(page, () => page.locator('[data-theme-preset="3"]').click());
@@ -645,6 +673,7 @@ test('PDF export prints one page per visible slide at the deck size', async ({ p
   // Printing cannot be driven headlessly, so record the call instead of opening a dialog.
   await context.addInitScript(() => { (window as any).__printed = 0; window.print = () => { (window as any).__printed++; }; });
   await open(page, doc.id);
+  await openHeaderMenu(page, 'export');
   const sheetPromise = page.waitForEvent('popup');
   await page.locator('#export-pdf').click();
   const sheet = await sheetPromise;

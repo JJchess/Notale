@@ -47,18 +47,18 @@ const step = (title: string, note: string, first = false) =>
   `<div style="flex:1;padding:26px 24px 26px ${first ? 28 : 44}px;background:var(--accent-soft);${first ? chevron.replace(',26px 50%', ',0 50%') : chevron}"><p style="margin:0;font-size:30px;font-weight:700;color:var(--ink)">${title}</p><p style="margin:8px 0 0;font-size:22px;color:var(--ink);opacity:.75">${note}</p></div>`;
 function smartArt(kind: string) {
   if (kind === 'process')
-    return `<div data-notale-smart="process" ${name('流程图示')} style="${box}${diagramPalette}display:flex;align-items:stretch;gap:0;width:1100px">${['步骤一', '步骤二', '步骤三']
+    return `<div data-notale-smart="process" ${name('流程图二')} style="${box}${diagramPalette}display:flex;align-items:stretch;gap:0;width:1100px">${['步骤一', '步骤二', '步骤三']
       .map((t, i) => step(t, '说明', i === 0))
       .join('')}</div>`;
   if (kind === 'list')
-    return `<div data-notale-smart="list" ${name('列表图示')} style="${box}${diagramPalette}display:grid;gap:14px;width:820px">${['要点一', '要点二', '要点三']
+    return `<div data-notale-smart="list" ${name('列表图二')} style="${box}${diagramPalette}display:grid;gap:14px;width:820px">${['要点一', '要点二', '要点三']
       .map(
         (t, i) =>
           `<div style="display:flex;gap:18px;align-items:center;padding:18px 22px;border-radius:14px;background:#fff;border:1px solid var(--diagram-border)"><span style="flex:none;width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;font-size:24px;font-weight:700;display:flex;align-items:center;justify-content:center">${i + 1}</span><p style="margin:0;font-size:28px;color:var(--ink)">${t}</p></div>`,
       )
       .join('')}</div>`;
   if (kind === 'cycle')
-    return `<div data-notale-smart="cycle" data-notale-cycle="3" ${name('循环图示')} style="${box}${diagramPalette}position:relative;width:640px;height:640px">${cycleContent(['阶段一', '阶段二', '阶段三'])}</div>`;
+    return `<div data-notale-smart="cycle" data-notale-cycle="3" ${name('循环图二')} style="${box}${diagramPalette}position:relative;width:640px;height:640px">${cycleContent(['阶段一', '阶段二', '阶段三'])}</div>`;
   throw new Error(`Unknown layout ${kind}`);
 }
 // The ring is laid out from the label count, so items can be added or removed and the

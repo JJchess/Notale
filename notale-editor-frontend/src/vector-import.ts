@@ -1,5 +1,11 @@
+import { svgDimensions } from "./state/svg-dimensions";
 /** Static SVG ingress. Identities and stylesheet selectors are private to this instance. */
-export function prepareSvgImport(source: string, x = 120, y = 160) {
+export function prepareSvgImport(
+  source: string,
+  x = 120,
+  y = 160,
+  position?: (width: number, height: number) => string,
+) {
   const doc = new DOMParser().parseFromString(source, "image/svg+xml");
   if (
     doc.querySelector("parsererror") ||
@@ -95,20 +101,18 @@ export function prepareSvgImport(source: string, x = 120, y = 160) {
         .join("\n");
     style.textContent = scope(sheet.cssRules);
   }
-  const vb = (svg.getAttribute("viewBox") ?? "")
-      .trim()
-      .split(/[ ,]+/)
-      .map(Number),
-    width = parseFloat(svg.getAttribute("width") ?? "") || vb[2] || 600,
-    height = parseFloat(svg.getAttribute("height") ?? "") || vb[3] || 400;
-  if (vb.length !== 4 || !vb.every(Number.isFinite))
-    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  const { width, height, validViewBox } = svgDimensions(
+    svg.getAttribute("width"),
+    svg.getAttribute("height"),
+    svg.getAttribute("viewBox"),
+  );
+  if (!validViewBox) svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   const scale = Math.min(1, 800 / width, 600 / height);
   svg.setAttribute("width", String(width * scale));
   svg.setAttribute("height", String(height * scale));
   svg.setAttribute(
     "style",
-    `${svg.getAttribute("style") ?? ""};position:absolute;left:${x}px;top:${y}px;width:${width * scale}px;height:${height * scale}px`,
+    `${svg.getAttribute("style") ?? ""};position:absolute;z-index:50;${position ? position(width * scale, height * scale) : `left:${x}px;top:${y}px;`}width:${width * scale}px;height:${height * scale}px`,
   );
   svg.setAttribute("data-notale-name", "矢量图");
   return new XMLSerializer().serializeToString(svg);

@@ -1,5 +1,8 @@
 # PPTX → HTML · 最小 harness v1
 
+当前纯模板转换入口为相邻的 [确定性转换器](../pptx2html-converter/README.md)，运行期无需模型。
+本目录保留为 Gemini code agent 与轨迹实验，不再作为纯 1:1 模板转换的默认入口。
+
 一个 Gemini 3.8 Flash code agent，三个基础工具，一项交付存在性检查。
 先观察简单架构的真实能力，再根据实际失败增加机制。
 

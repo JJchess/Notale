@@ -1,6 +1,6 @@
 # Notale interactive presentation editor — frontend
 
-An independent frontend for “面向讲授的互动演示编辑器，具备设计工具的编辑深度”, using the supplied video as its overall interaction/layout reference.
+A React and Next.js editor for interactive teaching presentations: compose slides, edit objects, prepare animation steps, and present with speaker notes. The frontend and backend run as independent sibling applications.
 
 Sibling directories:
 
@@ -10,9 +10,11 @@ Notale/
   notale-editor-frontend/  Formal editor frontend, its own dependencies, build, server and browser acceptance
 ```
 
-The frontend imports the packed public `@notale/editor/browser` contract. It does not import backend source paths or share `node_modules`. `vendor/notale-editor-0.1.0.tgz` makes the current contract installation reproducible. The browser build rejects Node-only dependencies. Backend persistence, rendering, assets, concurrency and history remain accessed through HTTP. The embedded slide bridge stays with the backend because it is part of rendered HTML and portable output.
+The frontend imports the packed public `@notale/editor/browser` contract. It does not import backend source paths or share `node_modules`. The exact packed contract is declared in `package.json` and `package-lock.json`. Install with `npm ci`; do not substitute an older archive merely because its version number matches. The browser build rejects Node-only dependencies. Backend persistence, rendering, assets, concurrency and history remain accessed through HTTP. The embedded slide bridge stays with the backend because it is part of rendered HTML and portable output.
 
 ## Run
+
+For coordinated startup of both sibling applications, see [Local deployment](docs/LOCAL-DEPLOYMENT.md) and `npm run start:local`.
 
 Start the backend using its README (API defaults to 4310, isolated slide content to 4311). Then, in this directory:
 
@@ -22,15 +24,21 @@ npm run build
 npm start
 ```
 
-Open `http://127.0.0.1:4312/`. A specific lecture opens via `?document=<id>`. The frontend uses Next.js App Router, React and TypeScript. `npm run dev` starts the development server; `npm run build` followed by `npm start` runs production. `PORT` defaults to 4312. The custom Next.js host preserves `/api/`, presentation proxies and the isolated authored-content hostname; it is required for the current same-port, separate-origin preview setup. Backend services remain independent. Deploy the Next.js application and its runtime dependencies, `templates/refined/` and `vendor/katex.min.css`; static `dist/editor.js` deployment is no longer used. `NEXT_DIST_DIR` optionally selects a separate Next build directory, and must match between build and start.
+Open `http://127.0.0.1:4312/`. A specific lecture opens via `?document=<id>`. The frontend uses Next.js App Router, React and TypeScript. `npm run dev` starts the development server; `npm run build` followed by `npm start` runs production. `PORT` defaults to 4312. The custom Next.js host preserves `/api/`, presentation proxies and the isolated authored-content hostname; it is required for the current same-port, separate-origin preview setup. Backend services remain independent. Deploy the Next.js application and its runtime dependencies, `templates/original/` and `vendor/katex.min.css`; static `dist/editor.js` deployment is no longer used. `NEXT_DIST_DIR` optionally selects a separate Next build directory, and must match between build and start.
 
 For local port forwarding, only forward **4312**. Preview URLs use `http://notale-content.localhost:4312`, a separate loopback hostname on the same port. The server routes only signed `/content/` requests on that hostname to `EDITOR_CONTENT_BACKEND_URL` (default `http://127.0.0.1:4311`); it never exposes the host API there or content on the editor hostname. Preview API responses are rewritten at the proxy boundary, preserving signed paths and lease renewal. `EDITOR_PUBLIC_CONTENT_URL` configures the distinct public content origin for a deployed host; that hostname must resolve to the content proxy and use the appropriate HTTPS endpoint. Restart `npm start` after server/environment changes. Local browser acceptance deliberately blocks ports 4310/4311 and verifies native interaction, presentation and origin isolation.
+
+## Update the shared editor contract
+
+After changing the sibling backend source, run `npm run contract:update` here. It verifies/rebuilds backend output, creates a tarball named with its content hash, and updates both the dependency and npm lockfile. Existing archives are retained for rollback. Commit the selected vendor archive with both package files when publishing; do not hand-edit only the lockfile or overwrite a same-named archive with different contents.
+
+Then run the frontend production build and checks relevant to the changed contract before deployment. The update command does not restart a service or publish a release. Backend dependencies must already be installed (`npm ci` in the sibling directory).
 
 ## Current working flow
 
 - Narrow creation rail; contextual text/media/shape/interaction/component drawers; on-demand pages, properties and speaker notes.
 - 面板视觉规则：工具面板里的条目是「选择器」而不是卡片——静止无边框无底色，悬停出浅底，选中出主色浅底；形状与图标库不显示文字标签（名字在 tooltip 里），缩略图用按钮的颜色（中性灰），颜色只属于画布。只有装着渲染缩略图的格子（图示预览、主题色板）和没有图形的文字按钮保留底片或边框。改动集中在 `src/editor.css` 末尾的 Panel chrome 区块。
-- Insert gallery: a generated drawer (`src/insert-panel.ts`) with twelve shapes, 48 Lucide icons, KaTeX equations (display or inline, edited through a LaTeX dialog, selected as one object), symbols, word-art presets, date and code blocks, and three layouts whose items can be duplicated or deleted. Generated objects carry their colours as CSS variables so they follow the lecture theme and recolour from one accent field; `tests/insert-gallery.spec.ts` covers them including nested-page paste, export and the slide show.
+- Insert text, shapes, connectors, icons, equations, media, charts and reusable diagrams. Eight original full-page templates and eight matching standalone diagrams are generated from editable HTML/SVG; template provenance and regeneration instructions are in [`templates/original/README.md`](templates/original/README.md).
 - Reusable document media catalog with filename search, lazy image thumbnails, insertion and same-type replacement; uploads retain readable filenames and reuse does not upload again.
 - Fit-to-window and 25–200% zoom presets, fine zoom buttons, hand panning, focus view and panel preference persistence. These operations never modify the document.
 - Native HTML/Canvas page thumbnails, eight-page overview groups, whole-lecture search, drag sorting, keyboard navigation, Alt+arrow sorting and versioned undo. Thumbnail runtimes are virtualized and capped at six in the sidebar/eight in overview.
@@ -45,11 +53,12 @@ For local port forwarding, only forward **4312**. Preview URLs use `http://notal
 ## Validation
 
 ```sh
-npm run typecheck
-npm run test:browser
+# Select checks for the feature being changed.
+npm run typecheck:files -- src/components/page-settings.tsx
+npm run test:browser -- tests/page-settings-react.spec.ts
 ```
 
-The focused browser acceptance creates a separate real-lecture sample, exercises view controls, actual edits, a dropped successful save response and reload/retry, page ordering/undo, native Canvas interaction and presentation. A second scenario checks narrow-screen drawers and overflow. A third verifies contextual properties, nested interaction preservation, independent style/geometry updates and distinct multi-selection transforms. A fourth covers named teaching steps, animation duplication/remapping, drag order and reopen/preview. A fifth covers inherited/mixed typography, isolated edits and style reset. A sixth covers actual uploads, media search/reuse and nested-page replacement/undo/reopen. A seventh checks native Canvas thumbnails, overview grouping/search, revision refresh and hidden-runtime teardown. An eighth verifies atomic click-reveal authoring, undo/redo, reopening and standalone exported interaction. A ninth covers page-link authoring, nested content preservation and portable viewer navigation. The original lecture is compared before and after. Browser configuration accepts `CHROMIUM_PATH`; the default reflects this workspace. Screenshots/results and the retained sample URL are written to `.local/`.
+The focused browser acceptance creates a separate real-lecture sample, exercises view controls, actual edits, a dropped successful save response and reload/retry, page ordering/undo, native Canvas interaction and presentation. A second scenario checks narrow-screen drawers and overflow. A third verifies contextual properties, nested interaction preservation, independent style/geometry updates and distinct multi-selection transforms. A fourth covers named teaching steps, animation duplication/remapping, drag order and reopen/preview. A fifth covers inherited/mixed typography, isolated edits and style reset. A sixth covers actual uploads, media search/reuse and nested-page replacement/undo/reopen. A seventh checks native Canvas thumbnails, overview grouping/search, revision refresh and hidden-runtime teardown. An eighth verifies atomic click-reveal authoring, undo/redo, reopening and standalone exported interaction. A ninth covers page-link authoring, nested content preservation and portable viewer navigation. The original lecture is compared before and after. Browser configuration uses the Playwright-managed Chromium by default (`npx playwright install chromium`); set `CHROMIUM_PATH` to use an existing browser. The lecture audit requires an explicit `EDITOR_AUDIT_DOCUMENT`. Screenshots/results and the retained sample URL are written to `.local/`.
 
 See [reference analysis](docs/REFERENCE.md) for observed video behavior and remaining frontend work. Advanced inspectors are inherited functional integration controls; a full product-level redesign of every inspector is not yet complete.
 
@@ -104,3 +113,5 @@ See [backend/frontend integration coverage](docs/INTEGRATION-COVERAGE.md) for ve
 React 界面位于 `src/components/`，App Router 入口位于 `app/`。根布局保留编辑会话；`mountWorkbench()` 在 React 挂载后启动一次，复用既有命令、保存、画布与快捷键控制器。动态检查器的宿主节点由 React 提供，内部交互由控制器管理，避免 React 重绘高频拖拽。
 
 增量作者文档、事务入口、运行时适配器与 sync/v2 协议见 [AUTHOR-KERNEL.md](docs/AUTHOR-KERNEL.md)。本轮定向用例：`NEXT_TEST_URL=http://127.0.0.1:4312 npx playwright test tests/author-kernel.spec.ts`。常用属性和几何修改先在本机反馈，保存确认通过差量推进，不重新载入整页画布。
+
+放映与演讲者视图说明见 [docs/PRESENTATION.md](docs/PRESENTATION.md)。

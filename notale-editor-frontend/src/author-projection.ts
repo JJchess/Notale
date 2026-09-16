@@ -38,7 +38,7 @@ export function projectCommands(source: Snapshot, commands: Command[]): Snapshot
     else if (c.type === 'slide.update') Object.assign(s,c.patch);
     else if (c.type === 'group.set') { s.groups=s.groups.filter(g=>g.id!==c.id).map(g=>({...g,members:g.members.filter(id=>!c.members.includes(id))})).filter(g=>g.members.length>=2); s.groups.push({id:c.id,name:c.name,members:c.members}); }
     else if (c.type === 'group.remove') s.groups=s.groups.filter(g=>g.id!==c.id);
-    else if (c.type === 'animation.set') { s.animations=s.animations.filter(a=>a.id!==c.animation.id); s.animations.push(c.animation); }
+    else if (c.type === 'animation.set') { const at=s.animations.findIndex(a=>a.id===c.animation.id);if(at<0)s.animations.push(c.animation);else s.animations[at]=c.animation; }
     else if (c.type === 'animation.remove') s.animations=s.animations.filter(a=>a.id!==c.id);
     else if (c.type === 'animation.reorder') s.animations=[...c.ids.flatMap(id=>s.animations.find(a=>a.id===id)??[]),...s.animations.filter(a=>!c.ids.includes(a.id))];
     else if (c.type === 'native-chart.edit') s.nativeCharts[c.target]={...s.nativeCharts[c.target],adapter:'echarts',option:s.nativeCharts[c.target]?.option??{},authoring:c.model};

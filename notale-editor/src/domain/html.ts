@@ -1,3 +1,7 @@
+import {codeResourcePath} from '@notale/format';
+import { pageRuntime } from '@notale/format';
+import { parse as parseScript } from 'acorn';
+import { simple as walkScript } from 'acorn-walk';
 import {
   parse,
   parseFragment,
@@ -63,6 +67,7 @@ export function assignIds(root: Node, fresh = false) {
     if (fresh || !id || used.has(id) || !/^[\w-]{1,100}$/.test(id)) id = uid();
     used.add(id);
     setAttr(el, NODE_ID, id);
+    if (el.tagName === 'iframe' && !attr(el, 'src') && attr(el, 'data-src')) setAttr(el, 'src', attr(el, 'data-src')!);
   }
 }
 export function normalizeHtml(html: string) {
@@ -180,7 +185,15 @@ export function importHtml(html: string) {
     (e) => e.tagName === 'aside' && (attr(e, 'class') ?? '').includes('notes'),
   );
   const title = all.find((e) => e.tagName === 'h1') ?? all.find((e) => e.tagName === 'title');
-  const steps = all.map((e) => Number(attr(e, 'data-step') ?? 0)).filter(Number.isFinite);
+  const steps = all.map((e) => Number(attr(e, 'data-deck-step') ?? attr(e, 'data-step') ?? 0)).filter(Number.isFinite);
+  for (const script of all.filter(el => el.tagName === 'script' && !attr(el, 'src'))) {
+    try {
+      walkScript(parseScript(textOf(script), {ecmaVersion:'latest',sourceType:'module'}), {CallExpression(node) {
+        const callee = node.callee, count = node.arguments[1];
+        if (callee.type === 'MemberExpression' && callee.object.type === 'Identifier' && callee.object.name === 'Deck' && callee.property.type === 'Identifier' && callee.property.name === 'onStep' && count?.type === 'Literal' && typeof count.value === 'number' && Number.isInteger(count.value) && count.value >= 0 && count.value <= 500) steps.push(count.value);
+      }});
+    } catch { /* Runtime-reported maxima remain authoritative for computed scripts. */ }
+  }
   return {
     html: normalized,
     notes: notes ? textOf(notes).trim() : '',
@@ -189,3 +202,7 @@ export function importHtml(html: string) {
   };
 }
 export { parse, parseFragment, serialize, serializeOuter };
+
+export function describePageRuntime(slide: Pick<Slide, 'html' | 'nativeStepCount'> & {sourcePath?:string}, doc?: import('./model.js').DeckDocument) {
+  return pageRuntime(slide.nativeStepCount, elements(parse(slide.html)).filter(el => el.tagName === 'iframe' && (attr(el, 'class') ?? '').split(/\s+/).includes('code-workbench-frame')).map(el => ({target:attr(el,NODE_ID)!,entry:attr(el,'src') ?? attr(el,'data-src') ?? '',lesson:doc?.codeLessons?.[codeResourcePath(attr(el,'src') ?? attr(el,'data-src') ?? '',slide.sourcePath??'index.html')]} )));
+}

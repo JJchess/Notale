@@ -13,7 +13,7 @@ Refine the first-response construction decision before selecting a library; no s
 - audience and page job;
 - reader question and intended conclusion;
 - canonical records, stable IDs, units, provenance, and uncertainty;
-- comparison or relation that must be visible in the first view;
+- starting data and reference geometry visible at step 0, and the comparison or relation established by subsequent steps;
 - plot, annotation, conclusion, control, and source-note regions;
 - one subject-specific signature treatment that does not distort encoding;
 - authored states and motion role;
@@ -86,9 +86,17 @@ Reserve room for real text:
 
 Format values through one function shared by axis ticks, tooltip, direct labels, annotation, DOM evidence, and fallback table. Preserve meaningful precision; do not show more decimals than the evidence supports. Attach units at the axis or value level where they remain unambiguous.
 
-The initial render must already answer a useful question. Hover and focus add exact detail; they do not unlock the only conclusion.
+The initial render establishes the data, scale, and a useful starting observation. Deck steps establish the full comparison or conclusion; hover and focus supply optional exact detail.
 
 ## Use authored motion
+
+Organize the explanation through Deck steps in one stable plotting region. Add a comparison series, residuals, uncertainty, differences, or focused annotations while preserving the needed earlier evidence. Both cases may be present initially and their differences emphasized across steps. Do not create a separate card or bordered chart panel for each step.
+
+The renderer must actually consume the selected step. Registering `Deck.onStep(renderAll, 1)` while `renderAll` draws the same marks for both values is a broken teaching sequence. For example, keep the curve and current point visible at step 0, add the tangent at step 1, and add the downhill direction at step 2. Derive every mark's presence and emphasis from the current step, including when going backward; do not reset to step 0 on resize. Use shared axes or aligned unboxed plots, with formulas beside the corresponding evidence, rather than plot cards plus a separate stack of formula cards.
+
+For ECharts, a shorter `series` array in a default merging `setOption` call can leave later-step series visible when going backward. When returning complete options for each step, use `chart.setOption(optionsForStep(step), { notMerge: true })`; otherwise explicitly replace/remove the relevant series and annotations. Verify that a tangent or residual added at step 1 is actually absent again at step 0, not merely that `Deck.step` returned to zero.
+
+Convert sample narration tabs, next buttons, and autoplay to chassis progression; preserve genuine free filtering or comparison controls. Reveal DOM/SVG groups with `data-deck-step="n"`, or register `Deck.onStep(renderStep, states.length - 1)` after initializing the chart. `renderStep(step)` derives the complete chart options and annotations from the selected state; it must restore earlier states, not only append series. States 0/1/2 use maxStep 2. Cancel pending transitions before changing step. The chassis owns the navigation; chart animation connects the current states without automatically advancing steps.
 
 Motion may establish reading order, connect a filter or named view to changed marks, preserve identity across a comparison, or reveal accumulation. It may also give the page restrained life, but it must not hide a domain or make a transient frame the only evidence.
 
@@ -99,6 +107,7 @@ Motion may establish reading order, connect a filter or named view to changed ma
 - Cancel or finish owned transitions before direct state navigation and reset.
 - Under reduced motion, update marks and annotation directly to the same final state.
 - Stop force simulations, ambient sweeps, and animation loops when their explanatory job is complete.
+- In the existing Check step states, verify that marks or relationships actually change, previous steps restore correctly, and the final/reduced-motion/`?all` view supports review. Inspect one continuous chart composition rather than successive boxed sections; do not add a separate checking loop.
 
 ## ECharts recipe
 

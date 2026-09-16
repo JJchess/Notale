@@ -4,7 +4,7 @@ export type HistoryPlan = { undo: number[]; redo: number[] };
 export type Pending = {
   owner?: string;
   inverseMutationId?: string;
-  kernel?: { protocol: 2; prepared?: boolean; preview?: import('@notale/editor/browser').AuthorChangeSet; htmlBases?: Record<string,string> };
+  kernel?: { protocol: 2; dependencies?: string[]; prepared?: boolean; preview?: import('@notale/editor/browser').AuthorChangeSet; htmlBases?: Record<string,string> };
   inverseVersion?: number;
   historyAction?: 'undo' | 'redo';
   geometry?: boolean;
@@ -40,6 +40,7 @@ export function isPending(value: unknown): value is Pending {
     !p ||
     !identifier.safeParse(p.documentId).success ||
     !p.request ||
+    (p.kernel?.dependencies !== undefined && (!Array.isArray(p.kernel.dependencies) || p.kernel.dependencies.length>500 || p.kernel.dependencies.some(id=>!commitSchema.shape.mutationId.safeParse(id).success||id===p.request.mutationId) || new Set(p.kernel.dependencies).size!==p.kernel.dependencies.length)) ||
     (p.after !== undefined && !validHistory(p.after)) ||
     (p.slideId !== undefined && typeof p.slideId !== 'string') ||
     (p.selection !== undefined &&

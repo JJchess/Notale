@@ -23,7 +23,7 @@ import httpx
 from core import llm
 from tools.image_search import tool as search
 from test.support import media_call, media_response
-media_PAGES = '# page-01 [标题页]\n开场\n\n# page-02 [内容页]\n算法的提出背景\n'
+media_PAGES = '## Audience\n学生\n\n# page-01 [标题页]\n开场\n\n# page-02 [内容页]\n算法的提出背景\n'
 
 def search_output(rows, errors=None, images=None):
     return tools.Out(json.dumps({'results': rows, 'errors': errors or []}), images or [])

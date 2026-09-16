@@ -56,28 +56,33 @@ VISUAL_FOCUS_BLOCK = """<chapter_context> 里每页的「视觉焦点」一行�
 没有这一行的页(代码页)照常处理。"""
 
 
-# 实验开关 --notes:cap = 只给画面字数硬数;notes = 硬数 + 讲稿区出口。默认 off,基线 system 一字不变。
+# --notes:cap = 只给画面字数约束;notes = 字数约束 + 讲稿区出口。
 # 2026-09-05 量的:生成页每页可见字符中位 550–750,金样本中位 206;用户的直觉是「字太密、一堆卡片」。
 # 假设:模型把所有想说的都写上画面,是因为没有别处可写。cap 臂回答「光给数够不够」,notes 臂回答「出口有没有额外作用」。
-TEXT_CAP_BLOCK = """<text_budget>
-画面上的可见文字总量不超过 200 个字符(标题、正文、标签、数值都算;Check 报告会给出实测字数)。
+TEXT_CAPS = {"build-cover": 80, "build-page": 200, "build-interaction": 200}
+TEXT_CAP_TEMPLATE = """<text_budget>
+画面上的可见文字总量不超过 {max_chars} 个字符(标题、正文、标签、数值都算)。
 超了就删:一页只留读者必须看见的那一句判断、必要的标签和数值;解释、推导、背景不上画面。
 不得用缩小字号、压行高、折叠或切换来"藏"字。
 </text_budget>"""
-NOTES_BLOCK = TEXT_CAP_BLOCK + """
-
-<speaker_notes>
+SPEAKER_NOTES_BLOCK = """<speaker_notes>
 不上画面但要讲的话,写进 `<aside class="notes" hidden>…</aside>`,放在 `</body>` 之前 ——
 这是 `#stage` 之外唯一允许写的东西。讲稿按讲的顺序分段,写老师会对学生说的话(解释、推导、例子、过渡),
 不写页面说明;Check 报告会同时给画面字数和讲稿字数。
 </speaker_notes>"""
 # only = 只给讲稿出口,不提字数 —— 单独检验「出口本身能不能疏导」这条假设(C 臂把它和硬数混在一起了)。
-NOTES_ONLY_BLOCK = """<speaker_notes>
-不上画面但要讲的话,写进 `<aside class="notes" hidden>…</aside>`,放在 `</body>` 之前 ——
-这是 `#stage` 之外唯一允许写的东西。讲稿按讲的顺序分段,写老师会对学生说的话(解释、推导、例子、过渡),
-不写页面说明;Check 报告会同时给画面字数和讲稿字数。
-</speaker_notes>"""
-NOTES_BLOCKS = {"off": "", "cap": TEXT_CAP_BLOCK, "notes": NOTES_BLOCK, "only": NOTES_ONLY_BLOCK}
+NOTES_MODES = ("off", "cap", "notes", "only")
+
+
+def _notes_block(workflow: str, mode: str) -> str:
+    if mode not in NOTES_MODES:
+        raise ValueError(f"unknown notes mode {mode}")
+    parts = []
+    if mode in {"cap", "notes"} and workflow in TEXT_CAPS:
+        parts.append(TEXT_CAP_TEMPLATE.format(max_chars=TEXT_CAPS[workflow]))
+    if mode in {"notes", "only"}:
+        parts.append(SPEAKER_NOTES_BLOCK)
+    return "\n\n".join(parts)
 
 STEPS_BLOCK = """<steps>
 课堂讲授可使用底盘分步，API 见 chassis。
@@ -153,6 +158,8 @@ class Page:
     tok_write: int = 0   # 其中写进缓存的部分(写,通常带溢价 —— 和读不是一个价)
     tok_out: int = 0     # 累计输出 token
     tok_max: int = 0     # 单步输入峰值 —— 判 CONTEXT_SOFT 用
+    premature_stops: int = 0
+    last_stop_error: str = ""
     artifact_present: bool = False
     audit: dict | None = None
     cache_seen: bool = False   # 这条路由到底报不报 cached;不报和没命中要分得开
@@ -376,6 +383,9 @@ def chapter_preloads(root: Path, n_pages: int) -> dict[str, str]:
     if group:
         groups.append(group)
 
+    from .planner import plan_context
+    plan = root / 'pages/plan/pages.md'
+    context = plan_context(plan.read_text(encoding='utf-8')) if plan.is_file() else {'continuity': []}
     out: dict[str, str] = {}
     for chapter in groups:
         for current_pid, _, _, _ in chapter:
@@ -383,7 +393,12 @@ def chapter_preloads(root: Path, n_pages: int) -> dict[str, str]:
                 _xml_page(pid, label, prose, pid == current_pid)
                 for pid, label, prose, _ in chapter
             )
-            out[current_pid] = (
+            selected = [entry for entry in context['continuity'] if current_pid in entry['pages']]
+            continuity = ''
+            if selected:
+                entries = '\n'.join(f'  <item id="{html.escape(entry["id"], quote=True)}">{html.escape(entry["body"], quote=False)}</item>' for entry in selected)
+                continuity = f'<continuity>\n{entries}\n</continuity>\n\n'
+            out[current_pid] = continuity + (
                 f'<chapter_context current="{current_pid}">\n{body}\n</chapter_context>'
             )
     return out
@@ -409,15 +424,19 @@ def shared_preload(root: Path, n_pages: int, prompts: Path = None,
     if workflow == "build-code":
         # Code has its own host and visual foundation. Deck style assets must
         # not enter author context, even as an allegedly read-only interface.
-        return (_deck_outline(paths["pages.md"]) + "\n\n"
+        content = (_deck_outline(paths["pages.md"]) + "\n\n"
                 + _wrap("tech", (prompts or ROOT / "prompts") / "tech-code.md"))
-    chassis = paths["CHASSIS.md"].read_text(encoding="utf-8").strip()
-    return "\n\n".join((
-        tech_block(root, n_pages, prompts),
-        f"<theme_css>\n{_theme_interface(paths['theme.css']).strip()}\n</theme_css>",
-        f"<chassis>\n{chassis}\n</chassis>",
-        _deck_outline(paths["pages.md"]),
-    ))
+    else:
+        chassis = paths["CHASSIS.md"].read_text(encoding="utf-8").strip()
+        content = "\n\n".join((
+            tech_block(root, n_pages, prompts),
+            f"<theme_css>\n{_theme_interface(paths['theme.css']).strip()}\n</theme_css>",
+            f"<chassis>\n{chassis}\n</chassis>",
+            _deck_outline(paths["pages.md"]),
+        ))
+    from .planner import plan_context
+    audience = plan_context(paths['pages.md'].read_text(encoding='utf-8'))['audience']
+    return (f'<audience>\n{html.escape(audience, quote=False)}\n</audience>\n\n' if audience else '') + content
 
 
 def environment_context(pages_dir: Path, page: Page, resource_root: Path) -> str:
@@ -437,7 +456,7 @@ def environment_context(pages_dir: Path, page: Page, resource_root: Path) -> str
 def instruction_blocks(root: Path, n_pages: int, workflow: str, *,
                        workflow_root: Path = skills.WORKFLOWS,
                        prompts: Path | None = None, samples: str = "mini",
-                       include_aux: bool | None = None, notes: str = "off",
+                       include_aux: bool | None = None, notes: str = "cap",
                        visual_focus: bool = False) -> dict[str, str]:
     """One assembly path for production, offline sizing and frozen comparisons."""
     blocks = {"identity": IDENTITY, "philosophy": skills.philosophy_block("page"),
@@ -446,8 +465,9 @@ def instruction_blocks(root: Path, n_pages: int, workflow: str, *,
     if workflow != "build-code":
         if visual_focus:
             blocks["visual_focus"] = VISUAL_FOCUS_BLOCK
-        if NOTES_BLOCKS[notes]:
-            blocks["notes"] = NOTES_BLOCKS[notes]
+        notes_block = _notes_block(workflow, notes)
+        if notes_block:
+            blocks["notes"] = notes_block
         blocks["steps"] = COVER_STEPS_BLOCK if workflow == "build-cover" else STEPS_BLOCK
     blocks["shared"] = shared_preload(root, n_pages, prompts, workflow)
     blocks["workflow"] = skills.routed_workflow(
@@ -497,7 +517,7 @@ def audit_delivery(
     page: Page,
     resource_root: Path,
 ) -> dict:
-    """Audit once after the agent stops; never feed the result back into its loop."""
+    """Audit current delivery; results stay outside model history."""
     target = pages_dir / f"{page.pid}.html"
     if not target.is_file() or target.stat().st_size == 0:
         return {
@@ -567,7 +587,7 @@ def build_one(
     runtime: llm.ModelRuntime | None = None,
     refs: list[dict] | None = None,
 ) -> Page:
-    """Run one free-form agent loop to natural stop and audit separately."""
+    """Accept natural stop only after delivery audit; retry with unchanged history."""
     log = Writer(trace, str(uuid.uuid4()))
     resource_root = (
         workflow_root / page.workflow if page.workflow else workflow_root
@@ -590,7 +610,7 @@ def build_one(
     t0 = time.time()
     while True:
         if time.time() - t0 > MAX_SECONDS:
-            page.why = f"超过单页时限 {MAX_SECONDS}s"
+            page.why = f"超过单页时限 {MAX_SECONDS}s" + (f"；最近结束检查：{page.last_stop_error}" if page.last_stop_error else "")
             page.termination = "max_seconds"
             break
 
@@ -636,6 +656,18 @@ def build_one(
         )
 
         if not calls:
+            audit_started, audit_clock = _now(), time.monotonic()
+            page.audit = audit_delivery(pages_dir, page, resource_root)
+            rejected = bool(page.audit['fatal_errors'])
+            log.tool(rid=request_id, call_id=f"{request_id}-delivery", page=page.pid,
+                     name='DeliveryAudit', arguments='{}',
+                     output=json.dumps({'decision': 'retry' if rejected else 'complete', 'audit': page.audit}, ensure_ascii=False),
+                     started=audit_started, finished=_now(), seconds=time.monotonic() - audit_clock)
+            if rejected:
+                page.premature_stops += 1
+                page.last_stop_error = '；'.join(page.audit['fatal_errors'])
+                print(f"  {page.pid} · {page.label or page.workflow}：模型未调用工具，{page.last_stop_error}；正在按原上下文重试", flush=True)
+                continue
             page.why = text_of(response).strip()[:200]
             page.termination = "no_tool_use"
             break
@@ -798,7 +830,8 @@ def build_one(
 
     target = pages_dir / f"{page.pid}.html"
     page.artifact_present = target.is_file() and target.stat().st_size > 0
-    page.audit = audit_delivery(pages_dir, page, resource_root)
+    if page.termination != "no_tool_use":
+        page.audit = audit_delivery(pages_dir, page, resource_root)
     page.seconds = time.time() - t0
     mark = "✓" if page.artifact_present else "✗"
     print(
@@ -868,9 +901,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--notes",
-        choices=tuple(NOTES_BLOCKS),
-        default="off",
-        help="cap=画面 ≤200 字的硬数；notes=同样要求加讲稿区 <aside class=notes>；only=只给讲稿区；默认 off",
+        choices=NOTES_MODES,
+        default="cap",
+        help="cap=封面 ≤80 字、内容/交互页 ≤200 字；notes=同样要求加讲稿区；only=只给讲稿区；off=关闭；默认 cap",
     )
     args = parser.parse_args(argv)
     if args.aux_samples is None:
@@ -881,7 +914,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     tools.read.SAMPLE_SHOTS = args.sample_shots
-    tools.check.TEXT_REPORT = args.notes != "off"
+    tools.check.TEXT_REPORT = args.notes in {"notes", "only"}
 
     cfg = config()
     profile = llm.resolve_builder_profile(cfg, args.profile)
@@ -1067,6 +1100,8 @@ def main() -> None:
             "workflow": page.workflow,
             "profile": runtimes[page.workflow].profile.id,
             "termination": page.termination,
+            "premature_stops": page.premature_stops,
+            "last_stop_error": page.last_stop_error,
             "artifact_present": page.artifact_present,
             "audit": page.audit,
             "steps": page.steps,

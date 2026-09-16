@@ -14,8 +14,10 @@ export interface PageRuntime {
   kind: 'slide' | 'code-workbench';
   nativeStepMax: number;
   /** Authored iframe paths; execution state never belongs to the author document. */
-  workbenches: {target:string;entry:string}[];
+  workbenches: {target:string;entry:string;lesson?:import('./code-lesson.js').CodeLessonDescriptor}[];
 }
 export function pageRuntime(nativeStepMax: number, workbenches: PageRuntime['workbenches']): PageRuntime {
   return {version:1,kind:workbenches.length?'code-workbench':'slide',nativeStepMax,workbenches};
 }
+export { CODE_RUNTIME_VERSION, CODE_FILES, codeResourcePath, codeRevision, discoverCodeLessons } from './code-lesson.js';
+export type { CodeFile, CodeSources, CodeLessonDescriptor } from './code-lesson.js';

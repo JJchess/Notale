@@ -259,10 +259,10 @@ class ToolEvidenceTests(unittest.TestCase):
             def respond(_instructions, history, *_args, **_kwargs):
                 histories.append(json.loads(json.dumps(history)))
                 return responses.pop(0)
-            with patch.object(builder, 'respond', side_effect=respond), patch.object(builder.tools, 'run', return_value='actual tool result'), patch.object(builder, 'audit_delivery', return_value={}):
+            with patch.object(builder, 'respond', side_effect=respond), patch.object(builder.tools, 'run', return_value='actual tool result'), patch.object(builder, 'audit_delivery', return_value={'fatal_errors': [], 'visual_warnings': [], 'code_result': None}):
                 result = builder.build_one(builder_page(), root, root / 'trace.jsonl', builder.ROOT / 'skills', 'instructions', 'low')
             rows = [json.loads(line) for line in (root / 'trace.jsonl').read_text().splitlines()]
-            evidence = [r for r in rows if r['type'] == 'system']
+            evidence = [r for r in rows if r['type'] == 'system' and r['toolUseResult'].get('name') != 'DeliveryAudit']
             self.assertEqual(len(evidence), 1)
             self.assertEqual(evidence[0]['toolUseResult']['output'], 'actual tool result')
             self.assertEqual(rows[1]['toolUseResult']['instructions'], 'instructions')

@@ -1,58 +1,88 @@
-import { projectCommands } from './author-projection.js';
+import {bindCourseEditor,courseActions,courseIdentity,type CourseEditing} from './state/course-editor';
+import {sidebar} from './state/sidebar';
+import {runtimeIdentity} from './canvas/page-identity';
+import {PreviewLeases} from './canvas/preview-leases';
+import {waitForPrintPages} from './print-readiness';
+import {assetBase64} from './asset-encoding';
+import {coalescedRefresh} from './state/coalesced-refresh';
+import {AuthorObjects,type AuthorObject} from './canvas/author-objects';
+import {KeyboardQueue,type KeyboardIntent} from './state/keyboard-queue';
+import {requestMediaFile} from './state/media-picker';
+import {bindDocumentIO} from './state/document-io';
+import {importDocument} from './document-transfer';
+import {bindNotifications} from './state/notifications';
+import {createSmartDiagram} from './state/smart-diagram';
+import {bindInsertionDrop} from './state/insertion-drop';
+import {createSourceEditor} from './state/source-editor';
+import {bindSaveRecovery} from './state/save-recovery-actions';
+import {bindArrangement,arrangementSettings} from './state/arrangement';
+import {createConnectorInspector} from './state/connector-inspector';
+import {AcceptedOperations} from './state/accepted-operations';
+import {createComponentNavigation} from './state/component-navigation';
+import {captureLayerPlan,layerPlanCommands} from './state/layer-commands';
+import {assertSelectionEditable,deleteSelectionCommands,groupingPlan} from './state/selection-commands';
+import {UiTasks} from './lifecycle/ui-tasks';
+import {bindNotesEditor} from './state/notes-editor';
+import {bindAnimationControls} from './state/animation-controls';
+import {AnimationSelection} from './state/animation-selection';
+import {bindAnimationForm,animationTriggerLabels} from './state/animation-form';
+import {animationDraftFields,editAnimationField,AnimationDraft,type AnimationField} from './state/animation-draft';
+import {bindAnimationGallery,animationEffectGroups as effectGroups,animationEffectLabels} from './state/animation-gallery';
+import {bindAnimationList} from './state/animation-list';
+import {createTextLinkDialog} from './state/text-link-dialog';
+import {SessionShutdown} from './state/session-shutdown';
+import {closingSessions} from './state/closing-sessions';
+import {viewSettings,bindGuideActions} from './state/view-settings';
+import {bindDocumentSettings} from './state/document-settings';
+import {layerRows} from './state/layers';
+import {CanvasController} from './canvas/controller.js';
+import {bindEditorSession,editorActions as publicEditorActions} from './state/editor-session.js';
+import {scopeActions} from './state/action-scope';
+import {CanvasResources} from './canvas/resources.js';
+import {AuthorCanvasController} from './canvas/author-controller';
 import { EditorKernel } from './editor-kernel.js';
 import { applyAuthorChanges, type AuthorChangesPage, type SyncAcknowledgement } from '@notale/editor/browser';
 import {selectionBounds,geometryCommand,selectionUnits,alignmentCommands} from './object-geometry.js';
-import {animationOrderCommands,hasTeachingStructure,sequenceAnimations,type AnimationSequence} from './animation-authoring.js';
+import {animationOrderCommands,hasTeachingStructure,sequenceAnimations} from './animation-authoring.js';
 import {createTemplateLibrary} from './template-library.js';
 import {createEchartsEditor} from './echarts-editor.js';
 import type {ChartAuthoring} from '@notale/editor/browser';
 import {prepareSvgImport} from './vector-import.js';
 import {createVectorIngress} from './vector-ingress.js';
 import {createVectorInspector} from './vector-inspector.js';
-import {createDocumentUI} from './document-ui.js';
+import {bindRecovery} from './state/recovery';
 import {createTextIngress, type TextDraft} from './text-ingress.js';
 import { createAnimationPath } from './animation-path.js';
 import { createObjectMenu, type ObjectMenuItem, type FormatControl } from './object-menu.js';
 import { GeometrySession, type GeometryEdit } from './geometry-session.js';
-import { installDockIcons } from './dock-icons.js';
-import { createPreviewOverlay } from './preview-overlay.js';
-import { bindAnimationTiming } from './animation-timing.js';
+import {previewActions} from './state/preview-session';
 import { createPageSettings } from './page-settings.js';
 import { renderSelectionTools } from './selection-tools.js';
-import { createCanvasLoading } from './canvas-loading.js';
+import { createCanvasLoading } from './canvas/loading-controller';
 import { createChartEditor } from './chart-editor.js';
 import { createTableInspector } from './table-inspector.js';
-import { applyFeatureAvailability } from './feature-availability.js';
 import { createLayoutManager } from './layout-manager.js';
 import { createImageCrop } from './image-crop.js';
 import { createMediaIngress } from './media-ingress.js';
 import { createRichEditor } from './rich-editor.js';
 import { createLinkInspector } from './link-inspector.js';
 import { createRevealPreset } from './reveal-preset.js';
-import { createPageThumbnails } from './page-thumbnails.js';
+import { bindAiEdits } from './state/ai-edits.js';
+import { createPageThumbnails } from './canvas/page-thumbnails.js';
 import { createAssetLibrary } from './asset-library.js';
 import { createTypography } from './typography.js';
 import { createContextInspector } from './context-inspector.js';
 import { createEditorShell } from './editor-shell.js';
-import { bindPageNavigation } from './page-navigation.js';
 import { timeline } from '@notale/editor/browser';
-import { htmlLayerCommands } from '@notale/editor/browser';
 import { createLayoutValues } from './layout-values.js';
 import { createStepInspector } from './step-inspector.js';
 import { createComponentInspector } from './component-inspector.js';
 import type { SourceScene } from '@notale/editor/browser';
-import { sceneValuesSchema, type SceneScalar } from '@notale/editor/browser';
-import { sceneCheckpointSchema, type SceneCheckpoint } from '@notale/editor/browser';
-import {
-  nativeChartOptionSchema,
-  nativeChartAppearancePatchSchema,
-  type NativeChartInteraction,
-} from '@notale/editor/browser';
+import {createSceneInspector,type SceneInspection} from './state/scene-inspector';
+import {createNativeChartInspector} from './state/native-chart-inspector';
 import type { NativeChartInspection } from '@notale/editor/browser';
 import { connectorSchema } from '@notale/editor/browser';
-import { keepPreviewAlive } from './preview-lease.js';
-let previewLease: ReturnType<typeof keepPreviewAlive> | undefined;
-window.addEventListener('pagehide', () => previewLease?.stop());
+import { trackPreviewLease } from './canvas/resource-lease';
 import {
   PendingJournal,
   pendingRecordKey,
@@ -64,37 +94,31 @@ import {
 } from './pending-journal.js';
 import { editShortcut, type EditAction } from './shortcuts.js';
 import { selectIds } from '@notale/editor/browser';
-import { isSvgLayer } from '@notale/editor/browser';
-import { mediaSettingsSchema } from '@notale/editor/browser';
+import {createMediaInspector} from './state/media-inspector';
 import type { Snapshot, Slide, Command, AnimationSpec } from '@notale/editor/browser';
-import { template, DEFAULT_TEX, cycleContent, cycleLabels } from './templates.js';
+import { template, DEFAULT_TEX } from './templates.js';
 import { createEquationEditor } from './equation-editor.js';
 import { createCodeEditor } from './code-editor.js';
-import { buildInsertPanel } from './insert-panel.js';
+import {bindInsertActions} from './state/insert-actions';
 import { createAppearanceInspector, toHex } from './appearance-inspector.js';
 import { createThemePanel } from './theme-panel.js';
 import { createFindReplace } from './find-replace.js';
 import { createPageBackground } from './page-background.js';
 import { createCommentsPanel } from './comments-panel.js';
-import { createHeaderMenus } from './header-menu.js';
 import { setSaveStatus, showSaveStatus, PHASES } from './save-status.js';
-import { parsePptx } from './pptx-import.js';
-let mounted=false;
+let mounted:symbol|undefined;
 export function mountWorkbench(){
   if(mounted)return;
-  mounted=true;
-type ObjectInfo = {
-  id: string;
-  tag: string;
-  namespace: string;
-  parent?: string;
-  text: string;
-  html: string;
-  attributes: Record<string, string>;
-  style: Record<string, string>;
-  locked: boolean;
-  kind: string;
-};
+  const identity=Symbol('workbench');mounted=identity;
+  const workbenchEvents=new AbortController();
+  let release=()=>workbenchEvents.abort();
+  try {
+  const editorSession=bindEditorSession(workbenchEvents.signal);
+  const editorActions=scopeActions(publicEditorActions,workbenchEvents.signal);
+  const uiTasks=new UiTasks(workbenchEvents.signal);
+  let previewLease:ReturnType<typeof trackPreviewLease>|undefined;
+  window.addEventListener('pagehide',()=>previewLease?.stop(), {signal:workbenchEvents.signal});
+type ObjectInfo = AuthorObject;
 type Rect = {
   id: string;
   x: number;
@@ -105,41 +129,36 @@ type Rect = {
   value?: string;
 };
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
-const value = (id: string) => $<HTMLInputElement>(id).value;
-const num = (id: string) => Number(value(id));
+const notices=bindNotifications();
+const animationDraft=new AnimationDraft();
+const value = (id:AnimationField) => animationDraft.get(id);
+const num = (id:AnimationField) => Number(value(id));
 let paintingAuthor=false;
-const set = (id: string, v: unknown) => {
-  if(paintingAuthor&&document.activeElement===$(id))return;
-  $<HTMLInputElement>(id).value = String(v ?? '');
-};
+const set=(id:AnimationField,value:unknown)=>{if(!paintingAuthor||animationDraft.focused!==id)animationDraft.set(id,value);};
 const esc = (s: unknown) =>
   String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
 const uuid = () => crypto.randomUUID();
-let snapshot: Snapshot,
-  slideId = '',
-  objects: ObjectInfo[] = [],
-  selected = new Set<string>(),
+let objects: ObjectInfo[] = [],
   rects: Rect[] = [],
-  channel = '',
-  interacting = false,
-  step = 0,
-  max = 0;
+  channel = '';
 let undo: number[] = [],
-  redo: number[] = [],
-  busy = false;
+  redo: number[] = [];
+const isBusy=()=>editorSession.getSnapshot().busy;
 const idleWaiters = new Set<() => void>();
+function assertWorkbenchOpen(){if(workbenchEvents.signal.aborted)throw Error('编辑器已关闭，无法接收新操作');}
 async function whenIdle() {
-  if (busy) await new Promise<void>((resolve) => idleWaiters.add(resolve));
+  assertWorkbenchOpen();
+  if (isBusy()) await new Promise<void>((resolve) => idleWaiters.add(resolve));
+  assertWorkbenchOpen();
 }
 function releaseBusy() {
-  busy = false;
+  if(!workbenchEvents.signal.aborted)editorSession.update({busy:false});
   for (const done of idleWaiters) done();
   idleWaiters.clear();
 }
 let pending: Pending | undefined;
 let pendingConflict = false;
 let echartsUI:ReturnType<typeof createEchartsEditor>|undefined;
-let documentUI:ReturnType<typeof createDocumentUI>|undefined;
 type Capture = {
   textReflowTargets?:string[];
   rectangles: (Rect & {
@@ -157,54 +176,34 @@ type Capture = {
   nativeChartTargets?: string[];
   nativeChartStates?: Record<string, import('@notale/editor/browser').NativeChartState>;
 };
-let canvasReady = false;
-let nativeMax = 0;
-const readyWaiters = new Set<() => void>();
-function whenReady(): Promise<void> {
-  if (canvasReady) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const done = () => {
-      clearTimeout(timeout);
-      readyWaiters.delete(done);
-      resolve();
-    };
-    const timeout = setTimeout(() => {
-      readyWaiters.delete(done);
-      reject(new Error('页面仍未加载完成'));
-    }, 30000);
-    readyWaiters.add(done);
-  });
-}
-const captures = new Map<string, (result: Capture) => void>();
+function whenReady(){return canvasController.whenReady();}
 let clipboard:
   | { documentId: string; source: Slide; targets: string[]; mode: 'copy' | 'cut'; capture: Capture }
   | undefined;
-async function captureSelection(ids = [...selected]): Promise<Capture> {
+async function captureSelection(ids = [...editorSession.selection]): Promise<Capture> {
+  const documentId=editorSession.snapshot.document.id,pageId=editorSession.pageId;
   await whenReady();
+  assertWorkbenchOpen();
+  if(documentId!==editorSession.snapshot.document.id||pageId!==editorSession.pageId)throw Error('页面已切换，请在当前页面重试');
   if (!ids.length) return Promise.reject(new Error('请先选择对象'));
-  const requestId = uuid();
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      captures.delete(requestId);
-      reject(new Error('画布未响应，请等待页面加载后重试'));
-    }, 5000);
-    captures.set(requestId, (result) => {
-      clearTimeout(timeout);
-      resolve(result);
-    });
-    send('capture', { requestId, ids });
-  });
+  return canvasController.request<Capture>('capture',{ids});
 }
+
 let clipboardCapture: Promise<void> | undefined;
 function copySelection(mode: 'copy' | 'cut') {
+  assertWorkbenchOpen();
+  const originDocument=editorSession.snapshot.document.id,originPage=editorSession.pageId;
+  const assertSource=()=>{assertWorkbenchOpen();if(editorSession.snapshot.document.id!==originDocument||editorSession.pageId!==originPage)throw Error('页面已切换，请重新复制对象');};
   const task = (async () => {
     await kernel.flush();await textIngress.flush();await vectorIngress.flush();
     await echartsUI?.flush();
-    const ids = [...selected],
+    assertSource();
+    const ids = [...editorSession.selection],
       source = structuredClone(slide()),
-      documentId = snapshot.document.id;
+      documentId = editorSession.snapshot.document.id;
     for(const state of geometrySession.states(source.id))if(state.chart)source.nativeCharts[state.id]=structuredClone(state.chart);
     const capture = await captureSelection(ids);
+    assertSource();
     clipboard = { documentId, source, targets: ids, mode, capture };
   })();
   clipboardCapture = task;
@@ -213,22 +212,32 @@ function copySelection(mode: 'copy' | 'cut') {
   });
 }
 async function pasteSelection() {
+  assertWorkbenchOpen();
+  const originDocument=editorSession.snapshot.document.id,originPage=editorSession.pageId;
+  const assertSource=()=>{assertWorkbenchOpen();if(editorSession.snapshot.document.id!==originDocument||editorSession.pageId!==originPage)throw Error('页面已切换，请重新粘贴对象');};
   await clipboardCapture;
+  assertSource();
   if (!clipboard) throw new Error('剪贴板中没有对象');
-  if (clipboard.documentId !== snapshot.document.id)
-    throw new Error('跨讲义请使用工程导入；当前剪贴板属于另一份讲义');
+  if (clipboard.documentId !== editorSession.snapshot.document.id)
+    throw new Error('跨讲义请使用“导入Notale”；当前剪贴板属于另一份讲义');
   const beforeIds = new Set(objects.map((o) => o.id));
   await commands([
     {
       type: 'elements.transfer',
-      slideId,
+      slideId:editorSession.pageId,
       sourceSlideId: clipboard.source.id,
       sourceSnapshot: clipboard.source,
       targets: clipboard.targets,
       mode: clipboard.mode,
-      ...clipboard.capture,
+      rectangles:clipboard.capture.rectangles,
+      computedStyles:clipboard.capture.computedStyles,
+      nativeChartTargets:clipboard.capture.nativeChartTargets,
+      nativeChartStates:clipboard.capture.nativeChartStates,
+      canvasSceneStates:clipboard.capture.canvasSceneStates,
+      componentStates:clipboard.capture.componentStates,
     },
   ]);
+  assertSource();
   const definitionHelper = (object: ObjectInfo) => {
     let node: ObjectInfo | undefined = object;
     while (node) {
@@ -246,76 +255,91 @@ async function pasteSelection() {
 }
 const journal = new PendingJournal(localStorage, sessionStorage);
 let migratedLegacy: PendingEntry | undefined;
-const frame = $<HTMLIFrameElement>('canvas');
-buildInsertPanel($('insert-drawer'));
+const canvasController=new CanvasController($('canvas-host'));
+release=()=>canvasController.dispose();
+canvasController.onDispose(()=>{if(mounted===identity)mounted=undefined;});
+canvasController.onDispose(()=>{workbenchEvents.abort();for(const done of idleWaiters)done();idleWaiters.clear();previewLease?.stop();previewLease=undefined;});
+let frame=canvasController.frame;
 const editorShell = createEditorShell(scale=>send('camera',{scale}));
+canvasController.onDispose(()=>editorShell.dispose());
 const geometrySession: GeometrySession = new GeometrySession({
-  task: edit => ({kernel:{protocol:2},documentId:snapshot.document.id,slideId:edit.slideId,selection:[...selected],request:{baseVersion:edit.sourceVersion??snapshot.version,mutationId:edit.id,commands:edit.commands},after:{undo:[...undo],redo:[]}}),
+  task: edit => ({kernel:{protocol:2},documentId:editorSession.snapshot.document.id,slideId:edit.slideId,selection:[...editorSession.selection],request:{baseVersion:edit.sourceVersion??editorSession.snapshot.version,mutationId:edit.id,commands:edit.commands},after:{undo:[...undo],redo:[]}}),
   submit: task => transmit(task),
   snapshot:()=>kernel.confirmed,
   recovered:task=>{kernel.recover(task.request.mutationId);journal.clear(task);if(pending?.request.mutationId===task.request.mutationId)pending=undefined;},
-  confirm:(task,version)=>{mutationVersions.set(task.request.mutationId,version);void pullAuthorChanges().then(()=>kernel.acknowledge(task.request.mutationId,version)).catch(error);const plan=nextHistory(task,version);undo=plan.undo;redo=plan.redo;sessionStorage.setItem(historyKey(task.documentId),JSON.stringify({version:Math.max(version,snapshot.version),...plan}));mark();},
-  remote: async()=>{if(!busy&&!canvasGesture&&!textSession&&snapshot){await pullAuthorChanges();kernel.refresh(true);}},
-  paint: states => {const chartStates=states.filter(s=>s.chart);if(chartStates.length){const charts={...slide().nativeCharts};for(const state of chartStates){charts[state.id]=state.chart!;if(selected.has(state.id)&&state.chart?.authoring)echartsUI?.restore(state.chart.authoring);}send('charts-update',{charts});}send('geometry-draft',{states:states.filter(s=>!s.chart)});},
-  changed: () => {if(snapshot){kernel.refresh();mark();}},error,
+  confirm:(task,version)=>{mutationVersions.set(task.request.mutationId,version);void pullAuthorChanges().then(()=>{if(!workbenchEvents.signal.aborted)kernel.acknowledge(task.request.mutationId,version);}).catch(error);const plan=nextHistory(task,version);undo=plan.undo;redo=plan.redo;sessionStorage.setItem(historyKey(task.documentId),JSON.stringify({version:Math.max(version,editorSession.snapshot.version),...plan}));mark();},
+  remote: async()=>{if(!isBusy()&&!canvasGesture&&!textSession&&editorSession.snapshot){await pullAuthorChanges();if(!workbenchEvents.signal.aborted)kernel.refresh(true);}},
+  paint: states => {const chartStates=states.filter(s=>s.chart);if(chartStates.length){const charts={...slide().nativeCharts};for(const state of chartStates){charts[state.id]=state.chart!;if(editorSession.selection.has(state.id)&&state.chart?.authoring)echartsUI?.restore(state.chart.authoring);}send('charts-update',{charts});}send('geometry-draft',{states:states.filter(s=>!s.chart)});},
+  changed: () => {if(editorSession.snapshot){kernel.refresh();mark();}},error,
 });
-let authorPreviewCommands:Command[]=[];
 const kernel: EditorKernel = new EditorKernel({
   operations:()=>geometrySession.operations(),owner:()=>geometrySession.ownerId,
   stage:task=>geometrySession.stageText(task),finalize:id=>geometrySession.finalizeText(id),
+  retainPreparation:(task,cause)=>geometrySession.retainPreparation(task,cause),
   enqueue:task=>geometrySession.enqueueTask(task),cancel:id=>geometrySession.cancelOperation(id),
-  prepare:request=>api('/api/documents/'+snapshot.document.id+'/prepare',request),
+  prepare:request=>api('/api/documents/'+editorSession.snapshot.document.id+'/prepare',request),
   barrier:async()=>{await geometrySession.barrier();await pullAuthorChanges();},
   changed:(next,previous,paint)=>{
-    snapshot=next;
-    if(paint&&canvasReady&&previous?.document.id===next.document.id){
-      if(!next.document.slides.some(s=>s.id===slideId)){void render('page-removed').catch(error);return;}
-      const old=previous.document.slides.find(s=>s.id===slideId);
+    if(workbenchEvents.signal.aborted)return;
+    editorSession.update({document:next});
+    if(paint&&editorSession.canvasReady&&previous?.document.id===next.document.id){
+      if(!next.document.slides.some(s=>s.id===editorSession.pageId)){void render('page-removed').catch(error);return;}
+      const old=previous.document.slides.find(s=>s.id===editorSession.pageId);
       refreshAuthorObjects();
-      if(old)void updateAuthor(old).catch(error);
-      renderPageList();renderObjects();paintingAuthor=true;try{renderSelection(false);}finally{paintingAuthor=false;}
+      if(old)void authorCanvas.update(old).catch(error);
+      renderObjects();paintingAuthor=true;try{renderSelection(false);}finally{paintingAuthor=false;}
     }
   },
-  preview:cmds=>{authorPreviewCommands.push(...cmds);send('author-preview',{commands:cmds});mark();},error,
+  preview:cmds=>{authorCanvas.preview(cmds);mark();},error,
 });
-async function pullAuthorChanges(){
-  const id=kernel.confirmed.document.id;
+const refreshAuthorChanges=coalescedRefresh(async(id)=>{
+  if(workbenchEvents.signal.aborted||kernel.confirmed.document.id!==id)return;
   while(true){
     const page:AuthorChangesPage=await api('/api/documents/'+id+'/changes?after='+kernel.confirmed.version);
-    if(kernel.confirmed.document.id!==id)return;
+    if(workbenchEvents.signal.aborted||kernel.confirmed.document.id!==id)return;
     for(const change of page.changes)kernel.accept(change);
     if(!page.hasMore)break;
   }
+});
+async function pullAuthorChanges(){
+  if(workbenchEvents.signal.aborted)return;
+  return refreshAuthorChanges(kernel.confirmed.document.id);
 }
+
+const authorObjects = new AuthorObjects();
+canvasController.onDispose(()=>authorObjects.clear());
 function refreshAuthorObjects(){
-  const s=slide(),doc=new DOMParser().parseFromString(s.html,'text/html'),old=new Map(objects.map(o=>[o.id,o]));
-  objects=[...doc.querySelectorAll<HTMLElement>('[data-notale-id]')].filter(e=>!['HTML','HEAD','BODY','SCRIPT','STYLE','LINK','META'].includes(e.tagName)).map(e=>{
-    const id=e.dataset.notaleId!,previous=old.get(id);
-    return {id,tag:e.tagName.toLowerCase(),namespace:e.namespaceURI??'',parent:e.parentElement?.getAttribute('data-notale-id')??undefined,
-      text:e.textContent??'',html:e.outerHTML,attributes:Object.fromEntries([...e.attributes].map(a=>[a.name,a.value])),
-      style:Object.fromEntries([...e.style].map(k=>[k,e.style.getPropertyValue(k)+(e.style.getPropertyPriority(k)?' !important':'')])),locked:s.locked.includes(id),kind:previous?.kind??'element'};
-  });
-  selected=new Set([...selected].filter(id=>objects.some(o=>o.id===id)));
+  objects=authorObjects.read(editorSession.snapshot.document.id,slide(),objects);
+  const available=new Set(objects.map(object=>object.id));
+  editorSession.select([...editorSession.selection].filter(id=>available.has(id)));
 }
 let textSession:{sessionId:string;target:string;sequence?:number}|undefined;
-const textIngress=createTextIngress({queue:geometrySession,documentId:()=>snapshot.document.id,version:()=>snapshot.version,error,confirm:data=>send('text-confirm',data)});
-bindPageNavigation({
-  pages: normalPages,
-  documentId: () => snapshot.document.id,
-  show: showPage,
-  move: moveNormalPage,
-  error,
-});
-function normalPages() { return snapshot.document.slides.filter(page=>!page.layoutSourceId); }
+const textIngress=createTextIngress({queue:geometrySession,documentId:()=>editorSession.snapshot.document.id,version:()=>editorSession.snapshot.version,error,confirm:data=>send('text-confirm',data)});
+
+function normalPages() { return editorSession.snapshot.document.slides.filter(page=>!page.layoutSourceId); }
 function moveNormalPage(id:string,index:number) {
   if(!normalPages().some(page=>page.id===id))throw new Error('请在普通页面列表中排序');
-  const remaining=snapshot.document.slides.filter(page=>page.id!==id),ordinary=remaining.filter(page=>!page.layoutSourceId);
+  const remaining=editorSession.snapshot.document.slides.filter(page=>page.id!==id),ordinary=remaining.filter(page=>!page.layoutSourceId);
   const target=ordinary[Math.max(0,index)];
   const at=target?remaining.findIndex(page=>page.id===target.id):ordinary.length?remaining.findIndex(page=>page.id===ordinary.at(-1)!.id)+1:0;
   return commands([{type:'slide.move',slideId:id,index:at}]);
 }
 class ApiError extends Error {
   constructor(readonly code: string, message: string) { super(`${code}: ${message}`); }
+}
+/** Model calls run far longer than an edit round trip and the author can stop them. */
+async function apiSignal(path: string, body: unknown, signal: AbortSignal) {
+  const r = await fetch(path, {
+    signal,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const e = await r.json().catch(()=>({}));
+    throw new ApiError(String(e.error ?? 'HTTP_'+r.status), e.message ?? `HTTP ${r.status}`);
+  }
+  return r.json();
 }
 async function api(path: string, body?: unknown) {
   const r = await fetch(
@@ -325,8 +349,8 @@ async function api(path: string, body?: unknown) {
       : {
           signal:AbortSignal.timeout(15000),
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          headers: { 'Content-Type': body instanceof Blob ? 'application/octet-stream' : 'application/json' },
+          body: body instanceof Blob ? body : JSON.stringify(body),
         },
   );
   if (!r.ok) {
@@ -336,93 +360,64 @@ async function api(path: string, body?: unknown) {
   return r.json();
 }
 function error(e: unknown) {
-  const status=document.querySelector<HTMLElement>('dialog[open] [role="status"]');if(status)status.textContent=e instanceof Error?e.message:String(e);
-  $('toast').textContent = e instanceof Error ? e.message : String(e);
-  $('toast').hidden = false;
-  setTimeout(() => ($('toast').hidden = true), 10000);
-  if(snapshot)mark();
-}
-function on(id: string, fn: () => unknown) {
-  $(id).addEventListener('click', () => Promise.resolve().then(fn).catch(error));
+  if(workbenchEvents.signal.aborted)return;
+  notices.show(e instanceof Error?e.message:String(e));
+  if(editorSession.snapshot)mark();
 }
 function slide(): Slide {
-  return snapshot.document.slides.find((s) => s.id === slideId)!;
+  return editorSession.snapshot.document.slides.find((s) => s.id === editorSession.pageId)!;
 }
 function send(type: string, data: unknown) {
-  frame.contentWindow?.postMessage({ source: 'notale-host', channel, type, data }, '*');
+  canvasController.send(type,data);
 }
 function current() {
-  const id = [...selected][0];
+  const id = [...editorSession.selection][0];
   if (!id) throw new Error('请先选择一个对象');
   return objects.find((o) => o.id === id)!;
 }
-let selectionScope:string|undefined;
 function changeSelection(ids: string[], operation: 'replace' | 'add' | 'toggle' = 'replace') {
   if(kernel.editing)void kernel.flush().catch(error);
-  selected = new Set(
+  editorSession.select(
     selectIds(
-      [...selected],
+      [...editorSession.selection],
       ids,
       objects.filter((o) => o.attributes.id !== 'stage'),
-      selectionScope?[]:slide().groups,
+      editorSession.selectionScope?[]:slide().groups,
       operation,
     ),
   );
 }
 function refreshPendingControls() {
-  $('retry-save').hidden = !geometrySession.blocked;
-  $('reload-head').hidden = !geometrySession.blocked;
-  $('export-draft').hidden = !geometrySession.blocked;
-  $<HTMLButtonElement>('retry-save').disabled = busy;
-  $<HTMLButtonElement>('reload-head').disabled = busy;
+  saveRecovery.update({scope:editorSession.getSnapshot().document?.document.id??'',visible:geometrySession.blocked,busy:isBusy()});
 }
 function mark() {
-  if(snapshot)documentUI?.render();
+  if(workbenchEvents.signal.aborted)return;
   refreshPendingControls();
-  showSaveStatus({ editing: kernel.editing, journal: geometrySession.status, busy, version: snapshot.version });
-  $<HTMLButtonElement>('undo').disabled = !kernel.canUndo && !textIngress.canUndo && !undo.some(v=>!kernel.handlesVersion(v));
-  $<HTMLButtonElement>('redo').disabled = !kernel.canRedo && !textIngress.canRedo && !redo.length;
-  $<HTMLSelectElement>('documents').disabled = busy;
+  showSaveStatus({ editing: kernel.editing, journal: geometrySession.status, busy:isBusy(), version: editorSession.snapshot.version });
+  editorSession.update({canUndo:kernel.canUndo||textIngress.canUndo||undo.some(v=>!kernel.handlesVersion(v)),canRedo:kernel.canRedo||textIngress.canRedo||!!redo.length});
   refreshRecoveries();
 }
-const assetLeases=new Map<number,ReturnType<typeof keepPreviewAlive>>();
-let assetSignature='',assetBase='',authorUpdateSequence=0;
-let paintedAssets:Snapshot['document']['assets']={};
-async function authorAssetBase(){
-  const base=kernel.confirmed,signature=JSON.stringify(base.document.assets);
-  if(signature===assetSignature&&assetBase)return assetBase;
-  if(!Object.keys(base.document.assets).length){assetSignature=signature;return '';}
-  const previews=await api('/api/documents/'+base.document.id+'/preview?version='+base.version);
-  if(!assetLeases.has(base.version))assetLeases.set(base.version,keepPreviewAlive(base.document.id,previews));
-  const first=base.document.slides[0],url=previews.slides.find((s:{id:string})=>s.id===first.id).url;
-  assetBase=new URL('../'.repeat(first.sourcePath.split('/').length-1)||'./',url).href;
-  assetSignature=signature;return assetBase;
-}
-async function updateAuthor(previous:Slide){
-  const target=slideId,sequence=++authorUpdateSequence;
-  const base=await authorAssetBase();if(sequence!==authorUpdateSequence||target!==slideId)return;
-  const next=snapshot.document.slides.find(s=>s.id===slideId);if(!next){await render('page-removed');return;}
-  previous=renderedSlide?.id===next.id?renderedSlide:previous;
-  if(previous.id!==next.id)return;
-  if(authorPreviewCommands.length){previous=projectCommands({...snapshot,document:{...snapshot.document,slides:[previous]}},authorPreviewCommands).document.slides[0];authorPreviewCommands=[];}
-  const assets=kernel.confirmed.document.assets,changedPaths=Object.keys(assets).filter(path=>JSON.stringify(assets[path])!==JSON.stringify(paintedAssets[path]));paintedAssets=assets;
-  send('author-resources',{assetBase:base,changedPaths});
-  send('author-update',{before:previous.html,after:next.html,transforms:next.transforms});
-  send('author-state',{slide:{...next,html:''},theme:{...snapshot.document.theme,...snapshot.document.layouts.find(l=>l.id===next.layoutId)?.theme,...next.theme},width:snapshot.document.width,height:snapshot.document.height,assetBase:base,assetPaths:Object.keys(kernel.confirmed.document.assets)});
-  renderedSlide=structuredClone(next);
-  pageThumbnails.patch(snapshot.document,base,changedPaths);
-  if(JSON.stringify(previous.animations)!==JSON.stringify(next.animations)){renderAnimations();teachingStepsUI.render();}
-  mark();
-}
+const canvasSeeds=new WeakMap<HTMLIFrameElement,{snapshot:Snapshot;slide:Slide}>();
+const canvasGrants=new PreviewLeases();
+const retainedGrants=new Map<HTMLIFrameElement,()=>void>();
+canvasController.onRelease(frame=>{retainedGrants.get(frame)?.();retainedGrants.delete(frame);});
+canvasController.onDispose(()=>{canvasGrants.clear();retainedGrants.clear();});
+const authorCanvas=new AuthorCanvasController(canvasController,{
+  snapshot:()=>editorSession.snapshot,confirmed:()=>kernel.confirmed,pageId:()=>editorSession.pageId,
+  preview:(id,version)=>api('/api/documents/'+id+'/preview?version='+version),
+  painted:(document,base,paths,animationsChanged)=>{canvasSeeds.set(canvasController.frame,{snapshot:editorSession.snapshot,slide:slide()});pageThumbnails.patch(kernel.confirmed.document,base,paths,kernel.confirmed.version);if(base)assetLibrary.update(new URL(slide().sourcePath,base).href,slide().sourcePath);if(animationsChanged){renderAnimations();teachingStepsUI.render();}mark();},
+  refreshed:(previews,snapshot)=>{pageThumbnails.update(previews.slides,snapshot.document,previews);pageThumbnails.patch(editorSession.snapshot.document,authorCanvas.assetBase);},
+  pageRemoved:()=>render('page-removed'),
+});
 
-const flushWaiters=new Map<string,()=>void>();
-async function flushTextEditor(){const id=uuid();await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>{flushWaiters.delete(id);reject(Error('画布尚未确认编辑内容，请稍后再试'));},5000);flushWaiters.set(id,()=>{clearTimeout(timer);resolve();});send('flush-editor',{id});});await textIngress.flush();await vectorIngress.flush();}
+async function flushTextEditor(){await canvasController.flushEditor();await textIngress.flush();await vectorIngress.flush();}
 function paintChartModels(){
   const charts=structuredClone(slide().nativeCharts);
-  for(const state of geometrySession.states(slideId))if(state.chart)charts[state.id]=state.chart;
-  send('charts-update',{charts});const id=[...selected][0];if(charts[id]?.authoring)echartsUI?.restore(charts[id].authoring!);
+  for(const state of geometrySession.states(editorSession.pageId))if(state.chart)charts[state.id]=state.chart;
+  send('charts-update',{charts});const id=[...editorSession.selection][0];if(charts[id]?.authoring)echartsUI?.restore(charts[id].authoring!);
 }
 async function flushAuthor(){await kernel.flush();await propertyEdits;await echartsUI?.flush();await whenReady();await flushTextEditor();await whenEditsIdle();await geometrySession.barrier();await geometrySession.pull();}
+async function flushDocument(){const documentId=editorSession.snapshot.document.id;await notesEditor.flush();await flushAuthor();assertWorkbenchOpen();if(editorSession.snapshot.document.id!==documentId)throw Error('讲义已切换，请重试当前操作');}
 const mutationVersions=new Map<string,number>();
 const historyKey = (id: string) => `notale-editor-history-v2:${id}`;
 function nextHistory(task:Pending,version:number):HistoryPlan {
@@ -436,15 +431,13 @@ function nextHistory(task:Pending,version:number):HistoryPlan {
 async function transmit(task: Pending) {
   await initialized;
   await whenIdle();
-  busy = true;
-  $<HTMLSelectElement>('documents').disabled = true;
+  editorSession.update({busy:true});
   pending = task;
   pendingConflict = false;
-  if(snapshot)documentUI?.render();
   refreshPendingControls();
   setSaveStatus(task.kind === 'restore' ? PHASES.restoring : PHASES.saving);
   try {
-    if(!task.kernel)journal.put(task,snapshot.document.title);
+    if(!task.kernel)journal.put(task,editorSession.snapshot.document.title);
     refreshRecoveries();
     const request=task.inverseMutationId?{baseVersion:task.request.baseVersion,mutationId:task.request.mutationId,commands:[],inverseMutationId:task.inverseMutationId}
       :task.inverseVersion?{baseVersion:task.request.baseVersion,mutationId:task.request.mutationId,commands:[],inverseVersion:task.inverseVersion}
@@ -452,19 +445,23 @@ async function transmit(task: Pending) {
       :task.geometry?{...task.request,geometry:true}:task.request;
     let acknowledged:Snapshot;
     if(task.kernel){
-      const reply:SyncAcknowledgement=await api('/api/documents/'+task.documentId+'/sync/v2',request);
+      const reply:SyncAcknowledgement=await api('/api/documents/'+task.documentId+'/sync/v2',{...request,...(task.kernel.dependencies?.length?{dependencies:task.kernel.dependencies}:{})});
+      if(workbenchEvents.signal.aborted){journal.clear(task);return reply.committedVersion;}
       if(reply.change.fromVersion===kernel.confirmed.version)kernel.accept(reply.change);
       if(kernel.confirmed.version<reply.committedVersion)await pullAuthorChanges();
       acknowledged={...kernel.confirmed,version:reply.committedVersion};
     }else{
       acknowledged=await api('/api/documents/'+task.documentId+'/sync',request);
+      if(workbenchEvents.signal.aborted){journal.clear(task);return acknowledged.version;}
       if(acknowledged.version>kernel.confirmed.version)kernel.resetBase(acknowledged);
     }
+    if(workbenchEvents.signal.aborted){journal.clear(task);return acknowledged.version;}
     const result=kernel.confirmed;
     const confirmedVersion=acknowledged.version;mutationVersions.set(task.request.mutationId,confirmedVersion);
     const advanced=false;
     const geometryOnly=!!task.geometry || geometrySession.has(task.request.mutationId);
     const foreign=!await geometrySession.ownsHistory(task);
+    if(workbenchEvents.signal.aborted){journal.clear(task);return confirmedVersion;}
     const plan=foreign?{undo:[...undo],redo:[...redo]}:nextHistory(task,confirmedVersion);
     sessionStorage.setItem(
       historyKey(task.documentId),
@@ -474,23 +471,16 @@ async function transmit(task: Pending) {
     pending=undefined;
     undo=[...plan.undo];redo=[...plan.redo];
     kernel.acknowledge(task.request.mutationId,confirmedVersion);
-    snapshot=kernel.current;
-    if(task.textEdit&&canvasReady&&task.slideId===slideId){
+    if(task.textEdit&&editorSession.canvasReady&&task.slideId===editorSession.pageId){
       const doc=new DOMParser().parseFromString(slide().html,'text/html'),node=doc.querySelector<HTMLElement>('[data-notale-id="'+CSS.escape(task.textEdit.target)+'"]');
       if(node)send('text-confirm',{...task.textEdit,html:node.innerHTML});
     }
-    if(canvasReady)send('geometry-confirm',{mutationId:task.request.mutationId,version:result.version,transforms:slide().transforms});
-    if(task.kernel?.prepared&&canvasReady&&task.slideId===slideId){
-      const previews=await api('/api/documents/'+task.documentId+'/preview?version='+result.version);
-      if(!assetLeases.has(result.version))assetLeases.set(result.version,keepPreviewAlive(task.documentId,previews));
-      const source=previews.slides.find((p:{id:string})=>p.id===slideId);
-      pageThumbnails.update(previews.slides,result.document);pageThumbnails.patch(snapshot.document,assetBase);
-      if(source)send('runtime-refresh',{url:source.url,version:result.version});
+    if(editorSession.canvasReady)send('geometry-confirm',{mutationId:task.request.mutationId,version:result.version,transforms:slide().transforms});
+    if(task.kernel?.prepared&&editorSession.canvasReady&&task.slideId===editorSession.pageId){
+      await authorCanvas.refreshRuntime(result,task.slideId);
     }
     if (advanced) {
-      $('toast').textContent = '这批修改已确认，已载入其他窗口的较新版本';
-      $('toast').hidden = false;
-      setTimeout(() => ($('toast').hidden = true), 10000);
+      notices.show('这批修改已确认，已载入其他窗口的较新版本');
     }
     return confirmedVersion;
   } catch (cause) {
@@ -501,35 +491,36 @@ async function transmit(task: Pending) {
     mark();
   }
 }
-async function commands(cmds: unknown[], remember = true, focusSlide?: string) {
+const acceptedCommands=new AcceptedOperations();
+function commands(cmds: unknown[], remember = true, focusSlide?: string) {return acceptedCommands.run(()=>executeCommands(structuredClone(cmds),remember,focusSlide));}
+async function executeCommands(cmds: unknown[], remember = true, focusSlide?: string) {
+  assertWorkbenchOpen();
   if(!cmds.length)return;
-  await initialized;
-  if(textSession){await flushTextEditor();send('text-end',{});}
-  await textIngress.flush();
-  await kernel.execute(cmds as Command[],focusSlide);
-  if(focusSlide&&focusSlide!==slideId){await geometrySession.barrier();await showPage(focusSlide);}
+  if(!editorSession.getSnapshot().document){await initialized;assertWorkbenchOpen();}
+  const navigation=pageNavigation,documentId=editorSession.snapshot.document.id;
+  const mayFocus=()=>!workbenchEvents.signal.aborted&&navigation===pageNavigation&&editorSession.snapshot.document.id===documentId;
+  await kernel.executeAfter(cmds as Command[],async()=>{
+    if(textSession){await flushTextEditor();send('text-end',{});}
+    await textIngress.flush();
+  },focusSlide);
+  if(focusSlide&&focusSlide!==editorSession.pageId&&mayFocus()){await geometrySession.barrier();if(mayFocus())await showPage(focusSlide);}
 }
 
 function selectDocument(document: Snapshot['document']) {
-  const select = $<HTMLSelectElement>('documents');
-  let option = [...select.options].find((o) => o.value === document.id);
-  if (!option) {
-    option = new Option(document.title, document.id);
-    select.add(option);
-  }
-  option.textContent = document.title;
-  select.value = document.id;
+  const documents=editorSession.getSnapshot().documents;
+  const entry={id:document.id,title:document.title};
+  editorSession.update({documents:documents.some(item=>item.id===document.id)?documents.map(item=>item.id===document.id?entry:item):[entry,...documents]});
 }
 async function load(id: string) {
+  assertWorkbenchOpen();
   await kernel.flush();
   await propertyEdits;
   if(textSession){await flushTextEditor();send("text-end",{});textSession=undefined;}
   await clipboardCapture?.catch(() => undefined);
   await geometrySession.barrier();
-  if (busy) throw new Error('正在保存或载入，请稍后切换讲义');
-  busy = true;
-  $<HTMLSelectElement>('documents').disabled = true;
-  if(snapshot)documentUI?.render();
+  assertWorkbenchOpen();
+  if (isBusy()) throw new Error('正在保存或载入，请稍后切换讲义');
+  editorSession.update({busy:true});
   refreshPendingControls();
   setSaveStatus(PHASES.loading);
   try {
@@ -539,19 +530,20 @@ async function load(id: string) {
       migratedLegacy = undefined;
     }
     const result: Snapshot = await api(`/api/documents/${id}`);
+    assertWorkbenchOpen();
     pending = undefined;
     pendingConflict = false;
-    snapshot = result;kernel.load(result);authorPreviewCommands=[];assetSignature="";assetBase="";for(const lease of assetLeases.values())lease.stop();assetLeases.clear();
-    await geometrySession.load(id);kernel.refresh();
-    await geometrySession.checkpoint(snapshot);
-    selectDocument(snapshot.document);
-    slideId = geometrySession.firstSlide ?? normalPages()[0]?.id ?? snapshot.document.slides[0].id;
-    selected.clear();
+    canvasController.suspend();authorCanvas.resetDocument();kernel.load(result);editorSession.update({document:kernel.current,canvas:'loading'});
+    await geometrySession.load(id);assertWorkbenchOpen();kernel.refresh();
+    await geometrySession.checkpoint(editorSession.snapshot);
+    assertWorkbenchOpen();
+    selectDocument(editorSession.snapshot.document);
+    editorSession.openPage(geometrySession.firstSlide ?? normalPages()[0]?.id ?? editorSession.snapshot.document.slides[0].id);
     undo = [];
     redo = [];
     try {
       const stored = JSON.parse(sessionStorage.getItem(historyKey(id)) ?? 'null');
-      if (stored?.version <= snapshot.version && validHistory(stored)) {
+      if (stored?.version <= editorSession.snapshot.version && validHistory(stored)) {
         undo = stored.undo;
         redo = stored.redo;
       }
@@ -560,7 +552,7 @@ async function load(id: string) {
     await render();
   } finally {
     releaseBusy();
-    if (snapshot) mark();
+    if (editorSession.snapshot) mark();
   }
 }
 
@@ -568,24 +560,46 @@ class SupersededPage extends Error {}
 function pageError(e: unknown) {
   if (!(e instanceof SupersededPage)) error(e);
 }
+let pageNavigation=0;
+let editablePaint:Promise<void>=Promise.resolve();
 async function showPage(id: string) {
+  const navigation=++pageNavigation;
+  performance.mark(`notale:navigation:${navigation}`);
+  try {
   await kernel.flush();
   await propertyEdits;
   if(textSession){await flushTextEditor();send("text-end",{});textSession=undefined;}
+  await geometrySession.whenLocallySaved();
   await initialized;
   await clipboardCapture?.catch(() => undefined);
-  if (!snapshot.document.slides.some((s) => s.id === id)) throw new Error('页面不存在');
-  slideId = id;
-  selected.clear();
+  const documentId=editorSession.snapshot.document.id;
+  if (!editorSession.snapshot.document.slides.some((s) => s.id === id)) throw new Error('页面不存在');
+  // New pages are projected before their server resource URL exists. Existing
+  // pages keep the cached navigation path and never wait for unrelated saves.
+  if(!kernel.confirmed.document.slides.some(page=>page.id===id))await geometrySession.barrier();
+  assertWorkbenchOpen();
+  if(editorSession.snapshot.document.id!==documentId)throw new SupersededPage('文档已切换');
+  if(!kernel.confirmed.document.slides.some(page=>page.id===id))throw new Error('新页面尚未同步，请保存后重试');
+  if (navigation !== pageNavigation) throw new SupersededPage();
+  if(editorSession.pageId===id&&editorSession.canvasReady)return;
+  editorSession.openPage(id);
   await render();
-  if (slideId !== id) throw new SupersededPage('页面切换已被后续请求替代');
+  if (navigation !== pageNavigation || editorSession.pageId !== id) throw new SupersededPage('页面切换已被后续请求替代');
   await whenReady();
-  if (slideId !== id) throw new SupersededPage('页面切换已被后续请求替代');
+  await editablePaint;
+  performance.measure('notale:navigation-to-editable',`notale:navigation:${navigation}`);
+  performance.clearMarks(`notale:navigation:${navigation}`);
+  if (navigation !== pageNavigation || editorSession.pageId !== id) throw new SupersededPage('页面切换已被后续请求替代');
+  } catch(cause) {
+    if(navigation!==pageNavigation)throw new SupersededPage();
+    throw cause;
+  }
 }
 
 type MenuContext={contextId:string;slideId:string;runtimeId:string;x:number;y:number;width:number;ids:string[];info:{id:string;tag:string;editableText:boolean;locked:boolean;styles:Record<string,string>}[];text?:{sessionId:string;target:string;selectionToken:number;selectedText:string;selectedHtml:string;collapsed:boolean;styles:Record<string,string>;mixed:string[]}};
 let menuContext:MenuContext|undefined;
 const objectMenu=createObjectMenu(()=>send(textSession?'text-refocus':'focus',{}),error);
+canvasController.onDispose(()=>objectMenu.dispose());
 function formatControls(ctx:MenuContext):FormatControl[]{
  const info=ctx.info,styles=ctx.text?.styles??info[0]?.styles??{},mixed=ctx.text?.mixed??Object.keys(styles).filter(k=>info.some(o=>o.styles[k]!==styles[k]));
  const disabled=info.some(o=>o.locked);
@@ -602,13 +616,13 @@ function formatControls(ctx:MenuContext):FormatControl[]{
   ];
  }
  if(info.length===1&&info[0].tag==='img')return [{id:'replace-image',label:'替换图片',kind:'button',icon:'image',disabled,run:()=>chooseMedia('image',ctx.ids[0])},{id:'crop-image',label:'裁剪图片',kind:'button',icon:'crop',disabled,run:()=>imageCrop.open()}];
- if(info.length===1&&['rect','circle','ellipse','path','polygon','line','polyline'].includes(info[0].tag))return (['fill','stroke','stroke-width'] as const).map(id=>({id,label:({fill:'填充颜色',stroke:'描边颜色','stroke-width':'描边宽度'})[id],kind:id==='stroke-width'?'number':'color',value:id==='stroke-width'?String(parseFloat(styles[id])||1):color(styles[id]??''),min:0,max:100,disabled,run:(v:string)=>commands([{type:'element.patch',slideId,target:ctx.ids[0],patch:{style:{[id]:v}}}])}));
+ if(info.length===1&&['rect','circle','ellipse','path','polygon','line','polyline'].includes(info[0].tag))return (['fill','stroke','stroke-width'] as const).map(id=>({id,label:({fill:'填充颜色',stroke:'描边颜色','stroke-width':'描边宽度'})[id],kind:id==='stroke-width'?'number':'color',value:id==='stroke-width'?String(parseFloat(styles[id])||1):color(styles[id]??''),min:0,max:100,disabled,run:(v:string)=>commands([{type:'element.patch',slideId:editorSession.pageId,target:ctx.ids[0],patch:{style:{[id]:v}}}])}));
  return [];
 }
 function openObjectMenu(data:MenuContext) {
  if(!data.ids?.length||![data.x,data.y,data.width].every(Number.isFinite)||data.width<=0)return;
  changeSelection(data.ids);menuContext=data;
- const documentId=snapshot.document.id,valid=()=>documentId===snapshot.document.id&&data.slideId===slideId&&data.runtimeId===frameRuntimeId&&menuContext?.contextId===data.contextId&&(!data.text?JSON.stringify([...selected])===JSON.stringify(data.ids):data.text.sessionId===textSession?.sessionId);
+ const documentId=editorSession.snapshot.document.id,valid=()=>documentId===editorSession.snapshot.document.id&&data.slideId===editorSession.pageId&&data.runtimeId===frameRuntimeId&&menuContext?.contextId===data.contextId&&(!data.text?JSON.stringify([...editorSession.selection])===JSON.stringify(data.ids):data.text.sessionId===textSession?.sessionId);
  const blocked=false,locked=data.info.some(o=>o.locked),mod=/Mac|iPhone|iPad/.test(navigator.platform)?'⌘':'Ctrl';
  const edit=(label:string,type:'copy'|'cut'|'paste'|'duplicate'|'delete',key:string,disabled=false,separator=false):ObjectMenuItem=>({id:type,label,icon:type,shortcut:key,disabled:blocked||disabled,separator,danger:type==='delete',run:()=>enqueueEdit({type},true)});
  let items:ObjectMenuItem[];
@@ -618,17 +632,18 @@ function openObjectMenu(data:MenuContext) {
   items=[{id:'cut',label:'剪切',icon:'cut',shortcut:mod+' X',disabled:data.text.collapsed||locked,run:async()=>{const token=data.text!.selectionToken;await write();replace('',token);}},{id:'copy',label:'复制',icon:'copy',shortcut:mod+' C',disabled:data.text.collapsed,run:write},{id:'paste',label:'粘贴',icon:'paste',shortcut:mod+' V',disabled:locked,run:async()=>{const token=data.text!.selectionToken;const text=await navigator.clipboard.readText();replace(text,token);}},{id:'select-all',label:'全选文字',shortcut:mod+' A',separator:true,run:()=>send('text-select-all',{})},{id:'clear-format',label:'清除格式',icon:'clear',disabled:locked,run:()=>send('text-format',{sessionId:data.text!.sessionId,selectionToken:data.text!.selectionToken,property:'clear',value:''})},{id:'text-link',label:'链接…',icon:'link',disabled:locked||data.text.collapsed,run:()=>openTextLink(data)},{id:'end-text',label:'结束文字编辑',separator:true,run:()=>send('text-end',{})},{id:'format',label:'文字设置',icon:'format',run:()=>editorShell.inspect('format')}];
  }else{
   const groups=slide().groups.filter(g=>g.members.some(id=>data.ids.includes(id)));
-  const contextUnits=selectionUnits(data.ids.map(id=>({id})),selectionScope?[]:slide().groups).length;
-  const svgSelection=data.info.every(n=>['svg','g','path','rect','circle','ellipse','line','polygon','polyline','text','tspan','use'].includes(n.tag));
+  const contextUnits=selectionUnits(data.ids.map(id=>({id})),editorSession.selectionScope?[]:slide().groups).length;
+  const svgSelection=data.ids.length>0&&data.ids.every(id=>objects.find(object=>object.id===id)?.namespace==='http://www.w3.org/2000/svg');
   items=[edit('剪切','cut',mod+' X',locked),edit('复制','copy',mod+' C'),edit('粘贴','paste',mod+' V',!clipboard||clipboard.documentId!==documentId),edit('创建副本','duplicate',mod+' D'),
    ...(svgSelection?[{id:'vector-edit',label:'编辑图形',icon:'format',disabled:locked,children:[{label:'编辑顶点',disabled:data.info.length!==1||!['path','rect','circle','ellipse','line','polyline','polygon'].includes(data.info[0].tag),run:()=>send('vector-action',{action:'nodes'})},{label:'编辑文字',disabled:data.info.length!==1||!['text','tspan','textPath'].includes(data.info[0].tag),run:()=>send('vector-action',{action:'text'})},{label:'图形格式',run:()=>editorShell.inspect('format')},{label:'导出 SVG',run:()=>send('vector-action',{action:'export'})}]}]:[]),
-   {id:'arrange',label:'排列',icon:'layers',separator:true,disabled:locked||blocked,children:([{action:'front',label:'置于顶层'},{action:'forward',label:'上移一层'},{action:'backward',label:'下移一层'},{action:'back',label:'置于底层'}] as const).map(i=>({id:i.action,label:i.label,run:async()=>{await geometrySession.barrier();if(valid())await changeLayer(i.action);}}))},
+   {id:'arrange',label:'排列',icon:'layers',separator:true,disabled:locked||blocked,children:([{action:'front',label:'置于顶层'},{action:'forward',label:'上移一层'},{action:'backward',label:'下移一层'},{action:'back',label:'置于底层'}] as const).map(i=>({id:i.action,label:i.label,run:()=>{if(valid())return changeLayer(i.action);}}))},
    {id:'alignment',label:contextUnits===1?'对齐到页面':'对齐与分布',disabled:locked||blocked,children:Object.entries({left:'左对齐',center:'水平居中',right:'右对齐',top:'顶部对齐',middle:'垂直居中',bottom:'底部对齐','distribute-x':'水平分布','distribute-y':'垂直分布'}).map(([action,label])=>({id:action,label,disabled:action.startsWith('distribute')&&contextUnits<3,run:()=>{if(valid())return arrange(action);}}))},
-   ...(data.ids.length>1?[{id:'group',label:'组合',icon:'group',disabled:locked||blocked,run:()=>svgSelection?send('vector-action',{action:'group'}):commands([{type:'group.set',slideId,id:uuid(),name:'组合',members:data.ids}])}]:[]),
-   ...(svgSelection&&data.info[0].tag==='g'?[{id:'svg-ungroup',label:'取消组合',icon:'group',disabled:locked||blocked,run:()=>send('vector-action',{action:'ungroup'})}]:[]),
-   ...(groups.length?[{id:'ungroup',label:'取消组合',icon:'group',disabled:locked||blocked,run:()=>commands(groups.map(g=>({type:'group.remove',slideId,id:g.id})))}]:[]),
-   {id:'lock',label:locked?'解锁':'锁定',icon:'lock',disabled:blocked||(locked&&!data.ids.some(id=>objects.find(o=>o.id===id)?.locked)),reason:locked&&!data.ids.some(id=>objects.find(o=>o.id===id)?.locked)?'请先解锁父级对象':undefined,run:()=>commands(data.ids.map(target=>({type:'element.lock',slideId,target,locked:!locked})))},
+   ...(data.ids.length>1?[{id:'group',label:'组合',icon:'group',disabled:locked||blocked,run:()=>groupSelection()}]:[]),
+   ...(svgSelection&&data.info[0].tag==='g'?[{id:'svg-ungroup',label:'取消组合',icon:'group',disabled:locked||blocked,run:()=>ungroupSelection()}]:[]),
+   ...(groups.length?[{id:'ungroup',label:'取消组合',icon:'group',disabled:locked||blocked,run:()=>ungroupSelection()}]:[]),
+   {id:'lock',label:locked?'解锁':'锁定',icon:'lock',disabled:blocked||(locked&&!data.ids.some(id=>objects.find(o=>o.id===id)?.locked)),reason:locked&&!data.ids.some(id=>objects.find(o=>o.id===id)?.locked)?'请先解锁父级对象':undefined,run:()=>commands(data.ids.map(target=>({type:'element.lock',slideId:editorSession.pageId,target,locked:!locked})))},
    ...(data.info.length===1&&data.info[0].editableText?[{id:'edit-text',label:'编辑文字',icon:'format',separator:true,disabled:locked,run:()=>send('text-start',{target:data.ids[0]})}]:[]),
+   {id:'ai-edit',label:'AI 修改…',icon:'format',disabled:locked||blocked,run:()=>editorShell.openTool('interactive')},
    {id:'animation',label:'动画…',icon:'animation',run:()=>editorShell.inspect('animation')},
    {id:'format',label:'设置对象格式',icon:'format',run:()=>editorShell.inspect('format')},edit('删除','delete','Delete',locked,true)];
  }
@@ -636,144 +651,117 @@ function openObjectMenu(data:MenuContext) {
  {id:'chart-data',label:'编辑图表数据',icon:'format',disabled:locked,run:async()=>{await echartsUI?.render();await echartsUI?.openData();}},
  {id:'chart-type',label:'更改图表类型',disabled:locked,run:async()=>{await echartsUI?.render();echartsUI?.changeType();}},
  {id:'chart-format',label:'设置图表格式',separator:true,run:()=>editorShell.inspect('format')});
+ if(!data.text&&data.ids.length===1&&objects.find(o=>o.id===data.ids[0])?.attributes['class']?.split(/\s+/).includes('code-workbench-frame'))items.unshift({id:'course-edit',label:'编辑课程代码…',icon:'format',disabled:locked,run:()=>courseActions.open(data.ids[0])});
  const rect=frame.getBoundingClientRect(),scale=rect.width/data.width;
  objectMenu.open(rect.left+data.x*scale,rect.top+data.y*scale,items,formatControls(data),valid);
 }
+const textLinkDialog=createTextLinkDialog();
+canvasController.onDispose(()=>textLinkDialog.dispose());
 function openTextLink(ctx:MenuContext){
- const dialog=document.createElement('dialog');dialog.className='context-link-dialog';dialog.innerHTML='<form method="dialog"><label>链接地址<input name="url" type="url" placeholder="https://" aria-label="链接地址"></label><footer><button value="cancel">取消</button><button value="remove">移除链接</button><button value="apply" class="primary">应用</button></footer></form>';document.body.append(dialog);dialog.showModal();dialog.querySelector('input')!.focus();dialog.addEventListener('close',()=>{if(['apply','remove'].includes(dialog.returnValue)&&ctx.text?.sessionId===textSession?.sessionId)send('text-format',{sessionId:ctx.text!.sessionId,selectionToken:ctx.text!.selectionToken,property:'link',value:dialog.returnValue==='remove'?'':dialog.querySelector('input')!.value});dialog.remove();});
+ const text=ctx.text;if(!text)return;
+ const documentAtOpen=editorSession.snapshot.document.id,pageAtOpen=editorSession.pageId;
+ textLinkDialog.open(value=>{
+  assertWorkbenchOpen();
+  if(editorSession.snapshot.document.id!==documentAtOpen||editorSession.pageId!==pageAtOpen||text.sessionId!==textSession?.sessionId)throw Error('文字编辑位置已变化，请重新打开链接设置');
+  if(objects.find(object=>object.id===textSession?.target)?.locked)throw Error('对象已锁定');
+  send('text-format',{sessionId:text.sessionId,selectionToken:text.selectionToken,property:'link',value});
+ });
 }
+
 let canvasGesture=false;const gestureWaiters=new Set<()=>void>();
-let renderedSlide:Slide|undefined;
 let frameRuntimeId = '';
 let renderGeneration = 0;
-function renderPageList(){
-  const pages=normalPages(),host=$('slides'),existing=new Map([...host.querySelectorAll<HTMLButtonElement>('[data-slide]')].map(node=>[node.dataset.slide!,node]));
-  for(const [index,page] of pages.entries()){
-    let button=existing.get(page.id);
-    if(!button){button=document.createElement('button');button.className='slide-card';button.dataset.slide=page.id;button.draggable=true;button.title='拖动排序 · Alt + ↑ / ↓ 调整顺序';button.innerHTML='<span class="number"></span><span class="page-thumbnail" aria-hidden="true"><span>载入页面…</span></span><span class="name"></span><span class="meta"></span>';button.querySelector<HTMLElement>('.page-thumbnail')!.dataset.thumbnail=page.id;button.onclick=()=>{document.body.classList.remove('overview-mode');void showPage(page.id).catch(pageError);};}
-    existing.delete(page.id);button.classList.toggle('active',page.id===slideId);button.setAttribute('aria-current',String(page.id===slideId));
-    for(const [selector,value] of [['.number',String(index+1).padStart(2,'0')+(page.hidden?' · 已隐藏':'')],['.name',page.name],['.meta',(page.section||'未分章节')+' · '+page.animations.length+' 动画']]){const field=button.querySelector(selector)!;if(field.textContent!==value)field.textContent=value;}
-    if(host.children[index]!==button)host.insertBefore(button,host.children[index]??null);
-  }
-  for(const node of existing.values())node.remove();
-  $('slide-count').textContent=String(pages.length);$('page-name').textContent=slide().name;
-}
+canvasController.onDispose(()=>{renderGeneration++;canvasGesture=false;for(const done of gestureWaiters)done();gestureWaiters.clear();});
+const canvasResources=new CanvasResources<ObjectInfo[]>(api);
+canvasController.onDispose(()=>canvasResources.dispose());
+let navigationLeaseChannel='';
+function pagePreview(){return canvasResources.getPreview(editorSession.snapshot.document.id,editorSession.snapshot.version);}
+function pageObjects(id:string){return canvasResources.getObjects(editorSession.snapshot.document.id,editorSession.snapshot.version,id,JSON.stringify(kernel.confirmed.document.slides.find(page=>page.id===id)));}
+
+editorActions.showPage=id=>showPage(id);
+editorActions.movePage=moveNormalPage;
+editorActions.reportError=pageError;
+editorActions.pagesCommitted=()=>{
+  if(!editorSession.snapshot)return;
+  if(previewSlides.length){pageThumbnails.update(previewSlides,kernel.confirmed.document);pageThumbnails.patch(editorSession.snapshot.document,authorCanvas.assetBase);}
+};
+
 async function render(reason: 'navigation'|'page-removed'|'source-script'|'runtime-recovery' = 'navigation') {
-  (window as any).__notaleMounts??=[];(window as any).__notaleMounts.push({reason,slideId,at:performance.now()});
+  assertWorkbenchOpen();
+  (window as any).__notaleMounts??=[];(window as any).__notaleMounts.push({reason,slideId:editorSession.pageId,at:performance.now()});
   if(canvasGesture)await new Promise<void>(resolve=>gestureWaiters.add(resolve));
-  objectMenu.close();textSession=undefined;authorPreviewCommands=[];
+  assertWorkbenchOpen();
+  objectMenu.close();textSession=undefined;authorCanvas.beginPage();
   const generation = ++renderGeneration;
-  canvasReady = false;
   canvasLoading.start();
+  editorSession.update({canvas:'loading'});
   channel = '';
-  frame.inert = true;
-  if (!snapshot.document.slides.some((s) => s.id === slideId))
-    slideId = normalPages()[0]?.id ?? snapshot.document.slides[0].id;
+  canvasController.suspend();
+  if (!editorSession.snapshot.document.slides.some((s) => s.id === editorSession.pageId))
+    editorSession.openPage(normalPages()[0]?.id ?? editorSession.snapshot.document.slides[0].id);
   const s = slide();
   const pages=normalPages();
-  $('slide-count').textContent = String(pages.length);
-  for(const id of ['copy-slide','delete-slide','up-slide','down-slide','add-slide'])$<HTMLButtonElement>(id).disabled=!!s.layoutSourceId;
+
+
   
-  $('page-name').textContent = s.name;
-  renderPageList();
-  editorShell.render(snapshot.document.width,snapshot.document.height,pages.findIndex(s=>s.id===slideId),pages.length);
+
+  
+  editorShell.render(editorSession.snapshot.document.width,editorSession.snapshot.document.height);
   const [nextObjects, previews] = await Promise.all([
-    api(`/api/documents/${snapshot.document.id}/slides/${slideId}/objects?version=${snapshot.version}`),
-    api(`/api/documents/${snapshot.document.id}/preview?version=${snapshot.version}`),
+    pageObjects(editorSession.pageId),
+    pagePreview(),
   ]);
-  if (generation !== renderGeneration) return;
+  if (workbenchEvents.signal.aborted || generation !== renderGeneration) return;
   objects = nextObjects;refreshAuthorObjects();
-  selected = new Set([...selected].filter((id) => objects.some((o) => o.id === id)));
+  editorSession.select([...editorSession.selection].filter((id) => objects.some((o) => o.id === id)));
   renderObjects();
-  set('notes', s.notes);
-  if(snapshot)documentUI?.render();
-  renderGuides();
-  if (generation !== renderGeneration) return;
-  previewLease?.stop();
+  if (workbenchEvents.signal.aborted || generation !== renderGeneration) return;
+  if(navigationLeaseChannel !== previews.channel || !previewLease){
+    previewLease?.stop();
+    previewLease = trackPreviewLease(editorSession.snapshot.document.id, previews);
+    navigationLeaseChannel = previews.channel;
+  }
   previewSlides = previews.slides;
-  previewLease = keepPreviewAlive(snapshot.document.id, previews);
-  pageThumbnails.update(previews.slides, kernel.confirmed.document);
-  pageThumbnails.patch(snapshot.document,assetBase);
-  channel = previews.channel;
-  renderedSlide=structuredClone(kernel.confirmed.document.slides.find(page=>page.id===s.id)??s);
-  frame.src = previews.slides.find((p: { id: string }) => p.id === slideId).url;
-  assetBase=new URL('../'.repeat(s.sourcePath.split('/').length-1)||'./',frame.src).href;assetSignature=JSON.stringify(kernel.confirmed.document.assets);
+  pageThumbnails.update(previews.slides, kernel.confirmed.document,previews);
+  pageThumbnails.patch(editorSession.snapshot.document,authorCanvas.assetBase);
+  const activated = canvasController.activate({documentId:editorSession.snapshot.document.id,version:editorSession.snapshot.version,pageId:editorSession.pageId,url:previews.slides.find(p=>p.id===editorSession.pageId)!.url+'?notaleMode=edit',channel:previews.channel,runtimeKey:runtimeIdentity(kernel.confirmed.document,s)},reason!=='navigation');
+  frame=activated.frame;channel=activated.page.channel;
+  if(!retainedGrants.has(frame))retainedGrants.set(frame,canvasGrants.retain(editorSession.snapshot.document.id,previews));
+  const seed=canvasSeeds.get(frame)??{snapshot:kernel.confirmed,slide:kernel.confirmed.document.slides.find(page=>page.id===s.id)??s};
+  canvasSeeds.set(frame,seed);authorCanvas.seed(seed.snapshot,seed.slide,frame.src);
   assetLibrary.update(frame.src, s.sourcePath);
-  $('empty').hidden = true;
+  const neighbors=[pages[pages.findIndex(page=>page.id===s.id)+1],pages[pages.findIndex(page=>page.id===s.id)-1]].filter((page):page is Slide=>!!page);
+  const navigationDocumentId=editorSession.snapshot.document.id,navigationVersion=editorSession.snapshot.version;
+  if(neighbors.length)uiTasks.schedule(()=>{
+    for(const neighbor of neighbors){
+    if(generation!==renderGeneration||editorSession.snapshot.document.id!==navigationDocumentId||editorSession.snapshot.version!==navigationVersion)return;
+    void pageObjects(neighbor.id).catch(()=>undefined);
+    const source=previews.slides.find(page=>page.id===neighbor.id);
+    if(source){const warmed=canvasController.preload({documentId:navigationDocumentId,version:navigationVersion,pageId:neighbor.id,url:source.url+'?notaleMode=edit',channel:previews.channel,runtimeKey:runtimeIdentity(kernel.confirmed.document,neighbor)});if(warmed){canvasSeeds.set(warmed,{snapshot:kernel.confirmed,slide:neighbor});retainedGrants.set(warmed,canvasGrants.retain(navigationDocumentId,previews));}}
+    }
+  },0);
+  editorSession.update({emptyMessage:null});
   renderAnimations();
   teachingStepsUI.render();
   renderSelection();
   mark();
-  set('step-map', JSON.stringify(s.stepMap ?? []));
-  $('shared-layout').innerHTML =
-    '<option value="">选择母版</option>' +
-    snapshot.document.layouts
-      .map((l) => `<option value="${l.id}">${esc(l.name)} · ${snapshot.document.slides.filter(p=>p.layoutId===l.id&&!p.layoutSourceId).length} 页使用</option>`)
-      .join('');
-  set('shared-layout', s.layoutSourceId ?? s.layoutId ?? '');
-  fillLayout();
   layoutValuesUI.render();
   layoutManager.render();
 }
-// Equations and data charts are edited through their dialogs; their internals stay out of the layer list.
-function insideAtomic(o: ObjectInfo) {
-  const byId = new Map(objects.map((x) => [x.id, x]));
-  for (let p = o.parent ? byId.get(o.parent) : undefined; p; p = p.parent ? byId.get(p.parent) : undefined)
-    if (p.attributes['data-notale-tex'] !== undefined || p.attributes['data-notale-chart'] !== undefined) return true;
-  return false;
-}
 function renderObjects() {
-  const byId = new Map(objects.map((o) => [o.id, o]));
-  const query = value('object-search').trim().toLocaleLowerCase();
-  $('objects').innerHTML = objects
-    .filter(
-      (o) =>
-        !query ||
-        `${o.attributes['data-notale-name'] ?? ''} ${o.tag} ${o.text} ${o.attributes.id ?? ''}`
-          .toLocaleLowerCase()
-          .includes(query),
-    )
-    .filter(
-      (o) =>
-        o.attributes.id !== 'stage' && !['aside', 'defs', 'linearGradient', 'stop', 'link'].includes(o.tag) && !insideAtomic(o),
-    )
-    .map((o) => {
-      let depth = 0,
-        parent = o.parent;
-      while (parent && depth < 5) {
-        depth++;
-        parent = byId.get(parent)?.parent;
-      }
-      return `<button class="object-row ${selected.has(o.id) ? 'selected' : ''}" data-object="${o.id}" style="padding-left:${8 + depth * 8}px" title="${esc(o.attributes.id || o.id)}"><small>${esc(o.tag)}</small>${esc((o.attributes['data-notale-name'] || o.text.trim() || o.attributes.alt || o.attributes.id || o.kind).slice(0, 28))}${o.locked ? ' 🔒' : ''}</button>`;
-    })
-    .join('');
-  for (const el of document.querySelectorAll<HTMLElement>('[data-object]'))
-    el.onclick = (e) => {
-      changeSelection(
-        [el.dataset.object!],
-        e.shiftKey || e.ctrlKey || e.metaKey ? 'toggle' : 'replace',
-      );
-      renderObjects();
-      renderSelection();
-    };
-  $('trigger-target').innerHTML = objects
-    .map(
-      (o) =>
-        `<option value="${o.id}">${esc(o.tag + ' ' + (o.text.trim() || o.attributes.id || '').slice(0, 30))}</option>`,
-    )
-    .join('');
+  const layers={documentId:editorSession.snapshot.document.id,pageId:editorSession.pageId,rows:layerRows(objects)};
+  if(JSON.stringify(layers)!==JSON.stringify(editorSession.getSnapshot().layers))editorSession.update({layers});
+  animationForm.update({targets:objects.map(o=>({value:o.id,label:o.tag+' '+(o.text.trim()||o.attributes.id||'').slice(0,30)}))});
 }
 let inspectedSelectionKey = '';
-let selectionFieldsKey = '',
-  bindingRendered = '';
+let selectionFieldsKey = '';
 function renderSelection(autoInspect = true) {
   syncAnimationSelection();
-  const nextSelectionKey=JSON.stringify([snapshot.document.id,slideId,[...selected].sort()]);
+  const nextSelectionKey=JSON.stringify([editorSession.snapshot.document.id,editorSession.pageId,[...editorSession.selection].sort()]);
   const selectionChanged=nextSelectionKey!==inspectedSelectionKey;
   inspectedSelectionKey=nextSelectionKey;
-  editorShell.selectionChanged(selected.size > 0);
-  if(autoInspect&&selectionChanged&&selected.size)editorShell.inspect('format');
-  renderSelectionTools(objects, selected, slide().groups, canvasReady);
+  if(autoInspect&&selectionChanged&&editorSession.selection.size)sidebar.onObjectSelection();
+  renderSelectionTools(objects, editorSession.selection, slide().groups, editorSession.canvasReady);
   chartEditor.render();
   appearanceInspector.render();
   themePanel.render();
@@ -786,36 +774,25 @@ function renderSelection(autoInspect = true) {
   richEditor.render();
   linkInspector.render();
   revealPreset.render();
+  aiEdits.render();
   assetLibrary.selection();
+  smartDiagram.render();
   authoredComponents.render();
   renderComponentNavigation();
-  if (canvasReady) send('select', { ids: [...selected] });
-  const hasSelection = selected.size > 0;
-  const alignmentReference=$<HTMLSelectElement>('arrange-reference');
-  const units=selectionUnits([...selected].map(id=>({id})),selectionScope?[]:slide().groups).length;
-  const selectionKind=units===1?'single':'multiple';
-  if(alignmentReference.dataset.selectionKind!==selectionKind){
-    alignmentReference.value=units===1?'slide':'selection';
-    alignmentReference.dataset.selectionKind=selectionKind;
-  }
-  const cannotArrange=!canvasReady||!hasSelection||[...selected].some(id=>objects.find(o=>o.id===id)?.locked);
-  for(const button of document.querySelectorAll<HTMLButtonElement>('#arrange-tools button'))
-    button.disabled=cannotArrange||(button.id.includes('distribute')&&units<3);
-  $<HTMLButtonElement>('layer-forward').disabled = !hasSelection;
-  $<HTMLButtonElement>('layer-backward').disabled = !hasSelection;
+  if (editorSession.canvasReady) send('select', { ids: [...editorSession.selection] });
+  const hasSelection = editorSession.selection.size > 0;
+  const units=selectionUnits([...editorSession.selection].map(id=>({id})),editorSession.selectionScope?[]:slide().groups).length;
+  arrangement.update({scope:arrangementScope(),units,disabled:!editorSession.canvasReady||!hasSelection||[...editorSession.selection].some(id=>objects.find(o=>o.id===id)?.locked)});
   renderConnector();
   renderNativeChart();
   void echartsUI?.render();
   renderScene();
-  for (const id of ['apply-format', 'apply-text', 'apply-advanced'])
-    $<HTMLButtonElement>(id).disabled = [...selected].some((id) =>
-      (slide().connectors ?? []).some((c) => c.id === id),
-    );
-  $('media-panel').hidden = !selected.size || !['img', 'video', 'audio'].includes(current().tag);
-  contextInspector.render(objects, [...selected]);
-  if (!selected.size) {
-    $('selection-name').textContent = '未选择对象';
+  sourceEditor.render();
+  mediaInspector.render();
+  contextInspector.render(objects, [...editorSession.selection]);
+  if (!editorSession.selection.size) {
     selectionFieldsKey = '';
+    editorSession.update({bindingField:undefined,nameField:undefined,geometryFields:undefined});
     typographyUI.render();
     return;
   }
@@ -826,330 +803,177 @@ function renderSelection(autoInspect = true) {
     bindingValue = String(
       binding?.value ?? rects.find((r) => r.id === o.id)?.value ?? o.attributes.value ?? '',
     ),
-    fieldsKey = JSON.stringify([snapshot.document.id, snapshot.version, slideId, [...selected], o, t, binding]);
+    fieldsKey = JSON.stringify([editorSession.snapshot.document.id, editorSession.snapshot.version, editorSession.pageId, [...editorSession.selection], o, t, binding]);
   // A runtime-ready or repeated selection notification must not overwrite an
   // unfinished form when its authored source has not changed.
+  const targets=[...editorSession.selection],chosen=objects.filter(object=>editorSession.selection.has(object.id));
+  const nameField={key:JSON.stringify([editorSession.snapshot.document.id,editorSession.pageId,targets]),documentId:editorSession.snapshot.document.id,slideId:editorSession.pageId,targets,before:Object.fromEntries(chosen.map(object=>[object.id,object.attributes['data-notale-name']??''])),value:o.attributes['data-notale-name']??'',editable:!chosen.some(object=>object.locked)};
+  if(JSON.stringify(nameField)!==JSON.stringify(editorSession.getSnapshot().nameField))editorSession.update({nameField});
+  const checkbox=o.attributes.type==='checkbox';
+  const field=editorSession.selection.size===1&&['input','select','textarea'].includes(o.tag)?{key:JSON.stringify([editorSession.snapshot.document.id,editorSession.pageId,o.id]),documentId:editorSession.snapshot.document.id,slideId:editorSession.pageId,target:o.id,value:checkbox?String(binding?.value??(o.attributes.checked!==undefined)):bindingValue,editable:!o.locked,before:JSON.stringify(binding??null),checkbox}:undefined;
+  if(JSON.stringify(field)!==JSON.stringify(editorSession.getSnapshot().bindingField))editorSession.update({bindingField:field});
   renderGeometryFields();
   if (fieldsKey === selectionFieldsKey) {
-    if ($<HTMLInputElement>('binding-value').value === bindingRendered)
-      set('binding-value', bindingValue);
-    bindingRendered = bindingValue;
     typographyUI.render();
     return;
   }
   selectionFieldsKey = fieldsKey;
-  bindingRendered = bindingValue;
-  set('object-name', o.attributes['data-notale-name'] ?? '');
-  set('object-text', o.text);
-  set('font-size', parseFloat(o.style['font-size']) || 32);
   renderGeometryFields();
-  const layoutParent = o.parent ? objects.find((x) => x.id === o.parent) : undefined;
-  $('layout-item-tools').hidden = !(selected.size === 1 && ['process', 'list'].includes(layoutParent?.attributes['data-notale-smart'] ?? ''));
-  const cycle = selected.size === 1 && o.attributes['data-notale-smart'] === 'cycle';
-  $('cycle-count-field').hidden = !cycle;
-  if (cycle) set('cycle-count', String(objects.filter((x) => x.parent === o.id && x.tag === 'p').length || 3));
-  for (const id of ['tx', 'ty', 'rotation', 'scale', 'object-width', 'object-height']) $<HTMLInputElement>(id).dataset.initial = value(id);
-  set('color', /^#[0-9a-f]{6}$/i.test(o.style.color ?? '') ? o.style.color : '#263449');
-  for (const id of ['font-size', 'color']) $<HTMLInputElement>(id).dataset.initial = value(id);
-  set('style-json', JSON.stringify(o.style, null, 2));
-  set('attrs-json', '{}');
-  if (!$('media-panel').hidden) fillMedia(o);
-  const chart = JSON.parse(o.attributes['data-notale-chart'] ?? '{}');
-  set('chart-kind', chart.kind ?? 'bar');
-  set('chart-title', chart.title ?? '');
-  set(
-    'chart-colors',
-    (chart.colors ?? ['#466ddb', '#28a69b', '#e69444', '#a46bd1', '#dc667a']).join(', '),
-  );
-  for (const [key, fallback] of Object.entries({
-    fontSize: 16,
-    textColor: '#273247',
-    background: '#ffffff',
-    gridColor: '#dce3ed',
-    labelAngle: 0,
-    labelEvery: 0,
-    valueDecimals: 0,
-    lineWidth: 3,
-    pointRadius: 4,
-  }))
-    set(`chart-${key}`, chart[key] ?? fallback);
-  for (const key of ['showValues', 'showLegend', 'showGrid'])
-    $<HTMLInputElement>(`chart-${key}`).checked = chart[key] ?? true;
-  set('binding-value', bindingValue);
-  set(
-    'chart-data',
-    o.attributes['data-notale-chart'] ?? '{"labels":["A","B","C"],"values":[48,72,91]}',
-  );
   typographyUI.render();
 }
-let editingAnimation: string | undefined;
-let animationSelectionKey = '';
+const animationSelection=new AnimationSelection();
 let animationFieldsKey = '';
-function showAnimationGroup(kind:string){
-  for(const group of document.querySelectorAll<HTMLElement>('.animation-effect-group'))group.hidden=!group.classList.contains(kind);
-  for(const tab of document.querySelectorAll<HTMLElement>('[data-animation-category]'))tab.setAttribute('aria-selected',String(tab.dataset.animationCategory===kind));
-}
-const effectGroups = [
-  {name:'进入', kind:'entrance', effects:['draw-stroke','appear','fade-in','fly-in','zoom-in','float-in','bounce-in','wipe-in','split-in']},
-  {name:'强调', kind:'emphasis', effects:['pulse','spin']},
-  {name:'退出', kind:'exit', effects:['disappear','fade-out','fly-out','zoom-out','wipe-out','split-out']},
-  {name:'路径', kind:'motion', effects:['motion']},
-];
+const animationGallery=bindAnimationGallery();
+canvasController.onDispose(()=>animationGallery.dispose());
+function showAnimationGroup(kind:string){animationGallery.group(kind);}
 function resetAnimationDraft() {
   const next=Math.min(500,Math.max(0,...slide().animations.map(a=>a.step))+1);
-  if(!$<HTMLSelectElement>('animation-step').querySelector(`option[value="${next}"]`))$('animation-step').append(new Option(`${next} · 单击步骤`,String(next)));
   set('animation-step',next);set('trigger','click');set('duration',.6);set('delay',0);
-  set('animation-repeat',1);$<HTMLInputElement>('animation-reverse').checked=false;
+  set('animation-repeat',1);animationDraft.reverse=false;
   set('dx',-120);set('dy',0);set('easing','ease-out');set('effect-direction','left');
   animationPath.set([{x:0,y:0},{x:200,y:0}]);
 }
 function syncAnimationSelection() {
-  const key = slideId + ':' + [...selected].join(',');
-  if (key === animationSelectionKey) return;
-  animationSelectionKey = key;
-  editingAnimation = selected.size === 1 ? slide().animations.find(a => selected.has(a.target))?.id : undefined;
-  if (editingAnimation) fillAnimation(slide().animations.find(a => a.id === editingAnimation)!);
+  if(!animationSelection.sync(editorSession.snapshot.document.id,editorSession.pageId,[...editorSession.selection],slide().animations))return;
+  if (animationSelection.selected) fillAnimation(slide().animations.find(a => a.id === animationSelection.selected)!);
   else resetAnimationDraft();
   renderAnimations();
 }
 async function previewSingleAnimation(spec?: AnimationSpec, batch?: AnimationSpec[]) {
-  const currentSlide = slideId;
+  const currentSlide = editorSession.pageId;
   await whenReady();
-  if (currentSlide !== slideId) return;
-  const a = spec ?? slide().animations.find(a => a.id === editingAnimation) ?? (selected.size>1?slide().animations.find(a=>selected.has(a.target)):undefined);
+  if (currentSlide !== editorSession.pageId) return;
+  const a = spec ?? slide().animations.find(a => a.id === animationSelection.selected) ?? (editorSession.selection.size>1?slide().animations.find(a=>editorSession.selection.has(a.target)):undefined);
   if (!a) throw Error('请先选择一条动画');
-  send('animation-preview', { animations:batch?.length?batch:!spec&&selected.size>1?slide().animations.filter(item=>selected.has(item.target)):[a] });
+  send('animation-preview', { animations:batch?.length?batch:!spec&&editorSession.selection.size>1?slide().animations.filter(item=>editorSession.selection.has(item.target)):[a] });
 }
 async function applyAnimationEffect(effect: string) {
-  if (!selected.size) throw Error('请先选择画布对象');
-  if(effect==='draw-stroke'&&[...selected].some(id=>!['path','line','polyline','polygon','rect','circle','ellipse','svg','g'].includes(objects.find(o=>o.id===id)?.tag??'')))throw Error('描边绘制适用于矢量图形');
+  if (!editorSession.selection.size) throw Error('请先选择画布对象');
+  if(effect==='draw-stroke'&&[...editorSession.selection].some(id=>!['path','line','polyline','polygon','rect','circle','ellipse','svg','g'].includes(objects.find(o=>o.id===id)?.tag??'')))throw Error('描边绘制适用于矢量图形');
   set('effect', effect);
   if(['appear','disappear'].includes(effect))set('duration',0);
   else if(num('duration')===0)set('duration',.6);
   const edits: Command[] = [];
   let first: string | undefined;
-  const batch=sequenceAnimations(readAnimation(uuid()) as AnimationSpec,[...selected],value('animation-sequence') as AnimationSequence,uuid);
+  const batch=sequenceAnimations(readAnimation(uuid()) as AnimationSpec,[...editorSession.selection],animationControls.sequence,uuid);
   for (const proposed of batch) {
-    const old = slide().animations.find(a => a.id === editingAnimation && a.target === proposed.target);
+    const old = slide().animations.find(a => a.id === animationSelection.selected && a.target === proposed.target);
     const id = old?.id ?? proposed.id; first ??= id;
-    edits.push({type:'animation.set', slideId, animation:{...proposed,id}});
+    edits.push({type:'animation.set', slideId:editorSession.pageId, animation:{...proposed,id}});
   }
-  editingAnimation = first;
+  const sourceDocument=editorSession.snapshot.document.id,sourcePage=editorSession.pageId,sourceSelection=[...editorSession.selection].join(':');
+  animationSelection.selected = first;
   await commands(edits);
+  if(editorSession.snapshot.document.id!==sourceDocument||editorSession.pageId!==sourcePage||[...editorSession.selection].join(':')!==sourceSelection)return;
+  animationSelection.selected=first;
+  const selectedAnimation=slide().animations.find(animation=>animation.id===first);
+  if(selectedAnimation)fillAnimation(selectedAnimation);
+  renderAnimations();
   await previewSingleAnimation(batch[0],batch);
 }
 
-function animationLabel(id: string, v: string) { return Array.from($<HTMLSelectElement>(id).options).find(o => o.value === v)?.textContent ?? v; }
-function renderAnimationFields() {
-  $('keyframes').closest<HTMLElement>('label')!.hidden = value('effect') !== 'custom';
-  $('animation-custom').hidden = value('effect') !== 'custom';
-  for (const id of ['dx', 'dy']) $(id).closest<HTMLElement>('label')!.hidden = !['fly-in','fly-out','float-in'].includes(value('effect'));
-  $('trigger-target').closest<HTMLElement>('label')!.hidden = value('trigger') !== 'object';
-  $('effect-direction').closest<HTMLElement>('label')!.hidden = !['wipe-in','wipe-out','split-in','split-out','fly-in','fly-out','float-in'].includes(value('effect'));
-  $('animation-path').hidden = value('effect') !== 'motion';
-}
-
+function animationLabel(id:string,v:string){return (id==='effect'?animationEffectLabels:(animationTriggerLabels as Record<string,string>))[v]??v;}
+const animationControls=bindAnimationControls({newDraft:()=>{animationSelection.selected=undefined;resetAnimationDraft();renderAnimations();$('animation-gallery').scrollIntoView({block:'nearest'});},preview:()=>previewSingleAnimation(),stop:()=>send('animation-preview-stop',{}),present:()=>previewActions.open(),error});
+canvasController.onDispose(()=>animationControls.dispose());
+const animationForm=bindAnimationForm(animationDraft,changeAnimationField,()=>{void animationUpdate.then(()=>{if(!workbenchEvents.signal.aborted)renderAnimations();});});
+canvasController.onDispose(()=>animationForm.dispose());
+const animationList=bindAnimationList();
+canvasController.onDispose(()=>animationList.dispose());
 function renderAnimations() {
-  const restoreFocus=$('animations').contains(document.activeElement);
+  const restoreFocus=animationList.focused;
   const s = slide();
-  renderAnimationFields();
-  if(!s.animations.some(a=>a.id===editingAnimation))editingAnimation=restoreFocus?s.animations.find(a=>selected.has(a.target))?.id:undefined;
-  const chosen = s.animations.find(a => a.id === editingAnimation);
-  if(chosen && JSON.stringify(chosen)!==animationFieldsKey && !$('animation-settings').contains(document.activeElement)){fillAnimation(chosen);animationFieldsKey=JSON.stringify(chosen);}
-  $('animation-sequence-field').hidden=selected.size<2;
-  $('animation-target').textContent = selected.size ? `${selected.size > 1 ? `已选 ${selected.size} 个对象` : (objects.find(o=>selected.has(o.id))?.text?.trim().slice(0,30) || '已选对象')}` : '选择对象，添加动画';
-  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-animation-effect]')) {
-    button.disabled = !selected.size;
-    button.setAttribute('aria-pressed', String(chosen?.effect === button.dataset.animationEffect));
+  if(restoreFocus&&!s.animations.some(a=>a.id===animationSelection.selected)){const fallback=s.animations.find(a=>editorSession.selection.has(a.target));if(fallback)animationSelection.selected=fallback.id;}
+  const chosen = s.animations.find(a => a.id === animationSelection.selected);
+  if(chosen && JSON.stringify(chosen)!==animationFieldsKey){
+    if(!animationDraft.formFocused){fillAnimation(chosen);animationFieldsKey=JSON.stringify(chosen);}
+    else if(animationDraft.get('effect')===chosen.effect){
+      for(const [id,value] of Object.entries(animationDraftFields(chosen)))if(id!==animationDraft.focused)animationDraft.set(id as AnimationField,value);
+      animationDraft.reverse=chosen.autoReverse??false;
+    }
   }
-  $('animation-settings').toggleAttribute('disabled', !chosen);
-  $('preview-selected-animation').toggleAttribute('disabled', !chosen && !(selected.size>1&&s.animations.some(a=>selected.has(a.target))));
-  $('add-animation').toggleAttribute('disabled', !selected.size);
-  $('new-animation').toggleAttribute('disabled', !selected.size);
-  $('clear-object-animations').toggleAttribute('disabled',!s.animations.some(a=>selected.has(a.target)));
+  const galleryDocument=editorSession.snapshot.document.id,galleryPage=editorSession.pageId,gallerySelection=[...editorSession.selection].join(':');
+  const galleryCurrent=()=>{if(workbenchEvents.signal.aborted||editorSession.snapshot.document.id!==galleryDocument||editorSession.pageId!==galleryPage||[...editorSession.selection].join(':')!==gallerySelection)throw Error('动画选区已变化，请重新选择');};
+  animationGallery.update({enabled:!!editorSession.selection.size,selected:chosen?.effect,clearable:s.animations.some(a=>editorSession.selection.has(a.target)),apply:effect=>{galleryCurrent();return applyAnimationEffect(effect);},clear:()=>{galleryCurrent();return commands(slide().animations.filter(a=>editorSession.selection.has(a.target)).map(a=>({type:'animation.remove',slideId:galleryPage,id:a.id})));}});
 
+
+  animationControls.update({target:editorSession.selection.size ? `${editorSession.selection.size > 1 ? `已选 ${editorSession.selection.size} 个对象` : (objects.find(o=>editorSession.selection.has(o.id))?.text?.trim().slice(0,30) || '已选对象')}` : '',status:'',enabled:!!editorSession.selection.size,previewable:!!chosen||(editorSession.selection.size>1&&s.animations.some(a=>editorSession.selection.has(a.target))),multiple:editorSession.selection.size>1});
   const oldStep=value('animation-step');
-  const lastStep=Math.min(500,Math.max(1,max,...s.animations.map(a=>a.step),Number(oldStep)||0)+1);
-  $('animation-step').innerHTML=Array.from({length:lastStep+1},(_,i)=>`<option value="${i}">${i===0?'随页面出现':`${i} · ${esc(s.steps?.[i]?.name ?? '单击步骤')}`}</option>`).join('');
-  set('animation-step',oldStep);
+  const lastStep=Math.min(500,Math.max(1,editorSession.canvasMax,...s.animations.map(a=>a.step),Number(oldStep)||0)+1);
+  animationForm.update({scope:JSON.stringify([galleryDocument,galleryPage,animationSelection.selected,gallerySelection]),disabled:!chosen||objects.some(o=>editorSession.selection.has(o.id)&&o.locked),steps:Array.from({length:lastStep+1},(_,i)=>({value:String(i),label:i===0?'随页面出现':`${i} · ${s.steps?.[i]?.name??'单击步骤'}`}))});
   const cues = timeline(s);
   const objectLabel = (id: string) => {
     const object = objects.find(object => object.id === id);
     return object?.attributes['data-notale-name'] || object?.text?.trim().slice(0, 48) || object?.tag || '对象';
   };
   const seconds = (ms: number) => `${Number((ms / 1000).toFixed(3))} 秒`;
-  $('animations').innerHTML = cues.map((cue, i) => {
-    const a = cue.spec;
-    const extent = Math.max(1000, ...cues.filter(other => other.spec.step === a.step && other.eventTarget === cue.eventTarget).map(other => other.end * 1.25));
-    const origin = cue.eventTarget ? `点击「${objectLabel(cue.eventTarget)}」后` : '步骤开始后';
-    return `<div class="animation-row ${a.id === editingAnimation ? 'is-selected' : ''}" data-cue-id="${a.id}">
-      <div class="animation-row-heading"><button class="animation-grip" draggable="true" data-drag-animation="${a.id}" title="拖动调整顺序" aria-label="拖动调整顺序">⠿</button><button class="animation-object" data-edit-animation="${a.id}"><span class="animation-number">${i + 1}</span>${esc(objectLabel(a.target))}</button></div>
-      <span class="animation-description">${esc(animationLabel('effect', a.effect))} · ${esc(s.steps?.[a.step]?.name ?? `步骤 ${a.step}`)} · ${esc(animationLabel('trigger', a.trigger))}</span>
-      <div class="animation-time-label">${esc(origin)} ${seconds(cue.start)}–${seconds(cue.end)}</div>
-      <button class="animation-track" data-extent="${extent}" data-edit-animation="${a.id}" aria-label="编辑${esc(objectLabel(a.target))}的${esc(animationLabel('effect', a.effect))}动画" title="${esc(origin)} ${seconds(cue.start)}–${seconds(cue.end)}"><span style="left:${cue.start / extent * 100}%;width:${(cue.end-cue.start) / extent * 100}%"><i aria-hidden="true"></i></span></button>
-      <div class="animation-actions"><button data-preview-animation="${a.id}" title="预览此动画" aria-label="预览此动画">▷</button><button data-copy-animation="${a.id}" title="复制动画" aria-label="复制动画">⧉</button><button data-remove-animation="${a.id}" title="删除动画" aria-label="删除动画">×</button><span class="grow"></span><button data-up-animation="${a.id}" title="上移" aria-label="上移动画"  ${i === 0 || hasTeachingStructure(s) && cues[i-1].spec.step !== a.step ? 'disabled' : ''}>↑</button><button data-down-animation="${a.id}" title="下移" aria-label="下移动画"  ${i === cues.length - 1 || hasTeachingStructure(s) && cues[i+1].spec.step !== a.step ? 'disabled' : ''}>↓</button></div></div>`;
-  }).join('') || '<p class="hint">选择画布对象，为它添加进入、强调或退出动画。</p>';
-  $('timeline').innerHTML = cues.map(cue => `<button class="cue" data-edit-animation="${cue.spec.id}">${esc(objectLabel(cue.spec.target))} · ${esc(s.steps?.[cue.spec.step]?.name ?? `步骤 ${cue.spec.step}`)} · ${seconds(cue.start)}–${seconds(cue.end)}${cue.eventTarget ? ' · 点击触发' : ''}</button>`).join('');
-  if (!s.animations.some((a) => a.id === editingAnimation)) editingAnimation = undefined;
-  $('save-animation').toggleAttribute('disabled', !editingAnimation);
-  $('animation-editing').textContent = editingAnimation
-    ? `编辑第 ${s.animations.findIndex((a) => a.id === editingAnimation) + 1} 条动画`
-    : '点击上方效果，添加动画';
-  for (const el of document.querySelectorAll<HTMLElement>('[data-edit-animation]'))
-    el.onclick = () => {
-      const a = s.animations.find((a) => a.id === el.dataset.editAnimation)!;
-      const tool = document.querySelector<HTMLButtonElement>('[data-tool="animation"]')!;
-      if (tool.getAttribute('aria-pressed') !== 'true') tool.click();
-      editingAnimation = a.id;
-      selected = new Set([a.target]);
-      animationSelectionKey = slideId + ':' + a.target;
-      renderObjects();
-      renderSelection(false);
-      fillAnimation(a);
-      renderAnimations();
-    };
-  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-preview-animation]')) button.onclick = () => void previewSingleAnimation(s.animations.find(a=>a.id===button.dataset.previewAnimation)).catch(error);
-  for (const handle of $('animations').querySelectorAll<HTMLElement>('[data-drag-animation]')) handle.ondragstart = event => {
-    event.dataTransfer?.setData('application/notale-animation', handle.dataset.dragAnimation!);
-    if(event.dataTransfer) event.dataTransfer.effectAllowed='move';
-  };
-  for (const row of $('animations').querySelectorAll<HTMLElement>('[data-cue-id]')) {
-    row.ondragover = event => { if(event.dataTransfer?.types.includes('application/notale-animation')) {event.preventDefault(); row.classList.add('drag-target');} };
-    row.ondragleave = () => row.classList.remove('drag-target');
-    row.ondrop = event => {
-      event.preventDefault(); row.classList.remove('drag-target');
-      const id=event.dataTransfer?.getData('application/notale-animation');
-      if(!id || id===row.dataset.cueId || !s.animations.some(a=>a.id===id))return;
-      if(hasTeachingStructure(s)&&s.animations.find(a=>a.id===id)!.step!==s.animations.find(a=>a.id===row.dataset.cueId)!.step){error(Error('请通过动画的“步骤”选项移动到其他讲授步骤'));return;}
-      const ids=s.animations.map(a=>a.id).filter(a=>a!==id); ids.splice(ids.indexOf(row.dataset.cueId!),0,id);
-      void commands(animationOrderCommands(s,ids.map(id=>s.animations.find(a=>a.id===id)!))).catch(error);
-    };
-  }
-  const timingVersion = snapshot.version, timingDocument = snapshot.document.id, timingSlide = s.id;
-  for (const track of $('animations').querySelectorAll<HTMLElement>('.animation-track')) {
-    const cue = cues.find(cue => cue.spec.id === track.dataset.editAnimation)!;
-    track.setAttribute('aria-description', '拖动调整延迟，拖动条末端调整时长。左右键调整延迟，Shift 加左右键调整时长；Alt 精调，Esc 取消拖动。');
-    bindAnimationTiming(track, {
-      animation: cue.spec, start: cue.start, extent: Number(track.dataset.extent),
-      current: () => snapshot.document.id === timingDocument && snapshot.version === timingVersion && slideId === timingSlide,
-      commit: animation => commands([{ type: 'animation.set', slideId: timingSlide, animation }]), error,
-    });
-  }
-  for (const el of document.querySelectorAll<HTMLElement>('[data-copy-animation]'))
-    el.onclick = () => {
-      const a = s.animations.find((a) => a.id === el.dataset.copyAnimation)!,
-        id = uuid(),
-        ids = s.animations.map((a) => a.id);
-      ids.splice(ids.indexOf(a.id) + 1, 0, id);
-      void commands([
-        { type: 'animation.set', slideId, animation: { ...a, id } },
-        { type: 'animation.reorder', slideId, ids },
-      ]).catch(error);
-    };
-  for (const el of document.querySelectorAll<HTMLElement>('[data-down-animation]'))
-    el.onclick = () => {
-      const ids = s.animations.map((a) => a.id),
-        at = ids.indexOf(el.dataset.downAnimation!);
-      if (at < ids.length - 1) {
-        if(hasTeachingStructure(s)&&s.animations[at].step!==s.animations[at+1].step){error(Error('请通过动画的“步骤”选项移动到其他讲授步骤'));return;}
-        [ids[at], ids[at + 1]] = [ids[at + 1], ids[at]];
-        void commands(animationOrderCommands(s,ids.map(id=>s.animations.find(a=>a.id===id)!))).catch(error);
-      }
-    };
-  for (const el of document.querySelectorAll<HTMLElement>('[data-remove-animation]'))
-    el.onclick = () =>
-      void commands([{ type: 'animation.remove', slideId, id: el.dataset.removeAnimation }]).catch(
-        error,
-      );
-  for (const el of document.querySelectorAll<HTMLElement>('[data-up-animation]'))
-    el.onclick = () => {
-      const ids = s.animations.map((a) => a.id),
-        index = ids.indexOf(el.dataset.upAnimation!);
-      if (index > 0) {
-        if(hasTeachingStructure(s)&&s.animations[index].step!==s.animations[index-1].step){error(Error('请通过动画的“步骤”选项移动到其他讲授步骤'));return;}
-        [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
-        void commands(animationOrderCommands(s,ids.map(id=>s.animations.find(a=>a.id===id)!))).catch(error);
-      }
-    };
-  if(restoreFocus){const focus=editingAnimation?$('animations').querySelector<HTMLButtonElement>(`[data-edit-animation="${editingAnimation}"].animation-object`):$('animations');focus?.focus({preventScroll:true});}
+  const timingAnimations=JSON.stringify(s.animations),timingDocument=editorSession.snapshot.document.id;
+  const current=()=>!workbenchEvents.signal.aborted&&editorSession.snapshot.document.id===timingDocument&&editorSession.pageId===s.id&&JSON.stringify(slide().animations)===timingAnimations;
+  const ordered=(ids:string[])=>commands(animationOrderCommands(s,ids.map(id=>s.animations.find(a=>a.id===id)!)));
+  const checkStep=(id:string,target:string)=>{if(hasTeachingStructure(s)&&s.animations.find(a=>a.id===id)?.step!==s.animations.find(a=>a.id===target)?.step)throw Error('请通过动画的“步骤”选项移动到其他讲授步骤');};
+  animationList.update({scope:JSON.stringify([timingDocument,s.id,timingAnimations]),current,error,
+    rows:cues.map((cue,i)=>{const a=cue.spec;const label=objectLabel(a.target),step=s.steps?.[a.step]?.name??`步骤 ${a.step}`,times=`${seconds(cue.start)}–${seconds(cue.end)}`;return {id:a.id,animation:a,label,description:`${animationLabel('effect',a.effect)} · ${step} · ${animationLabel('trigger',a.trigger)}`,timing:`${cue.eventTarget?`点击「${objectLabel(cue.eventTarget)}」后`:'步骤开始后'} ${times}`,summary:`${label} · ${step} · ${times}${cue.eventTarget?' · 点击触发':''}`,selected:a.id===animationSelection.selected,start:cue.start,end:cue.end,extent:Math.max(1000,...cues.filter(other=>other.spec.step===a.step&&other.eventTarget===cue.eventTarget).map(other=>other.end*1.25)),up:i>0&&(!hasTeachingStructure(s)||cues[i-1].spec.step===a.step),down:i<cues.length-1&&(!hasTeachingStructure(s)||cues[i+1].spec.step===a.step)};}),
+    edit:id=>{const a=s.animations.find(a=>a.id===id);if(!a)return;editorShell.inspect('animation');animationSelection.selected=id;editorSession.select([a.target]);animationSelection.select(id,editorSession.snapshot.document.id,editorSession.pageId,[a.target]);renderObjects();renderSelection(false);fillAnimation(a);renderAnimations();},
+    preview:id=>previewSingleAnimation(s.animations.find(a=>a.id===id)),
+    copy:id=>{const a=s.animations.find(a=>a.id===id);if(!a)return;const copyId=uuid(),ids=s.animations.map(a=>a.id);ids.splice(ids.indexOf(id)+1,0,copyId);return commands([{type:'animation.set',slideId:s.id,animation:{...a,id:copyId}},{type:'animation.reorder',slideId:s.id,ids}]);},
+    remove:id=>commands([{type:'animation.remove',slideId:s.id,id}]),
+    move:(id,direction)=>{const ids=s.animations.map(a=>a.id),at=ids.indexOf(id),to=at+direction;if(at<0||to<0||to>=ids.length)return;checkStep(id,ids[to]);[ids[at],ids[to]]=[ids[to],ids[at]];return ordered(ids);},
+    drop:(id,target)=>{if(!s.animations.some(a=>a.id===id)||!s.animations.some(a=>a.id===target))return;checkStep(id,target);const ids=s.animations.map(a=>a.id).filter(a=>a!==id);ids.splice(ids.indexOf(target),0,id);return ordered(ids);},
+    commit:animation=>commands([{type:'animation.set',slideId:s.id,animation}]),
+  });
+
 }
 function setStep(next: number, animate = true, componentStep?: number) {
-  step = Math.max(0, Math.min(max, next));
-  set('step', step);
-  $('step-label').textContent = `${step} / ${max}`;
-  send('seek', { step, animate, ...(componentStep !== undefined ? { componentStep } : {}) });
+  editorSession.seekStep(next);
+  send('seek', { step:editorSession.canvasStep, animate, ...(componentStep !== undefined ? { componentStep } : {}) });
 }
-function mode(play: boolean) {
-  interacting = play;
-  document.body.classList.toggle('interacting', play);
-  document.querySelector<HTMLElement>('.tool-rail')!.inert = play;
-  document.querySelector<HTMLElement>('.toolbar')!.inert = play;
-  $('canvas-hint').textContent = play ? '操作页面中的控件，体验讲授互动' : '双击文字编辑 · Shift 多选';
-  $('interact').setAttribute('aria-label', play ? '返回编辑' : '预览讲义');
-  $('interact').setAttribute('aria-pressed', String(play));
-  send('resize-mode', { reflow: $<HTMLInputElement>('text-reflow').checked });
-  send('mode', { mode: play ? 'play' : 'edit' });
-  setStep(play ? 0 : max, false, 0);
+function initializeEditCanvas() {
+  send('resize-mode', { reflow: editorSession.getSnapshot().textReflow });
+  send('mode', { mode:'edit' });
+  setStep(editorSession.canvasMax, false, 0);
 }
-window.addEventListener('message', (e) => {
-  if (
-    e.source !== frame.contentWindow ||
-    e.data?.source !== 'notale-slide' ||
-    e.data.channel !== channel
-  )
-    return;
+canvasController.subscribe((e) => {
+  if(e.data.channel!==channel)return;
   const { type, data } = e.data;
-  if(type==='runtime-reload-required'&&data.runtimeId===frameRuntimeId&&data.slideId===slideId)void kernel.flush().then(()=>geometrySession.barrier()).then(()=>render(data.reason==='source-script'?'source-script':'runtime-recovery')).catch(error);
-  if (type === 'scene-inspect') {
-    sceneRequests.get(data.requestId)?.(data);
-    sceneRequests.delete(data.requestId);
-  }
+  if(type==='runtime-reload-required'&&data.runtimeId===frameRuntimeId&&data.slideId===editorSession.pageId)void kernel.flush().then(()=>geometrySession.barrier()).then(()=>render(data.reason==='source-script'?'source-script':'runtime-recovery')).catch(error);
   echartsUI?.receive(type,data);
   if (type === 'native-chart-error') error(new Error(`原生图表：${data.error}`));
-  if (type === 'native-chart-inspect') {
-    nativeChartRequests.get(data.requestId)?.(data);
-    nativeChartRequests.delete(data.requestId);
-  }
-  if(type==='gesture-active'&&data.runtimeId===frameRuntimeId&&data.slideId===slideId){canvasGesture=!!data.active;if(!canvasGesture){for(const done of gestureWaiters)done();gestureWaiters.clear();}}
-  if(type==='editor-flushed'){flushWaiters.get(data.id)?.();flushWaiters.delete(data.id);}
+  if(type==='gesture-active'&&data.runtimeId===frameRuntimeId&&data.slideId===editorSession.pageId){canvasGesture=!!data.active;if(!canvasGesture){for(const done of gestureWaiters)done();gestureWaiters.clear();}}
   if(type==='context-dismiss')objectMenu.close();
-  if(data?.runtimeId===frameRuntimeId&&data?.slideId===slideId){
+  if(type==='code-lesson-edit'&&data.runtimeId===frameRuntimeId&&data.slideId===editorSession.pageId)void courseActions.open(data.target);
+  if(data?.runtimeId===frameRuntimeId&&data?.slideId===editorSession.pageId){
     if(type==='text-session-start')textSession={sessionId:data.sessionId,target:data.target};
     if(type==='text-session-end'&&textSession?.sessionId===data.sessionId){textSession=undefined;if(menuContext?.text)objectMenu.close();void textIngress.flush().catch(error);}
     if(type==='text-draft'&&textSession&&textSession.sessionId===data.sessionId){textSession.sequence=data.sequence;textIngress.receive(data as TextDraft);}
     if(type==='text-history')enqueueEdit({type:data.action},false);
     if(type==='text-context-state'&&menuContext&&menuContext.text?.sessionId===data.sessionId){menuContext.text=data;objectMenu.refresh(formatControls(menuContext));}
   }
-  if(type==='vector-import'&&data.runtimeId===frameRuntimeId&&data.slideId===slideId)void commands([{type:'svg.import',slideId,html:data.html}]).catch(error);
-  if(type==='vector-draft'&&data.runtimeId===frameRuntimeId&&data.slideId===slideId)vectorIngress.receive(data);
-  if(type==='vector-state'&&data.runtimeId===frameRuntimeId&&data.slideId===slideId){if(data.objects){const ids=new Set(data.objects.map((o:any)=>o.id));if(data.rootId){ids.add(data.rootId);let added=true;while(added){added=false;for(const o of objects)if(o.parent&&ids.has(o.parent)&&!ids.has(o.id)){ids.add(o.id);added=true;}}}objects=[...objects.filter(o=>!ids.has(o.id)),...data.objects];}vectorUI.render(data);}
+  if(type==='vector-import'&&data.runtimeId===frameRuntimeId&&data.slideId===editorSession.pageId)void commands([{type:'svg.import',slideId:editorSession.pageId,html:data.html}]).catch(error);
+  if(type==='vector-draft'&&data.runtimeId===frameRuntimeId&&data.slideId===editorSession.pageId)vectorIngress.receive(data);
+  if(type==='vector-state'&&data.runtimeId===frameRuntimeId&&data.slideId===editorSession.pageId){if(data.objects){const ids=new Set(data.objects.map((o:any)=>o.id));if(data.rootId){ids.add(data.rootId);let added=true;while(added){added=false;for(const o of objects)if(o.parent&&ids.has(o.parent)&&!ids.has(o.id)){ids.add(o.id);added=true;}}}objects=[...objects.filter(o=>!ids.has(o.id)),...data.objects];}vectorUI.render(data);}
   if(type==='vector-export'){const url=URL.createObjectURL(new Blob([data.html],{type:'image/svg+xml'}));const a=document.createElement('a');a.href=url;a.download='图形.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   if(type==='text-error')error(Error(data.message));
-  if(type==='object-context' && data.slideId===slideId && data.runtimeId===frameRuntimeId && !interacting)openObjectMenu(data);
-  if (type === 'edit-action' && data.slideId === slideId && !interacting)
+  if(type==='object-context' && data.slideId===editorSession.pageId && data.runtimeId===frameRuntimeId)openObjectMenu(data);
+  if (type === 'edit-action' && data.slideId === editorSession.pageId)
     enqueueEdit(data.action, true);
-  if (type === 'ready' && data.slideId === slideId) {
-    frame.inert = false;
-    canvasReady = true;
+  if (type === 'ready' && data.slideId === editorSession.pageId) {
     frameRuntimeId = data.runtimeId;
-    canvasLoading.ready();
-    nativeMax = data.nativeMax ?? slide().nativeStepCount;
+
+    editorSession.setStepRange(data.max,data.nativeMax ?? slide().nativeStepCount);
     teachingStepsUI.render();
-    for (const done of readyWaiters) done();
     rects = data.objects;
     sourceScenes = data.scenes ?? [];
-    max = data.max;
-    $<HTMLInputElement>('step').max = String(max);
-    mode(interacting);
+    initializeEditCanvas();
     send('camera',{scale:editorShell.zoom()});
-    if(renderedSlide?.id===slideId)void updateAuthor(renderedSlide).catch(error);
-    const drafts=geometrySession.states(slideId);if(drafts.length)send('geometry-draft',{states:drafts});
+    const readyFrame=frame,readyGeneration=renderGeneration;
+    editablePaint=(async()=>{await authorCanvas.update();if(readyFrame!==frame||readyGeneration!==renderGeneration)return;await canvasController.request('author-flush',{},'author-flushed');if(readyFrame!==frame||readyGeneration!==renderGeneration)return;frame.inert=false;canvasLoading.ready();editorSession.update({canvas:'ready'});pageThumbnails.start();})();
+    void editablePaint.catch(error);
+    const drafts=geometrySession.states(editorSession.pageId);if(drafts.length)send('geometry-draft',{states:drafts});
     if(geometrySession.count)void geometrySession.drain().catch(error);
     sendSnapping();
     renderSelection();
   }
   if (type === 'select') {
-    selectionScope=data.scope;
+    editorSession.update({selectionScope:typeof data.scope==='string'?data.scope:undefined});
     changeSelection(Array.isArray(data.ids) ? data.ids : data.id ? [data.id] : []);
     rects = data.objects;
     renderObjects();
@@ -1157,21 +981,21 @@ window.addEventListener('message', (e) => {
   }
   if (type === 'text')
     void commands([
-      { type: 'element.patch', slideId, target: data.id, patch: { text: data.text } },
+      { type: 'element.patch', slideId:editorSession.pageId, target: data.id, patch: { text: data.text } },
     ]).catch(error);
-  if (type === 'connector-edit' && data.slideId === slideId && !interacting)
+  if (type === 'connector-edit' && data.slideId === editorSession.pageId)
     void commands([
-      { type: 'connector.set', slideId, connector: connectorSchema.parse(data.connector) },
+      { type: 'connector.set', slideId:editorSession.pageId, connector: connectorSchema.parse(data.connector) },
     ]).catch(error);
   if (type === 'guide-edit') {
-    const pageId = slideId,
-      documentId = snapshot.document.id,
+    const pageId = editorSession.pageId,
+      documentId = editorSession.snapshot.document.id,
       id = data.id ?? uuid();
     guideEdits = guideEdits
       .then(async () => {
         await whenEditsIdle();
         await whenIdle();
-        if (snapshot.document.id !== documentId || slideId !== pageId) return;
+        if (editorSession.snapshot.document.id !== documentId || editorSession.pageId !== pageId) return;
         const previous = slide().guides.find((g) => g.id === id);
         if (data.id && !previous && !data.create) return;
         const guides = slide().guides.filter((g) => g.id !== id);
@@ -1183,22 +1007,22 @@ window.addEventListener('message', (e) => {
           });
         await commands([{ type: 'slide.update', slideId: pageId, patch: { guides } }]);
         await whenReady();
-        if (slideId === pageId && !data.remove) send('guide-focus', { id });
+        if (editorSession.pageId === pageId && !data.remove) send('guide-focus', { id });
       })
       .catch(error);
   }
-  if(type==='camera-hand'&&!interacting)editorShell.hand(!!data.active);
-  if(type==='camera-pan'&&!interacting)editorShell.pan(data.x,data.y);
-  if (type === 'camera-wheel' && !interacting) editorShell.wheel(data.x,data.y,data.delta);
-  if (type === 'geometry-commit' && data.slideId === slideId && data.runtimeId === frameRuntimeId && !interacting) {
+  if(type==='camera-hand')editorShell.hand(!!data.active);
+  if(type==='camera-pan')editorShell.pan(data.x,data.y);
+  if (type === 'camera-wheel') editorShell.wheel(data.x,data.y,data.delta);
+  if (type === 'geometry-commit' && data.slideId === editorSession.pageId && data.runtimeId === frameRuntimeId) {
     void geometrySession.enqueue(data as GeometryEdit).catch(error);
   }
   if (type === 'box-resize')
     void commands([
-      { type: 'element.patch', slideId, target: data.id, patch: { style: data.style } },
+      { type: 'element.patch', slideId:editorSession.pageId, target: data.id, patch: { style: data.style } },
       {
         type: 'element.transform',
-        slideId,
+        slideId:editorSession.pageId,
         target: data.id,
         transform: { width: data.width, height: data.height, matrix: data.matrix },
       },
@@ -1207,7 +1031,7 @@ window.addEventListener('message', (e) => {
     void commands([
       {
         type: 'elements.arrange',
-        slideId,
+        slideId:editorSession.pageId,
         action: data.action ?? 'translate',
         angle: data.angle,
         factorX: data.factorX,
@@ -1218,859 +1042,230 @@ window.addEventListener('message', (e) => {
         dy: data.dy,
       },
     ]).catch(error);
-  if (type === 'step') {
-    step = data.step;
-    max = data.max;
-    $<HTMLInputElement>('step').max = String(max);
-    set('step', step);
-    $('step-label').textContent = `${step} / ${max}`;
-  }
+  if (type === 'step') editorSession.setStepRange(data.max,undefined,data.step);
   if (type === 'edit-error') error(new Error(data.message));
   if (type === 'media-blocked')
-    $('media-notice').textContent = '浏览器未允许自动播放，请使用媒体播放按钮。';
+    mediaInspector.notice('浏览器未允许自动播放，请使用媒体播放按钮。');
   if (type === 'measure') {rects = data;renderGeometryFields();}
-  if (type === 'capture') {
-    const callback = captures.get(data.requestId);
-    if (callback) {
-      captures.delete(data.requestId);
-      callback({
-        rectangles: data.rectangles,
-        computedStyles: data.computedStyles,
-        ...(data.nativeChartTargets ? { nativeChartTargets: data.nativeChartTargets } : {}),
-        ...(data.nativeChartStates ? { nativeChartStates: data.nativeChartStates } : {}),
-        ...(data.componentStates ? { componentStates: data.componentStates } : {}),
-        ...(data.canvasSceneStates ? { canvasSceneStates: data.canvasSceneStates } : {}),
-      });
-    }
-  }
   if (
     type === 'navigate' &&
     data.slideId &&
-    snapshot.document.slides.some((s) => s.id === data.slideId)
+    editorSession.snapshot.document.slides.some((s) => s.id === data.slideId)
   ) {
     void showPage(data.slideId).catch(pageError);
   }
-  if (type === 'navigate' && data.direction) setStep(step + data.direction);
+  if (type === 'navigate' && data.direction) setStep(editorSession.canvasStep + data.direction);
 });
 let guideEdits: Promise<void> = Promise.resolve();
-const snapKey = 'notale-editor-snapping';
-function sendSnapping() {
-  send('snapping', {
-    enabled: $<HTMLInputElement>('snap-enabled').checked,
-    visible: $<HTMLInputElement>('guides-visible').checked,
-    rulers: $<HTMLInputElement>('rulers-visible').checked,
-    grid: num('snap-grid'),
-  });
-}
-for (const id of ['snap-enabled', 'guides-visible', 'snap-grid', 'rulers-visible'])
-  $(id).addEventListener('change', () => {
-    sendSnapping();
-    try {
-      localStorage.setItem(
-        snapKey,
-        JSON.stringify({
-          enabled: $<HTMLInputElement>('snap-enabled').checked,
-          visible: $<HTMLInputElement>('guides-visible').checked,
-          rulers: $<HTMLInputElement>('rulers-visible').checked,
-          grid: num('snap-grid'),
-        }),
-      );
-    } catch {}
-  });
-try {
-  const saved = JSON.parse(localStorage.getItem(snapKey) ?? 'null');
-  if (saved) {
-    $<HTMLInputElement>('snap-enabled').checked = saved.enabled !== false;
-    $<HTMLInputElement>('guides-visible').checked = saved.visible !== false;
-    $<HTMLInputElement>('rulers-visible').checked = saved.rulers === true;
-    set('snap-grid', Math.max(0, Math.min(10000, Number(saved.grid) || 0)));
-  }
-} catch {}
-function renderGuides() {
-  $('guide-list').innerHTML = (slide().guides ?? [])
-    .map(
-      (g) => `<div class="guide-row" data-guide="${g.id}">
-    <label>${g.axis === 'x' ? '垂直 X' : '水平 Y'}<input type="number" step="any" data-guide-position="${g.id}" value="${g.position}" aria-label="${g.axis.toUpperCase()} 参考线坐标" /></label>
-    <button data-save-guide="${g.id}">更新</button><button data-remove-guide="${g.id}">删除</button></div>`,
-    )
-    .join('');
-  for (const el of document.querySelectorAll<HTMLElement>('[data-save-guide]'))
-    el.onclick = () => {
-      const id = el.dataset.saveGuide!,
-        input = document.querySelector<HTMLInputElement>(`[data-guide-position="${id}"]`)!;
-      void commands([
-        {
-          type: 'slide.update',
-          slideId,
-          patch: {
-            guides: slide().guides.map((g) =>
-              g.id === id ? { ...g, position: Number(input.value) } : g,
-            ),
-          },
-        },
-      ]).catch(error);
-    };
-  for (const el of document.querySelectorAll<HTMLElement>('[data-remove-guide]'))
-    el.onclick = () =>
-      void commands([
-        {
-          type: 'slide.update',
-          slideId,
-          patch: { guides: slide().guides.filter((g) => g.id !== el.dataset.removeGuide) },
-        },
-      ]).catch(error);
-}
-on('add-guide', () =>
-  commands([
-    {
-      type: 'slide.update',
-      slideId,
-      patch: {
-        guides: [
-          ...(slide().guides ?? []),
-          { id: uuid(), axis: value('guide-axis'), position: num('guide-position') },
-        ],
-      },
-    },
-  ]),
-);
+function sendSnapping() {send('snapping',viewSettings.getSnapshot());}
+viewSettings.restore();
+canvasController.onDispose(viewSettings.subscribe(sendSnapping));
+bindGuideActions({source:()=>({documentId:editorSession.snapshot.document.id,pageId:editorSession.pageId}),guides:()=>slide().guides??[],commands});
 
-for (const tab of document.querySelectorAll<HTMLElement>('[data-tab]'))
-  tab.onclick = () => {
-    for (const panel of document.querySelectorAll<HTMLElement>('[data-panel]'))
-      panel.hidden = panel.dataset.panel !== tab.dataset.tab;
-    for (const t of document.querySelectorAll('[data-tab]'))
-      t.classList.toggle('active', t === tab);
-    editorShell.selectionChanged(selected.size > 0);
-  };
-on('apply-text', () =>
-  commands([
-    { type: 'element.patch', slideId, target: current().id, patch: { text: value('object-text') } },
-  ]),
-);
+editorActions.replaceText=async(field,text)=>{
+  const object=objects.find(object=>object.id===field.target);
+  if(editorSession.snapshot.document.id!==field.documentId||editorSession.pageId!==field.slideId||editorSession.selection.size!==1||!editorSession.selection.has(field.target)||!object||object.locked||!editorSession.getSnapshot().inspector.text)throw Error('对象已变化，请重新选择后编辑');
+  if(object.text!==field.value)throw Error('文字已变化，输入已保留，请核对后重新编辑');
+  if(text!==field.value)await commands([{type:'element.patch',slideId:field.slideId,target:field.target,patch:{text}}]);
+};
 let propertyEdits:Promise<unknown>=Promise.resolve();
-function editGeometry(field:string){
- const control=$<HTMLInputElement>(field);
- if(!control.reportValidity()||!control.value)return;
- const amount=num(field),ids=[...selected],pageId=slideId,documentId=snapshot.document.id;
- const rotation=Number($<HTMLInputElement>('rotation').dataset.initial)||0;
- const proportional=$<HTMLInputElement>('geometry-proportional').checked;
- propertyEdits=propertyEdits.catch(()=>{}).then(async()=>{
-  await geometrySession.barrier();
-  if(documentId!==snapshot.document.id||pageId!==slideId)return;
-  const capture=await captureSelection(ids);
-  const reflow=ids.length===1&&capture.textReflowTargets?.includes(ids[0])&&$<HTMLInputElement>('text-reflow').checked;
+editorActions.editGeometry=edit=>{
+ const {source,field,value:amount,proportional}=edit,ids=source.ids,pageId=source.slideId,documentId=source.documentId;
+ if(!Number.isFinite(amount))return Promise.reject(Error('请输入有效数值'));
+ const task=propertyEdits.catch(()=>{}).then(async()=>{
+  // Geometry commands project locally; capture after local gesture staging, not network acknowledgement.
+  await kernel.flush();
+  if(documentId!==editorSession.snapshot.document.id||pageId!==editorSession.pageId)throw Error('页面已变化，请重新选择后编辑');
+  if(ids.some(id=>!objects.some(object=>object.id===id&&!object.locked)))throw Error('对象不存在或已锁定');
+  const capture=await captureSelection(ids),first=slide().transforms[ids[0]],matrix=first?.matrix;
+  const rotation=ids.length>1?0:matrix?Math.atan2(matrix[1],matrix[0])*180/Math.PI:first?.rotate??0;
+  const reflow=ids.length===1&&capture.textReflowTargets?.includes(ids[0])&&editorSession.getSnapshot().textReflow;
   if(reflow&&(field==='object-width'||field==='object-height')){
-    send('object-box-size',{target:ids[0],field,value:amount,proportional});
-    await captureSelection(ids);
-    await geometrySession.barrier();
+    send('object-box-size',{target:ids[0],field,value:amount,proportional});await captureSelection(ids);await geometrySession.whenLocallySaved();
   }else await commands([geometryCommand(pageId,capture.rectangles,field,amount,proportional,rotation)]);
- }).catch(error);
-}
-on('apply-format',()=>{for(const id of ['tx','ty','rotation','scale','object-width','object-height'])if(value(id)!==$<HTMLInputElement>(id).dataset.initial)editGeometry(id);});
-for(const id of ['tx','ty','rotation','scale','object-width','object-height']){
- $(id).addEventListener('change',()=>editGeometry(id));
- $(id).addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();(event.target as HTMLInputElement).blur();}});
-}
+ });
+ propertyEdits=task.catch(()=>{});return task;
+};
 function renderGeometryFields(){
- const box=selectionBounds(rects.filter(r=>selected.has(r.id)));
- if(!box)return;
- const first=slide().transforms[[...selected][0]],matrix=first?.matrix;
- const rotation=selected.size>1?0:matrix?Math.atan2(matrix[1],matrix[0])*180/Math.PI:first?.rotate??0;
- for(const [id,n] of Object.entries({tx:box.x,ty:box.y,'object-width':box.width,'object-height':box.height,rotation,scale:1})){
-  if(document.activeElement===$(id))continue;
-  set(id,Math.round(n*100)/100);$<HTMLInputElement>(id).dataset.initial=value(id);
- }
+ const box=selectionBounds(rects.filter(r=>editorSession.selection.has(r.id)));
+ if(!box){editorSession.update({geometryFields:undefined});return;}
+ const ids=[...editorSession.selection],first=slide().transforms[ids[0]],matrix=first?.matrix;
+ const rotation=ids.length>1?0:matrix?Math.atan2(matrix[1],matrix[0])*180/Math.PI:first?.rotate??0;
+ const round=(value:number)=>Math.round(value*100)/100;
+ const geometryFields={key:JSON.stringify([editorSession.snapshot.document.id,editorSession.pageId,ids]),documentId:editorSession.snapshot.document.id,slideId:editorSession.pageId,ids,editable:ids.every(id=>objects.some(object=>object.id===id&&!object.locked))&&!ids.some(id=>slide().connectors.some(c=>c.id===id)),values:{tx:round(box.x),ty:round(box.y),'object-width':round(box.width),'object-height':round(box.height),rotation:round(rotation),scale:1}};
+ if(JSON.stringify(geometryFields)!==JSON.stringify(editorSession.getSnapshot().geometryFields))editorSession.update({geometryFields});
 }
-on('apply-advanced', () =>
-  commands([
-    {
-      type: 'element.patch',
-      slideId,
-      target: current().id,
-      patch: {
-        style: JSON.parse(value('style-json')),
-        attributes: JSON.parse(value('attrs-json')),
-      },
-    },
-  ]),
-);
-on('bold', () => typographyUI.toggle('bold'));
-on('italic', () => typographyUI.toggle('italic'));
-on('lock', () =>
+editorActions.toggleObjectLock = () =>
   commands(
-    [...selected].map((target) => ({
+    [...editorSession.selection].map((target) => ({
       type: 'element.lock',
-      slideId,
+      slideId:editorSession.pageId,
       target,
-      locked: !objects.find((o) => o.id === target)!.locked,
+      locked: !objects.find((o) => o.id === target)?.locked,
     })),
-  ),
-);
-function svgLayer(id: string) {
-  const object = objects.find((o) => o.id === id);
-  return (
-    object &&
-    isSvgLayer(
-      object,
-      objects.find((o) => o.id === object.parent),
-    )
   );
-}
 async function changeLayer(action: 'front' | 'back' | 'forward' | 'backward') {
-  await whenIdle();
-  const targets = [...selected],
-    pageId = slideId,
-    documentId = snapshot.document.id,
-    version = snapshot.version;
+  const sourceSelection=arrangementScope();
+  await kernel.flush();
+  await geometrySession.whenLocallySaved();
+  if(arrangementScope()!==sourceSelection)throw new Error('选区已变化，请重新调整层级');
+  const targets = [...editorSession.selection],
+    pageId = editorSession.pageId,
+    documentId = editorSession.snapshot.document.id,
+    source = arrangementSource();
   if (!targets.length) return;
-  const svg = targets.filter((id) => svgLayer(id)),
-    html = targets.filter((id) => !svgLayer(id));
-  if (
-    html.some((id) => {
-      const object = objects.find((o) => o.id === id)!;
-      return (
-        object.namespace === 'http://www.w3.org/2000/svg' &&
-        (object.tag !== 'svg' ||
-          objects.find((o) => o.id === object.parent)?.namespace === object.namespace)
-      );
-    })
-  )
-    throw new Error('请选择完整 SVG 图形或图形组合，文字片段和条件分支不能作为独立图层排序');
-  const parentIds = new Set(html.map((id) => objects.find((object) => object.id === id)?.parent));
-  const related = objects
-    .filter((object) => parentIds.has(object.parent) || parentIds.has(object.id))
-    .map((object) => object.id);
-  const capture = html.length ? await captureSelection(related) : undefined;
-  if (slideId !== pageId || snapshot.document.id !== documentId || snapshot.version !== version)
-    throw new Error('页面在调整层级前已变化，请重试');
-  const edits: Command[] = svg.length
-    ? [{ type: 'elements.order', slideId: pageId, targets: svg, action }]
-    : [];
-  if (html.length)
-    edits.push(...htmlLayerCommands(pageId, html, objects, capture!.computedStyles, action));
+  const plan=captureLayerPlan(pageId,targets,objects,action);
+  const capture=plan.captureIds.length?await captureSelection(plan.captureIds):undefined;
+  if (editorSession.pageId !== pageId || editorSession.snapshot.document.id !== documentId || arrangementSource() !== source || arrangementScope()!==sourceSelection)
+    throw new Error('页面或选区在调整层级前已变化，请重试');
+  const edits=layerPlanCommands(plan,capture?.computedStyles);
   if (!edits.length) return;
   return commands(edits);
 }
-on('front', () => changeLayer('front'));
-on('back', () => changeLayer('back'));
-$('objects').insertAdjacentHTML(
-  'beforebegin',
-  '<label>查找对象<input id="object-search" placeholder="名称、文字或类型"></label>',
-);
-$<HTMLInputElement>('object-search').oninput = renderObjects;
-$('object-text').closest('label')!.insertAdjacentHTML(
-  'beforebegin',
-  '<label>对象名称<input id="object-name"></label><button id="save-object-name">保存名称</button><div class="inline"><button id="hide-objects">隐藏所选对象</button><button id="show-objects">显示所选对象</button></div>',
-);
-on('save-object-name', () =>
+editorActions.selectLayer=(source,id,toggle)=>{
+  if(source.documentId!==editorSession.snapshot.document.id||source.pageId!==editorSession.pageId||!objects.some(object=>object.id===id))return;
+  changeSelection([id],toggle?'toggle':'replace');renderSelection(false);
+};
+editorActions.saveObjectName=async(field,name)=>{
+  if(editorSession.snapshot.document.id!==field.documentId||editorSession.pageId!==field.slideId||editorSession.selection.size!==field.targets.length||!field.targets.every(id=>editorSession.selection.has(id)))throw Error('选区已变化，请重新选择后编辑');
+  const chosen=field.targets.map(id=>objects.find(object=>object.id===id));
+  if(chosen.some(object=>!object||object.locked))throw Error('对象不存在或已锁定');
+  if(chosen.some(object=>(object!.attributes['data-notale-name']??'')!==field.before[object!.id]))throw Error('对象名称已变化，输入已保留，请核对后重新编辑');
+  await commands(field.targets.map(target=>({type:'element.patch',slideId:field.slideId,target,patch:{attributes:{'data-notale-name':name}}})));
+};
+editorActions.hideObjects = () =>
   commands(
-    [...selected].map((target) => ({
+    [...editorSession.selection].map((target) => ({
       type: 'element.patch',
-      slideId,
-      target,
-      patch: { attributes: { 'data-notale-name': value('object-name') } },
-    })),
-  ),
-);
-on('hide-objects', () =>
-  commands(
-    [...selected].map((target) => ({
-      type: 'element.patch',
-      slideId,
+      slideId:editorSession.pageId,
       target,
       patch: { style: { visibility: 'hidden' } },
     })),
-  ),
-);
-on('show-objects', () =>
+  );
+editorActions.showObjects = () =>
   commands(
-    [...selected].map((target) => ({
+    [...editorSession.selection].map((target) => ({
       type: 'element.patch',
-      slideId,
+      slideId:editorSession.pageId,
       target,
       patch: { style: { visibility: 'visible' } },
     })),
-  ),
-);
-on('layer-forward', () => changeLayer('forward'));
-on('layer-backward', () => changeLayer('backward'));
-function groupSelection(){
- if(selected.size<2)return;
- return [...selected].every(id=>objects.find(o=>o.id===id)?.namespace==='http://www.w3.org/2000/svg')
- ?send('vector-action',{action:'group'}):commands([{type:'group.set',slideId,id:uuid(),name:'组合',members:[...selected]}]);
+  );
+function runGrouping(action:'group'|'ungroup'){
+ const plan=groupingPlan(action,slide(),[...editorSession.selection],objects,uuid);
+ return plan.kind==='canvas'?send('vector-action',{action:plan.action}):commands(plan.commands);
 }
-function ungroupSelection(){
- if(selected.size===1&&objects.find(o=>selected.has(o.id))?.tag==='g')return send('vector-action',{action:'ungroup'});
- const groups=slide().groups.filter(g=>g.members.some(id=>selected.has(id)));
- if(groups.length)return commands(groups.map(g=>({type:'group.remove',slideId,id:g.id})));
-}
-on('group',groupSelection);
-on('ungroup',ungroupSelection);
-on('align-left', () => arrange('left'));
-on('distribute', () => arrange('distribute-x'));
+function groupSelection(){return runGrouping('group');}
+function ungroupSelection(){return runGrouping('ungroup');}
+canvasController.onDispose(()=>renderSelectionTools([],new Set(),[],false));
+editorActions.selectionTool=async action=>{assertWorkbenchOpen();if(action==='group')return groupSelection();if(action==='ungroup')return ungroupSelection();if(action==='align-left')return arrange('left');if(action==='distribute')return arrange('distribute-x');};
 
 let sourceScenes: SourceScene[] = [];
-let sceneSelection = '';
-let sceneValues: Record<string, SceneScalar> | undefined;
-let sceneCheckpoint: SceneCheckpoint | undefined;
-type SceneInspection = {
-  values?: Record<string, SceneScalar>;
-  checkpoint?: SceneCheckpoint;
-  error?: string;
+const sceneInspector=createSceneInspector({
+ source:()=>({documentId:editorSession.snapshot.document.id,pageId:editorSession.pageId,runtimeId:frameRuntimeId,target:editorSession.selection.size===1?[...editorSession.selection][0]:'',ready:editorSession.canvasReady,scenes:sourceScenes,saved:slide().scenes??[]}),
+ inspect:async sceneId=>{await whenReady();return canvasController.request<SceneInspection>('scene-inspect',{sceneId});},
+ commands,select:id=>{changeSelection([id]);renderSelection();},
+});
+canvasController.onDispose(()=>sceneInspector.dispose());
+function renderScene(){sceneInspector.render();}
+
+const componentNavigation=createComponentNavigation({
+ source:()=>{
+  const scope=JSON.stringify([editorSession.snapshot.document.id,editorSession.pageId,editorSession.snapshot.version]);
+  const inspection=nativeChartInspector.inspection;
+  return {scope,target:editorSession.selection.size===1?[...editorSession.selection][0]:'',objects,
+   components:Object.entries(slide().nativeCharts??{}).flatMap(([id,chart])=>chart.interaction?[{id,component:chart.interaction}]:[]),
+   discovered:inspection?.component?{id:inspection.target,component:inspection.component}:undefined};
+ },select:id=>{changeSelection([id]);renderObjects();renderSelection();},
+});
+canvasController.onDispose(()=>componentNavigation.dispose());
+function renderComponentNavigation(){componentNavigation.render();}
+const nativeChartInspector=createNativeChartInspector({
+ source:()=>{const target=editorSession.selection.size===1?[...editorSession.selection][0]:'';return {documentId:editorSession.snapshot.document.id,pageId:editorSession.pageId,target,runtimeId:frameRuntimeId,available:editorSession.canvasReady&&!!target&&(rects.some(r=>r.id===target&&r.nativeChart)||!!slide().nativeCharts?.[target]),chart:slide().nativeCharts?.[target]};},
+ inspect:async target=>{await whenReady();return canvasController.request<NativeChartInspection>('native-chart-inspect',{target});},
+ commands,discovered:()=>renderComponentNavigation(),supports:(property,value)=>CSS.supports(property,value),
+});
+canvasController.onDispose(()=>nativeChartInspector.dispose());
+function renderNativeChart(){nativeChartInspector.render();}
+function inspectNativeChart(){return nativeChartInspector.inspect();}
+
+editorActions.saveBinding=async(field,value)=>{
+  const object=objects.find(object=>object.id===field.target);
+  if(editorSession.snapshot.document.id!==field.documentId||editorSession.pageId!==field.slideId||editorSession.selection.size!==1||!editorSession.selection.has(field.target)||!object||object.locked||!['input','select','textarea'].includes(object.tag))throw Error('对象已变化，请重新选择后编辑');
+  const binding=slide().bindings.find(binding=>binding.target===field.target);
+  if(JSON.stringify(binding??null)!==field.before)throw Error('互动初始值已变化，输入已保留，请核对后重新编辑');
+  await commands([{type:'binding.set',slideId:field.slideId,binding:{id:binding?.id??uuid(),target:field.target,label:object.attributes.id??object.tag,value:object.attributes.type==='checkbox'?value==='true':value,event:object.tag==='select'?'change':'input'}}]);
 };
-const sceneRequests = new Map<string, (result: SceneInspection) => void>();
-function chosenScene() {
-  return sourceScenes.find((scene) => scene.id === value('scene-choice'));
-}
-function renderScene() {
-  const target = selected.size === 1 ? [...selected][0] : '';
-  const candidates = canvasReady
-    ? sourceScenes.filter((scene) => scene.targets.includes(target))
-    : [];
-  $('scene-panel').hidden = !candidates.length;
-  const key = `${snapshot.document.id}/${slideId}/${snapshot.version}/${target}/${canvasReady}`;
-  if (key === sceneSelection) return;
-  sceneSelection = key;
-  sceneValues = undefined;
-  sceneCheckpoint = undefined;
-  $('scene-choice').innerHTML = candidates
-    .map((scene) => `<option value="${scene.id}">${esc(scene.name)}</option>`)
-    .join('');
-  fillScene();
-}
-function fillScene() {
-  const scene = chosenScene();
-  $<HTMLButtonElement>('select-scene-root').hidden = !scene?.root;
-  sceneValues = undefined;
-  sceneCheckpoint = undefined;
-  $<HTMLButtonElement>('save-scene').disabled = true;
-  $('scene-status').textContent = '读取当前互动状态后，可以保存本次采样和修改启动参数。';
-  if (scene?.checkpoint)
-    $('scene-status').textContent =
-      '在画布中体验互动并调整树的数量或重新抽样，然后读取并保存完整场景状态。';
-  $('save-scene').textContent = scene?.checkpoint ? '保存完整场景状态' : '保存场景参数';
-  $('scene-parameters').innerHTML = (scene?.checkpoint ? [] : (scene?.parameters ?? []))
-    .filter((p) => !p.readonly)
-    .map((parameter) => {
-      const saved =
-        slide().scenes?.find((s) => s.id === scene!.id)?.values[parameter.key] ?? parameter.value;
-      if (parameter.choices)
-        return `<label>${esc(parameter.label)}<select data-scene-key="${esc(parameter.key)}">${parameter.choices.map((choice) => `<option value="${esc(choice.value)}" ${choice.value === saved ? 'selected' : ''}>${esc(choice.label)}</option>`).join('')}</select></label>`;
-      const type =
-        typeof parameter.value === 'number'
-          ? 'number'
-          : typeof parameter.value === 'boolean'
-            ? 'checkbox'
-            : 'text';
-      return `<label>${esc(parameter.label === 'seed' ? '随机种子' : parameter.label)}<input data-scene-key="${esc(parameter.key)}" type="${type}" ${type === 'checkbox' ? (saved ? 'checked' : '') : `value="${esc(saved)}"`} ${type === 'number' ? `step="${parameter.control?.step ?? 'any'}" min="${parameter.control?.min ?? -1e9}" max="${parameter.control?.max ?? 1e9}"` : ''}/></label>`;
-    })
-    .join('');
-}
-$<HTMLSelectElement>('scene-choice').onchange = fillScene;
-on('select-scene-root', () => {
-  const root = chosenScene()?.root;
-  if (root) {
-    changeSelection([root]);
-    renderSelection();
-  }
-});
-on('read-scene', async () => {
-  await whenReady();
-  const scene = chosenScene(),
-    key = sceneSelection;
-  if (!scene) throw new Error('请先选择互动场景');
-  const requestId = uuid();
-  const result = await new Promise<SceneInspection>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      sceneRequests.delete(requestId);
-      reject(new Error('场景未响应'));
-    }, 5000);
-    sceneRequests.set(requestId, (data) => {
-      clearTimeout(timer);
-      resolve(data);
-    });
-    send('scene-inspect', { requestId, sceneId: scene.id });
-  });
-  if (key !== sceneSelection || chosenScene()?.id !== scene.id) return;
-  if (result.error || !result.values) throw new Error(result.error ?? '无法读取场景');
-  sceneValues = sceneValuesSchema.parse(result.values);
-  if (scene.checkpoint) sceneCheckpoint = sceneCheckpointSchema.parse(result.checkpoint);
-  for (const input of document.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
-    '[data-scene-key]',
-  )) {
-    const v = sceneValues[input.dataset.sceneKey!];
-    if (input instanceof HTMLInputElement && input.type === 'checkbox') input.checked = Boolean(v);
-    else input.value = String(v);
-  }
-  $('scene-status').textContent = '已读取当前互动状态；保存后重新打开将使用这些参数。';
-  if (sceneCheckpoint)
-    $('scene-status').textContent =
-      `已读取第 ${sceneCheckpoint.state.runCount} 次抽样、${sceneCheckpoint.state.m} 棵树及预测历史，保存后可继续互动。`;
-  $<HTMLButtonElement>('save-scene').disabled = false;
-});
-on('save-scene', () => {
-  const scene = chosenScene();
-  if (!scene || !sceneValues) throw new Error('请先读取当前互动状态');
-  if (scene.checkpoint) {
-    if (!sceneCheckpoint) throw new Error('请先读取完整场景状态');
-    return commands([
-      { type: 'scene.checkpoint', slideId, sceneId: scene.id, checkpoint: sceneCheckpoint },
-    ]);
-  }
-  const values: Record<string, SceneScalar> = {};
-  for (const input of document.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
-    '[data-scene-key]',
-  )) {
-    const key = input.dataset.sceneKey!,
-      parameter = scene.parameters.find((p) => p.key === key)!;
-    if (
-      (input instanceof HTMLSelectElement && input.selectedIndex < 0) ||
-      (typeof parameter.value === 'number' && input.value.trim() === '')
-    )
-      throw new Error(`请为 ${parameter.label} 选择或输入有效值`);
-    values[key] =
-      typeof parameter.value === 'number'
-        ? Number(input.value)
-        : typeof parameter.value === 'boolean'
-          ? input instanceof HTMLInputElement
-            ? input.checked
-            : input.value === 'true'
-          : input.value;
-  }
-  return commands([
-    { type: 'scene.set', slideId, sceneId: scene.id, values: sceneValuesSchema.parse(values) },
-  ]);
-});
-on('reset-scene', () => {
-  const scene = chosenScene();
-  if (!scene) throw new Error('请先选择互动场景');
-  return commands([{ type: 'scene.remove', slideId, sceneId: scene.id }]);
-});
 
-const nativeChartRequests = new Map<string, (result: NativeChartInspection) => void>();
-$('native-chart-panel').insertAdjacentHTML(
-  'beforeend',
-  `<div id="native-chart-interaction" hidden>
-    <label>学习率<select id="native-chart-value"><option value="1.0">1.0 过冲</option><option value="0.1">0.1 推荐</option><option value="0.02">0.02 保守</option></select></label>
-    <button id="save-native-chart-state">保存互动选择</button>
-    <label>按钮状态<select id="native-chart-appearance-state"><option value="active">选中</option><option value="inactive">未选中</option></select></label>
-    <label>背景色<input id="native-chart-backgroundColor" /></label>
-    <label>文字颜色<input id="native-chart-color-state" /></label>
-    <label>边框颜色<input id="native-chart-borderColor" /></label>
-    <label>字重<input id="native-chart-fontWeight" /></label>
-    <button id="save-native-chart-appearance">保存状态样式</button>
-  </div>`,
-);
-$('native-chart-panel').insertAdjacentHTML(
-  'afterend',
-  '<fieldset id="component-members" hidden><legend>互动组件</legend><label>编辑对象<select id="component-member"></select></label><button id="select-component-member">选择对象</button></fieldset>',
-);
-function currentComponent(): NativeChartInteraction | undefined {
-  return (
-    slide().nativeCharts?.[[...selected][0] ?? '']?.interaction ?? nativeChartInspection?.component
-  );
-}
-function componentAdoption(): Command[] {
-  const target = current().id;
-  if (slide().nativeCharts?.[target]?.interaction) return [];
-  const component =
-    nativeChartInspection?.target === target ? nativeChartInspection.component : undefined;
-  if (!component) throw new Error('请先读取当前组件');
-  const { value, active, inactive } = component;
-  return [{ type: 'native-chart.component', slideId, target, state: { value, active, inactive } }];
-}
-on('save-native-chart-state', () =>
-  commands([
-    ...componentAdoption(),
-    {
-      type: 'native-chart.state',
-      slideId,
-      target: current().id,
-      value: value('native-chart-value'),
-    },
-  ]),
-);
-const appearanceInputs = {
-  backgroundColor: 'native-chart-backgroundColor',
-  color: 'native-chart-color-state',
-  borderColor: 'native-chart-borderColor',
-  fontWeight: 'native-chart-fontWeight',
-} as const;
-function fillComponentAppearance() {
-  const state = value('native-chart-appearance-state') as 'active' | 'inactive';
-  const appearance = currentComponent()?.[state];
-  if (appearance)
-    for (const [key, input] of Object.entries(appearanceInputs))
-      set(input, appearance[key as keyof typeof appearance]);
-}
-$<HTMLSelectElement>('native-chart-appearance-state').onchange = fillComponentAppearance;
-on('save-native-chart-appearance', () => {
-  const state = value('native-chart-appearance-state') as 'active' | 'inactive';
-  const before = currentComponent()?.[state];
-  if (!before) throw new Error('请先读取当前组件');
-  const patch: Record<string, string> = {};
-  for (const [key, input] of Object.entries(appearanceInputs)) {
-    const next = value(input).trim(),
-      property = key.replace(/[A-Z]/g, (letter) => '-' + letter.toLowerCase());
-    if (!CSS.supports(property, next))
-      throw new Error(`无效的${$(input).closest('label')?.firstChild?.textContent ?? '样式'}`);
-    if (next !== before[key as keyof typeof before]) patch[key] = next;
-  }
-  if (!Object.keys(patch).length) return;
-  return commands([
-    ...componentAdoption(),
-    {
-      type: 'native-chart.appearance',
-      slideId,
-      target: current().id,
-      state,
-      patch: nativeChartAppearancePatchSchema.parse(patch),
-    },
-  ]);
-});
-function renderComponentNavigation() {
-  const target = selected.size === 1 ? [...selected][0] : '';
-  const entries = Object.entries(slide().nativeCharts ?? {}).filter(
-    ([, chart]) => chart.interaction,
-  );
-  const key = `${snapshot.document.id}/${slideId}/${snapshot.version}`;
-  if (key !== componentDiscoveryKey) {
-    componentDiscoveryKey = key;
-    componentDiscoveries.clear();
-  }
-  if (nativeChartSelection.startsWith(`${key}/`) && nativeChartInspection?.component)
-    componentDiscoveries.set(nativeChartInspection.target, nativeChartInspection.component);
-  for (const [id, component] of componentDiscoveries)
-    if (!entries.some(([target]) => target === id))
-      entries.push([id, { adapter: 'echarts', option: {}, interaction: component }]);
-  const entry = entries.find(([, chart]) => {
-    let id: string | undefined = target;
-    const seen = new Set<string>();
-    while (id && !seen.has(id)) {
-      if (id === chart.interaction!.root) return true;
-      seen.add(id);
-      id = objects.find((object) => object.id === id)?.parent;
-    }
-    return false;
-  });
-  $('component-members').hidden = !entry;
-  if (!entry) return;
-  const [id, chart] = entry,
-    component = chart.interaction!;
-  $('component-member').innerHTML = [
-    [component.root, '整个组件'],
-    [id, '图表'],
-    ...Object.entries(component.controls).map(([value, id]) => [id, `按钮 ${value}`]),
-    ...Object.entries(component.metrics).map(([key, id]) => [
-      id,
-      (
-        {
-          optM: '最佳轮数',
-          minErr: '最低验证误差',
-          overfit: '后期反弹',
-          verdict: '结论',
-        } as Record<string, string>
-      )[key],
-    ]),
-  ]
-    .map(([id, label]) => `<option value="${esc(id)}">${esc(label)}</option>`)
-    .join('');
-  set(
-    'component-member',
-    [
-      component.root,
-      id,
-      ...Object.values(component.controls),
-      ...Object.values(component.metrics),
-    ].includes(target)
-      ? target
-      : component.root,
-  );
-}
-on('select-component-member', () => {
-  changeSelection([value('component-member')]);
-  renderObjects();
-  renderSelection();
-});
-const componentDiscoveries = new Map<string, NativeChartInteraction>();
-let componentDiscoveryKey = '';
-let nativeChartInspection: NativeChartInspection | undefined;
-let nativeChartSelection = '';
-function renderNativeChart() {
-  const target = selected.size === 1 ? [...selected][0] : '';
-  const key = `${snapshot.document.id}/${slideId}/${snapshot.version}/${target}`;
-  const available =
-    !!target &&
-    (rects.some((r) => r.id === target && r.nativeChart) || !!slide().nativeCharts?.[target]);
-  $('native-chart-panel').hidden = !available;
-  $('native-chart-interaction').hidden = !(
-    slide().nativeCharts?.[target]?.interaction ||
-    (key === nativeChartSelection && nativeChartInspection?.component)
-  );
-  if (key === nativeChartSelection) return;
-  nativeChartSelection = key;
-  nativeChartInspection = undefined;
-  set('native-chart-value', slide().nativeCharts?.[target]?.interaction?.value ?? '0.1');
-  fillComponentAppearance();
-  $('native-chart-series').innerHTML = '';
-  set('native-chart-option', JSON.stringify(slide().nativeCharts?.[target]?.option ?? {}, null, 2));
-  $('native-chart-status').textContent = '读取图表后可编辑序列数据与样式。';
-  $<HTMLButtonElement>('save-native-chart-series').disabled = true;
-}
-async function inspectNativeChart() {
-  await whenReady();
-  const target = current().id,
-    key = nativeChartSelection,
-    requestId = uuid();
-  const result = await new Promise<NativeChartInspection>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      nativeChartRequests.delete(requestId);
-      reject(new Error('图表未响应'));
-    }, 5000);
-    nativeChartRequests.set(requestId, (r) => {
-      clearTimeout(timer);
-      resolve(r);
-    });
-    send('native-chart-inspect', { requestId, target });
-  });
-  if (key !== nativeChartSelection) return;
-  if (!result.available || result.error) throw new Error(result.error ?? '图表实例不可用');
-  nativeChartInspection = result;
-  if (result.value) set('native-chart-value', result.value);
-  $('native-chart-interaction').hidden =
-    !result.component && !slide().nativeCharts?.[target]?.interaction;
-  fillComponentAppearance();
-  renderComponentNavigation();
-  $('native-chart-series').innerHTML = result.series
-    .map((s, i) => `<option value="${i}">${esc(s.name || `序列 ${i + 1}`)}</option>`)
-    .join('');
-  $('native-chart-status').textContent =
-    `${result.series.length} 个序列；未固定的数据继续响应原页面互动。`;
-  $<HTMLButtonElement>('save-native-chart-series').disabled = !result.series.length;
-  fillNativeSeries();
-  return result;
-}
-function fillNativeSeries() {
-  const index = num('native-chart-series'),
-    series = nativeChartInspection?.series[index];
-  if (!series) return;
-  set('native-chart-name', series.name);
-  set('native-chart-color', series.color);
-  set('native-chart-width', series.width);
-  set('native-chart-data', JSON.stringify(series.data, null, 2));
-  $<HTMLInputElement>('native-chart-symbols').checked = series.showSymbol;
-  $<HTMLInputElement>('native-chart-save-data').checked =
-    slide().nativeCharts?.[current().id]?.option.series?.[index]?.data !== undefined;
-}
-on('inspect-native-chart', inspectNativeChart);
-$<HTMLSelectElement>('native-chart-series').onchange = fillNativeSeries;
-on('save-native-chart-series', () => {
-  const target = current().id;
-  if (!nativeChartInspection || nativeChartInspection.target !== target)
-    throw new Error('请先读取当前图表');
-  const index = num('native-chart-series');
-  const option = structuredClone(slide().nativeCharts?.[target]?.option ?? {});
-  option.series ??= [];
-  while (option.series.length <= index) option.series.push({});
-  const patch = option.series[index];
-  patch.name = value('native-chart-name');
-  patch.lineStyle = {
-    ...patch.lineStyle,
-    color: value('native-chart-color'),
-    width: num('native-chart-width'),
-  };
-  patch.itemStyle = { ...patch.itemStyle, color: value('native-chart-color') };
-  patch.showSymbol = $<HTMLInputElement>('native-chart-symbols').checked;
-  if ($<HTMLInputElement>('native-chart-save-data').checked)
-    patch.data = JSON.parse(value('native-chart-data'));
-  else delete patch.data;
-  return commands([
-    { type: 'native-chart.set', slideId, target, option: nativeChartOptionSchema.parse(option) },
-  ]);
-});
-on('save-native-chart-option', () =>
-  commands([
-    {
-      type: 'native-chart.set',
-      slideId,
-      target: current().id,
-      option: nativeChartOptionSchema.parse(JSON.parse(value('native-chart-option'))),
-    },
-  ]),
-);
-on('reset-native-chart', () =>
-  commands([{ type: 'native-chart.remove', slideId, target: current().id }]),
-);
-
-on('save-binding', () => {
-  const o = current();
-  return commands([
-    {
-      type: 'binding.set',
-      slideId,
-      binding: {
-        id: slide().bindings.find((b) => b.target === o.id)?.id ?? uuid(),
-        target: o.id,
-        label: o.attributes.id ?? o.tag,
-        value:
-          o.attributes.type === 'checkbox'
-            ? value('binding-value') === 'true'
-            : value('binding-value'),
-        event: o.tag === 'select' ? 'change' : 'input',
-      },
-    },
-  ]);
-});
 function fillAnimation(a: AnimationSpec) {
-  if(a.effect==='chart-state'&&!$<HTMLSelectElement>('effect').querySelector('option[value="chart-state"]'))$('effect').append(new Option('图表变化','chart-state'));
-  set('effect', a.effect);
+  for(const [id,value] of Object.entries(animationDraftFields(a)))set(id as AnimationField,value);
   showAnimationGroup(effectGroups.find(g=>g.effects.includes(a.effect))?.kind??'entrance');
-  if(!$<HTMLSelectElement>('animation-step').querySelector(`option[value="${a.step}"]`))$('animation-step').append(new Option(`${a.step} · 单击步骤`,String(a.step)));
-  set('animation-step', a.step);
-  set('duration', a.duration / 1000);
-  set('delay', a.delay / 1000);
-  set('trigger', a.trigger);
-  set('trigger-target', a.triggerTarget ?? '');
-  set('dx', a.dx);
-  set('dy', a.dy);
-  set('easing', a.easing);
-  set('animation-repeat',a.repeat ?? 1);
-  $<HTMLInputElement>('animation-reverse').checked = a.autoReverse ?? false;
-  set('effect-direction',a.effectDirection ?? 'left');
-  animationPath.set(a.path ?? [{x:0,y:0},{x:a.dx,y:a.dy}]);
-  set(
-    'keyframes',
-    JSON.stringify(
-      a.keyframes ?? [
-        { opacity: 0, offset: 0 },
-        { opacity: 1, offset: 1 },
-      ],
-      null,
-      2,
-    ),
-  );
+  animationDraft.reverse=a.autoReverse??false;
+  animationPath.set(a.path??[{x:0,y:0},{x:a.dx,y:a.dy}]);
 }
+
 function readAnimation(id: string) {
-  return {
-    id,
-    target: current().id,
-    effect: value('effect'),
-    ...(value('effect')==='chart-state'?{chartStateId:slide().animations.find(a=>a.id===id)?.chartStateId}:{}),
-    step: num('animation-step'),
-    duration: Math.round(num('duration') * 1000),
-    delay: Math.round(num('delay') * 1000),
-    trigger: value('trigger'),
-    ...(value('trigger') === 'object' ? { triggerTarget: value('trigger-target') } : {}),
-    dx: num('dx'),
-    dy: num('dy'),
-    easing: value('easing'),
-    repeat: num('animation-repeat'),
-    autoReverse: $<HTMLInputElement>('animation-reverse').checked,
-    effectDirection: value('effect-direction'),
-    ...(value('effect') === 'motion' ? {path:animationPath.get()} : {}),
-    ...(value('effect') === 'custom' ? { keyframes: JSON.parse(value('keyframes')) } : {}),
-  };
+ return animationDraft.read(id,current().id,animationPath.get(),slide().animations.find(a=>a.id===id)?.chartStateId);
 }
-$('effect').insertAdjacentHTML('beforeend', Object.entries({'disappear':'消失','zoom-out':'缩小退出','wipe-in':'擦除','wipe-out':'擦除退出','split-in':'劈裂','split-out':'闭合','float-in':'浮入','bounce-in':'弹跳','custom':'自定义效果'}).map(([value,label])=>`<option value="${value}">${label}</option>`).join(''));
-$('animation-settings').insertAdjacentHTML('beforeend', '<label>垂直位移<input id="dy" type="number" value="0"></label><label>缓动<select id="easing"><option value="ease-out">减速</option><option value="linear">线性</option><option value="ease">平滑</option><option value="ease-in">加速</option><option value="ease-in-out">加速后减速</option></select></label><details id="animation-custom" hidden><summary>自定义效果数据</summary><label>关键帧<textarea id="keyframes" rows="4">[{"opacity":0,"offset":0},{"opacity":1,"offset":1}]</textarea></label></details>');
-const effectSymbol:Record<string,string>={'draw-stroke':'✎','appear':'◈','fade-in':'◌','fly-in':'↘','zoom-in':'⤢','float-in':'↑','bounce-in':'↟','wipe-in':'▥','split-in':'◧','pulse':'✦','spin':'⟳','disappear':'◇','fade-out':'◌','fly-out':'↗','zoom-out':'⤡','wipe-out':'▥','split-out':'◨','motion':'↝'};
-$('animation-gallery').innerHTML = `<div class="animation-category-tabs" role="tablist" aria-label="动画效果分类">${effectGroups.map(g=>`<button role="tab" data-animation-category="${g.kind}" aria-selected="${g.kind==='entrance'}">${g.name}</button>`).join('')}</div>`+effectGroups.map(group=>`<section class="animation-effect-group ${group.kind}" ${group.kind==='entrance'?'':'hidden'}><div>${group.effects.map(effect=>`<button data-animation-effect="${effect}" title="${animationLabel('effect',effect)}"><span class="effect-symbol" aria-hidden="true">${effectSymbol[effect]}</span><span>${animationLabel('effect',effect)}</span></button>`).join('')}</div></section>`).join('');
-$('animation-gallery').insertAdjacentHTML('beforebegin','<label id="animation-sequence-field" hidden>多个对象<select id="animation-sequence"><option value="together">同时播放</option><option value="after">依次播放</option><option value="click">逐次单击</option></select></label>');
-$('animation-gallery').insertAdjacentHTML('afterbegin','<button id="clear-object-animations" title="移除所选对象的全部动画">无动画</button>');
-on('clear-object-animations',()=>commands(slide().animations.filter(a=>selected.has(a.target)).map(a=>({type:'animation.remove',slideId,id:a.id}))));
-for(const tab of document.querySelectorAll<HTMLButtonElement>('[data-animation-category]'))tab.onclick=()=>showAnimationGroup(tab.dataset.animationCategory!);
-for (const button of document.querySelectorAll<HTMLButtonElement>('[data-animation-effect]')) button.onclick=()=>void applyAnimationEffect(button.dataset.animationEffect!).catch(error);
-$('animation-settings').insertAdjacentHTML('beforeend','<label>效果方向<select id="effect-direction"><option value="left">从左侧</option><option value="right">从右侧</option><option value="up">从上方</option><option value="down">从下方</option></select></label><div class="field-grid"><label>重复次数<input id="animation-repeat" type="number" min="1" max="20" step="1" value="1"></label><label class="animation-check"><input id="animation-reverse" type="checkbox">自动反向</label></div><details id="animation-path" hidden></details>');
-const advancedAnimation=document.createElement('details');advancedAnimation.className='animation-advanced';advancedAnimation.innerHTML='<summary>更多效果选项</summary>';
-for(const id of ['easing','animation-repeat','animation-reverse']) {
- const label=$(id).closest<HTMLElement>('label')!;advancedAnimation.append(label);
-}
-$('animation-settings').append(advancedAnimation);
-$('effect').closest<HTMLElement>('label')!.hidden=true;
+
 let animationUpdate: Promise<unknown> = Promise.resolve();
-function saveAnimationFields(reflow=false) {
-  renderAnimationFields();
-  if (!editingAnimation) return;
-  if (!$<HTMLFieldSetElement>('animation-settings').checkValidity()) return;
+function saveAnimationFields(field:string,reflow=false) {
+  if (!animationSelection.selected) return;
   // An object trigger is incomplete until its target is chosen; saving it would be rejected and pause the sync journal.
   if (value('trigger') === 'object' && !value('trigger-target')) return;
   let animation: ReturnType<typeof readAnimation>;
-  try {animation=readAnimation(editingAnimation);} catch(e) {error(e);return;}
-  const targetSlide=slideId, id=editingAnimation;
+  try {animation=readAnimation(animationSelection.selected);} catch(e) {error(e);return;}
+  const targetDocument=editorSession.snapshot.document.id,targetSlide=editorSession.pageId, id=animationSelection.selected;
   animationUpdate=animationUpdate.catch(()=>{}).then(()=>{
-    const source=snapshot.document.slides.find(s=>s.id===targetSlide);
-    if(!source)return;
-    return commands(reflow&&!hasTeachingStructure(source)?animationOrderCommands(source,source.animations.map(a=>a.id===id?animation as AnimationSpec:a)):[{type:'animation.set',slideId:targetSlide,animation} as Command]);
-  }).then(()=>{if(slideId===targetSlide&&editingAnimation===id)return previewSingleAnimation();}).catch(error);
+    if(editorSession.snapshot.document.id!==targetDocument)throw Error('讲义已切换，动画修改未提交');
+    const source=editorSession.snapshot.document.slides.find(s=>s.id===targetSlide);
+    const current=source?.animations.find(a=>a.id===id);
+    if(!source||!current)throw Error('动画已删除，修改未提交');
+    const next=editAnimationField(current,animation,field);
+    return commands(reflow&&!hasTeachingStructure(source)?animationOrderCommands(source,source.animations.map(a=>a.id===id?next:a)):[{type:'animation.set',slideId:targetSlide,animation:next} as Command]);
+  }).then(()=>{if(editorSession.pageId===targetSlide&&animationSelection.selected===id)return previewSingleAnimation();}).catch(error);
 }
-const animationPath=createAnimationPath($('animation-path'),()=>saveAnimationFields());
+const animationPath=createAnimationPath(()=>saveAnimationFields('path'));
+canvasController.onDispose(()=>animationPath.dispose());
 animationPath.set([{x:0,y:0},{x:200,y:0}]);
-for (const field of $('animation-settings').querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>('input,select,textarea')) {
-  if(field.closest('#animation-path'))continue;
-  field.addEventListener('change',()=>{
-    if(!field.reportValidity())return;
-    if(field.id==='trigger') {
-      const index=slide().animations.findIndex(a=>a.id===editingAnimation),previous=slide().animations[index-1];
+function changeAnimationField(id:string){
+    if(id==='trigger') {
+      const index=slide().animations.findIndex(a=>a.id===animationSelection.selected),previous=slide().animations[index-1];
       if(previous && ['with-previous','after-previous'].includes(value('trigger')))set('animation-step',previous.step);
       else if(previous && value('trigger')==='click')set('animation-step',Math.min(500,previous.step+1));
     }
-    if(field.id==='effect-direction' && ['fly-in','fly-out','float-in'].includes(value('effect'))) {
+    if(id==='effect-direction' && ['fly-in','fly-out','float-in'].includes(value('effect'))) {
       const distance=Math.max(Math.abs(num('dx')),Math.abs(num('dy')),120),d=value('effect-direction');
       set('dx',d==='left'?-distance:d==='right'?distance:0);set('dy',d==='up'?-distance:d==='down'?distance:0);
     }
-    saveAnimationFields(field.id==='trigger');
-  });
+    saveAnimationFields(id,id==='trigger');
 }
-on('add-animation', () => applyAnimationEffect(value('effect')));
-on('save-animation', () => {if(editingAnimation)return commands([{type:'animation.set',slideId,animation:readAnimation(editingAnimation)}]);});
-on('new-animation', () => {
-  editingAnimation=undefined;
-  resetAnimationDraft();
-  renderAnimations();
-  $('animation-gallery').scrollIntoView({block:'nearest'});
-});
-$('animations').tabIndex=0;
-$('animations').addEventListener('keydown',event=>{
-  const row=(event.target as HTMLElement).closest<HTMLElement>('[data-cue-id]');
-  if(!row){if(['Delete','Backspace','ArrowUp','ArrowDown'].includes(event.key)||(event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='d'){event.preventDefault();event.stopPropagation();}return;}
-  let action:HTMLButtonElement|null=null;
-  if(event.key==='Delete'||event.key==='Backspace')action=row.querySelector('[data-remove-animation]');
-  else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='d')action=row.querySelector('[data-copy-animation]');
-  else if(['ArrowUp','ArrowDown'].includes(event.key)) {
-    if(event.altKey)action=row.querySelector(event.key==='ArrowUp'?'[data-up-animation]':'[data-down-animation]');
-    else action=(event.key==='ArrowUp'?row.previousElementSibling:row.nextElementSibling)?.querySelector<HTMLButtonElement>('.animation-object')??null;
-    event.preventDefault();event.stopPropagation();
-  }
-  if(action){event.preventDefault();event.stopPropagation();action.click();}
-});
-on('preview-selected-animation', () => previewSingleAnimation());
-on('stop-animation-preview', () => send('animation-preview-stop',{}));
-on('preview-animation', () => previewOverlay.open());
-on('interact', () => interacting ? mode(false) : previewOverlay.open());
-on('step-prev', () => setStep(step - 1));
-on('step-next', () => setStep(step + 1));
-$<HTMLInputElement>('step').oninput = () => setStep(num('step'), false);
-on('save-notes', () =>
-  commands([{ type: 'slide.update', slideId, patch: { notes: value('notes') } }]),
-);
-on('copy-slide', () => {
-  const id = uuid();
-  return commands([{ type: 'slide.duplicate', slideId, newId: id }], true, id);
-});
-on('delete-slide', () => {
-  const pages=normalPages(),at=pages.findIndex(s=>s.id===slideId),next=pages[at+1]??pages[at-1];
-  return commands([{ type: 'slide.delete', slideId }], true, next?.id);
-});
-on('up-slide',()=>moveNormalPage(slideId,Math.max(0,normalPages().findIndex(page=>page.id===slideId)-1)));
-on('down-slide',()=>moveNormalPage(slideId,Math.min(normalPages().length-1,normalPages().findIndex(page=>page.id===slideId)+1)));
-on('add-slide', () => {
+editorActions.seekStep=(next,animate=true)=>{if(editorSession.canvasReady)setStep(next,animate);};
+
+editorActions.copyPage = (pageId=editorSession.pageId) => {
+  const source=normalPages().find(page=>page.id===pageId);
+  if(!source)throw Error('页面已不存在');
+  const id=uuid(),notes=notesEditor.value(source.id);
+  const batch:Command[]=[{type:'slide.duplicate',slideId:source.id,newId:id}];
+  if(notes!==source.notes)batch.push({type:'slide.update',slideId:id,patch:{notes}});
+  return commands(batch,true,id).then(()=>id);
+};
+editorActions.deletePage = (pageId=editorSession.pageId) => {
+  const pages=normalPages(),at=pages.findIndex(s=>s.id===pageId),next=pages[at+1]??pages[at-1];
+  if(at<0)throw Error('页面已不存在');
+  if(pages.length<=1)return Promise.resolve(pageId);
+  return commands([{ type: 'slide.delete', slideId:pageId }], true, next?.id).then(()=>next?.id);
+};
+editorActions.previousPageOrder = ()=>moveNormalPage(editorSession.pageId,Math.max(0,normalPages().findIndex(page=>page.id===editorSession.pageId)-1));
+editorActions.nextPageOrder = ()=>moveNormalPage(editorSession.pageId,Math.min(normalPages().length-1,normalPages().findIndex(page=>page.id===editorSession.pageId)+1));
+editorActions.addPage = (pageId=editorSession.pageId) => {
+  if(!normalPages().some(page=>page.id===pageId))throw Error('页面已不存在');
   const id = uuid();
   return commands(
     [
       {
         type: 'slide.insert',
-        after: slideId,
+        after: pageId,
         slide: {
           id,
           name: '新页面',
@@ -2081,26 +1276,24 @@ on('add-slide', () => {
     ],
     true,
     id,
-  );
-});
+  ).then(()=>id);
+};
 let uploadAction:
-  | { kind: string; target?: string; poster?: boolean; documentId: string; slideId: string; point?: { x: number; y: number } }
+  | { kind: string; target?: string; before?: string; poster?: boolean; documentId: string; slideId: string; point?: { x: number; y: number } }
   | undefined;
 function chooseMedia(kind: string, target?: string, poster = false, point?: { x: number; y: number }) {
-  uploadAction = { kind, target, poster, documentId: snapshot.document.id, slideId, point };
-  $<HTMLInputElement>('media-file').accept = kind === 'image' ? 'image/*' : `${kind}/*`;
-  $('media-file').click();
+  uploadAction = { kind, target, before: target ? objects.find(object=>object.id===target)?.attributes[poster?'poster':'src']??'' : undefined, poster, documentId: editorSession.snapshot.document.id, slideId:editorSession.pageId, point };
+  requestMediaFile(kind);
 }
 async function uploadAsset(bytes: Uint8Array, mime: string) {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 8192)
-    binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-  return api('/api/assets', { data: btoa(binary), mime: mime || 'application/octet-stream' });
+  const data = await assetBase64(bytes);
+  assertWorkbenchOpen();
+  return api('/api/assets', { data, mime: mime || 'application/octet-stream' });
 }
 // KaTeX HTML output needs one stylesheet (fonts are inlined). Reuse the lecture's
 // own copy when the import brought one; otherwise store the bundled copy once.
 async function insertEquation(client?: { x: number; y: number }) {
-  const existing = Object.keys(snapshot.document.assets).find((p) => p.endsWith('lib/katex.min.css')),
+  const existing = Object.keys(editorSession.snapshot.document.assets).find((p) => p.endsWith('lib/katex.min.css')),
     path = existing ?? 'assets/lib/katex.min.css',
     href = '../'.repeat(slide().sourcePath.split('/').length - 1) + path.split('/').map(encodeURIComponent).join('/'),
     edits: unknown[] = [];
@@ -2109,7 +1302,7 @@ async function insertEquation(client?: { x: number; y: number }) {
     if (!response.ok) throw new Error('无法加载公式样式');
     edits.push({ type: 'asset.put', path, asset: await uploadAsset(new Uint8Array(await response.arrayBuffer()), 'text/css') });
   }
-  edits.push({ type: 'element.insert', slideId, html: placed(template('equation', DEFAULT_TEX, href), 'equation', client) });
+  edits.push({ type: 'element.insert', slideId:editorSession.pageId, html: placed(template('equation', DEFAULT_TEX, href), 'equation', client) });
   return commands(edits);
 }
 // New objects land in the middle of what the author is looking at, each one offset from
@@ -2125,22 +1318,25 @@ let insertRun = { slide: '', count: 0 };
 function documentPoint(client?: { x: number; y: number }) {
   const bounds = frame.getBoundingClientRect(),
     view = $('canvas-viewport').getBoundingClientRect(),
-    scale = bounds.width / snapshot.document.width || 1;
+    scale = bounds.width / editorSession.snapshot.document.width || 1;
   const at = client ?? {
     x: (Math.max(bounds.left, view.left) + Math.min(bounds.right, view.right)) / 2,
     y: (Math.max(bounds.top, view.top) + Math.min(bounds.bottom, view.bottom)) / 2,
   };
   return { x: (at.x - bounds.left) / scale, y: (at.y - bounds.top) / scale };
 }
-function placement(kind: string, client?: { x: number; y: number }) {
+function placement(kind: string, client?: { x: number; y: number }, dimensions?: [number, number]) {
   const { x, y } = documentPoint(client);
-  if (insertRun.slide !== slideId) insertRun = { slide: slideId, count: 0 };
+  if (insertRun.slide !== editorSession.pageId) insertRun = { slide: editorSession.pageId, count: 0 };
   const stagger = client ? 0 : (insertRun.count++ % 5) * 24;
-  const [w, h] = NOMINAL[kind] ?? NOMINAL[kind.split(':')[0]] ?? [220, 140];
+  const [w, h] = dimensions ?? NOMINAL[kind] ?? NOMINAL[kind.split(':')[0]] ?? [220, 140];
+  return mediaPosition(x,y,w,h,stagger);
+}
+function mediaPosition(x:number,y:number,w:number,h:number,stagger=0) {
   const clamp = (v: number, max: number) => Math.round(Math.max(0, Math.min(max - 40, v)));
   // New objects go on top of existing page content, as in PowerPoint and Figma; the
   // layer controls move them afterwards.
-  return `left:${clamp(x - w / 2 + stagger, snapshot.document.width)}px;top:${clamp(y - h / 2 + stagger, snapshot.document.height)}px;z-index:50;`;
+  return `left:${clamp(x - w / 2 + stagger, editorSession.snapshot.document.width)}px;top:${clamp(y - h / 2 + stagger, editorSession.snapshot.document.height)}px;z-index:50;`;
 }
 const placed = (html: string, kind: string, client?: { x: number; y: number }) =>
   html.replace('left:120px;top:160px;', placement(kind, client));
@@ -2152,74 +1348,35 @@ function insertObject(kind: string, value?: string, client?: { x: number; y: num
   }
   if (kind === 'equation') return insertEquation(client);
   if(kind==='chart')return echartsUI?.openGallery();
-  return commands([{ type: 'element.insert', slideId, html: placed(template(kind, value), kind, client) }]);
+  return commands([{ type: 'element.insert', slideId:editorSession.pageId, html: placed(template(kind, value), kind, client) }]);
 }
 // Dragging an entry onto the canvas drops the object where the pointer released. The
 // slide runs in an isolated frame, so a surface above it receives the drag, the same
 // way file drops are handled.
-const insertDrop = document.createElement('div');
-insertDrop.id = 'insert-drop-overlay';
-insertDrop.hidden = true;
-insertDrop.textContent = '松开以放置对象';
-$('canvas-viewport').append(insertDrop);
-function showInsertDrop(show: boolean) {
-  if (!show) { insertDrop.hidden = true; return; }
-  const bounds = $('canvas-viewport').getBoundingClientRect();
-  Object.assign(insertDrop.style, { left: `${bounds.left}px`, top: `${bounds.top}px`, width: `${bounds.width}px`, height: `${bounds.height}px` });
-  insertDrop.hidden = false;
-}
-for (const button of document.querySelectorAll<HTMLButtonElement>('[data-insert]')) {
-  button.addEventListener('click', () => Promise.resolve().then(() => insertObject(button.dataset.insert!, button.dataset.symbol)).catch(error));
-  button.draggable = true;
-  button.addEventListener('dragstart', (event) => {
-    event.dataTransfer?.setData('application/x-notale-insert', JSON.stringify({ kind: button.dataset.insert, value: button.dataset.symbol }));
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
-    showInsertDrop(true);
-  });
-  button.addEventListener('dragend', () => showInsertDrop(false));
-}
-insertDrop.addEventListener('dragover', (event) => {
-  event.preventDefault();
-  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
-});
-insertDrop.addEventListener('dragleave', () => showInsertDrop(false));
-insertDrop.addEventListener('drop', (event) => {
-  event.preventDefault();
-  showInsertDrop(false);
-  const raw = event.dataTransfer?.getData('application/x-notale-insert');
-  if (!raw) return;
-  const { kind, value } = JSON.parse(raw) as { kind: string; value?: string };
-  const { clientX: x, clientY: y } = event;
-  void Promise.resolve().then(() => insertObject(kind, value, { x, y })).catch(error);
-});
-$<HTMLInputElement>('media-file').onchange = () =>
-  void (async () => {
-    const input = $<HTMLInputElement>('media-file'),
-      file = input.files?.[0],
-      action = uploadAction;
-    input.value = '';
-    uploadAction = undefined;
-    if (!file || !action) return;
-    if (action.documentId !== snapshot.document.id || action.slideId !== slideId)
-      throw new Error('页面已切换，请重新选择媒体');
-    if (file.type && !file.type.startsWith(action.kind + '/'))
-      throw new Error('文件类型与所选媒体类型不符');
-    if(!action.target&&(file.type==='image/svg+xml'||file.name.toLowerCase().endsWith('.svg'))){await commands([{type:'svg.import',slideId,html:prepareSvgImport(await file.text())}]);return;}
-    const asset = await uploadAsset(new Uint8Array(await file.arrayBuffer()), file.type),
-      path = `media/${uuid()}/${file.name.replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'media.bin'}`,
-      src = '../'.repeat(slide().sourcePath.split('/').length - 1) + path.split('/').map(encodeURIComponent).join('/');
+const insertionDrop=bindInsertionDrop({scope:()=>JSON.stringify([editorSession.getSnapshot().document?.document.id,editorSession.pageId]),bounds:()=>$('canvas-viewport').getBoundingClientRect(),insert:async(kind,value,point)=>insertObject(kind,value,point),error});
+const insertActions=bindInsertActions({insert:async(kind,value)=>insertObject(kind,value),drag:insertionDrop.show,error});
+canvasController.onDispose(()=>{insertActions.dispose();insertionDrop.dispose();});
+editorActions.importMedia=async file=>{
+    const action=uploadAction;
+    uploadAction=undefined;
+    if(!action)return;
+    const assertSource=()=>{assertWorkbenchOpen();if(action.documentId!==editorSession.snapshot.document.id||action.slideId!==editorSession.pageId)throw Error('页面已切换，请重新选择媒体');if(action.target){const object=objects.find(object=>object.id===action.target);if(!object||object.locked)throw Error('媒体对象不存在或已锁定，请重新选择');if((object.attributes[action.poster?'poster':'src']??'')!==action.before)throw Error('目标媒体已变化，未覆盖新的内容，请重新选择文件');}};
+    assertSource();
+    if(file.type&&!file.type.startsWith(action.kind+'/'))throw Error('文件类型与所选媒体类型不符');
+    if(!action.target&&(file.type==='image/svg+xml'||file.name.toLowerCase().endsWith('.svg'))){
+      const source=await file.text();assertSource();
+      await commands([{type:'svg.import',slideId:action.slideId,html:prepareSvgImport(source,120,160,(w,h)=>placement('image',action.point,[w,h]))}]);return;
+    }
+    const bytes=new Uint8Array(await file.arrayBuffer());assertSource();
+    const asset=await uploadAsset(bytes,file.type);assertSource();
+    const path=`media/${uuid()}/${file.name.replace(/[^\p{L}\p{N}._ -]/gu,'_').slice(0,120)||'media.bin'}`;
+    const src='../'.repeat(slide().sourcePath.split('/').length-1)+path.split('/').map(encodeURIComponent).join('/');
     await commands([
-      { type: 'asset.put', path, asset },
-      action.target
-        ? {
-            type: 'media.update',
-            slideId,
-            target: action.target,
-            patch: action.poster ? { poster: src } : { src },
-          }
-        : { type: 'element.insert', slideId, html: placed(template(action.kind, src), action.kind, action.point) },
+      {type:'asset.put',path,asset},
+      action.target?{type:'media.update',slideId:action.slideId,target:action.target,patch:action.poster?{poster:src}:{src}}
+        :{type:'element.insert',slideId:action.slideId,html:placed(template(action.kind,src),action.kind,action.point)},
     ]);
-  })().catch(error);
+};
 async function restore(
   version: number,
   after: HistoryPlan = { undo: [...undo], redo: [] },
@@ -2231,11 +1388,11 @@ async function restore(
   await geometrySession.submit({
     kind: 'restore',
     inverseVersion:historyAction?version:undefined,historyAction,
-    documentId: snapshot.document.id,
-    request: { version, baseVersion: snapshot.version, mutationId: uuid() },
+    documentId: editorSession.snapshot.document.id,
+    request: { version, baseVersion: editorSession.snapshot.version, mutationId: uuid() },
     after,
-    slideId,
-    selection: [...selected],
+    slideId:editorSession.pageId,
+    selection: [...editorSession.selection],
   });
 }
 function confirmLocalTextHistory(){if(textSession?.sequence!==undefined){const node=new DOMParser().parseFromString(slide().html,'text/html').querySelector('[data-notale-id="'+CSS.escape(textSession.target)+'"]');if(node)send('text-confirm',{...textSession,html:node.innerHTML});}}
@@ -2255,214 +1412,120 @@ async function redoEdit() {
   if (!redo.length) return;
   await restore(redo.at(-1)!, { undo: [...undo], redo: redo.slice(0, -1) },'redo');
 }
-on('undo', undoEdit);
-on('redo', redoEdit);
+editorActions.undo=undoEdit;
+editorActions.redo=redoEdit;
 
 let previewSlides: { id: string; url: string }[] = [];
 // PDF goes through the browser's own print pipeline: one page per slide at the deck's
 // size, printed from a plain sheet of frames. PowerPoint's export is a single file with
 // one slide per page; the print dialog's "Save as PDF" produces the same thing without
 // putting a headless browser in the backend.
-on('export-pdf', async () => {
-  await flushAuthor();
-  const pages = snapshot.document.slides.filter((s) => !s.hidden);
-  const frames = pages.map((page) => previewSlides.find((preview) => preview.id === page.id)?.url).filter((url): url is string => !!url);
+async function printDocument(){
+  const documentId=editorSession.snapshot.document.id;
+  const sheet=window.open('', '_blank');
+  if(!sheet)throw Error('请允许打开新窗口以导出 PDF');
+  let lease:ReturnType<typeof trackPreviewLease>|undefined;const timers=new Set<ReturnType<typeof setTimeout>>();
+  const wait=(duration:number)=>new Promise<void>(resolve=>{const timer=setTimeout(()=>{timers.delete(timer);resolve();},duration);timers.add(timer);});
+  try{
+  await flushDocument();
+  if(workbenchEvents.signal.aborted||editorSession.snapshot.document.id!==documentId)throw Error('讲义已切换，请重新导出');
+  const exported=editorSession.snapshot;
+  const preview=await canvasResources.getPreview(documentId,exported.version);
+  if(workbenchEvents.signal.aborted||sheet.closed)throw Error('导出窗口或编辑会话已关闭');
+  lease=trackPreviewLease(documentId,preview);
+  const pages = exported.document.slides.filter((s) => !s.hidden&&!s.layoutSourceId);
+  const frames = pages.map((page) => preview.slides.find((preview) => preview.id === page.id)?.url).filter((url): url is string => !!url);
   if (frames.length !== pages.length) throw new Error('请等待页面预览就绪后再导出 PDF');
-  const sheet = window.open('', '_blank');
-  if (!sheet) throw new Error('请允许打开新窗口以导出 PDF');
-  const { width, height } = snapshot.document;
+  const { width, height } = exported.document;
   sheet.document.write(
-    `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>${esc(snapshot.document.title)}</title><style>@page{size:${width}px ${height}px;margin:0}html,body{margin:0;padding:0;background:#fff}.print-page{width:${width}px;height:${height}px;overflow:hidden;break-after:page}.print-page:last-child{break-after:auto}iframe{width:${width}px;height:${height}px;border:0;display:block}#print-hint{position:fixed;inset:auto 16px 16px auto;padding:10px 14px;border-radius:8px;background:#263449;color:#fff;font:14px system-ui}</style></head><body><div id="print-hint">正在准备 ${frames.length} 页…</div>${frames
+    `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>${esc(exported.document.title)}</title><style>@page{size:${width}px ${height}px;margin:0}html,body{margin:0;padding:0;background:#fff}.print-page{width:${width}px;height:${height}px;overflow:hidden;break-after:page}.print-page:last-child{break-after:auto}iframe{width:${width}px;height:${height}px;border:0;display:block}#print-hint{position:fixed;inset:auto 16px 16px auto;padding:10px 14px;border-radius:8px;background:#263449;color:#fff;font:14px system-ui}</style></head><body><div id="print-hint">正在准备 ${frames.length} 页…</div>${frames
       .map((url) => `<div class="print-page"><iframe src="${esc(url)}" title="讲义页面"></iframe></div>`)
       .join('')}</body></html>`,
   );
   sheet.document.close();
-  const loaded = [...sheet.document.querySelectorAll('iframe')].map(
-    (node) => new Promise<void>((resolve) => node.addEventListener('load', () => resolve(), { once: true })),
-  );
-  await Promise.race([Promise.all(loaded), new Promise((resolve) => sheet.setTimeout(resolve, 20000))]);
-  await new Promise((resolve) => sheet.setTimeout(resolve, 600));
+  await waitForPrintPages(sheet,[...sheet.document.querySelectorAll('iframe')].map((frame,index)=>({frame,slideId:pages[index].id})),preview.channel,workbenchEvents.signal);
+  await wait(600);
   sheet.document.getElementById('print-hint')?.remove();
   sheet.focus();
+  if(workbenchEvents.signal.aborted||sheet.closed)throw Error('导出窗口或编辑会话已关闭');
   sheet.print();
-});
-on('export', async () => {
-  await flushAuthor();
-  location.href = `/api/documents/${snapshot.document.id}/export?version=${snapshot.version}`;
-});
-$<HTMLInputElement>('import').onchange = () =>
-  void (async () => {
-    const file = $<HTMLInputElement>('import').files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    const data = await new Promise<string>((resolve, reject) => {
-      reader.onload = () => resolve(String(reader.result).split(',')[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-    const result = await api('/api/import', { data });
-    await init(result.document.id);
-  })().catch(error);
-// PPTX import creates a new lecture rather than merging into the open one, so the
-// original file and the current work are both left intact.
-$<HTMLInputElement>('import-pptx').onchange = () =>
-  void (async () => {
-    const input = $<HTMLInputElement>('import-pptx'), file = input.files?.[0];
-    input.value = '';
-    if (!file) return;
-    setSaveStatus(PHASES.importing);
-    const deck = parsePptx(new Uint8Array(await file.arrayBuffer()));
-    if (!deck.slides.length) throw new Error('这份 PPTX 里没有可导入的页面');
-    const id = uuid();
-    const assets: Record<string, unknown> = {};
-    const slides = [];
-    for (const [index, page] of deck.slides.entries()) {
-      const sourcePath = `page-${String(index + 1).padStart(2, '0')}.html`;
-      let html = page.html;
-      for (const item of page.media) {
-        const asset = await uploadAsset(item.bytes, item.mime);
-        assets[item.path] = asset;
-        html = html.replaceAll(item.path, item.path.split('/').map(encodeURIComponent).join('/'));
-      }
-      slides.push({ id: uuid(), name: page.name, sourcePath, html });
-    }
-    const created = await api('/api/documents', {
-      schemaVersion: 1,
-      id,
-      title: file.name.replace(/\.pptx$/i, '') || '导入的演示文稿',
-      width: deck.width,
-      height: deck.height,
-      slides,
-      assets,
-    });
-    await init(created.document?.id ?? id);
-    if (deck.skipped)
-      $('toast').textContent = `导入完成，跳过 ${deck.skipped} 个无法读取的元素（表格、图表、艺术效果等）。`;
-  })().catch(error);
-on('overview', () => document.body.classList.toggle('overview-mode'));
-async function show(speaker = false) {
+  }catch(cause){sheet.close();throw cause;}finally{lease?.stop();for(const timer of timers)clearTimeout(timer);}
+}
+const documentIO=bindDocumentIO({documentId:()=>editorSession.getSnapshot().document?.document.id??'',importFile:(file,kind,active)=>importDocument(file,kind,{api,upload:uploadAsset,active}),open:id=>init(id),notice:message=>notices.show(message),exportFile:async kind=>{
+ if(kind==='pdf')return printDocument();
+ const documentId=editorSession.snapshot.document.id;await flushDocument();
+ if(workbenchEvents.signal.aborted||editorSession.snapshot.document.id!==documentId)throw Error('讲义已切换，请重新导出');
+ location.href=`/api/documents/${documentId}/export?version=${editorSession.snapshot.version}`;
+}});
+canvasController.onDispose(()=>documentIO.dispose());
+async function show(speaker = false,fromBeginning=false) {
+  const documentId=editorSession.snapshot.document.id;
+  const slideId=fromBeginning?normalPages()[0]?.id:editorSession.pageId;
   const viewer=window.open('about:blank','_blank');
-  try{await flushAuthor();const url=`/show.html?document=${snapshot.document.id}&version=${snapshot.version}&slide=${slideId}${speaker?'&speaker=1':''}`;if(viewer)viewer.location.href=url;else throw Error('请允许打开讲授窗口');}catch(e){viewer?.close();throw e;}
-}
-on('present', () => show());
-on('speaker', () => show(true));
-type QueuedEdit = {
-  action: EditAction;
-  documentId: string;
-  slideId: string;
-  ids: string[];
-  focusCanvas: boolean;
-};
-const editQueue: QueuedEdit[] = [];
-let editTimer: ReturnType<typeof setTimeout> | undefined,
-  editingKeys = false;
-const editWaiters = new Set<() => void>();
-function whenEditsIdle(): Promise<void> {
-  return editingKeys || editQueue.length
-    ? new Promise((resolve) => editWaiters.add(resolve))
-    : Promise.resolve();
-}
-function enqueueEdit(action: EditAction, focusCanvas = false) {
-  if (
-    !snapshot ||
-    interacting ||
-    !action ||
-    ![
-      'nudge',
-      'group','ungroup','front','back','forward','backward',
-      'copy',
-      'cut',
-      'paste',
-      'duplicate',
-      'delete',
-      'undo',
-      'redo',
-      'clear',
-      'select-all',
-      'save',
-    ].includes(action.type)
-  )
-    return;
-  if (
-    action.type === 'nudge' &&
-    (!Number.isFinite(action.dx) ||
-      !Number.isFinite(action.dy) ||
-      Math.abs(action.dx) > 10 ||
-      Math.abs(action.dy) > 10)
-  )
-    return;
-  const item = {
-    action,
-    documentId: snapshot.document.id,
-    slideId,
-    ids: [...selected],
-    focusCanvas,
-  };
-  const last = editQueue.at(-1);
-  if (
-    last?.action.type === 'nudge' &&
-    action.type === 'nudge' &&
-    last.documentId === item.documentId &&
-    last.slideId === slideId &&
-    JSON.stringify(last.ids) === JSON.stringify(item.ids)
-  ) {
-    last.action.dx += action.dx;
-    last.action.dy += action.dy;
-  } else editQueue.push(item);
-  clearTimeout(editTimer);
-  editTimer = setTimeout(() => void drainEdits(), action.type === 'nudge' ? 100 : 0);
-}
-async function drainEdits() {
-  if (editingKeys) return;
-  editingKeys = true;
   try {
-    while (editQueue.length) {
-      await textIngress.flush();
-      await whenReady();
-      const item = editQueue.shift()!;
-      if (item.documentId !== snapshot.document.id || item.slideId !== slideId)
+    if(!viewer)throw Error('请允许打开讲授窗口');
+    await flushDocument();
+    assertWorkbenchOpen();
+    if(viewer.closed)return;
+    if(editorSession.snapshot.document.id!==documentId)throw Error('讲义已切换，请重新开始放映');
+    if(!slideId||!editorSession.snapshot.document.slides.some(page=>page.id===slideId))throw Error('放映起始页已被删除，请重新选择页面');
+    const query=new URLSearchParams({document:documentId,version:String(editorSession.snapshot.version),slide:slideId});
+    if(speaker)query.set('speaker','1');
+    viewer.location.href=`/present?${query}`;
+  } catch(cause) {viewer?.close();throw cause;}
+}
+
+editorActions.present=show;
+const notesEditor=bindNotesEditor({snapshot:()=>editorSession.getSnapshot().document,pageId:()=>editorSession.pageId,subscribe:editorSession.subscribe,commands,canAutosave:()=>!textSession,present:()=>show(true)});
+canvasController.onDispose(()=>notesEditor.dispose());
+editorActions.keyboardRecoveries=()=>geometrySession.keyboardRecoveries();
+editorActions.dismissKeyboardRecovery=id=>geometrySession.dismissKeyboard(id);
+editorActions.inspectKeyboardRecovery=async record=>{
+ if(editorSession.snapshot.document.id!==record.intent.documentId)await load(record.intent.documentId);
+ await showPage(record.intent.slideId);assertWorkbenchOpen();
+ changeSelection(record.intent.ids.filter(id=>objects.some(object=>object.id===id)));renderObjects();renderSelection();
+ editorSession.update({documentDialog:undefined});
+};
+const keyboardQueue=new KeyboardQueue({
+ retain:records=>geometrySession.retainKeyboard(records),
+ prepare:async()=>{await textIngress.flush();await whenReady();},
+ execute:executeKeyboardIntent,
+ error:cause=>{error(cause);if(!pending)mark();},
+},workbenchEvents.signal);
+function whenEditsIdle(){return keyboardQueue.whenIdle();}
+function enqueueEdit(action:EditAction,focusCanvas=false){
+ if(!editorSession.snapshot||!action)return;
+ keyboardQueue.enqueue({action,documentId:editorSession.snapshot.document.id,slideId:editorSession.pageId,ids:[...editorSession.selection],focusCanvas});
+}
+async function executeKeyboardIntent(item:KeyboardIntent,effectsComplete:(selection?:readonly string[])=>void):Promise<readonly string[]|undefined>{
+      assertWorkbenchOpen();
+      if (item.documentId !== editorSession.snapshot.document.id || item.slideId !== editorSession.pageId)
         throw new Error('页面已切换，未执行剩余快捷键操作');
       const action = item.action;
       if (['nudge', 'copy', 'cut', 'delete', 'duplicate','group','ungroup','front','back','forward','backward'].includes(action.type)) {
         changeSelection(item.ids);
         renderObjects();
         renderSelection();
-        if (!selected.size) continue;
+        if (!editorSession.selection.size) return;
       }
       if (['nudge', 'delete', 'cut','group','ungroup','front','back','forward','backward'].includes(action.type)) {
-        const byId = new Map(objects.map((o) => [o.id, o]));
-        const ancestor = (parent: string, child: string) => {
-          const seen = new Set<string>();
-          let next = byId.get(child)?.parent;
-          while (next && !seen.has(next)) {
-            if (next === parent) return true;
-            seen.add(next);
-            next = byId.get(next)?.parent;
-          }
-          return false;
-        };
-        if (
-          objects.some(
-            (o) =>
-              o.locked &&
-              [...selected].some((id) => id === o.id || ancestor(o.id, id) || ancestor(id, o.id)),
-          )
-        )
-          throw new Error('选区含锁定对象，请先解锁');
+        assertSelectionEditable([...editorSession.selection],objects);
       }
       if (action.type === 'nudge') {
-        if (!action.dx && !action.dy) continue;
+        if (!action.dx && !action.dy) return;
         const captured = await captureSelection();
+        assertWorkbenchOpen();
+        if(item.documentId!==editorSession.snapshot.document.id||item.slideId!==editorSession.pageId)throw Error('页面已切换，请重新移动对象');
         if (!captured.rectangles.length) {
           connectorGeometryNotice();
-          continue;
+          return;
         }
         if (captured.rectangles.some((r) => !r.geometry))
           throw new Error('该对象的坐标变换暂不支持键盘微调');
         await commands([
           {
             type: 'elements.arrange',
-            slideId,
+            slideId:editorSession.pageId,
             action: 'translate',
             rectangles: captured.rectangles,
             dx: action.dx,
@@ -2470,7 +1533,7 @@ async function drainEdits() {
           },
         ]);
       } else if(action.type==='group'){
-        if(selected.size>=2)await groupSelection();
+        if(editorSession.selection.size>=2)await groupSelection();
       } else if(action.type==='ungroup')await ungroupSelection();
       else if(action.type==='front'||action.type==='back'||action.type==='forward'||action.type==='backward')await changeLayer(action.type);
       else if (action.type === 'copy' || action.type === 'cut') await copySelection(action.type);
@@ -2479,9 +1542,7 @@ async function drainEdits() {
         await copySelection('copy');
         await pasteSelection();
       } else if (action.type === 'delete')
-        await commands(
-          [...selected].map((target) => ({ type: 'element.delete', slideId, target })),
-        );
+        await commands(deleteSelectionCommands(item.slideId,item.ids,objects));
       else if (action.type === 'undo') await undoEdit();
       else if (action.type === 'redo') await redoEdit();
       else if (action.type === 'save') mark();
@@ -2499,30 +1560,14 @@ async function drainEdits() {
         );
         renderObjects();
         renderSelection();
-        if (action.type === 'clear') document.body.classList.remove('overview-mode');
       }
-      for (const queued of editQueue)
-        if (
-          queued.documentId === item.documentId &&
-          queued.slideId === item.slideId &&
-          JSON.stringify(queued.ids) === JSON.stringify(item.ids)
-        )
-          queued.ids = [...selected];
+      effectsComplete([...editorSession.selection]);
       if (item.focusCanvas) {
         await whenReady();
         frame.focus();
         send('focus', {});
       }
-    }
-  } catch (e) {
-    editQueue.length = 0;
-    error(e);
-    if (!pending) mark();
-  } finally {
-    editingKeys = false;
-    for (const done of editWaiters) done();
-    editWaiters.clear();
-  }
+      return [...editorSession.selection];
 }
 // A surface with a text cursor keeps the browser's own undo. Colour swatches, sliders,
 // spinners and menus carry no text history, so Ctrl+Z with one of them focused must undo
@@ -2532,143 +1577,58 @@ const TEXT_ENTRY = new Set(['text', 'search', 'url', 'email', 'tel', 'password',
 function keepsNativeUndo(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable || target.tagName === 'TEXTAREA') return true;
-  return target instanceof HTMLInputElement && TEXT_ENTRY.has(target.type);
+  return target instanceof HTMLInputElement && !target.hasAttribute('data-editor-number') && TEXT_ENTRY.has(target.type);
 }
 document.addEventListener('keydown', (e) => {
+  if(e.defaultPrevented)return;
   if((e.target as Element)?.closest?.('#chart-data-dock')){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();void(e.shiftKey?redoEdit():undoEdit()).catch(error);}return;}
   const action = editShortcut(e);
   if (!action) return;
+  if((e.target as Element)?.closest?.('#animations')&&!['undo','redo'].includes(action.type))return;
   const inField =
     e.target instanceof HTMLElement &&
     (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName));
   if (inField && (!['undo', 'redo'].includes(action.type) || keepsNativeUndo(e.target))) return;
   if (action.type === 'paste' && !clipboard) return; // Native files when no internal object clipboard is active.
-  if (!interacting) {
-    e.preventDefault();
-    enqueueEdit(action);
-  }
-});
+  e.preventDefault();
+  enqueueEdit(action);
+}, {signal:workbenchEvents.signal});
 
-const vectorIngress=createVectorIngress(geometrySession,()=>snapshot.document.id,()=>snapshot.version,error);
+const vectorIngress=createVectorIngress(geometrySession,()=>editorSession.snapshot.document.id,()=>editorSession.snapshot.version,error);
 
 async function init(id?: string) {
+  assertWorkbenchOpen();
   const chosen = id ?? new URLSearchParams(location.search).get('document');
   const populate = (docs: {id:string;title:string}[]) => {
+    if(workbenchEvents.signal.aborted)return;
     // Preserve a document opened or created while the catalogue was loading.
-    const current = snapshot?.document;
+    const current = editorSession.snapshot?.document;
     if(current && !docs.some(d=>d.id===current.id))docs=[current,...docs];
-    $('documents').innerHTML = docs.map(d=>`<option value="${d.id}">${esc(d.title)}</option>`).join('');
-    if(current)set('documents',current.id);
+    editorSession.update({documents:docs,catalogueNotice:''});
   };
   if(chosen){
     // The catalogue is auxiliary; it must never delay opening an explicit document.
     await load(chosen);
+    assertWorkbenchOpen();
     void api('/api/documents').then(populate).catch(()=>{
-      $('documents').title='讲义列表暂时不可用，当前讲义可继续编辑';
+      if(workbenchEvents.signal.aborted)return;
+      editorSession.update({catalogueNotice:'讲义列表暂时不可用，当前讲义可继续编辑'});
     });
     return;
   }
   const docs = await api('/api/documents');
+  assertWorkbenchOpen();
   populate(docs);
   if (!docs[0]?.id) {
-    $('empty').textContent = '尚无讲义。请使用导入脚本导入 HTML slides，或导入已有工程包。';
+    editorSession.update({emptyMessage:'尚无讲义。请导入 Notale 或 PowerPoint 文件。'});
     setSaveStatus(PHASES.waitingImport);
     return;
   }
   await load(docs[0].id);
 }
-$<HTMLSelectElement>('documents').onchange = () =>
-  void load(value('documents')).catch((e) => {
-    set('documents', snapshot.document.id);
-    error(e);
-  });
-$('save-status').insertAdjacentHTML(
-  'afterend',
-  '<button id="retry-save" hidden>立即同步</button><button id="reload-head" hidden>保留草稿并重载</button><button id="export-draft" hidden>导出草稿</button>',
-);
-$('save-status').insertAdjacentHTML(
-  'afterend',
-  '<details id="recovery-panel" hidden><summary>待恢复修改</summary><div id="recovery-list"></div></details>',
-);
-let recoveryGeneration=0;
-async function refreshRecoveries() {
-  const generation=++recoveryGeneration;
-  const panel = $('recovery-panel');
-  if (!panel) return;
-  try {
-    const records=await geometrySession.retained();if(generation!==recoveryGeneration)return;
-    const retained=new Set(records.map(e=>e.id));const legacy=journal.list();
-    const entries=legacy.entries.filter(e=>!retained.has(e.entry.task.request.mutationId));const invalid=legacy.invalid;
-    const recovery=records.filter(e=>e.state==='recovery');
-    panel.hidden = entries.length + invalid.length + recovery.length === 0;
-    panel.querySelector('summary')!.textContent =
-      `待恢复修改（${entries.length + invalid.length + recovery.length}）`;
-    const list = $('recovery-list');
-    list.replaceChildren();
-    for(const entry of recovery){
-      const row=document.createElement('div');row.className='recovery-row';const label=document.createElement('p');label.textContent='已保留草稿 · '+(entry.error??'等待恢复');
-      const download=document.createElement('button');download.textContent='导出完整草稿';download.onclick=()=>downloadRecovery(JSON.stringify({schema:'notale-sync-v1',operations:records.filter(e=>e.documentId===entry.documentId)},null,2));
-      const recover=document.createElement('button');recover.textContent='打开恢复副本';recover.onclick=()=>{void (async()=>{const source=entry.edit?.sourceVersion??entry.task?.request.baseVersion??entry.draftTask?.request.baseVersion;if(!source)throw Error('请先导出草稿以保留操作');const edits=records.filter(e=>e.documentId===entry.documentId&&e.state==='recovery');const commands=edits.flatMap(e=>e.edit?.commands??(e.task?.kind!=='restore'?e.task?.request.commands??(e.draftTask?.kind!=="restore"?e.draftTask?.request.commands??[]:[]):[]));const history=entry.task??entry.draftTask;const operation=history?.inverseVersion?{commands:[],inverseVersion:history.inverseVersion}:history?.kind==='restore'?{commands:[],restoreVersion:history.request.version}:{commands};const copy=await api(`/api/documents/${entry.documentId}/sync-recovery`,{baseVersion:source,mutationId:entry.id,...operation});window.open(`/?document=${copy.document.id}`,'_blank','noopener');})().catch(error);};row.append(label,recover,download);list.append(row);
-    }
-    for (const { key, entry } of entries) {
-      const row = document.createElement('div');
-      row.className = 'recovery-row';
-      row.dataset.recovery = key;
-      const label = document.createElement('p');
-      label.textContent = `${entry.title} · ${entry.task.kind === 'restore' ? '恢复版本' : '编辑修改'} · v${entry.task.request.baseVersion} · ${new Date(entry.createdAt).toLocaleString()}`;
-      row.append(label);
-      const use = document.createElement('button');
-      const own = pending && pendingRecordKey(pending) === key;
-      use.textContent = own ? '当前待确认修改' : '继续恢复';
-      use.disabled = !!own || busy || !!pending;
-      use.dataset.recover = key;
-      use.onclick = () =>
-        void Promise.resolve()
-          .then(async () => {
-            if (busy || pending) throw new Error('请先处理当前待确认修改');
-            const selected = journal.adopt(key);
-            await load(selected.task.documentId);
-          })
-          .catch(error);
-      const download = document.createElement('button');
-      download.textContent = '导出修改';
-      download.dataset.exportRecovery = key;
-      download.onclick = () => downloadRecovery(JSON.stringify(entry, null, 2));
-      row.append(use, download);
-      list.append(row);
-    }
-    for (const item of invalid) {
-      const row = document.createElement('div');
-      row.className = 'recovery-row';
-      const label = document.createElement('p');
-      label.textContent = '恢复记录无法读取，原始数据仍保留在本机';
-      const download = document.createElement('button');
-      download.textContent = '导出原始记录';
-      download.onclick = () => downloadRecovery(item.raw);
-      row.append(label, download);
-      list.append(row);
-    }
-  } catch (e) {
-    error(e);
-  }
-}
-$('restore').insertAdjacentHTML(
-  'afterend',
-  '<label class="button">导入待恢复修改<input id="import-recovery" type="file" accept=".json,application/json" hidden></label>',
-);
-$<HTMLInputElement>('import-recovery').onchange = () =>
-  void Promise.resolve()
-    .then(async () => {
-      const input = $<HTMLInputElement>('import-recovery'),
-        file = input.files?.[0];
-      input.value = '';
-      if (!file) return;
-      if (file.size > 50 * 1024 * 1024) throw new Error('恢复文件超过当前 50 MB 读取上限');
-      const raw=await file.text();if(JSON.parse(raw).schema==='notale-sync-v1')await geometrySession.importDraft(raw);else journal.importFile(raw);
-      refreshRecoveries();
-      ($('recovery-panel') as HTMLDetailsElement).open = true;
-    })
-    .catch(error);
+editorActions.loadDocument=load;
+let recoveryController:ReturnType<typeof bindRecovery>|undefined;
+async function refreshRecoveries(){await recoveryController?.refresh();}
 function downloadRecovery(raw: string) {
   const url = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
   const link = document.createElement('a');
@@ -2677,308 +1637,48 @@ function downloadRecovery(raw: string) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-document
-  .querySelector('[data-panel="format"]')!
-  .insertAdjacentHTML(
-    'beforeend',
-    `<fieldset id="media-panel" hidden><legend>媒体</legend><div class="inline"><button id="replace-media">替换文件</button><button id="replace-poster">替换视频封面</button></div><label>图片说明<input id="media-alt"></label><label>取景<select id="media-fit"><option value="contain">完整适应</option><option value="cover">裁切填充</option><option value="fill">拉伸</option><option value="none">原始尺寸</option><option value="scale-down">仅缩小</option></select></label><div class="field-grid"><label>水平焦点 %<input id="media-x" type="number" min="0" max="100" value="50"></label><label>垂直焦点 %<input id="media-y" type="number" min="0" max="100" value="50"></label>${['top', 'right', 'bottom', 'left'].map((key, i) => `<label>裁去${['上', '右', '下', '左'][i]}边 %<input id="crop-${key}" type="number" min="0" max="99" value="0"></label>`).join('')}</div><div id="media-playback"><div class="field-grid"><label>开始秒<input id="media-start" type="number" min="0" step=".1"></label><label>结束秒（空=片尾）<input id="media-end" type="number" min="0" step=".1"></label><label>音量<input id="media-volume" type="number" min="0" max="1" step=".1"></label><label>速度<input id="media-rate" type="number" min=".25" max="4" step=".25"></label><label>开始步骤（空=手动）<input id="media-step" type="number" min="0"></label></div><label><input id="media-muted" type="checkbox">静音</label><label><input id="media-loop" type="checkbox">循环选定区间</label><label><input id="media-controls" type="checkbox">显示播放控件</label></div><button id="save-media">保存媒体设置</button><p id="media-notice" role="status"></p></fieldset>`,
-  );
-function fillMedia(o: ObjectInfo) {
-  const m = mediaSettingsSchema.parse(
-    o.attributes['data-notale-media']
-      ? JSON.parse(o.attributes['data-notale-media'])
-      : {
-          fit: o.style['object-fit'] ?? 'contain',
-          controls: o.tag === 'img' || o.attributes.controls !== undefined,
-          muted: o.attributes.muted !== undefined,
-          loop: o.attributes.loop !== undefined,
-        },
-  );
-  set('media-alt', o.attributes.alt ?? '');
-  set('media-fit', m.fit);
-  set('media-x', m.positionX);
-  set('media-y', m.positionY);
-  for (const edge of ['top', 'right', 'bottom', 'left'] as const) set('crop-' + edge, m.crop[edge]);
-  set('media-start', m.startAt);
-  set('media-end', m.endAt);
-  set('media-volume', m.volume);
-  set('media-rate', m.rate);
-  set('media-step', m.startStep);
-  for (const key of ['muted', 'loop', 'controls'] as const)
-    $<HTMLInputElement>('media-' + key).checked = m[key];
-  $('media-playback').hidden = o.tag === 'img';
-  $('replace-poster').hidden = o.tag !== 'video';
-}
-on('replace-media', () => {
-  const o = current();
-  chooseMedia(o.tag === 'img' ? 'image' : o.tag, o.id);
-});
-on('replace-poster', () => chooseMedia('image', current().id, true));
-on('save-media', () =>
-  commands([
-    {
-      type: 'media.update',
-      slideId,
-      target: current().id,
-      patch: {
-        alt: value('media-alt'),
-        settings: {
-          fit: value('media-fit'),
-          positionX: num('media-x'),
-          positionY: num('media-y'),
-          crop: Object.fromEntries(
-            ['top', 'right', 'bottom', 'left'].map((key) => [key, num('crop-' + key)]),
-          ),
-          startAt: num('media-start'),
-          endAt: value('media-end') ? num('media-end') : null,
-          volume: num('media-volume'),
-          rate: num('media-rate'),
-          startStep: value('media-step') ? num('media-step') : null,
-          muted: $<HTMLInputElement>('media-muted').checked,
-          loop: $<HTMLInputElement>('media-loop').checked,
-          controls: $<HTMLInputElement>('media-controls').checked,
-        },
-      },
-    },
-  ]),
-);
-$('animations').insertAdjacentHTML(
-  'beforebegin',
-  '<div hidden><input id="step-map" value="[]"><button id="save-step-map">保存步骤编排</button></div>',
-);
-$('apply-advanced').insertAdjacentHTML(
-  'afterend',
-  '<label>富文本 HTML<textarea id="rich-text" rows="3"></textarea></label><button id="apply-rich-text">应用富文本</button><label>图表数据<textarea id="chart-data" rows="4"></textarea></label><button id="apply-chart">更新图表数据</button>',
-);
-$('apply-format').insertAdjacentHTML(
-  'afterend',
-  '<label>对齐基准<select id="arrange-reference"><option value="selection">选区</option><option value="slide">页面</option></select></label><div id="arrange-tools" class="inline"></div><div class="field-grid"><label>组旋转角度<input id="group-angle" type="number" value="15"></label><label>组缩放倍数<input id="group-factor" type="number" value="1.1"></label></div><button id="rotate-group">整体旋转</button><button id="scale-group">整体缩放</button>',
-);
+const mediaInspector=createMediaInspector({source:()=>{const object=editorSession.selection.size===1?objects.find(object=>editorSession.selection.has(object.id)&&['img','video','audio'].includes(object.tag)):undefined;return {documentId:editorSession.snapshot.document.id,pageId:editorSession.pageId,object};},commands,replace:(object,poster)=>chooseMedia(poster||object.tag==='img'?'image':object.tag,object.id,poster)});
+canvasController.onDispose(()=>mediaInspector.dispose());
+const sourceEditor=createSourceEditor({source:()=>{const object=editorSession.selection.size===1?objects.find(object=>editorSession.selection.has(object.id)):undefined;return {documentId:editorSession.snapshot.document.id,pageId:editorSession.pageId,target:object?.id??'',style:object?.style??{},attributes:object?.attributes??{},html:object?.html??'',disabled:!object||!!object.locked||slide().connectors.some(c=>c.id===object.id)};},commands});
+canvasController.onDispose(()=>sourceEditor.dispose());
 async function arrange(action: string) {
-  const sourceDocument = snapshot.document, sourceSlide = slideId;
-  const settings = { reference: value('arrange-reference'), angle: num('group-angle'), factor: num('group-factor') };
+  const sourceDocument = arrangementSource(), sourceSlide = editorSession.pageId, sourceSelection=arrangementScope();
+  assertSelectionEditable([...editorSession.selection],objects);
+  const settings = arrangementSettings(action);
   const capture = await captureSelection();
-  if (snapshot.document !== sourceDocument || slideId !== sourceSlide) throw new Error('页面或内容已变化，请在当前页重新操作');
+  if (arrangementSource() !== sourceDocument || editorSession.pageId !== sourceSlide || arrangementScope()!==sourceSelection) throw new Error('页面、选区或内容已变化，请在当前页重新操作');
   if (!capture.rectangles.length) {
     connectorGeometryNotice();
     return;
   }
   if(!['rotate','scale','translate'].includes(action)){
-    const edits=alignmentCommands(slideId,capture.rectangles,selectionScope?[]:slide().groups,action,settings.reference,snapshot.document.width,snapshot.document.height);
+    const edits=alignmentCommands(editorSession.pageId,capture.rectangles,editorSession.selectionScope?[]:slide().groups,action,settings.reference,editorSession.snapshot.document.width,editorSession.snapshot.document.height);
     if(edits.length)return commands(edits);
     return;
   }
   return commands([
     {
       type: 'elements.arrange',
-      slideId,
+      slideId:editorSession.pageId,
       action,
       rectangles: capture.rectangles,
       ...settings,
     },
   ]);
 }
-for (const [action, label] of Object.entries({
-  left: '左对齐',
-  center: '水平居中',
-  right: '右对齐',
-  top: '顶部对齐',
-  middle: '垂直居中',
-  bottom: '底部对齐',
-  'distribute-x': '水平分布',
-  'distribute-y': '垂直分布',
-})) {
-  $('arrange-tools').insertAdjacentHTML(
-    'beforeend',
-    `<button id="arrange-${action}">${label}</button>`,
-  );
-  on(`arrange-${action}`, () => arrange(action));
-}
-on('rotate-group', () => arrange('rotate'));
-on('scale-group', () => arrange('scale'));
-document
-  .querySelector('#global-master-mount')!
-  .insertAdjacentHTML(
-    'beforeend',
-    '<hr><label>选择母版<select id="shared-layout"></select></label><div class="inline"><button id="apply-layout-all">应用全部页面</button></div><label>布局名称<input id="layout-name" value="页脚布局"></label><label>布局对象 HTML<textarea id="layout-html" rows="4"></textarea></label><label>布局 CSS<textarea id="layout-css" rows="3"></textarea></label><div class="inline"><button id="new-layout">新建页脚母版</button><button id="save-layout">更新母版</button><button id="edit-layout-canvas">画布编辑母版</button><button id="publish-layout-canvas">发布画布修改</button></div>',
-  );
-function fillLayout() {
-  const layout = snapshot.document.layouts.find((l) => l.id === value('shared-layout'));
-  set('layout-name', layout?.name ?? '页脚布局');
-  set(
-    'layout-html',
-    layout?.html ??
-      '<footer style="position:absolute;left:60px;right:60px;bottom:28px;font-size:20px;color:#466ddb;display:flex;justify-content:space-between"><span data-notale-field="title"></span><span data-notale-field="slide-number"></span></footer>',
-  );
-  set('layout-css', layout?.css ?? '');
-}
-$<HTMLSelectElement>('shared-layout').onchange = ()=>{fillLayout();layoutManager.render();};
-on('new-layout', () =>
-  commands([
-    {
-      type: 'layout.set',
-      layout: {
-        id: uuid(),
-        name: value('layout-name'),
-        html: value('layout-html'),
-        css: value('layout-css'),
-      },
-    },
-  ]),
-);
-on('save-layout', () => {
-  const layout = snapshot.document.layouts.find((l) => l.id === value('shared-layout'));
-  if (!layout) throw new Error('请先选择一个共享布局');
-  return commands([
-    {
-      type: 'layout.set',
-      layout: {
-        ...layout,
-        name: value('layout-name'),
-        html: value('layout-html'),
-        css: value('layout-css'),
-      },
-    },
-  ]);
-});
-on('apply-layout-all', () =>
-  commands(
-    snapshot.document.slides
-      .filter((s) => !s.layoutSourceId)
-      .map((s) => ({
-        type: 'slide.update',
-        slideId: s.id,
-        patch: { layoutId: value('shared-layout') || null },
-      })),
-  ),
-);
-on('edit-layout-canvas', () => layoutManager.edit(value('shared-layout')));
-on('publish-layout-canvas', () => commands([{ type: 'layout.publish', slideId }]));
+function arrangementSource(){const doc=editorSession.snapshot.document,page=slide();return JSON.stringify([doc.id,doc.width,doc.height,doc.theme,doc.layouts.find(layout=>layout.id===page.layoutId),page]);}
+function arrangementScope(){return JSON.stringify([editorSession.snapshot.document.id,editorSession.pageId,[...editorSession.selection].sort()]);}
+const arrangement=bindArrangement({scope:arrangementScope,arrange,layer:changeLayer});
+canvasController.onDispose(()=>arrangement.dispose());
 
-$('chart-data').insertAdjacentHTML(
-  'beforebegin',
-  '<label>图表类型<select id="chart-kind"><option value="bar">柱状图</option><option value="line">折线图</option><option value="area">面积图</option><option value="pie">饼图</option><option value="doughnut">环形图</option></select></label>',
-);
-$('apply-chart').insertAdjacentHTML(
-  'beforebegin',
-  `
-  <div id="chart-style-controls">
-    <label>图表标题<input id="chart-title"></label>
-    <label>系列配色（逗号分隔）<input id="chart-colors"></label>
-    <div class="field-grid">
-      <label>字号<input id="chart-fontSize" type="number" min="10" max="24" value="16"></label>
-      <label>数值小数位<input id="chart-valueDecimals" type="number" min="0" max="6" value="0"></label>
-      <label>文字颜色<input id="chart-textColor" value="#273247"></label>
-      <label>背景颜色<input id="chart-background" value="#ffffff"></label>
-      <label>网格颜色<input id="chart-gridColor" value="#dce3ed"></label>
-      <label>分类标签方向<select id="chart-labelAngle"><option value="0">水平换行</option><option value="-45">倾斜 45°</option><option value="-90">垂直</option></select></label>
-      <label>标签间隔（0 为自动）<input id="chart-labelEvery" type="number" min="0" max="100" value="0"></label>
-      <label>线宽<input id="chart-lineWidth" type="number" min="0.5" max="12" step="0.5" value="3"></label>
-      <label>数据点半径<input id="chart-pointRadius" type="number" min="0" max="12" value="4"></label>
-    </div>
-    <label><input id="chart-showValues" type="checkbox" checked>显示可容纳的数值标签</label>
-    <label><input id="chart-showLegend" type="checkbox" checked>显示图例</label>
-    <label><input id="chart-showGrid" type="checkbox" checked>显示坐标网格</label>
-    <button id="apply-chart-style">应用图表样式</button>
-  </div>`,
-);
-on('apply-chart-style', () => {
-  const o = current();
-  if (!o.attributes['data-notale-chart']) throw new Error('请选择插入的图表 SVG 对象');
-  const data = {
-    ...JSON.parse(value('chart-data')),
-    kind: value('chart-kind'),
-    title: value('chart-title'),
-    colors: value('chart-colors')
-      .split(',')
-      .map((c) => c.trim()),
-  };
-  for (const key of [
-    'fontSize',
-    'valueDecimals',
-    'labelEvery',
-    'labelAngle',
-    'lineWidth',
-    'pointRadius',
-  ])
-    data[key] = num(`chart-${key}`);
-  for (const key of ['textColor', 'background', 'gridColor']) data[key] = value(`chart-${key}`);
-  for (const key of ['showValues', 'showLegend', 'showGrid'])
-    data[key] = $<HTMLInputElement>(`chart-${key}`).checked;
-  return commands([{ type: 'chart.update', slideId, target: o.id, data }]);
+const saveRecovery=bindSaveRecovery({
+ scope:()=>editorSession.getSnapshot().document?.document.id??'',
+ export:async()=>downloadRecovery(await geometrySession.exportDraft()),
+ retry:async()=>{if(geometrySession.count)await geometrySession.retry();else if(pending)await transmit(pending);},
+ reload:async()=>{if(isBusy())throw Error('正在保存，请等待当前请求结束');const documentId=editorSession.snapshot.document.id;if(pending)journal.clear(pending);await geometrySession.abandon();pending=undefined;if(editorSession.snapshot.document.id!==documentId)throw Error('讲义已切换');await load(documentId);},
 });
-$('apply-chart').insertAdjacentHTML(
-  'afterend',
-  '<hr><div class="field-grid"><label>行（从 1 开始）<input id="table-row" type="number" min="1" value="2"></label><label>列（从 1 开始）<input id="table-column" type="number" min="1" value="1"></label><label>合并行数<input id="table-rows" type="number" min="1" value="1"></label><label>合并列数<input id="table-columns" type="number" min="1" value="2"></label></div><div class="inline" id="table-tools"></div>',
-);
-function selectedTable() {
-  let o = current();
-  while (o.tag !== 'table' && o.parent) {
-    const parent = objects.find((p) => p.id === o.parent);
-    if (!parent) break;
-    o = parent;
-  }
-  if (o.tag !== 'table') throw new Error('请选择表格或单元格');
-  return o;
-}
-for (const [action, label] of Object.entries({
-  'insert-row': '插入行',
-  'delete-row': '删除行',
-  'insert-column': '插入列',
-  'delete-column': '删除列',
-  merge: '合并单元格',
-  unmerge: '取消合并',
-})) {
-  $('table-tools').insertAdjacentHTML(
-    'beforeend',
-    `<button id="table-${action}">${label}</button>`,
-  );
-  on(`table-${action}`, () =>
-    commands([
-      {
-        type: 'table.edit',
-        slideId,
-        target: selectedTable().id,
-        action,
-        row: num('table-row') - 1,
-        column: num('table-column') - 1,
-        rowSpan: num('table-rows'),
-        colSpan: num('table-columns'),
-      },
-    ]),
-  );
-}
-on('save-step-map', () =>
-  commands([{ type: 'slide.update', slideId, patch: { stepMap: JSON.parse(value('step-map')) } }]),
-);
-on('apply-rich-text', () =>
-  commands([
-    {
-      type: 'element.patch',
-      slideId,
-      target: current().id,
-      patch: { richText: value('rich-text') },
-    },
-  ]),
-);
-on('apply-chart', () => {
-  const o = current();
-  if (!o.attributes['data-notale-chart']) throw new Error('请选择插入的图表 SVG 对象');
-  const data = { ...JSON.parse(value('chart-data')), kind: value('chart-kind') };
-  return commands([{ type: 'chart.update', slideId, target: o.id, data }]);
-});
-on('export-draft',async()=>downloadRecovery(await geometrySession.exportDraft()));
-on('retry-save', async () => {
-  if(geometrySession.count) await geometrySession.retry();
-  else if (pending) await transmit(pending);
-});
-on('reload-head', async () => {
-  if (busy) throw new Error('正在保存，请等待当前请求结束');
-  if (pending) journal.clear(pending);
-  await geometrySession.abandon();
-  pending = undefined;
-  await load(snapshot.document.id);
-});
+canvasController.onDispose(()=>saveRecovery.dispose());
+
 try {
   migratedLegacy = journal.migrateLegacy();
 } catch (e) {
@@ -2987,21 +1687,20 @@ try {
 
 window.addEventListener('storage', (event) => {
   if (isJournalKey(event.key)) refreshRecoveries();
-});
+}, {signal:workbenchEvents.signal});
 window.addEventListener('beforeunload', (e) => {
-  if (pending || busy || geometrySession.count || editingKeys || editQueue.length) {
+  if (pending || isBusy() || geometrySession.count || keyboardQueue.pending) {
     e.preventDefault();
     e.returnValue = '';
   }
-});
-$<HTMLInputElement>('text-reflow').onchange = () =>
-  send('resize-mode', { reflow: $<HTMLInputElement>('text-reflow').checked });
+}, {signal:workbenchEvents.signal});
+editorActions.setTextReflow=enabled=>{editorSession.update({textReflow:enabled});send('resize-mode',{reflow:enabled});};
 const authoredComponents = createComponentInspector({
   slide,
-  document: () => snapshot.document,
+  document: () => editorSession.snapshot.document,
   capture: captureSelection,
   objects: () => objects,
-  selected: () => [...selected],
+  selected: () => [...editorSession.selection],
   choose: (id) => {
     changeSelection([id]);
     renderObjects();
@@ -3012,25 +1711,27 @@ const authoredComponents = createComponentInspector({
   preview: (id, state) => send('component-select', { id, state, animate: true }),
   error,
 });
+canvasController.onDispose(()=>authoredComponents.dispose());
 const teachingStepsUI = createStepInspector({
+  scope:()=>JSON.stringify([editorSession.snapshot.document.id,editorSession.pageId]),
+  chooseAnimationStep:index=>{if(!animationSelection.selected)animationDraft.set('animation-step',index);},
   slide,
-  step: () => step,
-  nativeMax: () => nativeMax,
-  ready: () => canvasReady,
+  step: () => editorSession.canvasStep,
+  nativeMax: () => editorSession.nativeMax,
+  ready: () => editorSession.canvasReady,
   whenReady,
   preview: (index, play) => {
-    if (play) { void previewOverlay.open(index); return; }
+    if (play) { void previewActions.open(index); return; }
     setStep(index, true, index);
   },
   commands,
-  error,
 });
-const pageSettings=createPageSettings({document:()=>snapshot.document,current:()=>slideId,commands,editMaster:(id,pageId)=>layoutManager.edit(id,pageId)});
+canvasController.onDispose(()=>teachingStepsUI.dispose());
+const pageSettings=createPageSettings({document:()=>editorSession.snapshot.document,current:()=>editorSession.pageId,commands,editMaster:(id,pageId)=>layoutManager.edit(id,pageId)});
 const layoutValuesUI = createLayoutValues({
-  mount:pageSettings.mount,
   slide:()=>pageSettings.target()??slide(),
-  document: () => snapshot.document,
-  selected: () => [...selected],
+  document: () => editorSession.snapshot.document,
+  selected: () => [...editorSession.selection],
   commands,
   uploadImage: async (file) => {
     if (!file.type.startsWith('image/')) throw new Error('请选择图片文件');
@@ -3045,181 +1746,249 @@ const layoutValuesUI = createLayoutValues({
       }`,
     };
   },
-  error,
+
 });
 const contextInspector = createContextInspector();
 const typographyUI = createTypography({
-  key: () => JSON.stringify([snapshot.document.id, snapshot.version, kernel.revision, slideId, [...selected]]),
-  ready: () => canvasReady,
-  ids: () => [...selected],
-  slideId: () => slideId,
+  documentId:()=>editorSession.snapshot.document.id,enabled:()=>editorSession.getSnapshot().inspector.typography,
+  key: () => JSON.stringify([editorSession.snapshot.document.id, editorSession.snapshot.version, kernel.revision, editorSession.pageId, [...editorSession.selection]]),
+  ready: () => editorSession.canvasReady,
+  ids: () => [...editorSession.selection],
+  objects: () => objects,
+  slideId: () => editorSession.pageId,
   capture: captureSelection,
   commands,preview:(key,cmds)=>kernel.preview(key,cmds),commit:(key,cmds)=>kernel.commit(key,cmds),cancel:key=>kernel.cancel(key),error,
 });
-on('apply-typography', () => typographyUI.apply());
-on('reset-typography', () => typographyUI.reset());
+canvasController.onDispose(()=>typographyUI.disposeCapture());
 const assetLibrary = createAssetLibrary({
-  document: () => snapshot.document,
+  document: () => editorSession.snapshot.document,
   slide,
-  selection: () => objects.filter(o => selected.has(o.id)),
-  insert: template,
+  selection: () => objects.filter(o => editorSession.selection.has(o.id)),
+  insert: (kind,src)=>placed(template(kind,src),kind),
   commands,
   error,
 });
+canvasController.onDispose(()=>assetLibrary.dispose());
 const pageThumbnails = createPageThumbnails();
+canvasController.onDispose(()=>pageThumbnails.dispose());
 const revealPreset = createRevealPreset({
-  slide, objects: () => objects, selected: () => [...selected], commands, whenReady, error,
+  documentId:()=>editorSession.snapshot.document.id,slide, objects: () => objects, selected: () => [...editorSession.selection], commands, whenReady, error,
   choose: id => {changeSelection([id]);renderObjects();renderSelection();},
 });
-const linkInspector = createLinkInspector({document: () => snapshot.document, slide, objects: () => objects, selected: () => [...selected], commands, error});
-const richEditor = createRichEditor({
-  selected: () => selected.size === 1 ? objects.find(o => selected.has(o.id)) : undefined,
-  key: () => JSON.stringify([snapshot.document.id,snapshot.version,slideId,[...selected]]),
-  slideId: () => slideId, commands, capture: captureSelection,
+canvasController.onDispose(()=>revealPreset.dispose());
+const linkInspector = createLinkInspector({document: () => editorSession.snapshot.document, slide, objects: () => objects, selected: () => [...editorSession.selection], commands});
+canvasController.onDispose(()=>linkInspector.dispose());
+const aiEdits = bindAiEdits({
+  documentId:()=>editorSession.snapshot.document.id,
+  slideId:()=>editorSession.pageId,
+  selection:()=>[...editorSession.selection],
+  selectionLabel:()=>editorSession.getSnapshot().inspector.label,
+  request:(path,body,signal)=>apiSignal(path,body,signal),
+  // One batch through the kernel is one mutation, so the whole AI edit undoes in one step.
+  apply:cmds=>commands(cmds),
+  status:async()=>await api('/api/ai/status') as {available:boolean;reason:string},
 });
-createMediaIngress({
-  enabled: () => !!snapshot && !interacting && !busy && !pending && !document.querySelector('dialog[open]'),
+canvasController.onDispose(()=>aiEdits.dispose());
+const richEditor = createRichEditor({
+  selected: () => editorSession.selection.size === 1 ? objects.find(o => editorSession.selection.has(o.id)) : undefined,
+  key: () => JSON.stringify([editorSession.snapshot.document.id,editorSession.pageId,[...editorSession.selection]]),
+  slideId: () => editorSession.pageId, commands, capture: captureSelection,
+});
+canvasController.onDispose(()=>richEditor.dispose());
+const mediaIngress=createMediaIngress({
+  enabled: () => !workbenchEvents.signal.aborted && !!editorSession.snapshot && !isBusy() && !pending && !document.querySelector('dialog[open]'),
   pasteObjects: pasteSelection,
-  svg:async source=>commands([{type:'svg.import',slideId,html:prepareSvgImport(source)}]),
+  svg:async source=>commands([{type:'svg.import',slideId:editorSession.pageId,html:prepareSvgImport(source,120,160,(w,h)=>placement('image',undefined,[w,h]))}]),
   error,
   insert: async (files, point) => {
-    const documentId=snapshot.document.id, revision=snapshot.version, targetSlide=slide();
-    const bounds=frame.getBoundingClientRect();
-    const x=point?Math.max(0,Math.min(snapshot.document.width-100,(point.x-bounds.left)*snapshot.document.width/bounds.width)):120;
-    const y=point?Math.max(0,Math.min(snapshot.document.height-100,(point.y-bounds.top)*snapshot.document.height/bounds.height)):160;
+    const documentId=editorSession.snapshot.document.id, targetSlide=slide();
+    const assertDestination=()=>{assertWorkbenchOpen();if(documentId!==editorSession.snapshot.document.id||targetSlide.id!==editorSession.pageId||slide().sourcePath!==targetSlide.sourcePath)throw new Error('上传期间目标页面已变化，请在目标页重新插入');};
+    const {x,y}=documentPoint(point);
     const edits: unknown[]=[];
     for(const [index,file] of files.entries()) {
-      if(file.type==='image/svg+xml'||file.name.toLowerCase().endsWith('.svg')){edits.push({type:'svg.import',slideId:targetSlide.id,html:prepareSvgImport(await file.text(),x+index*24,y+index*24)});continue;}
-      const asset=await uploadAsset(new Uint8Array(await file.arrayBuffer()),file.type);
+      assertDestination();
+      if(file.type==='image/svg+xml'||file.name.toLowerCase().endsWith('.svg')){edits.push({type:'svg.import',slideId:targetSlide.id,html:prepareSvgImport(await file.text(),120,160,(w,h)=>mediaPosition(x,y,w,h,index*24))});continue;}
+      const bytes=new Uint8Array(await file.arrayBuffer());
+      assertDestination();
+      const asset=await uploadAsset(bytes,file.type);
+      assertDestination();
       const path=`media/${uuid()}/${file.name.replace(/[^\p{L}\p{N}._ -]/gu,'_').slice(0,120)||'media.bin'}`;
       const src='../'.repeat(targetSlide.sourcePath.split('/').length-1)+path.split('/').map(encodeURIComponent).join('/');
       const kind=file.type.startsWith('image/')?'image':file.type.split('/')[0];
-      const html=template(kind,src).replace('left:120px;top:160px;',`left:${x+index*24}px;top:${y+index*24}px;`);
+      const [w,h]=NOMINAL[kind]??NOMINAL.image;
+      const html=template(kind,src).replace('left:120px;top:160px;',mediaPosition(x,y,w,h,index*24));
       edits.push({type:'asset.put',path,asset},{type:'element.insert',slideId:targetSlide.id,html});
     }
-    if(documentId!==snapshot.document.id||revision!==snapshot.version||targetSlide.id!==slideId)
-      throw new Error('上传期间页面或版本已变化，请在目标页重新插入');
+    assertDestination();
     await commands(edits);
   },
 });
-const imageCrop=createImageCrop({selected:()=>selected.size===1?objects.find(o=>selected.has(o.id)):undefined,key:()=>JSON.stringify([snapshot.document.id,snapshot.version,slideId,[...selected]]),slideId:()=>slideId,preview:()=>frame.src,capture:captureSelection,commands});
-const layoutManager=createLayoutManager({mount:$('global-master-mount'),document:()=>snapshot.document,slide,commands,show:async id=>{await showPage(id);editorShell.inspect('format');},error});
-const tableInspector=createTableInspector({objects:()=>objects,selection:()=>[...selected],select:id=>{changeSelection([id]);renderObjects();renderSelection();},slideId:()=>slideId,commands,error});
-const themePanel = createThemePanel({ document: () => snapshot.document, commands, error });
-const pageBackground = createPageBackground({ document: () => snapshot.document, slide, commands, error });
+canvasController.onDispose(()=>mediaIngress.dispose());
+const imageCrop=createImageCrop({selected:()=>editorSession.selection.size===1?objects.find(o=>editorSession.selection.has(o.id)):undefined,key:()=>JSON.stringify([editorSession.snapshot.document.id,editorSession.pageId,[...editorSession.selection]]),slideId:()=>editorSession.pageId,preview:()=>frame.src,capture:captureSelection,commands});
+canvasController.onDispose(()=>imageCrop.dispose());
+const layoutManager=createLayoutManager({document:()=>editorSession.snapshot.document,slide,commands,show:async id=>{await showPage(id);editorShell.inspect('format');}});
+const unsubscribeLayouts=editorSession.subscribe(()=>{if(editorSession.getSnapshot().document&&editorSession.snapshot.document.slides.some(page=>page.id===editorSession.pageId))layoutManager.render();});
+canvasController.onDispose(()=>{unsubscribeLayouts();layoutManager.dispose();});
+const tableInspector=createTableInspector({documentId:()=>editorSession.snapshot.document.id,objects:()=>objects,selection:()=>[...editorSession.selection],select:id=>{changeSelection([id]);renderObjects();renderSelection();},slideId:()=>editorSession.pageId,commands});
+canvasController.onDispose(()=>tableInspector.dispose());
+const themePanel = createThemePanel({ document: () => editorSession.snapshot.document, commands });
+canvasController.onDispose(()=>themePanel.dispose());
+const pageBackground = createPageBackground({ document: () => editorSession.snapshot.document, slide, commands });
+canvasController.onDispose(()=>pageBackground.dispose());
 const commentsPanel = createCommentsPanel({
-  document: () => snapshot.document,
-  slideId: () => slideId,
+  document: () => editorSession.snapshot.document,
+  slideId: () => editorSession.pageId,
   objects: () => objects,
-  selected: () => [...selected],
+  selected: () => [...editorSession.selection],
   commands,
   show: showPage,
   select: (id) => { changeSelection([id]); renderObjects(); renderSelection(); },
   uuid,
-  error,
 });
-on('toggle-comments', () => {
-  const open = commentsPanel.toggle();
-  $('toggle-comments').setAttribute('aria-pressed', String(open));
-  $('toggle-comments').setAttribute('aria-expanded', String(open));
-});
+canvasController.onDispose(()=>commentsPanel.dispose());
 const findReplace = createFindReplace({
-  document: () => snapshot.document,
+  document: () => editorSession.snapshot.document,
   commands,
   show: showPage,
   select: (id) => { changeSelection([id]); renderObjects(); renderSelection(); },
-  error,
+
 });
+canvasController.onDispose(()=>findReplace.dispose());
 // Ctrl/Cmd+H opens replace, the PowerPoint shortcut; the pages panel has a button too.
 document.addEventListener('keydown', (event) => {
+  if(event.defaultPrevented)return;
   if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'h') return;
   const target = event.target;
   if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input,textarea,select'))) return;
   event.preventDefault();
   findReplace.open();
-});
-on('open-find-replace', () => findReplace.open());
+}, {signal:workbenchEvents.signal});
 const appearanceInspector = createAppearanceInspector({
+  documentId:()=>editorSession.snapshot.document.id,
   objects: () => objects,
-  selected: () => [...selected],
-  key: () => JSON.stringify([snapshot.document.id, snapshot.version, kernel.revision, slideId, [...selected]]),
-  slideId: () => slideId,
+  selected: () => [...editorSession.selection],
+  key: () => JSON.stringify([editorSession.snapshot.document.id, editorSession.snapshot.version, kernel.revision, editorSession.pageId, [...editorSession.selection]]),
+  slideId: () => editorSession.pageId,
   commands,
   preview:(key,cmds)=>kernel.preview(key,cmds),commit:(key,cmds)=>kernel.commit(key,cmds),cancel:key=>kernel.cancel(key),
   capture: captureSelection,
   error,
 });
-// A cycle is regenerated from its labels, so changing the count re-flows the ring and
-// keeps whatever text the author already wrote.
-$('cycle-count').addEventListener('change', () => void Promise.resolve().then(() => {
-  const root = current(), count = Math.max(3, Math.min(6, num('cycle-count')));
-  const existing = objects.filter((o) => o.parent === root.id && o.tag === 'p').map((o) => o.text.trim());
-  return commands([
-    { type: 'element.content', slideId, target: root.id, html: cycleContent(cycleLabels(count, existing)) },
-    { type: 'element.patch', slideId, target: root.id, patch: { attributes: { 'data-notale-cycle': String(count) } } },
-  ]);
-}).catch(error));
-on('layout-item-duplicate', () => commands([{ type: 'element.duplicate', slideId, target: current().id }]));
-on('layout-item-delete', () => commands([{ type: 'element.delete', slideId, target: current().id }]));
-const equationEditor = createEquationEditor({ objects: () => objects, selection: () => [...selected], slideId: () => slideId, commands, error });
-const codeEditor = createCodeEditor({ objects: () => objects, selection: () => [...selected], slideId: () => slideId, commands, error });
-const chartEditor=createChartEditor({objects:()=>objects,selection:()=>[...selected],key:()=>JSON.stringify([snapshot.document.id,snapshot.version,slideId,[...selected]]),slideId:()=>slideId,commands,error});
-echartsUI=createEchartsEditor({documentId:()=>snapshot.document.id,slide,selection:()=>[...selected],locked:()=>[...selected].some(id=>objects.find(o=>o.id===id)?.locked),
-  inspect:async()=>{const id=[...selected][0];if(!rects.some(r=>r.id===id&&r.nativeChart))return {target:id,available:false,series:[]};return await inspectNativeChart()??{target:id,available:false,series:[]};},
-  send,select:id=>{changeSelection([id]);renderObjects();renderSelection();},format:()=>editorShell.inspect('format'),commands,error,step:()=>step,setStep,
-  commit:async(pageId,target,before,after)=>{
-    const chart=snapshot.document.slides.find(s=>s.id===pageId)!.nativeCharts[target]??{adapter:'echarts' as const,option:{}};
-    await geometrySession.enqueue({id:uuid(),slideId:pageId,runtimeId:'chart',sequence:Date.now(),commands:[{type:'native-chart.edit',slideId:pageId,target,model:after,before}],before:[{id:target,style:null,chart:{...chart,authoring:before}}],after:[{id:target,style:null,chart:{...chart,authoring:after}}],chart:true});
+canvasController.onDispose(()=>appearanceInspector.disposeCapture());
+const smartDiagram=createSmartDiagram({source:()=>({documentId:editorSession.snapshot.document.id,pageId:editorSession.pageId,objects,selection:[...editorSession.selection]}),commands});
+canvasController.onDispose(()=>smartDiagram.dispose());
+canvasController.onDispose(()=>notices.dispose());
+const equationEditor = createEquationEditor({ documentId:()=>editorSession.snapshot.document.id,objects: () => objects, selection: () => [...editorSession.selection], slideId: () => editorSession.pageId, commands });
+canvasController.onDispose(()=>equationEditor.dispose());
+const codeEditor = createCodeEditor({ documentId:()=>editorSession.snapshot.document.id, objects: () => objects, selection: () => [...editorSession.selection], slideId: () => editorSession.pageId, commands });
+canvasController.onDispose(()=>codeEditor.dispose());
+const courseEditor=bindCourseEditor({error,
+  open:async target=>{
+    target??=editorSession.selection.size===1?[...editorSession.selection][0]:undefined;if(!target)return;
+    const documentId=editorSession.snapshot.document.id,slideId=editorSession.pageId,item=objects.find(o=>o.id===target);
+    if(!item||item.locked)return;
+    const [identity]=await Promise.all([courseIdentity(),(async()=>{await kernel.flush();await geometrySession.barrier();})()]);
+    const response=await api(`/api/documents/${documentId}/slides/${slideId}/code/${target}`);
+    const grant=await canvasResources.getPreview(documentId,response.version);
+    const page=grant.slides.find(p=>p.id===slideId);if(!page)throw Error('课程页面已删除');
+    const url=new URL(item.attributes.src??item.attributes['data-src'],page.url),authorChannel=crypto.randomUUID();
+    const resourceRoot=new URL(page.url);resourceRoot.pathname=resourceRoot.pathname.slice(0,-new URL(editorSession.snapshot.document.slides.find(s=>s.id===slideId)!.sourcePath,'https://notale.invalid/').pathname.slice(1).length);
+    url.pathname=new URL(response.lesson.entry,resourceRoot).pathname;
+    url.searchParams.set('notaleMode','author');url.searchParams.set('notaleAuthorChannel',authorChannel);url.searchParams.set('notaleParentOrigin',location.origin);url.searchParams.set('notaleSession',JSON.stringify([documentId,slideId,target]));url.searchParams.set('notaleRevision',response.lesson.revision);
+    const lease=trackPreviewLease(documentId,grant);
+    return {id:crypto.randomUUID(),identity,documentId,slideId,target,title:slide().name,lesson:response.lesson,sources:response.sources,url:url.href,channel:authorChannel,release:()=>lease.stop()};
+  },
+  read:editing=>api(`/api/documents/${editing.documentId}/slides/${editing.slideId}/code/${editing.target}`),
+  save:async(editing,sources,preview)=>{
+    if(await courseIdentity()!==editing.identity)throw Error('登录身份已变化，原身份下的课程草稿已保留');
+    if(editorSession.snapshot.document.id!==editing.documentId)throw Error('讲义已切换，课程草稿已保留');
+    await kernel.flush();if(geometrySession.blocked)await geometrySession.retry();await geometrySession.barrier();
+    const current=await api(`/api/documents/${editing.documentId}/slides/${editing.slideId}/code/${editing.target}`);
+    if(Object.keys(sources).every(name=>sources[name as keyof typeof sources]===current.sources[name]))return current.lesson;
+    const prepared=await api(`/api/documents/${editing.documentId}/slides/${editing.slideId}/code/${editing.target}/prepare`,{expectedEntry:editing.lesson.entry,expectedRevision:editing.lesson.revision,sources,...(preview?{preview}:{})});
+    if(editorSession.snapshot.document.id!==editing.documentId)throw Error('讲义已切换，课程草稿已保留');
+    await commands([prepared.command]);await geometrySession.barrier();
+    const saved=await api(`/api/documents/${editing.documentId}/slides/${editing.slideId}/code/${editing.target}`);
+    if(saved.lesson.entry!==prepared.lesson.entry||saved.lesson.revision!==prepared.lesson.revision)throw Error('课程保存尚未确认，草稿已保留');
+    return saved.lesson;
   },
 });
-$('native-chart-panel').classList.add('chart-legacy-replaced');
+canvasController.onDispose(()=>courseEditor.dispose());
+
+const chartEditor=createChartEditor({documentId:()=>editorSession.snapshot.document.id,objects:()=>objects,selection:()=>[...editorSession.selection],slideId:()=>editorSession.pageId,commands});
+canvasController.onDispose(()=>chartEditor.dispose());
+echartsUI=createEchartsEditor({documentId:()=>editorSession.snapshot.document.id,slide,selection:()=>[...editorSession.selection],locked:()=>[...editorSession.selection].some(id=>objects.find(o=>o.id===id)?.locked),
+  inspect:async()=>{const id=[...editorSession.selection][0];if(!rects.some(r=>r.id===id&&r.nativeChart))return {target:id,available:false,series:[]};return await inspectNativeChart()??{target:id,available:false,series:[]};},
+  send,select:id=>{changeSelection([id]);renderObjects();renderSelection();},format:()=>editorShell.inspect('format'),commands,error,step:()=>editorSession.canvasStep,setStep,
+  commit:async({id,documentId,slideId:pageId,target,before,after})=>{
+    if(editorSession.snapshot.document.id!==documentId)throw Error('讲义已切换，图表草稿已保留');
+    if(await geometrySession.retainOperation(id))return;
+    const chart=editorSession.snapshot.document.slides.find(s=>s.id===pageId)!.nativeCharts[target]??{adapter:'echarts' as const,option:{}};
+    await geometrySession.enqueue({id,slideId:pageId,runtimeId:'chart',sequence:Date.now(),commands:[{type:'native-chart.edit',slideId:pageId,target,model:after,before}],before:[{id:target,style:null,chart:{...chart,authoring:before}}],after:[{id:target,style:null,chart:{...chart,authoring:after}}],chart:true});
+  },
+});
 pageSettings.bindValues(()=>layoutValuesUI.render(),()=>layoutValuesUI.reset());
-const previewOverlay = createPreviewOverlay({
-  prepare: async () => {
+const previewRegistrations=scopeActions(previewActions,workbenchEvents.signal);
+previewRegistrations.prepare=async () => {
     await initialized; await echartsUI?.flush();
     if(!geometrySession.onlyChartEdits){await flushAuthor();await whenIdle();}
     await whenReady();
-    const frozen=structuredClone(snapshot);
+    const frozen=structuredClone(editorSession.snapshot);
     for(const page of frozen.document.slides)for(const state of geometrySession.states(page.id))if(state.chart)page.nativeCharts[state.id]=structuredClone(state.chart);
-    return { snapshot: frozen, slideId };
-  },
-  present: () => $('present').click(), error,
-});
-installDockIcons();
-createHeaderMenus();
-on('dock-add-page', () => $('add-slide').click());
-on('dock-delete-page', () => $('delete-slide').click());
-for (const [id, delta] of [['dock-previous-page', -1], ['dock-next-page', 1]] as const)
-  on(id, () => { const pages = normalPages(), at = pages.findIndex(page => page.id === slideId); if (pages[at + delta]) return showPage(pages[at + delta].id); });
+    return { snapshot: frozen, slideId:editorSession.pageId };
+};
+previewRegistrations.present=()=>{void editorActions.present().catch(error);};
+previewRegistrations.error=error;
 const canvasLoading = createCanvasLoading(async () => { await whenIdle(); await render(); }, pageError);
-documentUI=createDocumentUI({document:()=>snapshot.document,version:()=>snapshot.version,commands,load,history:()=>api(`/api/documents/${snapshot.document.id}/history`),restore,flush:flushAuthor,error});
-applyFeatureAvailability();
-const vectorUI=createVectorInspector((action,data={})=>send('vector-action',{action,...data}));
-createTemplateLibrary({ready:()=>initialized,snapshot:()=>snapshot,slide,commands,upload:uploadAsset,error,selectInstance:instance=>{
+canvasController.onDispose(()=>canvasLoading.dispose());
+const documentSettings=bindDocumentSettings({signal:workbenchEvents.signal,document:()=>editorSession.snapshot.document,commands,history:()=>api(`/api/documents/${editorSession.snapshot.document.id}/history`),restore,flush:flushDocument});
+canvasController.onDispose(()=>documentSettings.dispose());
+recoveryController=bindRecovery({retained:()=>geometrySession.retained(),journal,pending:()=>pending,busy:isBusy,load,importDraft:raw=>geometrySession.importDraft(raw),copy:async(id,request)=>{const result=await api(`/api/documents/${id}/sync-recovery`,request);return result.document.id;},open:id=>{window.open(`/?document=${id}`,'_blank','noopener');}});
+canvasController.onDispose(()=>recoveryController?.dispose());
+canvasController.onDispose(()=>echartsUI?.dispose());
+const shutdown = new SessionShutdown([
+  {name:'keyboard',seal:()=>keyboardQueue.seal()},
+  {name:'kernel',seal:()=>kernel.seal()},
+  {name:'text',seal:()=>textIngress.seal()},
+  {name:'vector',seal:()=>vectorIngress.seal()},
+  {name:'charts',seal:async()=>{await echartsUI?.seal();}},
+], geometrySession);
+canvasController.onDispose(()=>{
+  closingSessions.retain(shutdown,editorSession.getSnapshot().document?.document.title??'讲义');
+});
+editorActions.openRecovery=()=>editorSession.update({documentDialog:'recovery'});
+const vectorUI=createVectorInspector({scope:()=>JSON.stringify([editorSession.getSnapshot().document?.document.id,editorSession.pageId,frameRuntimeId]),send:(action,data={})=>send('vector-action',{action,...data})});
+canvasController.onDispose(()=>vectorUI.dispose());
+const templateLibrary=createTemplateLibrary({ready:()=>initialized,snapshot:()=>editorSession.snapshot,slide,commands,upload:uploadAsset,error,selectInstance:instance=>{
   const root=objects.find(o=>o.attributes['data-template-instance']===instance);if(!root)return;
   const members=objects.filter(o=>o.parent===root.id&&o.tag!=='style').map(o=>o.id);
   changeSelection(members);renderObjects();renderSelection();
 }});
+canvasController.onDispose(()=>templateLibrary.dispose());
 const initialized = init();
 void initialized.catch(error);
 // A small stable surface for host integration and browser acceptance tests.
 Object.assign(window, {
   NotaleWorkbench: {
+    mount:mountWorkbench,
     commands,
+    dispose:()=>canvasController.dispose(),
     getSyncState:()=>({pending:geometrySession.count,status:geometrySession.status,blocked:geometrySession.blocked}),
-    getSnapshot: () => snapshot ? kernel.current : undefined,
+    getSnapshot: () => editorSession.snapshot ? kernel.current : undefined,
   getConfirmedSnapshot:()=>kernel.confirmed,
-  whenSynchronized:async()=>{await kernel.flush();await geometrySession.barrier();},
+  whenSynchronized:async()=>{await acceptedCommands.whenIdle();await kernel.whenIdle();await kernel.flush();await kernel.whenIdle();await geometrySession.whenLocallySaved();await geometrySession.barrier();},
     getPending: () => (pending ? structuredClone(pending) : undefined),
     select: (id: string) => {
+      assertWorkbenchOpen();
       changeSelection([id]);
       renderObjects();
       renderSelection();
     },
     getObjects: () => objects,
-    getSelection: () => [...selected],
+    getSelection: () => [...editorSession.selection],
     whenEditsIdle,
     selectMany: (ids: string[]) => {
+      assertWorkbenchOpen();
       changeSelection(ids);
       renderObjects();
       renderSelection();
@@ -3233,95 +2002,35 @@ Object.assign(window, {
 });
 
 async function createConnector() {
-  const ids = [...selected].filter((id) => !(slide().connectors ?? []).some((c) => c.id === id));
+  const ids = [...editorSession.selection].filter((id) => !(slide().connectors ?? []).some((c) => c.id === id));
   if (ids.length > 2) throw new Error('请选择最多两个需要连接的对象');
   const id = uuid();
   await commands([
     {
       type: 'connector.set',
-      slideId,
+      slideId:editorSession.pageId,
       connector: connectorSchema.parse({
         id,
         start: ids[0]
           ? { target: ids[0] }
-          : { point: { x: snapshot.document.width * 0.35, y: snapshot.document.height * 0.5 } },
+          : { point: { x: editorSession.snapshot.document.width * 0.35, y: editorSession.snapshot.document.height * 0.5 } },
         end: ids[1]
           ? { target: ids[1] }
-          : { point: { x: snapshot.document.width * 0.65, y: snapshot.document.height * 0.5 } },
+          : { point: { x: editorSession.snapshot.document.width * 0.65, y: editorSession.snapshot.document.height * 0.5 } },
       }),
     },
   ]);
   changeSelection([id]);
   renderSelection();
 }
-function renderConnector() {
-  const c =
-    selected.size === 1 ? (slide().connectors ?? []).find((c) => selected.has(c.id)) : undefined;
-  $('connector-panel').hidden = !c;
-  if (!c) return;
-  const options = objects
-    .filter(
-      (o) => o.attributes.id !== 'stage' && !(slide().connectors ?? []).some((c) => c.id === o.id),
-    )
-    .map(
-      (o) =>
-        `<option value="${o.id}">${esc(o.tag + ' ' + (o.text.trim() || o.attributes.id || '').slice(0, 28))}</option>`,
-    )
-    .join('');
-  for (const side of ['start', 'end'] as const) {
-    $('connector-' + side).innerHTML = '<option value="">自由端点</option>' + options;
-    set('connector-' + side, c[side].target ?? '');
-    set('connector-' + side + '-x', c[side].point?.x ?? snapshot.document.width / 2);
-    set('connector-' + side + '-y', c[side].point?.y ?? snapshot.document.height / 2);
-    connectorEndpointFields(side);
-    set('connector-' + side + '-anchor', c[side].anchor);
-    $<HTMLInputElement>('connector-' + side + '-arrow').checked =
-      side === 'start' ? c.startArrow : c.endArrow;
-  }
-  set('connector-kind', c.kind);
-  set('connector-color', c.color);
-  set('connector-width', c.width);
-  set('connector-dash', c.dash);
-}
-function connectorEndpointFields(side: 'start' | 'end') {
-  const free = !value('connector-' + side);
-  $('connector-' + side + '-point').hidden = !free;
-  $<HTMLSelectElement>('connector-' + side + '-anchor').disabled = free;
-}
-for (const side of ['start', 'end'] as const)
-  $('connector-' + side).addEventListener('change', () => connectorEndpointFields(side));
-function connectorEndpointValue(side: 'start' | 'end') {
-  const target = value('connector-' + side);
-  return target
-    ? { target, anchor: value('connector-' + side + '-anchor') }
-    : { point: { x: num('connector-' + side + '-x'), y: num('connector-' + side + '-y') } };
-}
-on('save-connector', () => {
-  const c = (slide().connectors ?? []).find((c) => selected.has(c.id));
-  if (!c) throw new Error('请选择连接线');
-  return commands([
-    {
-      type: 'connector.set',
-      slideId,
-      connector: {
-        ...c,
-        start: connectorEndpointValue('start'),
-        end: connectorEndpointValue('end'),
-        kind: value('connector-kind'),
-        color: value('connector-color'),
-        width: num('connector-width'),
-        dash: value('connector-dash'),
-        startArrow: $<HTMLInputElement>('connector-start-arrow').checked,
-        endArrow: $<HTMLInputElement>('connector-end-arrow').checked,
-      },
-    },
-  ]);
-});
+const connectorInspector=createConnectorInspector({source:()=>({documentId:editorSession.snapshot.document.id,pageId:editorSession.pageId,width:editorSession.snapshot.document.width,height:editorSession.snapshot.document.height,connector:editorSession.selection.size===1?slide().connectors.find(c=>editorSession.selection.has(c.id)):undefined,options:objects.filter(o=>o.attributes.id!=='stage'&&!slide().connectors.some(c=>c.id===o.id)).map(o=>({value:o.id,label:o.tag+' '+(o.text.trim()||o.attributes.id||'').slice(0,28)}))}),commands});
+canvasController.onDispose(()=>connectorInspector.dispose());
+function renderConnector(){connectorInspector.render();}
 
 function connectorGeometryNotice() {
-  $('toast').textContent = '连接线会跟随端点，请移动或调整端点对象';
-  $('toast').hidden = false;
-  setTimeout(() => ($('toast').hidden = true), 5000);
+  notices.show('连接线会跟随端点，请移动或调整端点对象',5000);
 }
 
+return {dispose:()=>canvasController.dispose()};
+  } catch(cause) {release();if(mounted===identity)mounted=undefined;throw cause;}
 }

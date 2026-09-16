@@ -1,0 +1,21 @@
+import {test,expect} from '@playwright/test';
+import {reveal} from './harness/format-panel';
+import {randomUUID} from 'node:crypto';
+test.use({baseURL:process.env.ARCHITECTURE_URL??'http://127.0.0.1:4399'});
+test('React scene inspector reads runtime state and saves bounded parameters',async({page})=>{
+ const id=randomUUID();const html=`<html><body><main id="stage" data-notale-id="stage"><canvas id="plot" data-notale-id="plot" width="600" height="400"></canvas><input id="count" data-notale-id="count" type="range" min="1" max="9" step="2" value="3"></main><script>(()=>{const cv=document.getElementById('plot'),slider=document.getElementById('count');let state={count:3,seed:42,title:'Original'};slider.addEventListener('input',e=>{state.count=parseInt(e.target.value,10);});window.read=()=>({...state});})();</script></body></html>`;
+ expect((await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'Scene acceptance',width:1600,height:900,slides:[{id:'first',name:'Scene',sourcePath:'first.html',html}]}})).ok()).toBe(true);
+ await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot()?.document.slides.length===1);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());await page.evaluate(()=>(window as any).NotaleWorkbench.select('plot'));await reveal(page,'#scene-panel');
+ await expect(page.locator('#scene-panel')).toBeVisible();await page.locator('#read-scene').click();await expect(page.locator('#save-scene')).toBeEnabled();const count=page.locator('[data-scene-key="count"]');await count.fill('5');
+ let release!:()=>void,entered!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;}),started=new Promise<void>(resolve=>{entered=resolve;});
+ await page.route('**/prepare',async route=>{entered();await gate;await route.continue();});
+ const entries=()=>page.evaluate(async documentId=>{const names=await indexedDB.databases();const name=names.find(entry=>entry.name?.startsWith('notale-sync-v2:'))!.name!;const db=await new Promise<IDBDatabase>(resolve=>{const request=indexedDB.open(name);request.onsuccess=()=>resolve(request.result);});try{return await new Promise<any[]>(resolve=>{const request=db.transaction('operations').objectStore('operations').index('document').getAll(documentId);request.onsuccess=()=>resolve(request.result);});}finally{db.close();}},id);
+ try{
+  await page.locator('#save-scene').click();await started;const staged=await entries();expect(staged).toHaveLength(1);expect(staged[0].staged).toBe(true);expect(staged[0].draftTask.request.commands[0].values.count).toBe(5);
+  await page.evaluate(()=>{(window as any).__syncDone=false;(window as any).__syncWaiting=(window as any).NotaleWorkbench.whenSynchronized().then(()=>{(window as any).__syncDone=true;});});expect(await page.evaluate(()=>(window as any).__syncDone)).toBe(false);
+  release();await page.evaluate(()=>(window as any).__syncWaiting);const saved=await page.request.get('/api/documents/'+id).then(r=>r.json());expect(saved.document.slides[0].scenes[0].values.count).toBe(5);expect(await entries()).toHaveLength(0);
+  await page.unroute('**/prepare');await page.route('**/prepare',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'OFFLINE',message:'prepare offline'})}));
+  const error=await page.evaluate(async sceneId=>{try{await (window as any).NotaleWorkbench.commands([{type:'scene.set',slideId:'first',sceneId,values:{count:7}}]);return '';}catch(cause){return String(cause);}},saved.document.slides[0].scenes[0].id);expect(error).toContain('offline');const retained=await entries();expect(retained).toHaveLength(1);expect(retained[0].state).toBe('recovery');expect(retained[0].task.request.commands[0].values.count).toBe(7);
+  await page.evaluate(async()=>{await (window as any).NotaleWorkbench.commands([{type:'deck.update',title:'After recovery'}]);await (window as any).NotaleWorkbench.whenSynchronized();});const head=await page.request.get('/api/documents/'+id).then(r=>r.json());expect(head.document.title).toBe('After recovery');expect(head.document.slides[0].scenes[0].values.count).toBe(5);
+ }finally{release();await page.unroute('**/prepare');}
+});

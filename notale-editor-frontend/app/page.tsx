@@ -1,2 +1,3 @@
-// The persistent layout owns the editor session, including its React shell.
-export default function Page(){return null;}
+import {Editor} from '../src/components/editor';
+import '../src/editor.css';
+export default function Page(){return <Editor/>;}

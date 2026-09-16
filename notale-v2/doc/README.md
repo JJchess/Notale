@@ -14,6 +14,7 @@
 
 以下文档包含拟议设计与历史研究，不能当作当前 harness 已实现的功能。
 
+- [Build-code 整改方案与提示词 diff](PLAN-build-code-redesign.md)（设计候选，尚未实施）
 - [研究与实验循环](PLAN-research-loop.md)
 - [Benchmark 规划](PLAN-benchmarks.md)
 - [互动讲义可编辑化](PLAN-editable-interactive-lectures.md)

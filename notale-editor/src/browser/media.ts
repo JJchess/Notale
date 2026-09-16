@@ -5,9 +5,9 @@ export function mediaController(report: (type: string, data: unknown) => void) {
   const entries=new Map<HTMLMediaElement,Entry>();
   const start=(e:Entry)=>Math.min(e.settings.startAt,Number.isFinite(e.el.duration)?Math.max(0,e.el.duration-.01):e.settings.startAt);
   const end=(e:Entry)=>Math.min(e.settings.endAt??Infinity,e.el.duration||Infinity);
-  const play=(e:Entry)=>void e.el.play().catch(error=>{e.el.controls=true;report('media-blocked',{target:e.el.dataset.notaleId,message:String(error)});});
+  const play=(e:Entry)=>{const raw=e.raw;void e.el.play().catch(error=>{if(entries.get(e.el)!==e||e.events.signal.aborted||e.raw!==raw)return;e.el.controls=true;report('media-blocked',{target:e.el.dataset.notaleId,message:String(error)});});};
   function update(){
-    for(const [el,e] of entries)if(!el.isConnected||!el.hasAttribute('data-notale-media')){e.events.abort();cancelAnimationFrame(e.frame);entries.delete(el);}
+    for(const [el,e] of entries)if(!el.isConnected||!el.hasAttribute('data-notale-media')){e.el.pause();e.events.abort();cancelAnimationFrame(e.frame);entries.delete(el);}
     for(const el of document.querySelectorAll<HTMLMediaElement>('video[data-notale-media],audio[data-notale-media]')){
       const raw=el.dataset.notaleMedia!;let e=entries.get(el);if(e?.raw===raw)continue;
       let settings:MediaSettings;try{settings=JSON.parse(raw);}catch{continue;}

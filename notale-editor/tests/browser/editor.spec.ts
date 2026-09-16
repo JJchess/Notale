@@ -260,7 +260,7 @@ test('teaching sequence editing remaps real native steps, replayed animation, co
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  const imported = await request.post('/api/import', { data: { data: bytes.toString('base64') } });
+  const imported = await request.post('/api/import', { headers: {'content-type':'application/octet-stream'}, data: bytes });
   expect(imported.status(), await imported.text()).toBe(201);
   const reopened = await imported.json();
   created.push(reopened.document.id);
@@ -560,7 +560,7 @@ test('shared teaching component instances retain overrides, stable references, h
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  const imported = await request.post('/api/import', { data: { data: bytes.toString('base64') } });
+  const imported = await request.post('/api/import', { headers: {'content-type':'application/octet-stream'}, data: bytes });
   expect(imported.status(), await imported.text()).toBe(201);
   const restored = await imported.json();
   created.push(restored.document.id);
@@ -952,7 +952,7 @@ test('page-specific master images upload, reset, inherit styles and survive hist
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  const imported = await request.post('/api/import', { data: { data: bytes.toString('base64') } });
+  const imported = await request.post('/api/import', { headers: {'content-type':'application/octet-stream'}, data: bytes });
   expect(imported.status(), await imported.text()).toBe(201);
   const restored = await imported.json();
   created.push(restored.document.id);
@@ -1104,7 +1104,7 @@ test('shared layout changes propagate, while a detached page preserves its indep
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
   const imported = await page.request.post('/api/import', {
-    data: { data: bytes.toString('base64') },
+    headers: {'content-type':'application/octet-stream'}, data: bytes,
   });
   expect(imported.status(), await imported.text()).toBe(201);
   const restored = await imported.json();
@@ -1415,7 +1415,7 @@ test('full real project export plays independently and imports with the same aut
     });
     await expect(page.locator('#m-val')).toHaveText('31');
     const imported = await request.post('/api/import', {
-      data: { data: bytes.toString('base64') },
+      headers: {'content-type':'application/octet-stream'}, data: bytes,
     });
     expect(imported.status(), await imported.text()).toBe(201);
     const result = await imported.json();
@@ -6600,7 +6600,7 @@ test('complete Canvas regions copy independent live state, cut across pages, edi
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
   const imported = await page.request.post('/api/import', {
-    data: { data: (await archive.body()).toString('base64') },
+    headers: {'content-type':'application/octet-stream'}, data: await archive.body(),
   });
   expect(imported.status(), await imported.text()).toBe(201);
   const reopened = await imported.json();
@@ -7097,7 +7097,7 @@ test('bootstrap Canvas checkpoints preserve both plots, comparison history and t
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  const imported = await request.post('/api/import', { data: { data: bytes.toString('base64') } });
+  const imported = await request.post('/api/import', { headers: {'content-type':'application/octet-stream'}, data: bytes });
   expect(imported.status(), await imported.text()).toBe(201);
   const restored = await imported.json();
   created.push(restored.document.id);
@@ -7302,7 +7302,7 @@ test('native chart copies keep independent callbacks and editable data through c
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  const imported = await request.post('/api/import', { data: { data: bytes.toString('base64') } });
+  const imported = await request.post('/api/import', { headers: {'content-type':'application/octet-stream'}, data: bytes });
   expect(imported.status(), await imported.text()).toBe(201);
   const restored = await imported.json();
   created.push(restored.document.id);
@@ -7573,7 +7573,7 @@ test('cutting an original native chart preserves its sibling through retry, hist
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  const imported = await request.post('/api/import', { data: { data: bytes.toString('base64') } });
+  const imported = await request.post('/api/import', { headers: {'content-type':'application/octet-stream'}, data: bytes });
   expect(imported.status(), await imported.text()).toBe(201);
   const reopened = await imported.json();
   created.push(reopened.document.id);
@@ -7790,7 +7790,7 @@ test('interactive chart components keep independent controls, captured choices a
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  const imported = await request.post('/api/import', { data: { data: bytes.toString('base64') } });
+  const imported = await request.post('/api/import', { headers: {'content-type':'application/octet-stream'}, data: bytes });
   expect(imported.status(), await imported.text()).toBe(201);
   const reopened = await imported.json();
   created.push(reopened.document.id);
@@ -8041,7 +8041,7 @@ test('original component state appearances edit in place, navigate internal obje
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  const imported = await request.post('/api/import', { data: { data: bytes.toString('base64') } });
+  const imported = await request.post('/api/import', { headers: {'content-type':'application/octet-stream'}, data: bytes });
   expect(imported.status(), await imported.text()).toBe(201);
   const reopened = await imported.json();
   created.push(reopened.document.id);
@@ -8272,7 +8272,7 @@ test('authored HTML components edit layouts, states, click transitions and steps
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  const imported = await request.post('/api/import', { data: { data: bytes.toString('base64') } });
+  const imported = await request.post('/api/import', { headers: {'content-type':'application/octet-stream'}, data: bytes });
   expect(imported.status(), await imported.text()).toBe(201);
   const reopened = await imported.json();
   created.push(reopened.document.id);
@@ -8435,7 +8435,7 @@ test('component steps drive an adopted native chart and preserve authored defaul
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  const imported = await request.post('/api/import', { data: { data: bytes.toString('base64') } });
+  const imported = await request.post('/api/import', { headers: {'content-type':'application/octet-stream'}, data: bytes });
   expect(imported.status(), await imported.text()).toBe(201);
   const reopened = await imported.json();
   created.push(reopened.document.id);

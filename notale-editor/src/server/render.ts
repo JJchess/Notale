@@ -7,9 +7,11 @@ import type { Stylesheets } from '../domain/layout-css.js';
 import { readFile } from 'node:fs/promises';
 import {
   parse,
+  describePageRuntime,
   serialize,
   elements,
   setText,
+  setAttr,
   attr,
   appendHtml,
   escaped,
@@ -30,6 +32,7 @@ export async function renderSlide(
   slide: Slide,
   channel: string,
   stylesheets: Stylesheets = {},
+  mode: 'edit'|'play'|'poster' = 'play',
 ) {
   const root = parse(
       materializeLayout(
@@ -61,8 +64,26 @@ export async function renderSlide(
   head.childNodes.unshift(encoding);
 
   // Presentation copies must be silent before authored scripts can start media.
-  const guard=appendHtml(head,`<script data-notale-runtime>(function(){const role=new URLSearchParams(location.search).get('notaleRole');if(!role)return;const play=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){if(this.dataset.notaleDesiredMuted===undefined)this.dataset.notaleDesiredMuted=String(this.muted);this.muted=true;if(role==='preview')return Promise.resolve();return play.call(this);};})();</script>`,undefined,false)[0];
-  head.childNodes=head.childNodes.filter(node=>node!==guard);head.childNodes.unshift(guard);
+  const guard=appendHtml(head,`<script data-notale-runtime>(function(){const role=new URLSearchParams(location.search).get('notaleRole');if(!role)return;const play=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){if(this.dataset.notaleDesiredMuted===undefined)this.dataset.notaleDesiredMuted=String(this.muted);this.muted=!window.__NOTALE_PRESENTATION_SOUND__||this.dataset.notaleDesiredMuted==='true';if(role==='preview')return Promise.resolve();return play.call(this);};})();</script>`,undefined,false)[0];
+  head.childNodes=head.childNodes.filter(node=>node!==guard);head.childNodes.splice(1,0,guard);
+  if(mode!=='play'){
+    const setup=appendHtml(head,`<script data-notale-runtime>window.__NOTALE_RENDER_MODE__=${JSON.stringify(mode)}</script>`,undefined,false)[0];head.childNodes=head.childNodes.filter(node=>node!==setup);head.childNodes.splice(1,0,setup);
+    for(const el of elements(root))if(el.tagName==='iframe')for(const name of ['src','data-src']){
+      const raw=attr(el,name);if(!raw||/^(data:|blob:)/i.test(raw))continue;
+      const [address,fragment]=raw.split('#'),at=address.indexOf('?'),path=at<0?address:address.slice(0,at),params=new URLSearchParams(at<0?'':address.slice(at+1));params.set('notaleMode',mode);setAttr(el,name,path+'?'+params+(fragment?'#'+fragment:''));
+    }
+  }
+  for(const el of elements(root))if(el.tagName==='iframe'&&(attr(el,'class')??'').split(/\s+/).includes('code-workbench-frame')) {
+    const target=attr(el,'data-notale-id')??'';
+    const descriptor=describePageRuntime(slide,doc).workbenches.find(f=>f.target===target)?.lesson;
+    for(const name of ['src','data-src']){
+      const raw=attr(el,name);if(!raw)continue;
+      const [address,fragment]=raw.split('#'),at=address.indexOf('?'),path=at<0?address:address.slice(0,at),params=new URLSearchParams(at<0?'':address.slice(at+1));
+      params.set('notaleSession',JSON.stringify([doc.id,slide.id,target]));
+      if(descriptor)params.set('notaleRevision',descriptor.revision);
+      setAttr(el,name,path+'?'+params+(fragment?'#'+fragment:''));
+    }
+  }
   const numberedSlides = doc.slides.filter((page) => !page.layoutSourceId);
   for (const el of elements(root)) {
     if (el.tagName === 'aside' && (attr(el, 'class') ?? '').split(/\s+/).includes('notes'))
@@ -98,10 +119,12 @@ export async function renderSlide(
     false,
   );
   if(Object.values(slide.nativeCharts).some(chart=>chart.authoring&&!chart.source)) {
-    const engine=await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist','chart-engine.js'),'utf8');
-    appendHtml(head,`<script data-notale-chart-engine>${engine.replaceAll('</script','<\\/script')}</script>`,undefined,false);
+    if(channel==='export'){
+      const engine=await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist','chart-engine.js'),'utf8');
+      appendHtml(head,`<script data-notale-chart-engine>${engine.replaceAll('</script','<\\/script')}</script>`,undefined,false);
+    }else appendHtml(head,`<script data-notale-chart-engine src="${'../'.repeat(slide.sourcePath.split('/').length-1)}__notale_runtime__/chart-engine.js"></script>`,undefined,false);
   }
-  const runtime = await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist','bridge.js'), 'utf8');
+  const runtime = channel==='export'?await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist','bridge.js'), 'utf8'):undefined;
   const factories: string[] = [];
   for (const [id, chart] of Object.entries(slide.nativeCharts))
     if (chart.source) {
@@ -144,6 +167,7 @@ export async function renderSlide(
   const data = {
     ...(channel!=='export'?Object.fromEntries([['textEditorUrl','text-editor.js'],['vectorEditorUrl','vector-editor.js'],['vectorWasmUrl','pathkit.wasm']].map(([key,file])=>[key,'../'.repeat(slide.sourcePath.split('/').length-1)+'__notale_runtime__/'+file])):{}),
     slide: { ...slide, html: '' },
+    pageRuntime: describePageRuntime(slide,doc),
     scenes: inspectSourceScenes(slide),
     chartComponents: Object.fromEntries(inspectChartComponents(slide)),
     navigation: doc.slides.map((s) => ({
@@ -156,7 +180,7 @@ export async function renderSlide(
   };
   appendHtml(
     body,
-    `<script type="application/json" id="notale-author-config">${JSON.stringify(data).replaceAll('<', '\\u003c')}</script><script data-notale-runtime>window.__NOTALE__=${JSON.stringify(data).replaceAll('<', '\\u003c')};\n${runtime.replaceAll('</script', '<\\/script')}</script>`,
+    `<script type="application/json" id="notale-author-config">${JSON.stringify(data).replaceAll('<', '\\u003c')}</script><script data-notale-runtime>window.__NOTALE__=${JSON.stringify(data).replaceAll('<', '\\u003c')};\n${runtime?.replaceAll('</script', '<\\/script')??''}</script>${runtime===undefined?`<script data-notale-runtime src="${'../'.repeat(slide.sourcePath.split('/').length-1)}__notale_runtime__/bridge.js"></script>`:''}`,
     undefined,
     false,
   );

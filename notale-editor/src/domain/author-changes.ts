@@ -20,7 +20,14 @@ export type AuthorChangeSet = {
 export type SyncAcknowledgement = { mutationId: string; committedVersion: number; change: AuthorChangeSet };
 export type AuthorChangesPage = { changes: AuthorChangeSet[]; headVersion: number; throughVersion: number; hasMore: boolean };
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
+// JSON object member order is not semantic (PostgreSQL jsonb may reorder keys).
+const same = (a: unknown, b: unknown): boolean => {
+  if(a===b)return true;
+  if(Array.isArray(a)||Array.isArray(b))return Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((value,index)=>same(value,b[index]));
+  if(!object(a)||!object(b))return false;
+  const keys=Object.keys(a);
+  return keys.length===Object.keys(b).length&&keys.every(key=>Object.hasOwn(b,key)&&same(a[key],b[key]));
+};
 
 export function authorChanges(before: Snapshot, after: Snapshot): AuthorChangeSet {
   if (before.document.id !== after.document.id) throw Error('Cannot diff different documents');
@@ -77,6 +84,7 @@ export function reverseAuthorChanges(change: AuthorChangeSet, fromVersion = chan
 export type OperationPolicy = 'property' | 'structure' | 'metadata' | 'runtime' | 'resource';
 /** Exhaustive registration is mandatory for every new domain command. */
 export const operationPolicies = {
+  'codeLesson.update':'runtime',
   'svg.patch':'runtime','svg.structure':'runtime','svg.import':'structure',
   'deck.update':'metadata','layout.set':'runtime','comment.set':'metadata','comment.remove':'metadata',
   'layout.remove':'runtime','layout.detach':'structure','layout.checkout':'structure','layout.publish':'runtime','layout.image':'runtime','layout.values':'runtime',

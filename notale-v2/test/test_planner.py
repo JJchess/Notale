@@ -18,7 +18,7 @@ class BriefTests(unittest.TestCase):
         self.assertEqual(Brief(**values).as_tool_input(), values)
 ROOT = Path(__file__).resolve().parents[1]
 prompts_CSS_OK = '/* ==== INTERFACE ====\ntoken --bg #ffffff page background\n==== /INTERFACE ==== */\n:root { --pad-x:56px; --pad-y:28px; --bg:#fff; --text:#111; --font-sans:sans-serif; }\n#stage { padding:var(--pad-y) var(--pad-x); }\n'
-prompts_PAGES_OK = '本套无需图池\n\n# page-01 [标题页]\nAdaBoosting 算法\n\n# page-02 [内容页]\nAdaBoosting 算法的历史\n\n# page-03 [交互页]\n交互理解 AdaBoosting 算法\n\n# page-04 [代码页]\n代码实操 AdaBoosting 算法\n'
+prompts_PAGES_OK = '## Audience\n学生\n\n## Continuity\n无\n\n# page-01 [标题页]\nAdaBoosting 算法\n\n# page-02 [内容页]\nAdaBoosting 算法的历史\n\n# page-03 [交互页]\n交互理解 AdaBoosting 算法\n\n# page-04 [代码页]\n代码实操 AdaBoosting 算法\n'
 
 class PromptTests(unittest.TestCase):
 
@@ -108,7 +108,7 @@ class PlannerExecutionTests(unittest.TestCase):
     def test_non_cover_start_finalizes_and_routes_without_repair(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            doc = '# page-01 [内容页]\n从核心问题开始\n'
+            doc = '## Audience\n学生\n\n# page-01 [内容页]\n从核心问题开始\n'
             run = SimpleNamespace(root=root, style_director=True, log=SimpleNamespace(add=lambda *args: None))
             response = SimpleNamespace(output=[self.function_call(root / planner.PAGES_REL, doc, 'pages')], usage=None, id='non-cover')
             with patch.object(planner.llm, 'respond', return_value=response) as respond:
@@ -117,7 +117,7 @@ class PlannerExecutionTests(unittest.TestCase):
             self.assertEqual(delivered, doc)
             spec = root / 'pages/plan/p01.md'
             spec.parent.mkdir(parents=True)
-            spec.write_text(doc)
+            spec.write_text(planner.split_pages(doc)['01'])
             page = builder.route_page(root, SimpleNamespace(pid='page-01'))
             self.assertEqual(page.workflow, 'build-page')
             context = builder.chapter_preloads(root, 1)['page-01']

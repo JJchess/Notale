@@ -18,4 +18,4 @@ cp tests/fixtures/scene-bootstrap.html "$task_consumer/scene-bootstrap.html"
 cp tests/fixtures/chart-callbacks.html "$task_consumer/chart-callbacks.html"
 cp tests/fixtures/chart-learning-rate.html "$task_consumer/chart-learning-rate.html"
 "$task_consumer/node_modules/.bin/tsc" -p "$task_consumer/tsconfig.json"
-node "$task_consumer/out/consumer.js"
+(cd "$task_consumer" && EDITOR_RUNTIME_DIR="$task_consumer/node_modules/@notale/editor/dist" node out/consumer.js)

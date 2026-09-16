@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import {reveal} from './harness/format-panel';
 import { randomUUID } from "node:crypto";
 test.use({ baseURL: process.env.VECTOR_TEST_URL ?? "http://127.0.0.1:4332" });
 test("vector object, path, gradient and structure edits share durable history", async ({
@@ -41,7 +42,7 @@ test("vector object, path, gradient and structure edits share durable history", 
       )
       .toBe(0);
   await page.locator('[data-tool="style"]').click();
-  await select(["rect"]);
+  await select(["rect"]);await reveal(page,"#vector-properties");
   await expect(page.locator("#vector-properties")).toBeVisible();
   const frame = page.frameLocator("#canvas");
   await frame.locator("body").evaluate(() => {

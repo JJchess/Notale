@@ -1,3 +1,6 @@
+import {readCourse,prepareCourse} from './code-lessons.js';
+import {runtimeIdentity,authorIdentity} from '../domain/page-identity.js';
+import {PosterService} from './posters.js';
 import {resolve} from 'node:path';
 import { inspectSourceScenes } from '../domain/source-scenes.js';
 import { byteRange } from './range.js';
@@ -5,12 +8,15 @@ import Fastify, { type FastifyRequest, type FastifyInstance } from 'fastify';
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
-import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+import { strToU8 } from 'fflate';
+import { NOTALE_FORMAT, encodeArchive, decodeArchive, notaleFilename } from './notale-archive.js';
 import { lookup } from 'mime-types';
 import { Store, sha256, type Context } from './store.js';
 import { commitSchema, documentSchema, DomainError, filePath, invariant } from '../domain/model.js';
-import { inspectSlide } from '../domain/html.js';
+import { inspectSlide, describePageRuntime } from '../domain/html.js';
 import { renderSlide, playerHtml } from './render.js';
+import { createAiProvider, type AiProvider } from './ai-provider.js';
+import { aiEditSchema, aiEdit } from './ai-edits.js';
 
 export interface Integration {
   context: (request: FastifyRequest) => Promise<Context>;
@@ -28,6 +34,7 @@ export interface AppOptions {
   logger?: boolean;
   api?: FastifyInstance;
   serveWorkbench?: boolean;
+  ai?: AiProvider;
 }
 export function createApps(options: AppOptions) {
   const api = options.api ?? Fastify({ logger: options.logger ?? false, bodyLimit: 75_000_000 });
@@ -35,7 +42,11 @@ export function createApps(options: AppOptions) {
     logger: options.logger ?? false,
     routerOptions: { maxParamLength: 2048 },
   });
+  api.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: 75_000_000 }, (_req, body, done) => done(null, body));
   const { store, integration } = options;
+  const ai = options.ai ?? createAiProvider();
+  const posters=new PosterService(process.env.EDITOR_POSTER_DIR);
+  api.addHook('onClose',async()=>posters.close());
   async function context(
     req: FastifyRequest,
     action: 'read' | 'edit' | 'create' | 'export',
@@ -154,6 +165,18 @@ export function createApps(options: AppOptions) {
       return inspectSourceScenes(slide);
     },
   );
+  const courseParams = '/api/documents/:id/slides/:slideId/code/:target';
+  api.get<{Params:{id:string;slideId:string;target:string};Querystring:{version?:string}}>(courseParams,async req=>{
+    const {id,slideId,target}=req.params;
+    const value=await readCourse(store,await context(req,'read',id),id,slideId,target,req.query.version?z.coerce.number().int().positive().parse(req.query.version):undefined);
+    return {lesson:value.lesson,sources:value.sources,version:value.snapshot.version};
+  });
+  const courseSource=z.string().max(200000);
+  const courseInput=z.object({expectedEntry:z.string(),expectedRevision:z.string(),sources:z.object({'starter.py':courseSource,'observe.py':courseSource,'tests.py':courseSource,'view/render.js':courseSource}).strict(),preview:z.object({sourceRevision:z.string(),runtimeRevision:z.string(),initialStep:z.unknown()}).strict().optional()}).strict();
+  api.post<{Params:{id:string;slideId:string;target:string}}>(courseParams+'/prepare',{bodyLimit:5_000_000},async req=>{
+    const {id,slideId,target}=req.params;
+    return prepareCourse(store,await context(req,'edit',id),id,slideId,target,courseInput.parse(req.body));
+  });
   api.get<{Params:{id:string}}>('/api/documents/:id/sync-head',async req=>store.syncHead(await context(req,'read',req.params.id),req.params.id));
   const syncSchema=commitSchema.extend({commands:z.array(commitSchema.shape.commands.element).max(500),geometry:z.boolean().optional(),inverseVersion:z.number().int().min(2).optional(),restoreVersion:z.number().int().positive().optional()}).refine(v=>!!v.inverseVersion||!!v.restoreVersion||v.commands.length>0).refine(v=>!(v.inverseVersion&&v.restoreVersion)).refine(v=>!v.commands.length||(!v.inverseVersion&&!v.restoreVersion));
   api.post<{ Params: { id: string } }>('/api/documents/:id/sync-recovery',async req=>{
@@ -163,7 +186,19 @@ export function createApps(options: AppOptions) {
     store.changes(await context(req,'read',req.params.id),req.params.id,z.coerce.number().int().positive().parse(req.query.after)));
   api.post<{Params:{id:string}}>('/api/documents/:id/prepare',async req=>
     store.prepareSync(await context(req,'edit',req.params.id),req.params.id,commitSchema.parse(req.body)));
-  const syncV2Schema=commitSchema.extend({commands:z.array(commitSchema.shape.commands.element).max(500),geometry:z.boolean().optional(),inverseVersion:z.number().int().min(2).optional(),restoreVersion:z.number().int().positive().optional(),inverseMutationId:commitSchema.shape.mutationId.optional()}).refine(v=>Number(!!v.inverseVersion)+Number(!!v.restoreVersion)+Number(!!v.inverseMutationId)+(v.commands.length?1:0)===1);
+  // A candidate, never a commit: the author applies it from the editor, or discards it.
+  api.get('/api/ai/status',async()=>({available:ai.available,reason:ai.reason,model:ai.model}));
+  api.post<{Params:{id:string}}>('/api/documents/:id/ai-edits',async req=>{
+    const ctx=await context(req,'edit',req.params.id);
+    const request=aiEditSchema.parse(req.body);
+    return aiEdit(request,{
+      provider:ai,
+      snapshot:baseVersion=>store.get(ctx,req.params.id,baseVersion),
+      prepare:commit=>store.prepareSync(ctx,req.params.id,commit),
+      mutationId:()=>randomUUID(),
+    });
+  });
+  const syncV2Schema=commitSchema.extend({dependencies:z.array(commitSchema.shape.mutationId).max(500).optional(),commands:z.array(commitSchema.shape.commands.element).max(500),geometry:z.boolean().optional(),inverseVersion:z.number().int().min(2).optional(),restoreVersion:z.number().int().positive().optional(),inverseMutationId:commitSchema.shape.mutationId.optional()}).refine(v=>Number(!!v.inverseVersion)+Number(!!v.restoreVersion)+Number(!!v.inverseMutationId)+(v.commands.length?1:0)===1);
   api.post<{Params:{id:string}}>('/api/documents/:id/sync/v2',async req=>
     store.syncV2(await context(req,'edit',req.params.id),req.params.id,syncV2Schema.parse(req.body)));
   api.post<{ Params: { id: string } }>('/api/documents/:id/sync', async req =>
@@ -235,11 +270,29 @@ export function createApps(options: AppOptions) {
         renewAfterMs: 1800000,
         slides: snapshot.document.slides.map((s) => ({
           id: s.id,
+          contentKey:sha256(authorIdentity(snapshot.document,s)),
+          runtimeKey:sha256(runtimeIdentity(snapshot.document,s)),
+          objectIndexKey:sha256(JSON.stringify(s)),
+          posterUrl:`/api/documents/${req.params.id}/slides/${s.id}/poster?version=${snapshot.version}`,
           url: base + s.sourcePath.split('/').map(encodeURIComponent).join('/'),
         })),
       };
     },
   );
+  api.get<{Params:{id:string;pageId:string};Querystring:{version?:string;step?:string}}>('/api/documents/:id/slides/:pageId/poster',async(req,reply)=>{
+    const ctx=await context(req,'read',req.params.id),snapshot=await store.get(ctx,req.params.id,req.query.version?z.coerce.number().int().positive().parse(req.query.version):undefined);
+    const slide=snapshot.document.slides.find(page=>page.id===req.params.pageId);invariant(slide,'NOT_FOUND','Page not found',404);
+    const step=z.coerce.number().int().min(0).max(10000).parse(req.query.step??0);
+    const doc=snapshot.document,key=sha256(JSON.stringify(['poster-5',step,ctx.scope,doc.id,slide,doc.width,doc.height,doc.theme,doc.layouts.find(layout=>layout.id===slide.layoutId),doc.assets]));
+    const bytes=await posters.request(key,async()=>{
+    const token=capability(ctx,doc.id,snapshot.version);
+    await store.renewPreview(ctx,doc.id,snapshot.version,sha256(token));
+    const url=`${options.contentOrigin}/content/${token}/${doc.id}/${snapshot.version}/${slide.sourcePath.split('/').map(encodeURIComponent).join('/')}?notaleMode=poster`;
+    return {key,url,width:doc.width,height:doc.height,step};});
+    reply.header('Cache-Control','private, no-cache');
+    if(!bytes)return reply.code(202).header('Retry-After','1').send({status:'pending',key});
+    return reply.header('ETag',`"${key}"`).type('image/webp').send(bytes);
+  });
   api.post<{ Params: { id: string } }>('/api/documents/:id/preview/renew', async (req) => {
     const ctx = await context(req, 'read', req.params.id);
     const { channel, version } = z
@@ -272,7 +325,14 @@ export function createApps(options: AppOptions) {
         'Preview grant expired',
         403,
       );
-      if(path==='__notale_runtime__/chart-engine.js')return reply.type('text/javascript; charset=utf-8').send(await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist','chart-engine.js')));
+      if(path==='__notale_runtime__/bridge.js'||path==='__notale_runtime__/chart-engine.js'){
+        const bytes=await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist',path.split('/').at(-1)!));
+        const etag=`"${sha256(bytes)}"`;
+        reply.type('text/javascript; charset=utf-8').header('ETag',etag).header('Cache-Control','private, max-age=0, must-revalidate').header('X-Content-Type-Options','nosniff');
+        // Capability/lease validation above still runs for conditional requests.
+        if(req.headers['if-none-match']===etag)return reply.code(304).send();
+        return reply.send(bytes);
+      }
       if(path==='__notale_runtime__/text-editor.js')return reply.type('text/javascript; charset=utf-8').send(await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist','text-editor.js')));
       if(path==='__notale_runtime__/vector-editor.js'||path==='__notale_runtime__/vector-worker.js'||path==='__notale_runtime__/pathkit.wasm')return reply.type(path.endsWith('.wasm')?'application/wasm':'text/javascript; charset=utf-8').send(await readFile(resolve(process.env.EDITOR_RUNTIME_DIR??'dist',path.split('/').at(-1)!)));
       const snapshot = await store.get(ctx, id, version),
@@ -287,13 +347,16 @@ export function createApps(options: AppOptions) {
               slide,
               token,
               slide.layoutId ? await store.stylesheets(ctx, snapshot.document) : undefined,
+              (req.query as Record<string,string>).notaleMode==='edit'?'edit':(req.query as Record<string,string>).notaleMode==='poster'?'poster':'play',
             ),
           );
       const metadata = snapshot.document.assets[path];
       invariant(metadata, 'NOT_FOUND', 'File not found', 404);
+      const etag = `"${metadata.hash}"`;
+      reply.type(metadata.mime).header('ETag', etag).header('Accept-Ranges', 'bytes').header('Cache-Control', 'private, max-age=0, must-revalidate');
+      // The scoped revision contains the immutable asset hash; a cache hit needs no blob read.
+      if (req.headers['if-none-match'] === etag) return reply.code(304).send();
       const asset = await store.asset(ctx, id, version, path);
-      const etag = `"${asset.hash}"`;
-      reply.type(metadata.mime).header('ETag', etag).header('Accept-Ranges', 'bytes');
       const range =
         req.method === 'GET' && (!req.headers['if-range'] || req.headers['if-range'] === etag)
           ? byteRange(req.headers.range, asset.data.length)
@@ -320,9 +383,13 @@ export function createApps(options: AppOptions) {
             : undefined,
         );
       const files: Record<string, Uint8Array> = {
-        'notale-project.json': strToU8(JSON.stringify(snapshot)),
+        'notale-project.json': strToU8(JSON.stringify({ ...NOTALE_FORMAT, document: snapshot.document, pageRuntimes: Object.fromEntries(snapshot.document.slides.map(slide => [slide.id, describePageRuntime(slide,snapshot.document)])) })),
         'index.html': strToU8(playerHtml(snapshot.document)),
       };
+      const usedPaths = new Set([...Object.keys(files), ...Object.keys(snapshot.document.assets), ...snapshot.document.slides.map(slide => slide.sourcePath)]);
+      let noticePath = 'notale-runtime-notices.txt', suffix = 2;
+      while (usedPaths.has(noticePath)) noticePath = `notale-runtime-notices-${suffix++}.txt`;
+      files[noticePath] = new Uint8Array(await readFile(resolve(process.env.EDITOR_RUNTIME_DIR ?? 'dist', 'runtime-notices.txt')));
       const stylesheets = snapshot.document.slides.some((s) => s.layoutId)
         ? await store.stylesheets(ctx, snapshot.document)
         : undefined;
@@ -340,38 +407,27 @@ export function createApps(options: AppOptions) {
         .type('application/zip')
         .header(
           'Content-Disposition',
-          `attachment; filename="${req.params.id}-v${snapshot.version}.zip"`,
+          `attachment; filename="Notale.notale"; filename*=UTF-8''${encodeURIComponent(notaleFilename(snapshot.document.title))}`,
         )
-        .send(Buffer.from(zipSync(files, { level: 6 })));
+        .send(Buffer.from(await encodeArchive(files)));
     },
   );
   api.post('/api/import', async (req, reply) => {
-    const ctx = await context(req, 'create'),
-      body = z
-        .object({ data: z.string().max(70_000_000), id: z.string().uuid().optional() })
-        .strict()
-        .parse(req.body);
-    let total = 0;
-    const files = unzipSync(Buffer.from(body.data, 'base64'), {
-      filter: (entry) => {
-        total += entry.originalSize;
-        invariant(total <= 150_000_000, 'TOO_LARGE', 'Expanded project exceeds 150 MB', 413);
-        filePath.parse(entry.name);
-        return true;
-      },
-    });
-    invariant(files['notale-project.json'], 'INVALID_PROJECT', 'Project manifest is missing');
-    const manifest = JSON.parse(strFromU8(files['notale-project.json']));
-    const doc = documentSchema.parse(manifest.document);
-    doc.id = body.id ?? randomUUID();
+    const ctx = await context(req, 'create');
+    invariant(Buffer.isBuffer(req.body), 'INVALID_PROJECT', 'Upload a binary Notale file');
+    const { document: doc, files } = await decodeArchive(req.body);
+    doc.id = randomUUID();
     for (const [path, a] of Object.entries(doc.assets)) {
       invariant(files[path], 'MISSING_ASSET', `Missing ${path}`);
-      const uploaded = await store.upload(ctx, { data: Buffer.from(files[path]), mime: a.mime });
+      const data = Buffer.from(files[path]);
+      invariant(sha256(data)===a.hash && data.length===a.size,'ASSET_HASH_MISMATCH',`Corrupt asset ${path}`);
+      const uploaded = await store.upload(ctx, { data, mime: a.mime });
       invariant(
         uploaded.hash === a.hash && uploaded.size === a.size,
         'ASSET_HASH_MISMATCH',
         `Corrupt asset ${path}`,
       );
+      doc.assets[path]=uploaded;
     }
     return reply.code(201).send(await store.create(ctx, doc));
   });

@@ -27,13 +27,14 @@ const server = createServer(async (req, res) => {
   }
   // Signed slide content is never served on the editor/API origin.
   if (pathname.startsWith('/content/')) { res.writeHead(404).end('Not found'); return; }
-  const templateAsset = /^\/templates\/refined\/(?:assets\/)?[a-zA-Z0-9_.-]+\.(?:json|html|png|jpg|woff2)$/.test(pathname) ? [pathname.slice(1), ({json:'application/json',html:'text/html; charset=utf-8',png:'image/png',jpg:'image/jpeg',woff2:'font/woff2'})[pathname.split('.').pop() as 'json'|'html'|'png'|'jpg'|'woff2']] : undefined;
+  const templateAsset = /^\/templates\/(?:original|refined)\/(?:assets\/)?[a-zA-Z0-9_.-]+\.(?:json|html|png|jpg|woff2)$/.test(pathname) ? [pathname.slice(1), ({json:'application/json',html:'text/html; charset=utf-8',png:'image/png',jpg:'image/jpeg',woff2:'font/woff2'})[pathname.split('.').pop() as 'json'|'html'|'png'|'jpg'|'woff2']] : undefined;
   const staticAsset=pathname==='/katex.min.css'?['vendor/katex.min.css','text/css; charset=utf-8']:templateAsset;
   if(staticAsset && req.method==='GET'){
     try{const body=await readFile(resolve(staticAsset[0]));res.writeHead(200,{'content-type':staticAsset[1],'cache-control':'no-cache'}).end(body);}
     catch{res.writeHead(404).end('Resource not found');}
     return;
   }
+  if(pathname==='/show.html'){res.writeHead(302,{location:'/present'+new URL(req.url!,'http://frontend.local').search}).end();return;}
   // Host API/show routing; preview URLs point at the isolated content hostname above.
   if (pathname.startsWith('/api/') || ['/health', '/show.html', '/show.js', '/reveal.css'].includes(pathname)) {
     const target = new URL(backend);

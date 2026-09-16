@@ -1,6 +1,7 @@
 /** Transient presentation data. Never sent to the author/save command pipeline. */
 export type PresentationRole='controller'|'audience'|'preview'|'following';
 export type PresentationRuntimeState={
+ step:number;
  controls:Record<string,{value:string;checked?:boolean}>;
  components:Record<string,string>;
  charts:Record<string,unknown>;
@@ -19,9 +20,10 @@ export type PresentationSessionState={
  runtime:Record<string,PresentationRuntimeState>;
 };
 export function mergePresentationRuntime(base:PresentationRuntimeState|undefined,patch:PresentationRuntimePatch):PresentationRuntimeState{
- const empty:PresentationRuntimeState={controls:{},components:{},charts:{},scenes:{},media:{},dom:{},capabilities:[]};
+ const empty:PresentationRuntimeState={step:0,controls:{},components:{},charts:{},scenes:{},media:{},dom:{},capabilities:[]};
  const next={...(base??empty)};
  for(const key of ['controls','components','charts','scenes','media','dom'] as const)next[key]={...next[key],...patch[key]} as never;
+ if(patch.step!==undefined)next.step=patch.step;
  if(patch.capabilities)next.capabilities=patch.capabilities;
  return next;
 }

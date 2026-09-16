@@ -6,7 +6,7 @@ export function rebaseUrl(value: string, from: string, to: string) {
     path = split < 0 ? value : value.slice(0, split),
     suffix = split < 0 ? '' : value.slice(split);
   return (
-    (posix.relative(posix.dirname(to), posix.join(posix.dirname(from), path)) ||
+    (posix.relative(posix.dirname(to), (path ? posix.join(posix.dirname(from), path) : from)) ||
       posix.basename(path)) + suffix
   );
 }

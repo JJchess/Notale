@@ -8,7 +8,7 @@ The user requests larger implementation increments and fewer repeated long tests
 
 ## Latest module: separate frontend and video-led editor shell
 
-The preceding goal turn completed the Canvas evidence audit and clarified frontend readiness, so it was verified progress. This turn shifted implementation to the formal frontend. The user then explicitly required sibling frontend/backend directories and supplied `/data1/home/zhuyifan/ws2/Notale/屏幕录制 2026-09-09 061109.mp4` as the preferred overall reference. Applied frontend-design and video-to-superprompt skills; inspected the 28.18-second, 2558×1346, 30fps video and extracted representative frames. The reference shows a narrow dark creation rail, contextual resource drawers, a dominant canvas, grouped bottom controls and dimmed editor chrome in interaction preview.
+The preceding goal turn completed the Canvas evidence audit and clarified frontend readiness, so it was verified progress. This turn shifted implementation to the formal frontend. The user then explicitly required sibling frontend/backend directories and supplied `<workspace>/屏幕录制 2026-09-09 061109.mp4` as the preferred overall reference. Applied frontend-design and video-to-superprompt skills; inspected the 28.18-second, 2558×1346, 30fps video and extracted representative frames. The reference shows a narrow dark creation rail, contextual resource drawers, a dominant canvas, grouped bottom controls and dimmed editor chrome in interaction preview.
 
 Created sibling `../notale-editor-frontend/` with independent package/lock/build/static host (4312), source and browser tests. The new UI changes were removed from the backend reference workbench. Backend additions are the browser-safe public `@notale/editor/browser` entry and integration documentation. The frontend installs a packed contract artifact and has no relative backend source imports; its browser bundle contains no Node builtins. API/show requests use an HTTP host proxy while authored content remains on the backend's isolated content origin.
 
@@ -89,7 +89,7 @@ References checked: [Reveal API](https://revealjs.com/api/), [speaker view](http
 
 ### Runtime notes
 
-Dedicated database: Docker Compose project `notale-editor`, localhost port 55439. API/content development ports 4310/4311; additional production test instance used 4312/4313. Query running process state before stopping/restarting anything. Environment already has Chromium at `/data1/home/zhuyifan/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome`; set `CHROMIUM_PATH` for browser tests or install the matching Playwright browser normally.
+Dedicated database: Docker Compose project `notale-editor`, localhost port 55439. API/content development ports 4310/4311; additional production test instance used 4312/4313. Query running process state before stopping/restarting anything. Environment already has Chromium at `<home>/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome`; set `CHROMIUM_PATH` for browser tests or install the matching Playwright browser normally.
 
 ### Shared design, structural editing and affine geometry increment
 

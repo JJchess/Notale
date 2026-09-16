@@ -263,7 +263,7 @@ Upload bytes first, then reference the returned hash in a commit. A blob must ha
 
 Blobs are kept while revisions exist; there is currently no destructive history pruning or automatic resource GC. This prioritizes restoration integrity and means storage grows with retained content. PostgreSQL `pg_dump` covers document metadata and blob bytes together. The executable `npm run test:restore` drill pins a consistent source snapshot, restores an isolated database, checks all editor tables/blob bytes and historical mutation replay, and runs the real-slide/browser validations. See [OPERATIONS.md](OPERATIONS.md) for the workflow and recovery boundaries. Restore into a separate database and run the browser audit before switching traffic. Stop the dedicated local database with `docker compose -p notale-editor stop`; retain the volume to retain saved work.
 
-ZIP contains `notale-project.json` with original author HTML, rendered page files, `index.html`, and resource paths. Rendered pages include the bridge and current author defaults; reopening a project uses the manifest, not the runtime HTML. Import validates hashes and creates a new document ID. Linked online resources remain online dependencies; runtime/library licenses and network needs travel with those resources, rather than being silently removed.
+The `.notale` v1 ZIP container contains `notale-project.json` with original author HTML, rendered page files, `index.html`, and resource paths. Rendered pages include the bridge and current author defaults; reopening a project uses the manifest, not the runtime HTML. Import validates hashes and creates a new document ID. Linked online resources remain online dependencies; runtime/library licenses and network needs travel with those resources, rather than being silently removed.
 
 
 ### Text-box dimensions and reflow
@@ -587,3 +587,5 @@ The isolated edit bridge accepts channel-validated `animations-update` and schem
 编辑预览通过已有签名 content 路由加载 `__notale_runtime__/text-editor.js`；导出 HTML 不加载此模块。`EDITOR_RUNTIME_DIR` 可指定独立候选运行时目录，构建与服务需使用同一目录。
 
 Bridge 事件 `text-session-start`、`text-draft`、`text-context-state`、`text-session-end` 带 slideId/runtimeId/sessionId；草稿额外携带 target/sequence/html，可附根节点 style。宿主持久化后沿既有 `/sync` 提交 `element.patch.richText`，确认通过 `text-confirm` 返回。文字选区 bookmark 留在 iframe 内，宿主只发送带 selectionToken 的格式意图。不要把未封批草稿当作已提交请求重写；封批后的 mutationId 与请求保持不可变。
+
+Current native file/API details: [NOTALE-V1.md](NOTALE-V1.md). Binary imports replace the previous base64 JSON import payload.

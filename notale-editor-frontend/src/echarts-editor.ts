@@ -1,7 +1,18 @@
+import {bindChartProperties,type ChartPropertyGroup,type ChartPropertyButton} from './state/chart-properties';
+import {bindChartDock} from './state/chart-dock';
+import {bindChartBindings,type ChartBindingField,type ChartBindingAction} from './state/chart-bindings';
+import {bindChartToolbar,type ChartToolbarAction} from './state/chart-toolbar';
+import {createChartGridConnection} from './state/chart-grid-connection';
+import {applyChartTable,chartTableRows} from './state/chart-table-draft';
+import {pasteChartTable} from './state/chart-table-paste';
+import {chartNumber as number} from './state/chart-table-import';
+import {createChartDataMenu,type ChartMenuAction} from './state/chart-data-menu';
+import {createChartImport} from './state/chart-import-dialog';
+import {createChartGallery} from './state/chart-gallery';
+import {ChartBuffers,chartBufferKey} from './state/chart-buffers';
+import {ChartEdits,type ChartEdit} from './state/chart-edits';
 import {
   chartAuthoringSchema,
-  chartKinds,
-  chartNames,
   newChart,
   cleanChartReferences,
   chartAtState,
@@ -23,37 +34,12 @@ type Context = {
   select: (id: string) => void;
   format: () => void;
   commands: (commands: Command[]) => Promise<unknown>;
-  commit: (
-    slideId: string,
-    target: string,
-    before: ChartAuthoring,
-    after: ChartAuthoring,
-  ) => Promise<void>;
+  commit:(edit:ChartEdit)=>Promise<void>;
   error: (error: unknown) => void;
   step: () => number;
   setStep: (step: number) => void;
 };
 const uid = () => crypto.randomUUID();
-const icon = (text: string, label: string) => {
-  const b = document.createElement("button");
-  b.type = "button";
-  b.textContent = text;
-  b.title = label;
-  b.setAttribute("aria-label", label);
-  return b;
-};
-const groups: [string, ChartKind[]][] = [
-  ["常用", ["column", "bar", "line", "area", "pie", "doughnut"]],
-  [
-    "组合与比较",
-    ["combo", "stacked", "percent", "stacked-area", "waterfall", "rose"],
-  ],
-  ["统计", ["scatter", "bubble", "histogram", "boxplot", "radar", "heatmap"]],
-  [
-    "结构与流程",
-    ["tree", "treemap", "sunburst", "graph", "sankey", "funnel", "gauge"],
-  ],
-];
 export function createEchartsEditor(ctx: Context) {
   let target = "",
     model: ChartAuthoring | undefined,
@@ -68,144 +54,72 @@ export function createEchartsEditor(ctx: Context) {
   let bufferBase: Record<string, unknown>[] = [];
   let buffer: Record<string, unknown>[] | undefined,
     bufferError = "",
-    write = Promise.resolve(),
     selectionGeneration = 0;
-  const cache = new Map<string, ChartAuthoring>(),
-    unsent = new Map<string, ChartAuthoring>();
-  const panel = document.createElement("section");
-  panel.id = "echarts-inspector";
-  panel.hidden = true;
-  panel.className = "chart-inspector";
-  document.getElementById("selection-name")!.after(panel);
-  const dock = document.createElement("section");
-  dock.id = "chart-data-dock";
-  dock.hidden = true;
-  dock.className = "chart-data-dock";
-  dock.setAttribute("aria-label", "图表数据");
-  dock.innerHTML =
-    '<div class="chart-data-resizer" role="separator" aria-label="调整数据面板高度" tabindex="0"></div><div class="chart-data-toolbar"><strong>图表数据</strong><div class="chart-data-actions"></div><button class="chart-data-close" aria-label="收起图表数据" title="收起图表数据">×</button></div><div class="chart-data-bindings"></div><div class="chart-data-grid"></div><p class="chart-data-status" role="status"></p>';
-  const viewport = document.getElementById("canvas-viewport")!;
-  viewport.after(dock);
-  const message = dock.querySelector<HTMLElement>(".chart-data-status")!,
-    bindings = dock.querySelector<HTMLElement>(".chart-data-bindings")!;
-  const gallery = document.createElement("dialog");
-  gallery.id = "chart-type-gallery";
-  gallery.className = "chart-gallery";
-  gallery.setAttribute("aria-label", "选择图表类型");
-  document.body.append(gallery);
-  let galleryMode: "insert" | "change" = "insert",
-    savedViewport: { left: number; top: number } | undefined;
+  const cache = new Map<string, ChartAuthoring>();
+  const edits=new ChartEdits(ctx.commit);
+  const buffers=new ChartBuffers();
+  let sealed=false,disposed=false;
+  const lifecycle=new AbortController();
+  const panel=document.getElementById('echarts-inspector')!;
+  const propertyView=bindChartProperties();
+  let observedAuthoring:string|undefined,propertyLocked:boolean|undefined;
+  let propertyRoot:ChartPropertyGroup={kind:'group',className:'',children:[]};
+  let propertyGuard=()=>{};
+  const dock=document.getElementById('chart-data-dock')!;
+  const dockState=bindChartDock();
+  const viewport=document.getElementById('canvas-viewport')!;
+  const gridConnection=createChartGridConnection();
+  const bindings = dock.querySelector<HTMLElement>(".chart-data-bindings")!;
+  let renamingColumn:string|undefined;
+  const bindingView=bindChartBindings(bindings);
+  const gallery=createChartGallery();
+  const importDialog=createChartImport();
+  const dataMenu=createChartDataMenu();
   const status = (text: string) => {
-    message.textContent = text;
-    message.classList.toggle("is-error", !!bufferError);
+    if(disposed)return;
+    dockState.status(text,!!bufferError);
   };
   const error = (e: unknown) => {
     bufferError = e instanceof Error ? e.message : String(e);
     status(bufferError);
   };
-  const button = (parent: HTMLElement, text: string, action: () => unknown) => {
-    const b = icon(text, text);
-    b.onclick = () => {
-      try {
-        Promise.resolve(action()).catch(ctx.error);
-      } catch (e) {
-        ctx.error(e);
-      }
-    };
-    parent.append(b);
-    return b;
+  const button=(parent:ChartPropertyGroup,label:string,action:()=>unknown)=>{
+    const guard=propertyGuard;
+    const node:ChartPropertyButton={kind:'button',label,run:()=>{guard();return action();}};
+    parent.children.push(node);return node;
   };
-  const field = (
-    parent: HTMLElement,
-    label: string,
-    value: unknown,
-    change: (value: any) => void,
-    options?: Record<string, string> | "number" | "color" | "checkbox",
-  ) => {
-    const wrap = document.createElement("label");
-    wrap.className = "chart-field";
-    const title = document.createElement("span");
-    title.textContent = label;
-    wrap.append(title);
-    let input: HTMLInputElement | HTMLSelectElement;
-    if (options && typeof options === "object") {
-      input = document.createElement("select");
-      for (const [key, name] of Object.entries(options))
-        input.add(new Option(name, key));
-    } else {
-      input = document.createElement("input");
-      input.type = options ?? "text";
-      if (options === "number") {
-        input.step = "any";
-        input.placeholder = "自动";
-      }
-    }
-    input.setAttribute("aria-label", label);
-    if (options === "checkbox") (input as HTMLInputElement).checked = !!value;
-    else input.value = value == null ? "" : String(value);
-    input.addEventListener("compositionstart", () => (composition = true));
-    input.addEventListener("compositionend", () => (composition = false));
-    input.onchange = () => {
-      if (composition) return;
-      change(
-        options === "checkbox"
-          ? (input as HTMLInputElement).checked
-          : options === "number"
-            ? input.value === ""
-              ? null
-              : Number(input.value)
-            : input.value,
-      );
-    };
-    wrap.append(input);
-    parent.append(wrap);
-    return input;
+  const field=(parent:ChartPropertyGroup,label:string,value:unknown,change:(value:any)=>void,options?:Record<string,string>|'number'|'color'|'checkbox')=>{
+    const guard=propertyGuard;
+    parent.children.push({kind:'field',label,value,options,change:value=>{guard();change(value);}});
   };
-  const section = (title: string, open = false) => {
-    const d = document.createElement("details");
-    d.className = "chart-properties";
-    d.open = open;
-    const s = document.createElement("summary");
-    s.textContent = title;
-    d.append(s);
-    panel.append(d);
-    return d;
+  const section=(title:string,open=false)=>{
+    const group:ChartPropertyGroup={kind:'group',className:'chart-properties',title,open,children:[]};propertyRoot.children.push(group);return group;
   };
   function currentKey() {
     return [ctx.documentId(), ctx.slide().id, target].join(":");
   }
+  function bufferKey(){return chartBufferKey(currentKey(),edgeMode?undefined:stepState);}
   function preview() {
     if (model) ctx.send("chart-draft", { target, model, stepState });
   }
   function save(next: ChartAuthoring, refresh = false) {
-    if (!model || ctx.locked()) return;
+    if (sealed || !model || ctx.locked()) return false;
     try {
       next = chartAuthoringSchema.parse(cleanChartReferences(next));
       const before = structuredClone(model);
-      if (JSON.stringify(before) === JSON.stringify(next)) return;
+      if (JSON.stringify(before) === JSON.stringify(next)) return true;
       model = next;
       cache.set(currentKey(), structuredClone(next));
-      unsent.set(currentKey(), next);
       preview();
-      const id = target,
-        pageId = ctx.slide().id,
-        saveKey = currentKey();
-      write = write
-        .catch(() => {})
-        .then(() => ctx.commit(pageId, id, before, next));
-      void write
-        .then(() => {
-          if (unsent.get(saveKey) === next) unsent.delete(saveKey);
-        })
-        .catch(ctx.error);
+      void edits.enqueue({documentId:ctx.documentId(),slideId:ctx.slide().id,target,before,after:next}).catch(ctx.error);
       bufferError = "";
       status("");
-      if (refresh) {
-        renderProperties();
-        renderGrid();
-      }
+      renderProperties();
+      if(refresh)renderGrid();
+      return true;
     } catch (e) {
       error(e);
+      return false;
     }
   }
   function edit(action: (next: ChartAuthoring) => void, refresh = false) {
@@ -292,18 +206,22 @@ export function createEchartsEditor(ctx: Context) {
     ctx.send("chart-selection", { target, selection: part });
   }
   function renderProperties() {
-    if (!model) return;
-    panel.replaceChildren();
+    if(disposed)return;
+    if(!model){propertyView.hide();return;}
+    propertyRoot={kind:'group',className:'',children:[]};
+    const scope=JSON.stringify([currentKey(),part,stepState]),baseline=JSON.stringify(model);
+    propertyGuard=()=>{if(disposed||JSON.stringify([currentKey(),part,stepState])!==scope||JSON.stringify(model)!==baseline)throw Error('图表已变化，请重新选择属性');if(ctx.locked())throw Error('图表已锁定');};
     if (stepState) {
-      const bar = document.createElement("div");
-      bar.className = "chart-step-scope";
-      bar.textContent = `正在编辑：${model.states.find((s) => s.id === stepState)?.name ?? "教学步骤"}`;
+      const bar:ChartPropertyGroup={kind:'group',className:'chart-step-scope',children:[]};
+      const stepLabel = `正在编辑：${model.states.find((s) => s.id === stepState)?.name ?? "教学步骤"}`;
+      bar.children.push({kind:'text',className:'',text:stepLabel});
       button(bar, "返回基础图表", () => {
         stepState = undefined;
         preview();
         renderProperties();
+        renderGrid();
       });
-      panel.append(bar);
+      propertyRoot.children.push(bar);
     }
     const cartesian = [
       "column",
@@ -342,7 +260,7 @@ export function createEchartsEditor(ctx: Context) {
           ? `annotation:${part.annotationId}`
           : part.kind;
     field(
-      panel,
+      propertyRoot,
       "所选内容",
       selectionKey,
       (value) => {
@@ -356,16 +274,13 @@ export function createEchartsEditor(ctx: Context) {
       objects,
     );
     if (part.kind === "point") {
-      const note = document.createElement("p");
-      note.className = "hint";
-      note.textContent = `数据点：${model.rows.find((r) => r.id === part.rowId)?.values[model.bindings.label] ?? ""}`;
-      panel.append(note);
+      const note = `数据点：${model.rows.find((r) => r.id === part.rowId)?.values[model.bindings.label] ?? ""}`;
+      propertyRoot.children.push({kind:'text',className:'hint',text:note});
     }
-    const actions = document.createElement("div");
-    actions.className = "chart-primary-actions";
+    const actions:ChartPropertyGroup={kind:'group',className:'chart-primary-actions',children:[]};
     button(actions, "编辑数据", openData);
     button(actions, "更改类型", () => openGallery("change"));
-    panel.append(actions);
+    propertyRoot.children.push(actions);
     const shown = stepState ? chartAtState(model, [stepState]) : model;
     if (["chart", "title"].includes(part.kind)) {
       const group = section("标题与文字", true);
@@ -427,21 +342,14 @@ export function createEchartsEditor(ctx: Context) {
         ["#3e73ba", "#6ca0d6", "#b4d5ed", "#dc914c", "#ddbd83"],
         ["#269a91", "#62b2a8", "#a4d1bc", "#d4c788", "#d58b61"],
       ];
-      const swatches = document.createElement("div");
-      swatches.className = "chart-palettes";
+      const swatches:ChartPropertyGroup={kind:'group',className:'chart-palettes',children:[]};
       palettes.forEach((colors, i) => {
         const b = button(swatches, `配色 ${i + 1}`, () =>
           styleEdit((n) => (n.appearance.palette = colors)),
         );
-        b.replaceChildren(
-          ...colors.map((c) => {
-            const s = document.createElement("span");
-            s.style.background = c;
-            return s;
-          }),
-        );
+        b.colors=colors;
       });
-      g.append(swatches);
+      g.children.push(swatches);
     }
     if (part.kind === "series" || part.kind === "point") {
       const s =
@@ -746,6 +654,7 @@ export function createEchartsEditor(ctx: Context) {
         stepState = state.id;
         preview();
         renderProperties();
+        renderGrid();
       });
     if (stepState) {
       field(
@@ -802,11 +711,8 @@ export function createEchartsEditor(ctx: Context) {
       button(transfer, "恢复动态数据", () =>
         edit((n) => (n.origin = "native"), true),
       );
-    if (ctx.locked())
-      for (const control of panel.querySelectorAll<HTMLInputElement>(
-        "input,select,button",
-      ))
-        control.disabled = true;
+    propertyLocked=ctx.locked();
+    propertyView.update(scope,propertyRoot.children,propertyLocked);
   }
   function addAnnotation(kind: "text" | "point" | "line" | "area") {
     const id = uid();
@@ -839,7 +745,7 @@ export function createEchartsEditor(ctx: Context) {
   }
   async function addStep() {
     if (!model) return;
-    await write;
+    await edits.flush();
     const page = ctx.slide(),
       id = target,
       stateId = uid(),
@@ -890,105 +796,36 @@ export function createEchartsEditor(ctx: Context) {
     ctx.setStep(index);
     preview();
     renderProperties();
+    renderGrid();
   }
   function openGallery(mode: "insert" | "change") {
-    galleryMode = mode;
-    gallery.replaceChildren();
-    const header = document.createElement("header");
-    const title = document.createElement("h2");
-    title.textContent = mode === "insert" ? "插入图表" : "更改图表类型";
-    header.append(title);
-    button(header, "×", () => gallery.close()).setAttribute(
-      "aria-label",
-      "关闭",
-    );
-    gallery.append(header);
-    for (const [name, kinds] of groups) {
-      const label = document.createElement("h3");
-      label.textContent = name;
-      gallery.append(label);
-      const row = document.createElement("div");
-      row.className = "chart-type-grid";
-      for (const kind of kinds) {
-        const b = button(row, chartNames[kind], () => chooseType(kind));
-        b.className = "chart-type-card";
-        b.setAttribute(
-          "aria-pressed",
-          String(mode === "change" && model?.kind === kind),
-        );
-        const picture = document.createElement("div");
-        picture.className = `chart-mini chart-mini-${kind}`;
-        picture.innerHTML = ["pie", "doughnut", "rose", "sunburst"].includes(
-          kind,
-        )
-          ? '<i class="chart-mini-circle"></i>'
-          : ["line", "area", "stacked-area"].includes(kind)
-            ? '<svg viewBox="0 0 100 50" aria-hidden="true"><path d="M5 42L30 24L50 32L75 10L95 17"/></svg>'
-            : '<i style="height:40%"></i><i style="height:75%"></i><i style="height:55%"></i><i style="height:90%"></i>';
-        b.prepend(picture);
+    if(disposed)return;
+    const documentId=ctx.documentId(),slideId=ctx.slide().id,selected=target;
+    const baseline=model?JSON.stringify(model):undefined;
+    gallery.open({mode,kind:model?.kind,choose:async kind=>{
+      if(disposed||ctx.documentId()!==documentId||ctx.slide().id!==slideId)
+        throw Error('讲义或页面已切换，请重新打开图表类型窗口');
+      if(mode==='insert'){
+        const id=uid();
+        await ctx.commands([{type:'native-chart.create',slideId,target:id,model:newChart(kind),x:180,y:120,width:900,height:520}]);
+        if(!disposed&&ctx.documentId()===documentId&&ctx.slide().id===slideId){ctx.select(id);ctx.format();}
+        return;
       }
-      gallery.append(row);
-    }
-    gallery.showModal();
-  }
-  async function chooseType(kind: ChartKind) {
-    if (galleryMode === "insert") {
-      const id = uid();
-      await ctx.commands([
-        {
-          type: "native-chart.create",
-          slideId: ctx.slide().id,
-          target: id,
-          model: newChart(kind),
-          x: 180,
-          y: 120,
-          width: 900,
-          height: 520,
-        },
-      ]);
-      gallery.close();
-      ctx.select(id);
-      ctx.format();
-      return;
-    }
-    if (!model) return;
-    const family = (kind: ChartKind) =>
-      ["tree", "treemap", "sunburst"].includes(kind)
-        ? "hierarchy"
-        : ["graph", "sankey"].includes(kind)
-          ? "network"
-          : "table";
-    if (family(model.kind) !== family(kind)) {
-      const hint = document.createElement("p");
-      hint.className = "chart-type-hint";
-      hint.textContent = "保留现有数据；请在数据表中设置父节点或连线。";
-      gallery.querySelector(".chart-type-hint")?.remove();
-      gallery.append(hint);
-    }
-    edit((n) => {
-      n.kind = kind;
-      n.origin = "manual";
-    }, true);
-    if (model.kind === kind) gallery.close();
+      if(!model||target!==selected||JSON.stringify(model)!==baseline)
+        throw Error('图表已变化，请重新打开类型窗口');
+      if(ctx.locked())throw Error('图表已锁定');
+      edit(next=>{next.kind=kind;next.origin='manual';},true);
+      if(bufferError)throw Error(bufferError);
+      await edits.flush();
+    }});
   }
   async function loadGrid() {
     if (gridLoaded) return gridLoaded;
     gridLoaded = (async () => {
-      const { defineCustomElement } = await import(
-        "@revolist/revogrid/standalone/revo-grid.js"
-      );
-      defineCustomElement();
-      grid = document.createElement("revo-grid");
-      grid.range = true;
-      grid.rowHeaders = true;
-      grid.resize = true;
-      grid.rowSize = 32;
-      grid.headerRowSize = 34;
-      grid.useClipboard = { rangeFill: true };
-      grid.theme = "compact";
-      grid.style.height = "100%";
-      dock.querySelector(".chart-data-grid")!.append(grid);
-      grid.addEventListener("beforecellfocusinit", (e: any) => {
+      const handle=await gridConnection.mount(dock.querySelector<HTMLElement>(".chart-data-grid")!);
+      if(disposed)return;
+      grid=handle.element;const gridHost=handle.adapter;
+      gridHost.on("beforecellfocusinit", (e: any) => {
         focused = {
           row: e.detail.rowIndex ?? 0,
           column: e.detail.colIndex ?? 0,
@@ -1006,59 +843,34 @@ export function createEchartsEditor(ctx: Context) {
             });
         }
       });
-      grid.addEventListener("afteredit", (e: any) => {
+      gridHost.on("afteredit", (e: any) => {
         if (composition) return;
         buffer = (grid.source as any[]).map((row) => ({ ...row }));
         applyBuffer();
       });
-      grid.addEventListener("beforepasteapply", (event: any) => {
+      gridHost.on("beforepasteapply", (event: any) => {
         if (edgeMode || !model) return;
         event.preventDefault();
         event.detail.event?.preventDefault();
         const pasted = event.detail.parsed as string[][];
         if (!pasted.length) return;
-        if (
-          focused.row + pasted.length > 20000 ||
-          focused.column + Math.max(...pasted.map((r) => r.length)) > 100
-        ) {
-          error(Error("最多支持 20,000 行、100 列"));
-          return;
+        try {
+          if (ctx.locked()) throw Error("图表已锁定，未粘贴数据");
+          const next = pasteChartTable(model, grid.source, bufferBase, focused, pasted, stepState, uid);
+          if (!save(next)) throw Error(bufferError || "图表暂时无法保存，未完成粘贴");
+          buffers.clear(bufferKey());
+          renderGrid();
+        } catch (cause) {
+          error(cause);
         }
-        const width = focused.column + Math.max(...pasted.map((r) => r.length));
-        if (width > model.columns.length) {
-          edit((n) => {
-            while (n.columns.length < width) {
-              const id = uid(),
-                name = `系列 ${n.series.length + 1}`;
-              n.columns.push({ id, name, type: "number" });
-              n.series.push({
-                id: uid(),
-                columnId: id,
-                name,
-                axis: "primary",
-                style: {},
-                points: {},
-              });
-            }
-          }, true);
-        }
-        buffer = (grid.source as any[]).map((r) => ({ ...r }));
-        for (let r = 0; r < pasted.length; r++) {
-          const at = focused.row + r;
-          buffer[at] ??= { __id: uid() };
-          for (let c = 0; c < pasted[r].length; c++)
-            buffer[at][model.columns[focused.column + c].id] = pasted[r][c];
-        }
-        grid.source = buffer;
-        applyBuffer();
       });
-      grid.addEventListener("afterpasteapply", () => {
+      gridHost.on("afterpasteapply", () => {
         buffer = (grid.source as any[]).map((row) => ({ ...row }));
         applyBuffer();
       });
-      grid.addEventListener("compositionstart", () => (composition = true));
-      grid.addEventListener("compositionend", () => (composition = false));
-      grid.addEventListener("keydown", async (event: KeyboardEvent) => {
+      gridHost.on("compositionstart", () => (composition = true));
+      gridHost.on("compositionend", () => (composition = false));
+      gridHost.on("keydown", async (event: KeyboardEvent) => {
         if (event.key === "Escape") {
           event.stopPropagation();
           return;
@@ -1070,7 +882,10 @@ export function createEchartsEditor(ctx: Context) {
           event.preventDefault();
           event.stopPropagation();
           if(buffer&&!ctx.locked()){
-            const selected=await grid.getSelectedRange(),cols=edgeMode?['source','target','value']:model!.columns.map(c=>c.id);
+            const scope=bufferKey(),previous=buffer;
+            const selected=await grid.getSelectedRange();
+            if(disposed||bufferKey()!==scope||buffer!==previous||ctx.locked())return;
+            const cols=edgeMode?['source','target','value']:model!.columns.map(c=>c.id);
             const range=selected??{x:focused.column,x1:focused.column,y:focused.row,y1:focused.row};
             const from=range.y===range.y1?range.y-1:range.y,start=range.y===range.y1?range.y:range.y+1;
             if(from>=0)for(let r=start;r<=range.y1;r++)for(let c=range.x;c<=range.x1;c++)if(buffer[r]&&(!edgeMode||c===2))buffer[r][cols[c]]=buffer[from][cols[c]];
@@ -1078,27 +893,24 @@ export function createEchartsEditor(ctx: Context) {
           }
         }
       });
-      grid.addEventListener("contextmenu", (e: MouseEvent) => {
+      gridHost.on("contextmenu", (e: MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
         showDataMenu(e.clientX, e.clientY);
       });
-    })();
+    })().catch(cause=>{gridLoaded=undefined;throw cause;});
     return gridLoaded;
   }
   function showDataMenu(x: number, y: number) {
-    document.getElementById("chart-grid-menu")?.remove();
-    const menu = document.createElement("div");
-    menu.id = "chart-grid-menu";
-    menu.className = "chart-grid-menu";
-    menu.style.left = `${Math.min(x, innerWidth - 180)}px`;
-    menu.style.top = `${Math.min(y, innerHeight - 210)}px`;
-    document.body.append(menu);
-    const action = (name: string, fn: () => void) =>
-      button(menu, name, () => {
-        menu.remove();
-        fn();
-      });
+    if(disposed)return;
+    const source=currentKey(),scope=stepState,baseline=JSON.stringify(model),cell={...focused},sourceEdge=edgeMode;
+    const actions:ChartMenuAction[]=[];
+    const action=(label:string,run:()=>void)=>actions.push({label,run:()=>{
+      if(disposed||currentKey()!==source||JSON.stringify(model)!==baseline||edgeMode!==sourceEdge||stepState!==scope)
+        throw Error('图表数据已变化，请重新打开快捷菜单');
+      if(ctx.locked())throw Error('图表已锁定');
+      focused={...cell};run();
+    }});
     action("在下方插入行", addRow);
     action("删除当前行", () =>
       edit((n) => {
@@ -1151,15 +963,8 @@ export function createEchartsEditor(ctx: Context) {
       action("当前列左移", () => move(-1));
       action("当前列右移", () => move(1));
       action("重命名当前列", () => {
-        const c = model!.columns[focused.column];
-        const input = field(bindings, "列名称", c.name, (v) =>
-          edit((n) => {
-            n.columns.find((x) => x.id === c.id)!.name = v;
-            for (const series of n.series)
-              if (series.columnId === c.id) series.name = v;
-          }, true),
-        );
-        input.focus();
+        renamingColumn=model!.columns[focused.column]?.id;
+        renderBindings();
       });
       if (model.series.length > 1)
         action("删除当前系列", () =>
@@ -1173,91 +978,35 @@ export function createEchartsEditor(ctx: Context) {
           }, true),
         );
     }
-    setTimeout(
-      () =>
-        document.addEventListener(
-          "pointerdown",
-          (e) => {
-            if (!menu.contains(e.target as Node)) menu.remove();
-          },
-          { once: true },
-        ),
-      0,
-    );
+    dataMenu.open(x,y,actions);
   }
   function applyBuffer() {
     if (!model || !buffer) return;
     try {
-      const next = structuredClone(model);
-      if (stepState && !edgeMode)
-        next.rows = structuredClone(chartAtState(next, [stepState]).rows);
-      if (edgeMode) {
-        next.edges = buffer.map((r, i) => ({
-          id: String(r.__id ?? uid()),
-          source: String(r.source ?? ""),
-          target: String(r.target ?? ""),
-          value: number(r.value, i, "流量") ?? 0,
-        }));
-      } else
-        for (const [i, r] of buffer.entries()) {
-          let row = next.rows.find((row) => row.id === r.__id);
-          if (!row) {
-            row = { id: String(r.__id ?? uid()), values: {} };
-            next.rows.push(row);
-          }
-          for (const c of model.columns)
-            if (r[c.id] !== bufferBase[i]?.[c.id])
-              row.values[c.id] =
-                c.type === "number"
-                  ? number(r[c.id], i, c.name)
-                  : String(r[c.id] ?? "");
-        }
-      if (stepState && !edgeMode) {
-        next.states.find((s) => s.id === stepState)!.rows = next.rows;
-        next.rows = structuredClone(model.rows);
-      }
-      next.origin = "manual";
-      chartAuthoringSchema.parse(next);
-      save(next);
+      const next=applyChartTable(model,buffer,bufferBase,edgeMode,stepState,uid);
+      if (!save(next)) throw Error(bufferError || (ctx.locked() ? "图表已锁定，数据草稿已保留" : "图表暂时无法保存，数据草稿已保留"));
       bufferBase = structuredClone(buffer);
       bufferError = "";
-      localStorage.removeItem("notale-chart-buffer:" + currentKey());
+      buffers.clear(bufferKey());
       status("");
     } catch (e) {
       error(e);
       try {
-        localStorage.setItem(
-          "notale-chart-buffer:" + currentKey(),
-          JSON.stringify({ edgeMode, buffer, bufferBase }),
-        );
+        buffers.set(bufferKey(),{edgeMode,buffer,bufferBase});
       } catch {
         ctx.error(Error("数据草稿无法写入本机，请保持窗口打开"));
       }
     }
   }
-  function number(value: unknown, row: number, name: string) {
-    if (value === null || String(value ?? "").trim() === "") return null;
-    const raw = String(value).trim();
-    if (
-      !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(raw) ||
-      !Number.isFinite(Number(raw))
-    )
-      throw Error(`第 ${row + 1} 行「${name}」需要数字`);
-    return Number(raw);
-  }
+
   function renderGrid() {
-    if (!grid || !model || dock.hidden) return;
-    buffer = edgeMode
-      ? model.edges.map((e) => ({
-          __id: e.id,
-          source: e.source,
-          target: e.target,
-          value: e.value,
-        }))
-      : (stepState ? chartAtState(model, [stepState]).rows : model.rows).map(
-          (r) => ({ __id: r.id, __parent: r.parentId ?? "", ...r.values }),
-        );
+    if(disposed)return;
+    if (!grid || !model || !dockState.visible) return;
+    buffer=chartTableRows(model,edgeMode,stepState);
     bufferBase = structuredClone(buffer);
+    bufferError="";status("");
+    const retained=buffers.get(bufferKey());
+    if(retained){buffer=retained.buffer;bufferBase=retained.bufferBase;edgeMode=retained.edgeMode;bufferError='上次的数据草稿尚未应用，请修正后继续';status(bufferError);}
     grid.columns = edgeMode
       ? [
           { prop: "sourceName", name: "起点", readonly: true, size: 190 },
@@ -1269,30 +1018,34 @@ export function createEchartsEditor(ctx: Context) {
           name: c.name,
           size: c.type === "text" ? 190 : 150,
         }));
-    if (edgeMode)
+    if (edgeMode) {
+      const labels = new Map(model.rows.map(row => [row.id, row.values[model!.bindings.label]]));
       for (const row of buffer) {
-        row.sourceName =
-          model.rows.find((r) => r.id === row.source)?.values[
-            model.bindings.label
-          ] ?? "";
-        row.targetName =
-          model.rows.find((r) => r.id === row.target)?.values[
-            model.bindings.label
-          ] ?? "";
+        row.sourceName = (typeof row.source === "string" ? labels.get(row.source) : undefined) ?? "";
+        row.targetName = (typeof row.target === "string" ? labels.get(row.target) : undefined) ?? "";
       }
+    }
     grid.source = buffer;
     grid.readonly = ctx.locked();
     renderBindings();
   }
   function renderBindings() {
-    bindings.replaceChildren();
-    if (!model) return;
+    if(disposed)return;
+    const fields:ChartBindingField[]=[],actions:ChartBindingAction[]=[];let hint='';
+    if(!model){bindingView.update(fields,actions);return;}
+    const source=currentKey(),baseline=JSON.stringify(model),cell={...focused};
+    const validate=()=>{if(disposed||currentKey()!==source||JSON.stringify(model)!==baseline||focused.row!==cell.row||focused.column!==cell.column)throw Error('图表或单元格已变化，请重新选择');if(ctx.locked())throw Error('图表已锁定');};
+    const bindingField=(label:string,value:unknown,change:(value:string)=>void,options?:Record<string,string>)=>fields.push({label,value:String(value??''),options,change:value=>{validate();change(value);}});
+    const bindingButton=(label:string,run:()=>void)=>actions.push({label,run:()=>{validate();run();}});
     const columns = Object.fromEntries(
       model.columns.map((c) => [c.id, c.name]),
     );
-    field(
-      bindings,
-      "分类",
+    const rename=model.columns.find(column=>column.id===renamingColumn);
+    if(rename)bindingField('列名称',rename.name,value=>{
+      renamingColumn=undefined;
+      edit(next=>{next.columns.find(column=>column.id===rename.id)!.name=value;for(const series of next.series)if(series.columnId===rename.id)series.name=value;},true);
+    });
+    bindingField("分类",
       model.bindings.label,
       (v) => edit((n) => (n.bindings.label = v), true),
       columns,
@@ -1301,9 +1054,7 @@ export function createEchartsEditor(ctx: Context) {
       ["tree", "treemap", "sunburst"].includes(model.kind) &&
       model.rows[focused.row]
     )
-      field(
-        bindings,
-        "父节点",
+      bindingField("父节点",
         model.rows[focused.row].parentId ?? "",
         (v) =>
           edit((n) => {
@@ -1322,24 +1073,18 @@ export function createEchartsEditor(ctx: Context) {
         },
       );
     if (["scatter", "bubble"].includes(model.kind)) {
-      field(
-        bindings,
-        "横轴",
+      bindingField("横轴",
         model.bindings.x,
         (v) => edit((n) => (n.bindings.x = v), true),
         columns,
       );
-      field(
-        bindings,
-        "纵轴",
+      bindingField("纵轴",
         model.bindings.y,
         (v) => edit((n) => (n.bindings.y = v), true),
         columns,
       );
       if (model.kind === "bubble")
-        field(
-          bindings,
-          "大小",
+        bindingField("大小",
           model.bindings.size,
           (v) => edit((n) => (n.bindings.size = v), true),
           columns,
@@ -1357,15 +1102,13 @@ export function createEchartsEditor(ctx: Context) {
         "sunburst",
       ].includes(model.kind)
     )
-      field(
-        bindings,
-        "数值系列",
+      bindingField("数值系列",
         model.bindings.seriesId ?? model.series[0].id,
         (v) => edit((n) => (n.bindings.seriesId = v), true),
         Object.fromEntries(model.series.map((s) => [s.id, s.name])),
       );
     if (["graph", "sankey"].includes(model.kind)) {
-      button(bindings, edgeMode ? "编辑节点" : "编辑连线", () => {
+      bindingButton(edgeMode ? "编辑节点" : "编辑连线", () => {
         edgeMode = !edgeMode;
         focused.row = 0;
         renderGrid();
@@ -1378,16 +1121,12 @@ export function createEchartsEditor(ctx: Context) {
             String(r.values[model!.bindings.label] ?? "未命名"),
           ]),
         );
-        field(
-          bindings,
-          "起点",
+        bindingField("起点",
           edge.source,
           (v) => edit((n) => (n.edges[focused.row].source = v), true),
           nodes,
         );
-        field(
-          bindings,
-          "终点",
+        bindingField("终点",
           edge.target,
           (v) => edit((n) => (n.edges[focused.row].target = v), true),
           nodes,
@@ -1395,73 +1134,23 @@ export function createEchartsEditor(ctx: Context) {
       }
     }
     if (ctx.slide().nativeCharts[target]?.source && model.origin === "native") {
-      const hint = document.createElement("span");
-      hint.className = "hint";
-      hint.textContent = "当前由原图动态计算；修改表格后使用手工数据。";
-      bindings.append(hint);
+      hint="当前由原图动态计算；修改表格后使用手工数据。";
     }
+    bindingView.update(fields,actions,hint);
   }
   async function openData() {
+    if(disposed)return;
     if (!model) return;
-    savedViewport = { left: viewport.scrollLeft, top: viewport.scrollTop };
-    dock.hidden = false;
-    const saved = Number(localStorage.getItem("notale-chart-dock-height"));
-    dock.style.height = `${Math.min(Math.max(saved || 280, 180), viewport.parentElement!.clientHeight * 0.5)}px`;
-    viewport.parentElement!.style.setProperty(
-      "--chart-dock-height",
-      dock.style.height,
-    );
+    let saved=280;try{saved=Number(localStorage.getItem('notale-chart-dock-height'))||280;}catch{}
+    dockState.show(Math.max(180,Math.min(saved,viewport.parentElement!.clientHeight*.5)));
     await loadGrid();
+    if(disposed)return;
     renderGrid();
-    try {
-      const raw = localStorage.getItem("notale-chart-buffer:" + currentKey());
-      if (raw) {
-        const saved = JSON.parse(raw);
-        buffer = saved.buffer;
-        bufferBase = saved.bufferBase ?? bufferBase;
-        edgeMode = saved.edgeMode;
-        grid.source = buffer;
-        bufferError = "上次的数据草稿尚未应用，请修正后继续";
-        status(bufferError);
-      }
-    } catch {}
+
   }
-  dock.querySelector<HTMLButtonElement>(".chart-data-close")!.onclick = () => {
-    dock.hidden = true;
-    if (savedViewport)
-      requestAnimationFrame(() =>
-        viewport.scrollTo(savedViewport!.left, savedViewport!.top),
-      );
-  };
-  const resizer = dock.querySelector<HTMLElement>(".chart-data-resizer")!;
-  resizer.onpointerdown = (e) => {
-    e.preventDefault();
-    const start = e.clientY,
-      height = dock.clientHeight;
-    resizer.setPointerCapture(e.pointerId);
-    resizer.onpointermove = (event) => {
-      const h = Math.max(
-        180,
-        Math.min(
-          height + start - event.clientY,
-          viewport.parentElement!.clientHeight * 0.5,
-        ),
-      );
-      dock.style.height = h + "px";
-      viewport.parentElement!.style.setProperty(
-        "--chart-dock-height",
-        dock.style.height,
-      );
-    };
-    resizer.onpointerup = () => {
-      resizer.onpointermove = null;
-      localStorage.setItem(
-        "notale-chart-dock-height",
-        String(dock.clientHeight),
-      );
-    };
-  };
   const actions = dock.querySelector<HTMLElement>(".chart-data-actions")!;
+  const toolbarActions:ChartToolbarAction[]=[];
+  const toolbarAction=(label:string,run:()=>unknown)=>{toolbarActions.push({label,run:()=>{if(disposed)throw Error('图表数据面板已关闭');return run();}});};
   function addRow() {
     edit((n) => {
       if (edgeMode) {
@@ -1481,8 +1170,8 @@ export function createEchartsEditor(ctx: Context) {
         });
     }, true);
   }
-  button(actions, "＋ 行", addRow);
-  button(actions, "＋ 系列", () =>
+  toolbarAction("＋ 行", addRow);
+  toolbarAction("＋ 系列", () =>
     edit((n) => {
       const id = uid();
       n.columns.push({
@@ -1501,7 +1190,7 @@ export function createEchartsEditor(ctx: Context) {
       n.rows.forEach((r) => (r.values[id] = null));
     }, true),
   );
-  button(actions, "切换行列", () => {
+  toolbarAction("切换行列", () => {
     if (!model) return;
     if (model.states.length || model.annotations.length || model.edges.length)
       throw Error("带有步骤、标注或连线的图表暂不能切换行列");
@@ -1538,110 +1227,68 @@ export function createEchartsEditor(ctx: Context) {
       n.origin = "manual";
     }, true);
   });
-  button(actions, "导入表格", () => file.click());
-  button(actions, "恢复有效数据", () => {
+  toolbarActions.push({label:'导入表格',run:()=>{},file:{accept:'.csv,.tsv,.txt',prepare:()=>{
+    if(disposed)throw Error('图表数据面板已关闭');
+    const source=currentKey(),generation=selectionGeneration;
+    return async(file:File)=>{
+      const text=await file.text();
+      if(disposed)return;
+      if(currentKey()!==source||selectionGeneration!==generation)throw Error('图表已切换，请重新选择导入文件');
+      showImport(text);
+    };
+  }}});
+  toolbarAction("恢复有效数据", () => {
     bufferError = "";
-    localStorage.removeItem("notale-chart-buffer:" + currentKey());
+    buffers.clear(bufferKey());
     renderGrid();
     status("");
   });
-  const file = document.createElement("input");
-  file.type = "file";
-  file.accept = ".csv,.tsv,.txt";
-  file.hidden = true;
-  dock.append(file);
-  file.onchange = () => {
-    const f = file.files?.[0];
-    if (f) void f.text().then(showImport).catch(error);
-    file.value = "";
-  };
-  async function showImport(text: string) {
-    const dialog = document.createElement("dialog");
-    dialog.className = "chart-import-dialog";
-    dialog.setAttribute("aria-label", "导入图表数据");
-    const heading = document.createElement("h2");
-    heading.textContent = "导入表格";
-    dialog.append(heading);
-    const raw = document.createElement("textarea");
-    raw.value = text;
-    raw.rows = 8;
-    raw.setAttribute("aria-label", "表格内容");
-    dialog.append(raw);
-    let header = true;
-    field(dialog, "首行为系列名称", true, (v) => (header = v), "checkbox");
-    const status = document.createElement("p");
-    status.setAttribute("role", "status");
-    dialog.append(status);
-    button(dialog, "导入", async () => {
-      try {
-        await importTable(raw.value, header);
-        if (bufferError) {
-          status.textContent = bufferError;
-          return;
-        }
-        dialog.close();
-        dialog.remove();
-      } catch (e) {
-        status.textContent = e instanceof Error ? e.message : String(e);
-      }
+  const toolbar=bindChartToolbar(actions,toolbarActions);
+  function showImport(text: string) {
+    if(disposed)return;
+    const source=currentKey(),baseline=JSON.stringify(model);
+    const validate=()=>{
+      if(disposed||currentKey()!==source||JSON.stringify(model)!==baseline)throw Error('图表已变化，导入内容已保留，请重新打开导入窗口');
+      if(ctx.locked())throw Error('图表已锁定');
+    };
+    importDialog.open(text,async(raw,header)=>{
+      validate();await importTable(raw,header,validate);
+      if(bufferError)throw Error(bufferError);
+      await edits.flush();
     });
-    button(dialog, "取消", () => {
-      dialog.close();
-      dialog.remove();
-    });
-    document.body.append(dialog);
-    dialog.showModal();
   }
-  async function importTable(text: string, withHeader = true) {
-    const { readDelimitedRows } = await import("./chart-table-parser.js");
-    const rows = readDelimitedRows(text);
-    if (rows.length < (withHeader ? 2 : 1)) throw Error("需要至少一行数据");
-    const header = withHeader
-      ? rows.shift()!
-      : rows[0].map((_, i) => (i ? `系列 ${i}` : "分类"));
-    edit((n) => {
-      n.columns = header.map((name, i) => ({
-        id: n.columns[i]?.id ?? uid(),
-        name: name || `列 ${i + 1}`,
-        type: i ? "number" : "text",
-      }));
-      n.series = n.columns
-        .slice(1)
-        .map((c, i) => ({
-          ...n.series[i],
-          id: n.series[i]?.id ?? uid(),
-          columnId: c.id,
-          name: c.name,
-          axis: n.series[i]?.axis ?? "primary",
-          style: n.series[i]?.style ?? {},
-          points: n.series[i]?.points ?? {},
-        }));
-      n.bindings = {
-        label: n.columns[0].id,
-        x: n.columns[1]?.id,
-        y: n.columns[2]?.id ?? n.columns[1]?.id,
-      };
-      n.rows = rows.map((r, i) => ({
-        id: n.rows[i]?.id ?? uid(),
-        values: Object.fromEntries(
-          n.columns.map((c, j) => [
-            c.id,
-            j ? number(r[j], i, c.name) : (r[j] ?? ""),
-          ]),
-        ),
-      }));
-      n.origin = "manual";
-    }, true);
+  async function importTable(text: string, withHeader: boolean, validate:()=>void) {
+    const {importChartTable}=await import('./state/chart-table-import');
+    validate();
+    if(!model)throw Error('请选择图表');
+    save(importChartTable(model,text,withHeader,uid),true);
   }
   async function render() {
+    if(disposed)return;
     const id = ctx.selection().length === 1 ? ctx.selection()[0] : "";
     const chart = ctx.slide().nativeCharts[id];
     const nextKey = [ctx.documentId(), ctx.slide().id, id].join(":");
+    const authoring=JSON.stringify(chart?.authoring);
     if (nextKey === key) {
-      panel.hidden = !model;
+      const pending=edits.hasPending(ctx.documentId(),ctx.slide().id,id);
+      if(authoring!==observedAuthoring&&!pending){
+        observedAuthoring=authoring;
+        model=chart?.authoring?structuredClone(chart.authoring):undefined;
+        if(model){
+          if(stepState&&!model.states.some(state=>state.id===stepState))stepState=undefined;
+          cache.set(key,structuredClone(model));renderProperties();
+          if(dockState.visible&&!bufferError)renderGrid();
+        }else{propertyView.hide();dockState.hide();}
+      }
+      if(model&&propertyLocked!==ctx.locked()){
+        renderProperties();renderBindings();if(grid)grid.readonly=ctx.locked();
+      }
+      if(!model)propertyView.hide();
       return;
     }
+    observedAuthoring=authoring;
     key = nextKey;
+    renamingColumn=undefined;
     target = id;
     part = { kind: "chart" };
     stepState = undefined;
@@ -1649,8 +1296,8 @@ export function createEchartsEditor(ctx: Context) {
     model = chart?.authoring ? structuredClone(chart.authoring) : undefined;
     const generation = ++selectionGeneration;
     if (!id) {
-      panel.hidden = true;
-      dock.hidden = true;
+      propertyView.hide();
+      dockState.hide();
       return;
     }
     if (!model) {
@@ -1728,20 +1375,27 @@ export function createEchartsEditor(ctx: Context) {
       }
     }
     if (generation !== selectionGeneration) return;
-    panel.hidden = !model;
+    if(!model)propertyView.hide();
     if (model) {
       cache.set(key, structuredClone(model));
       renderProperties();
-      if (!dock.hidden) renderGrid();
-    } else dock.hidden = true;
+      if (dockState.visible) renderGrid();
+    } else dockState.hide();
   }
   return {
     render,
+    dispose(){
+      if(disposed)return;
+      disposed=true;sealed=true;selectionGeneration++;lifecycle.abort();gridConnection.dispose();gallery.dispose();importDialog.dispose();dataMenu.dispose();toolbar.dispose();bindingView.dispose();
+      propertyView.dispose();dockState.dispose();
+      cache.clear();
+    },
     changeType: () => openGallery("change"),
     openGallery: () => openGallery("insert"),
     openData,
     selectPart,
     restore(next: ChartAuthoring) {
+      if(disposed)return;
       if (JSON.stringify(model) === JSON.stringify(next)) return;
       model = structuredClone(next);
       cache.set(currentKey(), model);
@@ -1755,11 +1409,12 @@ export function createEchartsEditor(ctx: Context) {
       }
     },
     async flush() {
-      await write;
+      await edits.flush();
       if (bufferError) throw Error(bufferError);
     },
     model: () => model,
     receive(type: string, data: any) {
+      if(disposed)return;
       if (type === "chart-title" && data.target === target)
         edit((n) => (n.appearance.title = data.text));
       if (type === "chart-selected" && data.target === target)
@@ -1778,6 +1433,8 @@ export function createEchartsEditor(ctx: Context) {
           );
         });
     },
-    pending: () => unsent,
+    pending: () => edits.pending(),
+    pendingBuffers:()=>buffers.pending(),
+    async seal(){sealed=true;await edits.seal();},
   };
 }

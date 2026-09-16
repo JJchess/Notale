@@ -194,6 +194,7 @@ test('HTTP authorization, immutable preview grants and portable project round tr
     data: Buffer.from('picture'),
     mime: 'image/png',
   });
+  doc.assets['notale-runtime-notices.txt'] = await store.upload(ctx, {data: Buffer.from('User notes'), mime: 'text/plain'});
   await store.create(ctx, doc);
   const apps = createApps({
     store,
@@ -214,7 +215,12 @@ test('HTTP authorization, immutable preview grants and portable project round tr
     const html = await apps.content.inject(url.pathname);
     assert.equal(html.statusCode, 200);
     assert.match(html.body, /window.example = 42/);
-    assert.match(html.body, /NotaleBridge/);
+    const runtimeSource = html.body.match(/<script[^>]+src="([^"]*__notale_runtime__\/bridge\.js)"/);
+    assert.ok(runtimeSource, 'preview links the isolated runtime');
+    const runtimeUrl = new URL(runtimeSource[1], url);
+    const runtimeResponse = await apps.content.inject(runtimeUrl.pathname + runtimeUrl.search);
+    assert.equal(runtimeResponse.statusCode, 200);
+    assert.match(runtimeResponse.body, /NotaleBridge/);
     const wrongVersion = await apps.content.inject(
       url.pathname.replace(`/${doc.id}/1/`, `/${doc.id}/2/`),
     );
@@ -224,11 +230,15 @@ test('HTTP authorization, immutable preview grants and portable project round tr
     const files = unzipSync(exported.rawPayload);
     assert.ok(files['notale-project.json']);
     assert.ok(files['index.html']);
+    assert.equal(Buffer.from(files['notale-runtime-notices.txt']).toString(), 'User notes');
+    assert.match(Buffer.from(files['notale-runtime-notices-2.txt']).toString(), /Notale contributors/);
+    assert.match(Buffer.from(files['notale-runtime-notices-2.txt']).toString(), /Apache License/);
     assert.equal(Buffer.from(files['image.png']).toString(), 'picture');
     const imported = await apps.api.inject({
       method: 'POST',
       url: '/api/import',
-      payload: { data: exported.rawPayload.toString('base64') },
+      headers: {'content-type':'application/octet-stream'},
+      payload: exported.rawPayload,
     });
     assert.equal(imported.statusCode, 201, imported.body);
     assert.notEqual(imported.json().document.id, doc.id);
@@ -635,4 +645,26 @@ test('native chart schema defaults preserve pre-upgrade insert and clipboard mut
       await content.close();
     }
   }
+});
+
+test('causal sync API: pending create copy delete, missing dependency and immutable retries',async()=>{
+ const doc=fixture();await store.create(ctx,doc);
+ const slideId=doc.slides[0].id,target=inspectSlide(doc.slides[0]).find(o=>o.tag==='h1')!.id;
+ const apps=createApps({store,secret:'test-only-causal-key',contentOrigin:'http://content.test',integration:{context:async()=>ctx,authorize:async()=>true}});
+ const submit=(payload:unknown)=>apps.api.inject({method:'POST',url:`/api/documents/${doc.id}/sync/v2`,payload:payload as any});
+ try{
+  const animation={id:randomUUID(),target,step:1,effect:'pulse',trigger:'click',duration:1000};
+  const predecessor={baseVersion:1,mutationId:randomUUID(),commands:[{type:'animation.set',slideId,animation}]};
+  const copyId=randomUUID();
+  const copy={baseVersion:1,mutationId:randomUUID(),dependencies:[predecessor.mutationId],commands:[{type:'animation.set',slideId,animation:{...animation,id:copyId}},{type:'animation.reorder',slideId,ids:[animation.id,copyId]}]};
+  assert.equal((await submit(copy)).statusCode,409);
+  assert.equal((await submit({baseVersion:1,mutationId:randomUUID(),commands:[{type:'deck.update',title:'Remote title'}]})).statusCode,200);
+  assert.equal((await submit(predecessor)).statusCode,200);
+  const copied=await submit(copy);assert.equal(copied.statusCode,200,copied.body);
+  const remove={baseVersion:1,mutationId:randomUUID(),dependencies:[predecessor.mutationId,copy.mutationId],commands:[{type:'animation.remove',slideId,id:copyId}]};
+  const removed=await submit(remove);assert.equal(removed.statusCode,200,removed.body);
+  const repeated=await submit(copy);assert.equal(repeated.statusCode,200,repeated.body);assert.equal(repeated.json().committedVersion,copied.json().committedVersion);
+  const changed=await submit({...copy,dependencies:[]});assert.equal(changed.statusCode,409);
+  const final=await store.get(ctx,doc.id);assert.equal(final.document.title,'Remote title');assert.deepEqual(final.document.slides[0].animations.map(a=>a.id),[animation.id]);
+ }finally{await apps.api.close();await apps.content.close();}
 });
