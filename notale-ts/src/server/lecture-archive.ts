@@ -94,7 +94,10 @@ export async function lectureArchive(service: RunService, id: string, mime: Reco
         if ('childNodes' in node) node.childNodes.forEach(visit);
       }
       visit(parse(slide.html));
-      return [slide.id,pageRuntime(slide.nativeStepCount,frames.map(frame=>({...frame,lesson:codeLessons[codeResourcePath(frame.entry,slide.sourcePath)]})))];
+      return [slide.id,pageRuntime(slide.nativeStepCount,frames.map(frame=>{
+        const lesson = codeLessons[codeResourcePath(frame.entry,slide.sourcePath)];
+        return {...frame,...(lesson?{lesson}:{})};
+      }))];
     })),
     document: {
     schemaVersion: 1, id: randomUUID(), title: run.request.query.slice(0, 300) || '讲义',
