@@ -42,6 +42,6 @@ def observe(context):
 
 ## 检查与结束
 
-Write／Patch 成功后宿主自动运行课程，把执行、测试、抽样渲染与重置的结果附在返回里；`⚠` 行是容量提示，不是失败。没有新改动想复跑用 Check。运行通过不等于语义正确：按任务核对过程顺序与数值。没有具体违约就结束。
+Write／Patch 成功后宿主自动运行课程，把执行、测试、抽样渲染与重置的结果附在返回里；`⚠` 行是容量提示，不是失败。运行通过不等于语义正确：按任务核对过程顺序与数值。没有具体违约就结束。
 
 其余样例按需 `Read observer-samples/<neural-network|bfs|insertion-sort>/<starter.py|observe.py|tests.py|view/render.js>`。

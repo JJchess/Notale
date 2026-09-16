@@ -22,7 +22,7 @@ test('observer Patch batches and read/write boundaries', async () => {
   const created = await scaffold(pages, 'page-01', 'patch', 1);
   assert.equal((created.limits as Record<string, number>).maxItems, 160);
   const context = { cwd: pages, pid: 'page-01', resourceRoot: path.join(RESOURCES, 'skills/build-code') };
-  assert.deepEqual(toolSpecs('build-code', false).map(s => s.name).sort(), ['Check', 'Patch', 'Read', 'Write']);
+  assert.deepEqual(toolSpecs('build-code', false).map(s => s.name).sort(), ['Patch', 'Read', 'Write']);
   const unused = async (): Promise<never> => { throw Error('unexpected dependency'); };
   const ports = {image: unused, media: unused, check: unused};
   for (const file_path of ['page-01.html', 'assets/lessons/page-01/lesson/starter.py', 'assets/lessons/page-01/lesson/view/render.js']) {
@@ -220,15 +220,16 @@ test('code Check selects semantic evidence and preserves endpoints', () => {
   assert.deepEqual(selectCodeShots(['/x/initial.png','/x/failure.png']),['/x/failure.png','/x/initial.png']);
 });
 
-test('code Check bypasses outer measurement and sends pictures only to visual models', async () => {
+test('writes auto-run the check, pictures reach visual models only, and only the newest pair stays', async () => {
   const { observeBuilder } = await import('../src/core/progress.js');
   for (const vision of [false,true]) {
     const root=await mkdtemp(path.join(os.tmpdir(),'code-check-feedback-'));await writeFile(path.join(root,'page-01.html'),'host');
+    const starter=path.join(root,'assets/lessons/page-01/lesson/starter.py');await mkdir(path.dirname(starter),{recursive:true});
     const page=new Page('page-01','check');page.workflow='build-code';page.total=1;
     let calls=0;const shots:string[]=[],checks:boolean[]=[];
     const ports=observeBuilder({
       scaffold:async()=>({editable:[]}),
-      run:async()=>{throw Error('code Check must not call generic Check');},
+      run:async(name,args)=>{if(name!=='Write')throw Error('code pages only write; got '+name);await writeFile(String(args.file_path),String(args.content));return '已写入';},
       codeCheck:async(_cwd,_pid,shot,_signal,outer)=>{checks.push(Boolean(outer));assert.equal(shot,outer?false:vision);return {report:'全部通过',shots:shot?['/initial.png','/final.png','/active.png']:[]};},
       image:async(file)=>{shots.push(file);return {text:'',images:[['image/png',Buffer.from(file).toString('base64')]]};},
       model:{async respondCanonical(_instructions,history){
@@ -237,7 +238,7 @@ test('code Check bypasses outer measurement and sends pictures only to visual mo
           const images=history.flatMap(item=>item.role==='user'&&Array.isArray(item.content)?item.content.filter((c:any)=>c.type==='input_image'):[]);
           assert.deepEqual(images.map((i:any)=>i.image_url),vision?['/active.png','/final.png'].map(file=>'data:image/png;base64,'+Buffer.from(file).toString('base64')):[]);
         }
-        const output=calls++<2?[{type:'function_call',name:'Check',call_id:'c'+calls,arguments:JSON.stringify({page:'page-01.html'})}]:[{type:'message',role:'assistant',content:[{type:'output_text',text:'done'}]}];
+        const output=calls++<2?[{type:'function_call',name:'Write',call_id:'w'+calls,arguments:JSON.stringify({file_path:starter,content:'x = '+calls})}]:[{type:'message',role:'assistant',content:[{type:'output_text',text:'done'}]}];
         return {id:String(calls),output,replay_items:[],raw:{},status:'completed',incomplete_details:null,usage:{input_tokens:10,output_tokens:1,input_tokens_details:{cached_tokens:0}}};
       }},
     },()=>{});

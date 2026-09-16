@@ -5,6 +5,8 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import * as guidance from '../src/core/guidance.js';
+/** TS code pages (observer contract, Patch, auto-run check) have no Python counterpart; every Python oracle skips them. */
+const PYTHON_WORKFLOWS = guidance.PAGE_WORKFLOWS.filter(name => name !== 'build-code');
 
 const pythonRoot = path.resolve(guidance.RESOURCES, '../../notale-v2');
 // Compare assembly using the same explicitly updated configuration on both sides.
@@ -179,8 +181,7 @@ print(json.dumps(out,ensure_ascii=False))
     const { plannerPrompt } = await import('../src/core/planner-contract.js');
     assert.equal(plannerPrompt('deck', { query: '主题' }, true, root), reference.prompt);
 
-    for (const workflow of guidance.PAGE_WORKFLOWS) for (const notes of ['off', 'cap', 'notes', 'only']) for (const visualFocus of [false, true]) {
-      if (workflow === 'build-code') continue; // Observer authoring deliberately replaces Python baseline inputs.
+    for (const workflow of PYTHON_WORKFLOWS) for (const notes of ['off', 'cap', 'notes', 'only']) for (const visualFocus of [false, true]) {
       const expected = reference.blocks[`${workflow}/${notes}/${visualFocus ? 'True' : 'False'}`];
       const actual = builder.instructionBlocks(root, 5, workflow, { notes, visualFocus, workflowRoot: path.join(pythonRoot, 'skills'), prompts: path.join(pythonRoot, 'prompts') });
       assert.deepEqual(Object.keys(actual), expected.order);
@@ -289,13 +290,9 @@ print(json.dumps(dict(parsed=parsed,chapters=builder.chapter_preloads(root,4),sh
     assert.ok(chapters['page-02']!.includes('id="dataset"') && !chapters['page-02']!.includes('id="training"'));
     assert.ok(chapters['page-03']!.includes('id="dataset"') && chapters['page-03']!.includes('id="training"'));
     assert.ok(!chapters['page-04']!.includes('id="dataset"') && chapters['page-04']!.includes('id="training"'));
-    for (const workflow of guidance.PAGE_WORKFLOWS) {
+    for (const workflow of PYTHON_WORKFLOWS) {
       const shared = builder.sharedPreload(root, 4, path.join(pythonRoot, 'prompts'), workflow);
-      if (workflow !== 'build-code') assert.equal(shared, expected.shared[workflow]);
-      else {
-        assert.ok(!shared.includes('<tech>'));
-        assert.equal(shared, expected.shared[workflow].split('\n\n<tech>')[0]);
-      }
+      assert.equal(shared, expected.shared[workflow]);
       assert.equal(shared.match(/<audience>/g)?.length, 1);
       assert.ok(shared.includes('x &lt; 18 &amp; y &gt; 0'));
       assert.ok(!shared.includes('初始权重') && !shared.includes('样本 [['));
@@ -2180,12 +2177,11 @@ print(json.dumps(rows))
     }
 
     // The TS authoring API intentionally uses file_path/Patch; compare unchanged tool contracts to Python.
-    for (const workflow of [undefined, ...guidance.PAGE_WORKFLOWS]) for (const vision of [true, false]) {
+    for (const workflow of [undefined, ...PYTHON_WORKFLOWS]) for (const vision of [true, false]) {
       const specs = tools.toolSpecs(workflow, vision);
       assert(!specs.some(s => s.name === 'Edit'));
       assert.deepEqual(specs.find(s => s.name === 'Patch')!.parameters.required, ['file_path', 'edits']);
-      // Code pages run the lesson on every write; their Check is a bare re-run and no longer mirrors the visual Check.
-      for (const spec of specs.filter(s => !['Write', 'Patch'].includes(s.name) && !(workflow === 'build-code' && s.name === 'Check')))
+      for (const spec of specs.filter(s => !['Write', 'Patch'].includes(s.name)))
         assert.deepEqual(spec, oracle.schemas[`${workflow ?? 'None'}/${vision ? 'True' : 'False'}`].find((s: any) => s.name === spec.name));
     }
   } finally { rmSync(root, { recursive: true, force: true }); }

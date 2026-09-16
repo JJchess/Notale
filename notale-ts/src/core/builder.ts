@@ -51,7 +51,7 @@ export function evictImages(history: Item[], tokens: PythonInt): number {
   if (tokens <= constants.CONTEXT_SOFT) return 0;
   const indexes = history.flatMap((item, index) => item.role === 'user' && Array.isArray(item.content) && item.content.some((block: Item) => block?.type === 'input_image') ? [index] : []);
   const removed = indexes.slice(0, Math.max(0, indexes.length - constants.KEEP_IMAGES));
-  for (const index of removed) history[index] = { ...history[index], content: history[index]!.content.map((block: Item) => block.type === 'input_image' ? { type: 'input_text', text: '（旧图片已移除，文字保留；需要时重新 Read 原图或 Check 当前页面。）' } : block) };
+  for (const index of removed) history[index] = { ...history[index], content: history[index]!.content.map((block: Item) => block.type === 'input_image' ? { type: 'input_text', text: '（这里原来有一张图，为了不撑爆上下文已经拿掉了。要再看就重新 Check，需要局部细节时指定 box。）' } : block) };
   return removed.length;
 }
 export function auditLines(report: string): [string[], string[]] {
@@ -82,7 +82,6 @@ export function codeGuard(name: string, args: Item, context: Workspace): string 
     }
     return undefined;
   }
-  if (name === 'Check') return String(args.page || '') === `${context.pid}.html` ? undefined : `check only ${context.pid}.html`;
   return `${name} is not available while authoring a code lesson`;
 }
 export interface BuilderPorts {
@@ -194,7 +193,7 @@ async function buildOneLoop(page: Page, pagesDir: string, trace: string, instruc
     }
     history.push(...ModelRuntime.replay(response));
     const pending: Array<[string, string]> = [];
-    let wrote = -1, checked = false;
+    let wrote = -1;
     for (const call of calls) {
       options.signal?.throwIfAborted();
       const toolStarted = new Date().toISOString(), toolClock = performance.now();
@@ -223,12 +222,7 @@ async function buildOneLoop(page: Page, pagesDir: string, trace: string, instruc
         const denied = page.workflow === 'build-code' ? codeGuard(call.name, actual, context) : undefined;
         if (denied) result = '拒绝：' + denied;
         else {
-          if (page.workflow === 'build-code' && call.name === 'Check') {
-            const extra = await ports.codeCheck(pagesDir, page.pid, Boolean(actual.shot) && vision, options.signal);
-            const images: Array<[string, string]> = [];
-            if (vision && actual.shot) for (const shot of selectCodeShots(extra.shots)) images.push(...(await ports.image(shot)).images);
-            result = { text: extra.report, images };
-          } else result = await ports.run(call.name, actual, context, options.signal);
+          result = await ports.run(call.name, actual, context, options.signal);
         }
       }
       if (call.name === 'Read' && args.file_path) {
@@ -243,13 +237,10 @@ async function buildOneLoop(page: Page, pagesDir: string, trace: string, instruc
       if (images.length && !vision) { images = []; output += '\n\n（当前模型不接收图片输入；仅保留文本报告。）'; }
       log.tool({ rid, call_id: call.call_id, page: page.pid, name: call.name, arguments: call.arguments, output, images, started: toolStarted, finished: new Date().toISOString(), seconds: (performance.now() - toolClock) / 1000 });
       history.push({ type: 'function_call_output', call_id: call.call_id, output }); pending.push(...images);
-      if (page.workflow === 'build-code') {
-        if (call.name === 'Check') checked = true;
-        else if (['Write', 'Patch'].includes(call.name) && !/^(?:失败|拒绝)/.test(output)) wrote = history.length - 1;
-      }
+      if (page.workflow === 'build-code' && ['Write', 'Patch'].includes(call.name) && !/^(?:失败|拒绝)/.test(output)) wrote = history.length - 1;
     }
-    if (page.workflow === 'build-code' && wrote >= 0 && !checked) {
-      // A write without its check is half a round trip; run the lesson now and attach the result to the write.
+    if (page.workflow === 'build-code' && wrote >= 0) {
+      // A write without its check is half a round trip; the lesson runs now and the result rides on the write.
       const started = new Date().toISOString(), clock = performance.now();
       const extra = await ports.codeCheck(pagesDir, page.pid, vision, options.signal);
       const images: Array<[string, string]> = [];

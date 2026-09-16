@@ -25,7 +25,7 @@ export function cap(text: string, maximum = 30000): string {
 }
 export function toolSpecs(workflow?: string, visionInput = true): Record<string, any>[] {
   let specs: Record<string, any>[] = constants.TOOL_SCHEMAS.map((spec: Record<string, unknown>) => ({ type: 'function', ...structuredClone(spec) }));
-  if (workflow === 'build-code') specs = specs.filter(spec => ['Read', 'Write', 'Patch', 'Check'].includes(spec.name));
+  if (workflow === 'build-code') specs = specs.filter(spec => ['Read', 'Write', 'Patch'].includes(spec.name));
   for (const spec of specs) {
     if (spec.name === 'Check' && !visionInput) {
       delete spec.parameters.properties.box; delete spec.parameters.properties.zoom;
@@ -33,13 +33,7 @@ export function toolSpecs(workflow?: string, visionInput = true): Record<string,
     }
     if (spec.name === 'Write' && workflow) spec.description = '写完整文件，用于创建或整体重构；局部修正用 Patch。';
   }
-  if (workflow === 'build-code') for (const spec of specs) {
-    if (['Write', 'Patch'].includes(spec.name)) spec.description += ' 写入成功后宿主自动运行课程，把执行、测试、抽样渲染与重置结果附在返回里，不必再调 Check。';
-    if (spec.name === 'Check') {
-      spec.description = '不改文件时重新运行当前课程，返回执行、测试、抽样渲染与重置结果。有新改动时 Write/Patch 已自带这份结果。';
-      for (const key of ['shot', 'after', 'box', 'zoom']) delete spec.parameters.properties[key];
-    }
-  }
+  if (workflow === 'build-code') for (const spec of specs) if (['Write', 'Patch'].includes(spec.name)) spec.description += ' 写入成功后宿主自动运行课程，把执行、测试、抽样渲染与重置结果附在返回里。';
   if (visionInput) specs.push(...structuredClone(constants.MEDIA_SCHEMAS));
   return specs;
 }
