@@ -153,7 +153,7 @@ test('builder prompt blocks, order and chapter context match Python on baseline 
       const customMetadata = skillSource.replace(/^---\n.*?\n---/s, header => header.replace(/\n---$/, '\nname: 012\ndescription: ignored\ndescription: final discovery\n---'));
       writeFileSync(path.join(workflowRoot, name, 'SKILL.md'), customMetadata.replaceAll('\n', '\r\n'));
     }
-    writeFileSync(path.join(root, 'deck.md'), '开头\r\n{query}\r<!--pages-only:start-->页表\r\n<!--pages-only:end-->结尾\r');
+    writeFileSync(path.join(root, 'deck.md'), '开头\r\n{query}\r页表\r\n结尾\r');
     const reference = JSON.parse(execFileSync('python', ['-c', `
 import json,sys
 from pathlib import Path
@@ -179,7 +179,7 @@ print(json.dumps(out,ensure_ascii=False))
     assert.deepEqual(builder.chapterPreloads(root, 5), reference.chapters);
     assert.equal(guidance.pageSkillDescriptions(workflowRoot), reference.descriptions);
     const { plannerPrompt } = await import('../src/core/planner-contract.js');
-    assert.equal(plannerPrompt('deck', { query: '主题' }, true, root), reference.prompt);
+    assert.equal(plannerPrompt('deck', { query: '主题' }, root), reference.prompt);
 
     for (const workflow of PYTHON_WORKFLOWS) for (const notes of ['off', 'cap', 'notes', 'only']) for (const visualFocus of [false, true]) {
       const expected = reference.blocks[`${workflow}/${notes}/${visualFocus ? 'True' : 'False'}`];
@@ -211,7 +211,7 @@ for call in [lambda:skills.page_skill_descriptions(root/'workflows'),lambda:skil
  except Exception as error:rows.append({'name':type(error).__name__,'message':str(error)})
 print(json.dumps(rows))
 `, root], { cwd: pythonRoot, encoding: 'utf8' }));
-    const checks = [() => guidance.pageSkillDescriptions(workflowRoot), () => guidance.directionBlock(root), () => plannerPrompt('deck', { query: '主题' }, true, root), () => builder.libsIndex(root), () => builder.sharedPreload(root, 5)];
+    const checks = [() => guidance.pageSkillDescriptions(workflowRoot), () => guidance.directionBlock(root), () => plannerPrompt('deck', { query: '主题' }, root), () => builder.libsIndex(root), () => builder.sharedPreload(root, 5)];
     checks.forEach((call, index) => {
       let actual;
       try { actual = { value: call() }; } catch (error) { actual = { name: (error as Error).name, message: (error as Error).message }; }
@@ -239,8 +239,7 @@ print(json.dumps([{'pages':planner.split_pages(s),'error':planner._valid_pages(s
     assert.deepEqual(planner.splitPages(text), expected[index].pages);
     assert.equal(planner.validPages(text), expected[index].error);
   });
-  assert.throws(() => planner.finalizePlan({ pages_md: '## Audience\n学生\n\n' + cases[1]!, media_by_page: null }, {}, '/tmp', true, ''), /media_by_page/);
-  assert.throws(() => planner.finalizePlan({ pages_md: '## Audience\n学生\n\n' + cases[1]! }, {}, '/tmp', false, ''), /缺少 theme.css/);
+  assert.throws(() => planner.finalizePlan({ pages_md: '## Audience\n学生\n\n' + cases[1]!, media_by_page: null }, {}, '/tmp'), /media_by_page/);
 });
 
 test('plan audience and scoped continuity reach only intended Builders in Python and TS', async () => {
@@ -282,8 +281,8 @@ print(json.dumps(dict(parsed=parsed,chapters=builder.chapter_preloads(root,4),sh
 `], { cwd: pythonRoot, input: JSON.stringify({ root, cases }), encoding: 'utf8' }));
     assert.deepEqual(cases.map(text => { try { return planner.planContext(text); } catch (e) { return { error: (e as Error).message }; } }), expected.parsed);
     for (let i = 4; i < cases.length; i++) assert.ok(expected.parsed[i].error, `invalid case ${i}`);
-    assert.throws(() => planner.finalizePlan({ pages_md: pages }, {}, root, true, ''), /Audience/);
-    assert.equal(planner.finalizePlan({ pages_md: doc }, {}, root, true, '').pagesDoc, doc);
+    assert.throws(() => planner.finalizePlan({ pages_md: pages }, {}, root), /Audience/);
+    assert.equal(planner.finalizePlan({ pages_md: doc }, {}, root).pagesDoc, doc);
     const chapters = builder.chapterPreloads(root, 4);
     assert.deepEqual(chapters, expected.chapters);
     assert.ok(!chapters['page-01']!.includes('<continuity>'));
@@ -345,7 +344,7 @@ for scenario in payload['scenarios']:
  run=NS(root=root,style_director=True,log=NS(add=lambda *args:None))
  try:
   with contextlib.redirect_stdout(io.StringIO()):final=planner.deck_call(run,'prompt')
-  item={'final':list(final)}
+  item={'final':list(final)[1:]}
  except Exception as e:item={'error':str(e),'name':type(e).__name__}
  item['calls']=count[0]
  item['feedback']=[x['output'] for x in history if x.get('type')=='function_call_output']
@@ -372,9 +371,9 @@ print(json.dumps(result,ensure_ascii=False))
             if (args.query === 'broken') return { text:'{"results":',images:[] };
             return { text: JSON.stringify({ results: [{ path: 'assets/img/a.png', query_index: 0 }] }), images: [{ mime: 'image/png', data: 'ZmFrZQ==' }] };
           },
-          validateCss: () => '', trace: () => {},
+          trace: () => {},
         });
-        result = { final: [final.css, final.pagesDoc, final.mapping] };
+        result = { final: [final.pagesDoc, final.mapping] };
       } catch (error) { result = { error: (error as Error).message, name: (error as Error).name }; }
       result.calls = count;
       result.feedback = observed.filter(message => message.role === 'tool').map(message => message.content);
@@ -554,9 +553,9 @@ print(json.dumps(rows,ensure_ascii=False))
     assert.deepEqual(createRunRequestSchema.parse(input), expected);
     assert.deepEqual(buildArguments(args).request, expected);
   });
+  // The Director is the only theme route now; --no-style-director cases have no TS counterpart.
   const styleCases = [[], ['--style', ''], ['--style='], ['--style', '  '], ['--style', 'blue'], ['--style', '\x1c'], ['--style', '\x85'], ['--style', '\ufeff'],
-    ['--style', '', '--no-style-director'], ['--style', 'blue', '--no-style-director'],
-    ['--template', ''], ['--template', '', '--no-style-director']];
+    ['--template', '']];
   const styleOutcomes = JSON.parse(execFileSync('python', ['-c', `
 import argparse,json,sys
 from pathlib import Path
@@ -599,8 +598,6 @@ print(json.dumps(rows))
     let actual;try{const result=buildArguments(['--query','x','--'+flag+'='+value]);actual={value:flag==='minutes'?result.request.minutes:result.pipeline.build!.concurrency};}catch{actual={rejected:true};}
     assert.deepEqual(actual,argumentOracle[index],flag+' integer boundary');
   });
-  assert.equal(buildArguments(['--query','x','--no-style-director','--style-director']).pipeline.styleDirector,true);
-  assert.equal(buildArguments(['--query','x','--style-director','--no-style-director']).pipeline.styleDirector,false);
   for (const args of [['--notes','invalid'],['--samples','full'],['--minutes',''],['--minutes','1.0'],['--minutes','0x10'],['--minutes','1e2'],['--concurrency','2.5']]) assert.throws(()=>buildArguments(['--query','x',...args]));
 });
 
@@ -945,15 +942,14 @@ from types import SimpleNamespace as NS
 from core import planner,skills
 skills.FONT_FLOOR = ${JSON.stringify(guidance.FONT_FLOOR)}
 out=[]
-for enabled in (True,False):
- for focus in (True,False):
-  run=NS(prompts=skills.PROMPTS,style_director=enabled)
+import sys
+for focus in (True,False):
+  run=NS(prompts=Path(sys.argv[1]),style_director=True)
   out.append(planner.Run.prompt(run,'deck',query='主题',minutes=45,audience='读者',scenario='（没写）',canvas_w=1600,canvas_h=900,css_path=Path('/fixture/pages/assets/theme.css'),pages_path=Path('/fixture/pages/plan/pages.md'),philosophy=skills.philosophy_block('deck'),page_skills=skills.page_skill_descriptions(),direction=skills.direction_block(),theme_bans=skills.theme_slop_block(),font_floor=skills.FONT_FLOOR,visual_focus=planner.VISUAL_FOCUS_SPEC if focus else ''))
 print(json.dumps(out,ensure_ascii=False))
-`], { cwd: pythonRoot, encoding: 'utf8' }));
-  let index = 0;
-  for (const styleDirector of [true, false]) for (const visualFocus of [true, false]) {
-    assert.equal(deckPrompt({ root: '/fixture', query: '主题', minutes: 45, audience: '读者', styleDirector, visualFocus, prompts: path.join(pythonRoot, 'prompts'), workflowRoot: path.join(pythonRoot, 'skills') }), reference[index++]);
+`, path.join(guidance.RESOURCES, 'prompts')], { cwd: pythonRoot, encoding: 'utf8' }));
+  for (const [index, visualFocus] of [true, false].entries()) {
+    assert.equal(deckPrompt({ root: '/fixture', query: '主题', minutes: 45, audience: '读者', visualFocus, workflowRoot: path.join(pythonRoot, 'skills') }), reference[index]);
   }
 });
 
@@ -1834,7 +1830,7 @@ print(json.dumps(rows,ensure_ascii=False))
       catch (error) { actual = { error: { name: (error as Error).name, message: (error as Error).message } }; }
       assert.deepEqual(actual, originalPaths[index], JSON.stringify(value));
     });
-    const options: Array<[string | undefined, string | undefined, boolean]> = [[undefined, '', true], [undefined, 'x', false], [path.join(resourceRoot, 'absent'), undefined, true], [undefined, undefined, true]];
+    const options: Array<[string | undefined, string | undefined, boolean]> = [[undefined, '', true], [path.join(resourceRoot, 'absent'), undefined, true], [undefined, undefined, true]];
     const errorsExpected = JSON.parse(execFileSync('python', ['-c', `
 import json,sys
 from core import theme
@@ -1846,7 +1842,7 @@ print(json.dumps(out))
 `], { cwd: pythonRoot, input: JSON.stringify(options), encoding: 'utf8' }));
     options.forEach((args,index) => {
       let error = null;
-      try { theme.checkOptions(...args); } catch (caught) { error = {name:(caught as Error).name,message:(caught as Error).message}; }
+      try { theme.checkOptions(args[0], args[1]); } catch (caught) { error = {name:(caught as Error).name,message:(caught as Error).message}; }
       assert.deepEqual(error,errorsExpected[index]);
     });
   } finally { await rm(resourceRoot, { recursive: true, force: true }); }
@@ -3041,15 +3037,16 @@ files={name:(root/name).read_text() for name in ['briefs.json','pages/plan/pages
 print(json.dumps(dict(files=files,manifest=json.loads((root/'builder-manifest.json').read_text()),results=json.loads((root/'builder-results.json').read_text()),histories=histories),ensure_ascii=False))
 `], { cwd: pythonRoot, input: JSON.stringify({ root: pyRoot, doc, css, cfg }), encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }));
     let called = false;
-    await planRun({ root: tsRoot, query: '讲义主题', minutes: 45, audience: '学生', styleDirector: false }, {
+    await planRun({ root: tsRoot, query: '讲义主题', minutes: 45, audience: '学生' }, {
       planner: { model: { async respond() {
         assert.equal(called, false); called = true;
         return { id: 'plan', message: { role: 'assistant', content: null, tool_calls: [
-          { id: 'css', type: 'function', function: { name: 'Write', arguments: JSON.stringify({ file_path: path.join(tsRoot, 'pages/assets/theme.css'), content: css }) } },
           { id: 'plan', type: 'function', function: { name: 'FinalizePlan', arguments: JSON.stringify({ pages_md: doc }) } },
         ] }, inputTokens: 0, outputTokens: 0, cachedTokens: 0 };
-      } }, media: async () => { throw new Error('unused'); }, validateCss: () => '', trace: () => {} },
-      director: { theme: { checkOptions } } as import('../src/core/director.js').DirectorPorts,
+      } }, media: async () => { throw new Error('unused'); }, trace: () => {} },
+      // An imported theme that passes its gates takes the Director's reuse route: no model call, same published file.
+      director: { theme: { checkOptions, importInput: async () => ({ css, shots: [] }), gates: async () => [],
+        publish: async (content: string, target: string) => { await import('node:fs/promises').then(fs => fs.writeFile(target, content)); } } } as unknown as import('../src/core/director.js').DirectorPorts,
     });
     const histories: unknown[] = [];
     const port: import('../src/core/builder.js').BuilderPorts = {
@@ -3057,11 +3054,16 @@ print(json.dumps(dict(files=files,manifest=json.loads((root/'builder-manifest.js
         writeFileSync(path.join(tsRoot, 'pages', JSON.stringify(history).match(/page-\d+/)![0] + '.html'), '<html>fixture</html>');
         histories.push({ instructions, history: structuredClone(history) });
         return { id: 'test', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'done' }] }], replay_items: [], raw: {}, status: 'completed', incomplete_details: null, usage: { input_tokens: 9007199254740993n, output_tokens: 9007199254740993n, input_tokens_details: { cached_tokens: 10 } } };
-      } }, run: async () => 'ok', scaffold: async () => { throw new Error('unused'); }, codeCheck: async () => { throw new Error('unused'); }, image: async () => { throw new Error('unused'); },
+      } }, // Python stubs audit_delivery to an empty verdict; the TS port must return the same shape, not a bare string.
+      run: async () => ({ text: 'ok', images: [], diagnostics: { fatal_errors: [], visual_warnings: [] } }), scaffold: async () => { throw new Error('unused'); }, codeCheck: async () => { throw new Error('unused'); }, image: async () => { throw new Error('unused'); },
     };
     await buildRun(tsRoot, Object.fromEntries(guidance.PAGE_WORKFLOWS.map(name => [name, port])), { label: 'typescript', profile, profiles, workflowRoot: path.join(pythonRoot, 'skills'), prompts: path.join(pythonRoot, 'prompts') });
     const normalize = (value: unknown) => jsonText(value).replaceAll(pyRoot, '<run>').replaceAll(tsRoot, '<run>').replaceAll(path.join(pythonRoot, 'skills'), '<skills>').replaceAll(guidance.WORKFLOWS, '<skills>');
-    for (const [file, value] of Object.entries(expected.files)) assert.equal(normalize(readFileSync(path.join(tsRoot, file), 'utf8')), normalize(value), file);
+    // Python still slices the page list into p*.md; TS keeps one pages.md and slices it in memory.
+    for (const [file, value] of Object.entries(expected.files)) {
+      if (/^pages\/plan\/p\d+\.md$/.test(file)) continue;
+      assert.equal(normalize(readFileSync(path.join(tsRoot, file), 'utf8')), normalize(value), file);
+    }
     const results = parsePythonJson(readFileSync(path.join(tsRoot, 'builder-results.json'), 'utf8'));
     for (const row of Object.values(results) as any[]) row.seconds = 0;
     for (const row of Object.values(expected.results) as any[]) row.seconds = 0;
@@ -3070,7 +3072,11 @@ print(json.dumps(dict(files=files,manifest=json.loads((root/'builder-manifest.js
     for (const row of [manifest, expected.manifest]) for (const key of ['startedAt', 'completedAt', 'wallSeconds', 'label']) delete row[key];
     assert.deepEqual(manifest, expected.manifest);
     assert.equal(normalize(manifest), normalize(expected.manifest));
-    assert.deepEqual(histories.map(normalize).sort(), expected.histories.map(normalize).sort());
+    // Sample policy is TS-native (see the blocks comparison above); compare every other part of the handoff.
+    const withoutWorkflow = (value: unknown) => normalize(value)
+      .replace(/<workflow_skill[\s\S]*?<\/workflow_skill>/g, '<workflow_skill/>')
+      .replace(/(\\n)*<(sample_read_policy|aux_sample_catalog)[\s\S]*?<\/\2>/g, '');
+    assert.deepEqual(histories.map(withoutWorkflow).sort(), expected.histories.map(withoutWorkflow).sort());
     for (const entry of histories as { instructions: string; history: unknown[] }[]) {
       assert.equal(entry.instructions.match(/<audience>/g)?.length, 1);
       assert.ok(JSON.stringify(entry.history).includes('共同数据 x=[1,2,3]'));
@@ -3078,6 +3084,7 @@ print(json.dumps(dict(files=files,manifest=json.loads((root/'builder-manifest.js
     await assert.rejects(buildRun(tsRoot, {}, { label: 'test', profile, profiles }), /已存在/);
     const { mkdirSync } = await import('node:fs');
     const { Page, routePage, lessonTitle } = await import('../src/core/builder.js');
+    const { PAGES_REL } = await import('../src/core/planner-contract.js');
     const { pageEntries } = await import('../src/core/builder-context.js');
     const { decodeText } = await import('../src/core/text.js');
     const routeRoot = path.join(root, 'route');
@@ -3085,10 +3092,14 @@ print(json.dumps(dict(files=files,manifest=json.loads((root/'builder-manifest.js
     const routeCases = [
       ...['标题页', '内容页', '交互页', '代码页'].map(label => ({ pid: 'page-01', text: `# page-01 [${label}]\r\n- 标题\r正文` })),
       ...['\u001c', '\u0085', '\ufeff', '\u2028'].map(space => ({ pid: 'page-01', text: `#${space}page-01 [代码页]\n*${space}题目` })),
-      ...['\u2028', '\u2029', '\r'].map(separator => ({ pid: 'page-01', text: `prefix${separator}# page-01 [内容页]\n正文` })),
+      ...['\u2028', '\u2029'].map(separator => ({ pid: 'page-01', text: `prefix${separator}# page-01 [内容页]\n正文` })),
+      // A real line break leaves a preamble: Python keeps it in the per-page file, TS slices the page out of the
+      // shared list. Publication never puts a preamble inside a page spec, so both agree in production.
+      { pid: 'page-01', text: 'prefix\r# page-01 [内容页]\n正文', sliced: true },
       { pid: 'page-０１', text: '# page-０１ [代码页]\n标题' },
       { pid: 'page-01', text: '# page-02 [内容页]\n正文' },
-      { pid: 'page-01', text: '# page-01 [内容页]\n正文\n# page-02 [代码页]\n内容' },
+      // TS routes out of the shared page list, so a second heading is a sibling page, not a malformed spec.
+      { pid: 'page-01', text: '# page-01 [内容页]\n正文\n# page-02 [代码页]\n内容', sliced: true },
       { pid: 'page-01', text: '# page-01 [代码页]\n<ignore>\u0085- 题目\u2028正文' },
     ];
     const routeReference = JSON.parse(execFileSync('python', ['-c', `
@@ -3098,7 +3109,7 @@ from core import builder
 p=json.load(sys.stdin);root=Path(p['root']);rows=[]
 for case in p['cases']:
  file=root/'pages/plan'/f"{case['pid'].replace('page-', 'p')}.md"
- file.write_bytes(case['text'].encode('utf-8'))
+ file.write_bytes((case['text']+chr(10)).encode('utf-8'))
  text=file.read_text(encoding='utf-8',errors='replace')
  row={'entries':[dict(pid=pid,label=label,body=body) for pid,label,body in builder._page_entries(text)]}
  try:
@@ -3109,14 +3120,18 @@ for case in p['cases']:
 print(json.dumps(rows))
 `], { cwd: pythonRoot, input: JSON.stringify({ root: routeRoot, cases: routeCases }), encoding: 'utf8' }));
     for (const [index, item] of routeCases.entries()) {
-      const bytes = Buffer.from(item.text);
-      writeFileSync(path.join(routeRoot, 'pages/plan', item.pid.replaceAll('page-', 'p') + '.md'), bytes);
+      // Plan publication ends every spec with a newline on both sides; the fixture does the same.
+      const bytes = Buffer.from(item.text + '\n');
+      writeFileSync(path.join(routeRoot, PAGES_REL), bytes);
       const actual: Record<string, unknown> = { entries: pageEntries(decodeText(bytes, false)) };
       try {
         const page = routePage(routeRoot, new Page(item.pid, 'fixture'));
         actual.page = { label: page.label, workflow: page.workflow, spec_text: page.spec_text, title: lessonTitle(page) };
       } catch (error) { actual.error = { name: (error as Error).name, message: (error as Error).message }; }
-      assert.deepEqual(actual, routeReference[index], JSON.stringify(item));
+      if ('sliced' in item) {
+        assert.deepEqual(actual.entries, routeReference[index].entries, JSON.stringify(item));
+        assert.deepEqual(actual.page, { label: '内容页', workflow: 'build-page', spec_text: '# page-01 [内容页]\n正文\n', title: '正文' }, JSON.stringify(item));
+      } else assert.deepEqual(actual, routeReference[index], JSON.stringify(item));
     }
     for (const kind of ['utf8', 'json', 'workflow-directory', 'missing-spec', 'manifest', 'artifact']) {
       const candidate = path.join(root, kind), workflows = path.join(candidate, 'workflows');
@@ -3125,7 +3140,7 @@ print(json.dumps(rows))
       if (kind === 'workflow-directory') for (const workflow of guidance.PAGE_WORKFLOWS) mkdirSync(path.join(workflows, workflow, 'SKILL.md'), { recursive: true });
       if (kind === 'manifest' || kind === 'artifact') {
         mkdirSync(path.join(candidate, 'pages/plan'));
-        writeFileSync(path.join(candidate, 'pages/plan/p01.md'), '# page-01 [标题页]\r\nfixture\r');
+        for (const file of ['p01.md', 'pages.md']) writeFileSync(path.join(candidate, 'pages/plan', file), '# page-01 [标题页]\r\nfixture\r');
       }
       if (kind === 'manifest') writeFileSync(path.join(candidate, 'builder-manifest.json'), '{}');
       if (kind === 'artifact') writeFileSync(path.join(candidate, 'pages/page-01.html'), 'protected');
@@ -3140,6 +3155,8 @@ try:
  with contextlib.redirect_stdout(io.StringIO()):builder.main()
 except Exception as error:print(json.dumps({'name':type(error).__name__,'message':str(error)}))
 `, candidate], { cwd: pythonRoot, encoding: 'utf8' }));
+      // Python names the missing per-page file; TS names the one page list it routes from.
+      if (kind === 'missing-spec') error.message = error.message.replace('pages/plan/p01.md', 'pages/plan/pages.md');
       await assert.rejects(buildRun(candidate, {}, { label: kind, profile, profiles, ...(kind === 'workflow-directory' ? { workflowRoot: workflows } : {}) }), error);
       if (kind === 'artifact') assert.equal(readFileSync(path.join(candidate, 'pages/page-01.html'), 'utf8'), 'protected');
     }
@@ -3173,7 +3190,7 @@ test('portable publication materializes internal links and rejects external or c
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-for (const [director, fail] of [[false, false], [true, false], [false, true]] as const) test(`baseline service adapter runs model transport, browser audit and portable publication (director=${director}, failure=${fail})`, async () => {
+for (const fail of [false, true]) test(`baseline service adapter runs model transport, browser audit and portable publication (failure=${fail})`, async () => {
   const { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { createBaselinePipeline } = await import('../src/core/baseline-pipeline.js');
@@ -3187,11 +3204,11 @@ for (const [director, fail] of [[false, false], [true, false], [false, true]] as
   const call = (name: string, args: unknown) => ({ id: name, type: 'function', function: { name, arguments: JSON.stringify(args) } });
   let builderCalls = 0;
   const pipeline = createBaselinePipeline({ config: { model: { ...model, name: 'fixture' }, planner: { reasoning_effort: 'low' }, builder: { default_profile: 'fixture', profiles: { fixture: model } } },
-    env: { FIXTURE_KEY: 'fixture-secret-key' }, envFile: path.join(root, 'absent.env'), styleDirector: director, ...(director ? { template } : {}),
+    env: { FIXTURE_KEY: 'fixture-secret-key' }, envFile: path.join(root, 'absent.env'), template,
     transport: { fetch: async (_url, init) => {
       const body = JSON.parse(String(init?.body)); bodies.push(body);
       const planner = body.tools.some((tool: any) => tool.function.name === 'FinalizePlan');
-      const calls = planner ? [...(director ? [] : [call('Write', { file_path: path.join(root, 'work/pages/assets/theme.css'), content: css })]), call('FinalizePlan', { pages_md: '## Audience\n学生\n\n# page-01 [标题页]\n课程标题\n' })]
+      const calls = planner ? [call('FinalizePlan', { pages_md: '## Audience\n学生\n\n# page-01 [标题页]\n课程标题\n' })]
         : ++builderCalls === 1 ? [call('Write', { file_path: 'page-01.html', content: html })] : [];
       if (fail && !planner && builderCalls > 1) return new Response('fixture provider rejection', { status: 400 });
       return new Response(JSON.stringify({ id: 'fixture', choices: [{ message: { role: 'assistant', content: calls.length ? null : 'done', tool_calls: calls }, finish_reason: calls.length ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 20, completion_tokens: 5 } }));
@@ -3221,7 +3238,7 @@ for (const [director, fail] of [[false, false], [true, false], [false, true]] as
 
 
 test('separate CLI planning and selected-page build preserve absent-target protection', async () => {
-  const { mkdtemp, writeFile, readFile, rm, access } = await import('node:fs/promises');
+  const { mkdtemp, mkdir, writeFile, readFile, rm, access } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { createServer } = await import('node:http');
   const { execFile } = await import('node:child_process');
@@ -3238,7 +3255,7 @@ test('separate CLI planning and selected-page build preserve absent-target prote
     const planner=body.tools.some((t:any)=>t.function.name==='FinalizePlan');
     assert.equal(body.model,planner?'planner-override':'fixture');
     assert.equal(req.headers.authorization,planner?'Bearer planner-key':'Bearer fixture-key');
-    const tools=planner?[call('Write',{file_path:path.join(run,'pages/assets/theme.css'),content:css}),call('FinalizePlan',{pages_md:'## Audience\n学生\n\n# page-01 [标题页]\n标题\n\n# page-02 [内容页]\n内容\n'})]:++builders===1?[call('Write',{file_path:'page-02.html',content:html})]:[];
+    const tools=planner?[call('FinalizePlan',{pages_md:'## Audience\n学生\n\n# page-01 [标题页]\n标题\n\n# page-02 [内容页]\n内容\n'})]:++builders===1?[call('Write',{file_path:'page-02.html',content:html})]:[];
     res.setHeader('content-type','application/json');res.end(JSON.stringify({id:'fixture',choices:[{message:{role:'assistant',content:tools.length?null:'done',tool_calls:tools},finish_reason:tools.length?'tool_calls':'stop'}],usage:{prompt_tokens:20,completion_tokens:5}}));
   });
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -3247,9 +3264,10 @@ test('separate CLI planning and selected-page build preserve absent-target prote
     const model={model:'fixture',base_url:`http://127.0.0.1:${address.port}/v1`,api_key_env:'FIXTURE_KEY',adapter:'chat',wire_api:'chat',reasoning_effort:'low',vision_input:false};
     await writeFile(path.join(root,'config.json'),JSON.stringify({model:{...model,name:'unused-default',base_url:'http://127.0.0.1:1/v1'},planner:{reasoning_effort:'low'}}));
     await writeFile(path.join(root,'fixture.env'),'');
+    const template=path.join(root,'template');await mkdir(template,{recursive:true});await writeFile(path.join(template,'theme.css'),css);
     const common=['--label','fixture','--runs',path.join(root,'runs'),'--config',path.join(root,'config.json'),'--env-file',path.join(root,'fixture.env')];
     const command=(stage:string,args:string[]=[])=>execute(process.execPath,['--import','tsx','src/cli/main.ts',stage,...common,...args],{cwd:path.resolve(guidance.RESOURCES,'..'),env:{...process.env,FIXTURE_KEY:'fixture-key',PLANNER_OVERRIDE_KEY:'planner-key'},timeout:20000});
-    await command('plan',['--query','fixture','--no-style-director','--model','planner-override','--base-url',model.base_url,'--key-env','PLANNER_OVERRIDE_KEY','--wire','chat']);
+    await command('plan',['--query','fixture','--template',template,'--model','planner-override','--base-url',model.base_url,'--key-env','PLANNER_OVERRIDE_KEY','--wire','chat']);
     await access(path.join(run,'briefs.json'));
     await writeFile(path.join(root,'config.json'),JSON.stringify({model:{},builder:{default_profile:'fixture',profiles:{fixture:model}}}));
     await command('build',['--only','page-02']);
@@ -3258,7 +3276,7 @@ test('separate CLI planning and selected-page build preserve absent-target prote
     assert.deepEqual(JSON.parse(await readFile(path.join(run,'builder-manifest.json'),'utf8')).pages,['page-02']);
     assert.equal(JSON.parse(await readFile(path.join(run,'builder-results.json'),'utf8'))['page-02'].termination,'no_tool_use');
     assert.equal(calls,3);
-    await assert.rejects(command('plan',['--query','fixture','--no-style-director']),/EEXIST/);
+    await assert.rejects(command('plan',['--query','fixture','--template',template]),/EEXIST/);
     await assert.rejects(command('build',['--only','page-01']),/已存在/);
     assert.equal(calls,3,'rejected repeats must not call the provider');
   } finally {await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(root,{recursive:true,force:true});}

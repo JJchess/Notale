@@ -185,9 +185,8 @@ export function localUrl(value: string, origin: string, boundary: string): [stri
   if (!IMAGES.has(path.extname(file).toLowerCase()) && !FONTS.has(path.extname(file).toLowerCase())) throw valueError(`不支持的资源类型: ${path.basename(file)}`);
   return [file, fragment ? '#' + fragment : ''];
 }
-export function checkOptions(template: string | undefined, style: string | undefined, enabled = true): void {
+export function checkOptions(template: string | undefined, style: string | undefined): void {
   if (style !== undefined && !stripText(style)) throw valueError('--style 不得为空；修改成品主题请明确填写要求');
-  if ((template !== undefined || style !== undefined) && !enabled) throw valueError('--template/--style 与 --no-style-director 冲突');
   if (template !== undefined && !existsSync(template)) throw valueError(`--template 不存在: ${template}`);
 }
 export async function publish(css: string, target: string): Promise<void> {

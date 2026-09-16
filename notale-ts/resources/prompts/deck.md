@@ -4,8 +4,7 @@
 
 ## 交付
 
-<!--css:start-->用 `Write(file_path="{css_path}", content=…)` 提交完整纯 CSS，不加代码围栏。
-<!--css:end-->先拟定页表草稿，按主题需要用 ImageSearch / ImageGen 取图；首轮搜图需求合入同一次 ImageSearch 的 query 数组，草稿不另行提交。
+先拟定页表草稿，按主题需要用 ImageSearch / ImageGen 取图；首轮搜图需求合入同一次 ImageSearch 的 query 数组，草稿不另行提交。
 查看图片，将选中的素材分配到它实际支持的页面；有缺口可补搜，不合适可不用。
 最后用 `FinalizePlan` 提交完整页表 `pages_md` 与素材映射 `media_by_page`；映射使用工具已返回的图片路径列表，无图页省略。不要在页表里写图池或图片规格。
 
@@ -70,67 +69,6 @@
 页表标签对应：`build-cover` → `[标题页]`，`build-page` → `[内容页]`，
 `build-interaction` → `[交互页]`，`build-code` → `[代码页]`。
 
-<!--css:start-->
-## `theme.css`
-
-### 视觉方向
-
-{direction}
-
-### 配色禁令
-
-{theme_bans}
-
-## CSS 边界
-
-只生成共享 token；不生成页眉页脚、`mount()`、utility 类或标题位置，也不规定各页怎么排版。
-单页的尺寸、坐标与份额留给建页 agent 内联。
-
-## 固定版心
-
-必须原样包含：
-
-    :root { --pad-x: 56px; --pad-y: 28px; }
-
-每页是一个不可滚动的画面，坐标系 {canvas_w}×{canvas_h}。共享层不规定 `#stage` 怎么排
-——各页自己决定是在画面上定点摆放还是切分区域。
-`base.css` 已负责缩放、reset、`[hidden]`、`.sr-only/.min0/.cv-fill/.no-pan`、焦点和
-reduced-motion；不重复或覆盖。
-
-## Token
-
-定义 `--bg`、`--text`、`--font-sans`、`--focus`、`--muted` 和必要的语义色。每个语义 token
-只表示一个概念，并在接口中列出 hex、含义和允许位置；无语义元素用同一冷暖倾向的灰阶。
-`--muted` 与底色至少 4.5:1；不定义 `--rule`、`--border`，线条直接用 `--muted`。
-不用 `@import` 或联网 URL，只用本地字体和系统 fallback。
-
-默认字阶 token：`{font_tokens}`。h1 为页标题，h2 为区块标题，lead 为导语，body/sec 为成句文字，label 为标签，tick 为纯数字刻度。成句文字不用 label/tick。{font_floor}
-
-## 版式
-
-共享层不预置任何版式骨架类。构图由各页在画布上自己定：知识关系（过程／对照／归类／概括）
-用 SVG、Canvas、图表或定点摆放来表达。
-
-舞台背景不用重复条纹、点阵或网格；网格线只属于真实坐标系或图表。
-
-## 共享样式
-
-只定义 token 与版心；不预置任何组件类，页面需要的样式由建页 agent 按内容写。文件末尾加入：
-
-    svg .bar, svg .cell, svg .box { width:auto; height:auto; }
-
-## 接口注释
-
-`theme.css` 第一段必须用下列定界符，逐行列出 Builder 可用的每个 token（hex、唯一语义、位置）、
-版心和版式几何；未列出的等于不可用，其余注释只留短标题。
-
-    /* ==== INTERFACE ====
-       token  --model #2457A6  当前模型值｜预测、前向箭头
-       token  --fs-body        正文，注明实际字号
-       版心   1488×844         #stage 已含 padding
-       ==== /INTERFACE ==== */
-
-<!--css:end-->
 ## `pages.md`：标签加主题
 
 每页只写**一个标签和一句主题**，说明本页推进的主要理解；必要时用简短补语指出依据或成立条件。不把未经支持的机制写成已经成立的页面结论。

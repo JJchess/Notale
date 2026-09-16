@@ -42,7 +42,7 @@ export async function briefs(run: DirectorRequest, numbers: string[], mapping: R
   const records = await mediaSources(path.join(run.root, 'pages'));
   return numbers.map(number => {
     const pid = `page-${number}`;
-    let prompt = plannerPrompt('brief', { query: run.query, pid, total: numbers.length }, run.styleDirector ?? true, run.prompts);
+    let prompt = plannerPrompt('brief', { query: run.query, pid, total: numbers.length }, run.prompts);
     const paths = mapping[pid] ?? [];
     if (paths.length) prompt += '\n\n本页可用素材（按内容需要选用）：\n' + paths.map(file => {
       const row = records[file] ?? {}, parts = ['title', row.page_url ? 'page_url' : 'url', 'author', 'license', 'model'].filter(key => row[key]).map(key => String(row[key]));
@@ -52,11 +52,10 @@ export async function briefs(run: DirectorRequest, numbers: string[], mapping: R
   });
 }
 export async function planRun(run: DirectorRequest, ports: { planner: PlannerPorts; director: DirectorPorts }, options: { chassis?: string; lib?: string; signal?: AbortSignal; onPlanned?(pagesDoc: string): void } = {}): Promise<{ pages: number; root: string }> {
-  ports.director.theme.checkOptions(run.template, run.style, run.styleDirector ?? true);
+  ports.director.theme.checkOptions(run.template, run.style);
   await seed(run.root, options.chassis, options.lib);
   // Neither branch consumes the other's planning context. Wait for both even on failure.
-  if (run.styleDirector === false) workflowNotice(ports.director.progress, 'director', 'overall', 'skipped', '未启用独立视觉设计，沿用规划主题');
-  const director = run.styleDirector === false ? Promise.resolve() : observedStep(ports.director.progress, 'director', 'overall', '视觉设计', () => direct(run, ports.director, options.signal));
+  const director = observedStep(ports.director.progress, 'director', 'overall', '视觉设计', () => direct(run, ports.director, options.signal));
   const planning = (async () => {
     const sources = run.inputDirectory ? await observedStep(ports.planner.progress, 'sources', 'overall', '资料准备', () => Sources.prepare(run.root, run.inputDirectory!, ports.planner.model, ports.planner.visionInput ?? true, options.signal,
       message => workflowNotice(ports.planner.progress, 'sources', 'reading', 'started', message))) : undefined;
@@ -70,16 +69,11 @@ export async function planRun(run: DirectorRequest, ports: { planner: PlannerPor
   if (styled.status === 'rejected') throw new Error(`style director 失败:${styled.reason instanceof Error ? styled.reason.message : String(styled.reason)}`);
   options.signal?.throwIfAborted();
   if (planned.value.sourcesByPage) await writeFile(path.join(run.root, 'sources/by-page.json'), JSON.stringify(planned.value.sourcesByPage));
-  const { css, pagesDoc, mapping } = planned.value, assets = path.join(run.root, 'pages/assets');
-  if (run.styleDirector !== false) decodeText(await readFile(path.join(assets, 'theme.css')));
+  const { pagesDoc, mapping } = planned.value, assets = path.join(run.root, 'pages/assets');
+  decodeText(await readFile(path.join(assets, 'theme.css')));
   await mkdir(path.dirname(path.join(run.root, PAGES_REL)), { recursive: true });
   await writeFile(path.join(run.root, PAGES_REL), pagesDoc);
-  if (run.styleDirector === false) await writeFile(path.join(assets, 'theme.css'), css);
-  const pages = splitPages(pagesDoc), numbers = Object.keys(pages).sort();
-  await mkdir(path.join(run.root, 'pages/plan'), { recursive: true });
-  for (const number of numbers) await writeFile(path.join(run.root, 'pages/plan', `p${number}.md`), pages[number] + '\n');
-  const chassis = path.join(assets, 'CHASSIS.md'), text = decodeText(await readFile(chassis));
-  if (!text.includes('Deck.fmt(v, d)')) await writeFile(chassis, text.trimEnd() + '\n`Deck.fmt(v, d)` **给非负数加 `+`**，只用于增量（`+3.2%`）；年代、质量、温度、距离等\n绝对量一律 `v.toFixed(d)`。\n');
+  const numbers = Object.keys(splitPages(pagesDoc)).sort();
   await writeFile(path.join(run.root, 'briefs.json'), JSON.stringify(await briefs(run, numbers, mapping), null, 2));
   try { await writeCredits(path.join(run.root, 'pages')); } catch (error) { console.warn(`  素材来源汇总失败（不影响交付）：${(error as Error).message}`); }
   return { pages: numbers.length, root: run.root };
@@ -136,7 +130,9 @@ export async function buildRun(root: string, ports: Record<string, BuilderPorts>
     refShots: refs.some(ref => ref.type === 'input_image'), themeReferences: refs.filter(ref => ref.type === 'input_text').map(ref => ref.text),
     pages: pages.map(page => page.pid), startedAt: new Date().toISOString() };
   await writeFile(manifestFile, jsonText(manifest, { indent: 2 }) + '\n');
-  const chapters = chapterPreloads(root, raw.length), instructions = Object.fromEntries(PAGE_WORKFLOWS.map(name => [name, Object.values(instructionBlocks(root, raw.length, name, { ...options, includeAux: auxiliary })).join('\n\n')]));
+  // Only the workflows this run actually uses; a deck without code pages never loads the observer contract.
+  const used = [...new Set(pages.map(page => page.workflow))];
+  const chapters = chapterPreloads(root, raw.length), instructions = Object.fromEntries(used.map(name => [name, Object.values(instructionBlocks(root, raw.length, name, { ...options, includeAux: auxiliary })).join('\n\n')]));
   for (const page of pages) page.prompt = environmentContext(directory, page.pid, path.join(workflows, page.workflow)) + '\n\n' + page.prompt + '\n\n' + chapters[page.pid] + (sources ? '\n\n' + sourceInstructions + '\n本页相关资料：\n' + sources.evidence(sourceMapping[page.pid] ?? []) : '');
   const templateRefs: Record<string, Record<string, any>[]> = {};
   if (templateSpec) for (const workflow of PAGE_WORKFLOWS.filter(w => w !== 'build-code')) {

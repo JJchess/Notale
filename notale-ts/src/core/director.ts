@@ -34,7 +34,7 @@ export interface DirectorPorts {
   images(refs: ReferenceImage[], width?: number): Promise<ChatInputBlock[]>;
   media(name: string, args: Record<string, unknown>, pages: string, owner: string, signal?: AbortSignal): Promise<MediaOutput>;
   theme: {
-    checkOptions(template: string | undefined, style: string | undefined, enabled: boolean): void;
+    checkOptions(template: string | undefined, style: string | undefined): void;
     importInput(source: string | undefined, assets: string, allowRepair: boolean, request: string): Promise<{ css: string; shots: string[] }>;
     importedAssets(assets: string): Promise<string[]>;
     prepareFonts(css: string, assets: string): Promise<unknown>;
@@ -65,15 +65,14 @@ export function oneWrite(calls: ToolCall[], target: string): { css: string | und
 }
 export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?: AbortSignal) {
   if (run.template && path.extname(run.template).toLowerCase() === '.pptx') {
-    ports.theme.checkOptions(run.template, run.style, run.styleDirector ?? true);
+    ports.theme.checkOptions(run.template, run.style);
     const { directTemplate } = await import('./template-style.js');
     return directTemplate(run, ports, signal);
   }
   const assets = path.join(run.root, 'pages/assets');
   const target = path.join(assets, 'theme.css');
   const workflowRoot = run.workflowRoot ?? guidance.WORKFLOWS;
-  const styleDirector = run.styleDirector ?? true;
-  ports.theme.checkOptions(run.template, run.style, styleDirector);
+  ports.theme.checkOptions(run.template, run.style);
   const originalTheme = ports.theme;
   ports = { ...ports, theme: { ...ports.theme,
     prepareFonts: (...args) => observedStep(ports.progress, 'director', 'fonts', '字体准备', () => originalTheme.prepareFonts(...args)),
@@ -109,7 +108,7 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
     return response.message.tool_calls ?? [];
   };
   const result = (call: ToolCall, output: string) => history.push({ role: 'tool', tool_call_id: call.id, content: output });
-  const prompt = (name: string, values: Record<string, string | number>) => plannerPrompt(name, values, styleDirector, run.prompts);
+  const prompt = (name: string, values: Record<string, string | number>) => plannerPrompt(name, values, run.prompts);
   let picks: string[] = [];
   if (!run.template && !ports.catalog.match(run.style)) {
     const out = path.join(run.root, 'style-picks.tsv');

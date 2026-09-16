@@ -46,7 +46,7 @@ export function buildArguments(args: string[], stage: 'plan' | 'build' = 'build'
     concurrency: { type: 'string', default: '100' }, samples: { type: 'string', default: 'mini' },
     notes: { type: 'string', default: 'cap' }, 'sample-shots': { type: 'boolean', default: false },
     'visual-focus': { type: 'boolean', default: false }, 'aux-samples': { type: 'boolean' }, 'no-aux-samples': { type: 'boolean' },
-    'style-director': { type: 'boolean' }, 'no-style-director': { type: 'boolean' }, template: { type: 'string' },
+    template: { type: 'string' },
     skills: { type: 'string' }, workflows: { type: 'string' }, prompts: { type: 'string' }, chassis: { type: 'string' }, lib: { type: 'string' },
     model: { type: 'string' }, effort: { type: 'string' }, 'base-url': { type: 'string' }, 'key-env': { type: 'string' }, wire: { type: 'string' },
     config: { type: 'string' }, 'env-file': { type: 'string' },
@@ -81,14 +81,14 @@ export function buildArguments(args: string[], stage: 'plan' | 'build' = 'build'
   if (values.wire && !['chat', 'messages', 'responses'].includes(values.wire)) throw new Error('--wire must be chat, messages or responses');
   if (stage !== 'plan' && [values.model, values.effort, values['base-url'], values['key-env'], values.wire].some(value => value !== undefined)) throw new Error('Planner model overrides require the plan command; use --profile for Builder');
   if (stage === 'plan' || !values.label) {
-    checkOptions(values.template !== undefined ? path.resolve(values.template) : undefined, values.style, toggle('style-director', true));
+    checkOptions(values.template !== undefined ? path.resolve(values.template) : undefined, values.style);
   }
   if (values.skills !== undefined) generationScriptFor(values.skills);
   if (values.file?.length && (values.starter || stage === 'build' && values.label)) throw new Error('--file 仅用于 plan 或完整生成；分阶段 build 使用已保存的资料快照');
   const pipeline: PipelineOptions = {
     ...(values.skills !== undefined ? { skillsRoot: path.resolve(values.skills) } : {}),
     ...(stage === 'plan' ? { planner: { ...(values.model ? { model: values.model } : {}), ...(values.effort ? { effort: values.effort } : {}), ...(values['base-url'] ? { baseUrl: values['base-url'] } : {}), ...(values['key-env'] ? { keyEnv: values['key-env'] } : {}), ...(values.wire ? { wire: values.wire } : {}) } } : {}),
-    uniform: values.uniform, styleDirector: toggle('style-director', true),
+    uniform: values.uniform,
     ...(values.profile ? { profile: values.profile } : {}), ...(values.template !== undefined ? { template: path.resolve(values.template) } : {}),
     ...(values.config ? { config: loadConfig(values.config) } : {}), ...(values['env-file'] ? { envFile: path.resolve(values['env-file']) } : {}),
     ...(values.chassis ? { chassis: path.resolve(values.chassis) } : {}), ...(values.lib ? { lib: path.resolve(values.lib) } : {}),
@@ -115,7 +115,7 @@ async function main(): Promise<void> {
     if (starter) throw new Error('--starter is only supported for complete demo runs');
     const root = path.resolve(runs, label);
     if (command === 'plan') {
-      checkOptions(pipeline.template, request.style || undefined, pipeline.styleDirector ?? true);
+      checkOptions(pipeline.template, request.style || undefined);
       // mkdir without recursive guarantees an existing plan is never overwritten.
       await mkdir(path.dirname(root), { recursive: true });
       await mkdir(root);
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
       const runtime = baselineRuntime(root, pipeline);
       if (command === 'plan') {
         const { style, ...planning } = request;
-        const result = await planRun({ root, ...planning, ...(files.length ? { inputDirectory: path.join(root, 'input/files') } : {}), ...(style ? { style } : {}), styleDirector: pipeline.styleDirector ?? true,
+        const result = await planRun({ root, ...planning, ...(files.length ? { inputDirectory: path.join(root, 'input/files') } : {}), ...(style ? { style } : {}),
           ...(pipeline.template ? { template: pipeline.template } : {}),
           ...(pipeline.build?.prompts ? { prompts: pipeline.build.prompts } : {}),
           ...(pipeline.build?.workflowRoot ? { workflowRoot: pipeline.build.workflowRoot } : {}),
@@ -176,7 +176,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${JSON.stringify({ run: await store.get(id), events: await store.events(id) }, null, 2)}\n`);
     return;
   }
-  process.stdout.write("Usage: notale <serve|plan|build|check|inspect> [options]\nCheck: [page-*.html ...] [--after JS ...] [--shot] [--shot-dir PATH] [--crop X,Y,W,H] [--zoom 2] [--wait 1200] [--text-report] [--json]\nStages: plan --label NAME --query TEXT; build --label NAME [--only page-01 ...]\nPlanner: [--model NAME] [--effort VALUE] [--base-url URL] [--key-env ENV] [--wire chat|messages|responses]\nBuild: --query TEXT [--minutes 90] [--profile NAME] [--uniform] [--samples mini|none]\n       [--notes off|cap|notes|only (default cap: cover 80, page/interaction 200)]\n       [--sample-shots] [--visual-focus] [--[no-]aux-samples]\n       [--concurrency 100] [--[no-]style-director] [--template PATH] [--file PATH ...]\n       [--skills PATH] [--workflows PATH] [--prompts PATH] [--chassis PATH] [--lib PATH] [--config PATH] [--env-file PATH]\n");
+  process.stdout.write("Usage: notale <serve|plan|build|check|inspect> [options]\nCheck: [page-*.html ...] [--after JS ...] [--shot] [--shot-dir PATH] [--crop X,Y,W,H] [--zoom 2] [--wait 1200] [--text-report] [--json]\nStages: plan --label NAME --query TEXT; build --label NAME [--only page-01 ...]\nPlanner: [--model NAME] [--effort VALUE] [--base-url URL] [--key-env ENV] [--wire chat|messages|responses]\nBuild: --query TEXT [--minutes 90] [--profile NAME] [--uniform] [--samples mini|none]\n       [--notes off|cap|notes|only (default cap: cover 80, page/interaction 200)]\n       [--sample-shots] [--visual-focus] [--[no-]aux-samples]\n       [--concurrency 100] [--template PATH] [--file PATH ...]\n       [--skills PATH] [--workflows PATH] [--prompts PATH] [--chassis PATH] [--lib PATH] [--config PATH] [--env-file PATH]\n");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch((error) => {

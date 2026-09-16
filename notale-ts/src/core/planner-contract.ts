@@ -31,18 +31,12 @@ export function resolvePath(file: string, cwd = process.cwd()): string {
 
 export const N_CEIL = 60;
 export const PAGE_LABELS = new Set(['标题页', '内容页', '交互页', '代码页']);
-export const CSS_REL = 'pages/assets/theme.css';
 export const PAGES_REL = 'pages/plan/pages.md';
 export const DECK_TRIES = 3;
 export const PLANNER_IDENTITY = '你在为一套内容做规划。只输出被要求的东西,不写说明、不写总结、不加围栏。';
 
-export function plannerPrompt(name: string, values: Record<string, string | number>, styleDirector = true, prompts = PROMPTS): string {
-  const drop = styleDirector ? 'css' : 'pages-only';
-  const keep = styleDirector ? 'pages-only' : 'css';
-  const raw = decodeText(readFileSync(path.join(prompts, `${name}.md`)))
-    .replace(new RegExp(`<!--${drop}:start-->.*?<!--${drop}:end-->`, 'gs'), '')
-    .replaceAll(`<!--${keep}:start-->`, '').replaceAll(`<!--${keep}:end-->`, '');
-  return fill(raw, values, `${name}.md`);
+export function plannerPrompt(name: string, values: Record<string, string | number>, prompts = PROMPTS): string {
+  return fill(decodeText(readFileSync(path.join(prompts, `${name}.md`))), values, `${name}.md`);
 }
 export function stripFence(text: string): string {
   text = text.trim();
@@ -142,11 +136,10 @@ export function validateMedia(mapping: unknown, pagesDoc: string, available: Rec
   }
   return normalized;
 }
-export function finalizePlan(args: { pages_md: string; media_by_page?: unknown }, available: Record<string, unknown>, root: string, separateTheme: boolean, css: string): { css: string; pagesDoc: string; mapping: Record<string, string[]>; output: string } {
+export function finalizePlan(args: { pages_md: string; media_by_page?: unknown }, available: Record<string, unknown>, root: string): { pagesDoc: string; mapping: Record<string, string[]>; output: string } {
   const error = validPages(args.pages_md);
   if (error) throw new Error(error);
   planContext(args.pages_md, true);
   const mapping = validateMedia(args.media_by_page === undefined ? {} : args.media_by_page, args.pages_md, available, path.join(root, 'pages'));
-  if (!separateTheme && !css) throw new Error('缺少 theme.css，请先 Write 主题');
-  return { css, pagesDoc: args.pages_md, mapping, output: '定稿已接收' };
+  return { pagesDoc: args.pages_md, mapping, output: '定稿已接收' };
 }

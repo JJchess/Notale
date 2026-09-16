@@ -466,14 +466,11 @@ test('template and free Builders share teaching and visual rules without changin
   const { mkdir, writeFile, readFile, rm } = await import('node:fs/promises');
   const { deckPrompt } = await import('../src/core/planning.js');
   const { instructionBlocks } = await import('../src/core/builder-context.js');
-  const { routedWorkflow, WORKFLOWS, FONT_FLOOR, FONT_TOKENS } = await import('../src/core/guidance.js');
+  const { routedWorkflow, WORKFLOWS, FONT_FLOOR } = await import('../src/core/guidance.js');
   const root = await mkdtemp(path.join(os.tmpdir(), 'notale-template-prompts-'));
   try {
     const request = { root, query: '种子发芽', minutes: 15, audience: '小学生' };
     assert.equal(deckPrompt(request), deckPrompt({ ...request, ...{ template: 'input.pptx' } }));
-    const fallback = deckPrompt({ ...request, styleDirector: false });
-    assert.ok(fallback.includes(FONT_TOKENS) && fallback.includes(FONT_FLOOR));
-    assert.doesNotMatch(fallback, /\{font_(?:floor|tokens)\}|--fs-body 18/);
     await mkdir(path.join(root, 'pages/assets/lib'), { recursive: true }); await mkdir(path.join(root, 'pages/plan'), { recursive: true });
     await writeFile(path.join(root, 'pages/assets/CHASSIS.md'), '共享底盘');
     await writeFile(path.join(root, 'pages/assets/lib/LIBS.md'), '## 按「要做的事」查\n本地依赖');

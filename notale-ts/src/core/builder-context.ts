@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { decodeText, PYTHON_SPACE, stripText } from './text.js';
 import * as skills from './guidance.js';
-import { planContext } from './planner-contract.js';
+import { PAGES_REL, planContext } from './planner-contract.js';
 import { CODE_IDENTITY, codeReferences } from './code-observer.js';
 
 const constants = JSON.parse(readFileSync(path.join(skills.RESOURCES, 'builder-instructions.json'), 'utf8'));
@@ -16,10 +16,17 @@ const escape = (value: string, quote = false) => {
   return result;
 };
 export interface PageEntry { pid: string; label: string; body: string }
+const pageHeading = () => new RegExp(`(?:^|(?<=\\n))#${PYTHON_SPACE}+(page-(\\p{Nd}+))${PYTHON_SPACE}+\\[(标题页|内容页|交互页|代码页)\\]${PYTHON_SPACE}*(?=\\n|$)`, 'gu');
 export function pageEntries(text: string): PageEntry[] {
-  const heading = new RegExp(`(?:^|(?<=\\n))#${PYTHON_SPACE}+(page-(\\p{Nd}+))${PYTHON_SPACE}+\\[(标题页|内容页|交互页|代码页)\\]${PYTHON_SPACE}*(?=\\n|$)`, 'gu');
-  const hits = [...text.matchAll(heading)];
+  const hits = [...text.matchAll(pageHeading())];
   return hits.map((hit, index) => ({ pid: hit[1]!, label: hit[3]!, body: stripText(text.slice(hit.index! + hit[0].length, hits[index + 1]?.index ?? text.length)) }));
+}
+/** The one page list on disk; a per-page spec is a slice of it, never a separate file. */
+export function pageSpec(pagesDoc: string, pid: string): string | undefined {
+  const hits = [...pagesDoc.matchAll(pageHeading())];
+  const index = hits.findIndex(hit => hit[1] === pid);
+  if (index < 0) return undefined;
+  return pagesDoc.slice(hits[index]!.index!, hits[index + 1]?.index ?? pagesDoc.length).trimEnd() + '\n';
 }
 function xmlPage(page: PageEntry, current = false): string {
   return `  <page id="${escape(page.pid, true)}" label="${escape(page.label, true)}"${current ? ' current="true"' : ''}>${escape(page.body)}</page>`;
@@ -28,21 +35,20 @@ export function deckOutline(file: string): string {
   return `<deck_outline>\n${pageEntries(read(file)).filter(page => page.label === '标题页').map(page => xmlPage(page)).join('\n')}\n</deck_outline>`;
 }
 export function chapterPreloads(root: string, total: number): Record<string, string> {
+  const plan = path.join(root, PAGES_REL);
+  const document = read(plan);
   const groups: PageEntry[][] = [];
   let group: PageEntry[] = [];
   for (let index = 1; index <= total; index++) {
-    const number = String(index).padStart(2, '0');
-    const pid = `page-${number}`;
-    const file = path.join(root, 'pages/plan', `p${number}.md`);
-    const entries = pageEntries(read(file));
-    if (entries.length !== 1 || entries[0]!.pid !== pid) throw new Error(`${file} 必须且只能包含 ${pid} 的一份规格`);
-    const page = entries[0]!;
+    const pid = `page-${String(index).padStart(2, '0')}`;
+    const spec = pageSpec(document, pid);
+    const page = spec === undefined ? undefined : pageEntries(spec)[0];
+    if (!page || page.pid !== pid) throw new Error(`${plan} 必须包含 ${pid} 的一份规格`);
     if (page.label === '标题页' && group.length) { groups.push(group); group = []; }
     group.push(page);
   }
   if (group.length) groups.push(group);
-  const plan = path.join(root, 'pages/plan/pages.md');
-  const context = existsSync(plan) ? planContext(read(plan)) : { continuity: [] };
+  const context = planContext(document);
   const result: Record<string, string> = {};
   for (const chapter of groups) for (const current of chapter) {
     const selected = context.continuity.filter(entry => entry.pages.includes(current.pid));

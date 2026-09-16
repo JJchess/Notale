@@ -13,8 +13,8 @@ import { firstGuidanceOnly, resolveReadPath, runTool, toolSpecs, type ToolOutput
 import { check, imageOutput } from '../tools/check.js';
 import { scaffold } from '../tools/code-scaffold.js';
 import { runBrowserCheck, selectCodeShots } from '../tools/code-check.js';
-import { pageEntries } from './builder-context.js';
-import { resolvePath } from './planner-contract.js';
+import { pageEntries, pageSpec } from './builder-context.js';
+import { PAGES_REL, resolvePath } from './planner-contract.js';
 import { isWithin } from './theme.js';
 import { CODE_FILES, CODE_PAGE_SECONDS, CODE_REQUEST_SECONDS } from './code-observer.js';
 
@@ -31,13 +31,16 @@ export class Page {
   constructor(readonly pid: string, public prompt: string) {}
 }
 export function routePage(root: string, page: Page): Page {
-  const file = path.join(root, 'pages/plan', page.pid.replaceAll('page-', 'p') + '.md');
+  const file = path.join(root, PAGES_REL);
   if (!existsSync(file) || !statSync(file).isFile()) throw Object.assign(new Error(`cannot route ${page.pid}: missing planner spec ${file}`), { name: 'FileNotFoundError' });
-  const text = decodeText(readFileSync(file), false), entries = pageEntries(text);
-  if (entries.length !== 1) throw Object.assign(new Error(`cannot route ${page.pid}: expected one '# page-NN [标题页|内容页|交互页|代码页]' heading`), { name: 'ValueError' });
-  const entry = entries[0]!;
-  if (entry.pid !== page.pid) throw Object.assign(new Error(`planner spec id '${entry.pid}' does not match '${page.pid}'`), { name: 'ValueError' });
-  page.label = entry.label; page.workflow = constants.LABEL_WORKFLOWS[entry.label]; page.spec_text = text;
+  const document = decodeText(readFileSync(file), false), text = pageSpec(document, page.pid);
+  const entry = text === undefined ? undefined : pageEntries(text)[0];
+  if (!entry) {
+    const found = pageEntries(document)[0];
+    if (!found) throw Object.assign(new Error(`cannot route ${page.pid}: expected one '# page-NN [标题页|内容页|交互页|代码页]' heading`), { name: 'ValueError' });
+    throw Object.assign(new Error(`planner spec id '${found.pid}' does not match '${page.pid}'`), { name: 'ValueError' });
+  }
+  page.label = entry.label; page.workflow = constants.LABEL_WORKFLOWS[entry.label]; page.spec_text = text!;
   return page;
 }
 export function lessonTitle(page: Page): string {

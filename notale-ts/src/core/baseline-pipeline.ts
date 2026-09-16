@@ -11,7 +11,6 @@ import { RESOURCES } from './guidance.js';
 import { planRun, buildRun, type BuildOptions } from './orchestration.js';
 import { builderPorts, lessonTitle, Page } from './builder.js';
 import { directorPorts } from './theme-runtime.js';
-import { inspect } from './theme.js';
 import { TraceWriter } from './trace.js';
 import { jsonText, type WorkflowTrace } from './planning.js';
 import { mediaPorts, generationScriptFor } from '../tools/media-execution.js';
@@ -23,7 +22,7 @@ import { publishLecture } from './publication.js';
 
 export interface PipelineOptions {
   planner?: PlannerOverrides; config?: Record<string, any>; env?: NodeJS.ProcessEnv; envFile?: string; profile?: string;
-  skillsRoot?: string; chassis?: string; lib?: string; uniform?: boolean; transport?: TransportOptions; styleDirector?: boolean; template?: string;
+  skillsRoot?: string; chassis?: string; lib?: string; uniform?: boolean; transport?: TransportOptions; template?: string;
   build?: Pick<BuildOptions, 'samples' | 'sampleShots' | 'includeAux' | 'notes' | 'visualFocus' | 'concurrency' | 'workflowRoot' | 'prompts' | 'only'>;
 }
 export function runtimeEnvironment(env: NodeJS.ProcessEnv = process.env, file?: string): NodeJS.ProcessEnv {
@@ -97,7 +96,7 @@ export function baselineRuntime(root: string, options: PipelineOptions = {}, sig
         { step, tools: (response.message.tool_calls ?? []).map(call => ({ name: call.function.name, arguments: call.function.arguments })) });
     };
     return { env, cfg, models,
-      get planner() { return { model: models.planner, visionInput: models.planner.profile.vision_input, media: media.workflow, trace, validateCss: (css: string) => inspect(css).bad.join('；') }; },
+      get planner() { return { model: models.planner, visionInput: models.planner.profile.vision_input, media: media.workflow, trace }; },
       get director() { return directorPorts(models.director, trace, media.workflow, signal); },
       get builders() { return Object.fromEntries(Object.entries(models.builders).map(([workflow, model]) => [workflow, builderPorts(model, media.workspace, env)])); },
     };
@@ -127,7 +126,7 @@ export function createBaselinePipeline(options: PipelineOptions = {}): Generatio
     try {
       await emit('phase.changed', '正在规划讲义和视觉方向', { phase: 'ideate' });
       await planRun({ root, ...(run.request.fileIds?.length ? { inputDirectory: path.join(path.dirname(outputDir), 'input/files') } : {}), query: run.request.query, minutes: run.request.minutes, audience: run.request.audience, scenario: run.request.scenario,
-        ...(run.request.style ? { style: run.request.style } : {}), ...(options.build?.workflowRoot ? { workflowRoot: options.build.workflowRoot } : {}), ...(options.build?.prompts ? { prompts: options.build.prompts } : {}), styleDirector: options.styleDirector ?? true, visualFocus: options.build?.visualFocus ?? false, ...(run.request.templateId ? { template: path.join(path.dirname(outputDir), 'input/template.pptx') } : options.template ? { template: options.template } : {}) },
+        ...(run.request.style ? { style: run.request.style } : {}), ...(options.build?.workflowRoot ? { workflowRoot: options.build.workflowRoot } : {}), ...(options.build?.prompts ? { prompts: options.build.prompts } : {}), visualFocus: options.build?.visualFocus ?? false, ...(run.request.templateId ? { template: path.join(path.dirname(outputDir), 'input/template.pptx') } : options.template ? { template: options.template } : {}) },
       { planner: { ...planner, progress: report }, director: { ...director, progress: report } }, { signal, onPlanned(pagesDoc) {
         const pages = Object.entries(splitPages(pagesDoc)).sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true })).map(([number, spec]) => {
           const page = new Page('page-' + number, ''); page.spec_text = spec;
