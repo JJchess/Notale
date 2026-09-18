@@ -24,6 +24,9 @@ export function InteractiveDrawer(){
        {running&&<button id="ai-stop" onClick={()=>model.stop?.()}>{"停止"}</button>}
       </div>
     : <p id="ai-unavailable" className="hint" role="status">{model.reason||'模型服务不可用'}</p>}
+   {!!model.steps.length&&<ol id="ai-steps" role="status">
+    {model.steps.map(step=><li key={step.label} data-status={step.status}>{step.label}</li>)}
+   </ol>}
    {candidate&&<div id="ai-candidate" className="ai-candidate">
     <strong>{"待应用的修改"}</strong>
     <ul>{candidate.summary.map(entry=><li key={entry}>{entry}</li>)}</ul>

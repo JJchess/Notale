@@ -9,13 +9,30 @@
 `reason` 是给作者看的原因，前端据此禁用提交而不是静默失败。
 
 `POST /api/documents/:id/ai-edits`，鉴权走既有的 `Integration.context/authorize`（action `edit`）。
+响应体是**换行分隔的 JSON**（`content-type: application/x-ndjson`），不是一次性 JSON——鉴权和
+请求体 schema 校验仍在第一行写出之前完成，失败照旧是普通 4xx；只有进了 `aiEdit()` 内部之后的
+失败才会作为流的最后一行出现。
 
 ```
-{ slideId, intent: 'insert-interactive' | 'edit-selection', instruction, targets?: string[], baseVersion?: number }
-→ { mutationId, baseVersion, commands, preview, model }
+请求 { slideId, intent: 'insert-interactive' | 'edit-selection', instruction, targets?: string[], baseVersion?: number }
+
+响应（每行一个 JSON 对象）：
+{ type:'step', label, status:'active'|'done' }   — 真实发生的五个节点各一行，见下
+{ type:'result', mutationId, baseVersion, commands, preview, model }   — 成功收尾
+{ type:'error', error, message }                                       — 失败收尾
 ```
+
+`step` 对应的是链路里真实存在的节点，不是编出来的进度条：读取页面对象 → 请求模型 →
+解析与校验 → 服务端试跑；失败重试时会多出一行「请求模型（第 2 次尝试）」。
 
 `preview` 是 `AuthorChangeSet`，由 `store.prepareSync` 试跑得到——和 `/prepare` 同一条路径。
+前端拿它做**候选实时预览**：`projectPrepared(kernel.confirmed, preview, htmlBasesFor(...))`
+（`notale-editor-frontend/src/author-projection.ts`）投影出一份不提交的 `Snapshot`，画到
+`AuthorCanvasController.previewExternal()`（`notale-editor-frontend/src/canvas/author-controller.ts`）
+——真实文档和撤销栈完全不碰，取消/重新生成/应用完成时调 `clearExternalPreview()` 复原。
+**这个预览的对象 id 未必和候选 `commands` 里的一致**：`elements.transfer` 会在服务端重新分配
+稳定 id（防止粘贴/搬运碰撞），`preview` 反映的是这次试跑分配到的 id；真正点「应用」时会用一个
+新的 mutationId 重新走一遍，届时再分配一批 id——语义等价，只是底层 id 不同，纯 UI 不可见。
 
 ## 模型看到什么
 
@@ -68,12 +85,16 @@
 | `EDITOR_AI_API_KEY_ENV` | `GEMINI_API_KEY` | 从哪个环境变量读密钥 |
 | `EDITOR_AI_TIMEOUT_MS` | `60000` | 单次请求超时 |
 | `EDITOR_AI_STUB` | — | 固定回复，或 `{关键词: 回复}` 映射（按提示词匹配），用于确定性验收 |
+| `EDITOR_AI_STUB_DELAY_MS` | `0` | stub 回复前的固定延迟；不设的话流式阶段会在一次事件循环里全部推完，看不出中间态，浏览器验收步骤顺序的断言需要它 |
 
 ## 验收
 
-- 闸门与候选流程（离线）：`notale-editor/tests/ai-edits.test.ts`、
-  `notale-editor-frontend/tests/ai-edits-state.test.ts`
-- 端到端（stub）：`notale-editor-frontend/tests/interactive-ai.spec.ts`，
-  后端带 `EDITOR_AI_STUB` 启动，覆盖候选先审后用、一次撤销、取消不改工程、右键入口。
+- 闸门、候选流程、流式进度节点（离线）：`notale-editor/tests/ai-edits.test.ts`（14 例）。
+- 状态机、ndjson 解析、候选实时预览的投影/清除时机（离线）：
+  `notale-editor-frontend/tests/ai-edits-state.test.ts`（17 例）。
+- 端到端（stub）：`notale-editor-frontend/tests/interactive-ai.spec.ts`（4 例），后端带
+  `EDITOR_AI_STUB` + `EDITOR_AI_STUB_DELAY_MS` 启动，覆盖候选先审后用、**候选一到就在画布上
+  实时预览、应用前就能看到**、一次撤销、取消后画布连同预览一起复原、右键入口、进度清单按真实
+  阶段依次点亮。
 - 真实模型闭环在 2026-09-16 用 `gemini-3.8-flash` 各跑过一次：局部修改产出
   `element.patch`；插入互动产出完整的三步事务并通过全部闸门。

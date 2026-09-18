@@ -86,12 +86,20 @@
 - 闸门：命令白名单（按意图）、页面闸门、局部修改的作用域闸门、`store.prepareSync` 试跑，
   失败回喂重试一次，坏候选不进界面。
 - 前端状态机 + 候选摘要 + 应用/取消 + 停止；右键「AI 修改…」把选区交给互动侧栏。
-- 验收：`notale-editor/tests/ai-edits.test.ts`（11）、`tests/ai-edits-state.test.ts`（8）、
-  `tests/interactive-ai.spec.ts`（4，stub 后端）；真实模型两种意图各跑通一次。
+- **2026-09-17 补齐**：侧栏不再是黑箱转圈——响应改成 ndjson 流式推送，侧栏按真实节点
+  （读取页面对象→请求模型→解析与校验→服务端试跑）依次点亮，不是编出来的假 tool_use。
+  候选一到就在画布上**实时预览**（复用内核给所有结构性编辑用的 `projectPrepared` 乐观投影，
+  接进 `AuthorCanvasController.previewExternal()`），应用前就能看到效果；取消/重新生成/
+  应用完成都会把画布干净地复原——全程不碰真实文档和撤销栈。
+- 验收：`notale-editor/tests/ai-edits.test.ts`（14）、`tests/ai-edits-state.test.ts`（17）、
+  `tests/interactive-ai.spec.ts`（4，stub 后端，含流式进度与实时预览断言）；真实模型两种
+  意图各跑通一次。
 
 **这一批没做**：导入第三方代码、npm 依赖、esbuild、worker 容器、Docker、`WidgetPackage`、
-`webWidgets` 元数据、候选的画布内幽灵预览（现在只列出将改动什么）。
-场景（scene）仍无法由 AI 创建——它从页面内联 `<script>` 反推，而命令层禁止插入脚本。
+`webWidgets` 元数据；真正的多轮 tool-calling（现在的重试仍是整段重新生成，不是分步调用工具）；
+`apply()` 复用候选已算好的 mutationId/preview 省掉一次服务器往返（现在的重新 prepare 是有意
+的并发安全网）。场景（scene）仍无法由 AI 创建——它从页面内联 `<script>` 反推，而命令层禁止
+插入脚本。
 
 ### 参考与适用边界
 

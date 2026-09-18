@@ -13,6 +13,7 @@ type Context={
 /** Coordinates author projections and resource versions for the active canvas. UI observes completed paints. */
 export class AuthorCanvasController {
  private rendered?:Slide;
+ private externalPreview?:Slide;
  private previews:Command[]=[];
  private leases=new Map<string,ReturnType<typeof trackPreviewLease>>();
  private signature='';
@@ -25,10 +26,26 @@ export class AuthorCanvasController {
  private detach:()=>void;
  constructor(private canvas:Pick<CanvasController,'send'|'onDispose'>,private context:Context){this.detach=canvas.onDispose(()=>this.dispose());}
  get assetBase(){return this.base;}
- beginPage(){if(this.disposed)return;++this.refreshSequence;++this.epoch;++this.sequence;this.previews=[];this.rendered=undefined;}
+ beginPage(){if(this.disposed)return;++this.refreshSequence;++this.epoch;++this.sequence;this.previews=[];this.rendered=undefined;this.externalPreview=undefined;}
  resetDocument(){this.beginPage();this.signature='';this.base='';this.paintedAssets={};for(const lease of this.leases.values())lease.stop();this.leases.clear();}
  seed(confirmed:Snapshot,slide:Slide,url:string){if(this.disposed)return;this.rendered=structuredClone(slide);this.base=new URL('../'.repeat(slide.sourcePath.split('/').length-1)||'./',url).href;this.signature=JSON.stringify(confirmed.document.assets);this.paintedAssets=confirmed.document.assets;}
  preview(commands:Command[]){if(this.disposed)return;this.previews.push(...commands);this.canvas.send('author-preview',{commands});}
+ /** Paints a candidate the author has not applied yet -- e.g. an AI edit under review. The
+  * committed state (`rendered`) is untouched, so this is always cheaply reversible; it only
+  * makes sense while nothing else is editing, and the caller must clear it before any real
+  * edit reaches this controller. */
+ previewExternal(slide:Slide){
+  if(this.disposed||!this.rendered||slide.id!==this.rendered.id)return;
+  const before=(this.externalPreview??this.rendered).html;
+  this.externalPreview=slide;
+  this.canvas.send('author-update',{before,after:slide.html,transforms:slide.transforms});
+ }
+ clearExternalPreview(){
+  if(this.disposed||!this.externalPreview||!this.rendered)return;
+  const before=this.externalPreview.html;
+  this.externalPreview=undefined;
+  this.canvas.send('author-update',{before,after:this.rendered.html,transforms:this.rendered.transforms});
+ }
  private retain(documentId:string,preview:CanvasPreview){const key=JSON.stringify([documentId,preview.version,preview.channel]);if(!this.leases.has(key))this.leases.set(key,trackPreviewLease(documentId,preview));}
  private async resources(current:()=>boolean){
   const confirmed=this.context.confirmed(),signature=JSON.stringify(confirmed.document.assets);

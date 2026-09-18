@@ -188,15 +188,33 @@ export function createApps(options: AppOptions) {
     store.prepareSync(await context(req,'edit',req.params.id),req.params.id,commitSchema.parse(req.body)));
   // A candidate, never a commit: the author applies it from the editor, or discards it.
   api.get('/api/ai/status',async()=>({available:ai.available,reason:ai.reason,model:ai.model}));
-  api.post<{Params:{id:string}}>('/api/documents/:id/ai-edits',async req=>{
+  // Streamed as newline-delimited JSON so the editor can show real progress instead of a
+  // spinner: one line per pipeline stage the request actually reaches, then a result/error
+  // line. Auth and body validation happen before the stream starts, so those still fail as
+  // ordinary 4xx responses; only failures inside aiEdit() itself become the final line.
+  api.post<{Params:{id:string}}>('/api/documents/:id/ai-edits',async(req,reply)=>{
     const ctx=await context(req,'edit',req.params.id);
     const request=aiEditSchema.parse(req.body);
-    return aiEdit(request,{
-      provider:ai,
-      snapshot:baseVersion=>store.get(ctx,req.params.id,baseVersion),
-      prepare:commit=>store.prepareSync(ctx,req.params.id,commit),
-      mutationId:()=>randomUUID(),
-    });
+    reply.hijack();
+    reply.raw.writeHead(200,{'content-type':'application/x-ndjson; charset=utf-8','cache-control':'no-store'});
+    let closed=false;
+    reply.raw.on('close',()=>{closed=true;});
+    const write=(line:unknown)=>{if(closed)return;try{reply.raw.write(JSON.stringify(line)+'\n');}catch{closed=true;}};
+    try{
+      const result=await aiEdit(request,{
+        provider:ai,
+        snapshot:baseVersion=>store.get(ctx,req.params.id,baseVersion),
+        prepare:commit=>store.prepareSync(ctx,req.params.id,commit),
+        mutationId:()=>randomUUID(),
+        report:step=>write({type:'step',...step}),
+      });
+      write({type:'result',...result});
+    }catch(cause){
+      const domain=cause instanceof DomainError?cause:new DomainError('INTERNAL',cause instanceof Error?cause.message:String(cause),500);
+      write({type:'error',error:domain.code,message:domain.message});
+    }finally{
+      reply.raw.end();
+    }
   });
   const syncV2Schema=commitSchema.extend({dependencies:z.array(commitSchema.shape.mutationId).max(500).optional(),commands:z.array(commitSchema.shape.commands.element).max(500),geometry:z.boolean().optional(),inverseVersion:z.number().int().min(2).optional(),restoreVersion:z.number().int().positive().optional(),inverseMutationId:commitSchema.shape.mutationId.optional()}).refine(v=>Number(!!v.inverseVersion)+Number(!!v.restoreVersion)+Number(!!v.inverseMutationId)+(v.commands.length?1:0)===1);
   api.post<{Params:{id:string}}>('/api/documents/:id/sync/v2',async req=>

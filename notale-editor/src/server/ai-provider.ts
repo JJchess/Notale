@@ -28,9 +28,13 @@ export function createAiProvider(env: NodeJS.ProcessEnv = process.env): AiProvid
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.values(parsed).every(value => typeof value === 'string'))
         replies = parsed as Record<string, string>;
     } catch {}
+    // A fixed delay makes the streamed progress steps land far enough apart for a browser
+    // test to observe each one in turn, instead of the whole pipeline settling in one tick.
+    const delay = Number(env.EDITOR_AI_STUB_DELAY_MS || 0);
     return {
       available: true, reason: '', model: 'stub',
       async complete(request) {
+        if (delay) await new Promise(resolve => setTimeout(resolve, delay));
         if (!replies) return stub;
         const hit = Object.entries(replies).find(([keyword]) => request.user.includes(keyword));
         if (!hit) throw new DomainError('AI_BAD_OUTPUT', `stub 没有匹配的回复：${Object.keys(replies).join(', ')}`, 422);

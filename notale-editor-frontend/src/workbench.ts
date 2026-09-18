@@ -67,7 +67,8 @@ import { createMediaIngress } from './media-ingress.js';
 import { createRichEditor } from './rich-editor.js';
 import { createLinkInspector } from './link-inspector.js';
 import { createRevealPreset } from './reveal-preset.js';
-import { bindAiEdits } from './state/ai-edits.js';
+import { bindAiEdits, splitNdjson, type AiStep, type AiCandidate, type AiRequestResult } from './state/ai-edits.js';
+import { projectPrepared, htmlBasesFor } from './author-projection.js';
 import { createPageThumbnails } from './canvas/page-thumbnails.js';
 import { createAssetLibrary } from './asset-library.js';
 import { createTypography } from './typography.js';
@@ -340,6 +341,31 @@ async function apiSignal(path: string, body: unknown, signal: AbortSignal) {
     throw new ApiError(String(e.error ?? 'HTTP_'+r.status), e.message ?? `HTTP ${r.status}`);
   }
   return r.json();
+}
+/** Reads a newline-delimited JSON response as it arrives: one line per real pipeline stage,
+ * then a result or error line. No SSE/WebSocket needed, just a streamed fetch body. */
+async function apiStream(path: string, body: unknown, signal: AbortSignal, onStep: (step: AiStep) => void): Promise<AiRequestResult> {
+  const r = await fetch(path, { signal, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) {
+    const e = await r.json().catch(()=>({}));
+    throw new ApiError(String(e.error ?? 'HTTP_'+r.status), e.message ?? `HTTP ${r.status}`);
+  }
+  if (!r.body) throw new ApiError('NO_STREAM', '当前浏览器不支持流式响应');
+  const reader = r.body.getReader(), decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const split = splitNdjson(buffer, decoder.decode(value, { stream: true }));
+    buffer = split.rest;
+    for (const raw of split.lines) {
+      const line = raw as { type: string; error?: string; message?: string } & Partial<AiStep> & Partial<AiRequestResult>;
+      if (line.type === 'step') onStep({ label: line.label!, status: line.status! });
+      else if (line.type === 'result') return line as unknown as AiRequestResult;
+      else if (line.type === 'error') throw new ApiError(line.error ?? 'AI_FAILED', line.message ?? '模型服务失败');
+    }
+  }
+  throw new ApiError('STREAM_ENDED', '模型响应意外中断');
 }
 async function api(path: string, body?: unknown) {
   const r = await fetch(
@@ -1783,10 +1809,20 @@ const aiEdits = bindAiEdits({
   slideId:()=>editorSession.pageId,
   selection:()=>[...editorSession.selection],
   selectionLabel:()=>editorSession.getSnapshot().inspector.label,
-  request:(path,body,signal)=>apiSignal(path,body,signal),
+  request:(path,body,signal,onStep)=>apiStream(path,body,signal,onStep),
   // One batch through the kernel is one mutation, so the whole AI edit undoes in one step.
   apply:cmds=>commands(cmds),
   status:async()=>await api('/api/ai/status') as {available:boolean;reason:string},
+  // A candidate under review is projected onto the canvas exactly the way the kernel already
+  // paints any server-prepared, not-yet-committed structural edit -- the real document and
+  // undo stack are never touched, so this is always cheaply reversible.
+  preview:(candidate:AiCandidate)=>{
+    const confirmed=kernel.confirmed;
+    const projected=projectPrepared(confirmed,candidate.preview,htmlBasesFor(confirmed,candidate.preview));
+    const target=projected.document.slides.find(s=>s.id===editorSession.pageId);
+    if(target)authorCanvas.previewExternal(target);
+  },
+  clearPreview:()=>authorCanvas.clearExternalPreview(),
 });
 canvasController.onDispose(()=>aiEdits.dispose());
 const richEditor = createRichEditor({

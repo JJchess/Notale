@@ -1,6 +1,6 @@
 import {waitForOperations} from './state/accepted-operations';
 import { commitSchema, authorChanges, applyAuthorChanges, operationPolicies, type AuthorChangeSet, type Command, type Snapshot } from '@notale/editor/browser';
-import { canProject, projectCommands, projectPrepared } from './author-projection.js';
+import { canProject, projectCommands, projectPrepared, htmlBasesFor } from './author-projection.js';
 import type { Pending } from './pending-journal.js';
 
 export type EditTransaction = { id: string; task: Pending; before: Snapshot; after: Snapshot; version?: number; inverseId?: string };
@@ -171,7 +171,7 @@ export class EditorKernel {
   recover(id: string) {
     this.acknowledged.add(id);this.undoStack=this.undoStack.filter(e=>e.id!==id);this.refresh(true);
   }
-  private bases(snapshot: Snapshot,change:AuthorChangeSet) {const ids=new Set(change.changes.filter(p=>p.splice).map(p=>change.slideIds?.[Number(p.path[1])]??snapshot.document.slides[Number(p.path[1])]?.id));return Object.fromEntries(snapshot.document.slides.filter(s=>ids.has(s.id)).map(s=>[s.id,s.html]));}
+  private bases(snapshot: Snapshot,change:AuthorChangeSet) {return htmlBasesFor(snapshot,change);}
   private async executePending(commands: Command[], focusSlide?: string) {
     if(!commands.length)return;
     commands=commitSchema.parse({baseVersion:this.confirmed.version,mutationId:crypto.randomUUID(),commands}).commands;

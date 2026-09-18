@@ -130,37 +130,51 @@ export function parseCommands(text: string): Command[] {
   invariant(shape.success, 'AI_BAD_OUTPUT', '模型返回里没有 commands 数组');
   return shape.data.commands as Command[];
 }
+export interface AiStep { label: string; status: 'active' | 'done'; }
 export interface AiEditDeps {
   provider: AiProvider;
   snapshot: (baseVersion?: number) => Promise<{ version: number; document: { width: number; height: number; theme: unknown; slides: Slide[] } }>;
   prepare: (input: { baseVersion: number; mutationId: string; commands: Command[] }) => Promise<unknown>;
   mutationId: () => string;
   attempts?: number;
+  /** Called at each real node the pipeline passes through, in order. Optional: callers that
+   * don't care about progress (tests, the offline gate checks) just omit it. */
+  report?: (step: AiStep) => void;
 }
 /** Produce a candidate. This never commits: the caller applies it, or throws it away. */
 export async function aiEdit(request: AiEditRequest, deps: AiEditDeps) {
+  const report = deps.report ?? (() => {});
   invariant(deps.provider.available, 'AI_UNCONFIGURED', deps.provider.reason, 503);
   const source = await deps.snapshot(request.baseVersion);
   const slide = source.document.slides.find(entry => entry.id === request.slideId);
   invariant(slide, 'SLIDE_NOT_FOUND', `页面不存在：${request.slideId}`, 404);
+  report({ label: '读取页面对象', status: 'active' });
   const objects = describeSlide(slide);
   const scope = scopeIds(objects, request.targets);
   if (request.intent === 'edit-selection')
     invariant(scope.size > 0, 'AI_NO_TARGET', '局部修改需要先选中对象');
+  report({ label: '读取页面对象', status: 'done' });
   const baseVersion = source.version;
   let failure = '';
   for (let attempt = 0; attempt < (deps.attempts ?? 2); attempt++) {
     const mutationId = deps.mutationId();
+    const label = attempt === 0 ? '请求模型' : `请求模型（第 ${attempt + 1} 次尝试）`;
+    report({ label, status: 'active' });
     const text = await deps.provider.complete({
       system: SYSTEM,
       user: prompt(request, slide, objects, source.document.width, source.document.height, source.document.theme)
         + (failure ? `\n\n上一次尝试被拒绝：${failure}\n请修正后重新输出。` : ''),
     });
+    report({ label, status: 'done' });
     try {
+      report({ label: '解析与校验', status: 'active' });
       const commands = parseCommands(text);
       const commit = commitSchema.parse({ baseVersion, mutationId, commands });
       checkAiCommands(commit.commands, { intent: request.intent, slideId: request.slideId, scope });
+      report({ label: '解析与校验', status: 'done' });
+      report({ label: '服务端试跑', status: 'active' });
       const preview = await deps.prepare(commit);
+      report({ label: '服务端试跑', status: 'done' });
       return { mutationId, baseVersion, commands: commit.commands, preview, model: deps.provider.model };
     } catch (cause) {
       failure = cause instanceof Error ? cause.message : String(cause);

@@ -120,3 +120,39 @@ test('a local edit with nothing selected is refused before the model is called',
   );
   assert.equal(called, false);
 });
+test('progress is reported at the real pipeline nodes, in order, each starting before it finishes', async () => {
+  const { deps: d } = deps('{"commands":[{"type":"element.patch","slideId":"page","target":"title","patch":{"text":"新标题"}}]}');
+  const steps: { label: string; status: string }[] = [];
+  const candidate = await aiEdit(
+    { slideId: 'page', intent: 'edit-selection', instruction: '改标题', targets: ['title'] },
+    { ...d, report: step => steps.push(step) },
+  );
+  assert.ok(candidate.commands.length);
+  assert.deepEqual(
+    steps.map(step => `${step.label}:${step.status}`),
+    ['读取页面对象:active', '读取页面对象:done', '请求模型:active', '请求模型:done', '解析与校验:active', '解析与校验:done', '服务端试跑:active', '服务端试跑:done'],
+  );
+});
+test('a retry reports a distinct step, not a silent repeat of the first', async () => {
+  let asked = 0;
+  const { deps: d } = deps('', {
+    provider: {
+      available: true, reason: '', model: 'test',
+      async complete() {
+        asked++;
+        return asked === 1
+          ? '{"commands":[{"type":"deck.update","title":"x"}]}'
+          : '{"commands":[{"type":"element.patch","slideId":"page","target":"title","patch":{"text":"好"}}]}';
+      },
+    } as never,
+  });
+  const steps: { label: string; status: string }[] = [];
+  await aiEdit({ slideId: 'page', intent: 'edit-selection', instruction: '改', targets: ['title'] }, { ...d, report: step => steps.push(step) });
+  const requestLabels = steps.filter(step => step.status === 'active').map(step => step.label);
+  assert.deepEqual(requestLabels, ['读取页面对象', '请求模型', '解析与校验', '请求模型（第 2 次尝试）', '解析与校验', '服务端试跑']);
+});
+test('a report callback is entirely optional', async () => {
+  const { deps: d } = deps('{"commands":[{"type":"element.patch","slideId":"page","target":"title","patch":{"text":"新标题"}}]}');
+  const candidate = await aiEdit({ slideId: 'page', intent: 'edit-selection', instruction: '改', targets: ['title'] }, d);
+  assert.ok(candidate.commands.length);
+});

@@ -59,6 +59,14 @@ export function projectCommands(source: Snapshot, commands: Command[]): Snapshot
   return { ...source, document };
 }
 
+/** Which slides a prepared AuthorChangeSet touches by HTML splice, and their pre-change html
+ * — the baseline `projectPrepared` needs to replay a splice safely. Shared by the kernel (for
+ * its own prepared tasks) and by anything else that wants to project a server-computed
+ * AuthorChangeSet without going through the kernel at all. */
+export function htmlBasesFor(snapshot: Snapshot, change: AuthorChangeSet): Record<string, string> {
+  const ids = new Set(change.changes.filter(p => p.splice).map(p => change.slideIds?.[Number(p.path[1])] ?? snapshot.document.slides[Number(p.path[1])]?.id));
+  return Object.fromEntries(snapshot.document.slides.filter(s => ids.has(s.id)).map(s => [s.id, s.html]));
+}
 /** Prepared/undo changes are rebased by author identity instead of HTML byte offsets. */
 export function projectPrepared(source: Snapshot, change: AuthorChangeSet, bases: Record<string, string> = {}): Snapshot {
   let next = source;
