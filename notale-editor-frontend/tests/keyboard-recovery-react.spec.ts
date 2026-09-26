@@ -1,0 +1,20 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+test.use({baseURL:process.env.ARCHITECTURE_URL??'http://127.0.0.1:4399'});
+test('keyboard edits work and interrupted intent survives close, export and reimport without replay',async({page})=>{
+ const id=randomUUID();expect((await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'Keyboard recovery',width:1600,height:900,slides:[{id:'page',name:'Page',sourcePath:'page.html',html:'<html><body><p data-notale-id="text" style="position:absolute;left:40px;top:40px;width:300px;height:60px">Hello</p></body></html>'}]}})).ok()).toBe(true);
+ await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot()?.document.slides.length===1);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());await page.evaluate(()=>(window as any).NotaleWorkbench.select('text'));
+ const key=async(key:string,ctrlKey=false)=>page.evaluate(({key,ctrlKey})=>document.dispatchEvent(new KeyboardEvent('keydown',{key,ctrlKey,bubbles:true,cancelable:true})),{key,ctrlKey});
+ await key('d',true);await page.evaluate(()=>(window as any).NotaleWorkbench.whenEditsIdle());await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());expect(await page.evaluate(()=>(window as any).NotaleWorkbench.getObjects().filter((o:any)=>o.tag==='p').length)).toBe(2);
+ await key('Delete');await page.evaluate(()=>(window as any).NotaleWorkbench.whenEditsIdle());await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());expect(await page.evaluate(()=>(window as any).NotaleWorkbench.getObjects().filter((o:any)=>o.tag==='p').length)).toBe(1);
+ const before=await page.request.get('/api/documents/'+id).then(r=>r.json());
+ await page.evaluate(()=>{const w=(window as any).NotaleWorkbench;w.select('text');document.dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',bubbles:true,cancelable:true}));w.dispose();});
+ await expect.poll(()=>page.evaluate(async()=>(await navigator.locks.query()).held?.filter(lock=>lock.name?.startsWith('notale-tab:')).length)).toBe(0);
+ await page.evaluate(()=>(window as any).NotaleWorkbench.mount());await page.waitForFunction(()=>(window as any).NotaleWorkbench.getSnapshot()?.document.slides.length===1);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
+ const open=async()=>{await page.locator('#file-menu-trigger').click();await page.locator('[data-file="recovery"]').click();};await open();
+ const records=page.getByRole('region',{name:'待检查的快捷键操作'});await expect(records).toBeVisible();await expect(records).toContainText('尚未执行');
+ const downloading=page.waitForEvent('download');await records.getByRole('button',{name:'导出记录'}).click();const stream=await (await downloading).createReadStream();const chunks:Buffer[]=[];for await(const chunk of stream!)chunks.push(Buffer.from(chunk));const raw=Buffer.concat(chunks),data=JSON.parse(raw.toString());expect(data.keyboard).toHaveLength(1);expect(data.keyboard[0].intent.action.type).toBe('delete');
+ await records.getByRole('button',{name:'标记已处理'}).click();await expect(records).toHaveCount(0);await page.locator('#import-recovery').setInputFiles({name:'recovery.json',mimeType:'application/json',buffer:raw});await expect(records).toBeVisible();
+ await records.getByRole('button',{name:'查看原页面'}).click();await expect(page.locator('#recovery-dialog')).toHaveCount(0);expect(await page.evaluate(()=>(window as any).NotaleWorkbench.getSelection())).toEqual(['text']);
+ const after=await page.request.get('/api/documents/'+id).then(r=>r.json());expect(after.version).toBe(before.version);expect(after.document.slides).toEqual(before.document.slides);
+});

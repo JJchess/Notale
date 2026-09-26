@@ -1,0 +1,22 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {timeline} from '@notale/editor/browser';
+import {AnimationDraft} from '../src/state/animation-draft';
+import {sequenceAnimations,animationOrderCommands} from '../src/animation-authoring';
+test('multi-object authoring and reorder keep click groups and authored steps coherent', async()=>{
+ const draft=new AnimationDraft();draft.set('delay','0.1');const base=draft.read('a','one',[]);
+ let id=0;const makeId=()=>String(++id);
+ const together=sequenceAnimations(base,['one','two'],'together',makeId);
+ assert.deepEqual(timeline({animations:together}).map(c=>c.start),[100,100]);
+ const after=sequenceAnimations(base,['one','two'],'after',makeId);
+ assert.deepEqual(timeline({animations:after}).map(c=>c.start),[100,800]);
+ const clicks=sequenceAnimations(base,['one','two'],'click',makeId);
+ assert.deepEqual(clicks.map(a=>a.step),[1,2]);
+ const slide={id:'slide',animations:[...clicks,{...after[1],step:2}],stepMap:[],nativeStepCount:0,components:[]} as any;
+ const reordered=[slide.animations[1],slide.animations[2],slide.animations[0]];
+ const edits=animationOrderCommands(slide,reordered);
+ assert.deepEqual(edits.filter(c=>c.type==='animation.set').map(c=>(c as any).animation.step),[1,1,2]);
+ const structured={...slide,steps:[{id:'start',name:'开始',notes:'',advanceAfter:null}]};
+ assert.equal(animationOrderCommands(structured,reordered).length,1);
+ assert.throws(()=>sequenceAnimations({...base,step:500},['one','two'],'click',makeId),/500/);
+});

@@ -1,0 +1,10 @@
+# Visual direction
+
+Set a coherent theme direction from the user's explicit request, supplied references, subject, audience and setting.
+Typography, local materials, image treatment, shapes and timing can all contribute; do not reduce a style to hex values.
+A reference palette and a style are coordinated in this step, not composed by a separate pipeline.
+Coordinate combined references into one deck-wide language; do not assign a different reference style to each page type unless explicitly requested.
+Typography roles, shape/stroke treatment and materials remain related across variants; vary emphasis and composition for the content, not the identity.
+
+Keep the first frame informative and text readable under scaling and projector conditions.
+Make the selected visual treatment usable in foreground graphics, annotations, images or controls, not just background and fonts. Named styles are optional implementations of that direction, not a page skeleton; Builder owns composition, scientific relationships and interaction choreography.

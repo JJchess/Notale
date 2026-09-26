@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage {
+      padding: var(--pad-y) var(--pad-x);
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 20px;
+      box-sizing: border-box;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h1);
+      line-height: var(--lh-tight);
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin: 0;
+      font-size: var(--fs-sec);
+      color: var(--muted);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 36px;
+      min-height: 0;
+      height: 100%;
+    }
+
+    .chart-container {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      height: 100%;
+    }
+
+    .chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 24px;
+      font-size: var(--fs-label);
+    }
+
+    .leg-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .line-indicator {
+      width: 20px;
+      height: 3px;
+      display: inline-block;
+    }
+
+    .line-train {
+      background: var(--rule);
+      border-top: 1px dashed var(--rule);
+      height: 0;
+    }
+
+    .line-test {
+      background: var(--model);
+      height: 3px;
+    }
+
+    .line-opt {
+      background: var(--focus);
+      height: 3px;
+    }
+
+    #chart {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .chart-caption {
+      margin-top: 6px;
+      font-size: var(--fs-tick);
+      color: var(--muted);
+    }
+
+    .control-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      padding-left: 28px;
+      border-left: 1px solid var(--rule);
+    }
+
+    .tradeoff-rule {
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .tradeoff-rule h2 {
+      margin: 0 0 10px 0;
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      line-height: var(--lh-tight);
+    }
+
+    .tradeoff-rule p {
+      margin: 0;
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--muted);
+    }
+
+    .param-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .param-label {
+      font-size: var(--fs-label);
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .tab-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 9px 0;
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: var(--fs-label);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
+    }
+
+    .tab-btn:hover {
+      border-color: var(--model);
+    }
+
+    .tab-btn.active {
+      background: var(--model);
+      color: #ffffff;
+      border-color: var(--model);
+      font-weight: bold;
+    }
+
+    .state-metrics {
+      background: rgba(20, 38, 48, 0.04);
+      padding: 16px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: var(--fs-label);
+    }
+
+    .metric-val {
+      font-family: var(--font-display);
+      font-size: var(--fs-h2);
+      color: var(--focus);
+      font-weight: bold;
+    }
+
+    .verdict-box {
+      font-size: var(--fs-sec);
+      line-height: var(--lh-copy);
+      color: var(--text);
+      border-left: 3px solid var(--focus);
+      padding-left: 10px;
+    }
+
+    #fallback {
+      display: none;
+      padding: 20px;
+      color: var(--focus);
+    }
+  </style>
+</head>
+<body data-page="24" data-total="32">
+  <div id="stage">
+    <header>
+      <h1>Boosting 的关键权衡：步长、轮数与过拟合</h1>
+      <p class="subtitle">基学习器过多会导致泛化误差反弹</p>
+    </header>
+
+    <div class="main-grid">
+      <div class="chart-container min0">
+        <div class="chart-head">
+          <div class="chart-legend">
+            <span class="leg-item"><i class="line-indicator line-train"></i>训练误差</span>
+            <span class="leg-item"><i class="line-indicator line-test"></i>测试误差</span>
+            <span class="leg-item"><i class="line-indicator line-opt"></i>最优停止轮数</span>
+          </div>
+        </div>
+        <div id="chart"></div>
+        <div id="fallback">无法加载图表引擎，请查看指标面板数据。</div>
+        <div class="chart-caption">轮数 M 与误差率 (%)</div>
+      </div>
+
+      <div class="control-panel min0">
+        <div class="tradeoff-rule">
+          <h2>步长与轮数强耦合</h2>
+          <p>小学习率提高泛化上限，但需更多轮数。</p>
+        </div>
+
+        <div class="param-selector">
+          <div class="param-label">学习率 η：</div>
+          <div class="tab-group" role="tablist">
+            <button class="tab-btn" data-lr="1.0" role="tab">1.0 过冲</button>
+            <button class="tab-btn active" data-lr="0.1" role="tab">0.1 推荐</button>
+            <button class="tab-btn" data-lr="0.02" role="tab">0.02 保守</button>
+          </div>
+        </div>
+
+        <div class="state-metrics">
+          <div class="metric-row">
+            <span>早停点 M*：</span>
+            <span class="metric-val" id="val-opt-m">42 轮</span>
+          </div>
+          <div class="metric-row">
+            <span>最低测试误差：</span>
+            <span class="metric-val" id="val-min-err">6.8%</span>
+          </div>
+          <div class="metric-row">
+            <span>后期反弹：</span>
+            <span class="metric-val" id="val-overfit">+2.4%</span>
+          </div>
+        </div>
+
+        <div class="verdict-box" id="verdict-text">
+          步长适中，平稳收敛到低误差，后期轻度过拟合。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" hidden>
+    同学们请注意，Boosting 与我们前面讲的 Bagging 在模型数量上有一个极其关键的差别。
+    在随机森林里，树的数量哪怕开到 1000 棵，测试误差通常只会收敛稳定，而不会反弹恶化；
+    但在 Boosting（包括 AdaBoost 与梯度提升）中，因为每一轮都在强行拟合前一轮的错误或残差，一旦轮数过多，模型就会死记硬背训练集里的噪声，导致测试误差剧烈抬升，发生严重的过拟合。
+    因此，实践中通常采用“学习率缩减（Shrinkage）”配合“早停法（Early Stopping）”。
+    大家可以通过点击右侧不同的学习率来观察：当步长较小时，误差下降虽然慢，但谷底更深、更抗噪，不过需要计算更多的基学习器。
+  </aside>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script>
+    (function() {
+      "use strict";
+
+      var profiles = {
+        "1.0": {
+          optM: 14,
+          minErr: "8.4%",
+          overfit: "+8.9%",
+          verdict: "全步长纠错激进，见底后迅速剧烈反弹。",
+          genData: function() {
+            var train = [], test = [];
+            for (var m = 1; m <= 150; m++) {
+              var tr = Math.max(0.2, 45 * Math.exp(-0.25 * m));
+              var te = 8.4 + 28 * Math.exp(-0.35 * m) + (m > 14 ? (m - 14) * 0.065 : 0);
+              train.push([m, +(tr).toFixed(2)]);
+              test.push([m, +(te).toFixed(2)]);
+            }
+            return { train: train, test: test, optM: 14, optVal: 8.4 };
+          }
+        },
+        "0.1": {
+          optM: 42,
+          minErr: "6.8%",
+          overfit: "+2.4%",
+          verdict: "步长适中，平稳收敛到低误差，后期轻度过拟合。",
+          genData: function() {
+            var train = [], test = [];
+            for (var m = 1; m <= 150; m++) {
+              var tr = Math.max(0.5, 45 * Math.exp(-0.065 * m));
+              var te = 6.8 + 32 * Math.exp(-0.075 * m) + (m > 42 ? (m - 42) * 0.022 : 0);
+              train.push([m, +(tr).toFixed(2)]);
+              test.push([m, +(te).toFixed(2)]);
+            }
+            return { train: train, test: test, optM: 42, optVal: 6.8 };
+          }
+        },
+        "0.02": {
+          optM: 135,
+          minErr: "6.5%",
+          overfit: "+0.3%",
+          verdict: "极小步长泛化最优，但收敛慢、计算大。",
+          genData: function() {
+            var train = [], test = [];
+            for (var m = 1; m <= 150; m++) {
+              var tr = Math.max(1.8, 45 * Math.exp(-0.022 * m));
+              var te = 6.5 + 34 * Math.exp(-0.024 * m) + (m > 135 ? (m - 135) * 0.02 : 0);
+              train.push([m, +(tr).toFixed(2)]);
+              test.push([m, +(te).toFixed(2)]);
+            }
+            return { train: train, test: test, optM: 135, optVal: 6.5 };
+          }
+        }
+      };
+
+      var currentLr = "0.1";
+      var chartHost = document.getElementById("chart");
+      var chart = null;
+
+      function updateOption(lr) {
+        var prof = profiles[lr];
+        var data = prof.genData();
+
+        var option = {
+          animationDuration: 350,
+          animationEasing: "cubicOut",
+          grid: {
+            left: 45,
+            right: 25,
+            top: 30,
+            bottom: 40
+          },
+          xAxis: {
+            type: "value",
+            min: 1,
+            max: 150,
+            interval: 30,
+            axisLine: { lineStyle: { color: "#71828B" } },
+            axisTick: { lineStyle: { color: "#71828B" } },
+            axisLabel: { color: "#50616B", fontSize: 13 },
+            splitLine: { show: false }
+          },
+          yAxis: {
+            type: "value",
+            min: 0,
+            max: 45,
+            interval: 10,
+            axisLine: { show: true, lineStyle: { color: "#71828B" } },
+            axisTick: { show: true, lineStyle: { color: "#71828B" } },
+            axisLabel: { color: "#50616B", fontSize: 13, formatter: "{value}%" },
+            splitLine: { lineStyle: { color: "rgba(113, 130, 139, 0.2)", type: "solid" } }
+          },
+          series: [
+            {
+              name: "训练误差",
+              type: "line",
+              data: data.train,
+              showSymbol: false,
+              lineStyle: {
+                color: "#71828B",
+                width: 2,
+                type: "dashed"
+              }
+            },
+            {
+              name: "测试误差",
+              type: "line",
+              data: data.test,
+              showSymbol: false,
+              lineStyle: {
+                color: "#17628E",
+                width: 3.5
+              },
+              markLine: {
+                silent: true,
+                symbol: ["none", "none"],
+                data: [
+                  {
+                    xAxis: data.optM,
+                    lineStyle: { color: "#B83D0B", width: 2, type: "solid" },
+                    label: {
+                      formatter: "M*=" + data.optM,
+                      position: "start",
+                      color: "#B83D0B",
+                      fontSize: 13,
+                      fontWeight: "bold"
+                    }
+                  }
+                ]
+              },
+              markPoint: {
+                silent: true,
+                data: [
+                  {
+                    coord: [data.optM, data.optVal],
+                    symbol: "circle",
+                    symbolSize: 8,
+                    itemStyle: { color: "#B83D0B" },
+                    label: {
+                      show: true,
+                      position: "bottom",
+                      formatter: data.optVal + "%",
+                      color: "#B83D0B",
+                      fontSize: 13,
+                      fontWeight: "bold",
+                      offset: [0, 8]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        };
+
+        return option;
+      }
+
+      function switchLr(lr) {
+        currentLr = lr;
+        var prof = profiles[lr];
+
+        // 更新按钮激活状态
+        document.querySelectorAll(".tab-btn").forEach(function(btn) {
+          if (btn.getAttribute("data-lr") === lr) {
+            btn.classList.add("active");
+          } else {
+            btn.classList.remove("active");
+          }
+        });
+
+        // 更新指标卡片
+        document.getElementById("val-opt-m").textContent = prof.optM + " 轮";
+        document.getElementById("val-min-err").textContent = prof.minErr;
+        document.getElementById("val-overfit").textContent = prof.overfit;
+        document.getElementById("verdict-text").textContent = prof.verdict;
+
+        // 更新图表
+        if (chart) {
+          chart.setOption(updateOption(lr), { notMerge: true });
+        }
+      }
+
+      // 初始化 ECharts
+      try {
+        if (!window.echarts) throw new Error("ECharts not found");
+        chart = echarts.init(chartHost, null, { renderer: "svg" });
+        chart.setOption(updateOption(currentLr));
+
+        window.addEventListener("resize", function() {
+          if (chart) chart.resize();
+        });
+      } catch (err) {
+        document.getElementById("fallback").style.display = "block";
+      }
+
+      // 绑定按钮事件
+      document.querySelectorAll(".tab-btn").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+          var lr = btn.getAttribute("data-lr");
+          if (lr) switchLr(lr);
+        });
+      });
+
+      Deck.init({ index: 24, total: 32, keys: false });
+    })();
+  </script>
+</body>
+</html>

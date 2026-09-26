@@ -1,0 +1,13 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+test.use({baseURL:process.env.ARCHITECTURE_URL??'http://127.0.0.1:4399'});
+test('SVG picker centers intrinsic size and staggers repeated insertion',async({page})=>{
+ const id=randomUUID();expect((await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'SVG落点',width:1600,height:900,slides:[{id:'page',name:'Page',sourcePath:'page.html',html:'<html><body style="margin:0"><main id="stage" data-notale-id="stage" style="position:absolute;width:1600px;height:900px"></main></body></html>'}]}})).ok()).toBe(true);
+ await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot());await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
+ const insert=async()=>{if(await page.locator('[data-tool="insert"]').getAttribute('aria-pressed')!=='true')await page.locator('[data-tool="insert"]').click();const category=page.locator('[data-insert-category="media"]');if(!await category.evaluate(e=>(e as HTMLDetailsElement).open))await category.locator('summary').click();const chooser=page.waitForEvent('filechooser');await page.locator('[data-insert="image"]').click();await(await chooser).setFiles({name:'figure.svg',mimeType:'image/svg+xml',buffer:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 200 100"><rect width="200" height="100" fill="red"/></svg>')});};
+ await insert();const figures=page.frameLocator('#canvas').locator('svg[data-notale-name="矢量图"]');await expect(figures).toHaveCount(1);await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());
+ const first=await figures.first().evaluate(el=>({x:parseFloat((el as SVGElement).style.left),y:parseFloat((el as SVGElement).style.top)}));
+ const center=await page.evaluate(()=>{const f=document.querySelector('#canvas')!.getBoundingClientRect(),v=document.querySelector('#canvas-viewport')!.getBoundingClientRect();return {x:((Math.max(f.left,v.left)+Math.min(f.right,v.right))/2-f.left)*1600/f.width,y:((Math.max(f.top,v.top)+Math.min(f.bottom,v.bottom))/2-f.top)*1600/f.width};});
+ expect(first.x+100).toBeCloseTo(center.x,0);expect(first.y+50).toBeCloseTo(center.y,0);await expect(figures.first()).toHaveCSS('z-index','50');await expect(figures.first()).toHaveCSS('width','200px');await expect(figures.first()).toHaveCSS('height','100px');
+ await insert();await expect(figures).toHaveCount(2);const second=await figures.nth(1).evaluate(el=>({x:parseFloat((el as SVGElement).style.left),y:parseFloat((el as SVGElement).style.top)}));expect(second.x-first.x).toBe(24);expect(second.y-first.y).toBe(24);
+});

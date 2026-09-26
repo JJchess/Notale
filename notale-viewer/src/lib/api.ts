@@ -1,0 +1,50 @@
+import type { CreateRunRequest, RunEvent, RunSnapshot } from "./protocol";
+
+const base = "/notale-api/v1";
+
+async function json<T>(response: Response): Promise<T> {
+  if (!response.ok) { const detail = await response.json().catch(() => ({})); throw new Error(detail.message || `请求失败（${response.status}）`); }
+  return response.json() as Promise<T>;
+}
+
+export async function createRun(request: CreateRunRequest): Promise<RunSnapshot> {
+  return json(await fetch(`${base}/runs`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(request),
+  }));
+}
+
+export async function getRun(runId: string): Promise<RunSnapshot> {
+  return json(await fetch(`${base}/runs/${encodeURIComponent(runId)}`, { cache: "no-store" }));
+}
+
+export async function cancelRun(runId: string): Promise<RunSnapshot> {
+  return json(await fetch(`${base}/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }));
+}
+
+export function eventUrl(runId: string, after: number): string {
+  return `${base}/runs/${encodeURIComponent(runId)}/events?after=${after}`;
+}
+
+export function previewUrl(runId: string, file = "index.html"): string {
+  return `${base}/runs/${encodeURIComponent(runId)}/preview/${file}`;
+}
+
+export type { RunEvent, RunSnapshot };
+
+export async function uploadTemplate(file: File): Promise<{ id: string; name: string }> {
+  const body = new FormData(); body.append('file', file);
+  return json(await fetch(`${base}/templates`, { method: 'POST', body }));
+}
+
+export async function uploadFile(file: File, signal?: AbortSignal): Promise<{ id: string; name: string }> {
+  const body = new FormData(); body.append('file', file);
+  return json(await fetch(`${base}/files`, { method: 'POST', body, signal }));
+}
+
+/** Who answers on this server, and with which model (`GET /v1/info`). */
+export interface ServiceInfo { assistant: string; model: string; effort: string }
+export async function getInfo(): Promise<ServiceInfo> {
+  return json(await fetch(`${base}/info`, { cache: "no-store" }));
+}

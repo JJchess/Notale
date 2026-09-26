@@ -1,0 +1,13 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+import {reveal} from './harness/format-panel';
+test.use({baseURL:process.env.ARCHITECTURE_URL??'http://127.0.0.1:4399'});
+test('React links edit, preserve conflicting drafts and remove only link attributes',async({page})=>{
+ const id=randomUUID();expect((await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'链接编辑',width:1600,height:900,slides:[{id:'first',name:'第一页',sourcePath:'chapter/first.html',html:'<html><body><main data-notale-id="stage" style="width:1600px;height:900px"><a data-notale-id="link" href="https://example.com"><span data-notale-id="label">保留文字</span></a></main></body></html>'},{id:'second',name:'第二页',sourcePath:'second.html',html:'<html><body>第二页</body></html>'}]}})).ok()).toBe(true);
+ await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot()?.document.slides.length===2);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
+ // There is no insert button any more; start from the anchor the fixture already seeded.
+ const anchor=page.frameLocator('#canvas').locator('[data-notale-id="link"]');
+ await page.evaluate(()=>(window as any).NotaleWorkbench.select('label'));await reveal(page,'#link-editor');await expect(page.locator('#link-editor')).toBeVisible();await page.locator('#link-url').fill('example.org/updated');await page.locator('#link-url').press('Enter');await expect(anchor).toHaveAttribute('href','https://example.org/updated');
+ await page.locator('#link-url').fill('https://example.org/draft');await page.evaluate(()=>(window as any).NotaleWorkbench.commands([{type:'element.patch',slideId:'first',target:'link',patch:{attributes:{href:'https://example.net/remote'}}}]));await page.locator('#update-link').click();await expect(page.locator('#link-status')).toContainText('链接已变化');await expect(page.locator('#link-url')).toHaveValue('https://example.org/draft');
+ await page.evaluate(()=>(window as any).NotaleWorkbench.select('stage'));await page.evaluate(()=>(window as any).NotaleWorkbench.select('label'));await page.locator('#remove-link').click();await expect(anchor).not.toHaveAttribute('href',/.+/);await expect(anchor).toHaveText('保留文字');await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());const saved=await page.request.get('/api/documents/'+id).then(r=>r.json());expect(saved.document.slides[0].html).not.toContain('https://example.net/remote');expect(saved.document.slides[0].html).not.toContain('href=');
+});

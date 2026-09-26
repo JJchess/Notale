@@ -1,0 +1,28 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+import {importHtml} from '@notale/editor';
+test.use({baseURL:process.env.ARCHITECTURE_URL??'http://127.0.0.1:4399'});
+test('React step controls follow the current page and preview stays isolated from editing',async({page})=>{
+ const id=randomUUID(),errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ const response=await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'步骤状态',width:1600,height:900,slides:[3,1].map((count,index)=>({id:'p'+index,name:'页面 '+index,sourcePath:`p${index}.html`,html:importHtml('<html><body><main id="stage"><h1 data-notale-id="title">步骤验证</h1></main></body></html>').html,steps:Array.from({length:count},(_,i)=>({id:'s'+i,name:'步骤 '+i,notes:''}))}))}});expect(response.ok(),await response.text()).toBe(true);
+ await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot()?.document.slides.length===2);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
+ await page.locator('[data-tool="animation"]').click();await page.locator('.animation-step-details > summary').click();
+ await expect(page.locator('#step-label')).toHaveText('2 / 2');await expect(page.locator('#step-next')).toBeDisabled();
+ await page.locator('#step-prev').click();await expect(page.locator('#step-label')).toHaveText('1 / 2');
+ await page.locator('#step').fill('0');await expect(page.locator('#step-label')).toHaveText('0 / 2');await expect(page.locator('#step-prev')).toBeDisabled();
+ await page.evaluate(()=>(window as any).NotaleWorkbench.showSlide('p1'));await expect(page.locator('#step-label')).toHaveText('0 / 0');await expect(page.locator('#step')).toBeDisabled();
+ await page.evaluate(()=>(window as any).NotaleWorkbench.showSlide('p0'));await expect(page.locator('#step-label')).toHaveText('2 / 2');
+ await page.locator('#interact').click();await expect(page.locator('#preview-overlay')).toBeVisible();await expect(page.locator('#preview-loading')).toBeHidden();await expect(page.locator('#preview-position')).toContainText('0 / 2');
+ await page.locator('#preview-next').click();await expect(page.locator('#preview-position')).toContainText('1 / 2');await page.frameLocator('#preview-canvas').locator('#stage').evaluate(()=>{(window as any).__previewCache='retained';});
+ await page.locator('#preview-next').click();await page.locator('#preview-next').click();await expect(page.locator('#preview-position')).toHaveText('2 / 2');
+ await page.locator('#preview-previous').click();await expect(page.locator('#preview-position')).toHaveText('1 / 2 · 2 / 2');expect(await page.frameLocator('#preview-canvas').locator('#stage').evaluate(()=>(window as any).__previewCache)).toBe('retained');
+ await page.locator('#preview-close').click();await expect(page.locator('#step-label')).toHaveText('2 / 2');await expect(page.locator('#preview-canvas-host iframe')).toHaveCount(0);await expect(page.locator('#interact')).toBeFocused();
+ const previewUrl='**/api/documents/'+id+'/preview?version=*';await page.route(previewUrl,route=>route.fulfill({status:503,body:'Unavailable'}));
+ await page.locator('#interact').click();await expect(page.locator('#preview-retry')).toBeVisible();await page.unroute(previewUrl);await page.locator('#preview-retry').click();await expect(page.locator('#preview-loading')).toBeHidden();await page.keyboard.press('Escape');await expect(page.locator('#preview-overlay')).not.toBeVisible();
+ let start!:()=>void,release!:()=>void,finish!:()=>void;const started=new Promise<void>(r=>start=r),held=new Promise<void>(r=>release=r),finished=new Promise<void>(r=>finish=r);
+ await page.route(previewUrl,async route=>{start();await held;try{await route.continue();}catch{}finally{finish();}});
+ await page.locator('#interact').click();await started;await page.locator('#preview-close').click();release();await finished;await page.unroute(previewUrl);
+ await expect(page.locator('#preview-canvas-host iframe')).toHaveCount(0);await expect(page.locator('#preview-overlay')).not.toBeVisible();
+ await page.locator('#interact').click();await expect(page.locator('#preview-loading')).toBeHidden();await page.locator('#preview-close').click();
+ await page.evaluate(()=>(window as any).NotaleWorkbench.select('title'));await expect(page.locator('#object-text')).toHaveValue('步骤验证');expect(errors).toEqual([]);
+});

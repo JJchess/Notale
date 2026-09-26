@@ -1,0 +1,5 @@
+import App from './App.svelte';new App({target:document.querySelector('#app')});
+let hadCompletion=false;
+function accessible(){document.querySelectorAll('.cell').forEach(e=>{const pos=e.getAttribute('transform').match(/[\d.]+/g),value=e.querySelector('.value')?.textContent.trim()||'blank';e.setAttribute('role','button');e.setAttribute('aria-label',`Row ${+pos[1]+1}, column ${+pos[0]+1}, ${value}`)});document.querySelectorAll('.bar button').forEach((e,i)=>e.setAttribute('aria-label',i?'Next clue':'Previous clue'));const complete=document.querySelector('.completed');if(complete&&!hadCompletion)complete.querySelector('button')?.focus();if(!complete&&hadCompletion)document.querySelector('select')?.focus();hadCompletion=!!complete;}
+new MutationObserver(accessible).observe(document.querySelector('#app'),{childList:true,subtree:true});accessible();
+addEventListener('keydown',e=>{if(e.key==='Escape'){const b=document.querySelector('.completed button');if(b)b.click();document.querySelector('select')?.focus();}});

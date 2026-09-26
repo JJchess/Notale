@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: notale_editor
+          POSTGRES_PASSWORD: local-editor-development
+          POSTGRES_DB: notale_editor
+        ports: ['55439:5432']
+        options: >-
+          --health-cmd "pg_isready -U notale_editor"
+          --health-interval 2s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            notale-format/package-lock.json
+            notale-editor/package-lock.json
+            notale-editor-frontend/package-lock.json
+            notale-ts/package-lock.json
+            notale-viewer/package-lock.json
+      - name: Check package and tag versions
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          const projects = ['notale-format', 'notale-editor', 'notale-editor-frontend', 'notale-ts', 'notale-viewer'];
+          const versions = projects.map(name => {
+            const pkg = JSON.parse(readFileSync(`${name}/package.json`));
+            const lock = JSON.parse(readFileSync(`${name}/package-lock.json`));
+            if (pkg.version !== lock.version || pkg.version !== lock.packages[''].version) throw Error(`${name}: version mismatch`);
+            return pkg.version;
+          });
+          if (new Set(versions).size !== 1) throw Error('Project versions differ');
+          if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== `v${versions[0]}`) throw Error('Tag/version mismatch');
+          JS
+      - name: Build shared format
+        working-directory: notale-format
+        run: npm ci && npm run build
+      - name: Build and check editor backend
+        working-directory: notale-editor
+        run: |
+          npm ci
+          npm run build
+          node --import tsx --test tests/pending-journal.test.ts
+          node --import tsx --test --test-name-pattern='causal sync API: pending create copy delete, missing dependency and immutable retries' tests/persistence.test.ts
+      - name: Build generator
+        working-directory: notale-ts
+        run: |
+          npm ci
+          npm run build
+          node --import tsx --test test/standalone.test.ts
+          node --import tsx --test --test-name-pattern='observer Patch batches and read/write boundaries' test/code-observer.test.ts
+      - name: Build editor frontend
+        working-directory: notale-editor-frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: |
+          npm ci
+          npm run build
+          ../notale-editor/node_modules/.bin/tsx --test tests/recovery-state.test.ts
+      - name: Build and check viewer
+        working-directory: notale-viewer
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: npm ci && npm run build && npm test

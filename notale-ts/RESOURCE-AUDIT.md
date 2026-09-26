@@ -1,0 +1,13 @@
+# Bundled resource inventory
+
+The generator's `resources/` directory is part of the public source proposal. It contains the prompt and skill catalog, browser chassis, code observer, fonts, local libraries, style reference images, and sample lectures. These files are needed for independent operation; matching files in a private development workspace are not grounds for deletion.
+
+| Group | Current evidence | Release disposition |
+| --- | --- | --- |
+| `vendor/fonts/` | `manifest.json` records sources and license paths for 19 font families; each family includes a local license file. | Keep notices with binaries; verify manifest against the final staged bytes. |
+| `chassis/lib/` | `LIBS.md` records bundled libraries and versions. | Keep `resources/licenses/` and generated output notices alongside the corresponding libraries. |
+| `code-observer/`, `preview/`, `publication/` | Runtime sources and notice files are included alongside the implementation. | Verify built artifacts carry all required notices. |
+| `skills/**/samples/` | `mini.html` links 51 distinct sample entries; the 29 entries in `index.html` are a subset. The user confirmed all 51 samples are selected. The 29 `pages/SAMPLE.md` files record earlier approval on 2026-09-07; the corresponding `provenance/REVIEW.md` files now reflect formal inclusion. | Keep all 51 selected samples, including their source attribution, asset manifests, and applicable third-party notices. The mini adaptations contain original Notale work alongside any retained upstream material; their provenance records identify both. |
+| `style-images/` and `skills/style-director/` | All 40 runtime reference images are original lecture-page slides. Editable HTML/CSS/SVG and the original generated subject images are in `skills/style-director/source/`; `GUIDE.md` records their creation and rebuild steps. The JPEG cache and hash index were rebuilt from the 40 new PNGs and 10 new contact sheets. The old poster-derived shots and cache were preserved only in ignored `.local/style-original-backup/`. | The borrowed poster images are no longer in the proposed public source. Keep the editable source and generated JPEG cache in sync with the approved slides. Hashes verify bytes, while the source record explains provenance. |
+
+The source review script inventories and hashes every proposed file, excludes local and generated state, and reports selected path and credential patterns without printing matched values. The user considers the remaining resource-permission concerns settled; this inventory does not claim ownership of retained upstream material. The script cannot inspect binary contents or Git history. Its output is a private review copy, not a publishable release.

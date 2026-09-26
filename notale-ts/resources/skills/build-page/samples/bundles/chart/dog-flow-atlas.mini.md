@@ -1,0 +1,67 @@
+<sample id="dog-flow-atlas" category="chart" variant="mini">
+  <file path="samples/chart/dog-flow-atlas/mini/pages/index.html">
+```html
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>它从哪里来？</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script><main><header><a href="../../../../../../index.html" target="_top">← Samples</a><span>FINDING FOREVER HOMES / 2019.09.20</span></header><section class="intro"><div><p class="eyebrow">领养旅程 · 单日数据切片</p><h1>它从哪里来？</h1></div><p>有些狗狗，在找到家之前，已经走了很远。<br>选一个州，沿着原始领养记录看看它们的来路与去向。</p></section><section class="controls"><label>领养所在地 <select id="state"></select></label><label>流向 <select id="direction"><option value="imports">从哪里来到这里</option><option value="exports">从这里去往哪里</option></select></label><div class="total"><strong id="total">—</strong><span>条可追踪记录</span></div></section><p class="note">每个原品种图标 = 一只狗 · 点击或键盘选择可查看个体 · 图标按推测的主要品种匹配，并非个体照片</p><div class="layout"><div><div id="groups"></div><p id="empty" hidden>原数据没有记录这一流向的狗狗。可以切换州或流向继续查看。</p><button id="more">展开全部来源</button></div><aside id="detail" aria-live="polite"><p class="eyebrow">一只狗，一段旅程</p><img id="portrait" src="assets/images/profiles/labrador.png" alt="原拉布拉多品种插画"><h2 id="name">选择一只狗</h2><p id="route">点击图标，看看它的故事。</p><dl id="facts"></dl><small>这些是 2019 年的历史记录，不代表当前可领养状态。</small></aside></div><footer><p>全样本包含 2,460 条可追踪流向。原研究也包含“获准匹配后才运输”的记录，因此流向表示领养发布地与来源地的关系，不一定是已完成的旅程。</p><div><a href="https://pudding.cool/2019/10/shelters/">原作与方法 ↗</a><a href="SAMPLE.md">来源与复核</a><span>已审阅入库</span></div></footer></main><link rel="stylesheet" href="mini-scrollbars.css"></html>
+```
+  </file>
+  <file path="samples/chart/dog-flow-atlas/mini/pages/app.js">
+```javascript
+const $=id=>document.getElementById(id);let data,expanded=false,selected=null;function image(d){return'assets/images/profiles/'+(d.file==='mix'?'labrador':d.file)+'.png'}function cleanName(name){return name.replace(/ *\([^)]*\) */g,'').replace('Adopted','').replace('Pending','').replace('&amp;','&').replace(/[^a-zA-Z ]/gi,'').trim()}
+function show(d){if(selected!==d.id)$('detail').scrollTop=0;selected=d.id;document.querySelectorAll('.dog').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===selected)));$('portrait').src=image(d);$('portrait').alt=d.breed_primary+' 原品种插画';$('name').textContent=cleanName(d.name)||'未命名';$('route').textContent=d.original_state+' → '+d.final_state;$('facts').replaceChildren();for(const[label,value]of[['年龄 / 性别',d.age+' · '+d.sex],['品种',d.breed_primary+(d.breed_secondary?' / '+d.breed_secondary+' mix':'')],['体型',d.size],['记录 ID',d.id]]){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;$('facts').append(dt,dd)}}
+function render(){$('groups').scrollTop=0;const state=$('state').value,isImport=$('direction').value==='imports',items=data.dogs.filter(d=>(isImport?d.final_state:d.original_state)===state);const groups=new Map();for(const d of items){const key=isImport?d.original_state:d.final_state;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(d)}const sorted=[...groups].sort((a,b)=>b[1].length-a[1].length);$('total').textContent=items.length;$('groups').replaceChildren();for(const[key,dogs]of sorted.slice(0,expanded?undefined:3)){const section=document.createElement('section');section.className='group';section.dataset.location=key;const h=document.createElement('h2');h.textContent=key+' · '+dogs.length;const grid=document.createElement('div');grid.className='dogs';dogs.sort((a,b)=>a.file<b.file?-1:a.file>b.file?1:0);for(const d of dogs){const button=document.createElement('button');button.className='dog';button.dataset.id=d.id;button.setAttribute('aria-label',cleanName(d.name)+' · '+d.breed_primary);button.setAttribute('aria-pressed',String(selected===d.id));const img=new Image();img.src=image(d);img.alt='';button.append(img);button.onclick=()=>{show(d);if(matchMedia('(max-width:800px)').matches)$('detail').scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})};button.onfocus=()=>show(d);button.onmouseenter=()=>{if(!document.activeElement?.classList.contains('dog'))show(d)};grid.append(button)}section.append(h,grid);$('groups').append(section)}$('empty').hidden=!!items.length;$('more').hidden=sorted.length<=3;$('more').textContent=expanded?'收起分组':`展开全部 ${sorted.length} 个分组`;if(!items.some(d=>d.id===selected)){selected=null;$('name').textContent='选择一只狗';$('route').textContent='点击图标，看看它的故事。';$('facts').replaceChildren();$('portrait').src='assets/images/profiles/labrador.png';$('portrait').alt='原拉布拉多品种插画'}}
+for(const id of ['state','direction'])$(id).onchange=()=>{expanded=false;render()};$('more').onclick=()=>{expanded=!expanded;render()};fetch('data.json').then(r=>r.json()).then(d=>{data=d;for(const state of data.states)$('state').add(new Option(state,state));$('state').value='Washington';render();document.body.dataset.ready='true'}).catch(e=>{$('empty').hidden=false;$('empty').textContent='数据载入失败，请刷新重试';console.error(e)});
+```
+  </file>
+  <file path="samples/chart/dog-flow-atlas/mini/pages/style.css">
+```css
+*{box-sizing:border-box}body{margin:0;background:#f9f9f6;color:#382b20;font-family:Arial,"PingFang SC",sans-serif}main{max-width:1320px;margin:auto;padding:30px 48px}a{color:inherit;text-underline-offset:4px}header{display:flex;justify-content:space-between;gap:20px;font-size:11px;padding-bottom:24px;border-bottom:1px solid #b7b0a5}.intro{display:flex;justify-content:space-between;align-items:center;gap:40px;margin:40px 0}.eyebrow{font-size:11px;letter-spacing:1px}h1{font:500 56px Georgia,"Songti SC",serif;margin:20px 0}.intro>p{font-size:14px;line-height:1.9;max-width:420px;color:#736859}.controls{display:flex;gap:30px;align-items:end;border-top:1px solid #b7b0a5;border-bottom:1px solid #b7b0a5;padding:22px 0}.controls label{font-size:11px;display:block}.controls select{display:block;font:600 22px Georgia,serif;color:inherit;background:none;border:0;border-bottom:2px solid #382b20;padding:10px 20px 10px 0;max-width:300px;cursor:pointer}.total{margin-left:auto;text-align:right}.total strong{display:block;font:40px Georgia}.total span{font-size:10px}.note{font-size:11px;line-height:1.8;color:#736859;margin:22px 0 35px}.layout{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:55px}.group{margin-bottom:32px}.group h2{font-size:12px;font-weight:400;letter-spacing:.5px;margin:0 0 14px;padding-bottom:12px;border-bottom:1px dashed #736859}.dogs{display:grid;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:3px}.dog{border:1px solid transparent;background:none;padding:3px;cursor:pointer;aspect-ratio:1;min-width:0}.dog img{width:100%;height:100%;object-fit:contain;display:block}.dog:hover,.dog[aria-pressed=true]{background:#eee4d3;border-color:#806540}.dogs:has(.dog:hover) .dog:not(:hover):not([aria-pressed=true]){opacity:.35}.dog:focus-visible,button:focus-visible,select:focus-visible{outline:3px solid #a7703b;outline-offset:2px}aside{position:sticky;top:24px;align-self:start;border-top:3px solid #382b20;border-bottom:1px solid #b7b0a5;background:#f0ede5;padding:22px}#portrait{width:100%;height:140px;object-fit:contain;margin:10px 0}aside h2{font:28px Georgia;margin:10px 0}#route{font-size:13px;line-height:1.8}dl{font-size:12px;line-height:1.6}dt{color:#736859;margin-top:14px}dd{margin:2px 0}aside small{display:block;font-size:10px;line-height:1.8;color:#736859;margin-top:22px}#more{padding:11px 20px;font-size:12px;color:inherit;background:none;border:1px solid #736859;cursor:pointer;margin:8px 0 30px}#empty{font-size:14px;line-height:1.8;padding:30px;border:1px dashed #b7b0a5}footer{margin-top:50px;border-top:1px solid #b7b0a5;padding-top:20px;color:#736859;font-size:11px;line-height:1.8}footer>p{max-width:850px}footer>div{display:flex;justify-content:space-between;gap:20px;margin-top:25px}@media(max-width:800px){main{padding:24px}.intro{display:block;margin:25px 0}h1{font-size:42px}.controls{gap:20px;flex-wrap:wrap}.controls select{font-size:19px;max-width:270px}.total{margin-left:0;text-align:left}.total strong{font-size:32px;display:inline;margin-right:10px}.layout{grid-template-columns:1fr;gap:25px}aside{position:static;grid-row:1;display:grid;grid-template-columns:100px 1fr;column-gap:20px;padding:18px}aside>.eyebrow,aside>small{grid-column:1/-1}#portrait{grid-column:1;grid-row:2/5;height:100px}aside h2,#route,aside dl{grid-column:2}aside h2{font-size:24px}aside dl:empty{display:none}header span{max-width:135px;text-align:right;font-size:9px}footer>div{flex-wrap:wrap}.dogs{grid-template-columns:repeat(auto-fill,minmax(34px,1fr))}}
+
+/* Each dog remains a selectable record in a local list beside its journey. */
+@media(min-width:1200px) and (min-height:700px){
+ main{height:900px;max-width:1600px;display:grid;grid-template-rows:30px 80px 84px 24px minmax(0,1fr) 80px;gap:8px;padding:24px 40px}header{padding-bottom:12px}.intro{margin:0}h1{font-size:42px;margin:8px 0}.controls{padding:10px 0}.note{margin:0;align-self:center}
+ .layout{min-height:0;grid-template-columns:minmax(0,1fr) 360px;gap:40px}.layout>div{min-height:0;display:flex;flex-direction:column}#groups{min-height:0;overflow:auto;flex:1;overscroll-behavior:contain;padding:4px 10px 4px 4px;scrollbar-gutter:stable}.group{margin-bottom:24px}.dogs{grid-template-columns:repeat(auto-fill,minmax(42px,1fr));gap:4px}#more{align-self:start;flex:none;margin:8px 0 0}#empty{margin:0}
+ aside{position:static;min-height:0;height:100%;overflow:auto;padding:16px 22px;overscroll-behavior:contain}#portrait{height:100px;margin:4px 0}aside h2{font-size:25px}aside small{margin-top:16px}
+ footer{margin:0;padding-top:10px}footer>p{max-width:none;margin:0}footer>div{margin-top:8px}
+}
+```
+  </file>
+  <file path="samples/chart/dog-flow-atlas/mini/pages/mini-scrollbars.css">
+```css
+/* Local scrollbars inherit the surrounding ink, including light/dark themes. */
+@supports selector(::-webkit-scrollbar) {
+  * { scrollbar-width: auto !important; scrollbar-color: auto !important; }
+  *::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
+  *::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent !important; }
+  *::-webkit-scrollbar-thumb {
+    background: #8888 !important;
+    background: color-mix(in srgb, currentColor 28%, transparent) !important;
+    border: 2px solid transparent !important;
+    border-radius: 999px !important;
+    background-clip: padding-box !important;
+    min-height: 28px !important;
+    min-width: 28px !important;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, currentColor 46%, transparent) !important;
+  }
+  *::-webkit-scrollbar-thumb:active {
+    background-color: color-mix(in srgb, currentColor 62%, transparent) !important;
+  }
+}
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin !important; scrollbar-color: #8888 transparent !important; }
+  @supports (color: color-mix(in srgb, black, transparent)) {
+    * { scrollbar-color: color-mix(in srgb, currentColor 28%, transparent) transparent !important; }
+    *:hover, *:focus-visible { scrollbar-color: color-mix(in srgb, currentColor 46%, transparent) transparent !important; }
+  }
+}
+@media (forced-colors: active) {
+  * { scrollbar-width: auto !important; scrollbar-color: auto !important; }
+  *::-webkit-scrollbar-thumb { background: ButtonText !important; }
+}
+```
+  </file>
+  <omitted path="../../../../../../index.html">Navigation back to the formal sample gallery.</omitted>
+  <omitted path="SAMPLE.md">Local source attribution and approval record; not part of the rendering algorithm.</omitted>
+  <omitted path="assets/images/profiles/labrador.png">Original local media or dataset retained byte-for-byte in the runnable sample; see its source manifest.</omitted>
+</sample>

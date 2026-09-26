@@ -1,0 +1,21 @@
+import {test,expect} from '@playwright/test';
+import {randomUUID} from 'node:crypto';
+test.use({baseURL:'http://127.0.0.1:4399'});
+test('next author page warms invisibly and becomes active without navigation',async({page})=>{
+ const id=randomUUID();
+ const response=await page.request.post('/api/documents',{data:{schemaVersion:1,id,title:'编辑预热',width:1600,height:900,slides:Array.from({length:4},(_,i)=>({id:'page'+i,name:'页面'+i,sourcePath:i+'.html',html:`<!doctype html><html><body><main id="stage" data-notale-id="stage">Page ${i}</main></body></html>`}))}});expect(response.ok()).toBe(true);
+ await page.goto('/?document='+id,{waitUntil:'domcontentloaded'});
+ await page.waitForFunction(()=>(window as any).NotaleWorkbench);
+ await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
+ const host=page.locator('#canvas').locator('..');
+ await expect(host.locator('iframe[src]')).toHaveCount(2);
+ const hidden=host.locator('iframe[src]:not(#canvas)');
+ await expect(hidden).toBeHidden();
+ await hidden.evaluate((frame:HTMLIFrameElement)=>{(window as any).__warmFrame=frame;});
+ const start=Date.now();
+ await page.evaluate(()=>(window as any).NotaleWorkbench.showSlide('page1'));
+ await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
+ expect(await page.locator('#canvas').evaluate(frame=>frame===(window as any).__warmFrame)).toBe(true);
+ await expect(page.frameLocator('#canvas').locator('#stage')).toHaveText('Page 1');
+ console.log({warmSwitchMs:Date.now()-start});
+});

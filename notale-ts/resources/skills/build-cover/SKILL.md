@@ -1,0 +1,47 @@
+---
+name: build-cover
+description: "Builds course covers and chapter-opening pages using static composition, animation, or procedural visuals."
+---
+
+# Build Cover
+
+<!--teaching:start-->
+Compose a concise title and a subject-specific main visual as one opening that establishes the topic or question. Keep only necessary learning context; do not preempt the following pages with a dashboard of results or invent an author or date. Keep clear hierarchy, readable type and open space.
+<!--teaching:end-->
+
+Choose the visual system that would still identify the opening without its other layers:
+
+- `composition`: an authored still arrangement carries the identity.
+- `motion`: setup, transformation, and payoff over time carry the identity.
+- `generative`: a rule, field, growth system, simulation, shader, or seeded drawing process carries the identity.
+
+In the first response, name the visual carrier and transferable pattern in one sentence. Select the category and follow `<sample_read_policy>` below. Do not copy sample subject matter, labels, or styling.
+
+Develop the same decision with the selected reference; do not write a separate contract.
+
+## References
+
+- `composition`: `<skill-dir>/references/composition.md`
+- `motion`: `<skill-dir>/references/motion.md`
+- `generative`: `<skill-dir>/references/generative.md`
+
+## Samples
+
+Read path: `samples/bundles/<category>/<id>.mini.md`
+
+### composition
+
+- climate-zones-title — an editorial map crop, protected type area, and geographic texture behave as one frame.
+- grid-to-preview — a poster-like grid, oversized typography, and full-frame preview share a continuous image hierarchy.
+- prism-light — subject geometry, title, and restrained light motion align on one focal axis.
+
+### motion
+
+- telescope-zoom — spatial handoffs and scale continuity create the opening instead of interface chrome.
+
+### generative
+
+- lenna-pixel-field — erosion remains subordinate to a stable typographic foreground.
+- magnetic-field — curved trajectories organize density while preserving a calm title region.
+- mycelium-growth — a legible settled network emerges from constrained growth rather than undirected particles.
+- tactile-grid — material height, light, and wave response make a tactile WebGL field without interface chrome.

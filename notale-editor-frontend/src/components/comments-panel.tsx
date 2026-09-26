@@ -1,0 +1,29 @@
+'use client';
+import {useI18n,useLocale} from '../i18n/react';
+
+import {useEffect,useRef,useState,useSyncExternalStore} from 'react';
+import {commentsState,commentsActions,type CommentsModel} from '../state/comments-panel';
+import type {ReviewComment} from '../state/comments';
+function useComments(){return useSyncExternalStore(commentsState.subscribe,commentsState.getSnapshot,commentsState.getServerSnapshot);}
+export function CommentsButton(){
+ const t=useI18n(),locale=useLocale();
+const state=useComments();return <button id="toggle-comments" aria-controls="comments-panel" aria-expanded={state.open} aria-pressed={state.open} title={t("批注")} aria-label={t("批注")} onClick={()=>commentsActions.toggle()}>💬</button>;}
+export function CommentsPanel(){
+ const t=useI18n(),locale=useLocale();
+const state=useComments();return <section id="comments-panel" hidden={!state.open} aria-label={t("批注")}>{state.model && <CommentFields key={state.model.documentId} model={state.model}/>}</section>;}
+function CommentFields({model}:{model:CommentsModel}){
+ const t=useI18n(),locale=useLocale();
+
+ const [all,setAll]=useState(false),[resolved,setResolved]=useState(false),[author,setAuthor]=useState(''),[text,setText]=useState(''),[anchor,setAnchor]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');const running=useRef(false),draftSource=useRef(model);
+ useEffect(()=>{try{setAuthor(localStorage.getItem('notale.comment.author')??'');}catch{}},[]);
+ async function add(){if(running.current)return;running.current=true;setBusy(true);setError('');try{await commentsActions.add(draftSource.current,author,text,anchor);setText('');try{localStorage.setItem('notale.comment.author',author);}catch{}}catch(e){setError(e instanceof Error?e.message:String(e));}finally{running.current=false;setBusy(false);}}
+ const comments=model.comments.filter(c=>(all||c.slideId===model.pageId)&&(resolved||!c.resolved));
+ return <><div className="comments-head"><strong>{t("批注")}</strong><label className="inline"><input id="comments-all" type="checkbox" checked={all} onChange={e=>setAll(e.target.checked)}/>{t(" 显示全部页面")}</label><label className="inline"><input id="comments-resolved" type="checkbox" checked={resolved} onChange={e=>setResolved(e.target.checked)}/>{t(" 含已解决")}</label></div><div id="comments-list" className="comments-list">{comments.length ? comments.map(c=><CommentRow key={c.id} comment={c} documentId={model.documentId} author={author}/>) : null}</div><form id="comment-form" onSubmit={e=>{e.preventDefault();void add();}}><label>{t("作者")}<input id="comment-author" autoComplete="off" placeholder={t("你的名字")} value={author} disabled={busy} onChange={e=>setAuthor(e.target.value)}/></label><label id="comment-anchor-label" className="inline" hidden={model.selected.length!==1}><input id="comment-anchor" type="checkbox" checked={anchor} disabled={busy} onChange={e=>setAnchor(e.target.checked)}/>{t(" 关联当前选中对象")}</label><label>{t("批注内容")}<textarea id="comment-text" rows={3} required value={text} disabled={busy} onChange={e=>{if(!text)draftSource.current=model;setText(e.target.value);}}/></label><button type="submit" className="primary" disabled={busy}>{t("添加批注")}</button>{error && <p role="alert">{t(error)}</p>}</form></>;
+}
+function CommentRow({comment,documentId,author}:{comment:ReviewComment&{label:string};documentId:string;author:string}){
+ const t=useI18n(),locale=useLocale();
+
+ const [text,setText]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');const running=useRef(false);
+ async function act(action:'reply'|'go'|'resolve'|'remove'){if(running.current)return;running.current=true;setBusy(true);setError('');const {label,...original}=comment;const source={documentId,comment:original};try{if(action==='go')await commentsActions.go(source);else await commentsActions.mutate(source,action,author,text);if(action==='reply')setText('');}catch(e){setError(e instanceof Error?e.message:String(e));}finally{running.current=false;setBusy(false);}}
+ return <article className={'comment'+(comment.resolved?' is-resolved':'')}><header><strong>{comment.author}</strong><time>{new Date(comment.createdAt).toLocaleString(locale,{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></header><p>{comment.text}</p><small>{comment.label}</small>{comment.replies.map(reply=><p className="comment-reply" key={reply.id}><strong>{reply.author}</strong>{reply.text}</p>)}<div className="comment-actions"><input id={'reply-'+comment.id} placeholder={t("回复…")} autoComplete="off" disabled={busy} value={text} onChange={e=>setText(e.target.value)}/>{(['reply','go','resolve','remove'] as const).map(action=><button key={action} type="button" data-comment-action={action} data-comment-id={comment.id} disabled={busy} onClick={()=>void act(action)}>{action==='reply' ? t("回复") : action==='go' ? t("定位") : action==='remove' ? t("删除") : comment.resolved ? t("重新打开") : t("标记解决")}</button>)}</div>{error && <p role="alert">{t(error)}</p>}</article>;
+}

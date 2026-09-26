@@ -1,0 +1,8 @@
+'use client';
+import {useI18n} from '../i18n/react';
+
+import {useSyncExternalStore} from 'react';
+import {smartDiagramState} from '../state/smart-diagram';
+export function SmartDiagram(){
+ const t=useI18n();
+const model=useSyncExternalStore(smartDiagramState.subscribe,smartDiagramState.getSnapshot,smartDiagramState.getServerSnapshot);return <><div id="layout-item-tools" className="inline" hidden={!model.item}><button id="layout-item-duplicate" disabled={model.busy||model.locked} onClick={()=>void model.itemAction?.('duplicate')}>{t("复制这一项")}</button><button id="layout-item-delete" disabled={model.busy||model.locked} onClick={()=>void model.itemAction?.('delete')}>{t("删除这一项")}</button></div><label id="cycle-count-field" hidden={!model.cycle}>{t("循环项数")}<input id="cycle-count" type="number" min="3" max="6" step="1" value={model.count} disabled={model.busy||model.locked} onChange={event=>model.change?.(event.target.value)} onBlur={()=>void model.save?.()} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();void model.save?.();}}}/></label>{model.error && <p role="alert">{t(model.error)}</p>}</>;}
