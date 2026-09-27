@@ -44,7 +44,8 @@ export async function uploadFile(file: File, signal?: AbortSignal): Promise<{ id
 }
 
 /** Who answers on this server, and with which model (`GET /v1/info`). */
-export interface ServiceInfo { assistant: string; model: string; effort: string }
+/** `assistant` answers and edits (Istar); `generator` makes new lectures (Valar). */
+export interface ServiceInfo { assistant: string; generator?: string; model: string; effort: string }
 export async function getInfo(): Promise<ServiceInfo> {
   return json(await fetch(`${base}/info`, { cache: "no-store" }));
 }

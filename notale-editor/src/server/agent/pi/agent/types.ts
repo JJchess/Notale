@@ -8,6 +8,7 @@ import type {
 	AssistantMessage,
 	AssistantMessageEvent,
 	Context,
+	FileContent,
 	ImageContent,
 	Message,
 	Model,
@@ -63,7 +64,7 @@ export interface BeforeToolCallResult {
  * Omitted fields keep the original executed tool result values.
  */
 export interface AfterToolCallResult {
-	content?: (TextContent | ImageContent)[];
+	content?: (TextContent | ImageContent | FileContent)[];
 	details?: unknown;
 	isError?: boolean;
 	terminate?: boolean;
@@ -123,7 +124,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 *
 	 * Contract: must not throw or reject. Return the original messages on failure.
 	 */
-	transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+	transformContext?: ((messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>) | undefined;
 
 	/**
 	 * Called when the run would otherwise end normally (the last assistant turn made no tool
@@ -131,7 +132,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * message and run another turn; return undefined to settle.
 	 * Minimal stand-in for pi coding-agent's `agent_before_settle` extension boundary.
 	 */
-	beforeSettle?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<BeforeSettleResult | undefined>;
+	beforeSettle?: ((messages: AgentMessage[], signal?: AbortSignal) => Promise<BeforeSettleResult | undefined>) | undefined;
 
 	/**
 	 * Tool execution mode. Default: "parallel". A tool with `executionMode: "sequential"`
@@ -143,13 +144,13 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * Called before a tool is executed, after arguments have been validated.
 	 * Return `{ block: true }` to prevent execution. The loop emits an error tool result instead.
 	 */
-	beforeToolCall?: (context: BeforeToolCallContext, signal?: AbortSignal) => Promise<BeforeToolCallResult | undefined>;
+	beforeToolCall?: ((context: BeforeToolCallContext, signal?: AbortSignal) => Promise<BeforeToolCallResult | undefined>) | undefined;
 
 	/**
 	 * Called after a tool finishes executing, before `tool_execution_end` and tool-result message events are emitted.
 	 * Return an `AfterToolCallResult` to override parts of the executed tool result.
 	 */
-	afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
+	afterToolCall?: ((context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>) | undefined;
 }
 
 /** Thinking/reasoning level for models that support it. */
@@ -184,15 +185,15 @@ export interface AgentState {
 
 /** Final or partial result produced by a tool. */
 export interface AgentToolResult<T = unknown> {
-	/** Text or image content returned to the model. */
-	content: (TextContent | ImageContent)[];
+	/** Text, image or file content returned to the model. */
+	content: (TextContent | ImageContent | FileContent)[];
 	/** Arbitrary structured details for logs or UI rendering. */
 	details: T;
 	/**
 	 * Hint that the agent should stop after the current tool batch.
 	 * Early termination only happens when every finalized tool result in the batch sets this to true.
 	 */
-	terminate?: boolean;
+	terminate?: boolean | undefined;
 }
 
 /** Callback used by tools to stream partial execution updates. Calls after the tool settles are ignored. */

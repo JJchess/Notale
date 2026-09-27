@@ -20,6 +20,8 @@ import { createAiRuntime, ModelRegistry, type AiRuntime } from './ai-model.js';
 import { mediaCall, mediaAvailability, IMAGE_TOOL_SCHEMAS } from './media/index.js';
 import { runTurn, type AiStep } from './agent/run.js';
 import { SessionStore, SandboxPool } from './agent/session.js';
+import { AiUploads } from './agent/uploads.js';
+import { MAX_MEDIA_BYTES } from './agent/pi/index.js';
 import { diffDocuments } from '../domain/document-diff.js';
 import { draftFile, renderDraftPage } from './agent/draft-renderer.js';
 
@@ -206,7 +208,18 @@ export function createApps(options: AppOptions) {
   const aiTurnSchema=z.object({sessionId:z.string().uuid().optional(),slideId:z.string().min(1).max(100),instruction:z.string().min(1).max(20_000),targets:z.array(z.string().min(1).max(100)).max(200).default([]),
     model:z.object({provider:z.string().min(1).max(64),id:z.string().min(1).max(200)}).optional(),
     // Pictures the author attaches for the model to look at: a few, of the formats it reads, each ≤5 MB.
-    images:z.array(z.object({mime:z.enum(['image/png','image/jpeg','image/webp']),data:z.string().max(7_000_000).regex(/^[A-Za-z0-9+/]+={0,2}$/)})).max(4).default([])});
+    images:z.array(z.object({mime:z.enum(['image/png','image/jpeg','image/webp']),data:z.string().max(7_000_000).regex(/^[A-Za-z0-9+/]+={0,2}$/)})).max(4).default([]),
+    // Documents and videos uploaded first (POST …/ai-uploads), named here by id.
+    files:z.array(z.string().uuid()).max(10).default([])});
+  // A document or video for an AI message: raw bytes (the octet-stream parser above; this route's
+  // limit wins over the parser's), the name URI-encoded in x-file-name.
+  const uploads=new AiUploads();
+  api.post<{Params:{id:string}}>('/api/documents/:id/ai-uploads',{bodyLimit:MAX_MEDIA_BYTES},async(req,reply)=>{
+    await context(req,'edit',req.params.id);
+    const name=decodeURIComponent(String(req.headers['x-file-name']??''));
+    invariant(name&&Buffer.isBuffer(req.body),'AI_UPLOAD_TYPE','只能附 PDF、DOCX、PPTX 或视频（MP4、MOV、WebM）',400);
+    return reply.code(201).send(await uploads.save(req.params.id,name,req.body as Buffer));
+  });
   api.get<{Params:{id:string;sid:string}}>('/api/documents/:id/ai-sessions/:sid/review',async req=>{
     const ctx=await context(req,'read',req.params.id),session=await sessions.get(req.params.id,req.params.sid);
     const head=await store.get(ctx,req.params.id),base=await store.get(ctx,req.params.id,session.reviewBase);
@@ -248,6 +261,7 @@ export function createApps(options: AppOptions) {
     const turnRequest=aiTurnSchema.parse(req.body);
     const runtime=turnRequest.model?await models.runtime(turnRequest.model):ai;
     invariant(!turnRequest.images.length||runtime.vision,'AI_MODEL_NO_VISION','这个模型看不了图片',400);
+    const files=await Promise.all(turnRequest.files.map(id=>uploads.resolve(req.params.id,id)));
     const session=turnRequest.sessionId?await sessions.get(req.params.id,turnRequest.sessionId):await sessions.create(req.params.id,(await store.get(ctx,req.params.id)).version);
     if(turnRequest.model&&JSON.stringify(turnRequest.model)!==JSON.stringify(session.model))await session.setModel(turnRequest.model);
     reply.hijack();
@@ -263,7 +277,7 @@ export function createApps(options: AppOptions) {
     try{
       write({type:'session',id:session.id,reviewBase:session.reviewBase});
       const open=mediaAvailability();
-      const result=await runTurn(turnRequest,{
+      const result=await runTurn({...turnRequest,files},{
         runtime,session,signal:gone.signal,report,mutationId:()=>randomUUID(),
         text:delta=>write(delta===null?{type:'text',reset:true}:{type:'text',delta}),
         sandbox:s=>sandboxes.get(s.id,s.workspace),

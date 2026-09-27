@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 const manifest = '.local/build-cache.json';
-async function files(path) {
+async function files(path: string): Promise<string[]> {
   const entries = await readdir(path, { withFileTypes: true });
   return (
     await Promise.all(
@@ -16,7 +16,7 @@ async function files(path) {
     .flat()
     .sort();
 }
-async function fingerprint(paths) {
+async function fingerprint(paths: string[]) {
   const hash = createHash('sha256');
   for (const path of [...paths].sort())
     hash
@@ -40,8 +40,8 @@ async function state() {
       'package-lock.json',
       'tsconfig.json',
       'tsconfig.build.json',
-      'scripts/build.mjs',
-      'scripts/build-cache.mjs',
+      'scripts/build.ts',
+      'scripts/build-cache.ts',
     ]),
     output: await fingerprint(await files('dist')),
   };
@@ -58,7 +58,7 @@ async function ensureBuild() {
       return;
     }
   } catch {}
-  const code = await new Promise((resolve, reject) => {
+  const code = await new Promise<number | null>((resolve, reject) => {
     const child = spawn('npm', ['run', 'build'], { stdio: 'inherit' });
     child.on('error', reject);
     child.on('exit', (code) => resolve(code));

@@ -1,5 +1,13 @@
 /* Prepare first, commit through Reveal second. No page/runtime source changes. */
 (() => {
+  if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');
+  // The key hints show for a moment, then only when asked for: near the top-right corner, or with ?.
+  const hint = document.querySelector('.hint');
+  let idle;
+  const wake = () => { if (!hint) return; hint.classList.remove('is-idle'); clearTimeout(idle); idle = setTimeout(() => hint.classList.add('is-idle'), 3000); };
+  wake();
+  document.addEventListener('pointermove', event => { if (event.clientX > innerWidth - 320 && event.clientY < 80) wake(); });
+  document.addEventListener('keydown', event => { if (event.key === '?') wake(); });
   const sections = [...document.querySelectorAll('.slides > section')];
   const states = new WeakMap();
   const frameOf = section => section.querySelector('.preview-frame');
@@ -84,7 +92,10 @@
   function wireKeys(doc) {
     if (!doc || boundDocuments.has(doc)) return;
     boundDocuments.add(doc);
+    // A page is its own document: the corner and the ? key have to be heard there too (page coordinates).
+    doc.addEventListener('pointermove', event => { const view = doc.defaultView; if (view && event.clientX > view.innerWidth - 400 && event.clientY < 100) wake(); });
     doc.addEventListener('keydown', event => {
+      if (event.key === '?') { wake(); return; }
       if (navigation(event, true)) return;
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || editable(event.target)) return;
       if (!['o', 'O', 'f', 'F', 'Escape'].includes(event.key)) return;

@@ -1810,6 +1810,12 @@ const aiEdits = bindAiEdits({
   objects:()=>objects,
   request:(path,body,signal,onStep,onSession,onText)=>apiStream(path,body,signal,onStep,onSession,onText),
   models:async()=>await api('/api/ai/models') as {default:AiModelRef;providers:AiProvider[]},
+  // A document or video can be 100 MB and is converted on arrival: no short timeout here.
+  uploadFile:async(file,signal)=>{
+    const r=await fetch(`/api/documents/${editorSession.snapshot.document.id}/ai-uploads`,{method:'POST',body:file,headers:{'Content-Type':'application/octet-stream','x-file-name':encodeURIComponent(file.name)},...(signal?{signal}:{})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new ApiError(String(e.error??'HTTP_'+r.status),responseMessage(e,`HTTP ${r.status}`));}
+    return await r.json() as {id:string};
+  },
   pages:()=>kernel.confirmed.document.slides.map(page=>({id:page.id,path:page.sourcePath,name:page.name})),
   review:async id=>await api(`/api/documents/${editorSession.snapshot.document.id}/ai-sessions/${id}/review`) as AiReviewReply,
   accept:(id,version)=>api(`/api/documents/${editorSession.snapshot.document.id}/ai-sessions/${id}/accept`,{version}),

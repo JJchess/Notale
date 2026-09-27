@@ -1,4 +1,4 @@
-/** Theme import, atomic publication and actual browser gates from core/theme.py. */
+/** Theme import, atomic publication and actual browser gates. */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';

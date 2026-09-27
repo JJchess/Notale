@@ -1,17 +1,15 @@
 import { workflowNotice, observedStep, type ProgressObserver } from './workflow-progress.js';
-import { parsePythonJson } from './json.js';
 /** Style Director orchestration port. Resource and browser gates are required ports, never bypassed. */
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ChatInputBlock, ChatMessage, ChatModel, ToolCall } from '../adapters/models/chat-model.js';
 import { PLANNER_IDENTITY, plannerPrompt, resolvePath } from './planner-contract.js';
-import { chatTools, errorOutput, objectArguments, plannerInstructions, type MediaOutput, type PlanningRequest, type WorkflowTrace } from './planning.js';
-import { stripText, splitLines } from './text.js';
+import { chatTools, errorOutput, objectArguments, plannerInstructions, type MediaOutput, type PlanningRequest, type WorkflowTrace } from './planner.js';
 import { valueError } from './theme.js';
 import * as guidance from './guidance.js';
 
 const TRIES = 10;
-const resourceFailure = (error: unknown): boolean => error instanceof Error && (['ValueError', 'UnicodeDecodeError', 'UnicodeEncodeError', 'JSONDecodeError', 'OSError', 'FileNotFoundError', 'PermissionError', 'IsADirectoryError', 'NotADirectoryError', 'FileExistsError', 'TimeoutError'].includes(error.name) || /^E[A-Z]+$/.test((error as NodeJS.ErrnoException).code ?? ''));
+const resourceFailure = (error: unknown): boolean => error instanceof Error && (['ValueError', 'UnicodeEncodeError', 'JSONDecodeError', 'OSError', 'FileNotFoundError', 'PermissionError', 'IsADirectoryError', 'NotADirectoryError', 'FileExistsError', 'TimeoutError'].includes(error.name) || /^E[A-Z]+$|^ERR_ENCODING_INVALID_ENCODED_DATA$/.test((error as NodeJS.ErrnoException).code ?? ''));
 const runtimeError = (message: string): Error => Object.assign(new Error(message), { name: 'RuntimeError' });
 export interface DirectorRequest extends PlanningRequest { style?: string; template?: string }
 export interface StyleInput { text: string; images: ChatInputBlock[] }
@@ -54,12 +52,12 @@ export function oneWrite(calls: ToolCall[], target: string): { css: string | und
   const writes = calls.filter(call => call.function.name === 'Write');
   if (writes.length !== 1) return { css: undefined, bad: [`每次提交恰好一个 Write；实际 ${writes.length} 个`] };
   try {
-    const args: unknown = parsePythonJson(writes[0]!.function.arguments);
+    const args: unknown = JSON.parse(writes[0]!.function.arguments);
     if (!args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).sort().join(',') !== 'content,file_path') throw valueError('Write 参数必须是含 file_path/content 的 JSON 对象');
     const input = args as Record<string, unknown>;
     if (typeof input.file_path !== 'string' || typeof input.content !== 'string') throw valueError('Write 路径和内容必须是字符串');
     if (resolvePath(input.file_path) !== resolvePath(target)) throw valueError(`只能写 ${target}`);
-    if (!stripText(input.content)) throw valueError('Write 内容不能为空');
+    if (!input.content.trim()) throw valueError('Write 内容不能为空');
     return { css: input.content, bad: [] };
   } catch (error) { if (!resourceFailure(error) && !(error instanceof TypeError) && (error as Error)?.name !== 'TypeError') throw error; return { css: undefined, bad: [(error as Error).message] }; }
 }
@@ -71,7 +69,6 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
   }
   const assets = path.join(run.root, 'pages/assets');
   const target = path.join(assets, 'theme.css');
-  const workflowRoot = run.workflowRoot ?? guidance.WORKFLOWS;
   ports.theme.checkOptions(run.template, run.style);
   const originalTheme = ports.theme;
   ports = { ...ports, theme: { ...ports.theme,
@@ -98,7 +95,7 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
     signal?.throwIfAborted();
     if (content !== undefined) history.push({ role: 'user', content });
     const started = new Date().toISOString();
-    const messages: ChatMessage[] = [{ role: 'system', content: PLANNER_IDENTITY + '\n\n' + guidance.visualSlopBlock(workflowRoot) }, ...history];
+    const messages: ChatMessage[] = [{ role: 'system', content: PLANNER_IDENTITY + '\n\n' + guidance.visualSlopBlock() }, ...history];
     workflowNotice(ports.progress, 'director', step, 'started', step === 'style-pick' ? '开始选择参考风格' : '开始生成主题');
     const response = await ports.model.respond(messages, tools, signal);
     workflowNotice(ports.progress, 'director', step, 'completed', step === 'style-pick' ? '本轮选样响应已返回' : '本轮主题响应已返回');
@@ -113,14 +110,14 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
   if (!run.template && !ports.catalog.match(run.style)) {
     const out = path.join(run.root, 'style-picks.tsv');
     const selection = await ports.catalog.selectionInputs();
-    const body = prompt('style-pick', { query: run.query, audience: run.audience, scenario: run.scenario || '（没写）', request: run.style || '按本次交流目的选择', index: selection.text, out_path: out, theme_bans: guidance.themeSlopBlock(workflowRoot) });
+    const body = prompt('style-pick', { query: run.query, audience: run.audience, scenario: run.scenario || '（没写）', request: run.style || '按本次交流目的选择', index: selection.text, out_path: out, theme_bans: guidance.themeSlopBlock() });
     const by = new Set(ports.catalog.rows().map(row => row[0]));
     let bad: string[] = [];
     for (let attempt = 0; attempt < tries; attempt++) {
       const calls = await request(attempt === 0 ? [{ type: 'text', text: body }, ...selection.images] : undefined, writeSpec(out), 'style-pick');
       const submission = oneWrite(calls, out);
       bad = submission.bad;
-      const ids = splitLines(submission.css ?? '').filter(line => stripText(line)).map(line => stripText(line.split('\t')[0]!));
+      const ids = (submission.css ?? '').split(/\r?\n/).filter(line => line.trim()).map(line => line.split('\t')[0]!.trim());
       if (!ids.length || new Set(ids).size !== ids.length || ids.some(id => !by.has(id))) bad.push('需要真实且唯一的风格 ID，首行为主方向');
       if (calls.some(call => call.function.name !== 'Write')) bad.push('选样只使用 Write');
       if (!bad.length) {
@@ -130,7 +127,7 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
       for (const call of calls) result(call, bad.length ? bad.join('；') : '选样已接收，下一步读取图片写主题');
       if (!bad.length) {
         await mkdir(run.root, { recursive: true });
-        await writeFile(out, stripText(submission.css!) + '\n', 'utf8');
+        await writeFile(out, submission.css!.trim() + '\n', 'utf8');
         workflowNotice(ports.progress, 'director', 'selection', 'completed', '参考风格已确定');
         picks = ids;
         break;
@@ -144,8 +141,8 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
   const selected = picks.length ? picks : match ? [match] : [];
   const catalog = await observedStep(ports.progress, 'director', 'references', '参考资料准备', () => selected.length ? ports.catalog.selectedInputs(selected) : ports.catalog.inputs(run.style));
   let body = prompt('style-theme', {
-    query: run.query, audience: run.audience, scenario: run.scenario || '（没写）', canvas_w: run.canvas?.[0] ?? 1600, canvas_h: run.canvas?.[1] ?? 900,
-    direction: guidance.directionBlock(run.prompts), theme_bans: history.length ? '' : guidance.themeSlopBlock(workflowRoot), font_floor: guidance.FONT_FLOOR, out_path: target,
+    query: run.query, audience: run.audience, scenario: run.scenario || '（没写）', canvas_w: 1600, canvas_h: 900,
+    direction: guidance.directionBlock(run.prompts), theme_bans: history.length ? '' : guidance.themeSlopBlock(), font_floor: guidance.FONT_FLOOR, out_path: target,
   });
   body += '\n\n明确风格要求：' + (run.style || '按内容选择');
   body += '\n\n风格表（创作参考，不是页面资产）：\n' + catalog.text;
@@ -162,7 +159,16 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
   while (rejected < tries) {
     const calls = await request(content, tools, 'style-theme');
     content = undefined;
-    if (!calls.length) throw runtimeError('Director 结束但没有有效 Write');
+    if (!calls.length) {
+      // Answered in words (e.g. the CSS pasted as text) instead of writing: say so, within the same bound.
+      bad = ['本轮没有调用工具；请用 Write 提交完整的 theme.css' + (bad.length ? `（上次的问题：${bad.join('；')}）` : '')];
+      history.push({ role: 'user', content: bad[0]! });
+      workflowNotice(ports.progress, 'director', 'theme-validation', 'reworking', '主题未提交，继续调整');
+      rejected++;
+      await mkdir(run.root, { recursive: true });
+      await writeFile(path.join(run.root, 'style.rejected.json'), JSON.stringify({ bad, css: null, submissions: rejected }, null, 2), 'utf8');
+      continue;
+    }
     const writes = calls.filter(call => call.function.name === 'Write');
     let css: string | undefined;
     ({ css, bad } = writes.length ? oneWrite(calls, target) : { css: undefined, bad: [] });

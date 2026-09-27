@@ -1,9 +1,10 @@
 import type { NextConfig } from "next";
 
+// Read when building: `next build` freezes rewrites, so set NOTALE_API_URL for the build.
 const apiOrigin = process.env.NOTALE_API_URL ?? "http://127.0.0.1:4321";
 
 const config: NextConfig = {
-  experimental: { proxyClientMaxBodySize: "51mb" },
+  experimental: { proxyClientMaxBodySize: "101mb" },
   async rewrites() {
     return [
       { source: "/notale-api/:path*", destination: `${apiOrigin}/:path*` },

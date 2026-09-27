@@ -631,6 +631,10 @@ export function convertMessages(
 						if (item.type === "text") {
 							return { type: "text", text: sanitizeSurrogates(item.text) } satisfies ChatCompletionContentPartText;
 						}
+						// Documents and video are Gemini-only here (transformMessages normally turns them into notes first).
+						if (item.type === "file") {
+							return { type: "text", text: `[${item.path} (${item.mimeType}) cannot be sent to this model]` } satisfies ChatCompletionContentPartText;
+						}
 						return {
 							type: "image_url",
 							image_url: { url: `data:${item.mimeType};base64,${item.data}` },

@@ -15,7 +15,6 @@ export const createRunRequestSchema = z.object({
   query: z.string(),
   fileIds: z.array(z.string().uuid()).max(10).refine(ids => new Set(ids).size === ids.length, "duplicate files").optional(),
   templateId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-  // Python argparse imposes no safe-integer quota on duration.
   minutes: z.number().refine(Number.isInteger, "expected an integer").default(90),
   audience: z.string().default("学过一点相关基础、但没系统学过这个题目的读者"),
   scenario: z.string().default(""),
@@ -98,13 +97,11 @@ export const lectureThemeSchema = z.object({
   warning: color,
   error: color,
 });
-export type LectureTheme = z.infer<typeof lectureThemeSchema>;
 
 export const codeRuntimeSchema = z.object({
   language: z.literal("python"),
   packages: z.array(z.string()).default([]),
 });
-export type CodeRuntime = z.infer<typeof codeRuntimeSchema>;
 
 export const artifactManifestSchema = z.object({
   protocolVersion: z.literal(protocolVersion),

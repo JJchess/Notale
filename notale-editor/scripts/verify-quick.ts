@@ -3,7 +3,7 @@ const checks = ['typecheck', 'test'];
 const results = await Promise.all(
   checks.map(
     (name) =>
-      new Promise((resolve) => {
+      new Promise<{ name: string; code: number; seconds?: string; error?: string }>((resolve) => {
         const started = performance.now(),
           child = spawn('npm', ['run', name], { stdio: 'inherit' });
         child.on('error', (error) => resolve({ name, error: String(error), code: 1 }));

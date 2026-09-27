@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { uploadAttachment } from "../lib/session-api";
 import { FileKind } from "./file-kind";
 
-const ACCEPT = /\.(pdf|docx|pptx|png|jpe?g|webp)$/i, MAX_FILES = 10, MAX_BYTES = 50 * 1024 * 1024;
+const ACCEPT = /\.(pdf|docx|pptx|png|jpe?g|webp|mp4|mov|webm)$/i, MAX_FILES = 10, MAX_BYTES = 100 * 1024 * 1024;
 type Item = { key: string; file: File; state: "uploading" | "ready" | "failed"; id?: string; error?: string; controller?: AbortController };
 
 /** One box: what you want, plus whatever you drop in (material, a template, a style picture). The
@@ -39,7 +39,7 @@ export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus
     if (!list.length) return;
     const room = MAX_FILES - items.length;
     const good = list.filter(file => ACCEPT.test(file.name) && file.size <= MAX_BYTES).slice(0, Math.max(0, room));
-    setError(good.length < list.length ? `支持 PDF、DOCX、PPTX 和图片，单个不超过 50 MB，最多 ${MAX_FILES} 个` : "");
+    setError(good.length < list.length ? `支持 PDF、DOCX、PPTX、图片和视频（MP4、MOV、WebM），单个不超过 100 MB，最多 ${MAX_FILES} 个` : "");
     const added = good.map(file => ({ key: crypto.randomUUID(), file, state: "uploading" as const }));
     setItems(current => [...current, ...added]);
     for (const item of added) void upload(item);
@@ -75,8 +75,8 @@ export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus
         </li>)}
       </ul>}
       <div className="composer-bar">
-        <button type="button" className="composer-attach" aria-label="添加附件" title="添加附件：素材、PPTX 模板或风格参考图" onClick={() => picker.current?.click()}>+</button>
-        <input ref={picker} type="file" multiple hidden accept=".pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp" onChange={event => { add(event.target.files); event.target.value = ""; }} />
+        <button type="button" className="composer-attach" aria-label="添加附件" title="添加附件：素材、PPTX 模板、风格参考图或视频" onClick={() => picker.current?.click()}>+</button>
+        <input ref={picker} type="file" multiple hidden accept=".pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp,.mp4,.mov,.webm" onChange={event => { add(event.target.files); event.target.value = ""; }} />
         {error ? <span className="composer-error" role="alert">{error}</span> : status}
         {busy && onStop
           ? <button type="button" className="composer-send is-stop" aria-label="停止" title="停止" onClick={onStop}><i /></button>

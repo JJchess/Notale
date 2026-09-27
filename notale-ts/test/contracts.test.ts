@@ -361,7 +361,7 @@ test('Builder premature stops are retried with the audit reason, bounded, and re
     // Every page type now hears why the audit rejected it; the same-context repair is bounded by MAX_PREMATURE_STOPS.
     for (const mode of ['missing', 'modified', 'timeout', 'cancel', 'max_stops']) {
       const target = path.join(root, 'page-01.html'); await rm(target, { force: true });
-      const page = new Page('page-01', 'brief'); page.workflow = 'build-page';
+      const page = new Page('page-01', 'brief'); page.skill = 'build-page';
       const history: unknown[] = []; let turn = 0, checks = 0, retries = 0, clock = 0;
       const controller = new AbortController();
       const sequence = mode === 'modified' ? [output(true, 'bad'), output(false), output(true), output(false)]
@@ -441,7 +441,7 @@ test('template layout submission and idempotent assembly reject invalid or chang
   const { assembleTemplatePage } = await import('../src/core/template-page.js');
   const root = await mkdtemp(path.join(os.tmpdir(), 'notale-template-page-')), pages = path.join(root, 'pages');
   const prepared = { schemaVersion: 1 as const, sha256: 'sample', width: 1600, height: 900, slides: [{ id: 'slide-1', svg: 'slide-1.svg', preview: 'slide-1.png', objects: [] }], warnings: [], fontCss: '' };
-  const submission = { themeCss: 'css', layouts: [{ id: 'content', source: 'slide-1', workflows: ['build-cover', 'build-page', 'build-interaction'], replaceObjects: [], slots: [{ id: 'title', purpose: 'title', x: 20, y: 20, width: 1200, height: 100, required: true }, { id: 'body', purpose: 'body', x: 20, y: 140, width: 1400, height: 700, required: true }] }] };
+  const submission = { themeCss: 'css', layouts: [{ id: 'content', source: 'slide-1', skills: ['build-cover', 'build-page', 'build-interaction'], replaceObjects: [], slots: [{ id: 'title', purpose: 'title', x: 20, y: 20, width: 1200, height: 100, required: true }, { id: 'body', purpose: 'body', x: 20, y: 140, width: 1400, height: 700, required: true }] }] };
   try {
     const parsed = validateTemplateSubmission(submission, prepared);
     assert.throws(() => validateTemplateSubmission({ ...submission, layouts: [{ ...submission.layouts[0], replaceObjects: ['unknown'] }] }, prepared), /替换对象/);
@@ -468,9 +468,9 @@ test('template layout submission and idempotent assembly reject invalid or chang
 
 test('template and free Builders share teaching and visual rules without changing Planner or code', async () => {
   const { mkdir, writeFile, readFile, rm } = await import('node:fs/promises');
-  const { deckPrompt } = await import('../src/core/planning.js');
+  const { deckPrompt } = await import('../src/core/planner.js');
   const { instructionBlocks } = await import('../src/core/builder-context.js');
-  const { routedWorkflow, WORKFLOWS, FONT_FLOOR } = await import('../src/core/guidance.js');
+  const { routedSkill, SKILLS, FONT_FLOOR } = await import('../src/core/guidance.js');
   const root = await mkdtemp(path.join(os.tmpdir(), 'notale-template-prompts-'));
   try {
     const request = { root, query: '种子发芽', minutes: 15, audience: '小学生' };
@@ -482,7 +482,7 @@ test('template and free Builders share teaching and visual rules without changin
     await writeFile(path.join(root, 'pages/plan/pages.md'), '## Audience\n小学生\n\n# page-01 [标题页]\n种子发芽');
     const workflows = ['build-cover', 'build-page', 'build-interaction'];
     const before = Object.fromEntries(workflows.map(w => [w, instructionBlocks(root, 1, w)])), code = instructionBlocks(root, 1, 'build-code');
-    await writeFile(path.join(root, 'template-spec.json'), JSON.stringify({ layouts: [{ id: 'body', workflows, slots: [] }] }));
+    await writeFile(path.join(root, 'template-spec.json'), JSON.stringify({ layouts: [{ id: 'body', skills: workflows, slots: [] }] }));
     for (const workflow of workflows) {
       const after = instructionBlocks(root, 1, workflow), original = before[workflow]!;
       for (const key of ['notes', 'steps', 'philosophy', 'anti_slop']) assert.equal(after[key], original[key]);
@@ -493,21 +493,21 @@ test('template and free Builders share teaching and visual rules without changin
       assert.match(after.notes!, /关键推导、条件和单位/);
       assert.match(after.anti_slop!, /border-left/);
       assert.equal(after.anti_slop!.split('<anti_ai_slop_visual>').length, 2);
-      const teaching = (await readFile(path.join(WORKFLOWS, workflow, 'SKILL.md'), 'utf8')).match(/<!--teaching:start-->\s*([\s\S]*?)\s*<!--teaching:end-->/)![1]!;
-      for (const text of [after.workflow!, original.workflow!]) assert.equal(text.split(teaching).length, 2, `${workflow} teaching occurs exactly once`);
-      assert.match(original.workflow!, /choose Main/);
-      if (workflow === 'build-interaction') assert.ok(after.workflow!.startsWith(original.workflow!));
-      else assert.doesNotMatch(after.workflow!, /aux_sample_catalog|choose Main/);
-      assert.doesNotMatch(after.workflow!, /<!--teaching/);
-      assert.match(after.workflow!, /template_constraints/);
-      assert.match(after.workflow!, /color:var\(--text\)/);
-      assert.match(after.workflow!, /color:var\(--muted\)/);
+      const teaching = (await readFile(path.join(SKILLS, workflow, 'SKILL.md'), 'utf8')).match(/<!--teaching:start-->\s*([\s\S]*?)\s*<!--teaching:end-->/)![1]!;
+      for (const text of [after.skill!, original.skill!]) assert.equal(text.split(teaching).length, 2, `${workflow} teaching occurs exactly once`);
+      assert.match(original.skill!, /choose Main/);
+      if (workflow === 'build-interaction') assert.ok(after.skill!.startsWith(original.skill!));
+      else assert.doesNotMatch(after.skill!, /aux_sample_catalog|choose Main/);
+      assert.doesNotMatch(after.skill!, /<!--teaching/);
+      assert.match(after.skill!, /template_constraints/);
+      assert.match(after.skill!, /color:var\(--text\)/);
+      assert.match(after.skill!, /color:var\(--muted\)/);
     }
     assert.deepEqual(instructionBlocks(root, 1, 'build-code'), code);
     const custom = path.join(root, 'workflows');
     await mkdir(path.join(custom, 'build-page'), { recursive: true });
     await writeFile(path.join(custom, 'build-page/SKILL.md'), '# Missing teaching');
-    assert.throws(() => routedWorkflow('build-page', custom, { template: true }), /exactly one teaching/);
+    assert.throws(() => routedSkill('build-page', custom, { template: true }), /exactly one teaching/);
     await rm(path.join(root, 'template-spec.json')); assert.deepEqual(instructionBlocks(root, 1, 'build-page'), before['build-page']);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -638,22 +638,22 @@ test('Check structured diagnostics survive the tool envelope and preserve fatal 
 
 
 test('sample policy keeps Main and Aux modes explicit in free and template interaction inputs', async () => {
-  const { routedWorkflow, PAGE_WORKFLOWS } = await import('../src/core/guidance.js');
-  for (const name of PAGE_WORKFLOWS.filter(n => n !== 'build-code')) {
-    const main = routedWorkflow(name, undefined, { includeAux: false });
+  const { routedSkill, PAGE_SKILLS } = await import('../src/core/guidance.js');
+  for (const name of PAGE_SKILLS.filter(n => n !== 'build-code')) {
+    const main = routedSkill(name, undefined, { includeAux: false });
     assert.match(main, /exactly one reference and one Main/);
     assert.doesNotMatch(main, /<aux_sample_catalog workflow=/);
-    const without = routedWorkflow(name, undefined, { samples: 'none' });
+    const without = routedSkill(name, undefined, { samples: 'none' });
     assert.doesNotMatch(without, /## Samples|samples\/bundles|choose Main/);
     assert.match(without, /no worked sample/);
-    assert.throws(() => routedWorkflow(name, undefined, { samples: 'none', includeAux: true }));
-    const defaults = routedWorkflow(name);
-    assert.equal(defaults, routedWorkflow(name, undefined, { includeAux: true }));
+    assert.throws(() => routedSkill(name, undefined, { samples: 'none', includeAux: true }));
+    const defaults = routedSkill(name);
+    assert.equal(defaults, routedSkill(name, undefined, { includeAux: true }));
     assert.equal((defaults.match(/^<sample_read_policy>$/gm) ?? []).length, 1);
     if (name === 'build-interaction') {
       assert.match(defaults, /zero to three/);
       for (const options of [{}, { includeAux: false }, { samples: 'none' }]) {
-        assert.equal(routedWorkflow(name, undefined, options), routedWorkflow(name, undefined, { ...options, template: true }));
+        assert.equal(routedSkill(name, undefined, options), routedSkill(name, undefined, { ...options, template: true }));
       }
     }
   }
@@ -731,7 +731,7 @@ test('header intrusion needs overlap on both axes, not just vertical', async () 
 
 test('buildRun rebuilds a page that did not deliver from a clean slate and keeps every reason', async () => {
   const { buildRun } = await import('../src/core/orchestration.js');
-  const { loadConfig, resolveBuilderProfile, workflowProfiles } = await import('../src/adapters/models/profiles.js');
+  const { loadConfig, resolveBuilderProfile, skillProfiles } = await import('../src/adapters/models/profiles.js');
   const { mkdir, writeFile, readFile, rm } = await import('node:fs/promises');
   const root = await mkdtemp(path.join(os.tmpdir(), 'notale-rebuild-'));
   try {
@@ -741,7 +741,7 @@ test('buildRun rebuilds a page that did not deliver from a clean slate and keeps
     await writeFile(path.join(root, 'pages/assets/CHASSIS.md'), '底盘');
     await writeFile(path.join(root, 'pages/assets/theme.css'), '/* ==== INTERFACE ====\n主题\n==== /INTERFACE ==== */');
     await writeFile(path.join(root, 'pages/assets/lib/LIBS.md'), '## 按「要做的事」查\n无\n');
-    const cfg = loadConfig(), profile = resolveBuilderProfile(cfg), profiles = workflowProfiles(cfg, profile);
+    const cfg = loadConfig(), profile = resolveBuilderProfile(cfg), profiles = skillProfiles(cfg, profile);
     const target = path.join(root, 'pages/page-01.html');
     let attempt = 0, calls = 0; const started: string[] = [];
     const port: import('../src/core/builder.js').BuilderPorts = {

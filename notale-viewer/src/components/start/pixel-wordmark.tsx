@@ -20,7 +20,8 @@ export const PixelWordmark = forwardRef<WordmarkHandle, { onPoke?: (letter: SVGG
       <svg viewBox={`0 0 ${shape.width} ${shape.height}`} role="img" aria-label="Notale" shapeRendering="crispEdges">
         {shape.letters.map((_letter, index) => (
           <g key={index} ref={node => { groups.current[index] = node; }} className={"wordmark-letter" + (index < QUIET ? " is-quiet" : "")}>
-            {shape.cells.filter(cell => cell.letter === index).map(cell => <rect key={`${cell.x}-${cell.y}`} x={cell.x} y={cell.y} width={1.02} height={1.02} className={cell.tone === "recess" ? "is-recess" : undefined} />)}
+            {/* Runs overlap their neighbours by a hair; every colour is opaque, so the overlap never shows. */}
+            {shape.runs.filter(run => run.letter === index).map(run => <rect key={`${run.x}-${run.y}`} x={run.x} y={run.y} width={run.width + 0.04} height={1.04} className={run.tone === "recess" ? "is-recess" : undefined} />)}
           </g>
         ))}
       </svg>

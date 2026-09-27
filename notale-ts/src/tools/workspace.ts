@@ -1,4 +1,4 @@
-/** Python tool schemas, workspace scope, and text tools. Check/media/scaffold are explicit dependencies. */
+/** Tool schemas, workspace scope, and text tools. Check/media/scaffold are explicit dependencies. */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
@@ -12,7 +12,7 @@ import { isWithin } from '../core/theme.js';
 const constants = JSON.parse(readFileSync(path.join(RESOURCES, 'builder-instructions.json'), 'utf8'));
 export interface CheckDiagnostics { fatal_errors: string[]; visual_warnings: string[] }
 export interface ToolOutput { text: string; images: Array<[string, string]>; diagnostics?: CheckDiagnostics }
-export interface Workspace { cwd: string; pid: string; resourceRoot?: string; textReport?: boolean; sampleShots?: boolean }
+export interface Workspace { cwd: string; pid: string; resourceRoot?: string; textReport?: boolean }
 export interface WorkspacePorts {
   image(file: string): Promise<ToolOutput>;
   check(args: Record<string, any>, context: Workspace, signal?: AbortSignal): Promise<ToolOutput>;
@@ -23,21 +23,21 @@ export function cap(text: string, maximum = 30000): string {
   const chars = characters(text);
   return chars.length <= maximum ? text : chars.slice(0, maximum).join('') + `\n…（已截断，原文 ${chars.length.toLocaleString('en-US')} 字符）`;
 }
-export function toolSpecs(workflow?: string, visionInput = true): Record<string, any>[] {
+export function toolSpecs(skill?: string, visionInput = true): Record<string, any>[] {
   let specs: Record<string, any>[] = constants.TOOL_SCHEMAS.map((spec: Record<string, unknown>) => ({ type: 'function', ...structuredClone(spec) }));
-  if (workflow === 'build-code') specs = specs.filter(spec => ['Read', 'Write', 'Patch'].includes(spec.name));
+  if (skill === 'build-code') specs = specs.filter(spec => ['Read', 'Write', 'Patch'].includes(spec.name));
   for (const spec of specs) {
     if (spec.name === 'Check' && !visionInput) {
       delete spec.parameters.properties.box; delete spec.parameters.properties.zoom;
       spec.description = spec.description.replace('默认返回整页截图；需要看局部细节时用 box 指定区域，裁图不改变整页检查范围。', '');
     }
-    if (spec.name === 'Write' && workflow) spec.description = '写完整文件，用于创建或整体重构；局部修正用 Patch。';
+    if (spec.name === 'Write' && skill) spec.description = '写完整文件，用于创建或整体重构；局部修正用 Patch。';
   }
-  if (workflow === 'build-code') for (const spec of specs) if (['Write', 'Patch'].includes(spec.name)) spec.description += ' 写入成功后宿主自动运行课程，把执行、测试、抽样渲染与重置结果附在返回里。';
+  if (skill === 'build-code') for (const spec of specs) if (['Write', 'Patch'].includes(spec.name)) spec.description += ' 写入成功后宿主自动运行课程，把执行、测试、抽样渲染与重置结果附在返回里。';
   if (visionInput) specs.push(...structuredClone(constants.MEDIA_SCHEMAS));
   return specs;
 }
-export function isWorkflowResource(file: string, resourceRoot?: string): boolean {
+export function isSkillResource(file: string, resourceRoot?: string): boolean {
   if (!resourceRoot || !isWithin(file, resourceRoot)) return false;
   const parts = path.relative(resolvePath(resourceRoot), resolvePath(file)).split(path.sep);
   if (path.basename(resourceRoot) === 'build-code') return parts.join('/') === 'SKILL.md'
@@ -49,7 +49,7 @@ export function resolveReadPath(file: string, cwd: string, resourceRoot?: string
   const resolved = resolvePath(file, cwd);
   if (!path.isAbsolute(file) && !existsSync(resolved) && resourceRoot) {
     const alternate = resolvePath(file, resourceRoot);
-    if (existsSync(alternate) && statSync(alternate).isFile() && isWorkflowResource(alternate, resourceRoot)) return alternate;
+    if (existsSync(alternate) && statSync(alternate).isFile() && isSkillResource(alternate, resourceRoot)) return alternate;
   }
   return resolved;
 }
@@ -68,7 +68,7 @@ export function outOfBounds(name: string, args: Record<string, any>, context: Wo
         const relative = path.relative(imageRoot, target).split(path.sep);
         if (!relative[0]?.startsWith(context.pid + '-')) return `${text}(共享或其他页面的素材只读)`;
       }
-      const resource = name === 'Read' && (isWorkflowResource(resolveReadPath(text, context.cwd, context.resourceRoot), context.resourceRoot) || isWithin(target, path.join(path.dirname(root), '.shots')));
+      const resource = name === 'Read' && (isSkillResource(resolveReadPath(text, context.cwd, context.resourceRoot), context.resourceRoot) || isWithin(target, path.join(path.dirname(root), '.shots')));
       outside = isWithin(target, root) || resource ? [] : [text];
     }
     if (outside.length) return `${outside[0]}(在本页的 run 目录之外)`;
@@ -87,18 +87,10 @@ export async function readText(args: Record<string, any>, context: Workspace, po
   if (['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(path.extname(file).toLowerCase())) return ports.image(file);
   const text = decodeText(await readFile(file), resolvePath(file) === resolvePath(path.join(context.cwd, 'assets/lib/LIBS.md')));
   if (resolvePath(file) === resolvePath(path.join(context.cwd, 'assets/lib/LIBS.md'))) return `（库用法全文开始：LIBS.md）\n${text}\n（库用法全文结束：LIBS.md · EOF）`;
-  if (isWorkflowResource(file, context.resourceRoot)) {
+  if (isSkillResource(file, context.resourceRoot)) {
     const parts = path.relative(resolvePath(context.resourceRoot!), resolvePath(file)).split(path.sep);
     const visual = ['build-cover', 'build-page', 'build-interaction'].includes(path.basename(context.resourceRoot!)) && parts.length >= 3 && parts[0] === 'samples' && parts[1] === 'bundles' && path.basename(file).endsWith('.mini.md');
-    const body = (visual ? constants.VISUAL_SAMPLE_USE + '\n\n' : '') + `（工作流资源全文开始：${path.basename(file)}，共 ${text.split('\n').length} 行）\n${text}\n（工作流资源全文结束：${path.basename(file)} · EOF）`;
-    if (context.sampleShots && parts.length === 4 && parts[0] === 'samples' && parts[1] === 'bundles') {
-      const sheet = path.join(context.resourceRoot!, 'samples', parts[2]!, path.basename(file).split('.')[0]!, 'shots.png');
-      if (existsSync(sheet) && statSync(sheet).isFile()) {
-        const shot = await ports.image(sheet);
-        return { text: body + '\n\n随附这个 sample 的多态截图拼图（按编号顺序是它的真实状态序列）：' + shot.text, images: shot.images };
-      }
-    }
-    return body;
+    return (visual ? constants.VISUAL_SAMPLE_USE + '\n\n' : '') + `（skill 资源全文开始：${path.basename(file)}，共 ${text.split('\n').length} 行）\n${text}\n（skill 资源全文结束：${path.basename(file)} · EOF）`;
   }
   const offset = Math.max(0, Math.trunc(Number(args.offset || 1)) - 1), limit = Math.trunc(Number(args.limit || 2000));
   const lines = text.split('\n');
@@ -216,8 +208,8 @@ export async function runTool(name: string, args: Record<string, any>, context: 
   }
   const outside = outOfBounds(name, args, context);
   if (outside) return name === 'Read'
-    ? `拒绝读取：\`${outside}\` 不在当前页面及工作流资源的可读范围内。`
-    : `拒绝:\`${outside}\` 不在当前页面的工作范围内。只能修改 \`${context.pid}.html\` 及宿主明确授予的代码 lesson 文件；当前 workflow 资源只读。`;
+    ? `拒绝读取：\`${outside}\` 不在当前页面及 skill 资源的可读范围内。`
+    : `拒绝:\`${outside}\` 不在当前页面的工作范围内。只能修改 \`${context.pid}.html\` 及宿主明确授予的代码 lesson 文件；当前 skill 资源只读。`;
   const actual = { ...args };
   if (['Read', 'Write'].includes(name) && actual.file_path) actual.file_path = name === 'Read' ? resolveReadPath(String(actual.file_path), context.cwd, context.resourceRoot) : path.isAbsolute(actual.file_path) ? actual.file_path : resolvePath(actual.file_path, context.cwd);
   try {
@@ -230,7 +222,7 @@ export async function runTool(name: string, args: Record<string, any>, context: 
     else if (name === 'Bash') result = await shell(actual.command, context.cwd, signal);
     else if (name === 'Check') result = await ports.check(actual, context, signal);
     else result = `未知工具 ${name}`;
-    const maximum = name === 'Read' && actual.file_path && (isWorkflowResource(actual.file_path, context.resourceRoot) || resolvePath(actual.file_path) === resolvePath(path.join(context.cwd, 'assets/lib/LIBS.md'))) ? 160000 : 30000;
+    const maximum = name === 'Read' && actual.file_path && (isSkillResource(actual.file_path, context.resourceRoot) || resolvePath(actual.file_path) === resolvePath(path.join(context.cwd, 'assets/lib/LIBS.md'))) ? 160000 : 30000;
     return typeof result === 'string' ? cap(result, maximum) : { ...result, text: cap(result.text, maximum) };
   } catch (error) {
     if (signal?.aborted) throw signal.reason;

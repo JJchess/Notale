@@ -1,4 +1,4 @@
-/** Full browser measurement and report orchestration from vendor/chassis/selfcheck.py. */
+/** Full browser measurement and report orchestration. */
 import { readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -6,7 +6,6 @@ import { pathToFileURL } from 'node:url';
 import { resizeRgbPng } from './image-resample.js';
 import type { Page, Browser } from 'playwright';
 import { acquireVisualChecker, browser } from './visual-check.js';
-import { jsonText } from '../core/json.js';
 import { recordPreviewSnapshot } from '../core/preview-snapshot.js';
 import type { CheckDiagnostics } from './workspace.js';
 
@@ -177,7 +176,7 @@ export function checkDiagnostics(states: CheckState[]): CheckDiagnostics {
       const side = ['左', '上', '右', '下'].filter((_, i) => item.out[i]).join(', ') || '?';
       visual_warnings.push(`超出画布 ${item.el} 往${side}出去 ${Math.max(...item.out)}px ${at(item)} «${item.text}»`);
     }
-    for (const item of probe.clipped ?? []) visual_warnings.push(`被裁 ${item.el} 内容 ${jsonText(item.need)} 容器只有 ${jsonText(item.have)} ${at(item)} «${item.text}»`);
+    for (const item of probe.clipped ?? []) visual_warnings.push(`被裁 ${item.el} 内容 ${JSON.stringify(item.need)} 容器只有 ${JSON.stringify(item.have)} ${at(item)} «${item.text}»`);
     visual_warnings.push(...(state.step_issues ?? []));
   }
   return { fatal_errors: [...new Set(fatal_errors)], visual_warnings: [...new Set(visual_warnings)] };
@@ -187,7 +186,7 @@ function stateLines(state: CheckState, textReport: boolean): string[] {
   const diagnostic = checkDiagnostics([state]);
   lines.push(...diagnostic.fatal_errors.map(x => '   ✗ ' + x), ...diagnostic.visual_warnings.map(x => '   ✗ ' + x));
   lines.push(...(state.capture_notes ?? []).map(x => '   截图时序: ' + x));
-  if (state.result != null) lines.push('   返回值 ' + jsonText(state.result));
+  if (state.result != null) lines.push('   返回值 ' + JSON.stringify(state.result));
   const probe = state.probe;
   if (state.js_error || !probe || probe.fatal) return lines;
   if (probe.contract?.length) { if (state.png) lines.push('   截图 ' + state.png); return lines; }

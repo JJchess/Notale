@@ -1,27 +1,38 @@
 import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { extname, join } from 'node:path';
+import { dirname, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Session } from './session.js';
+import { MAX_MEDIA_BYTES } from '../fix/pi/tools/media-read.js';
+import { sniffBytes } from '../fix/pi/tools/media-sniff.js';
+import { probeVideo, videoFrames } from '../fix/pi/tools/media-fallback.js';
 
 const run = promisify(execFile);
-export interface Attachment { id: string; name: string; mime: string; size: number; kind: 'pdf' | 'docx' | 'pptx' | 'image' }
+export interface Attachment { id: string; name: string; mime: string; size: number; kind: 'pdf' | 'docx' | 'pptx' | 'image' | 'video' }
 const KINDS: Record<string, { kind: Attachment['kind']; mime: string }> = {
   '.pdf': { kind: 'pdf', mime: 'application/pdf' },
   '.docx': { kind: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
   '.pptx': { kind: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
   '.png': { kind: 'image', mime: 'image/png' }, '.jpg': { kind: 'image', mime: 'image/jpeg' },
   '.jpeg': { kind: 'image', mime: 'image/jpeg' }, '.webp': { kind: 'image', mime: 'image/webp' },
+  '.mp4': { kind: 'video', mime: 'video/mp4' }, '.mov': { kind: 'video', mime: 'video/quicktime' }, '.webm': { kind: 'video', mime: 'video/webm' },
 };
-export const ATTACHMENT_LIMITS = { files: 10, bytes: 50 * 1024 * 1024 };
+/** 100 MB, Kimi Code's limit for media (and ours for the fix agent's read). */
+export const ATTACHMENT_LIMITS = { files: 10, bytes: MAX_MEDIA_BYTES };
 
-/** What the author sent with a message, kept in the session until its role is known. Only the
- * formats the generator also accepts (pdf, docx, images) plus pptx (a template, or content). */
+/** What the author sent with a message, kept in the session until its role is known: the formats
+ * the generator accepts (pdf, docx, images), pptx (a template, or content), and video (for a change). */
 export async function saveAttachment(session: Session, name: string, bytes: Buffer): Promise<Attachment> {
-  const found = KINDS[extname(name).toLowerCase()];
-  if (!found) throw Object.assign(new Error(`不支持的文件类型：${name}（可用 PDF、DOCX、PPTX、PNG、JPG、WebP）`), { status: 400 });
-  if (bytes.length > ATTACHMENT_LIMITS.bytes) throw Object.assign(new Error(`文件超过 50 MB：${name}`), { status: 400 });
+  const known = KINDS[extname(name).toLowerCase()], found = known && { ...known };
+  if (!found) throw Object.assign(new Error(`不支持的文件类型：${name}（可用 PDF、DOCX、PPTX、PNG、JPG、WebP、MP4、MOV、WebM）`), { status: 400 });
+  if (bytes.length > ATTACHMENT_LIMITS.bytes) throw Object.assign(new Error(`文件超过 100 MB：${name}`), { status: 400 });
+  // The bytes, not the name, decide what a PDF or a video is (a renamed file is refused, not misread).
+  if (found.kind === 'pdf' || found.kind === 'video') {
+    const sniffed = sniffBytes(new Uint8Array(bytes.subarray(0, 512)));
+    if (sniffed.kind !== found.kind) throw Object.assign(new Error(`文件内容与扩展名不符：${name}`), { status: 400 });
+    if (sniffed.kind === 'video') found.mime = sniffed.mimeType;
+  }
   const attachment: Attachment = { id: randomUUID(), name: name.replace(/[\x00-\x1f/\\]/g, '').slice(0, 200), mime: found.mime, size: bytes.length, kind: found.kind };
   const dir = join(session.dir, 'files', attachment.id);
   await mkdir(dir, { recursive: true });
@@ -50,6 +61,13 @@ export async function preview(session: Session, id: string): Promise<Preview> {
       const text = (await run('pdftotext', ['-f', '1', '-l', '3', '-layout', file, '-'], { maxBuffer: 8 << 20 })).stdout;
       const shot = await run('pdftoppm', ['-f', '1', '-l', '1', '-png', '-scale-to', '800', file], { encoding: 'buffer', maxBuffer: 16 << 20 }).then(r => r.stdout as unknown as Buffer).catch(() => undefined);
       return { ...base, summary: `PDF，${pages} 页。前 3 页文字：\n${clip(text, 1500) || '（没有可提取的文字，可能是扫描件）'}`, ...(shot?.length ? { image: { mime: 'image/png', data: shot.toString('base64') } } : {}) };
+    }
+    if (meta.kind === 'video') {
+      // The first frame and the facts: enough to tell what the video is for, without sending it whole.
+      const info = await probeVideo(file);
+      const [first] = await videoFrames(file, join(dirname(file), 'preview'), { max: 1 }).catch(() => []);
+      const facts = [info.seconds !== undefined ? `${info.seconds} 秒` : '', info.width ? `${info.width}×${info.height}` : '', `${Math.round(meta.size / 1024 / 1024 * 10) / 10} MB`].filter(Boolean).join('，');
+      return { ...base, summary: `视频，${facts}（附的是第一帧）`, ...(first ? { image: { mime: first.mimeType, data: first.data } } : {}) };
     }
     if (meta.kind === 'docx') {
       const xml = (await run('unzip', ['-p', file, 'word/document.xml'], { maxBuffer: 32 << 20 })).stdout;

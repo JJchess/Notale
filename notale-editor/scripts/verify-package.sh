@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-node scripts/build-cache.mjs
+npx tsx scripts/build-cache.ts
 task_consumer=$(mktemp -d /tmp/notale-editor-consumer-XXXXXX)
 task_package=$(npm pack --silent --pack-destination "$task_consumer")
 printf '%s\n' "Consumer evidence: $task_consumer"

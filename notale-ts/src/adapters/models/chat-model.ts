@@ -1,4 +1,3 @@
-import type { PythonInt } from '../../core/json.js';
 export interface ToolCall {
   id: string;
   type: "function";
@@ -26,9 +25,9 @@ export interface ToolDefinition {
 export interface AssistantTurn {
   id: string;
   message: ChatMessage;
-  inputTokens: PythonInt;
-  outputTokens: PythonInt;
-  cachedTokens?: PythonInt;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens?: number;
   canonical?: import("./runtime.js").ModelResponse;
 }
 

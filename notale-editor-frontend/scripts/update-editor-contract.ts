@@ -14,7 +14,7 @@ function run(command: string, args: string[], cwd: string, capture = false): str
 const metadata = JSON.parse(await readFile(resolve(backend, 'package.json'), 'utf8'));
 if (metadata.name !== '@notale/editor') throw Error('Expected sibling @notale/editor backend');
 // The backend cache checks source, configuration and output hashes before reuse.
-run(process.execPath, ['scripts/build-cache.mjs'], backend);
+run('npm', ['run', 'build:ensure'], backend);
 await mkdir(resolve(frontend, '.local'), { recursive: true });
 await mkdir(resolve(frontend, 'vendor'), { recursive: true });
 const temporary = await mkdtemp(resolve(frontend, '.local/contract-pack-'));

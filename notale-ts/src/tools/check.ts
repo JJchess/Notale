@@ -26,7 +26,7 @@ export async function imageOutput(file: string): Promise<ToolOutput> {
   if (metadata.space === 'grey16' && metadata.channels === 1) decoder.toColourspace('grey16');
   return { text: `${path.basename(file)}(${w}×${h},约 ${Math.floor(w * h / 750)} token${note})`, images: [['image/png', (resized ?? await decoder.png().toBuffer()).toString('base64')]] };
 }
-export function checkUse(workflow?: string): string { return instructions.guidance[workflow ?? ''] ?? ''; }
+export function checkUse(skill?: string): string { return instructions.guidance[skill ?? ''] ?? ''; }
 export function selectCheckShots(states: CheckState[], crop = false): string[] {
   const full = crop ? states[0]?.crop : states[0]?.png;
   const last = states.length > 1 ? (crop ? states.at(-1)?.crop : states.at(-1)?.png) : undefined;

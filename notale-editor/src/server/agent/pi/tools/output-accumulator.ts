@@ -14,7 +14,7 @@ export interface OutputAccumulatorOptions {
 export interface OutputSnapshot {
 	content: string;
 	truncation: TruncationResult;
-	fullOutputPath?: string;
+	fullOutputPath?: string | undefined;
 }
 
 function defaultTempFilePath(prefix: string): string {
@@ -185,7 +185,7 @@ export class OutputAccumulator {
 		}
 
 		let start = buffer.length - this.maxRollingBytes;
-		while (start < buffer.length && (buffer[start] & 0xc0) === 0x80) {
+		while (start < buffer.length && (buffer[start]! & 0xc0) === 0x80) {
 			start++;
 		}
 

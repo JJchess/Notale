@@ -47,7 +47,7 @@ cd notale-ts && npm ci && npm run build && npm run dev -- serve --starter
 cd notale-viewer && npm ci && npm run dev
 ```
 
-For real generation, configure your own API keys as described in the [generator guide](notale-ts/README.md). The editor and generator can be run independently.
+For real generation and the editor's Istar, copy `.env.example` to `.env.local` at the repository root and fill in your keys; notale-ts and notale-editor both read this one file (values already set in the shell win). See the [generator guide](notale-ts/README.md). The editor and generator can be run independently.
 
 ## How it is built
 

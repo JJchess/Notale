@@ -1,8 +1,7 @@
 import { Sources, sourceTools, sourceInstructions } from './sources.js';
 import { splitPages } from './planner-contract.js';
 import { workflowNotice, type ProgressObserver } from './workflow-progress.js';
-import { jsonText, parsePythonJson } from './json.js';
-/** Planner tool loop and submission order from core/planner.py. */
+/** Planner tool loop and submission order. */
 import { readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -15,18 +14,15 @@ export interface NativeToolSchema { type: 'function'; name: string; description:
 export const chatTools = (schemas: NativeToolSchema[]): ToolDefinition[] => schemas.map(({ type, ...spec }) => ({ type, function: spec }));
 export interface PlanningRequest {
   root: string; query: string; minutes: number; audience: string;
-  scenario?: string; canvas?: [number, number]; prompts?: string;
+  scenario?: string; prompts?: string;
   inputDirectory?: string; sources?: Sources;
-  workflowRoot?: string; visualFocus?: boolean;
 }
 export function deckPrompt(run: PlanningRequest): string {
-  const workflowRoot = run.workflowRoot ?? guidance.WORKFLOWS;
   const prompts = run.prompts ?? guidance.PROMPTS;
   return plannerPrompt('deck', {
     query: run.query, minutes: run.minutes, audience: run.audience, scenario: run.scenario || '（没写）',
     pages_path: path.join(run.root, PAGES_REL),
-    philosophy: guidance.philosophyBlock('deck', prompts), page_skills: guidance.pageSkillDescriptions(workflowRoot),
-    visual_focus: run.visualFocus ? plannerInstructions.visualFocus : '',
+    philosophy: guidance.philosophyBlock('deck', prompts), page_skills: guidance.pageSkillDescriptions(),
   }, prompts);
 }
 export interface MediaOutput { text: string; images: Array<{ mime: string; data: string }> }
@@ -42,11 +38,10 @@ export interface PlannerPorts {
   trace(record: WorkflowTrace): void | Promise<void>;
 }
 export function objectArguments(text: string): Record<string, unknown> {
-  const args: unknown = parsePythonJson(text);
+  const args: unknown = JSON.parse(text);
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw Object.assign(new Error('工具参数必须是 JSON 对象'), { name: 'ValueError' });
   return args as Record<string, unknown>;
 }
-export { jsonText } from './json.js';
 export function valueError(message: string): Error { return Object.assign(new Error(message), { name: 'ValueError' }); }
 export function errorOutput(error: unknown): string {
   return error instanceof Error ? `${error.name === 'Error' ? 'ValueError' : error.name}: ${error.message}` : `ValueError: ${String(error)}`;
@@ -72,8 +67,17 @@ export async function deckCall(run: PlanningRequest, ports: PlannerPorts, signal
     workflowNotice(ports.progress, 'planner', 'draft', 'completed', '本轮规划响应已返回');
     await ports.trace({ step: 'deck', started, finished: new Date().toISOString(), request, response });
     const calls = response.message.tool_calls ?? [];
-    if (!calls.length) throw Object.assign(new Error('Planner 结束但未提交有效 FinalizePlan'), { name: 'RuntimeError' });
     history.push(response.message);
+    if (!calls.length) {
+      // Answered in words instead of submitting: say so and let it submit, within the same bound.
+      const output = '本轮没有调用工具；请用 Submit 提交完整页表';
+      history.push({ role: 'user', content: output });
+      workflowNotice(ports.progress, 'planner', 'validation', 'reworking', '规划未提交页表，继续调整');
+      await mkdir(run.root, { recursive: true });
+      await writeFile(path.join(run.root, 'plan.rejected.json'), JSON.stringify({ bad: output, submissions: ++rejected, pages_md: '' }, null, 2), 'utf8');
+      if (rejected >= tries) throw Object.assign(new Error(`Planner 交付不合格：${output}`), { name: 'RuntimeError' });
+      continue;
+    }
     const returned: Record<string, unknown> = {};
     const pending: ChatInputBlock[] = [];
     let final: (ReturnType<typeof finalizePlan> & { sourcesByPage?: Record<string, string[]> }) | undefined;
@@ -81,7 +85,7 @@ export async function deckCall(run: PlanningRequest, ports: PlannerPorts, signal
     for (const call of calls) {
       signal?.throwIfAborted();
       const name = call.function.name;
-      if (name === 'FinalizePlan') final = undefined;
+      if (name === 'Submit') final = undefined;
       try {
         const args = objectArguments(call.function.arguments || '{}');
         if (run.sources && (name === 'SearchSources' || name === 'ReadSource')) {
@@ -93,7 +97,7 @@ export async function deckCall(run: PlanningRequest, ports: PlannerPorts, signal
           workflowNotice(ports.progress, 'planner', name, 'started', name === 'ImageSearch' ? '开始查找课程素材' : '开始生成课程素材');
           const result = await ports.media(name, args, path.join(run.root, 'pages'), 'planner', signal);
           workflowNotice(ports.progress, 'planner', name, 'completed', '素材请求已返回');
-          const payload = parsePythonJson(result.text);
+          const payload = JSON.parse(result.text);
           const rows = (name === 'ImageSearch' ? payload.results : payload) as Array<Record<string, unknown>>;
           const withPaths = rows.filter(row => 'path' in row);
           for (const row of withPaths) returned[String(row.path)] = row;
@@ -101,10 +105,10 @@ export async function deckCall(run: PlanningRequest, ports: PlannerPorts, signal
           for (let index = 0; index < Math.min(withPaths.length, result.images.length); index++) {
             const row = withPaths[index]!, image = result.images[index]!;
             const need = Array.isArray(query) ? query[Number(row.query_index)] : query;
-            pending.push({ type: 'text', text: jsonText({ '需求': need, path: row.path }) }, { type: 'image_url', image_url: { url: `data:${image.mime};base64,${image.data}` } });
+            pending.push({ type: 'text', text: JSON.stringify({ '需求': need, path: row.path }) }, { type: 'image_url', image_url: { url: `data:${image.mime};base64,${image.data}` } });
           }
           output = result.text;
-        } else if (name === 'FinalizePlan') {
+        } else if (name === 'Submit') {
           workflowNotice(ports.progress, 'planner', 'validation', 'started', '开始校验课程页表');
           final = finalizePlan(args as { pages_md: string; media_by_page?: unknown }, available, run.root);
           if (run.sources) final.sourcesByPage = run.sources.validateMapping(args.sources_by_page ?? {}, Object.keys(splitPages(final.pagesDoc)).map(n => 'page-' + n));
@@ -112,15 +116,15 @@ export async function deckCall(run: PlanningRequest, ports: PlannerPorts, signal
           workflowNotice(ports.progress, 'planner', 'validation', 'completed', '本次页表提交校验通过');
         } else throw valueError(`未知工具：${name}`);
       } catch (error) {
-        if (name === 'FinalizePlan') final = undefined;
+        if (name === 'Submit') final = undefined;
         if (signal?.aborted) throw signal.reason;
-        workflowNotice(ports.progress, 'planner', name === 'FinalizePlan' ? 'validation' : name, 'reworking', name === 'FinalizePlan' ? '页表校验未通过，继续调整' : '本次工具请求未完成，继续处理');
+        workflowNotice(ports.progress, 'planner', name === 'Submit' ? 'validation' : name, 'reworking', name === 'Submit' ? '页表校验未通过，继续调整' : '本次工具请求未完成，继续处理');
         output = errorOutput(error);
         if (name !== 'ImageSearch' && name !== 'ImageGen') rejected++;
-        if (name === 'FinalizePlan') {
+        if (name === 'Submit') {
           // Traces log planner tool results as "(tool results)"; the rejection itself is kept here, like style.rejected.json.
           let submitted = '';
-          try { submitted = String((parsePythonJson(call.function.arguments || '{}') as Record<string, unknown>).pages_md ?? '').slice(0, 400); } catch { /* unparseable arguments are the reason itself */ }
+          try { submitted = String((JSON.parse(call.function.arguments || '{}') as Record<string, unknown>).pages_md ?? '').slice(0, 400); } catch { /* unparseable arguments are the reason itself */ }
           await mkdir(run.root, { recursive: true });
           await writeFile(path.join(run.root, 'plan.rejected.json'), JSON.stringify({ bad: output, submissions: rejected, pages_md: submitted }, null, 2), 'utf8');
         }

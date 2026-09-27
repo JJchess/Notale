@@ -15,7 +15,7 @@ async function chromiumPath(): Promise<string | undefined> {
   const configured = process.env.NOTALE_CHROMIUM_PATH;
   if (configured && await exists(configured)) return configured;
   const packaged = chromium.executablePath();
-  // Python's headless launch uses headless-shell. Forcing the full Chrome
+  // Prefer headless-shell when installed. Forcing the full Chrome
   // executable changes text rasterization even at the same Chromium revision.
   const bundledShell = path.dirname(path.dirname(packaged)).replace(/chromium-(\d+)$/, 'chromium_headless_shell-$1');
   for (const relative of ['chrome-headless-shell-linux64/chrome-headless-shell', 'chrome-linux/headless_shell']) {

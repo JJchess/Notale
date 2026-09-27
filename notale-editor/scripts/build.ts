@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { recordBuild } from './build-cache.mjs';
+import { recordBuild } from './build-cache.js';
 import { mkdir, copyFile, readFile, writeFile } from 'node:fs/promises';
 const runtimeDir=process.env.EDITOR_RUNTIME_DIR??'dist';
 await mkdir(runtimeDir, { recursive: true });

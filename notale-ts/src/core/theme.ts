@@ -1,24 +1,23 @@
-/** Native CSS contracts and local resources from core/theme.py. */
+/** Native CSS contracts and local resources. */
 import { existsSync, statSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile, rename, rm, open } from 'node:fs/promises';
 import path from 'node:path';
 import { isIP } from 'node:net';
 import { cssComponents, cssRules, cssBlocks, serializeCss, type CssComponent } from './css-tokenizer.js';
-import { stripText, splitLines, PYTHON_SPACE } from './text.js';
 import { resolvePath } from './planner-contract.js';
 
 export const valueError = (message: string): Error => Object.assign(new Error(message), { name: 'ValueError' });
 
-export const INTERFACE = new RegExp(`/\\*${PYTHON_SPACE}*==== INTERFACE ====(.*?)==== /INTERFACE ====${PYTHON_SPACE}*\\*/`, 'su');
+export const INTERFACE = new RegExp(`/\\*\\s*==== INTERFACE ====(.*?)==== /INTERFACE ====\\s*\\*/`, 'su');
 const SURFACE = /^--(?:[sſ]urface|panel|card|board|t[iİı]le|box|ch[iİı]p|well|[sſ]heet|plate)(?:-|$)/iu;
-// Python re.M anchors only at LF; its dot includes CR and Unicode line separators.
+// Multiline anchors at LF only (input is LF-normalized).
 const LINE_START = '(?:^|(?<=\\n))';
 const LINE_END = '(?=\\n|$)';
 export const IMAGES = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg']);
 export const FONTS = new Set(['.woff', '.woff2', '.ttf', '.otf']);
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-export const variants = (contract: string): string[] => [...contract.matchAll(new RegExp(`${LINE_START}${PYTHON_SPACE}*\\*?${PYTHON_SPACE}*variant${PYTHON_SPACE}+([\\p{L}\\p{N}_-]+)`, 'gu'))].map(match => match[1]!);
-export const REFERENCE = new RegExp(`${LINE_START}${PYTHON_SPACE}*\\*?${PYTHON_SPACE}*reference(?:${PYTHON_SPACE}*:${PYTHON_SPACE}*|${PYTHON_SPACE}+)(style|user):([^\\n]+?)${PYTHON_SPACE}*${LINE_END}`, 'gu');
+export const variants = (contract: string): string[] => [...contract.matchAll(new RegExp(`${LINE_START}\\s*\\*?\\s*variant\\s+([\\p{L}\\p{N}_-]+)`, 'gu'))].map(match => match[1]!);
+export const REFERENCE = new RegExp(`${LINE_START}\\s*\\*?\\s*reference(?:\\s*:\\s*|\\s+)(style|user):([^\\n]+?)\\s*${LINE_END}`, 'gu');
 export function references(css: string): Array<[string, string]> {
   const contract = css.match(INTERFACE)?.[1] ?? '';
   const rows = [...contract.matchAll(REFERENCE)].map(match => [match[1]!, match[2]!] as [string, string]);
@@ -49,17 +48,17 @@ function selectorBranches(selector: string): string[] {
   let branch: ReturnType<typeof cssComponents> = [];
   for (const token of cssComponents(selector)) {
     if (token.type === 'literal' && token.value === ',') {
-      branches.push(stripText(serializeCss(branch))); branch = [];
+      branches.push(serializeCss(branch).trim()); branch = [];
     } else branch.push(token);
   }
-  branches.push(stripText(serializeCss(branch)));
+  branches.push(serializeCss(branch).trim());
   return branches;
 }
 
 export function inspect(css: string): { bad: string[]; root?: CssRoot; contract: string } {
   const bad: string[] = [], matched = css.match(INTERFACE);
-  if (!matched || !stripText(css).startsWith('/*')) bad.push('缺少完整的 INTERFACE 接口块');
-  if (!stripText(css) || stripText(css).startsWith('```')) bad.push('主题必须是非空纯 CSS，不能有代码围栏');
+  if (!matched || !css.trim().startsWith('/*')) bad.push('缺少完整的 INTERFACE 接口块');
+  if (!css.trim() || css.trim().startsWith('```')) bad.push('主题必须是非空纯 CSS，不能有代码围栏');
   const bare = css.replace(/\/\*.*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/gs, '');
   const stack: string[] = [];
   for (const char of bare) {
@@ -75,10 +74,10 @@ export function inspect(css: string): { bad: string[]; root?: CssRoot; contract:
   }
   const selectors: string[] = [], defined = new Set<string>(), defaults = new Set<string>();
   for (const rule of rulesOf(nodes)) {
-    const selector = stripText(serializeCss(rule.prelude!));
+    const selector = serializeCss(rule.prelude!).trim();
     selectors.push(selector);
     const branches = selectorBranches(selector);
-    for (const branch of branches) if (!/\.nt-[\p{L}\p{N}_-]+|#stage|:root|(?<![\p{L}\p{N}_])(?:html|body)(?![\p{L}\p{N}_])/u.test(branch)) bad.push(`共享样式须挂具名 .nt-*，不全局重写: ${stripText(branch)}`);
+    for (const branch of branches) if (!/\.nt-[\p{L}\p{N}_-]+|#stage|:root|(?<![\p{L}\p{N}_])(?:html|body)(?![\p{L}\p{N}_])/u.test(branch)) bad.push(`共享样式须挂具名 .nt-*，不全局重写: ${branch.trim()}`);
     for (const declaration of cssBlocks(rule.content!)) {
       if (declaration.type === 'error') bad.push(`CSS 声明错误 ${declaration.source_line}: ${declaration.message}`);
       if (declaration.type !== 'declaration') continue;
@@ -86,24 +85,17 @@ export function inspect(css: string): { bad: string[]; root?: CssRoot; contract:
       defined.add(name);
       if (branches.some(branch => [':root', 'html'].includes(branch))) defaults.add(name);
       if (branches.some(branch => !/\.nt-[\p{L}\p{N}_-]+/u.test(branch)) && SURFACE.test(name)) bad.push(`不许定义承载面 token 于公共作用域: ${name}`);
-      if (branches.some(branch => new RegExp(`#stage${PYTHON_SPACE}*$`, 'u').test(branch)) && ['transform', 'transform-origin', 'position', 'left', 'top', 'width', 'height', 'overflow'].includes(name.toLowerCase())) bad.push(`不覆盖底盘 #stage 的 ${name}`);
+      if (branches.some(branch => new RegExp(`#stage\\s*$`, 'u').test(branch)) && ['transform', 'transform-origin', 'position', 'left', 'top', 'width', 'height', 'overflow'].includes(name.toLowerCase())) bad.push(`不覆盖底盘 #stage 的 ${name}`);
     }
   }
   for (const name of ['--bg', '--text', '--font-sans']) if (!defaults.has(name)) bad.push(`缺少必需 token: ${name}`);
-  for (const name of variants(contract)) if (!selectors.some(selector => new RegExp(`data-variant${PYTHON_SPACE}*=${PYTHON_SPACE}*["']?${escapeRegex(name)}(?:["']|\\])`, 'u').test(selector))) bad.push(`接口 variant 未定义: ${name}`);
-  for (const line of splitLines(contract)) if (new RegExp(`^${PYTHON_SPACE}*\\*?${PYTHON_SPACE}*token${PYTHON_SPACE}+`, 'u').test(line)) for (const name of line.match(/--[\p{L}\p{N}_-]+/gu) ?? []) {
+  for (const name of variants(contract)) if (!selectors.some(selector => new RegExp(`data-variant\\s*=\\s*["']?${escapeRegex(name)}(?:["']|\\])`, 'u').test(selector))) bad.push(`接口 variant 未定义: ${name}`);
+  for (const line of contract.split(/\r?\n/)) if (new RegExp(`^\\s*\\*?\\s*token\\s+`, 'u').test(line)) for (const name of line.match(/--[\p{L}\p{N}_-]+/gu) ?? []) {
     if (!defined.has(name)) bad.push(`接口 token 未定义: ${name}`);
     if (SURFACE.test(name)) bad.push(`接口块不发布公共承载面 token: ${name}`);
   }
-  for (const match of contract.matchAll(new RegExp(`${LINE_START}${PYTHON_SPACE}*\\*?${PYTHON_SPACE}*class${PYTHON_SPACE}+(\\.nt-[\\p{L}\\p{N}_-]+)`, 'gu'))) if (!selectors.some(selector => new RegExp(escapeRegex(match[1]!) + '(?![\\p{L}\\p{N}_-])', 'u').test(selector))) bad.push(`接口 class 未定义: ${match[1]}`);
+  for (const match of contract.matchAll(new RegExp(`${LINE_START}\\s*\\*?\\s*class\\s+(\\.nt-[\\p{L}\\p{N}_-]+)`, 'gu'))) if (!selectors.some(selector => new RegExp(escapeRegex(match[1]!) + '(?![\\p{L}\\p{N}_-])', 'u').test(selector))) bad.push(`接口 class 未定义: ${match[1]}`);
   return { bad: [...new Set(bad)], root: new CssRoot(nodes), contract };
-}
-export function decodeCss(text: string): string {
-  return text.replace(/\\([0-9a-f]{1,6})(?:\r\n|[\n\r\t\f ])?|\\([^\n\r\f])/gi, (_all, hex, escaped) => {
-    if (!hex) return escaped;
-    const code = parseInt(hex, 16);
-    return String.fromCodePoint(code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff) ? 0xfffd : code);
-  });
 }
 export interface CssUrl { value: string; replace(value: string): void }
 export function cssUrls(root: CssRoot): CssUrl[] {
@@ -131,7 +123,7 @@ export function isWithin(file: string, boundary: string): boolean {
   return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 export const unquoteUrl = (value: string): string => value.replace(/(?:%[0-9a-f]{2})+/gi, bytes => Buffer.from(bytes.replaceAll('%', ''), 'hex').toString('utf8'));
-/** String URL splitting and netloc validation used by Python resource tools. */
+/** String URL splitting and netloc validation used by resource tools. */
 export function splitResourceUrl(value: string): { scheme: string; netloc: string; path: string; query: string; fragment: string } {
   const fail = (message: string): never => { throw Object.assign(new Error(message), { name: 'ValueError' }); };
   let rest = value.replace(/^[\x00-\x20]+/, '').replace(/[\t\r\n]/g, '');
@@ -186,7 +178,7 @@ export function localUrl(value: string, origin: string, boundary: string): [stri
   return [file, fragment ? '#' + fragment : ''];
 }
 export function checkOptions(template: string | undefined, style: string | undefined): void {
-  if (style !== undefined && !stripText(style)) throw valueError('--style 不得为空；修改成品主题请明确填写要求');
+  if (style !== undefined && !style.trim()) throw valueError('--style 不得为空；修改成品主题请明确填写要求');
   if (template !== undefined && !existsSync(template)) throw valueError(`--template 不存在: ${template}`);
 }
 export async function publish(css: string, target: string): Promise<void> {

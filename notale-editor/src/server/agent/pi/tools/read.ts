@@ -4,7 +4,8 @@ import { constants } from "node:fs";
 import { access as fsAccess, readFile as fsReadFile } from "node:fs/promises";
 import { type Static, Type } from "typebox";
 import type { AgentTool } from "../agent/types.js";
-import type { Api, ImageContent, Model, TextContent } from "../ai/types.js";
+import type { Api, FileContent, ImageContent, Model, TextContent } from "../ai/types.js";
+import { type MediaReadOptions, PDF_DEFAULT_PAGES, PDF_MAX_PAGES, readMedia } from "./media-read.js";
 import { type ImageResizeOptions, processImage } from "./image.js";
 import { detectSupportedImageMimeTypeFromFile } from "./mime.js";
 import { resolveReadPathAsync } from "./path-utils.js";
@@ -14,6 +15,7 @@ const readSchema = Type.Object({
 	path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
 	offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
 	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+	pages: Type.Optional(Type.String({ description: `PDF only: a page range like "3-5" or "7". Defaults to the first ${PDF_DEFAULT_PAGES} pages; at most ${PDF_MAX_PAGES} per call.` })),
 });
 
 export type ReadToolInput = Static<typeof readSchema>;
@@ -53,6 +55,8 @@ export interface ReadToolOptions {
 	model?: Model<Api> | (() => Model<Api> | undefined);
 	/** Custom operations for file reading. Default: local filesystem */
 	operations?: ReadOperations;
+	/** PDFs and video (Notale addition). Without it, read treats every non-image file as text, as pi does. */
+	media?: MediaReadOptions;
 }
 
 function getNonVisionImageNote(model: Model<Api> | undefined): string | undefined {
@@ -70,11 +74,11 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 	return {
 		name: "read",
 		label: "read",
-		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
+		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp)${options?.media ? ", PDFs (use pages for long ones) and videos (mp4, mov, webm)" : ""}. Images${options?.media ? ", PDFs and videos" : ""} are sent as attachments${options?.media ? " when the model reads them natively, otherwise as extracted text, page images or keyframes" : ""}. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
 		parameters: readSchema,
 		constrainedSampling: { type: "json_schema", strict: "prefer" },
-		async execute(_toolCallId, { path, offset, limit }, signal) {
-			return new Promise<{ content: (TextContent | ImageContent)[]; details: ReadToolDetails | undefined }>(
+		async execute(_toolCallId, { path, offset, limit, pages }, signal) {
+			return new Promise<{ content: (TextContent | ImageContent | FileContent)[]; details: ReadToolDetails | undefined }>(
 				(resolve, reject) => {
 					if (signal?.aborted) {
 						reject(new Error("Operation aborted"));
@@ -95,9 +99,11 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 							await ops.access(absolutePath);
 							if (aborted) return;
 							const mimeType = ops.detectImageMimeType ? await ops.detectImageMimeType(absolutePath) : undefined;
-							let content: (TextContent | ImageContent)[];
+							let content: (TextContent | ImageContent | FileContent)[];
 							let details: ReadToolDetails | undefined;
 							const nonVisionImageNote = getNonVisionImageNote(getModel());
+							// A PDF, a video or other binary (media-read.ts); undefined for text.
+							const media = !mimeType && options?.media ? await readMedia(absolutePath, path, pages, getModel(), options.media, signal) : undefined;
 							if (mimeType) {
 								// Read image as binary.
 								const buffer = await ops.readFile(absolutePath);
@@ -118,6 +124,8 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 										{ type: "image", data: processed.data, mimeType: processed.mimeType },
 									];
 								}
+							} else if (media) {
+								content = media;
 							} else {
 								// Read text content.
 								const buffer = await ops.readFile(absolutePath);

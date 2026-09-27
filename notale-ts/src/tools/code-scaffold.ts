@@ -31,6 +31,8 @@ function ensureDependencies(pages: string): void {
     if (!existsSync(path.join(pyodide, name))) copy(path.join(modules, 'pyodide', name), path.join(pyodide, name));
   }
   copy(path.join(RESOURCES, 'licenses/Pyodide-MPL-2.0.txt'), path.join(pyodide, 'LICENSE'));
+  // The interpreter and python_stdlib.zip are CPython; the PSF license must travel with them.
+  copy(path.join(RESOURCES, 'licenses/Python-LICENSE'), path.join(pyodide, 'LICENSE-Python'));
   const numpy = JSON.parse(readFileSync(path.join(pyodide, 'pyodide-lock.json'), 'utf8')).packages.numpy;
   if (!existsSync(path.join(pyodide, numpy.file_name))) {
     const wheel = path.join(packageRoot, 'dist/browser/packages', numpy.file_name);

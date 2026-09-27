@@ -18,7 +18,9 @@ export interface Generator {
   /** A finished run as the understanding stage sees it. */
   describe(runId: string): Promise<{ title: string; pages: string[] }>;
 }
-export interface FixRequest { session: Session; target: string; instruction: string; page?: number; images: { mime: string; data: string }[] }
+/** `images` go in the message itself (pi); `files` are documents and videos the agent reads with
+ * read, from its workspace (Kimi Code: the prompt names the file, the agent pulls it). */
+export interface FixRequest { session: Session; target: string; instruction: string; page?: number; images: { mime: string; data: string }[]; files: { file: string; name: string; kind: string }[] }
 export interface Fixer {
   /** Changes a copy of `target` and delivers it as a new run based on it. No change (the agent only
    * answered, or asked back) is no run: `runId` is absent and `text` is its answer. */
@@ -69,7 +71,7 @@ export async function turn(session: Session, message: { text: string; fileIds: s
     const byRole = async (role: string) => Promise.all(route.files.filter(f => f.role === role).map(async f => { const { meta, file } = await loadAttachment(session, f.id); return { name: meta.name, file, kind: meta.kind }; }));
     const [materials, templates, styleImages] = await Promise.all([byRole('material'), byRole('template'), byRole('style-reference')]);
     const { action: _action, reason: _reason, files: _files, language, ...fields } = route;
-    // The generator has no language field; the scenario carries it (the benchmark passes it the same way).
+    // The generator has no language field; the scenario carries it.
     const scenario = [fields.scenario, language ? `全部页面文字使用${language}撰写` : undefined].filter(Boolean).join('；');
     const { runId } = await deps.generator.start({ ...fields, ...(scenario ? { scenario } : {}), materials, ...(templates[0] ? { template: templates[0] } : {}), styleImages });
     await session.append({ type: 'run', runId, kind: 'generate', at: now() });
@@ -82,9 +84,11 @@ export async function turn(session: Session, message: { text: string; fileIds: s
     deps.emit({ type: 'result', runId, status });
     return;
   }
-  const images = await Promise.all(route.files.map(async f => { const { meta, file } = await loadAttachment(session, f.id); return { mime: meta.mime, data: (await readFile(file)).toString('base64') }; }));
+  const attached = await Promise.all(route.files.map(f => loadAttachment(session, f.id)));
+  const images = await Promise.all(attached.filter(a => a.meta.kind === 'image').map(async ({ meta, file }) => ({ mime: meta.mime, data: (await readFile(file)).toString('base64') })));
+  const references = attached.filter(a => a.meta.kind !== 'image').map(({ meta, file }) => ({ file, name: meta.name, kind: meta.kind }));
   let announced = '', recorded: Promise<void> = Promise.resolve();
-  const fixed = await deps.fixer.run({ session, target: route.target, instruction: route.instruction, ...(route.page ? { page: route.page } : {}), images },
+  const fixed = await deps.fixer.run({ session, target: route.target, instruction: route.instruction, ...(route.page ? { page: route.page } : {}), images, files: references },
     event => {
       // The fixer names its run as soon as it has one; that is the session's new artifact.
       if (typeof event.runId === 'string' && !announced) { announced = event.runId; recorded = session.append({ type: 'run', runId: announced, kind: 'fix', basedOn: route.target, at: now() }); deps.emit({ type: 'run', runId: announced, kind: 'fix', basedOn: route.target }); }

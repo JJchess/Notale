@@ -1,12 +1,14 @@
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
+import { dirname, join, relative } from 'node:path';
 import { readPage } from '@notale/format/page';
 import { createRunRequestSchema } from '../protocol/index.js';
 import { publishPages } from '../core/publication.js';
 import type { RunService } from '../core/run-service.js';
 import { fixModel, lectureFiles, PAGE, runFix, Transcript, type FixModel } from '../fix/istar.js';
 import { SandboxPool } from '../fix/sandbox.js';
-import type { Fixer, Generator } from './turn.js';
+import type { FixRequest, Fixer, Generator } from './turn.js';
 
 /** What a finished run delivered, as the files an author would edit: its output without the player
  * (`index.html`) and the HTTP encodings (`.br`/`.gz`) publishing adds back. */
@@ -14,14 +16,35 @@ async function checkout(service: RunService, runId: string, dir: string) {
   const run = await service.store.get(runId);
   if (run.status !== 'completed') throw new Error('只能修改已完成的讲义');
   const output = join(service.store.runDir(runId), 'output');
-  // Emptied, not recreated: the sandbox has this directory mounted.
+  // Emptied, not recreated: the sandbox has this directory mounted. The author's attachments
+  // (.inputs/) stay: earlier messages of the conversation still point at them.
   await mkdir(dir, { recursive: true });
-  for (const entry of await readdir(dir)) await rm(join(dir, entry), { recursive: true, force: true });
+  for (const entry of await readdir(dir)) if (entry !== INPUTS) await rm(join(dir, entry), { recursive: true, force: true });
   for (const file of await lectureFiles(output)) {
     if (file === 'index.html' || /\.(br|gz)$/.test(file)) continue;
     await mkdir(dirname(join(dir, file)), { recursive: true });
     await copyFile(join(output, file), join(dir, file));
   }
+}
+
+const INPUTS = '.inputs';
+const run = promisify(execFile);
+/** Puts the message's documents and videos into the workspace, where read finds them. DOCX and PPTX
+ * are turned into PDF on the host (LibreOffice), so the agent only ever reads PDFs and videos. */
+async function stage(dir: string, files: FixRequest['files']) {
+  const inputs = join(dir, INPUTS), staged: { path: string; name: string; kind: string }[] = [];
+  await mkdir(inputs, { recursive: true });
+  for (const file of files) {
+    const safe = file.name.replace(/[^\w.\-\u4e00-\u9fff]+/g, '_').slice(0, 120) || 'file';
+    const folder = await mkdtemp(join(inputs, 'in-'));
+    const target = join(folder, safe);
+    await copyFile(file.file, target);
+    if (file.kind === 'docx' || file.kind === 'pptx') {
+      await run('soffice', ['--headless', '--convert-to', 'pdf', '--outdir', folder, target], { timeout: 180_000 });
+      staged.push({ path: relative(dir, target.replace(/\.(docx|pptx)$/i, '.pdf')), name: `${file.name}（已转为 PDF）`, kind: 'pdf' });
+    } else staged.push({ path: relative(dir, target), name: file.name, kind: file.kind });
+  }
+  return staged;
 }
 
 /** Where a session's fix agent works, and which run that copy came from (for the draft preview). */
@@ -42,9 +65,10 @@ export function istarFixer(options: { service: RunService; generator: Generator;
       const root = join(request.session.dir, 'istar'), dir = draftDir(request.session);
       await checkout(options.service, request.target, dir);
       await writeFile(join(root, 'target'), request.target);
+      const inputs = await stage(dir, request.files);
       if (!transcripts.has(request.session.id)) transcripts.set(request.session.id, Transcript.open(join(root, 'transcript.jsonl')));
       const transcript = await transcripts.get(request.session.id)!;
-      const result = await runFix({ instruction: request.instruction, images: request.images, ...(request.page ? { page: request.page } : {}) }, {
+      const result = await runFix({ instruction: request.instruction, images: request.images, inputs, ...(request.page ? { page: request.page } : {}) }, {
         model: model(), transcript, dir,
         sandbox: async () => { swept ??= sandboxes.sweep(); await swept; return sandboxes.get(request.session.id, dir); },
         ...(env.GEMINI_API_KEY || env.PARATERA_API_KEY ? { media: { env } } : {}),

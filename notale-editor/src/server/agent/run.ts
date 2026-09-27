@@ -1,6 +1,7 @@
-import { access, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import sharp from 'sharp';
 import { Type } from 'typebox';
 import { ZodError } from 'zod';
@@ -16,7 +17,7 @@ import type { Session } from './session.js';
 import {
   Agent, compactIfNeeded, estimateContextTokens, createBashTool, createEditTool, createReadTool, createWriteTool,
   isContextOverflow, isRetryableAssistantError, retryDelayMs,
-  type AgentEvent, type AgentMessage, type AgentTool, type AssistantMessage, type ImageContent,
+  GeminiFiles, type AgentEvent, type AgentMessage, type AgentTool, type AssistantMessage, type ImageContent, type StreamFn,
 } from './pi/index.js';
 import { detectSupportedImageMimeTypeFromFile } from './pi/tools/mime.js';
 
@@ -33,7 +34,9 @@ export interface AiStep {
   /** What the node did. On a retry the first line is why the last attempt failed. */
   detail?: string[];
 }
-export interface TurnRequest { slideId: string; instruction: string; targets: string[]; images?: { mime: string; data: string }[] }
+/** `files`: documents and videos the author attached (host paths); they are copied into the
+ * workspace's .inputs/ and the agent reads them with read (Kimi Code: the prompt names the file). */
+export interface TurnRequest { slideId: string; instruction: string; targets: string[]; images?: { mime: string; data: string }[]; files?: { path: string; name: string; kind: string }[] }
 export interface TurnDeps {
   runtime: AiRuntime;
   session: Session;
@@ -175,8 +178,24 @@ export async function runTurn(request: TurnRequest, deps: TurnDeps): Promise<Tur
 
     const files = confined(dir);
     const model = runtime.model;
+    // The author's documents and videos, in the workspace where read finds them.
+    const inputs: { path: string; name: string; kind: string }[] = [];
+    for (const file of request.files ?? []) {
+      const folder = join(dir, '.inputs', randomUUID().slice(0, 8));
+      await mkdir(folder, { recursive: true });
+      // The author's name for it, with the extension of what is actually there (a DOCX arrives as PDF).
+      const stem = file.name.replace(/\.[^.]+$/, '').replace(/[^\w.\-\u4e00-\u9fff]+/g, '_').slice(0, 120) || 'file';
+      const target = join(folder, stem + extname(file.path));
+      await copyFile(file.path, target);
+      inputs.push({ path: relative(dir, target).split(sep).join('/'), name: file.name, kind: file.kind });
+    }
+    // Documents and video go to Gemini's Files API once; the transcript keeps only the references,
+    // cached per conversation. Other providers read PDFs and video through read's fallbacks.
+    const apiKey0 = runtime.getApiKey?.();
+    const uploads = model.api === 'google-generative-ai' && apiKey0 ? new GeminiFiles({ apiKey: apiKey0, cacheFile: join(dir, '.inputs', '.gemini-files.json') }) : undefined;
+    const streamFn: StreamFn = uploads ? (target, context, options) => runtime.streamFn(target, context, { ...options, files: uploads } as never) : runtime.streamFn;
     const tools: AgentTool[] = [
-      createReadTool(dir, { operations: files.read, model }) as AgentTool,
+      createReadTool(dir, { operations: files.read, model, media: { ...(uploads ? { uploader: uploads } : {}), scratch: join(dir, '.inputs', '.derived') } }) as AgentTool,
       createWriteTool(dir, { operations: files.write }) as AgentTool,
       createEditTool(dir, { operations: files.edit }) as AgentTool,
       createBashTool(dir, { operations: { exec: box.exec } }) as AgentTool,
@@ -220,8 +239,7 @@ export async function runTurn(request: TurnRequest, deps: TurnDeps): Promise<Tur
     });
     const extra = deps.media?.tools.length ? '；ImageSearch 找真实照片等证据类图片，ImageGen 生成插画；用了 ImageSearch 的图，说明里写来源和授权' : '';
 
-    const apiKey = runtime.getApiKey?.();
-    const streamFn = runtime.streamFn;
+    const apiKey = apiKey0;
     // pi compacts between prompts, at the threshold; the budget is ours (EDITOR_AI_CONTEXT_BUDGET).
     const window = Math.min(model.contextWindow, Number(process.env.EDITOR_AI_CONTEXT_BUDGET || 200_000) + RESERVE);
     const compact = async (messages: AgentMessage[], force = false) => {
@@ -285,7 +303,8 @@ export async function runTurn(request: TurnRequest, deps: TurnDeps): Promise<Tur
     const clip = (text: string, limit: number) => text.length > limit ? text.slice(0, limit) + `\n…（还有 ${text.length - limit} 字符，需要时 read 这个文件）` : text;
     const { html: pageHtml, ...pageData } = slide;
     const selection = request.targets.length ? `\n选中的对象：${request.targets.join(', ')}` : '';
-    const opening = `<context>\n作者在第 ${index}/${head.slides.length} 页「${slide.name}」，文件 ${slide.sourcePath}。${selection}\n`
+    const attached = inputs.map(input => `<file path="${input.path}" kind="${input.kind}" name="${input.name.replace(/"/g, "'")}"/>`).join('\n');
+    const opening = (attached ? `<attachments>\n作者附了这些文件，需要时用 read 看：\n${attached}\n</attachments>\n\n` : '') + `<context>\n作者在第 ${index}/${head.slides.length} 页「${slide.name}」，文件 ${slide.sourcePath}。${selection}\n`
       + `${slide.sourcePath}：\n\`\`\`html\n${clip(pageHtml, 30_000)}\n\`\`\`\n${slide.sourcePath.replace(/\.html?$/i, '')}.notale.json：\n\`\`\`json\n${clip(JSON.stringify(pageData, null, 2), 8_000)}\n\`\`\`\n</context>\n\n${request.instruction}`;
 
     const stop = () => agent.abort();

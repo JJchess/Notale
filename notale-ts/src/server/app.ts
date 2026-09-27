@@ -2,20 +2,21 @@ import { FileInputs, inputLimits } from '../core/file-input.js';
 import { TemplateInputs } from '../core/template-input.js';
 import { TEMPLATE_MAX_BYTES } from '../core/pptx-template.js';
 import { createReadStream } from "node:fs";
-import { stat, realpath } from "node:fs/promises";
+import { mkdir, readFile, stat, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import Fastify from "fastify";
 import fastifyStatic from '@fastify/static';
 import { createRunRequestSchema } from "../protocol/index.js";
 import { RunStore } from "../core/run-store.js";
 import { RunService, type GenerationPipeline } from "../core/run-service.js";
 import { starterPipeline } from "../core/starter-pipeline.js";
-import { createModelPipeline } from "../core/model-pipeline.js";
+import { createBaselinePipeline } from "../core/baseline-pipeline.js";
 import { archiveContentTypes } from './lecture-archive.js';
 import { LectureExports, lectureFilename } from './lecture-exports.js';
 import { ASSISTANT_NAME, fixModel } from '../fix/istar.js';
-import { configValue, loadConfig } from '../adapters/models/profiles.js';
+import { GENERATOR_NAME } from '../core/baseline-pipeline.js';
+import { loadConfig } from '../adapters/models/profiles.js';
 import { istarFixer } from '../session/fixing.js';
 import { runGenerator } from '../session/generation.js';
 import { sessionRoutes } from '../session/routes.js';
@@ -29,6 +30,9 @@ export interface AppOptions {
   pipeline?: GenerationPipeline;
   useStarterPipeline?: boolean;
   logger?: boolean;
+  /** When set, every request that changes something (not GET/HEAD) must carry `Authorization: Bearer <token>`.
+   * Reads stay open: a browser iframe cannot send the header, so previews rely on the network boundary. */
+  apiToken?: string;
   /** Serve the conversation layer (/v1/sessions) too, keeping sessions under `root`. */
   sessions?: { root: string; complete?: Complete; fixer?: Fixer };
 }
@@ -37,11 +41,26 @@ export function createApp(options: AppOptions) {
   const app = Fastify({ logger: options.logger ?? true });
   app.register(fastifyStatic, { serve: false, preCompressed: true, dotfiles: 'deny' });
   const store = new RunStore(options.runsRoot);
-  const service: RunService = new RunService(store, options.pipeline ?? (options.useStarterPipeline ? starterPipeline : createModelPipeline()),
+  const service: RunService = new RunService(store, options.pipeline ?? (options.useStarterPipeline ? starterPipeline : createBaselinePipeline()),
     id => exports.ensure(id).catch(error => { app.log.error({ err: error, runId: id }, 'Lecture export failed'); }));
   const exports = new LectureExports(service);
-  app.addHook('onReady', () => exports.recover());
+  app.addHook('onReady', async () => {
+    const orphans = await service.recover();
+    if (orphans.length) app.log.warn({ runs: orphans }, 'Runs interrupted by a restart were marked failed');
+    await exports.recover();
+  });
   app.addHook('onClose', () => exports.idle());
+
+  if (options.apiToken) {
+    const expected = Buffer.from(`Bearer ${options.apiToken}`);
+    app.addHook('onRequest', async (request, reply) => {
+      if (request.method === 'GET' || request.method === 'HEAD') return;
+      const given = Buffer.from(request.headers.authorization ?? '');
+      if (given.length !== expected.length || !timingSafeEqual(given, expected)) return reply.code(401).send({ error: 'unauthorized' });
+    });
+  }
+  // Liveness only: no model configuration, no disk.
+  app.get('/healthz', async () => ({ ok: true }));
 
   const templates = new TemplateInputs(options.runsRoot);
   app.addContentTypeParser('multipart/form-data', { parseAs: 'buffer', bodyLimit: TEMPLATE_MAX_BYTES + 1024 * 1024 }, (_request, body, done) => done(null, body));
@@ -66,6 +85,20 @@ export function createApp(options: AppOptions) {
     } catch (error) { return reply.code(400).send({ error: 'invalid_file', message: error instanceof Error ? error.message : '资料上传失败' }); }
   });
 
+  const idempotency = path.join(options.runsRoot, '.idempotency');
+  const starting = new Map<string, Promise<unknown>>();
+  const idempotent = async (key: string, body: unknown) => {
+    const file = path.join(idempotency, createHash('sha256').update(key).digest('hex') + '.json');
+    const requestHash = createHash('sha256').update(JSON.stringify(body)).digest('hex');
+    try {
+      const seen = JSON.parse(await readFile(file, 'utf8')) as { requestHash: string; runId: string };
+      return seen.requestHash === requestHash ? await store.get(seen.runId) : 'mismatch' as const;
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    const run = await service.start(body as Parameters<typeof service.start>[0]);
+    await mkdir(idempotency, { recursive: true });
+    await writeFile(file, JSON.stringify({ requestHash, runId: run.id }), 'utf8');
+    return run;
+  };
   app.post("/v1/runs", async (request, reply) => {
     const parsed = createRunRequestSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
@@ -87,14 +120,21 @@ export function createApp(options: AppOptions) {
       try { await store.get(parsed.data.basedOn); }
       catch { return reply.code(400).send({ error: 'invalid_based_on', message: '所依据的讲义不存在' }); }
     }
-    const run = await service.start(parsed.data);
-    return reply.code(202).send(run);
+    // A retried request with the same Idempotency-Key gets the run it already started, not a second one.
+    const key = request.headers['idempotency-key'];
+    if (typeof key !== 'string' || !key) return reply.code(202).send(await service.start(parsed.data));
+    const claim = starting.get(key) ?? idempotent(key, parsed.data);
+    starting.set(key, claim);
+    try {
+      const outcome = await claim;
+      return outcome === 'mismatch' ? reply.code(409).send({ error: 'IDEMPOTENCY_MISMATCH', message: '同一个 Idempotency-Key 对应了不同的请求' }) : reply.code(202).send(outcome);
+    } finally { if (starting.get(key) === claim) starting.delete(key); }
   });
 
   // Who answers on this server and with which model, for a client's status line.
   app.get("/v1/info", async () => {
-    const model = configValue(loadConfig(), 'model');
-    return { assistant: ASSISTANT_NAME, model: String(configValue(model, 'name')), effort: String(configValue(model, 'reasoning_effort', '')) };
+    const { model } = loadConfig();
+    return { assistant: ASSISTANT_NAME, generator: GENERATOR_NAME, model: model.name, effort: model.reasoning_effort ?? '' };
   });
   app.get("/v1/runs", async () => store.list());
   app.get<{ Params: { runId: string } }>("/v1/runs/:runId", async (request, reply) => {

@@ -28,6 +28,7 @@ export function rules(doc: DeckDocument) {
 - 每个页面 \`*.html\` 旁边的 \`*.notale.json\` 是这一页 html 以外的数据：名称 \`name\`、备注 \`notes\`、交互组件 \`components\`、动画 \`animations\` 等。
   新页可以不建它。
 - 其余文件都是讲义的素材，页面按相对路径引用。以点开头的路径和 \`node_modules\` 不算讲义，可以放临时文件。
+- \`.inputs/\` 是作者附来的参考文件（文档、视频），用 read 看；它们不是讲义的一部分，要用里面的图就复制进讲义目录再引用。
 ${sheets.length ? `- 全局样式表：${sheets.map(path => `\`${path}\``).join('、')}。` : ''}
 
 ## notale editor 能解析的前提

@@ -1,5 +1,5 @@
 // Forked from earendil-works/pi packages/ai/src/utils/estimate.ts@fde38ed (MIT). Trimmed for the notale editor.
-import type { Api, AssistantMessage, Context, ImageContent, Message, Model, TextContent, Usage } from "./types.js";
+import type { Api, AssistantMessage, Context, FileContent, ImageContent, Message, Model, TextContent, Usage } from "./types.js";
 
 export interface ContextUsageEstimate {
 	/** Estimated total context tokens. */
@@ -27,11 +27,20 @@ function safeJsonStringify(value: unknown): string {
 	}
 }
 
-function estimateTextAndImageContentChars(content: string | Array<TextContent | ImageContent>): number {
+/** Gemini's measured costs (2026-09): about 63 tokens per second of video, 532 per PDF page. */
+const VIDEO_TOKENS_PER_SECOND = 70, PDF_TOKENS_PER_PAGE = 550, UNKNOWN_FILE_TOKENS = 2_000;
+function estimateFileChars(block: FileContent): number {
+	const tokens = block.mimeType === "application/pdf"
+		? (block.pages ?? 4) * PDF_TOKENS_PER_PAGE
+		: block.seconds !== undefined ? block.seconds * VIDEO_TOKENS_PER_SECOND : UNKNOWN_FILE_TOKENS;
+	return Math.ceil(tokens * CHARS_PER_TOKEN);
+}
+
+function estimateTextAndImageContentChars(content: string | Array<TextContent | ImageContent | FileContent>): number {
 	if (typeof content === "string") return content.length;
 
 	let chars = 0;
-	for (const block of content) chars += block.type === "text" ? block.text.length : ESTIMATED_IMAGE_CHARS;
+	for (const block of content) chars += block.type === "text" ? block.text.length : block.type === "file" ? estimateFileChars(block) : ESTIMATED_IMAGE_CHARS;
 	return chars;
 }
 
@@ -39,7 +48,7 @@ export function estimateTextTokens(text: string): number {
 	return Math.ceil(text.length / CHARS_PER_TOKEN);
 }
 
-export function estimateTextAndImageContentTokens(content: string | Array<TextContent | ImageContent>): number {
+export function estimateTextAndImageContentTokens(content: string | Array<TextContent | ImageContent | FileContent>): number {
 	return Math.ceil(estimateTextAndImageContentChars(content) / CHARS_PER_TOKEN);
 }
 

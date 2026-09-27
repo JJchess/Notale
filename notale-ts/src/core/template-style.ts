@@ -6,14 +6,14 @@ import { DomUtils } from 'htmlparser2';
 import { preparePptx, TEMPLATE_SPEC, elements, xml, serialize, digest, type PreparedTemplate } from './pptx-template.js';
 import type { DirectorRequest, DirectorPorts } from './director.js';
 import type { ChatMessage, ChatInputBlock } from '../adapters/models/chat-model.js';
-import { chatTools, objectArguments } from './planning.js';
+import { chatTools, objectArguments } from './planner.js';
 import { inventory } from './style-assets.js';
 import { RESOURCES, visualSlopBlock, fill, FONT_FLOOR } from './guidance.js';
 import { workflowNotice, observedStep } from './workflow-progress.js';
 
 const id = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/);
 const slotSchema = z.object({ id, purpose: z.enum(['title', 'body', 'metadata']), x: z.number().nonnegative(), y: z.number().nonnegative(), width: z.number().positive(), height: z.number().positive(), required: z.boolean() }).strict();
-const layoutSchema = z.object({ id, source: id, workflows: z.array(z.enum(['build-cover', 'build-page', 'build-interaction'])).min(1), replaceObjects: z.array(id), slots: z.array(slotSchema).min(1) }).strict();
+const layoutSchema = z.object({ id, source: id, skills: z.array(z.enum(['build-cover', 'build-page', 'build-interaction'])).min(1), replaceObjects: z.array(id), slots: z.array(slotSchema).min(1) }).strict();
 export const templateSubmissionSchema = z.object({ themeCss: z.string().min(1), layouts: z.array(layoutSchema).min(1).max(60) }).strict();
 export type TemplateLayout = z.infer<typeof layoutSchema> & { fixedPath: string; fixedHash: string };
 export interface TemplateSpec { schemaVersion: 1; mode: 'template'; sourceHash: string; layouts: TemplateLayout[] }
@@ -30,9 +30,9 @@ export function validateTemplateSubmission(input: unknown, prepared: PreparedTem
       slots.add(slot.id);
     }
     if (!layout.slots.some(s => s.purpose === 'title' && s.required)) throw new Error(`${layout.id} 需要必填标题区域`);
-    if (layout.workflows.some(w => w !== 'build-cover') && !layout.slots.some(s => s.purpose === 'body' && s.required)) throw new Error(`${layout.id} 需要必填内容区域`);
+    if (layout.skills.some(w => w !== 'build-cover') && !layout.slots.some(s => s.purpose === 'body' && s.required)) throw new Error(`${layout.id} 需要必填内容区域`);
   }
-  for (const workflow of ['build-cover', 'build-page', 'build-interaction']) if (!result.layouts.some(l => (l.workflows as string[]).includes(workflow))) throw new Error(`缺少适用于 ${workflow} 的版式；可复用同一版式`);
+  for (const skill of ['build-cover', 'build-page', 'build-interaction']) if (!result.layouts.some(l => (l.skills as string[]).includes(skill))) throw new Error(`缺少适用于 ${skill} 的版式；可复用同一版式`);
   return result;
 }
 
@@ -46,7 +46,7 @@ export async function directTemplate(run: DirectorRequest, ports: DirectorPorts,
   const fontRows = Object.entries(inventory()).filter(([key]) => /noto-sans-sc|noto-serif-sc|inter|source-han|source-sans/.test(key));
   const fonts = fontRows.map(([key, row]) => ({ id: key, ...row }));
   const templatePrompt = await readFile(path.join(run.prompts ?? path.join(RESOURCES, 'prompts'), 'style-template.md'), 'utf8');
-  const instructions = [fill(templatePrompt, { font_floor: FONT_FLOOR }, 'style-template.md'), visualSlopBlock(run.workflowRoot)].join('\n\n');
+  const instructions = [fill(templatePrompt, { font_floor: FONT_FLOOR }, 'style-template.md'), visualSlopBlock()].join('\n\n');
   const history: ChatMessage[] = [{ role: 'user', content: [
     { type: 'text', text: `课程：${run.query}\n学习者：${run.audience}\n场合：${run.scenario || '未指定'}\n额外视觉要求：${run.style || '遵循模板'}\n模板对象（坐标已映射到 1600×900；没有列出的背景仍会保留）：\n${JSON.stringify(prepared.slides.map(({ id, objects, placeholders }) => ({ id, objects, placeholders })))}\n可用完整字体（CSS URL 用 fonts/library/<id>/<file>）：\n${JSON.stringify(fonts)}\n转换说明：${prepared.warnings.join('；')}` },
     ...await ports.images(prepared.slides.map(s => ({ id: s.id, shot: path.join(input, s.preview) }))),

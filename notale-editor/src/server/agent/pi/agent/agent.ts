@@ -106,18 +106,16 @@ export class Agent {
 	private readonly listeners = new Set<(event: AgentEvent, signal: AbortSignal) => Promise<void> | void>();
 
 	public convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
-	public transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+	public transformContext?: ((messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>) | undefined;
 	public streamFunction: StreamFn;
 	public streamOptions: Omit<SimpleStreamOptions, "signal" | "reasoning">;
-	public beforeToolCall?: (
-		context: BeforeToolCallContext,
-		signal?: AbortSignal,
-	) => Promise<BeforeToolCallResult | undefined>;
-	public afterToolCall?: (
-		context: AfterToolCallContext,
-		signal?: AbortSignal,
-	) => Promise<AfterToolCallResult | undefined>;
-	public beforeSettle?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<BeforeSettleResult | undefined>;
+	public beforeToolCall?:
+		| ((context: BeforeToolCallContext, signal?: AbortSignal) => Promise<BeforeToolCallResult | undefined>)
+		| undefined;
+	public afterToolCall?:
+		| ((context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>)
+		| undefined;
+	public beforeSettle?: ((messages: AgentMessage[], signal?: AbortSignal) => Promise<BeforeSettleResult | undefined>) | undefined;
 	private activeRun?: ActiveRun | undefined;
 	/** Tool execution strategy for assistant messages that contain multiple tool calls. */
 	public toolExecution: ToolExecutionMode;

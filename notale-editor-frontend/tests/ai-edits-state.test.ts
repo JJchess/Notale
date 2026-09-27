@@ -9,7 +9,7 @@ function harness(overrides:Partial<AiContext>={}){
  const store=new Map<string,string>();
  (globalThis as any).localStorage={getItem:(key:string)=>store.get(key)??null,setItem:(key:string,value:string)=>{store.set(key,value);},removeItem:(key:string)=>{store.delete(key);}};
  let selection:string[]=[],version=3,documentId='doc';
- const calls:{path:string;body:any}[]=[],accepted:number[]=[],closed:string[]=[];
+ const calls:{path:string;body:any}[]=[],accepted:number[]=[],closed:string[]=[],uploads:string[]=[];
  let discarded=0,pulls=0,changes:Command[]=[];
  let reply:AiTurnResult={sessionId:'s1',reviewBase:3,version:4,status:'complete',text:'改好了。'};
  let steps:AiStep[]=[];
@@ -42,6 +42,7 @@ function harness(overrides:Partial<AiContext>={}){
   // Like the server: the stopped turn commits what it wrote and its stream ends with the result.
   async interrupt(id){interrupted.push(id);version++;changes=[patch('title')];finish?.({sessionId:'s1',reviewBase:3,version,status:'interrupted',text:''});return {};},
   async pull(){pulls++;},
+  async uploadFile(file){if(file.name.startsWith('bad'))throw new Error('只能附 PDF、DOCX、PPTX 或视频（MP4、MOV、WebM）');uploads.push(file.name);return {id:`u-${uploads.length}`};},
   async status(){return {available:true,reason:''};},
   async models(){return {default:{provider:'google',id:'gemini-3.8-flash'},providers};},
   pages:()=>[{id:'page',path:'pages/01.html',name:'封面'},{id:'second',path:'pages/02.html',name:'目录'}],
@@ -50,7 +51,7 @@ function harness(overrides:Partial<AiContext>={}){
  };
  const binding=bindAiEdits(context);
  binding.render();
- return {binding,calls,accepted,closed,interrupted,
+ return {binding,calls,accepted,closed,interrupted,uploads,
   get discarded(){return discarded;},get pulls(){return pulls;},
   select(ids:string[]){selection=ids;binding.render();},
   /** Someone -- the author, a collaborator -- commits a change of their own. */
@@ -409,5 +410,18 @@ test('@ lists every page by its file, then this page\'s objects by their anchor'
  const h=harness();
  assert.deepEqual(h.model.mentions?.().map(item=>[item.kind,item.label,item.insert]),[
   ['page','封面','@pages/01.html'],['page','目录','@pages/02.html'],['object','标题文字','@pages/01.html#title']]);
+ h.done();
+});
+
+test('documents and video upload on their own and go with the message by id; a failed one is shown and left out',async()=>{
+ const h=harness();
+ await h.model.attach?.([new File(['%PDF-1.4'],'paper.pdf'),new File(['x'],'demo.mp4'),new File(['x'],'bad.webm')]);
+ await settle();
+ assert.deepEqual(h.model.files.map(file=>[file.name,file.state]),[['paper.pdf','ready'],['demo.mp4','ready'],['bad.webm','failed']]);
+ assert.deepEqual(h.uploads,['paper.pdf','demo.mp4']);
+ h.model.change?.({instruction:'按论文改'});
+ await h.model.submit?.();await settle();
+ assert.deepEqual(h.calls[0]?.body.files,['u-1','u-2']);
+ assert.deepEqual(h.model.files,[],'sent files leave the composer');
  h.done();
 });

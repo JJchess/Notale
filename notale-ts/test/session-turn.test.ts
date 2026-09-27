@@ -21,7 +21,7 @@ function model(routes: ((seen: string) => Record<string, unknown> | string)[]) {
   return { complete, seen };
 }
 function workers() {
-  const started: GenerateRequest[] = [], fixes: { target: string; instruction: string; page?: number; images: number }[] = [];
+  const started: GenerateRequest[] = [], fixes: { target: string; instruction: string; page?: number; images: number; files?: string[] }[] = [];
   let n = 0;
   const generator: Generator = {
     async start(request) { started.push(request); return { runId: `run-${++n}` }; },
@@ -30,7 +30,7 @@ function workers() {
     async cancel() {},
   };
   const fixer: Fixer = {
-    async run(request, onEvent) { fixes.push({ target: request.target, instruction: request.instruction, ...(request.page ? { page: request.page } : {}), images: request.images.length }); const runId = `run-${++n}`; onEvent({ runId, type: 'step' }); return { runId, status: 'completed' }; },
+    async run(request, onEvent) { fixes.push({ target: request.target, instruction: request.instruction, ...(request.page ? { page: request.page } : {}), images: request.images.length, ...(request.files.length ? { files: request.files.map(f => `${f.kind}:${f.name}`) } : {}) }); const runId = `run-${++n}`; onEvent({ runId, type: 'step' }); return { runId, status: 'completed' }; },
   };
   return { generator, fixer, started, fixes };
 }
@@ -41,6 +41,7 @@ async function world() {
 }
 const pdf = Buffer.from('%PDF-1.4\n%fake\n');
 const png = Buffer.from('89504e470d0a1a0a', 'hex');
+const mp4 = Buffer.from('0000001c6674797069736f6d0000020069736f6d69736f32', 'hex');
 /** Uploads, then the message names the uploads -- as the HTTP API does. */
 async function say(session: Session, text: string, files: { name: string; bytes: Buffer }[], deps: Parameters<typeof turn>[2]) {
   const fileIds = [];
@@ -100,7 +101,7 @@ test('a fix targets this session\'s deck and becomes a new run based on it; with
     const m = model([
       () => ({ action: 'fix', reason: '', target: 'nope', instruction: '改', page: 3 }),
       () => ({ action: 'generate', reason: '', query: '牛顿定律', files: [] }),
-      seen => ({ action: 'fix', reason: '改最近一份', target: /runId=(run-\d+)/.exec(seen)![1], instruction: '第 3 页改成两栏', page: 3, files: [{ id: ids(seen)[0], role: 'reference-image' }] }),
+      seen => ({ action: 'fix', reason: '改最近一份', target: /runId=(run-\d+)/.exec(seen)![1], instruction: '第 3 页改成两栏', page: 3, files: [{ id: ids(seen)[0], role: 'reference' }] }),
     ]);
     await say(w.session, '把第三页改成两栏', [], { complete: m.complete, ...work, emit: e => events.push(e) });
     assert.match((events.at(-1) as { text: string }).text, /还没有讲义/);
@@ -133,5 +134,22 @@ test('a fix that changes nothing is an answer, not an empty run; its steps are r
     assert.deepEqual(events.map(e => e.type), ['understood', 'working', 'reply']);
     assert.equal((events.at(-1) as { text: string }).text, '第 3 页已经是两栏了。');
     assert.deepEqual(w.session.artifacts.map(a => a.runId), ['run-1'], 'no run for no change');
+  } finally { await w.done(); }
+});
+
+test('a change may bring documents and video: images go in the message, the rest to the fix agent\'s workspace; video is no material', async () => {
+  const w = await world(), work = workers(), events: TurnEvent[] = [];
+  try {
+    const m = model([
+      () => ({ action: 'generate', reason: '', query: '牛顿定律', files: [] }),
+      seen => ({ action: 'fix', reason: '', target: /runId=(run-\d+)/.exec(seen)![1], instruction: '照论文和视频改', files: ids(seen).map(id => ({ id, role: 'reference' })) }),
+      seen => ({ action: 'generate', reason: '', query: '视频讲义', files: [{ id: ids(seen)[0], role: 'material' }] }),
+    ]);
+    await say(w.session, '做一份牛顿定律的讲义', [], { complete: m.complete, ...work, emit: () => {} });
+    await say(w.session, '按论文第 2 节和这个视频改第 1 页', [{ name: 'paper.pdf', bytes: pdf }, { name: 'demo.mp4', bytes: mp4 }, { name: 'sketch.png', bytes: png }], { complete: m.complete, ...work, emit: () => {} });
+    assert.deepEqual(work.fixes, [{ target: 'run-1', instruction: '照论文和视频改', images: 1, files: ['pdf:paper.pdf', 'video:demo.mp4'] }]);
+    await say(w.session, '用这个视频做一份讲义', [{ name: 'talk.mp4', bytes: mp4 }], { complete: m.complete, ...work, emit: e => events.push(e) });
+    assert.match((events.at(-1) as { text: string }).text, /视频目前只能在修改讲义时作参考/);
+    await assert.rejects(say(w.session, '看看', [{ name: 'fake.mp4', bytes: pdf }], { complete: m.complete, ...work, emit: () => {} }), /内容与扩展名不符/);
   } finally { await w.done(); }
 });

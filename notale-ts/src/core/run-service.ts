@@ -1,4 +1,4 @@
-import { readdir, stat, writeFile } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { publicMessage } from './public-text.js';
 import path from "node:path";
 import { artifactManifestSchema, protocolVersion, type ArtifactManifest, type CreateRunRequest, type RunEvent, type RunEventKind, type RunSnapshot } from "../protocol/index.js";
@@ -25,6 +25,17 @@ async function filesBelow(root: string, current = root): Promise<string[]> {
   return rows.sort();
 }
 
+// ponytail: a pid on this host; runs shared across machines would need a lease instead.
+async function ownerAlive(file: string, updatedAt: string): Promise<boolean> {
+  let pid: number;
+  try { pid = Number(await readFile(file, "utf8")); }
+  // Runs from before owners were recorded: alive only if they wrote something in the last 30 minutes.
+  catch { return Date.now() - Date.parse(updatedAt) < 30 * 60_000; }
+  if (pid === process.pid) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
+}
+
 interface RunningTask { controller: AbortController; done: Promise<void>; settling: boolean }
 
 export class RunService {
@@ -40,6 +51,8 @@ export class RunService {
   /** `pipeline` replaces the default work for this run only (e.g. a fix delivered as a new run); lifecycle is unchanged. */
   async start(request: CreateRunRequest, options: { pipeline?: GenerationPipeline } = {}): Promise<RunSnapshot> {
     const run = await this.store.create(request);
+    // Which process runs it, so a restarted server can tell its own orphans from a live CLI run.
+    await writeFile(path.join(this.store.runDir(run.id), ".owner"), String(process.pid), "utf8");
     const controller = new AbortController();
     const task: RunningTask = { controller, done: Promise.resolve(), settling: false };
     this.#tasks.set(run.id, task);
@@ -61,6 +74,21 @@ export class RunService {
       throw new Error("Run is not owned by this service; cancellation cannot be confirmed");
     }
     return run;
+  }
+
+  /** Runs left queued or running by a process that is gone (a restart, a crash) are failed, so
+   * they stop reading as "generating" and cancel answers for them. A run whose process is still
+   * alive (a CLI build on the same runs root) is left alone. */
+  async recover(): Promise<string[]> {
+    const orphans: string[] = [];
+    for (const run of await this.store.list()) {
+      if ((run.status !== "queued" && run.status !== "running") || this.#tasks.has(run.id)) continue;
+      if (await ownerAlive(path.join(this.store.runDir(run.id), ".owner"), run.updatedAt)) continue;
+      await this.store.update(run.id, { status: "failed", error: "服务重启，生成中断" });
+      await this.store.emit(run.id, "run.failed", "服务重启，生成中断");
+      orphans.push(run.id);
+    }
+    return orphans;
   }
 
   async manifest(id: string): Promise<ArtifactManifest> {

@@ -12,7 +12,7 @@ npm run build
 npm run dev -- serve --starter
 ```
 
-The starter service uses deterministic data and makes no model requests. For real generation, set `GEMINI_API_KEY` in your environment or in this project's ignored `.env.local`, then run `npm run dev -- serve`. `PARATERA_API_KEY` is needed when the ImageGen tool is used. You can select another local secrets file with `--env-file PATH`; `NOTALE_DOTENV_DISABLED=1` disables loading a file. Environment variables take precedence over file values. Keep credentials out of Git.
+The starter service uses deterministic data and makes no model requests. For real generation, set `GEMINI_API_KEY` in your environment or in the workspace's ignored `.env.local` (one file at the Notale root, shared with notale-editor; copy `../.env.example`), then run `npm run dev -- serve`. `PARATERA_API_KEY` is needed when the ImageGen tool is used. You can select another local secrets file with `--env-file PATH`; `NOTALE_DOTENV_DISABLED=1` disables loading a file. Environment variables take precedence over file values. Keep credentials out of Git.
 
 The separate [Viewer](../notale-viewer/README.md) connects to the service at `http://127.0.0.1:4321` by default. You can also generate directly:
 
@@ -21,7 +21,7 @@ npm run dev -- build --query "Understanding gradient descent" --minutes 45
 npm run dev -- inspect <run-id>
 ```
 
-Set `NOTALE_RUNS_ROOT` to choose where runs are stored. `--config`, `--profile`, and `--uniform` control the model configuration. `--skills`, `--workflows`, `--prompts`, `--chassis`, and `--lib` accept explicit resource directories. An explicitly selected `--skills` directory can supply `make-illustration/scripts/gen.py`; the built-in ImageGen path is TypeScript.
+Set `NOTALE_RUNS_ROOT` to choose where runs are stored. `--config` and `--profile` control the model configuration. `--prompts` accepts an explicit prompts directory; skills, chassis and browser libraries always come from `resources/`.
 
 ## Sessions: understand, then generate or fix
 
@@ -40,8 +40,6 @@ POST /v1/sessions/:id/files         raw bytes, x-file-name (URI-encoded) → {id
 POST /v1/sessions/:id/turns         {text, fileIds} → ndjson: understood / working / run / progress / result | question | reply, then done
 GET  /v1/sessions/:id               → {id, runs, entries, files}
 ```
-
-`npx tsx scripts/eval-understand.ts` runs the understanding stage alone against a real model.
 
 ## Develop and verify
 

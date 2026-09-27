@@ -23,7 +23,7 @@ export function StartScreen() {
     <main ref={stage} className="start-main">
       <h1 className="visually-hidden">想做一份什么样的讲义？</h1>
       <PixelWordmark ref={wordmark} onPoke={poke} />
-      <HomeComposer status={info && <span ref={status} className="composer-status"><b>{info.assistant}</b><span aria-hidden> · </span><code>{info.model}</code><span aria-hidden> · </span><em>{info.effort}</em></span>} />
+      <HomeComposer status={info && <span ref={status} className="composer-status"><b>{info.generator ?? info.assistant}</b><span aria-hidden> · </span><code>{info.model}</code><span aria-hidden> · </span><em>{info.effort}</em></span>} />
       <p className="start-keys"><span><kbd>enter</kbd> 发送</span><span><kbd>shift+enter</kbd> 换行</span><span><kbd>拖入文件</kbd> 附件</span></p>
       <RecentList />
     </main>

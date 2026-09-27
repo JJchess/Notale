@@ -8,6 +8,7 @@ import type {
 	AssistantMessage,
 	AssistantMessageEvent,
 	Context,
+	FileContent,
 	ImageContent,
 	Message,
 	Model,
@@ -63,7 +64,7 @@ export interface BeforeToolCallResult {
  * Omitted fields keep the original executed tool result values.
  */
 export interface AfterToolCallResult {
-	content?: (TextContent | ImageContent)[];
+	content?: (TextContent | ImageContent | FileContent)[];
 	details?: unknown;
 	isError?: boolean;
 	terminate?: boolean;
@@ -184,8 +185,8 @@ export interface AgentState {
 
 /** Final or partial result produced by a tool. */
 export interface AgentToolResult<T = unknown> {
-	/** Text or image content returned to the model. */
-	content: (TextContent | ImageContent)[];
+	/** Text, image or file content returned to the model. */
+	content: (TextContent | ImageContent | FileContent)[];
 	/** Arbitrary structured details for logs or UI rendering. */
 	details: T;
 	/**

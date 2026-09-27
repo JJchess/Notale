@@ -15,7 +15,7 @@ const white = (c: string | undefined) => c !== undefined && ' \n\t'.includes(c);
 const hex = (c: string | undefined) => c !== undefined && /^[0-9a-fA-F]$/.test(c);
 
 export function cssComponents(source: string, skipComments = false): CssComponent[] {
-  // Code-point indexing preserves Python source columns, including astral text.
+  // Code-point indexing keeps source columns correct for astral text.
   const chars = [...source.replaceAll('\0', '\uFFFD').replace(/\r\n|[\r\f]/g, '\n')];
   const length = chars.length;
   let pos = 0, previous = 0, line = 1, lastNewline = -1;

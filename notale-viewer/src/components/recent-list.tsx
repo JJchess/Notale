@@ -12,7 +12,7 @@ export function RecentList() {
   return (
     <section className="recent" aria-labelledby="recent-heading">
       <h2 id="recent-heading">最近的会话</h2>
-      <ul>{list.map(entry => <li key={entry.id}><Link href={`/s/${entry.id}`}><span className="recent-title">{entry.title}</span><time dateTime={entry.at}>{relativeTime(entry.at)}</time></Link></li>)}</ul>
+      <ul>{list.map(entry => <li key={entry.id}><Link href={`/s/${entry.id}`}><span className="recent-title" title={entry.title}>{entry.title}</span>{!!entry.versions && <span className="recent-versions">v{entry.versions}</span>}<time dateTime={entry.at}>{relativeTime(entry.at)}</time></Link></li>)}</ul>
     </section>
   );
 }

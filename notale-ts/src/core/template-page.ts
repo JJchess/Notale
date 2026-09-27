@@ -15,18 +15,18 @@ function hasContent(root: Node): boolean {
   return ('tagName' in root && ['svg', 'canvas', 'img', 'video', 'input', 'select'].includes(root.tagName)) || ('childNodes' in root && root.childNodes.some(hasContent));
 }
 function all(root: Node): Element[] { return [...('tagName' in root ? [root] : []), ...('childNodes' in root ? root.childNodes.flatMap(all) : [])]; }
-export async function assembleTemplatePage(pages: string, filename: string, workflow?: string): Promise<string[]> {
+export async function assembleTemplatePage(pages: string, filename: string, skill?: string): Promise<string[]> {
   const specFile = path.join(path.dirname(pages), TEMPLATE_SPEC);
-  if (!existsSync(specFile) || workflow === 'build-code') return [];
+  if (!existsSync(specFile) || skill === 'build-code') return [];
   const file = path.resolve(pages, filename);
   if (path.dirname(file) !== path.resolve(pages) || !/^page-\d+\.html$/.test(path.basename(file))) return ['模板检查只接受当前页面'];
   const original = await readFile(file, 'utf8'), document = parse(original), nodes = all(document);
-  if (!workflow && nodes.some(n => n.tagName === 'iframe' && (attr(n, 'class') ?? '').split(/\s+/).includes('code-workbench-frame'))) return [];
+  if (!skill && nodes.some(n => n.tagName === 'iframe' && (attr(n, 'class') ?? '').split(/\s+/).includes('code-workbench-frame'))) return [];
   const spec = JSON.parse(await readFile(specFile, 'utf8')) as TemplateSpec;
   const stages = nodes.filter(n => attr(n, 'id') === 'stage');
   const stage = stages[0], layout = spec.layouts.find(l => l.id === (stage && attr(stage, 'data-notale-template')));
   if (stages.length !== 1 || !stage || !layout) return ['#stage 必须选择有效的 data-notale-template 版式 ID'];
-  if (workflow && !layout.workflows.includes(workflow as typeof layout.workflows[number])) return [`版式 ${layout.id} 不适用于 ${workflow}`];
+  if (skill && !layout.skills.includes(skill as typeof layout.skills[number])) return [`版式 ${layout.id} 不适用于 ${skill}`];
   const slots = nodes.filter(n => attr(n, 'data-notale-slot') !== undefined), errors: string[] = [];
   for (const slot of layout.slots) {
     const matching = slots.filter(n => attr(n, 'data-notale-slot') === slot.id);

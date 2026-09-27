@@ -1,9 +1,9 @@
 import { TEMPLATE_SPEC } from './pptx-template.js';
 import type { TemplateSpec } from './template-style.js';
-/** Prompt assembly port of core/builder.py; ordering is part of the model contract. */
+/** Prompt assembly; ordering is part of the model contract. */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { decodeText, PYTHON_SPACE, stripText } from './text.js';
+import { decodeText } from './text.js';
 import * as skills from './guidance.js';
 import { PAGES_REL, planContext } from './planner-contract.js';
 import { CODE_IDENTITY, codeReferences } from './code-observer.js';
@@ -16,10 +16,10 @@ const escape = (value: string, quote = false) => {
   return result;
 };
 export interface PageEntry { pid: string; label: string; body: string }
-const pageHeading = () => new RegExp(`(?:^|(?<=\\n))#${PYTHON_SPACE}+(page-(\\p{Nd}+))${PYTHON_SPACE}+\\[(标题页|内容页|交互页|代码页)\\]${PYTHON_SPACE}*(?=\\n|$)`, 'gu');
+const pageHeading = () => new RegExp(`(?:^|(?<=\\n))#\\s+(page-(\\p{Nd}+))\\s+\\[(标题页|内容页|交互页|代码页)\\]\\s*(?=\\n|$)`, 'gu');
 export function pageEntries(text: string): PageEntry[] {
   const hits = [...text.matchAll(pageHeading())];
-  return hits.map((hit, index) => ({ pid: hit[1]!, label: hit[3]!, body: stripText(text.slice(hit.index! + hit[0].length, hits[index + 1]?.index ?? text.length)) }));
+  return hits.map((hit, index) => ({ pid: hit[1]!, label: hit[3]!, body: text.slice(hit.index! + hit[0].length, hits[index + 1]?.index ?? text.length).trim() }));
 }
 /** The one page list on disk; a per-page spec is a slice of it, never a separate file. */
 export function pageSpec(pagesDoc: string, pid: string): string | undefined {
@@ -73,10 +73,10 @@ export function libsIndex(root: string): string {
 export function techBlock(root: string, total: number, prompts = skills.PROMPTS): string {
   return '<tech>\n' + skills.fill(read(path.join(prompts, 'tech.md'), true), { n_pages: total, font_floor: skills.FONT_FLOOR, libs: libsIndex(root), ...constants.TECH_SLOTS }, 'tech.md').trim() + '\n</tech>';
 }
-export function sharedPreload(root: string, total: number, prompts = skills.PROMPTS, workflow?: string): string {
+export function sharedPreload(root: string, total: number, prompts = skills.PROMPTS, skill?: string): string {
   const outline = () => deckOutline(path.join(root, 'pages/plan/pages.md'));
   let content: string;
-  if (workflow === 'build-code') content = outline();
+  if (skill === 'build-code') content = outline();
   else {
     const chassis = read(path.join(root, 'pages/assets/CHASSIS.md'), true).trim();
     content = [techBlock(root, total, prompts), `<theme_css>\n${themeInterface(path.join(root, 'pages/assets/theme.css')).trim()}\n</theme_css>`, `<chassis>\n${chassis}\n</chassis>`, outline()].join('\n\n');
@@ -87,36 +87,34 @@ export function sharedPreload(root: string, total: number, prompts = skills.PROM
 export function environmentContext(pagesDir: string, pid: string, resourceRoot: string): string {
   return `<environment_context>\n  <cwd>${escape(path.resolve(pagesDir), true)}</cwd>\n  <target>${escape(path.resolve(pagesDir, `${pid}.html`), true)}</target>\n  <target_state>absent</target_state>\n  <read_only_skill>${escape(path.resolve(resourceRoot), true)}</read_only_skill>\n  <paths>页面路径相对 cwd；references/ 与 samples/ 相对 read_only_skill。</paths>\n</environment_context>`;
 }
-export interface InstructionOptions { workflowRoot?: string; prompts?: string; samples?: string; includeAux?: boolean; notes?: string; visualFocus?: boolean }
-export function instructionBlocks(root: string, total: number, workflow: string, options: InstructionOptions = {}): Record<string, string> {
-  const workflowRoot = options.workflowRoot ?? skills.WORKFLOWS;
-  if (workflow === 'build-code') return {
+export interface InstructionOptions { prompts?: string; samples?: string; includeAux?: boolean; notes?: string }
+export function instructionBlocks(root: string, total: number, skill: string, options: InstructionOptions = {}): Record<string, string> {
+  if (skill === 'build-code') return {
     identity: CODE_IDENTITY,
-    shared: sharedPreload(root, total, options.prompts, workflow),
-    workflow: codeReferences(path.join(workflowRoot, 'build-code')),
+    shared: sharedPreload(root, total, options.prompts, skill),
+    skill: codeReferences(path.join(skills.SKILLS, 'build-code')),
   };
-  const template = existsSync(path.join(root, TEMPLATE_SPEC)) && workflow !== 'build-code';
-  const blocks: Record<string, string> = { identity: constants.IDENTITY, philosophy: skills.philosophyBlock('page', options.prompts), anti_slop: skills.antiSlopBlock(workflowRoot, workflow !== 'build-code') };
-  if (workflow !== 'build-code') {
-    if (options.visualFocus && !template) blocks.visual_focus = constants.VISUAL_FOCUS_BLOCK;
+  const template = existsSync(path.join(root, TEMPLATE_SPEC)) && skill !== 'build-code';
+  const blocks: Record<string, string> = { identity: constants.IDENTITY, philosophy: skills.philosophyBlock('page', options.prompts), anti_slop: skills.antiSlopBlock(skills.SKILLS, skill !== 'build-code') };
+  if (skill !== 'build-code') {
     const notesMode = options.notes ?? 'cap';
     if (!(constants.NOTES_MODES as string[]).includes(notesMode)) throw new Error(`unknown notes mode ${options.notes}`);
     const notes: string[] = [];
     if (['cap', 'notes'].includes(notesMode)) {
-      const limit = constants.TEXT_CAPS[workflow];
+      const limit = constants.TEXT_CAPS[skill];
       if (limit !== undefined) notes.push(constants.TEXT_CAP_TEMPLATE.replace('{max_chars}', String(limit)));
     }
     if (['notes', 'only'].includes(notesMode)) notes.push(constants.SPEAKER_NOTES_BLOCK);
     if (notes.length) blocks.notes = notes.join('\n\n');
-    blocks.steps = workflow === 'build-cover' ? constants.COVER_STEPS_BLOCK : constants.STEPS_BLOCK;
+    blocks.steps = skill === 'build-cover' ? constants.COVER_STEPS_BLOCK : constants.STEPS_BLOCK;
   }
-  blocks.shared = sharedPreload(root, total, options.prompts, workflow);
-  blocks.workflow = skills.routedWorkflow(workflow, workflowRoot, { ...options, template });
+  blocks.shared = sharedPreload(root, total, options.prompts, skill);
+  blocks.skill = skills.routedSkill(skill, skills.SKILLS, { ...options, template });
   if (template) {
-    blocks.workflow += '\n\n<template_constraints>\n' + read(path.join(options.prompts ?? skills.PROMPTS, 'build-template.md'), true).trim() + '\n</template_constraints>';
+    blocks.skill += '\n\n<template_constraints>\n' + read(path.join(options.prompts ?? skills.PROMPTS, 'build-template.md'), true).trim() + '\n</template_constraints>';
     const spec = JSON.parse(read(path.join(root, TEMPLATE_SPEC))) as TemplateSpec;
-    const layout = spec.layouts.filter(layout => (layout.workflows as string[]).includes(workflow)).map(({ id, slots }) => ({ id, slots }));
+    const layout = spec.layouts.filter(layout => (layout.skills as string[]).includes(skill)).map(({ id, slots }) => ({ id, slots }));
     blocks.shared += '\n\n<template_layouts>\n' + JSON.stringify(layout) + '\n</template_layouts>';
   }
-  return Object.fromEntries(['identity', 'workflow', 'shared', 'philosophy', 'anti_slop', 'notes', 'visual_focus', 'steps'].filter(key => key in blocks).map(key => [key, blocks[key]!]));
+  return Object.fromEntries(['identity', 'skill', 'shared', 'philosophy', 'anti_slop', 'notes', 'steps'].filter(key => key in blocks).map(key => [key, blocks[key]!]));
 }

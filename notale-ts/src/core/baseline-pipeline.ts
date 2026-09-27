@@ -1,19 +1,24 @@
 import { splitPages } from './planner-contract.js';
 import type { ProgressObserver } from './workflow-progress.js';
-/** Service adapter for the migrated Python workflow. No alternative generation prompts. */
+/** Service adapter for the generation workflow. No alternative generation prompts. */
+
+/** The generation stage by name, as the author sees it: the Valar shape the whole lecture to one
+ * plan, many hands at once (the planner, then a builder per page). Changes go to Istar. */
+export const GENERATOR_NAME = 'Valar';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { loadConfig, configValue, resolveBuilderProfile } from '../adapters/models/profiles.js';
-import { workflowModels, type TransportOptions, type PlannerOverrides } from '../adapters/models/runtime.js';
+import { parseEnv } from 'node:util';
+import { loadConfig, resolveBuilderProfile, type ModelConfig } from '../adapters/models/profiles.js';
+import { skillModels, type PlannerOverrides } from '../adapters/models/runtime.js';
 import { RESOURCES } from './guidance.js';
 import { planRun, buildRun, type BuildOptions } from './orchestration.js';
 import { builderPorts, delivered, lessonTitle, Page } from './builder.js';
 import { directorPorts } from './theme-runtime.js';
 import { TraceWriter } from './trace.js';
-import { jsonText, type WorkflowTrace } from './planning.js';
-import { mediaPorts, generationScriptFor } from '../tools/media-execution.js';
+import type { WorkflowTrace } from './planner.js';
+import { mediaPorts } from '../tools/media-execution.js';
 import { acquireVisualChecker } from '../tools/visual-check.js';
 import { lecturePreview, queueLectureThumbnail } from './lecture-preview.js';
 import type { GenerationPipeline } from './run-service.js';
@@ -23,58 +28,24 @@ import { publishLecture } from './publication.js';
 import { publicReason } from './public-text.js';
 
 export interface PipelineOptions {
-  planner?: PlannerOverrides; config?: Record<string, any>; env?: NodeJS.ProcessEnv; envFile?: string; profile?: string;
-  skillsRoot?: string; chassis?: string; lib?: string; uniform?: boolean; transport?: TransportOptions; template?: string;
-  build?: Pick<BuildOptions, 'samples' | 'sampleShots' | 'includeAux' | 'notes' | 'visualFocus' | 'concurrency' | 'workflowRoot' | 'prompts' | 'only'>;
+  planner?: PlannerOverrides; config?: ModelConfig; envFile?: string; profile?: string; template?: string;
+  build?: Pick<BuildOptions, 'samples' | 'includeAux' | 'notes' | 'prompts' | 'only'>;
 }
 export function runtimeEnvironment(env: NodeJS.ProcessEnv = process.env, file?: string): NodeJS.ProcessEnv {
-  const own = path.resolve(RESOURCES, '../.env.local');
+  // One secrets file for the whole Notale workspace, at its root (see .env.example there).
+  const own = path.resolve(RESOURCES, '../../.env.local');
   const source = file ?? own;
   if (!existsSync(source)) return { ...env };
   if (['1', 'true', 't', 'yes', 'y'].includes((env.NOTALE_DOTENV_DISABLED ?? '').toLowerCase())) return { ...env };
   return dotenvEnvironment(readFileSync(source, 'utf8'), env);
 }
-/** Preserve python-dotenv's ordered bindings, quoting and override=False expansion. */
+/** Parse a dotenv file; the caller's values win, and `${VAR}` / `${VAR:-default}` expand against them, then earlier file values. */
 export function dotenvEnvironment(source: string, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const text = source.replace(/^\uFEFF/, '').replace(/\r\n|\r/g, '\n');
-  const values = new Map<string, string | null>();
-  let cursor = 0;
-  const take = (pattern: RegExp): RegExpExecArray => {
-    pattern.lastIndex = cursor;
-    const match = pattern.exec(text);
-    if (!match) throw new Error('invalid dotenv binding');
-    cursor = pattern.lastIndex;
-    return match;
-  };
-  const escapes: Record<string, string> = { a: '\x07', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', "'": "'", '"': '"', '\\': '\\' };
-  while (cursor < text.length) {
-    const start = cursor;
-    try {
-      take(/\s*/y);
-      if (cursor === text.length) break;
-      take(/(?:export[^\S\n]+)?/y);
-      const key = text[cursor] === '#' ? null : text[cursor] === "'" ? take(/'([^']+)'/y)[1]! : take(/([^=#\s]+)/y)[1]!;
-      take(/[^\S\n]*/y);
-      let value: string | null = null;
-      if (text[cursor] === '=') {
-        take(/=[^\S\n]*/y);
-        if (text[cursor] === "'") value = take(/'((?:\\.|[^'\\])*)'/sy)[1]!.replace(/\\([\\'])/g, (_, char) => escapes[char]!);
-        else if (text[cursor] === '"') value = take(/"((?:\\.|[^"\\])*)"/sy)[1]!.replace(/\\([\\'"abfnrtv])/g, (_, char) => escapes[char]!);
-        else value = take(/[^\n]*/y)[0].replace(/\s+#.*/, '').trimEnd();
-      }
-      take(/(?:[^\S\n]*#[^\n]*)?/y);
-      take(/[^\S\n]*(?:\n|$)/y);
-      if (key !== null) values.set(key, value === null ? null : value.replace(/\$\{([^}:]*)(?::-([^}]*))?\}/g, (_, name, fallback) => {
-        if (Object.hasOwn(env, name)) return env[name] ?? '';
-        return values.has(name) ? values.get(name) ?? '' : fallback ?? '';
-      }));
-    } catch {
-      take(/[^\n]*(?:\n|$)/y);
-      const line = 1 + (text.slice(0, start).match(/\n/g)?.length ?? 0);
-      process.stderr.write(`python-dotenv could not parse statement starting at line ${line}\n`);
-    }
-  }
-  return { ...Object.fromEntries([...values].filter((entry): entry is [string, string] => entry[1] !== null)), ...env };
+  const values: Record<string, string> = {};
+  for (const [key, value = ''] of Object.entries(parseEnv(source.replace(/^\uFEFF/, ''))))
+    values[key] = value.replace(/\$\{([^}:]*)(?::-([^}]*))?\}/g, (_, name: string, fallback?: string) =>
+      Object.hasOwn(env, name) ? env[name] ?? '' : values[name] ?? fallback ?? '');
+  return { ...values, ...env };
 }
 
 /** Director records this call's submitted content, not a guessed last user message. */
@@ -82,14 +53,13 @@ export function workflowTraceText({ step, request, submitted }: WorkflowTrace): 
   const history = request.slice(1);
   if (step === 'deck') return history.length === 1 ? String(history[0]?.content ?? '') : '(tool results)';
   const recent = typeof submitted === 'string' ? submitted : (submitted ?? []).map(block => 'text' in block ? block.text : '[image supplied]').join('\n');
-  return recent || jsonText(history.filter(message => message.role === 'tool').slice(-5).map(message => ({ type: 'function_call_output', call_id: message.tool_call_id, output: message.content })));
+  return recent || JSON.stringify(history.filter(message => message.role === 'tool').slice(-5).map(message => ({ type: 'function_call_output', call_id: message.tool_call_id, output: message.content })));
 }
 /** Shared production ports for the service and separate Planner/Builder commands. */
 export function baselineRuntime(root: string, options: PipelineOptions = {}, signal?: AbortSignal) {
-    const env = runtimeEnvironment(options.env, options.envFile), cfg = options.config ?? loadConfig();
-    const models = workflowModels(cfg, options.profile, options.uniform ?? false, { ...options.transport, env }, options.planner);
-    const script = generationScriptFor(options.skillsRoot);
-    const media = mediaPorts({ env, backend: configValue(configValue(cfg, 'media'), 'image_search_backend', 'gemini'), ...(script ? { imageGenScript: script } : {}) }), writer = new TraceWriter(path.join(root, 'trace.jsonl'), randomUUID(), env);
+    const env = runtimeEnvironment(process.env, options.envFile), cfg = options.config ?? loadConfig();
+    const models = skillModels(cfg, options.profile, { env }, options.planner);
+    const media = mediaPorts({ env, backend: cfg.media?.image_search_backend ?? 'gemini' }), writer = new TraceWriter(path.join(root, 'trace.jsonl'), randomUUID(), env);
     const trace = (record: WorkflowTrace) => {
       const { step, started, finished, response } = record;
       const recent = workflowTraceText(record);
@@ -100,7 +70,7 @@ export function baselineRuntime(root: string, options: PipelineOptions = {}, sig
     return { env, cfg, models,
       get planner() { return { model: models.planner, visionInput: models.planner.profile.vision_input, media: media.workflow, trace }; },
       get director() { return directorPorts(models.director, trace, media.workflow, signal); },
-      get builders() { return Object.fromEntries(Object.entries(models.builders).map(([workflow, model]) => [workflow, builderPorts(model, media.workspace, env)])); },
+      get builders() { return Object.fromEntries(Object.entries(models.builders).map(([skill, model]) => [skill, builderPorts(model, media.workspace, env)])); },
     };
 }
 
@@ -136,17 +106,17 @@ export function createBaselinePipeline(options: PipelineOptions = {}): Generatio
     try {
       await emit('phase.changed', '正在规划讲义和视觉方向', { phase: 'ideate' });
       await planRun({ root, ...(run.request.fileIds?.length ? { inputDirectory: path.join(path.dirname(outputDir), 'input/files') } : {}), query: run.request.query, minutes: run.request.minutes, audience: run.request.audience, scenario: run.request.scenario,
-        ...(run.request.style ? { style: run.request.style } : {}), ...(options.build?.workflowRoot ? { workflowRoot: options.build.workflowRoot } : {}), ...(options.build?.prompts ? { prompts: options.build.prompts } : {}), visualFocus: options.build?.visualFocus ?? false, ...(template ? { template } : {}) },
+        ...(run.request.style ? { style: run.request.style } : {}), ...(options.build?.prompts ? { prompts: options.build.prompts } : {}), ...(template ? { template } : {}) },
       { planner: { ...planner, progress: report }, director: { ...director, progress: report } }, { signal, onPlanned(pagesDoc) {
         const pages = Object.entries(splitPages(pagesDoc)).sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true })).map(([number, spec]) => {
           const page = new Page('page-' + number, ''); page.spec_text = spec;
           return { pageId: page.pid, pageTitle: lessonTitle(page), state: 'pending' as const };
         });
         notices = notices.then(() => emit('plan.ready', `规划完成 · 共 ${pages.length} 页`, { pages })).catch(() => {});
-      }, ...(options.chassis ? { chassis: options.chassis } : {}), ...(options.lib ? { lib: options.lib } : {}) });
+      } });
       await emit('phase.changed', '正在生成讲义页面', { phase: 'create' });
       const pages = await buildRun(root, observed,
-        { ...options.build, label: run.id, profile: resolveBuilderProfile(cfg, options.profile, env), profiles: Object.fromEntries(Object.entries(models.builders).map(([workflow, model]) => [workflow, model.profile])), signal,
+        { ...options.build, label: run.id, profile: resolveBuilderProfile(cfg, options.profile, env), profiles: Object.fromEntries(Object.entries(models.builders).map(([skill, model]) => [skill, model.profile])), signal,
           onRetry(page) {
             if (signal.aborted) return;
             states.set(page.pid, 'reworking');
@@ -166,7 +136,7 @@ export function createBaselinePipeline(options: PipelineOptions = {}): Generatio
       const available = pages.filter(delivered);
       await Promise.all(thumbnails);
       if (thumbnailErrors.length) throw thumbnailErrors[0];
-      await writeFile(path.join(root, 'pages/index.html'), lecturePreview(run.request.query, available.map(page => page.pid), Object.fromEntries(available.map(page => [page.pid, lessonTitle(page)])), available.filter(page => page.workflow === 'build-code').map(page => page.pid)));
+      await writeFile(path.join(root, 'pages/index.html'), lecturePreview(run.request.query, available.map(page => page.pid), Object.fromEntries(available.map(page => [page.pid, lessonTitle(page)])), available.filter(page => page.skill === 'build-code').map(page => page.pid)));
       // A deck with some pages is a deliverable; the missing ones are reported per page and kept in work/builder-results.json.
       if (!available.length) throw new Error(`生成未完成：${pages.length} 页均未通过交付检查`);
       await publishLecture(path.join(root, 'pages'), outputDir, { signal });

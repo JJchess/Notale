@@ -4,11 +4,13 @@ import { request as httpsRequest } from 'node:https';
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 const backend = new URL(process.env.EDITOR_BACKEND_URL ?? 'http://127.0.0.1:4310');
-const port = Number(process.env.PORT ?? 4312);
+const port = Number(process.env.PORT ?? 4312), host = process.env.HOST ?? '127.0.0.1';
+// Who may put the editor in an iframe, e.g. "'self' https://host.example"; unset sends no policy.
+const frameAncestors = process.env.NOTALE_FRAME_ANCESTORS;
 const contentBackend = new URL(process.env.EDITOR_CONTENT_BACKEND_URL ?? 'http://127.0.0.1:4311');
 // A distinct loopback hostname keeps authored scripts isolated, using the same forwarded port.
 const publicContent = new URL(process.env.EDITOR_PUBLIC_CONTENT_URL ?? `http://notale-content.localhost:${port}`);
-const app=next({webpack:true,dev:process.env.NODE_ENV==='development',hostname:'127.0.0.1',port});
+const app=next({webpack:true,dev:process.env.NODE_ENV==='development',hostname:host,port});
 await app.prepare();
 const handle=app.getRequestHandler();
 const server = createServer(async (req, res) => {
@@ -70,7 +72,8 @@ const server = createServer(async (req, res) => {
     req.pipe(upstream);
     return;
   }
+  if(frameAncestors)res.setHeader('content-security-policy',`frame-ancestors ${frameAncestors}`);
   if(['/index.html','/workbench.html'].includes(pathname))req.url='/'+new URL(req.url!,'http://frontend.local').search;
   await handle(req,res);
 });
-server.listen(port, '127.0.0.1', () => console.log(`Editor frontend: http://127.0.0.1:${port}`));
+server.listen(port, host, () => console.log(`Editor frontend: http://${host}:${port}`));

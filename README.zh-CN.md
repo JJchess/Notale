@@ -47,7 +47,7 @@ cd notale-ts && npm ci && npm run build && npm run dev -- serve --starter
 cd notale-viewer && npm ci && npm run dev
 ```
 
-真实生成所需密钥见[生成器说明](notale-ts/README.md)。编辑器与生成器也可以分别运行。
+真实生成和编辑器里的 Istar 需要模型密钥：把仓库根目录的 `.env.example` 复制为 `.env.local` 并填写，notale-ts 与 notale-editor 都只读这一份（已在 shell 里设置的变量优先）。详见[生成器说明](notale-ts/README.md)。编辑器与生成器也可以分别运行。
 
 ## 项目结构
 

@@ -3,13 +3,11 @@ import { requestBytes } from '../core/http.js';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Parser } from 'htmlparser2';
-import { stripText } from '../core/text.js';
 import { redact } from '../core/redact.js';
-import { jsonText, parsePythonJson, parsePythonJsonBytes, isPythonIntegerField, pythonJsonTruthy } from '../core/json.js';
 import { downloadImage, mediaInstructions, publicGet, valueError, type PublicGet } from './media-transport.js';
 
 type Row = Record<string, any>;
-export interface MediaOptions { env?: NodeJS.ProcessEnv; fetch?: typeof fetch; publicGet?: PublicGet; backend?: string; imageGenScript?: string }
+export interface MediaOptions { env?: NodeJS.ProcessEnv; fetch?: typeof fetch; publicGet?: PublicGet; backend?: string }
 export function mediaError(source: string, error: unknown, env = process.env): Row {
   const exception = error as Error & { status?: number; statusText?: string; retryAfter?: string };
   const result: Row = { source, code: exception.status ? String(exception.status) : exception.name === 'Error' ? 'ValueError' : exception.name,
@@ -19,12 +17,12 @@ export function mediaError(source: string, error: unknown, env = process.env): R
 }
 export function queriesOf(query: unknown): string[] {
   const queries = typeof query === 'string' ? [query] : query;
-  if (!Array.isArray(queries) || !queries.length || queries.some(value => typeof value !== 'string' || !stripText(value))) throw valueError('query 必须是非空字符串或非空字符串数组');
+  if (!Array.isArray(queries) || !queries.length || queries.some(value => typeof value !== 'string' || !value.trim())) throw valueError('query 必须是非空字符串或非空字符串数组');
   return queries;
 }
-export function requestBody(queries: string[], count: number | bigint): Row {
+export function requestBody(queries: string[], count: number): Row {
   const body = structuredClone(mediaInstructions.searchBody);
-  body.contents[0].parts[0].text = body.contents[0].parts[0].text.replace('123987', String(count)) + jsonText(queries.map((query, query_index) => ({ query_index, query })));
+  body.contents[0].parts[0].text = body.contents[0].parts[0].text.replace('123987', String(count)) + JSON.stringify(queries.map((query, query_index) => ({ query_index, query })));
   return body;
 }
 function commonsFile(raw: string): boolean {
@@ -86,7 +84,7 @@ async function downloadCandidate(item: Row, out: string, index: number, deadline
   } catch (error) { if (signal?.aborted) throw signal.reason; row.error = mediaError('source_page', error, options.env).message; }
   return row;
 }
-export async function search(query: unknown, count: number | bigint, out: string, options: MediaOptions = {}, signal?: AbortSignal): Promise<[Row[], Row[]]> {
+export async function search(query: unknown, count: number, out: string, options: MediaOptions = {}, signal?: AbortSignal): Promise<[Row[], Row[]]> {
   const queries = queriesOf(query), env = options.env ?? process.env, key = env.GEMINI_API_KEY;
   if (!key) throw valueError('未配置 GEMINI_API_KEY；此检索未执行，改搜索词不能修复配置');
   const body = requestBody(queries, count), started = performance.now(), batch = Array.isArray(query);
@@ -94,10 +92,10 @@ export async function search(query: unknown, count: number | bigint, out: string
   const error = (exception: unknown, index?: number) => { const row = mediaError('gemini-google-search', exception, env); if (batch && index !== undefined) row.query_index = index; errors.push(row); };
   try {
     signal?.throwIfAborted();
-    const { response, bytes: responseBytes } = await requestBytes(options.fetch ?? fetch, mediaInstructions.searchEndpoint, { method: 'POST', headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' }, body: jsonText(body, { compact: true, allowNan: false }), redirect: 'manual' }, 120, signal);
+    const { response, bytes: responseBytes } = await requestBytes(options.fetch ?? fetch, mediaInstructions.searchEndpoint, { method: 'POST', headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' }, body: JSON.stringify(body), redirect: 'manual' }, 120, signal);
     journal.http_status = response.status;
     const status = () => { if (!response.ok) throw Object.assign(new Error(), { name: 'HTTPStatusError', status: response.status, statusText: response.statusText, retryAfter: response.headers.get('Retry-After') ?? '' }); };
-    try { journal.response = parsePythonJsonBytes(responseBytes); } catch { status(); throw valueError('Gemini 成功响应不是 JSON'); }
+    try { journal.response = JSON.parse(new TextDecoder().decode(responseBytes)); } catch { status(); throw valueError('Gemini 成功响应不是 JSON'); }
     status(); journal.request_seconds = Math.round(performance.now() - started) / 1000;
     const candidates = journal.response?.candidates;
     if (!Array.isArray(candidates) || !candidates.length || !candidates[0] || typeof candidates[0] !== 'object' || Array.isArray(candidates[0])) throw valueError('Gemini 未返回候选响应，不是正常零结果');
@@ -105,15 +103,15 @@ export async function search(query: unknown, count: number | bigint, out: string
     if (candidate.finishReason !== 'STOP') throw valueError(`Gemini 响应未完整结束：${candidate.finishReason ?? 'None'}`);
     const parts = candidate.content?.parts;
     if (!Array.isArray(parts) || parts.some(part => !part || typeof part !== 'object' || Array.isArray(part))) throw valueError('Gemini 响应缺少有效 content.parts');
-    if (!parts.some(part => part.toolCall?.toolType === 'GOOGLE_SEARCH_WEB') && !(candidate.groundingMetadata && typeof candidate.groundingMetadata === 'object' && !Array.isArray(candidate.groundingMetadata) && pythonJsonTruthy(candidate.groundingMetadata.webSearchQueries))) throw valueError('Gemini 未返回 Google 搜索执行记录，不能确认这些候选来自实际搜索');
-    const texts = parts.filter(part => !pythonJsonTruthy(part.thought)).map(part => Object.hasOwn(part, 'text') ? part.text : '');
+    if (!parts.some(part => part.toolCall?.toolType === 'GOOGLE_SEARCH_WEB') && !(candidate.groundingMetadata && typeof candidate.groundingMetadata === 'object' && !Array.isArray(candidate.groundingMetadata) && candidate.groundingMetadata.webSearchQueries?.length > 0)) throw valueError('Gemini 未返回 Google 搜索执行记录，不能确认这些候选来自实际搜索');
+    const texts = parts.filter(part => !part.thought).map(part => Object.hasOwn(part, 'text') ? part.text : '');
     if (texts.some(text => typeof text !== 'string')) throw valueError('Gemini 返回了非字符串 text');
-    const payload = parsePythonJson(texts.join('')), groups = payload?.queries;
+    const payload = JSON.parse(texts.join('')), groups = payload?.queries;
     if (!Array.isArray(groups)) throw valueError('Gemini 响应缺少 queries 数组，不是正常零结果');
     const byIndex = new Map<number, Row>();
     for (const group of groups) {
       const index = group?.query_index;
-      if (!group || typeof group !== 'object' || !isPythonIntegerField(group, 'query_index') || index < 0 || index >= queries.length || byIndex.has(index)) { error(valueError('Gemini 返回无效或重复的 query_index')); continue; }
+      if (!group || typeof group !== 'object' || !Number.isInteger(index) || index < 0 || index >= queries.length || byIndex.has(index)) { error(valueError('Gemini 返回无效或重复的 query_index')); continue; }
       byIndex.set(index, group);
     }
     const deadline = performance.now() + 300000;
@@ -125,7 +123,7 @@ export async function search(query: unknown, count: number | bigint, out: string
         signal?.throwIfAborted();
         if (accepted >= count) break;
         if (!item || typeof item !== 'object' || Array.isArray(item) || ['title', 'page_url'].some(key => typeof item[key] !== 'string')) { error(valueError('Gemini 图片候选格式错误'), index); continue; }
-        const direct = pythonJsonTruthy(item.image_url) ? item.image_url : '';
+        const direct = item.image_url || '';
         if (typeof direct !== 'string') { error(valueError('Gemini image_url 不是字符串'), index); continue; }
         const identity = JSON.stringify([item.page_url, direct]); if (seen.has(identity)) continue;
         seen.add(identity); accepted++;
@@ -136,7 +134,7 @@ export async function search(query: unknown, count: number | bigint, out: string
   } catch (exception) { if (signal?.aborted) throw signal.reason; error(exception); }
   finally {
     journal.seconds = Math.round(performance.now() - started) / 1000; journal.errors = errors;
-    await writeFile(path.join(out, 'provider.json'), redact(jsonText(journal, { indent: 2 }), env));
+    await writeFile(path.join(out, 'provider.json'), redact(JSON.stringify(journal, null, 2), env));
   }
   return [rows, errors];
 }

@@ -2,130 +2,7 @@
 import { Agent, Client, Pool, type Dispatcher } from 'undici';
 import dns from 'node:dns';
 import { channel } from 'node:diagnostics_channel';
-import { createConnection, type Socket, type LookupFunction } from 'node:net';
-import { once } from 'node:events';
-import { Client as FtpClient, FTPError } from 'basic-ftp';
-import { parsePasvResponse } from 'basic-ftp/dist/transfer.js';
-
-/** urllib's Messages transport can follow an HTTP redirect to an FTP resource. */
-export async function requestFtpBytes(address: string, timeoutSeconds: number, signal?: AbortSignal): Promise<{ response: Response; bytes: Buffer }> {
-  const url = new URL(address);
-  const unquote = (value: string) => value.replace(/(?:%[0-9a-f]{2})+/gi, bytes => Buffer.from(bytes.replaceAll('%', ''), 'hex').toString('utf8'));
-  const commandText = (value: string) => {
-    if (/[\r\n]/.test(value)) throw new Error('an illegal newline character should not be contained');
-    return value;
-  };
-  const [pathname, ...attributes] = (url.pathname + url.search).split(';');
-  const segments = pathname!.split('/').map(unquote);
-  const file = commandText(segments.pop()!);
-  if (segments[0] === '') segments.shift();
-  const directory = commandText(segments.join('/')) || '.';
-  let type = file ? 'I' : 'D';
-  for (const attribute of attributes) {
-    const [name, value] = attribute.split('=');
-    if (name!.toLowerCase() === 'type' && /^[aid]$/i.test(value ?? '')) type = value!.toUpperCase();
-  }
-  const client = new FtpClient(0);
-  let dataSocket: Socket | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const arm = () => {
-    clearTimeout(timer);
-    const deadline = performance.now() + timeoutSeconds * 1000;
-    const expire = () => {
-      const remaining = deadline - performance.now();
-      if (remaining > 0) timer = setTimeout(expire, Math.min(remaining, 2147483647));
-      else {
-        const error = new Error('FTP read timed out');
-        dataSocket?.destroy(error);
-        client.ftp.closeWithError(error);
-      }
-    };
-    timer = setTimeout(expire, Math.min(timeoutSeconds * 1000, 2147483647));
-  };
-  const abort = () => { dataSocket?.destroy(signal?.reason); client.close(); };
-  signal?.throwIfAborted();
-  signal?.addEventListener('abort', abort, { once: true });
-  try {
-    // urllib resolves IPv4 before applying the socket timeout.
-    const { address: host } = await dns.promises.lookup(unquote(url.hostname), { family: 4 });
-    signal?.throwIfAborted();
-    const user = commandText(unquote(url.username)) || 'anonymous';
-    let password = commandText(unquote(url.password));
-    if (user === 'anonymous' && (password === '' || password === '-')) password += 'anonymous@';
-    const login = async () => {
-      signal?.throwIfAborted();
-      client.ftp.socket.removeListener('data', arm);
-      const connect = client.connect(host, Number(url.port || 21));
-      client.ftp.socket.on('data', arm);
-      arm();
-      await connect;
-      await client.login(user, password);
-      await client.send(`CWD ${directory}`);
-    };
-    await login();
-    const transferType = `TYPE ${type === 'D' ? 'A' : type}`;
-    try { await client.send(transferType); }
-    catch {
-      // urllib reconnects once when selecting the transfer type fails.
-      await login();
-      await client.send(transferType);
-    }
-    const receive = async (command: string) => {
-      const passive = parsePasvResponse((await client.send('PASV')).message);
-      // ftplib uses the control peer, not the host advertised in PASV. Keep the
-      // data socket independent: a failing final control reply cannot discard it.
-      const socket = dataSocket = createConnection({ host, port: passive.port });
-      socket.on('error', () => {});
-      const chunks: Buffer[] = [];
-      try {
-        await once(socket, 'connect');
-        let started = false;
-        let start!: () => void, failStart!: (error: unknown) => void;
-        const ready = new Promise<void>((resolve, reject) => { start = resolve; failStart = reject; });
-        const finished = client.ftp.handle(command, (response, task) => {
-          if (started) {
-            // urllib endtransfer consumes the final reply but suppresses its
-            // FTP/socket error after the response body has been read.
-            task.resolve(response instanceof Error ? { code: 200, message: '' } : response);
-          } else if (response instanceof Error) {
-            failStart(response); task.reject(response);
-          } else if (response.code >= 100 && response.code < 200) {
-            started = true; start();
-          } else if (response.code < 200 || response.code >= 300) {
-            const error = new FTPError(response);
-            failStart(error); task.reject(error);
-          }
-        }).catch(error => { failStart(error); });
-        await ready;
-        for await (const chunk of socket) { arm(); chunks.push(Buffer.from(chunk)); }
-        arm();
-        await finished;
-        signal?.throwIfAborted();
-        return Buffer.concat(chunks);
-      } finally { socket.destroy(); dataSocket = undefined; }
-    };
-    let bytes: Buffer | undefined;
-    if (file && type !== 'D') {
-      try { bytes = await receive(`RETR ${file}`); }
-      catch (error) { if (!(error instanceof FTPError) || error.code !== 550) throw error; }
-    }
-    if (!bytes) {
-      await client.send('TYPE A');
-      if (file) {
-        const previous = await client.pwd();
-        try { await client.send(`CWD ${file}`); }
-        finally { await client.send(`CWD ${commandText(previous)}`); }
-      }
-      bytes = await receive(file ? `LIST ${file}` : 'LIST');
-    }
-    signal?.throwIfAborted();
-    return { response: new Response(null, { status: 200 }), bytes };
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener('abort', abort);
-    client.close();
-  }
-}
+import type { Socket, LookupFunction } from 'node:net';
 
 // Undici creates its request synchronously during dispatch, but assigns a pooled
 // socket later. Match those events so only this request's reads renew its timer.
@@ -186,7 +63,7 @@ const dispatcher = new Agent({
   }),
 });
 
-export async function requestBytes(request: typeof fetch, url: string, init: RequestInit, timeoutSeconds: number, signal?: AbortSignal, onResponse?: (response: Response) => void): Promise<{ response: Response; bytes: Buffer; rawHeaders?: string[] | undefined }> {
+export async function requestBytes(request: typeof fetch, url: string, init: RequestInit, timeoutSeconds: number, signal?: AbortSignal): Promise<{ response: Response; bytes: Buffer }> {
   const timeout = new AbortController();
   const combined = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -203,7 +80,6 @@ export async function requestBytes(request: typeof fetch, url: string, init: Req
     };
     timer = setTimeout(expire, Math.min(duration, 2147483647));
   };
-  let rawHeaders: string[] | undefined;
   let readSocket: Socket | undefined;
   const observeSocket: ObserveSocket = socket => {
     if (finished || combined.aborted) return;
@@ -224,10 +100,6 @@ export async function requestBytes(request: typeof fetch, url: string, init: Req
           if (['onConnect', 'onBodySent', 'onRequestSent', 'onHeaders'].includes(String(property))) {
             return (...args: unknown[]) => {
               arm();
-              // Fetch merges duplicate headers; urllib redirects use the first.
-              if (property === 'onHeaders' && Number(args[0]) >= 200 && Array.isArray(args[1])) {
-                rawHeaders = args[1].map(value => Buffer.isBuffer(value) ? value.toString('latin1') : String(value));
-              }
               return typeof callback === 'function' ? callback.apply(target, args) : undefined;
             };
           }
@@ -242,7 +114,6 @@ export async function requestBytes(request: typeof fetch, url: string, init: Req
     combined.throwIfAborted();
     arm();
     const response = await request(url, { ...init, ...(request === globalThis.fetch ? { dispatcher: progressDispatcher } : {}), signal: combined });
-    onResponse?.(response);
     const chunks: Uint8Array[] = [];
     if (response.body) {
       const reader = response.body.getReader();
@@ -256,6 +127,6 @@ export async function requestBytes(request: typeof fetch, url: string, init: Req
       } finally { reader.releaseLock(); }
     }
     combined.throwIfAborted();
-    return { response, bytes: Buffer.concat(chunks), rawHeaders };
+    return { response, bytes: Buffer.concat(chunks) };
   } finally { finished = true; for (const release of clock.release) release(); readSocket?.off('data', arm); clearTimeout(timer); }
 }

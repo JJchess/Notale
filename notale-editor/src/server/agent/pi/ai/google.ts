@@ -24,10 +24,12 @@ import {
 	sanitizeSurrogates,
 } from "./provider-utils.js";
 import { transformMessages } from "./transform-messages.js";
+import type { GeminiFiles } from "./gemini-files.js";
 import type {
 	Api,
 	AssistantMessage,
 	Context,
+	FileContent,
 	ImageContent,
 	Model,
 	SimpleStreamOptions,
@@ -49,6 +51,8 @@ export type GoogleApiThinkingLevel = "THINKING_LEVEL_UNSPECIFIED" | "MINIMAL" | 
 export type ResolvedGoogleThinkingLevel = Exclude<ThinkingLevel, "xhigh" | "max">;
 
 export interface GoogleOptions extends StreamOptions {
+	/** Uploads documents and video and renews their references (Notale addition). Without it, file parts are sent as text notes. */
+	files?: GeminiFiles;
 	toolChoice?: "auto" | "none" | "any";
 	thinking?: {
 		enabled: boolean;
@@ -176,7 +180,12 @@ function supportsMultimodalFunctionResponse(modelId: string): boolean {
 }
 
 /** Convert internal messages to Gemini Content[] format. */
-export function convertMessages(model: Model<Api>, context: Context): Content[] {
+/** A file part as sent: what `GeminiFiles.parts` resolved it to, or a note when nothing resolved it. */
+function filePart(block: FileContent, media: Map<FileContent, Part> | undefined): Part {
+	return media?.get(block) ?? { text: `[${block.path} (${block.mimeType}) was not sent]` };
+}
+
+export function convertMessages(model: Model<Api>, context: Context, media?: Map<FileContent, Part>): Content[] {
 	const contents: Content[] = [];
 	const normalizeToolCallId = (id: string): string => {
 		if (!requiresToolCallId(model.id)) return id;
@@ -196,6 +205,8 @@ export function convertMessages(model: Model<Api>, context: Context): Content[] 
 				const parts: Part[] = msg.content.map((item) => {
 					if (item.type === "text") {
 						return { text: sanitizeSurrogates(item.text) };
+					} else if (item.type === "file") {
+						return filePart(item, media);
 					} else {
 						return {
 							inlineData: {
@@ -288,13 +299,20 @@ export function convertMessages(model: Model<Api>, context: Context): Content[] 
 					data: imageBlock.data,
 				},
 			}));
+			// Files: inline data may be nested in the function response like images, but Gemini
+			// silently drops an uploaded file (fileData) nested there -- probed 2026-09 -- so those
+			// go right after the response, in the same user turn.
+			const fileParts = msg.content.filter((c): c is FileContent => c.type === "file").map((block) => filePart(block, media));
+			const nestedFiles = modelSupportsMultimodalFunctionResponse ? fileParts.filter((part) => part.inlineData) : [];
+			const siblingFiles = fileParts.filter((part) => !nestedFiles.includes(part));
+			const nested = [...(modelSupportsMultimodalFunctionResponse ? imageParts : []), ...nestedFiles];
 
 			const includeId = requiresToolCallId(model.id);
 			const functionResponsePart: Part = {
 				functionResponse: {
 					name: msg.toolName,
 					response: msg.isError ? { error: responseValue } : { output: responseValue },
-					...(hasImages && modelSupportsMultimodalFunctionResponse && { parts: imageParts }),
+					...(nested.length && { parts: nested }),
 					...(includeId ? { id: msg.toolCallId } : {}),
 				},
 			};
@@ -302,11 +320,11 @@ export function convertMessages(model: Model<Api>, context: Context): Content[] 
 			// All function responses of one turn go in a single user turn.
 			const lastContent = contents[contents.length - 1];
 			if (lastContent?.role === "user" && lastContent.parts?.some((p) => p.functionResponse)) {
-				lastContent.parts.push(functionResponsePart);
+				lastContent.parts.push(functionResponsePart, ...siblingFiles);
 			} else {
 				contents.push({
 					role: "user",
-					parts: [functionResponsePart],
+					parts: [functionResponsePart, ...siblingFiles],
 				});
 			}
 
@@ -405,7 +423,7 @@ function retryGoogleRequest<T>(
 				return await request();
 			} catch (error) {
 				if (error instanceof Error && "status" in error && !("headers" in error)) {
-					(error as { headers?: Headers }).headers = undefined;
+					(error as { headers?: Headers | undefined }).headers = undefined;
 				}
 				throw error;
 			}
@@ -469,7 +487,8 @@ export function stream(model: Model<Api>, context: Context, options?: GoogleOpti
 			}
 			if (options?.signal?.aborted) request.abort();
 			const client = createClient(model, apiKey, options?.headers);
-			let params = buildParams(model, context, requestOptions);
+			const media = options?.files ? await options.files.parts(context.messages, request.signal) : undefined;
+			let params = buildParams(model, context, requestOptions, media);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
 				params = nextParams as GenerateContentParameters;
@@ -688,8 +707,8 @@ function createClient(model: Model<Api>, apiKey: string, optionsHeaders?: Record
 	});
 }
 
-function buildParams(model: Model<Api>, context: Context, options: GoogleOptions = {}): GenerateContentParameters {
-	const contents = convertMessages(model, context);
+function buildParams(model: Model<Api>, context: Context, options: GoogleOptions = {}, media?: Map<FileContent, Part>): GenerateContentParameters {
+	const contents = convertMessages(model, context, media);
 	const currentTools = context.tools ?? [];
 
 	const generationConfig: GenerateContentConfig = {};

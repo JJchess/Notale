@@ -2,7 +2,7 @@
 import {useI18n} from '../i18n/react';
 
 import {Fragment,useEffect,useLayoutEffect,useRef,useState,useSyncExternalStore} from 'react';
-import {aiEditsState,diffChips,DIFF_PREVIEW,ATTACHMENT_LIMIT,type AiTurn,type AiMention,type DiffRow,type DiffChip,type ChangeKind} from '../state/ai-edits';
+import {aiEditsState,diffChips,DIFF_PREVIEW,ATTACHMENT_LIMIT,FILE_LIMIT,FILE_PATTERN,type AiTurn,type AiMention,type DiffRow,type DiffChip,type ChangeKind} from '../state/ai-edits';
 import {ModelPicker,MentionMenu} from './composer-menus';
 import {ASSISTANT_NAME} from '@notale/editor/i18n';
 import {ToolChips} from './tool-chips';
@@ -167,10 +167,12 @@ function Composer(){
   model.change?.({instruction:next});setCaret(at);
   requestAnimationFrame(()=>{field.current?.focus();field.current?.setSelectionRange(at,at);});
  };
- const canAttach=model.vision&&model.attachments.length<ATTACHMENT_LIMIT&&!running;
- const take=(list:FileList|null|undefined)=>{const picked=[...(list??[])].filter(file=>file.type.startsWith('image/'));if(picked.length&&canAttach)void model.attach?.(picked);return picked.length>0;};
+ // Pictures need a model that sees them; documents and video always go (read turns them into what the model can take).
+ const canAttach=!running&&((model.vision&&model.attachments.length<ATTACHMENT_LIMIT)||model.files.length<FILE_LIMIT);
+ const uploading=model.files.some(file=>file.state==='uploading');
+ const take=(list:FileList|null|undefined)=>{const picked=[...(list??[])].filter(file=>file.type.startsWith('image/')||FILE_PATTERN.test(file.name));if(picked.length&&canAttach)void model.attach?.(picked);return picked.length>0;};
  return <div ref={box} className={'ai-composer'+(wide?' is-wide':'')+(dragging?' is-dropping':'')}
-  onDragOver={event=>{if(canAttach&&[...event.dataTransfer.items].some(item=>item.type.startsWith('image/'))){event.preventDefault();setDragging(true);}}}
+  onDragOver={event=>{if(canAttach&&[...event.dataTransfer.items].some(item=>item.kind==='file')){event.preventDefault();setDragging(true);}}}
   onDragLeave={()=>setDragging(false)}
   onDrop={event=>{setDragging(false);if(take(event.dataTransfer.files))event.preventDefault();}}>
   {sweep>0 && <span key={sweep} className="ai-sweep" aria-hidden="true"/>}
@@ -181,10 +183,18 @@ function Composer(){
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
    </button>
   </span>)}</div>}
+  {!!model.files.length && <div className="ai-attachments is-files">{model.files.map(item=><span key={item.id} className={'ai-file is-'+item.state} title={item.error?t(item.error):item.name}>
+   <span className="ai-file-kind" aria-hidden="true">{/\.([a-z0-9]+)$/i.exec(item.name)?.[1]?.toUpperCase()??'FILE'}</span>
+   <span className="ai-file-name">{item.name}</span>
+   {item.state!=='ready' && <span className="ai-file-state">{item.state==='uploading'?t('上传中…'):t('上传失败')}</span>}
+   <button type="button" className="ai-attachment-remove" aria-label={t('移除 {0}',{'0':item.name})} title={t('移除')} onClick={()=>model.detach?.(item.id)}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+   </button>
+  </span>)}</div>}
   <span ref={measure} className="ai-measure" aria-hidden="true">{model.instruction||placeholder}</span>
   <div ref={grid} className="ai-composer-grid">
    <button type="button" id="ai-attach" className="ai-icon-button" disabled={!canAttach}
-    aria-label={t('附加图片')} title={model.vision?t('附加图片'):t('当前模型看不了图片')} onClick={()=>files.current?.click()}>
+    aria-label={t('添加附件')} title={model.vision?t('添加附件：图片、PDF、文档或视频'):t('添加附件：PDF、文档或视频（当前模型看不了图片）')} onClick={()=>files.current?.click()}>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
    </button>
    <textarea id="ai-instruction" ref={field} rows={1} placeholder={placeholder}
@@ -201,13 +211,13 @@ function Composer(){
      }
      if(menuOpen&&event.key==='Escape'){event.preventDefault();setDismissed(mention!.start);return;}
      if(event.key!=='Enter'||event.shiftKey)return;   // Shift+Enter is the newline, on every platform
-     event.preventDefault();void model.submit?.();
+     event.preventDefault();if(!uploading)void model.submit?.();
     }}/>
    <ModelPicker providers={model.providers} {...(model.choice?{choice:model.choice}:{})} {...(model.defaultModel?{fallback:model.defaultModel}:{})} disabled={running}
     onPick={ref=>{const changed=ref.provider!==(model.choice??model.defaultModel)?.provider||ref.id!==(model.choice??model.defaultModel)?.id;model.pickModel?.(ref);if(changed)setSweep(value=>value+1);field.current?.focus();}}/>
-   {running ? <button id="ai-stop" className="ai-send is-stop" aria-label={t("停止")} title={t("停止")} onClick={()=>model.stop?.()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button> : <button id="ai-submit" className="ai-send" aria-label={t("发送")} title={t("发送（回车）")} disabled={!model.instruction.trim()||!model.available} onClick={()=>void model.submit?.()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>}
+   {running ? <button id="ai-stop" className="ai-send is-stop" aria-label={t("停止")} title={t("停止")} onClick={()=>model.stop?.()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button> : <button id="ai-submit" className="ai-send" aria-label={t("发送")} title={t("发送（回车）")} disabled={!model.instruction.trim()||!model.available||uploading} onClick={()=>void model.submit?.()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>}
   </div>
-  <input ref={files} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={event=>{take(event.target.files);event.target.value='';}}/>
+  <input ref={files} type="file" accept={(model.vision?'image/png,image/jpeg,image/webp,':'')+'.pdf,.docx,.pptx,.mp4,.mov,.webm'} multiple hidden onChange={event=>{take(event.target.files);event.target.value='';}}/>
   {menuOpen && <MentionMenu anchor={box} items={items} active={active} onPick={pick} onHover={setActive}/>}
  </div>;
 }

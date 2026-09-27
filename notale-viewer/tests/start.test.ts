@@ -31,3 +31,13 @@ test("the wizard's frames are the same size and use only his palette", () => {
     }
   }
 });
+
+test('neighbouring cells of one tone are drawn as one run, never across letters or rows', () => {
+  const shape = layout("notale");
+  const o = shape.letters.findIndex(letter => letter.char === "o");
+  const top = shape.runs.filter(run => run.letter === o && run.y === 2);
+  assert.deepEqual(top.map(run => [run.x, run.width, run.tone]), [[5, 4, "solid"]]);
+  const middle = shape.runs.filter(run => run.letter === o && run.y === 3);
+  assert.deepEqual(middle.map(run => [run.x, run.width, run.tone]), [[5, 1, "solid"], [6, 2, "recess"], [8, 1, "solid"]]);
+  assert.equal(shape.runs.reduce((sum, run) => sum + run.width, 0), shape.cells.length);
+});

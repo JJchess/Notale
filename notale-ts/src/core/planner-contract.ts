@@ -1,4 +1,4 @@
-/** Page-list and submission contracts ported from core/planner.py. */
+/** Page-list and submission contracts. */
 import { readFileSync, realpathSync, lstatSync, readlinkSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { decodeText } from './text.js';
@@ -102,7 +102,7 @@ export function validPages(text: string): string {
     const missing = Array.from({ length: Math.max(...numbers) }, (_, index) => index + 1).filter(number => !numbers.includes(number));
     return `页号不连续,缺 ${missing.map(number => `page-${String(number).padStart(2, '0')}`).join(' ')} —— 从 01 编到 N,不跳号`;
   }
-  // Python insertion order matters for the first reported error, including pages >= 10.
+  // Heading order decides the first reported error, including pages >= 10.
   const order = [...new Set([...stripFence(text.trim()).matchAll(/^#\s+page-(\d+)/gm)].map(hit => hit[1]!.padStart(2, '0')).filter(key => key in pages))];
   for (const key of order) {
     const match = pages[key]!.match(new RegExp(`^#\\s+page-${key}\\s+\\[([^\\]]+)\\]\\s*\\n(.+)`, 's'));

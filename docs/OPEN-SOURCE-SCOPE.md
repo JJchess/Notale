@@ -1,7 +1,9 @@
-# Public source boundary
+# Public source and contribution boundary
 
-The proposed public source contains the five projects `notale-format/`, `notale-editor/`, `notale-editor-frontend/`, `notale-ts/`, and `notale-viewer/`, plus the root README files, changelog, license, CI workflow, and .gitignore. Private prototypes, old viewers and tools, local state, and historical migration records are outside this boundary.
+This repository contains the five standalone projects `notale-format/`, `notale-editor/`, `notale-editor-frontend/`, `notale-ts/`, and `notale-viewer/`, with their documentation, resources, dependency notices and CI. Copy `.env.example` to `.env.local` for local model configuration; real credentials and generated user content stay outside Git.
 
-From the repository root, run `node notale-editor-frontend/scripts/prepare-public-source.mjs` to make a hash-verified private review copy. This is the sole public-source staging command. The command prints the separate review report path; inspect that report, the selected editor contract archive, third-party resource notices, and all findings. The report stays outside the staged source tree. The script does not commit, push, or publish.
+Develop public changes in a clone of this repository. Review the staged diff, then run `python3 scripts/check-public-source.py` before committing. CI checks the committed tree too, including paths and bundled editor archive contents. The scanner is an additional check; review new files and credentials that pattern matching cannot identify.
 
-The working repository already tracks files outside the public boundary. Publishing its existing Git history would disclose them even if the current tree excludes them. Create a new public repository from the reviewed staged tree with a clean initial history; verify the actual new tree and remote before publication. Keep all `.env.local` files outside the review copy and Git.
+Private downstream deployments consume public commits. A reusable fix discovered downstream must be implemented as a focused public change, reviewed here, then incorporated downstream. Never merge a private deployment branch or copy its whole source tree into this repository. The former mixed-workspace public export command has been retired.
+
+For automation, use this repository's read-only `GITHUB_TOKEN` for CI and a credential scoped only to this repository for publishing. Local push hooks are convenience safeguards and can be bypassed; they do not replace credential scope or review. Keep version tags immutable.

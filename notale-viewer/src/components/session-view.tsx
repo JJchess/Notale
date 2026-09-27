@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Composer } from "./composer";
-import { FileKind } from "./file-kind";
+import { IstarCard, UserBubble, exchanges, type RunView } from "./talk";
+import { VersionMenu, type VersionItem } from "./version-menu";
+import { PixelWordmark } from "./start/pixel-wordmark";
 import { SplitHandle } from "./split-handle";
 import { LecturePane } from "./lecture-pane";
 import { UrlSource } from "../lib/live/live-draft";
 import { rememberSession } from "../lib/recent-sessions";
-import { GenerationProgress } from "./generation-progress";
+import { GenerationView } from "./generation/generation-view";
 import { publicPhase } from "./run-experience";
 import { pendingKey } from "./home-composer";
 import { cancelRun, previewUrl } from "../lib/api";
@@ -24,6 +26,8 @@ const slideOf = (page: string) => Math.max(0, Number(/page-(\d+)/.exec(page)?.[1
 /** The conversation panel: 380 px by default, between 300 px and 55 % of the window. */
 const TALK = { key: "notale-talk-width", initial: 380, min: 300, share: 0.55 };
 const done = (status?: string) => status === "completed";
+/** Lectures shown inside the viewer: the player drops its own backdrop and lets the stage show through. */
+const EMBED = "?embed=1";
 
 /** A conversation about lectures: the lecture on the left, what was said on the right. Every
  * generation or change is a version; the newest finished one is shown unless the author picks
@@ -66,7 +70,6 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const entries = useMemo(() => [...(snapshot?.entries ?? []), ...live], [snapshot, live]);
   // The start page lists sessions this browser opened, named by their first message.
   const firstWords = entries.find(entry => entry.type === "user")?.text;
-  useEffect(() => { if (firstWords) rememberSession(sessionId, firstWords.slice(0, 80)); }, [sessionId, firstWords]);
   const names = useMemo(() => new Map([...sentNames, ...(snapshot?.files ?? []).map(file => [file.id, file.name] as const)]), [snapshot, sentNames]);
   // Versions in the order they were made; a run's status comes from its finished entry.
   const runs = useMemo(() => {
@@ -84,6 +87,10 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const newest = finished.at(-1)?.runId;
   useEffect(() => { setPicked(undefined); }, [newest]);
   useEffect(() => { const node = log.current; if (node) node.scrollTop = node.scrollHeight; }, [entries.length, typing]);
+  // A generated lecture opens on the page the author was looking at while it was being made.
+  const genPage = useRef("");
+  const viewing = useCallback((pageId: string) => { genPage.current = pageId; }, []);
+  useEffect(() => { if (running?.kind === "generate" && done(runningDone) && genPage.current) setLanding({ runId: running.runId, page: genPage.current }); }, [running, runningDone]);
   // A run followed to its end outside a turn stream (after a reload): refresh the record.
   useEffect(() => { if (runningDone && !sending) void reload(); }, [runningDone, sending, reload]);
 
@@ -149,52 +156,60 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     original: new UrlSource(file => previewUrl(target, file)),
   } : undefined, [sessionId, target]);
   const busy = sending || !!snapshot?.busy || !!running && !runningDone;
+  // What each run came to, for its badge and the version menu.
+  const stateOf = (run: (typeof runs)[number]): RunView["state"] => {
+    const status = run.status ?? (run.runId === running?.runId ? runningDone : undefined);
+    return done(status) ? "done" : status === "cancelled" ? "stopped" : status ? "failed" : "working";
+  };
+  const progressOf = (run: (typeof runs)[number]) => run.kind === "generate" && run.runId === running?.runId && followed.run
+    ? `${publicPhase[followed.run.phase ?? "starting"] ?? "生成中"} · ${followed.progress.pages.filter(page => page.state === "ready").length}/${followed.progress.pages.length || "?"} 页` : undefined;
+  const turns = exchanges(entries);
+  const title = firstWords?.replace(/\s+/g, " ").trim();
+  const versions: VersionItem[] = finished.map(run => ({ runId: run.runId, version: version(run.runId), kind: run.kind, at: run.at, ...(run.basedOn ? { basedOn: version(run.basedOn) } : {}) }));
+  useEffect(() => { if (firstWords) rememberSession(sessionId, firstWords.slice(0, 80), finished.length); }, [sessionId, firstWords, finished.length]);
   return (
     <main ref={shell} className={"session-shell" + (resizing ? " is-resizing" : "")} style={{ "--talk-width": `${clampTalk(talkWidth)}px` } as CSSProperties}>
       <section className="session-stage">
         {(draft || shown) && <LecturePane
-          src={draft ? `${draftUrl(sessionId)}#/${slideOf(draft.page)}` : previewUrl(shown!.runId) + (landing?.runId === shown!.runId ? `#/${slideOf(landing.page)}` : "")}
+          src={draft ? `${draftUrl(sessionId)}${EMBED}#/${slideOf(draft.page)}` : previewUrl(shown!.runId) + EMBED + (landing?.runId === shown!.runId ? `#/${slideOf(landing.page)}` : "")}
           title={draft ? "修改中的草稿" : `讲义 v${version(shown!.runId)}`}
-          {...(draft && sources ? { live: { index: draftUrl(sessionId), ...sources, page: draft.page, revision: draft.revision } } : {})} />}
+          {...(draft && sources ? { live: { index: draftUrl(sessionId) + EMBED, ...sources, page: draft.page, revision: draft.revision } } : {})} />}
         {draft ? <>
           <div className="stage-draft" role="status"><i /><span>{step?.label ?? "准备草稿"}</span><em>草稿</em></div>
         </> : shown ? <>
-          {busy && <div className="stage-busy" role="status"><i /></div>}
-          {/* Bottom-left, beside the download menu: the lecture's own player keeps its hints top-right. */}
+          {busy && <div className="stage-busy" role="status" aria-label="处理中"><i /></div>}
           <div className="stage-bar">
-            <details className="lecture-actions"><summary>讲义 ⋯</summary><div><a href={`/notale-api/v1/runs/${encodeURIComponent(shown.runId)}/download?format=notale`} download>下载 v{version(shown.runId)} .notale</a><Link href="/">新会话</Link></div></details>
-            {finished.length > 1 && <nav className="stage-versions" aria-label="版本">
-              {finished.map(run => <button key={run.runId} type="button" aria-pressed={run.runId === shown.runId} onClick={() => setPicked(run.runId)}>v{version(run.runId)}</button>)}
-            </nav>}
+            <VersionMenu versions={versions} shown={shown.runId} onPick={setPicked} download={`/notale-api/v1/runs/${encodeURIComponent(shown.runId)}/download?format=notale`} />
           </div>
         </> : running && running.kind === "generate" ? <div className="stage-progress" id="generation-panel">
-          <GenerationProgress state={followed.progress} phase={followed.run?.phase} status={publicPhase[followed.run?.phase ?? "starting"] ?? "生成中"} />
-        </div> : <div className="stage-empty" />}
+          <GenerationView state={followed.progress} phase={followed.run?.phase} status={publicPhase[followed.run?.phase ?? "starting"] ?? "生成中"} onViewing={viewing} />
+        </div> : <div className="stage-empty">{snapshot && <div className="stage-mark" aria-hidden="true"><PixelWordmark /></div>}</div>}
       </section>
       <SplitHandle value={clampTalk(talkWidth)} min={TALK.min} max={maxTalk} label="调整对话面板宽度" onResize={resize} onDragging={setResizing} onReset={() => resize({ width: TALK.initial })} />
       <aside className="session-talk">
-        <header className="session-head"><Link href="/" className="brand"><span className="brand-mark">N</span><span>NOTALE</span></Link></header>
-        <div ref={log} className="session-log" aria-live="polite">
-          {entries.map((entry, index) => {
-            if (entry.type === "user") return <div key={index} className="talk-user"><p>{entry.text}</p>{!!entry.files.length && <ul>{entry.files.map(id => <li key={id}><FileKind name={names.get(id) ?? ""} />{names.get(id) ?? "附件"}</li>)}</ul>}</div>;
-            if (entry.type === "understood" && (entry.route.action === "generate" || entry.route.action === "fix") && entry.route.reason) return <p key={index} className="talk-understood">{entry.route.reason}</p>;
-            if (entry.type === "reply") return <p key={index} className="talk-reply">{entry.text}</p>;
-            if (entry.type === "question") return <div key={index} className="talk-question"><p>{entry.text}</p>
-              {!!entry.options?.length && index > lastUser && <div className="talk-options">{entry.options.map(option => <button key={option} type="button" disabled={busy} onClick={() => void send(option, [])}>{option}</button>)}</div>}
-            </div>;
-            if (entry.type === "run") {
-              const run = runs.find(item => item.runId === entry.runId), status = run?.status ?? (run?.runId === running?.runId ? runningDone : undefined);
-              const label = entry.kind === "generate" ? "生成" : "修改";
-              const text = done(status) ? `已${label} v${version(entry.runId)}${entry.basedOn ? ` · 基于 v${version(entry.basedOn)}` : ""}`
-                : status ? `${label}${status === "cancelled" ? "已取消" : "失败"}` : `${label}中…${entry.kind === "generate" && followed.run ? ` ${publicPhase[followed.run.phase ?? "starting"] ?? ""} · ${followed.progress.pages.filter(page => page.state === "ready").length}/${followed.progress.pages.length || "?"} 页` : ""}`;
-              return <button key={index} type="button" className={"talk-run" + (shown?.runId === entry.runId ? " is-shown" : "") + (done(status) ? "" : " is-pending")}
-                disabled={!done(status)} onClick={() => setPicked(entry.runId)}>{text}</button>;
-            }
-            return null;
+        <header className="session-head">
+          <Link href="/" className="brand" aria-label="Notale 首页"><span className="brand-mark">N</span><span className="brand-word">NOTALE</span></Link>
+          {title && <h1 className="session-title" title={title}>{title}</h1>}
+        </header>
+        <div ref={log} className="session-log" aria-live="polite" aria-busy={!snapshot}>
+          {!snapshot && !error && <div className="talk-skeleton" aria-hidden="true"><i /><i /><i /></div>}
+          {turns.map((turn, index) => {
+            const last = index === turns.length - 1;
+            const views: RunView[] = turn.runs.map(entry => {
+              const run = runs.find(item => item.runId === entry.runId)!;
+              return { runId: entry.runId, kind: entry.kind, version: version(entry.runId), state: stateOf(run), shown: shown?.runId === entry.runId,
+                ...(entry.basedOn ? { basedOn: version(entry.basedOn) } : {}), ...(progressOf(run) ? { progress: progressOf(run)! } : {}) };
+            });
+            const route = turn.understood, why = route && (route.action === "generate" || route.action === "fix") ? route.reason : undefined;
+            const hasIstar = views.length || turn.replies.length || turn.question || (last && (sending || typing || error));
+            return <Fragment key={index}>
+              {turn.user && <UserBubble entry={turn.user} names={names} />}
+              {hasIstar && <IstarCard runs={views} replies={turn.replies} {...(turn.question ? { question: turn.question.text } : {})} {...(why ? { understood: why } : {})}
+                {...(last && typing ? { typing } : {})} thinking={last && sending} {...(last && error ? { error } : {})} onPick={setPicked}
+                options={last && turn.question?.options?.length ? <div className="talk-options">{turn.question.options.map(option => <button key={option} type="button" disabled={busy} onClick={() => void send(option, [])}>{option}</button>)}</div> : undefined} />}
+            </Fragment>;
           })}
-          {typing && <p className="talk-reply is-typing">{typing}<i className="caret" aria-hidden /></p>}
-          {sending && entries.at(-1)?.type === "user" && <p className="talk-understood">正在理解…</p>}
-          {error && <p className="talk-error" role="alert">{error}</p>}
+          {error && !turns.length && <p className="talk-error" role="alert">{error}</p>}
         </div>
         <div className="session-compose">
           <Composer session={async () => sessionId} busy={busy} onStop={() => void stop()} placeholder={finished.length ? "想怎么改？比如：把第 3 页改成两栏" : "想做一份什么样的讲义？"} onSend={send} />

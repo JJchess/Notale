@@ -3,16 +3,16 @@ import { readFileSync, existsSync, statSync, lstatSync } from 'node:fs';
 import { mkdir, copyFile, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { decodeText, stripText, splitLines, caseFold } from './text.js';
+import { decodeText } from './text.js';
 import { thumbnailJpeg } from '../tools/image-resample.js';
-import { RESOURCES, WORKFLOWS } from './guidance.js';
+import { RESOURCES, SKILLS } from './guidance.js';
 import { resolvePath } from './planner-contract.js';
 import { valueError, cssUrls, isWithin, parseCss, unquoteUrl, splitResourceUrl } from './theme.js';
 import type { ReferenceImage, StyleInput } from './director.js';
 import type { ChatInputBlock } from '../adapters/models/chat-model.js';
 
 export const FONT_ROOT = path.join(RESOURCES, 'vendor/fonts');
-export const STYLE_ROOT = path.join(WORKFLOWS, 'style-director');
+export const STYLE_ROOT = path.join(SKILLS, 'style-director');
 const PREFIX = 'fonts/library/';
 type FontRow = { files: Array<{ file: string; family: string; weight: string; style: string; sha256: string }>; license: string; notices?: string[] };
 export const inventory = (): Record<string, FontRow> => JSON.parse(decodeText(readFileSync(path.join(FONT_ROOT, 'manifest.json'))));
@@ -92,11 +92,11 @@ export async function images(refs: ReferenceImage[], width = 900): Promise<ChatI
 export class StyleCatalog {
   constructor(readonly root = STYLE_ROOT) {}
   rows(): string[][] {
-    return splitLines(decodeText(readFileSync(path.join(this.root, 'INDEX.md')))).filter(line => /^\| \p{Nd}{2}-/u.test(line)).map(line => line.replace(/^\|+|\|+$/g, '').split('|').map(value => stripText(value)));
+    return decodeText(readFileSync(path.join(this.root, 'INDEX.md'))).split('\n').filter(line => /^\| \p{Nd}{2}-/u.test(line)).map(line => line.replace(/^\|+|\|+$/g, '').split('|').map(value => value.trim()));
   }
   match(request?: string): string | undefined {
-    const normalized = caseFold(stripText(request || ''));
-    const chosen = this.rows().filter(row => [row[0]!, row[0]!.slice(row[0]!.indexOf('-') + 1), ...row[1]!.split('·').map(name => stripText(name))].map(value => caseFold(value)).includes(normalized));
+    const normalized = (request || '').trim().toLowerCase();
+    const chosen = this.rows().filter(row => [row[0]!, row[0]!.slice(row[0]!.indexOf('-') + 1), ...row[1]!.split('·').map(name => name.trim())].map(value => value.toLowerCase()).includes(normalized));
     return chosen.length === 1 ? chosen[0]![0] : undefined;
   }
   identify(value: unknown): string {

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { FileInputs } from '../core/file-input.js';
-import { pythonInteger } from "../core/json.js";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,17 +8,17 @@ import { mkdir, readFile } from "node:fs/promises";
 import { baselineRuntime } from "../core/baseline-pipeline.js";
 import { planRun, buildRun } from "../core/orchestration.js";
 import { resolveBuilderProfile } from "../adapters/models/profiles.js";
-import { generationScriptFor } from "../tools/media-execution.js";
 import { checkOptions } from "../core/theme.js";
 import { acquireVisualChecker } from "../tools/visual-check.js";
 import { loadConfig } from "../adapters/models/profiles.js";
 import type { PipelineOptions } from "../core/baseline-pipeline.js";
 import { createApp } from "../server/app.js";
+import { runtimeEnvironment } from "../core/baseline-pipeline.js";
 import { createRunRequestSchema } from "../protocol/index.js";
 import { RunStore } from "../core/run-store.js";
 import { RunService } from "../core/run-service.js";
 import { starterPipeline } from "../core/starter-pipeline.js";
-import { createModelPipeline } from "../core/model-pipeline.js";
+import { createBaselinePipeline } from "../core/baseline-pipeline.js";
 import { LectureExports } from '../server/lecture-exports.js';
 
 const command = process.argv[2] ?? "help";
@@ -30,8 +29,8 @@ function runsRoot(value?: string): string {
 }
 
 function integerArgument(value: string, option: string): number {
-  try { return pythonInteger(value); }
-  catch { throw new Error(`--${option} requires an integer`); }
+  if (!/^\s*[+-]?\d+\s*$/.test(value)) throw new Error(`--${option} requires an integer`);
+  return Number(value);
 }
 
 export function buildArguments(args: string[], stage: 'plan' | 'build' = 'build') {
@@ -42,12 +41,9 @@ export function buildArguments(args: string[], stage: 'plan' | 'build' = 'build'
     audience: { type: 'string', default: '学过一点相关基础、但没系统学过这个题目的读者' },
     scenario: { type: 'string', default: '' }, style: { type: 'string' },
     runs: { type: 'string' }, starter: { type: 'boolean', default: false },
-    profile: { type: 'string' }, uniform: { type: 'boolean', default: false },
-    concurrency: { type: 'string', default: '100' }, samples: { type: 'string', default: 'mini' },
-    notes: { type: 'string', default: 'cap' }, 'sample-shots': { type: 'boolean', default: false },
-    'visual-focus': { type: 'boolean', default: false }, 'aux-samples': { type: 'boolean' }, 'no-aux-samples': { type: 'boolean' },
-    template: { type: 'string' },
-    skills: { type: 'string' }, workflows: { type: 'string' }, prompts: { type: 'string' }, chassis: { type: 'string' }, lib: { type: 'string' },
+    profile: { type: 'string' }, samples: { type: 'string', default: 'mini' },
+    notes: { type: 'string', default: 'cap' }, 'aux-samples': { type: 'boolean' }, 'no-aux-samples': { type: 'boolean' },
+    template: { type: 'string' }, prompts: { type: 'string' },
     model: { type: 'string' }, effort: { type: 'string' }, 'base-url': { type: 'string' }, 'key-env': { type: 'string' }, wire: { type: 'string' },
     config: { type: 'string' }, 'env-file': { type: 'string' },
   } satisfies NonNullable<ParseArgsConfig['options']>;
@@ -67,7 +63,6 @@ export function buildArguments(args: string[], stage: 'plan' | 'build' = 'build'
   const { values, tokens } = parseArgs({ args: normalized, tokens: true, options });
   if (!['mini', 'none'].includes(values.samples)) throw new Error('--samples must be mini or none');
   if (!['off', 'cap', 'notes', 'only'].includes(values.notes)) throw new Error('--notes must be off, cap, notes or only');
-  const concurrency = integerArgument(values.concurrency, 'concurrency');
   const toggle = (name: string, fallback: boolean) => {
     let result = fallback;
     for (const token of tokens) if (token.kind === 'option') {
@@ -83,18 +78,13 @@ export function buildArguments(args: string[], stage: 'plan' | 'build' = 'build'
   if (stage === 'plan' || !values.label) {
     checkOptions(values.template !== undefined ? path.resolve(values.template) : undefined, values.style);
   }
-  if (values.skills !== undefined) generationScriptFor(values.skills);
   if (values.file?.length && (values.starter || stage === 'build' && values.label)) throw new Error('--file 仅用于 plan 或完整生成；分阶段 build 使用已保存的资料快照');
   const pipeline: PipelineOptions = {
-    ...(values.skills !== undefined ? { skillsRoot: path.resolve(values.skills) } : {}),
     ...(stage === 'plan' ? { planner: { ...(values.model ? { model: values.model } : {}), ...(values.effort ? { effort: values.effort } : {}), ...(values['base-url'] ? { baseUrl: values['base-url'] } : {}), ...(values['key-env'] ? { keyEnv: values['key-env'] } : {}), ...(values.wire ? { wire: values.wire } : {}) } } : {}),
-    uniform: values.uniform,
     ...(values.profile ? { profile: values.profile } : {}), ...(values.template !== undefined ? { template: path.resolve(values.template) } : {}),
     ...(values.config ? { config: loadConfig(values.config) } : {}), ...(values['env-file'] ? { envFile: path.resolve(values['env-file']) } : {}),
-    ...(values.chassis ? { chassis: path.resolve(values.chassis) } : {}), ...(values.lib ? { lib: path.resolve(values.lib) } : {}),
-    build: { ...(values.only ? { only: values.only } : {}), samples: values.samples, notes: values.notes, concurrency,
-      sampleShots: values['sample-shots'], visualFocus: values['visual-focus'], includeAux: toggle('aux-samples', values.samples !== 'none'),
-      ...(values.workflows ? { workflowRoot: path.resolve(values.workflows) } : {}), ...(values.prompts ? { prompts: path.resolve(values.prompts) } : {}),
+    build: { ...(values.only ? { only: values.only } : {}), samples: values.samples, notes: values.notes,
+      includeAux: toggle('aux-samples', values.samples !== 'none'), ...(values.prompts ? { prompts: path.resolve(values.prompts) } : {}),
     },
   };
   const request = createRunRequestSchema.parse({ query: values.query ?? (stage === 'build' && values.label ? '(planned run)' : undefined), minutes: integerArgument(values.minutes, 'minutes'), audience: values.audience, scenario: values.scenario, style: values.style });
@@ -103,10 +93,13 @@ export function buildArguments(args: string[], stage: 'plan' | 'build' = 'build'
 
 async function main(): Promise<void> {
   if (command === "serve") {
+    // The service reads keys in several places (generation, the fix agent, sessions, media); load the
+    // workspace's .env.local once into the process so they all see it. Shell values still win.
+    Object.assign(process.env, runtimeEnvironment(process.env));
     const { values } = parseArgs({ args: argv, options: { host: { type: "string", default: "127.0.0.1" }, port: { type: "string", default: "4321" }, runs: { type: "string" }, sessions: { type: "string" }, starter: { type: "boolean", default: false } } });
     // Sessions (the conversation layer) are served when given a directory for them.
     const sessions = values.sessions ?? process.env.NOTALE_SESSIONS_ROOT;
-    const { app } = createApp({ runsRoot: runsRoot(values.runs), useStarterPipeline: values.starter, ...(sessions ? { sessions: { root: path.resolve(sessions) } } : {}) });
+    const { app } = createApp({ runsRoot: runsRoot(values.runs), useStarterPipeline: values.starter, ...(process.env.NOTALE_API_TOKEN ? { apiToken: process.env.NOTALE_API_TOKEN } : {}), ...(sessions ? { sessions: { root: path.resolve(sessions) } } : {}) });
     const address = await app.listen({ host: values.host, port: Number(values.port) });
     process.stdout.write(`Notale API listening at ${address}\n`);
     return;
@@ -131,9 +124,7 @@ async function main(): Promise<void> {
         const result = await planRun({ root, ...planning, ...(files.length ? { inputDirectory: path.join(root, 'input/files') } : {}), ...(style ? { style } : {}),
           ...(pipeline.template ? { template: pipeline.template } : {}),
           ...(pipeline.build?.prompts ? { prompts: pipeline.build.prompts } : {}),
-          ...(pipeline.build?.workflowRoot ? { workflowRoot: pipeline.build.workflowRoot } : {}),
-          visualFocus: pipeline.build?.visualFocus ?? false,
-        }, runtime, { ...(pipeline.chassis ? { chassis: pipeline.chassis } : {}), ...(pipeline.lib ? { lib: pipeline.lib } : {}) });
+        }, runtime);
         process.stdout.write(JSON.stringify(result) + '\n');
       } else {
         const pages = await buildRun(root, runtime.builders, { ...pipeline.build, label,
@@ -149,7 +140,7 @@ async function main(): Promise<void> {
     const { request, pipeline, files, runs, starter } = buildArguments(argv);
     if (files.length) { const inputs = new FileInputs(runs); request.fileIds = []; for (const file of files) request.fileIds.push((await inputs.save(path.basename(file), await readFile(file))).id); }
     const store = new RunStore(runs);
-    const service = new RunService(store, starter ? starterPipeline : createModelPipeline(pipeline));
+    const service = new RunService(store, starter ? starterPipeline : createBaselinePipeline(pipeline));
     const exports = new LectureExports(service);
     const run = await service.start(request);
     for (;;) {
@@ -178,7 +169,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${JSON.stringify({ run: await store.get(id), events: await store.events(id) }, null, 2)}\n`);
     return;
   }
-  process.stdout.write("Usage: notale <serve|plan|build|check|inspect> [options]\nServe: [--host 127.0.0.1] [--port 4321] [--runs PATH] [--sessions PATH]\nCheck: [page-*.html ...] [--after JS ...] [--shot] [--shot-dir PATH] [--crop X,Y,W,H] [--zoom 2] [--wait 1200] [--text-report] [--json]\nStages: plan --label NAME --query TEXT; build --label NAME [--only page-01 ...]\nPlanner: [--model NAME] [--effort VALUE] [--base-url URL] [--key-env ENV] [--wire chat|messages|responses]\nBuild: --query TEXT [--minutes 90] [--profile NAME] [--uniform] [--samples mini|none]\n       [--notes off|cap|notes|only (default cap: cover 80, page/interaction 200)]\n       [--sample-shots] [--visual-focus] [--[no-]aux-samples]\n       [--concurrency 100] [--template PATH] [--file PATH ...]\n       [--skills PATH] [--workflows PATH] [--prompts PATH] [--chassis PATH] [--lib PATH] [--config PATH] [--env-file PATH]\n");
+  process.stdout.write("Usage: notale <serve|plan|build|check|inspect> [options]\nServe: [--host 127.0.0.1] [--port 4321] [--runs PATH] [--sessions PATH]\nCheck: [page-*.html ...] [--after JS ...] [--shot] [--shot-dir PATH] [--crop X,Y,W,H] [--zoom 2] [--wait 1200] [--text-report] [--json]\nStages: plan --label NAME --query TEXT; build --label NAME [--only page-01 ...]\nPlanner: [--model NAME] [--effort VALUE] [--base-url URL] [--key-env ENV] [--wire chat|messages|responses]\nBuild: --query TEXT [--minutes 90] [--profile NAME] [--samples mini|none]\n       [--notes off|cap|notes|only (default cap: cover 80, page/interaction 200)]\n       [--[no-]aux-samples] [--template PATH] [--file PATH ...]\n       [--prompts PATH] [--config PATH] [--env-file PATH]\n");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch((error) => {

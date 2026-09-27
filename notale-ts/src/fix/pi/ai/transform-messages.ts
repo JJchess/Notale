@@ -2,6 +2,7 @@
 import type {
 	Api,
 	AssistantMessage,
+	FileContent,
 	ImageContent,
 	Message,
 	Model,
@@ -13,44 +14,44 @@ import type {
 const NON_VISION_USER_IMAGE_PLACEHOLDER = "(image omitted: model does not support images)";
 const NON_VISION_TOOL_IMAGE_PLACEHOLDER = "(tool image omitted: model does not support images)";
 
-function replaceImagesWithPlaceholder(content: (TextContent | ImageContent)[], placeholder: string): TextContent[] {
-	const result: TextContent[] = [];
-	let previousWasPlaceholder = false;
+/** Why a block cannot go to this model, or undefined when it can. */
+function unsupported<TApi extends Api>(block: TextContent | ImageContent | FileContent, model: Model<TApi>, inTool: boolean): string | undefined {
+	if (block.type === "image") return model.input.includes("image") ? undefined : inTool ? NON_VISION_TOOL_IMAGE_PLACEHOLDER : NON_VISION_USER_IMAGE_PLACEHOLDER;
+	if (block.type !== "file") return undefined;
+	const kind = block.mimeType === "application/pdf" ? "pdf" : "video";
+	return model.input.includes(kind) ? undefined : `(${kind} omitted: model does not read ${kind}; file ${block.path})`;
+}
+
+function replaceUnsupported<TApi extends Api>(content: (TextContent | ImageContent | FileContent)[], model: Model<TApi>, inTool: boolean): (TextContent | ImageContent | FileContent)[] {
+	const result: (TextContent | ImageContent | FileContent)[] = [];
+	let previous = "";
 
 	for (const block of content) {
-		if (block.type === "image") {
-			if (!previousWasPlaceholder) {
-				result.push({ type: "text", text: placeholder });
-			}
-			previousWasPlaceholder = true;
+		const placeholder = unsupported(block, model, inTool);
+		if (placeholder === undefined) {
+			result.push(block);
+			previous = block.type === "text" ? block.text : "";
 			continue;
 		}
-
-		result.push(block);
-		previousWasPlaceholder = block.text === placeholder;
+		if (placeholder !== previous) result.push({ type: "text", text: placeholder });
+		previous = placeholder;
 	}
 
 	return result;
 }
 
 function downgradeUnsupportedImages<TApi extends Api>(messages: Message[], model: Model<TApi>): Message[] {
-	if (model.input.includes("image")) {
+	if (model.input.includes("image") && model.input.includes("pdf") && model.input.includes("video")) {
 		return messages;
 	}
 
 	return messages.map((msg) => {
 		if (msg.role === "user" && Array.isArray(msg.content)) {
-			return {
-				...msg,
-				content: replaceImagesWithPlaceholder(msg.content, NON_VISION_USER_IMAGE_PLACEHOLDER),
-			};
+			return { ...msg, content: replaceUnsupported(msg.content, model, false) };
 		}
 
 		if (msg.role === "toolResult") {
-			return {
-				...msg,
-				content: replaceImagesWithPlaceholder(msg.content, NON_VISION_TOOL_IMAGE_PLACEHOLDER),
-			};
+			return { ...msg, content: replaceUnsupported(msg.content, model, true) };
 		}
 
 		return msg;

@@ -2,15 +2,14 @@ import { Sources, publishSources, sourceInstructions } from './sources.js';
 import { TEMPLATE_SPEC } from './pptx-template.js';
 import type { TemplateSpec } from './template-style.js';
 import { observedStep, workflowNotice } from './workflow-progress.js';
-/** Plan publication and Builder handoff from Python's plan_run/main. */
+/** Plan publication and Builder handoff. */
 import { existsSync, statSync } from 'node:fs';
 import { constants } from 'node:fs';
 import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { decodeText } from './text.js';
-import { parsePythonJson, jsonText, sumIntegers, rememberNumber } from './json.js';
-import { RESOURCES, WORKFLOWS, PAGE_WORKFLOWS } from './guidance.js';
-import { deckCall, type PlannerPorts } from './planning.js';
+import { RESOURCES, SKILLS, PAGE_SKILLS } from './guidance.js';
+import { deckCall, type PlannerPorts } from './planner.js';
 import { direct, type DirectorPorts, type DirectorRequest } from './director.js';
 import { plannerPrompt, splitPages, PAGES_REL } from './planner-contract.js';
 import { mediaSources, writeCredits } from '../tools/media-execution.js';
@@ -22,7 +21,8 @@ import type { ResolvedProfile } from '../adapters/models/profiles.js';
 import { isWithin } from './theme.js';
 
 export interface Brief { description: string; prompt: string }
-export async function seed(root: string, chassis = path.join(RESOURCES, 'chassis'), lib = path.join(chassis, 'lib')): Promise<void> {
+export async function seed(root: string): Promise<void> {
+  const chassis = path.join(RESOURCES, 'chassis');
   const assets = path.join(root, 'pages/assets'); await mkdir(assets, { recursive: true });
   for (const file of ['base.css', 'base.js', 'CHASSIS.md']) {
     const source = path.join(chassis, file);
@@ -33,10 +33,8 @@ export async function seed(root: string, chassis = path.join(RESOURCES, 'chassis
   const diagnostics = path.resolve(RESOURCES, '../dist/diagnostics');
   if (!existsSync(path.join(diagnostics, 'selfcheck.mjs'))) throw new Error('缺少独立检查器；请先运行 npm run build');
   await cp(diagnostics, assets, { recursive: true });
-  // Preserve explicitly supplied legacy chassis diagnostics as an extension.
-  if (existsSync(path.join(chassis, 'selfcheck.py'))) await cp(path.join(chassis, 'selfcheck.py'), path.join(assets, 'selfcheck.py'));
   // Browser libraries are copied, never linked to the repository.
-  if (!existsSync(path.join(assets, 'lib'))) await cp(lib, path.join(assets, 'lib'), { recursive: true });
+  if (!existsSync(path.join(assets, 'lib'))) await cp(path.join(chassis, 'lib'), path.join(assets, 'lib'), { recursive: true });
 }
 export async function briefs(run: DirectorRequest, numbers: string[], mapping: Record<string, string[]> = {}): Promise<Brief[]> {
   const records = await mediaSources(path.join(run.root, 'pages'));
@@ -51,9 +49,9 @@ export async function briefs(run: DirectorRequest, numbers: string[], mapping: R
     return { description: `Build ${pid}`, prompt };
   });
 }
-export async function planRun(run: DirectorRequest, ports: { planner: PlannerPorts; director: DirectorPorts }, options: { chassis?: string; lib?: string; signal?: AbortSignal; onPlanned?(pagesDoc: string): void } = {}): Promise<{ pages: number; root: string }> {
+export async function planRun(run: DirectorRequest, ports: { planner: PlannerPorts; director: DirectorPorts }, options: { signal?: AbortSignal; onPlanned?(pagesDoc: string): void } = {}): Promise<{ pages: number; root: string }> {
   ports.director.theme.checkOptions(run.template, run.style);
-  await seed(run.root, options.chassis, options.lib);
+  await seed(run.root);
   // Neither branch consumes the other's planning context. Wait for both even on failure.
   const director = observedStep(ports.director.progress, 'director', 'overall', '视觉设计', () => direct(run, ports.director, options.signal));
   const planning = (async () => {
@@ -98,19 +96,18 @@ async function themeReferences(root: string): Promise<Record<string, any>[]> {
 }
 export interface BuildOptions extends InstructionOptions {
   label: string; profile: ResolvedProfile; profiles: Record<string, ResolvedProfile>;
-  concurrency?: number; only?: string[]; sampleShots?: boolean; signal?: AbortSignal;
+  only?: string[]; signal?: AbortSignal;
   onRetry?(page: Page): void;
   onPlan?(pages: Page[]): Promise<void>;
   onPage?(page: Page, state: 'started' | 'finished'): Promise<void>;
 }
 export async function buildRun(root: string, ports: Record<string, BuilderPorts>, options: BuildOptions): Promise<Page[]> {
-  const raw: Brief[] = parsePythonJson(decodeText(await readFile(path.join(root, 'briefs.json'))));
-  const workflows = options.workflowRoot ?? WORKFLOWS;
-  const missing = PAGE_WORKFLOWS.filter(name => {
-    const file = path.join(workflows, name, 'SKILL.md');
+  const raw: Brief[] = JSON.parse(decodeText(await readFile(path.join(root, 'briefs.json'))));
+  const missing = PAGE_SKILLS.filter(name => {
+    const file = path.join(SKILLS, name, 'SKILL.md');
     return !existsSync(file) || !statSync(file).isFile();
   });
-  if (missing.length) throw Object.assign(new Error('生产 workflow 未安装完整: ' + missing.join(', ')), { name: 'FileNotFoundError' });
+  if (missing.length) throw Object.assign(new Error('生产页型 skill 未安装完整: ' + missing.join(', ')), { name: 'FileNotFoundError' });
   let pages = raw.map(brief => routePage(root, new Page(brief.description.replaceAll('Build ', ''), brief.prompt)));
   for (const page of pages) page.total = raw.length;
   if (options.only) pages = pages.filter(page => options.only!.includes(page.pid));
@@ -121,36 +118,35 @@ export async function buildRun(root: string, ports: Record<string, BuilderPorts>
   const sources = await Sources.load(root);
   const sourceMapping: Record<string, string[]> = sources ? JSON.parse(await readFile(path.join(root, 'sources/by-page.json'), 'utf8')) : {};
   const templateSpec = existsSync(path.join(root, TEMPLATE_SPEC)) ? JSON.parse(await readFile(path.join(root, TEMPLATE_SPEC), 'utf8')) as TemplateSpec : undefined;
-  const refs = !templateSpec && pages.some(page => page.workflow !== 'build-code') ? await themeReferences(root) : [];
+  const refs = !templateSpec && pages.some(page => page.skill !== 'build-code') ? await themeReferences(root) : [];
   const profile = options.profile, samples = options.samples ?? 'mini', auxiliary = options.includeAux ?? samples !== 'none';
   const manifest: Record<string, any> = { schemaVersion: 3, label: options.label, profile: profile.id, model: profile.model, baseUrl: profile.base_url,
     apiKeyEnv: profile.api_key_env, adapter: profile.adapter, reasoningEffort: profile.reasoning_effort, visionInput: profile.vision_input,
-    workflowProfiles: Object.fromEntries(Object.entries(options.profiles).map(([name, profile]) => [name, profile.id])), auxiliarySamples: auxiliary,
-    samples, sampleShots: options.sampleShots ?? false, visualFocus: options.visualFocus ?? false, notesMode: options.notes ?? 'cap',
+    skillProfiles: Object.fromEntries(Object.entries(options.profiles).map(([name, profile]) => [name, profile.id])), auxiliarySamples: auxiliary,
+    samples, notesMode: options.notes ?? 'cap',
     refShots: refs.some(ref => ref.type === 'input_image'), themeReferences: refs.filter(ref => ref.type === 'input_text').map(ref => ref.text),
     pages: pages.map(page => page.pid), startedAt: new Date().toISOString() };
-  await writeFile(manifestFile, jsonText(manifest, { indent: 2 }) + '\n');
-  // Only the workflows this run actually uses; a deck without code pages never loads the observer contract.
-  const used = [...new Set(pages.map(page => page.workflow))];
+  await writeFile(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
+  // Only the skills this run actually uses; a deck without code pages never loads the observer contract.
+  const used = [...new Set(pages.map(page => page.skill))];
   const chapters = chapterPreloads(root, raw.length), instructions = Object.fromEntries(used.map(name => [name, Object.values(instructionBlocks(root, raw.length, name, { ...options, includeAux: auxiliary })).join('\n\n')]));
-  for (const page of pages) page.prompt = environmentContext(directory, page.pid, path.join(workflows, page.workflow)) + '\n\n' + page.prompt + '\n\n' + chapters[page.pid] + (sources ? '\n\n' + sourceInstructions + '\n本页相关资料：\n' + sources.evidence(sourceMapping[page.pid] ?? []) : '');
+  for (const page of pages) page.prompt = environmentContext(directory, page.pid, path.join(SKILLS, page.skill)) + '\n\n' + page.prompt + '\n\n' + chapters[page.pid] + (sources ? '\n\n' + sourceInstructions + '\n本页相关资料：\n' + sources.evidence(sourceMapping[page.pid] ?? []) : '');
   const templateRefs: Record<string, Record<string, any>[]> = {};
-  if (templateSpec) for (const workflow of PAGE_WORKFLOWS.filter(w => w !== 'build-code')) {
-    const sources = [...new Set(templateSpec.layouts.filter(l => (l.workflows as string[]).includes(workflow)).map(l => l.source))];
-    templateRefs[workflow] = (await images(sources.map(id => ({ id, shot: path.join(root, 'template-input', id + '.png') })))).map(block => block.type === 'text' ? { type: 'input_text', text: block.text } : { type: 'input_image', image_url: block.image_url.url });
+  if (templateSpec) for (const skill of PAGE_SKILLS.filter(w => w !== 'build-code')) {
+    const sources = [...new Set(templateSpec.layouts.filter(l => (l.skills as string[]).includes(skill)).map(l => l.source))];
+    templateRefs[skill] = (await images(sources.map(id => ({ id, shot: path.join(root, 'template-input', id + '.png') })))).map(block => block.type === 'text' ? { type: 'input_text', text: block.text } : { type: 'input_image', image_url: block.image_url.url });
   }
-  const started = performance.now(), concurrency = options.concurrency ?? 100;
-  if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error('max_workers must be greater than 0');
+  const started = performance.now(), concurrency = 100;
   let cursor = 0;
   const attempt = async (page: Page): Promise<void> => {
-    const port = ports[page.workflow]!, runtime = options.profiles[page.workflow]!;
-    try { await buildOne(page, directory, path.join(root, 'trace.jsonl'), instructions[page.workflow]!, port,
-      { ...(options.onRetry ? { onRetry: options.onRetry } : {}), workflowRoot: workflows, visionInput: runtime.vision_input, textReport: ['notes', 'only'].includes(options.notes ?? 'cap'), sampleShots: options.sampleShots ?? false, refs: templateRefs[page.workflow] ?? refs, ...(options.signal ? { signal: options.signal } : {}) }); }
+    const port = ports[page.skill]!, runtime = options.profiles[page.skill]!;
+    try { await buildOne(page, directory, path.join(root, 'trace.jsonl'), instructions[page.skill]!, port,
+      { ...(options.onRetry ? { onRetry: options.onRetry } : {}), visionInput: runtime.vision_input, textReport: ['notes', 'only'].includes(options.notes ?? 'cap'), refs: templateRefs[page.skill] ?? refs, ...(options.signal ? { signal: options.signal } : {}) }); }
     catch (error) {
       if (options.signal?.aborted) throw options.signal.reason;
       const exception = error as Error; page.why = `${exception.name}: ${[...exception.message].slice(0, 160).join('')}`; page.termination = 'agent_exception';
       const target = path.join(directory, page.pid + '.html'); page.artifact_present = existsSync(target) && (await stat(target)).isFile() && (await stat(target)).size > 0;
-      page.audit = await auditDelivery({ cwd: directory, pid: page.pid, resourceRoot: path.join(workflows, page.workflow), textReport: ['notes', 'only'].includes(options.notes ?? 'cap') }, page, port, options.signal);
+      page.audit = await auditDelivery({ cwd: directory, pid: page.pid, resourceRoot: path.join(SKILLS, page.skill), textReport: ['notes', 'only'].includes(options.notes ?? 'cap') }, page, port, options.signal);
     }
   };
   // A second attempt starts from a clean slate: same brief, fresh history, no artifacts left over from the first.
@@ -171,7 +167,7 @@ export async function buildRun(root: string, ports: Record<string, BuilderPorts>
         options.signal?.throwIfAborted();
         await clearArtifacts(page.pid);
         const fresh = new Page(page.pid, page.prompt);
-        fresh.label = page.label; fresh.workflow = page.workflow; fresh.spec_text = page.spec_text; fresh.total = page.total;
+        fresh.label = page.label; fresh.skill = page.skill; fresh.spec_text = page.spec_text; fresh.total = page.total;
         fresh.attempts = page.attempts + 1; fresh.stop_reasons = [...page.stop_reasons, ...(page.why ? [page.why] : [])];
         try { Promise.resolve(options.onRetry?.(fresh)).catch(() => {}); } catch {}
         await attempt(fresh);
@@ -184,15 +180,14 @@ export async function buildRun(root: string, ports: Record<string, BuilderPorts>
   try { await writeCredits(directory); } catch (error) { console.warn(`  素材来源汇总失败（不影响页面产物）：${(error as Error).message}`); }
   await publishSources(root);
   const results = Object.fromEntries(pages.map(page => [page.pid, { calls: page.calls, within_response_target: page.calls <= 11, seconds: Math.round(page.seconds * 10) / 10,
-    label: page.label, workflow: page.workflow, profile: options.profiles[page.workflow]!.id, termination: page.termination, premature_stops: page.premature_stops, last_stop_error: page.last_stop_error, attempts: page.attempts, stop_reasons: page.stop_reasons, artifact_present: page.artifact_present, audit: page.audit,
+    label: page.label, skill: page.skill, profile: options.profiles[page.skill]!.id, termination: page.termination, premature_stops: page.premature_stops, last_stop_error: page.last_stop_error, attempts: page.attempts, stop_reasons: page.stop_reasons, artifact_present: page.artifact_present, audit: page.audit,
     steps: page.steps, args: page.steps_arg, reference_reads: page.reference_reads, images: page.images, evicted: page.evicted,
     tok_in: page.tok_in, tok_cached: page.tok_cached, tok_write: page.tok_write, tok_out: page.tok_out, tok_max: page.tok_max, cache_reported: page.cache_seen, why: page.why }]));
-  for (const result of Object.values(results)) rememberNumber(result, 'seconds', result.seconds, '0.0');
-  await writeFile(path.join(root, 'builder-results.json'), jsonText(results, { indent: 2 }) + '\n');
+  await writeFile(path.join(root, 'builder-results.json'), JSON.stringify(results, null, 2) + '\n');
   Object.assign(manifest, { completedAt: new Date().toISOString(), wallSeconds: Math.round((performance.now() - started) / 100) / 10, artifacts: pages.filter(page => page.artifact_present).length,
     attempted: pages.length, rebuiltPages: pages.filter(page => page.attempts > 1).map(page => page.pid), fatalAuditPages: pages.filter(page => page.audit?.fatal_errors.length).map(page => page.pid), visualWarningPages: pages.filter(page => page.audit?.visual_warnings.length).map(page => page.pid), overResponseTargetPages: pages.filter(page => page.calls > 11).map(page => page.pid),
-    inputTokens: sumIntegers(...pages.map(page => page.tok_in)), outputTokens: sumIntegers(...pages.map(page => page.tok_out)), checkCalls: pages.reduce((sum, page) => sum + page.steps.filter(step => step === 'Check').length, 0) });
-  await writeFile(manifestFile, jsonText(manifest, { indent: 2 }) + '\n');
+    inputTokens: pages.reduce((sum, page) => sum + page.tok_in, 0), outputTokens: pages.reduce((sum, page) => sum + page.tok_out, 0), checkCalls: pages.reduce((sum, page) => sum + page.steps.filter(step => step === 'Check').length, 0) });
+  await writeFile(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
   return pages;
 }
 

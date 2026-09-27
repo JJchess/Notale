@@ -1,12 +1,12 @@
 import type { Preview } from './attachments.js';
 
 /** What one message is: a new deck, a change to one this session made, a question back, or a reply.
- * Decided by one model call that submits `Route` (the way the planner submits FinalizePlan); what
+ * Decided by one model call that submits `Route` (the way the planner submits Submit); what
  * happens after is plain code. */
 export type Route =
   | { action: 'generate'; reason: string; query: string; minutes?: number; audience?: string; scenario?: string; language?: string; style?: string;
       files: { id: string; role: 'material' | 'template' | 'style-reference' }[] }
-  | { action: 'fix'; reason: string; target: string; instruction: string; page?: number; files: { id: string; role: 'reference-image' }[] }
+  | { action: 'fix'; reason: string; target: string; instruction: string; page?: number; files: { id: string; role: 'reference' }[] }
   | { action: 'ask'; reason: string; question: string; options?: string[] }
   | { action: 'reply'; reason: string; text: string };
 
@@ -23,8 +23,8 @@ export const ROUTE_TOOL = {
     properties: {
       action: { type: 'string', enum: ['generate', 'fix', 'ask', 'reply'], description: 'generate=做一份新讲义；fix=修改本会话已有的一份讲义；ask=信息不够或有歧义，先问作者；reply=不需要生成也不需要修改' },
       reason: { type: 'string', description: '一句话：你为什么这样理解，会展示给作者' },
-      query: { type: 'string', description: 'generate：整理后的讲义主题与要求，不是原话照抄' },
-      minutes: { type: 'integer', description: 'generate：作者说了课时/时长才填，单位分钟' },
+      query: { type: 'string', description: 'generate：作者的原话，只去掉已填进 minutes、audience 等字段的部分，不改写、不扩写' },
+      minutes: { type: 'integer', description: 'generate：单位分钟。作者说了时长就填；没说时长但说了场合（如大学一节课、初二物理课），按该场合的一次课填（大学一次课通常两节连上，约 90 分钟；中小学一节约 45 分钟，说了连堂就按连堂），并在 reason 里写出按多少分钟理解；都没说就不填' },
       audience: { type: 'string', description: 'generate：作者说了受众才填' },
       scenario: { type: 'string', description: 'generate：使用场景或其他要求（作者说了才填）' },
       language: { type: 'string', description: 'generate：讲义文字的语言，作者指定或素材明显是某种语言时填，例如 English' },
@@ -39,7 +39,7 @@ export const ROUTE_TOOL = {
         type: 'array', description: '每个附件的用途，每个附件都要出现一次',
         items: { type: 'object', properties: {
           id: { type: 'string' },
-          role: { type: 'string', enum: ['material', 'template', 'style-reference', 'reference-image'] },
+          role: { type: 'string', enum: ['material', 'template', 'style-reference', 'reference'], description: 'material=提供内容；template=要照着排版的 PPTX（“照这个样子讲 X”；把 PPT 本身做成讲义则是 material）；style-reference=只借风格的图片；reference=修改时给的参考' },
         }, required: ['id', 'role'] },
       },
     },
@@ -47,26 +47,7 @@ export const ROUTE_TOOL = {
   },
 } as const;
 
-export const SYSTEM = `你是 Notale 的入口。作者发来一条消息（可能带附件），你判断它要做什么，然后调用 Route 提交。只调用一次，不要输出别的。
-
-两件能做的事：
-- generate：做一份新的互动讲义。
-- fix：修改这个会话里已经做出来的某一份讲义（只能改下面「本会话的讲义」里列出的，不能改附件里的文件）。
-
-附件的用途：
-- material（素材）：提供讲义的内容，例如论文、教材、笔记、数据截图。
-- template（模板）：提供版式，讲义要照它的样子排。只可能是 PPTX。作者会说「照这个模板/样式做」，或者这份 PPTX 基本是占位文字和版式。
-- style-reference（风格参考）：一张图片，提供配色、字体、气质，不提供内容。作者会说「按这张图的风格」「参考这个感觉」。
-- reference-image（fix 时的参考图）：修改时作者给的图，例如「把这页改成图里这样」。
-
-判断依据：
-- 会话里还没有讲义时，不可能是 fix。
-- 同一份 PPTX，作者说「照它的样子讲 X」是 template；说「把这份 PPT 做成讲义」「根据这份 PPT 的内容」是 material。说不清就 ask。
-- 作者说「改一下」「这一页」「上一份」等，指的是本会话最近的一份讲义；有多份又分不清指哪份就 ask。
-- 能从消息里读出来的就填，读不出来的字段不填，交给后面的流程按默认处理。不要编造作者没说的要求。
-- 上一轮你问过作者一个问题时，这条消息多半是在回答它；上一轮的附件还在，照回答确定它们的用途。
-- 拿不准要做什么、或附件用途有两种都说得通的理解时，ask，不要猜。
-- 寒暄、问怎么用、问已有讲义的内容而不要求改动：reply。`;
+export const SYSTEM = `你是 Notale 的入口：读作者这条消息和附件，调用一次 Route 说明要做什么。只填作者说了的内容，不补作者没提的要求；拿不准就 ask。`;
 
 /** The model's view of this message: what was said before, what exists, what came attached. */
 export function brief(input: Understanding): string {
@@ -98,6 +79,7 @@ export function validate(args: Record<string, unknown>, input: Understanding): R
         const file = input.files.find(f => f.id === r.id)!;
         if (r.role === 'template' && file.kind !== 'pptx') return ask(`模板只能是 PPTX，「${file.name}」要当素材还是风格参考？`);
         if (r.role === 'style-reference' && file.kind !== 'image') return ask(`风格参考只能是图片，「${file.name}」要当素材吗？`);
+        if (file.kind === 'video') return ask(`视频目前只能在修改讲义时作参考，还不能用来生成。「${file.name}」要先做一份讲义，再照视频修改吗？`);
       }
       if (roles.filter(r => r.role === 'template').length > 1) return ask('一次只能用一个模板，用哪一份？');
       const optional = { minutes: int('minutes'), audience: str('audience'), scenario: str('scenario'), language: str('language'), style: str('style') };
@@ -111,10 +93,9 @@ export function validate(args: Record<string, unknown>, input: Understanding): R
       if (!artifact) return ask('要改的是哪一份讲义？');
       if (!instruction) return ask('想怎么改？');
       const page = int('page');
-      const extra = input.files.filter(f => f.kind !== 'image');
-      if (extra.length) return ask(`修改时只能附图片作参考，「${extra[0]!.name}」要用来做什么？`);
+      // Anything attached to a change is a reference the fix agent reads (images inline, the rest with read).
       return { action: 'fix', reason, target: artifact.runId, instruction, ...(page && page <= artifact.pages.length ? { page } : {}),
-        files: input.files.map(f => ({ id: f.id, role: 'reference-image' as const })) };
+        files: input.files.map(f => ({ id: f.id, role: 'reference' as const })) };
     }
     case 'ask': {
       const question = str('question') ?? '能再说具体一点吗？';

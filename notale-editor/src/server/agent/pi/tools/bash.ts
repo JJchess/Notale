@@ -37,8 +37,8 @@ const bashSchema = Type.Object({
 export type BashToolInput = Static<typeof bashSchema>;
 
 export interface BashToolDetails {
-	truncation?: TruncationResult;
-	fullOutputPath?: string;
+	truncation?: TruncationResult | undefined;
+	fullOutputPath?: string | undefined;
 }
 
 /**
@@ -131,7 +131,7 @@ export function createLocalShellOperations(shellName: string, resolveShellConfig
 }
 
 /** Create bash operations using the built-in local shell execution backend. */
-export function createLocalBashOperations(options?: { shellPath?: string }): BashOperations {
+export function createLocalBashOperations(options?: { shellPath?: string | undefined }): BashOperations {
 	return createLocalShellOperations("bash", () => getShellConfig(options?.shellPath));
 }
 

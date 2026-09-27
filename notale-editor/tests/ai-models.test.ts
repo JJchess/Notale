@@ -32,7 +32,7 @@ test('services without a key are listed, disabled; with a key, the models it can
   const by = Object.fromEntries(providers.map(p => [p.provider, p]));
   assert.deepEqual(by.openai, { provider: 'openai', name: 'OpenAI', available: false, reason: '未配置密钥', models: [] });
   assert.deepEqual(by.google!.models.map(m => m.id), ['gemini-3.8-flash'], 'embedding models are not chat models');
-  assert.deepEqual(by.openrouter!.models, [{ id: 'a/tools-vision', name: 'A', vision: true, contextWindow: 200_000 }], 'only models that call tools');
+  assert.deepEqual(by.openrouter!.models, [{ id: 'a/tools-vision', name: 'A', vision: true, contextWindow: 200_000, input: ['text', 'image'] }], 'only models that call tools');
   assert.deepEqual(by.siliconflow!.models.map(m => [m.id, m.vision]), [['deepseek-ai/DeepSeek-V3', false]], 'no capability data: text-only, embeddings dropped');
 });
 test('a key the service rejects says so, and is asked again next time instead of cached', async () => {

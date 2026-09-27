@@ -41,13 +41,18 @@ export interface AiTurn {id:string;instruction:string;targetLabel:string;intent:
  targets?:string[];}
 /** A model the server can reach, as `/api/ai/models` lists it. */
 export interface AiModelRef {provider:string;id:string}
-export interface AiModelInfo {id:string;name:string;vision:boolean;contextWindow:number}
+export interface AiModelInfo {id:string;name:string;vision:boolean;contextWindow:number;input?:string[]}
 export interface AiProvider {provider:string;name:string;available:boolean;reason?:string;models:AiModelInfo[]}
 /** A picture the author attached for the model to look at. `url` is a local preview. */
 export interface AiAttachment {id:string;name:string;mime:string;data:string;url:string}
+/** A document or video: uploaded on its own first (it can be 100 MB), then named in the message by
+ * id. The agent reads it with read -- natively when the model can, as text, pages or keyframes when not. */
+export interface AiFile {id:string;name:string;state:'uploading'|'ready'|'failed';uploadId?:string;error?:string}
 /** One @ suggestion: what the menu shows, and the path text it inserts (pi's @file reference). */
 export interface AiMention {kind:'page'|'object';label:string;detail:string;insert:string}
-export const ATTACHMENT_LIMIT=4,ATTACHMENT_BYTES=5*1024*1024;
+export const ATTACHMENT_LIMIT=4,ATTACHMENT_BYTES=5*1024*1024,FILE_LIMIT=10,FILE_BYTES=100*1024*1024;
+/** What goes up as a file rather than inline: documents and video, by extension (browsers leave some types blank). */
+export const FILE_PATTERN=/\.(pdf|docx|pptx|mp4|mov|webm)$/i;
 const IMAGE_TYPES=['image/png','image/jpeg','image/webp'];
 /** What is not reviewed yet: the document at the session's baseline against now. */
 export interface AiReview {reviewBase:number;version:number;rows:DiffRow[];}
@@ -75,6 +80,7 @@ export interface AiModel {
  /** Whether the model that will answer can look at pictures. */
  vision:boolean;
  attachments:AiAttachment[];
+ files:AiFile[];
  pickModel?:(ref:AiModelRef)=>void;
  attach?:(files:readonly File[])=>Promise<void>;
  detach?:(id:string)=>void;
@@ -91,7 +97,7 @@ export interface AiModel {
  newConversation?:()=>void;
  clearSelection?:()=>void;
 }
-const initial:AiModel={available:false,reason:'',status:'idle',instruction:'',sent:'',intent:'edit-deck',targets:[],targetLabel:'',steps:[],turns:[],sessionId:'',error:'',reply:'',providers:[],vision:true,attachments:[]};
+const initial:AiModel={available:false,reason:'',status:'idle',instruction:'',sent:'',intent:'edit-deck',targets:[],targetLabel:'',steps:[],turns:[],sessionId:'',error:'',reply:'',providers:[],vision:true,attachments:[],files:[]};
 const MODEL_KEY='notale-ai-model';
 /** The model a pick names, if the server still lists it as usable. */
 export function findModel(providers:readonly AiProvider[],ref:AiModelRef|undefined){return ref?providers.find(p=>p.provider===ref.provider&&p.available)?.models.find(m=>m.id===ref.id):undefined;}
@@ -296,6 +302,8 @@ export interface AiContext {
  objects:()=>readonly AiObject[];
  /** Runs a turn; `onSession` fires as soon as the server says which session it is. */
  request:(path:string,body:unknown,signal:AbortSignal,onStep:(step:AiStep)=>void,onSession:(id:string)=>void,onText:(delta:string|null)=>void)=>Promise<AiTurnResult>;
+ /** Uploads a document or video for the next message; resolves with its id. */
+ uploadFile:(file:File,signal?:AbortSignal)=>Promise<{id:string}>;
  /** The services and the models each key can use. */
  models:()=>Promise<{default:AiModelRef;providers:AiProvider[]}>;
  /** The deck's pages as files, for @ references. */
@@ -356,15 +364,16 @@ export function bindAiEdits(context:AiContext){
 /** One turn: what to ask, about which objects. The composer's words, pictures and pick go with it. */
  async function send(instruction:string,targets:string[],targetLabel:string){
   const intent:AiIntent=targets.length?'edit-selection':'edit-deck';
-  const startedIn=context.documentId(),images=model.attachments;
+  const startedIn=context.documentId(),images=model.attachments,files=model.files.flatMap(file=>file.state==='ready'&&file.uploadId?[file.uploadId]:[]);
   controller=new AbortController();stopped=false;
-  render({status:'running',error:'',steps:[],reply:'',intent,targets,instruction:'',sent:instruction,attachments:[]});
+  render({status:'running',error:'',steps:[],reply:'',intent,targets,instruction:'',sent:instruction,attachments:[],files:[]});
   const seal=(turn:Omit<AiTurn,'id'|'instruction'|'targetLabel'|'intent'|'steps'>)=>persist({turns:[...model.turns,{id:crypto.randomUUID(),instruction,targetLabel,intent,steps:model.steps,targets,...turn}]});
   try{
    const result=await context.request('/api/documents/'+startedIn+'/ai-edits',
     {...(model.sessionId?{sessionId:model.sessionId}:{}),slideId:context.slideId(),instruction,targets,
      ...(findModel(model.providers,model.choice)?{model:model.choice}:{}),
-     ...(images.length?{images:images.map(({mime,data})=>({mime,data}))}:{})},
+     ...(images.length?{images:images.map(({mime,data})=>({mime,data}))}:{}),
+     ...(files.length?{files}:{})},
     controller.signal,
     step=>{if(active())render({steps:appendStep(model.steps,step)});},
     id=>{if(active()&&context.documentId()===startedIn&&id!==model.sessionId)persist({sessionId:id});},
@@ -433,8 +442,17 @@ export function bindAiEdits(context:AiContext){
    try{localStorage.setItem(MODEL_KEY,JSON.stringify(ref));}catch{/* a per-viewer convenience */}
    render({choice:ref,vision:findModel(model.providers,ref)!.vision});
   },
-  attach:async files=>{
+  attach:async list=>{
    if(!active())return;
+   // Documents and video: each uploads on its own, and shows how far it got.
+   const documents=list.filter(file=>FILE_PATTERN.test(file.name)&&!IMAGE_TYPES.includes(file.type));
+   const fitting=documents.filter(file=>file.size<=FILE_BYTES).slice(0,Math.max(0,FILE_LIMIT-model.files.length));
+   const pending=fitting.map((file):AiFile=>({id:crypto.randomUUID(),name:file.name,state:'uploading'}));
+   if(documents.length)render({files:[...model.files,...pending],error:fitting.length<documents.length?'最多附 10 个文件，单个不超过 100 MB':''});
+   const settle=(id:string,patch:Partial<AiFile>)=>{if(active())render({files:model.files.map(file=>file.id===id?{...file,...patch}:file)});};
+   fitting.forEach((file,index)=>{const entry=pending[index]!;void context.uploadFile(file).then(saved=>settle(entry.id,{state:'ready',uploadId:saved.id}),cause=>settle(entry.id,{state:'failed',error:cause instanceof Error?cause.message:String(cause)}));});
+   const files=list.filter(file=>!documents.includes(file));
+   if(!files.length)return;
    const room=ATTACHMENT_LIMIT-model.attachments.length;
    const accepted=files.filter(file=>IMAGE_TYPES.includes(file.type));
    const tooBig=accepted.filter(file=>file.size>ATTACHMENT_BYTES);
@@ -449,6 +467,7 @@ export function bindAiEdits(context:AiContext){
    render({attachments:[...model.attachments,...added],error});
   },
   detach:id=>{
+   if(active()&&model.files.some(file=>file.id===id)){render({files:model.files.filter(file=>file.id!==id)});return;}
    const gone=model.attachments.find(entry=>entry.id===id);
    if(!active()||!gone)return;
    URL.revokeObjectURL(gone.url);

@@ -24,7 +24,7 @@ await cp(path.join(packageRoot, 'resources/notices/Pillow-LICENSE'), path.join(d
 await writeFile(path.join(diagnostics, 'SELFCHECK.md'), '# 页面复查\n\n在 pages 目录运行：\n\n```sh\nnpm install --prefix assets\nnpm exec --prefix assets -- playwright install chromium\nnode assets/selfcheck.mjs page-01.html --json\n```\n\n支持与宿主 check 相同的 --after、--shot、--shot-dir、--crop、--zoom、--wait、--text-report 和 --json。不传页面时扫描当前目录 page-*.html。依赖安装仅用于复查；页面预览不需要 Node 或这些检查依赖。检查报告中的页面问题不改变诊断成功退出码 0；未找到页面返回 2。\n');
 if (process.argv.includes('--selfcheck-only')) process.exit(0);
 await Promise.all([preparePublicationPlayer(), preparePublicationFonts(), preparePublicationAssets()]);
-// The migrated scaffold uses the original workbench plus npm-provided runtime
+// The scaffold uses the original workbench plus npm-provided runtime
 // files. Only offline Python wheels need preparation; no second workbench bundle.
 const packageOutput = path.join(packageRoot, "dist/browser/packages");
 await mkdir(packageOutput, { recursive: true });

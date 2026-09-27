@@ -6,12 +6,13 @@ import path, { dirname, join, relative, resolve, sep } from 'node:path';
 import { Type } from 'typebox';
 import { references, workbenchFrames } from '@notale/format/page';
 import { codeResourcePath, discoverCodeLessons } from '@notale/format';
-import { loadConfig, configValue } from '../adapters/models/profiles.js';
+import { loadConfig } from '../adapters/models/profiles.js';
 import { RESOURCES } from '../core/guidance.js';
 import { check } from '../tools/check.js';
 import { mediaCall } from '../tools/media-execution.js';
 import { acquireVisualChecker } from '../tools/visual-check.js';
 import type { Sandbox } from './sandbox.js';
+import { GeminiFiles } from './pi/ai/gemini-files.js';
 import {
   Agent, compactIfNeeded, estimateContextTokens, createBashTool, createEditTool, createReadTool, createWriteTool,
   isContextOverflow, isRetryableAssistantError, retryDelayMs, streamGoogle,
@@ -31,18 +32,18 @@ export interface FixModel { model: Model<Api>; streamFn: StreamFn; apiKey: strin
 /** The generator's model (config.yaml `model`, locked to gemini-3.8-flash / low), on Gemini's own
  * API rather than its OpenAI-compatible one: pi's Google provider keeps thought signatures. */
 export function fixModel(env: NodeJS.ProcessEnv = process.env): FixModel {
-  const section = configValue(loadConfig(), 'model');
-  const id = String(configValue(section, 'name')), keyEnv = String(configValue(section, 'api_key_env'));
+  const section = loadConfig().model;
+  const id = section.name, keyEnv = section.api_key_env;
   const key = env[keyEnv];
   if (!key) throw Object.assign(new Error(`未配置模型服务：设置环境变量 ${keyEnv} 后可用`), { status: 503 });
-  const baseUrl = String(configValue(section, 'base_url')).replace(/\/$/, '').replace(/\/openai$/, '');
+  const baseUrl = section.base_url.replace(/\/$/, '').replace(/\/openai$/, '');
   const model = {
-    id, name: id, api: 'google-generative-ai', provider: 'google', baseUrl, reasoning: true, input: ['text', 'image'],
+    id, name: id, api: 'google-generative-ai', provider: 'google', baseUrl, reasoning: true, input: ['text', 'image', 'pdf', 'video'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1_048_576, maxTokens: 65_536,
   } as Model<Api>;
   // pi's httpIdleTimeoutMs / Codex's stream_idle_timeout_ms: 5 minutes without data, then retry.
   const streamFn: StreamFn = (target, context, options) => streamGoogle(target, context, { ...options, apiKey: key, temperature: 0, timeoutMs: 300_000 });
-  return { model, streamFn, apiKey: key, vision: configValue(section, 'vision_input', true) !== false };
+  return { model, streamFn, apiKey: key, vision: section.vision_input !== false };
 }
 
 /** One conversation's messages, kept the way pi keeps a session: append-only jsonl, a compaction
@@ -159,6 +160,7 @@ const RULES = (pages: string[]) => `# 这份讲义
   新建一页 = 新建一个 page-NN.html（编号决定位置）；删一页 = 删掉文件；调页序 = 改文件名的编号。
 - \`page-NN/\` 目录是那一页的代码课程；\`assets/\` 是共用的样式、脚本和图片，页面按相对路径引用。
 - 以点开头的路径和 \`node_modules\` 不算讲义，可以放临时文件。
+- \`.inputs/\` 是作者附来的参考文件（文档、视频），用 read 看；它们不是讲义的一部分，要用里面的图就复制进 \`assets/\` 再引用。
 
 ## 编辑器能导入的前提
 - 画布 1600×900；页面结构、样式表和脚本沿用已有页面的写法。
@@ -192,7 +194,8 @@ const RETRY = { enabled: true, maxRetries: 3, baseDelayMs: 2_000 };
 const RESERVE = 16_384, CONTEXT_BUDGET = 200_000;
 const MEDIA = (JSON.parse(readFileSync(path.join(RESOURCES, 'builder-instructions.json'), 'utf8')) as { MEDIA_SCHEMAS: { name: string; description: string; parameters: Record<string, unknown> }[] }).MEDIA_SCHEMAS;
 
-export interface FixTurn { instruction: string; page?: number; images?: { mime: string; data: string }[] }
+/** `inputs`: the author's documents and videos, already in the workspace (paths relative to it). */
+export interface FixTurn { instruction: string; page?: number; images?: { mime: string; data: string }[]; inputs?: { path: string; name: string; kind: string }[] }
 export interface FixDeps {
   model: FixModel;
   transcript: Transcript;
@@ -224,6 +227,10 @@ export async function runFix(request: FixTurn, deps: FixDeps): Promise<FixResult
     const before = await digest(dir);
     const pages = [...before.keys()].filter(file => PAGE.test(file));
     const files = confined(dir);
+    // Documents and video go to Gemini's Files API once; the transcript keeps only the references,
+    // cached per conversation (its .inputs/ outlives each checkout).
+    const uploads = new GeminiFiles({ apiKey: runtime.apiKey, cacheFile: join(dir, '.inputs', '.gemini-files.json') });
+    const streamFn: StreamFn = (target, context, options) => runtime.streamFn(target, context, { ...options, files: uploads } as never);
     // Pages changed since the last check get notale-ts's Check (render errors, overflow).
     let checked = new Map(before);
     let focus = pages[(request.page ?? 1) - 1] ?? pages[0] ?? '', revision = 0;
@@ -241,7 +248,7 @@ export async function runFix(request: FixTurn, deps: FixDeps): Promise<FixResult
       return { problems, warnings };
     };
     const tools: AgentTool[] = [
-      createReadTool(dir, { operations: files.read, model }) as AgentTool,
+      createReadTool(dir, { operations: files.read, model, media: { uploader: uploads, scratch: join(dir, '.inputs', '.derived') } }) as AgentTool,
       createWriteTool(dir, { operations: files.write }) as AgentTool,
       createEditTool(dir, { operations: files.edit }) as AgentTool,
       createBashTool(dir, { operations: { exec: async (command, cwd, options) => (await deps.sandbox()).exec(command, cwd, options) } }) as AgentTool,
@@ -272,7 +279,7 @@ export async function runFix(request: FixTurn, deps: FixDeps): Promise<FixResult
 
     const window = Math.min(model.contextWindow, CONTEXT_BUDGET + RESERVE);
     const compact = async (messages: AgentMessage[], force = false) => {
-      const next = await compactIfNeeded(messages, { model, streamFn: runtime.streamFn, contextWindow: force ? estimateContextTokens(messages).tokens : window, apiKey: runtime.apiKey, signal })
+      const next = await compactIfNeeded(messages, { model, streamFn, contextWindow: force ? estimateContextTokens(messages).tokens : window, apiKey: runtime.apiKey, signal })
         .catch(cause => { if (signal.aborted) return messages; throw cause; });
       if (next !== messages) report({ label: '压缩上下文', status: 'done', detail: [`${messages.length} 条消息压成 ${next.length} 条`] });
       return next;
@@ -285,7 +292,7 @@ export async function runFix(request: FixTurn, deps: FixDeps): Promise<FixResult
     let spent = 0, stopped = '', lastText = '', lastWasText = false;
     const agent = new Agent({
       initialState: { systemPrompt: SYSTEM(pages, extra), model, tools, messages: opened, thinkingLevel: 'low' },
-      streamFn: runtime.streamFn,
+      streamFn,
       toolExecution: 'sequential',
       // The one rule, enforced in the result of the call that broke it.
       afterToolCall: async ({ toolCall, result }) => {
@@ -333,9 +340,10 @@ export async function runFix(request: FixTurn, deps: FixDeps): Promise<FixResult
     const page = pages[(request.page ?? 1) - 1] ?? pages[0];
     if (page) deps.draft?.({ page, revision });
     const clip = (text: string, limit: number) => text.length > limit ? text.slice(0, limit) + `\n…（还有 ${text.length - limit} 字符，需要时 read 这个文件）` : text;
-    const opening = page
+    const attached = (request.inputs ?? []).map(input => `<file path="${input.path}" kind="${input.kind}" name="${input.name.replace(/"/g, "'")}"/>`).join('\n');
+    const opening = (attached ? `<attachments>\n作者附了这些文件，需要时用 read 看：\n${attached}\n</attachments>\n\n` : '') + (page
       ? `<context>\n${request.page ? `作者说的是第 ${request.page}/${pages.length} 页` : `讲义共 ${pages.length} 页，第一页`}，文件 ${page}：\n\`\`\`html\n${clip(await readFile(join(dir, page), 'utf8'), 30_000)}\n\`\`\`\n</context>\n\n${request.instruction}`
-      : request.instruction;
+      : request.instruction);
 
     const stop = () => agent.abort();
     signal.addEventListener('abort', stop, { once: true });

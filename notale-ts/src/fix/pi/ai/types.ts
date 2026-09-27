@@ -60,6 +60,24 @@ export interface ImageContent {
 	mimeType: string; // e.g., "image/jpeg", "image/png"
 }
 
+/**
+ * A document or video the model reads natively (Notale addition, after Kimi Code's media parts).
+ * Only a reference is kept: the local `path`, and once uploaded the provider's `uri` with its
+ * expiry. The bytes are never stored in the transcript; a provider reads or uploads them when it
+ * builds a request.
+ */
+export interface FileContent {
+	type: "file";
+	mimeType: string; // "application/pdf", "video/mp4", "video/quicktime", "video/webm"
+	path: string; // absolute host path
+	name?: string;
+	bytes: number;
+	seconds?: number; // video duration
+	pages?: number; // pages in this (possibly sliced) PDF
+	uri?: string; // provider file reference once uploaded
+	expiresAt?: number; // ms epoch; the reference is gone after this
+}
+
 export interface ToolCall {
 	type: "toolCall";
 	id: string;
@@ -89,7 +107,7 @@ export type StopReason = "pending" | "stop" | "length" | "toolUse" | "error" | "
 
 export interface UserMessage {
 	role: "user";
-	content: string | (TextContent | ImageContent)[];
+	content: string | (TextContent | ImageContent | FileContent)[];
 	timestamp: number; // Unix timestamp in milliseconds
 }
 
@@ -111,7 +129,7 @@ export interface ToolResultMessage<TDetails = unknown> {
 	role: "toolResult";
 	toolCallId: string;
 	toolName: string;
-	content: (TextContent | ImageContent)[]; // Supports text and images
+	content: (TextContent | ImageContent | FileContent)[]; // Supports text, images and files
 	details?: TDetails;
 	isError: boolean;
 	timestamp: number; // Unix timestamp in milliseconds
@@ -199,7 +217,8 @@ export interface Model<TApi extends Api = Api> {
 	reasoning: boolean;
 	/** Maps thinking levels to provider-specific values. null marks a level unsupported. */
 	thinkingLevelMap?: ThinkingLevelMap;
-	input: ("text" | "image")[];
+	/** Input kinds the model reads natively; "pdf" and "video" are Notale additions. */
+	input: ("text" | "image" | "pdf" | "video")[];
 	cost: ModelCost;
 	contextWindow: number;
 	maxTokens: number;

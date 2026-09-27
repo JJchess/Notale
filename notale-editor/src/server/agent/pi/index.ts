@@ -8,6 +8,7 @@ export type {
 	AssistantMessage,
 	AssistantMessageEvent,
 	Context,
+	FileContent,
 	ImageContent,
 	Message,
 	Model,
@@ -26,6 +27,9 @@ export type {
 export { AssistantMessageEventStream, EventStream } from "./ai/event-stream.js";
 export { type GoogleOptions, streamGoogle } from "./ai/google.js";
 export { type OpenAICompletionsOptions, streamOpenAICompletions } from "./ai/openai-completions.js";
+export { type FilesClient, GeminiFiles, INLINE_MAX_BYTES, type MediaUploader } from "./ai/gemini-files.js";
+export { MAX_MEDIA_BYTES, type MediaReadOptions, pageRange, readMedia } from "./tools/media-read.js";
+export { sniff, sniffBytes, type Sniffed } from "./tools/media-sniff.js";
 export { isContextOverflow } from "./ai/overflow.js";
 export { isRetryableAssistantError, retryDelayMs, type RetryPolicy } from "./ai/retry.js";
 export {

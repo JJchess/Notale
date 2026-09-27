@@ -1,12 +1,10 @@
 import { Sources, sourceTools } from './sources.js';
-import { sumIntegers, type PythonInt } from './json.js';
-import { decodeText, PYTHON_SPACE, stripText, splitLines } from './text.js';
-import { parsePythonJson } from './json.js';
-/** Builder natural-stop loop and separate delivery audit from core/builder.py. */
+import { decodeText } from './text.js';
+/** Builder natural-stop loop and separate delivery audit. */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { RESOURCES, WORKFLOWS } from './guidance.js';
+import { RESOURCES, SKILLS } from './guidance.js';
 import { ModelRuntime, cacheWriteOf, textOf } from '../adapters/models/runtime.js';
 import { TraceWriter } from './trace.js';
 import { firstGuidanceOnly, resolveReadPath, runTool, toolSpecs, type ToolOutput, type Workspace, type WorkspacePorts } from '../tools/workspace.js';
@@ -25,9 +23,9 @@ export class Page {
   calls = 0; steps: string[] = []; steps_arg: Record<string, string[]> = {}; reference_reads: string[] = [];
   premature_stops = 0; last_stop_error = ''; stop_reasons: string[] = []; attempts = 1;
   why = ''; seconds = 0; images = 0; evicted = 0;
-  tok_in: PythonInt = 0; tok_cached: PythonInt = 0; tok_write: PythonInt = 0; tok_out: PythonInt = 0; tok_max: PythonInt = 0;
+  tok_in = 0; tok_cached = 0; tok_write = 0; tok_out = 0; tok_max = 0;
   artifact_present = false; audit: DeliveryAudit | null = null; cache_seen = false;
-  label = ''; workflow = ''; spec_text = ''; total = 0; termination = '';
+  label = ''; skill = ''; spec_text = ''; total = 0; termination = '';
   constructor(readonly pid: string, public prompt: string) {}
 }
 /** A page is delivered when its file exists and the delivery audit found nothing fatal; how the loop ended is a record, not a verdict. */
@@ -42,17 +40,17 @@ export function routePage(root: string, page: Page): Page {
     if (!found) throw Object.assign(new Error(`cannot route ${page.pid}: expected one '# page-NN [标题页|内容页|交互页|代码页]' heading`), { name: 'ValueError' });
     throw Object.assign(new Error(`planner spec id '${found.pid}' does not match '${page.pid}'`), { name: 'ValueError' });
   }
-  page.label = entry.label; page.workflow = constants.LABEL_WORKFLOWS[entry.label]; page.spec_text = text!;
+  page.label = entry.label; page.skill = constants.LABEL_SKILLS[entry.label]; page.spec_text = text!;
   return page;
 }
 export function lessonTitle(page: Page): string {
-  for (const raw of splitLines(page.spec_text)) {
-    let line = stripText(raw); if (!line || line.startsWith('#') || line.startsWith('<')) continue;
-    line = line.replace(new RegExp(`^[\\-*]${PYTHON_SPACE}*`, 'u'), ''); return [...line].slice(0, 80).join('');
+  for (const raw of page.spec_text.split(/\r?\n/)) {
+    let line = raw.trim(); if (!line || line.startsWith('#') || line.startsWith('<')) continue;
+    line = line.replace(new RegExp(`^[\\-*]\\s*`, 'u'), ''); return [...line].slice(0, 80).join('');
   }
   return page.pid;
 }
-export function evictImages(history: Item[], tokens: PythonInt): number {
+export function evictImages(history: Item[], tokens: number): number {
   if (tokens <= constants.CONTEXT_SOFT) return 0;
   const indexes = history.flatMap((item, index) => item.role === 'user' && Array.isArray(item.content) && item.content.some((block: Item) => block?.type === 'input_image') ? [index] : []);
   const removed = indexes.slice(0, Math.max(0, indexes.length - constants.KEEP_IMAGES));
@@ -106,7 +104,7 @@ export function builderPorts(model: BuilderPorts['model'], media: WorkspacePorts
 export async function auditDelivery(context: Workspace, page: Page, ports: BuilderPorts, signal?: AbortSignal): Promise<DeliveryAudit> {
   const target = path.join(context.cwd, page.pid + '.html');
   if (!existsSync(target) || !statSync(target).isFile() || statSync(target).size === 0) return { fatal_errors: [`target missing: ${target}`], visual_warnings: [], code_result: null };
-  if (page.workflow === 'build-code') {
+  if (page.skill === 'build-code') {
     const report = (await ports.codeCheck(context.cwd, page.pid, false, signal, true)).report;
     const [fatal, visual] = auditLines(report);
     return { fatal_errors: fatal, visual_warnings: visual, code_result: report };
@@ -118,7 +116,7 @@ export async function auditDelivery(context: Workspace, page: Page, ports: Build
 }
 function tagOf(call: Item): string {
   let args: Item;
-  try { args = parsePythonJson(call.arguments || '{}'); } catch { return ''; }
+  try { args = JSON.parse(call.arguments || '{}'); } catch { return ''; }
   if (call.name === 'Bash') return [...String(args.command ?? '')].slice(0, 120).join('');
   if (call.name === 'Check') return String(args.page ?? '') + (args.after?.length ? ` +after×${args.after.length}` : '') + (args.shot ? ' +shot' : '') + (args.box ? ` @[${args.box.join(', ')}]` : '');
   if (call.name === 'Patch') return `${String(args.file_path ?? '').split('/').at(-1)} ×${args.edits?.length ?? 0}`;
@@ -126,7 +124,7 @@ function tagOf(call: Item): string {
 }
 export async function buildOne(...args: Parameters<typeof buildOneLoop>): Promise<Page> {
   const [page, pagesDir, trace, instructions, ports, options = {}] = args;
-  if (page.workflow !== 'build-code') return buildOneLoop(...args);
+  if (page.skill !== 'build-code') return buildOneLoop(...args);
   const deadline = AbortSignal.timeout(CODE_PAGE_SECONDS * 1000), started = performance.now();
   const signal = AbortSignal.any([deadline, ...(options.signal ? [options.signal] : [])]);
   try { return await buildOneLoop(page, pagesDir, trace, instructions, ports, { ...options, signal }); }
@@ -142,39 +140,38 @@ export async function buildOne(...args: Parameters<typeof buildOneLoop>): Promis
     return page;
   } finally { page.seconds = (performance.now() - started) / 1000; }
 }
-async function buildOneLoop(page: Page, pagesDir: string, trace: string, instructions: string, ports: BuilderPorts, options: { workflowRoot?: string; visionInput?: boolean; textReport?: boolean; sampleShots?: boolean; refs?: Item[]; signal?: AbortSignal; now?: () => number; onRetry?(page: Page): void } = {}): Promise<Page> {
+async function buildOneLoop(page: Page, pagesDir: string, trace: string, instructions: string, ports: BuilderPorts, options: { visionInput?: boolean; textReport?: boolean; refs?: Item[]; signal?: AbortSignal; now?: () => number; onRetry?(page: Page): void } = {}): Promise<Page> {
   const log = new TraceWriter(trace, randomUUID(), ports.env);
-  const root = options.workflowRoot ?? WORKFLOWS;
-  const context: Workspace = { cwd: pagesDir, pid: page.pid, resourceRoot: resolvePath(page.workflow ? path.join(root, page.workflow) : root), ...(options.textReport ? { textReport: true } : {}), ...(options.sampleShots ? { sampleShots: true } : {}) };
+  const context: Workspace = { cwd: pagesDir, pid: page.pid, resourceRoot: resolvePath(page.skill ? path.join(SKILLS, page.skill) : SKILLS), ...(options.textReport ? { textReport: true } : {}) };
   const vision = options.visionInput ?? true, refs = options.refs ?? [];
   const history: Item[] = [];
-  if (page.workflow === 'build-code') {
+  if (page.skill === 'build-code') {
     const created = await ports.scaffold(pagesDir, page.pid, lessonTitle(page), page.total, options.signal);
     page.prompt = page.prompt.replace('<target_state>absent</target_state>', '<target_state>host scaffold ready</target_state>')
       + '\n\nCURRENT FILES (host-created; use these exact paths):\n' + JSON.stringify(created, null, 2);
   }
-  if (refs.length && vision && page.workflow !== 'build-code') {
+  if (refs.length && vision && page.skill !== 'build-code') {
     history.push({ role: 'user', content: [{ type: 'input_text', text: page.prompt + '\n\n' + (existsSync(path.join(pagesDir, '../template-spec.json')) ? '以下是模板原始版式预览。保留固定骨架，用新内容替换示例文字；不照抄旧主题。' : constants.REF_SHOTS_NOTE) }, ...refs] });
     page.images += refs.filter(block => block.type === 'input_image').length;
   } else {
-    if (refs.length && !vision && page.workflow !== 'build-code') throw new Error('本次有视觉参考，但 Builder 模型未启用 vision_input；不能声称看过参考');
+    if (refs.length && !vision && page.skill !== 'build-code') throw new Error('本次有视觉参考，但 Builder 模型未启用 vision_input；不能声称看过参考');
     history.push({ role: 'user', content: page.prompt });
   }
   const sources = await Sources.load(path.dirname(pagesDir), page.pid);
-  const specs = toolSpecs(page.workflow, vision);
+  const specs = toolSpecs(page.skill, vision);
   if (sources) specs.push(...sourceTools);
   const now = options.now ?? (() => Date.now() / 1000), start = now(), seen = new Set<string>();
   for (;;) {
     options.signal?.throwIfAborted();
     if (now() - start > constants.MAX_SECONDS) { page.why = `超过单页时限 ${constants.MAX_SECONDS}s` + (page.last_stop_error ? `；最近结束检查：${page.last_stop_error}` : ''); page.termination = 'max_seconds'; break; }
     const started = new Date().toISOString();
-    const requestSignal = page.workflow === 'build-code'
+    const requestSignal = page.skill === 'build-code'
       ? AbortSignal.any([AbortSignal.timeout(CODE_REQUEST_SECONDS * 1000), ...(options.signal ? [options.signal] : [])]) : options.signal;
     const response = await ports.model.respondCanonical(instructions, history, specs, requestSignal ? { signal: requestSignal } : {});
     page.calls++;
     const usage = response.usage, cached = usage.input_tokens_details.cached_tokens;
-    page.tok_in = sumIntegers(page.tok_in, usage.input_tokens); page.tok_out = sumIntegers(page.tok_out, usage.output_tokens); page.tok_write = sumIntegers(page.tok_write, cacheWriteOf(response)); page.tok_max = page.tok_max >= usage.input_tokens ? page.tok_max : usage.input_tokens;
-    if (cached !== null) { page.cache_seen = true; page.tok_cached = sumIntegers(page.tok_cached, cached); }
+    page.tok_in += usage.input_tokens; page.tok_out += usage.output_tokens; page.tok_write += cacheWriteOf(response); page.tok_max = Math.max(page.tok_max, usage.input_tokens);
+    if (cached !== null) { page.cache_seen = true; page.tok_cached += cached; }
     const calls = response.output.filter(item => item.type === 'function_call'), rid = response.id || 'req_' + randomUUID().replaceAll('-', '').slice(0, 16);
     log.add([{ type: 'text', text: page.calls === 1 ? page.prompt : '(tool results)' }], textOf(response), { input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, cache_read_input_tokens: cached || 0, cache_creation_input_tokens: cacheWriteOf(response) }, rid, started, new Date().toISOString(), { page: page.pid, ...(page.calls === 1 ? { instructions } : {}), tools: calls.map(call => ({ name: call.name, arg: tagOf(call), call_id: call.call_id, arguments: call.arguments })) });
     if (!calls.length) {
@@ -204,7 +201,7 @@ async function buildOneLoop(page: Page, pagesDir: string, trace: string, instruc
       const toolStarted = new Date().toISOString(), toolClock = performance.now();
       let args: Item;
       try {
-        args = parsePythonJson(call.arguments || '{}');
+        args = JSON.parse(call.arguments || '{}');
         if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('工具参数必须是 JSON 对象');
       } catch (error) {
         const output = `${call.name} arguments 不是合法 JSON：${(error as Error).message}。请缩短内容并重发同一调用。`;
@@ -224,7 +221,7 @@ async function buildOneLoop(page: Page, pagesDir: string, trace: string, instruc
           if (vision) { if (!Object.hasOwn(actual, 'shot')) actual.shot = true; }
           else { actual.shot = false; delete actual.box; delete actual.zoom; }
         }
-        const denied = page.workflow === 'build-code' ? codeGuard(call.name, actual, context) : undefined;
+        const denied = page.skill === 'build-code' ? codeGuard(call.name, actual, context) : undefined;
         if (denied) result = '拒绝：' + denied;
         else {
           result = await ports.run(call.name, actual, context, options.signal);
@@ -242,9 +239,9 @@ async function buildOneLoop(page: Page, pagesDir: string, trace: string, instruc
       if (images.length && !vision) { images = []; output += '\n\n（当前模型不接收图片输入；仅保留文本报告。）'; }
       log.tool({ rid, call_id: call.call_id, page: page.pid, name: call.name, arguments: call.arguments, output, images, started: toolStarted, finished: new Date().toISOString(), seconds: (performance.now() - toolClock) / 1000 });
       history.push({ type: 'function_call_output', call_id: call.call_id, output }); pending.push(...images);
-      if (page.workflow === 'build-code' && ['Write', 'Patch'].includes(call.name) && !/^(?:失败|拒绝)/.test(output)) wrote = history.length - 1;
+      if (page.skill === 'build-code' && ['Write', 'Patch'].includes(call.name) && !/^(?:失败|拒绝)/.test(output)) wrote = history.length - 1;
     }
-    if (page.workflow === 'build-code' && wrote >= 0) {
+    if (page.skill === 'build-code' && wrote >= 0) {
       // A write without its check is half a round trip; the lesson runs now and the result rides on the write.
       const started = new Date().toISOString(), clock = performance.now();
       const extra = await ports.codeCheck(pagesDir, page.pid, vision, options.signal);
@@ -259,7 +256,7 @@ async function buildOneLoop(page: Page, pagesDir: string, trace: string, instruc
     }
     for (const [mime, encoded] of pending) { history.push({ role: 'user', content: [{ type: 'input_image', image_url: `data:${mime};base64,${encoded}` }] }); page.images++; }
     // Every screenshot is superseded by the next run of the same lesson; on an uncached line each stale one is paid every turn.
-    page.evicted += evictImages(history, page.workflow === 'build-code' && pending.length ? Infinity : page.tok_max);
+    page.evicted += evictImages(history, page.skill === 'build-code' && pending.length ? Infinity : page.tok_max);
   }
   const target = path.join(pagesDir, page.pid + '.html');
   page.artifact_present = existsSync(target) && statSync(target).isFile() && statSync(target).size > 0;

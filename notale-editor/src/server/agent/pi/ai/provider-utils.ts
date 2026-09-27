@@ -172,9 +172,9 @@ export const MAX_PROVIDER_ERROR_BODY_CHARS = 4000;
 
 export interface NormalizedProviderError {
 	/** HTTP status code, when one could be extracted from the SDK error object. */
-	status?: number;
+	status?: number | undefined;
 	/** Raw HTTP body reason, already trimmed and truncated to the cap. */
-	body?: string;
+	body?: string | undefined;
 	/** `error.message`, or `safeJsonStringify(error)` for a non-`Error` throw. */
 	message: string;
 	/** True when `message` already contains the body (no separate body to add). */
@@ -346,11 +346,11 @@ export function clampThinkingLevel<TApi extends Api>(
 	if (requestedIndex === -1) return availableLevels[0] ?? "off";
 
 	for (let i = requestedIndex; i < EXTENDED_THINKING_LEVELS.length; i++) {
-		const candidate = EXTENDED_THINKING_LEVELS[i];
+		const candidate = EXTENDED_THINKING_LEVELS[i]!;
 		if (availableLevels.includes(candidate)) return candidate;
 	}
 	for (let i = requestedIndex - 1; i >= 0; i--) {
-		const candidate = EXTENDED_THINKING_LEVELS[i];
+		const candidate = EXTENDED_THINKING_LEVELS[i]!;
 		if (availableLevels.includes(candidate)) return candidate;
 	}
 	return availableLevels[0] ?? "off";

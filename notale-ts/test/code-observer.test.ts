@@ -105,7 +105,7 @@ test('observer first input, exact ownership and same-context repair (no model)',
   assert.equal(codeGuard('Write', {file_path:path.join(lesson,'starter.py')}, context), undefined);
   for (const file of ['lesson.js','view/style.css','view/index.html','extra.py','../core/workbench.js'])
     assert.ok(codeGuard('Patch', {file_path:path.join(lesson,file)}, context));
-  const page = new Page('page-01','Implement'); page.workflow='build-code'; page.total=1;
+  const page = new Page('page-01','Implement'); page.skill='build-code'; page.total=1;
   await writeFile(path.join(lesson,'starter.py'),'alpha');
   await writeFile(path.join(lesson,'view/render.js'),'beta');
   let turn=0, checks=0;
@@ -225,7 +225,7 @@ test('writes auto-run the check, pictures reach visual models only, and only the
   for (const vision of [false,true]) {
     const root=await mkdtemp(path.join(os.tmpdir(),'code-check-feedback-'));await writeFile(path.join(root,'page-01.html'),'host');
     const starter=path.join(root,'assets/lessons/page-01/lesson/starter.py');await mkdir(path.dirname(starter),{recursive:true});
-    const page=new Page('page-01','check');page.workflow='build-code';page.total=1;
+    const page=new Page('page-01','check');page.skill='build-code';page.total=1;
     let calls=0;const shots:string[]=[],checks:boolean[]=[];
     const ports=observeBuilder({
       scaffold:async()=>({editable:[]}),

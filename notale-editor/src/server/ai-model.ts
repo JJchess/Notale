@@ -22,7 +22,8 @@ const cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 function googleModel(id: string, baseUrl: string, env: NodeJS.ProcessEnv, contextWindow?: number): Model<Api> {
   return {
     id, name: id, api: 'google-generative-ai', provider: 'google', baseUrl,
-    reasoning: true, input: ['text', 'image'], cost,
+    // Gemini reads PDFs and video natively (Files API for video); see agent/pi/ai/gemini-files.ts.
+    reasoning: true, input: ['text', 'image', 'pdf', 'video'], cost,
     contextWindow: contextWindow ?? Number(env.EDITOR_AI_CONTEXT_WINDOW || 1_048_576), maxTokens: 65_536,
   } as Model<Api>;
 }
@@ -81,9 +82,10 @@ export function builtInProviders(env: NodeJS.ProcessEnv = process.env): Record<s
   };
 }
 
-export interface ModelInfo { id: string; name: string; vision: boolean; contextWindow: number }
+/** `input`: what the model reads natively; PDFs and video reach other models through read's fallbacks. */
+export interface ModelInfo { id: string; name: string; vision: boolean; contextWindow: number; input: ('text' | 'image' | 'pdf' | 'video')[] }
 export interface ProviderInfo { provider: string; name: string; available: boolean; reason?: string; models: ModelInfo[] }
-type Listed = { models: (ModelInfo & { maxTokens: number; reasoning: boolean })[] } | { error: string };
+type Listed = { models: (Omit<ModelInfo, 'input'> & { maxTokens: number; reasoning: boolean })[] } | { error: string };
 /** Ids a chat listing carries that are not chat models. ponytail: a name pattern; a gateway that
  * publishes capabilities (OpenRouter) is filtered by them instead. */
 const NOT_CHAT = /embed|tts|whisper|dall-e|image|audio|rerank|moderation|speech|transcri|vision-preview|ocr/i;
@@ -145,7 +147,8 @@ export class ModelRegistry {
       if (!key) return { provider, name: config.name, available: false, reason: '未配置密钥', models: [] };
       const listed = await this.listed(provider, config, key);
       if ('error' in listed) return { provider, name: config.name, available: false, reason: listed.error, models: [] };
-      return { provider, name: config.name, available: true, models: listed.models.map(({ id, name, vision, contextWindow }) => ({ id, name, vision, contextWindow })) };
+      const input = (vision: boolean): ModelInfo['input'] => config.api === 'google-generative-ai' ? ['text', 'image', 'pdf', 'video'] : vision ? ['text', 'image'] : ['text'];
+      return { provider, name: config.name, available: true, models: listed.models.map(({ id, name, vision, contextWindow }) => ({ id, name, vision, contextWindow, input: input(vision) })) };
     }));
   }
   /** The runtime for one turn: the default model, or the one the author picked. */
