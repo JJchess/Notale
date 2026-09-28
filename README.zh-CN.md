@@ -2,13 +2,15 @@
 
 **制作可交互的讲义，并在同一份作品中完成讲授。**
 
-[![CI](https://github.com/JJchess/Notale/actions/workflows/ci.yml/badge.svg)](https://github.com/JJchess/Notale/actions/workflows/ci.yml)
+[![CI](https://github.com/THU-AICosmos/Notale/actions/workflows/ci.yml/badge.svg)](https://github.com/THU-AICosmos/Notale/actions/workflows/ci.yml)
 [![Package version](https://img.shields.io/badge/packages-0.1.0-6246C8?style=flat-square)](notale-editor/package.json)
 [![Node.js](https://img.shields.io/badge/Node.js-20.19%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white)](notale-editor/package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](notale-editor/tsconfig.json)
 [![MIT license](https://img.shields.io/badge/license-MIT-2EA44F?style=flat-square)](LICENSE)
 
 [English](README.md) · 简体中文
+
+主仓库为 [THU-AICosmos/Notale](https://github.com/THU-AICosmos/Notale)，[JJchess/Notale](https://github.com/JJchess/Notale) 为同步镜像。两者在维护者完成审查并明确批准公开前均保持私有。
 
 ![Notale 编辑器中的互动讲义页面与样式面板](notale-editor-frontend/docs/release/screenshots/editor.png)
 
