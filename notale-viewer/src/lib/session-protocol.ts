@@ -1,7 +1,7 @@
 /** The session layer's HTTP boundary (notale-ts `src/session/`), declared locally like protocol.ts: the
  * viewer builds on its own and has no dependency on the sibling package. */
 export type Route =
-  | { action: "generate"; reason: string; query: string; minutes?: number; audience?: string; scenario?: string; language?: string; style?: string; files: { id: string; role: string }[] }
+  | { action: "generate"; reason: string; query: string; title?: string; minutes?: number; audience?: string; scenario?: string; language?: string; style?: string; files: { id: string; role: string }[] }
   | { action: "fix"; reason: string; target: string; instruction: string; page?: number; files: { id: string; role: string }[] }
   | { action: "ask"; reason: string; question: string; options?: string[] }
   | { action: "reply"; reason: string; text: string };

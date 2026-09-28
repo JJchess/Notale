@@ -27,7 +27,6 @@ export interface EditorSessionState {
   busy: boolean;
   documents: readonly {id:string;title:string}[];
   catalogueNotice: string;
-  switchingDocument: boolean;
   save: SaveIndicator;
   canUndo: boolean;
   canRedo: boolean;
@@ -38,7 +37,7 @@ export interface EditorSessionState {
   pageQuery: string;
 }
 export class EditorSession {
-  private state: EditorSessionState = {emptyMessage:'正在加载讲义…',objectQuery:'',steps:{current:0,max:0,nativeMax:0},proportional:true,textReflow:true,inspector:emptyInspector,sidebar:initialSidebar,busy:false,documents:[],catalogueNotice:'',switchingDocument:false,save:{label:'连接中',detail:'正在连接编辑服务',state:'busy'},canUndo:false,canRedo:false,activePageId:'',selectedIds:[],canvas:'loading',pageQuery:''};
+  private state: EditorSessionState = {emptyMessage:'正在加载讲义…',objectQuery:'',steps:{current:0,max:0,nativeMax:0},proportional:true,textReflow:true,inspector:emptyInspector,sidebar:initialSidebar,busy:false,documents:[],catalogueNotice:'',save:{label:'连接中',detail:'正在连接编辑服务',state:'busy'},canUndo:false,canRedo:false,activePageId:'',selectedIds:[],canvas:'loading',pageQuery:''};
   // These are views of the subscribed state, not a second mutable workbench session.
   get snapshot(): Snapshot {return this.state.document!;}
   get pageId() {return this.state.activePageId;}
@@ -85,7 +84,7 @@ export class EditorSession {
     for(const listener of this.listeners)listener();
   }
 }
-const initialSession: EditorSessionState = {emptyMessage:'正在加载讲义…',objectQuery:'',steps:{current:0,max:0,nativeMax:0},proportional:true,textReflow:true,inspector:emptyInspector,sidebar:initialSidebar,busy:false,documents:[],catalogueNotice:'',switchingDocument:false,save:{label:'连接中',detail:'正在连接编辑服务',state:'busy'},canUndo:false,canRedo:false,activePageId:'',selectedIds:[],canvas:'loading',pageQuery:''};
+const initialSession: EditorSessionState = {emptyMessage:'正在加载讲义…',objectQuery:'',steps:{current:0,max:0,nativeMax:0},proportional:true,textReflow:true,inspector:emptyInspector,sidebar:initialSidebar,busy:false,documents:[],catalogueNotice:'',save:{label:'连接中',detail:'正在连接编辑服务',state:'busy'},canUndo:false,canRedo:false,activePageId:'',selectedIds:[],canvas:'loading',pageQuery:''};
 /** A stable React subscription endpoint; the attached session remains the sole state owner. */
 export class EditorSessionChannel {
  private current=new EditorSession();

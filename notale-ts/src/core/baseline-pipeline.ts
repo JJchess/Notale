@@ -136,7 +136,7 @@ export function createBaselinePipeline(options: PipelineOptions = {}): Generatio
       const available = pages.filter(delivered);
       await Promise.all(thumbnails);
       if (thumbnailErrors.length) throw thumbnailErrors[0];
-      await writeFile(path.join(root, 'pages/index.html'), lecturePreview(run.request.query, available.map(page => page.pid), Object.fromEntries(available.map(page => [page.pid, lessonTitle(page)])), available.filter(page => page.skill === 'build-code').map(page => page.pid)));
+      await writeFile(path.join(root, 'pages/index.html'), lecturePreview(run.request.title ?? run.request.query, available.map(page => page.pid), Object.fromEntries(available.map(page => [page.pid, lessonTitle(page)])), available.filter(page => page.skill === 'build-code').map(page => page.pid)));
       // A deck with some pages is a deliverable; the missing ones are reported per page and kept in work/builder-results.json.
       if (!available.length) throw new Error(`生成未完成：${pages.length} 页均未通过交付检查`);
       await publishLecture(path.join(root, 'pages'), outputDir, { signal });

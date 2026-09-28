@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeTitle } from '../core/title.js';
 
 export const protocolVersion = 1 as const;
 
@@ -13,6 +14,8 @@ export type RunStatus = z.infer<typeof runStatusSchema>;
 
 export const createRunRequestSchema = z.object({
   query: z.string(),
+  /** Shown as the lecture's title; the query when absent. */
+  title: z.string().transform(value => normalizeTitle(value)).optional(),
   fileIds: z.array(z.string().uuid()).max(10).refine(ids => new Set(ids).size === ids.length, "duplicate files").optional(),
   templateId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   minutes: z.number().refine(Number.isInteger, "expected an integer").default(90),

@@ -61,7 +61,7 @@ export function runGenerator(service: RunService, runsRoot: string): Generator {
     async cancel(runId) { await service.cancel(runId); },
     async describe(runId) {
       const snapshot = await store.get(runId);
-      return { title: snapshot.request.query, pages: (snapshot.pages ?? []).map(page => page.pageTitle) };
+      return { title: snapshot.request.title ?? snapshot.request.query, pages: (snapshot.pages ?? []).map(page => page.pageTitle) };
     },
   };
   return generator;

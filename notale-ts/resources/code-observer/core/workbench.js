@@ -208,6 +208,7 @@ function renderStep(rawStep, options = {}) {
     nativeView?.render({
       step,
       previousStep: previous,
+      history: historyUpTo(playback.index),
       playback: {
         index: playback.index,
         count: playback.frames.length,
@@ -230,6 +231,12 @@ function renderStep(rawStep, options = {}) {
   if (options.decorate !== false && !nativeView) decorateSource(source);
 }
 
+// ponytail: the whole history is cloned into every render packet (O(n), capped by maxPayloadBytes);
+// cache the frames in the bridge instead if long playbacks stutter.
+function historyUpTo(index) {
+  return playback.frames.slice(0, Math.max(0, index + 1)).map((frame) => frame?.state ?? {});
+}
+
 function viewEnvironment() {
   return {
     theme: codeTheme.view,
@@ -242,6 +249,7 @@ function syncPlaybackPacket() {
   nativeView?.render({
     step: playback.currentStep,
     previousStep: playback.currentStep,
+    history: historyUpTo(playback.index),
     playback: {
       index: playback.index,
       count: playback.frames.length,
@@ -868,7 +876,7 @@ async function mountView(renderer, options={}) {
     await candidate.mount();
     if(options.current&&!options.current())throw Error('视图更新已取消');
     const raw=playback.currentStep||lesson.initialStep;
-    if(raw)await candidate.renderConfirmed({step:normalizeStep(raw),previousStep:null,playback:{index:playback.index,count:playback.frames.length,playing:false,speed:playback.speed,transitionMs:0,decorate:false,reason:'preview'},environment:viewEnvironment()});
+    if(raw)await candidate.renderConfirmed({step:normalizeStep(raw),previousStep:null,history:historyUpTo(playback.index),playback:{index:playback.index,count:playback.frames.length,playing:false,speed:playback.speed,transitionMs:0,decorate:false,reason:'preview'},environment:viewEnvironment()});
     if(options.current&&!options.current())throw Error('视图更新已取消');
     candidate.commit();nativeView=candidate;mountedRenderer=renderer;previous?.dispose();visualizerReady=true;elements.visualizerError.hidden=true;updateRunAvailability();
   }catch(error){candidate.dispose();throw error;}
@@ -1012,5 +1020,6 @@ window.addEventListener('message',event=>{
 });
 initialization.catch((error) => {
   setRuntimeStatus("error", "工作台初始化失败");
-  setOutput("error", error?.stack || error?.message || String(error));
+  // A failed worker or script load rejects with a DOM Event, which prints as "[object Event]".
+  setOutput("error", error instanceof Event ? `工作台资源加载中断（${error.type}），请刷新重试` : error?.stack || error?.message || String(error));
 });

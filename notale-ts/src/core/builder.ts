@@ -76,12 +76,12 @@ export function codeGuard(name: string, args: Item, context: Workspace): string 
     if (name === 'Read' && context.resourceRoot && isWithin(target, context.resourceRoot)) return undefined;
     if (!isWithin(target, editable)) return name === 'Read'
       ? `${target} 不在当前课程的可读范围内；执行证据由 Check 返回。`
-      : `${target} 不可修改；只能修改当前课程声明的四份文件。`;
+      : `${target} 不可修改；只能修改当前课程声明的三份文件。`;
     if (name !== 'Read') {
       if (!CODE_FILES.some(file => {
         const allowed = path.join(editable, file);
         return target === allowed && resolvePath(allowed) === allowed;
-      })) return 'Only the four declared observer course files are editable';
+      })) return 'Only the three declared observer course files are editable';
     }
     return undefined;
   }

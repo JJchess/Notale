@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Composer } from "./composer";
 import { IstarCard, UserBubble, exchanges, type RunView } from "./talk";
 import { VersionMenu, type VersionItem } from "./version-menu";
+import { EditInEditor } from "./edit-in-editor";
 import { PixelWordmark } from "./start/pixel-wordmark";
 import { SplitHandle } from "./split-handle";
 import { LecturePane } from "./lecture-pane";
@@ -68,8 +68,10 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   useEffect(() => { void reload().catch(cause => setError(cause instanceof Error ? cause.message : "会话打不开")); }, [reload]);
 
   const entries = useMemo(() => [...(snapshot?.entries ?? []), ...live], [snapshot, live]);
-  // The start page lists sessions this browser opened, named by their first message.
-  const firstWords = entries.find(entry => entry.type === "user")?.text;
+  // Named by the title the first generation got, else by the first message (here and on the start page).
+  const named = entries.find(entry => entry.type === "understood" && entry.route.action === "generate");
+  const firstWords = (named?.type === "understood" && named.route.action === "generate" ? named.route.title : undefined)
+    ?? entries.find(entry => entry.type === "user")?.text;
   const names = useMemo(() => new Map([...sentNames, ...(snapshot?.files ?? []).map(file => [file.id, file.name] as const)]), [snapshot, sentNames]);
   // Versions in the order they were made; a run's status comes from its finished entry.
   const runs = useMemo(() => {
@@ -166,7 +168,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const turns = exchanges(entries);
   const title = firstWords?.replace(/\s+/g, " ").trim();
   const versions: VersionItem[] = finished.map(run => ({ runId: run.runId, version: version(run.runId), kind: run.kind, at: run.at, ...(run.basedOn ? { basedOn: version(run.basedOn) } : {}) }));
-  useEffect(() => { if (firstWords) rememberSession(sessionId, firstWords.slice(0, 80), finished.length); }, [sessionId, firstWords, finished.length]);
+  useEffect(() => { if (firstWords) rememberSession(sessionId, firstWords.slice(0, 80), finished.length, busy); }, [sessionId, firstWords, finished.length, busy]);
   return (
     <main ref={shell} className={"session-shell" + (resizing ? " is-resizing" : "")} style={{ "--talk-width": `${clampTalk(talkWidth)}px` } as CSSProperties}>
       <section className="session-stage">
@@ -180,6 +182,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           {busy && <div className="stage-busy" role="status" aria-label="处理中"><i /></div>}
           <div className="stage-bar">
             <VersionMenu versions={versions} shown={shown.runId} onPick={setPicked} download={`/notale-api/v1/runs/${encodeURIComponent(shown.runId)}/download?format=notale`} />
+            <EditInEditor key={shown.runId} runId={shown.runId} sessionId={sessionId} version={version(shown.runId)} />
           </div>
         </> : running && running.kind === "generate" ? <div className="stage-progress" id="generation-panel">
           <GenerationView state={followed.progress} phase={followed.run?.phase} status={publicPhase[followed.run?.phase ?? "starting"] ?? "生成中"} onViewing={viewing} />
@@ -188,7 +191,6 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       <SplitHandle value={clampTalk(talkWidth)} min={TALK.min} max={maxTalk} label="调整对话面板宽度" onResize={resize} onDragging={setResizing} onReset={() => resize({ width: TALK.initial })} />
       <aside className="session-talk">
         <header className="session-head">
-          <Link href="/" className="brand" aria-label="Notale 首页"><span className="brand-mark">N</span><span className="brand-word">NOTALE</span></Link>
           {title && <h1 className="session-title" title={title}>{title}</h1>}
         </header>
         <div ref={log} className="session-log" aria-live="polite" aria-busy={!snapshot}>

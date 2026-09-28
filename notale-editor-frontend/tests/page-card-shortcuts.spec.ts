@@ -20,7 +20,7 @@ test('page cards duplicate beside selection, retain keyboard focus, delete and r
  await search.fill('b');await page.locator('[data-slide="b"]').click();await page.keyboard.press('Delete');await expect(page.locator(`[data-slide="${firstCopy}"]`)).toBeFocused();
  await page.locator('#add-slide').click();await expect(search).toHaveValue('');await expect(cards).toHaveCount(6);await expect(page.locator('.slide-card.active')).toBeFocused();
  await search.fill('新页面');await page.locator('.slide-card.active').press('Delete');await expect(search).toBeFocused();await expect(page.locator('#slide-search-empty')).toBeVisible();await search.fill('');
- await page.locator('#file-menu-trigger').click();await page.locator('#open-find-replace').click();await expect(page.locator('#find-replace-dialog')).toBeVisible();await page.keyboard.press('Escape');
+ await page.locator('#open-find-replace').click();await expect(page.locator('#find-replace-dialog')).toBeVisible();await page.keyboard.press('Escape');
  await page.locator('[data-slide="a"]').click();await page.locator('#page-panel').screenshot({path:'.local/page-sidebar-compact.png'});
 
 });

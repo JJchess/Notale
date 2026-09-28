@@ -76,7 +76,7 @@ export class LectureExports {
       const s = await stat(path.join(this.service.store.runDir(id), 'output', name));
       return [name, s.size, s.mtimeMs, s.ctimeMs];
     }));
-    const key = createHash('sha256').update(JSON.stringify([EXPORT_VERSION, format, manifest, run.request.query, rows])).digest('hex');
+    const key = createHash('sha256').update(JSON.stringify([EXPORT_VERSION, format, manifest, run.request.title ?? run.request.query, rows])).digest('hex');
     try {
       const previous: ExportState = JSON.parse(await readFile(stateFile, 'utf8'));
       if (previous.status === 'ready' && previous.key === key && previous.bytes === (await stat(destination)).size) return destination;

@@ -6,7 +6,7 @@ import { Vortex } from "./vortex";
  * drawn in; `ground` is what he drops behind (the composer); `letters` are the wordmark's glyphs. */
 export interface EggParts { stage: HTMLElement; poked: SVGGraphicsElement; letters: SVGGraphicsElement[]; status?: HTMLElement | null; ground: HTMLElement }
 
-/** Poke the `o`: it swells and swallows the status line, Istar climbs out, hops along the word,
+/** Poke the `o`: it swells and swallows the status line, Valar climbs out, hops along the word,
  * drops behind the composer, and the status line comes back. Composition only -- the vortex, the
  * actor and the sprite each do one thing. One play at a time. */
 export class StartEasterEgg {

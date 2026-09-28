@@ -11,7 +11,7 @@ test('keyboard edits work and interrupted intent survives close, export and reim
  await page.evaluate(()=>{const w=(window as any).NotaleWorkbench;w.select('text');document.dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',bubbles:true,cancelable:true}));w.dispose();});
  await expect.poll(()=>page.evaluate(async()=>(await navigator.locks.query()).held?.filter(lock=>lock.name?.startsWith('notale-tab:')).length)).toBe(0);
  await page.evaluate(()=>(window as any).NotaleWorkbench.mount());await page.waitForFunction(()=>(window as any).NotaleWorkbench.getSnapshot()?.document.slides.length===1);await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
- const open=async()=>{await page.locator('#file-menu-trigger').click();await page.locator('[data-file="recovery"]').click();};await open();
+ await expect(page.locator('#recovery-dialog')).toBeVisible();
  const records=page.getByRole('region',{name:'待检查的快捷键操作'});await expect(records).toBeVisible();await expect(records).toContainText('尚未执行');
  const downloading=page.waitForEvent('download');await records.getByRole('button',{name:'导出记录'}).click();const stream=await (await downloading).createReadStream();const chunks:Buffer[]=[];for await(const chunk of stream!)chunks.push(Buffer.from(chunk));const raw=Buffer.concat(chunks),data=JSON.parse(raw.toString());expect(data.keyboard).toHaveLength(1);expect(data.keyboard[0].intent.action.type).toBe('delete');
  await records.getByRole('button',{name:'标记已处理'}).click();await expect(records).toHaveCount(0);await page.locator('#import-recovery').setInputFiles({name:'recovery.json',mimeType:'application/json',buffer:raw});await expect(records).toBeVisible();

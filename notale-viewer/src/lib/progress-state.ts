@@ -55,7 +55,22 @@ export function progressState(run: RunSnapshot | undefined, events: RunEvent[], 
   const feed = ordered.flatMap<{ key: string; text: string; kind: string }>(event => event.kind === 'plan.ready' ? (event.pages ?? []).map((page, i) => ({
     key: `${event.sequence}:${page.pageId}`, text: `构思出第 ${i + 1} 页 · ${page.pageTitle}`, kind: event.kind,
   })) : [{ key: String(event.sequence), text: event.message, kind: event.kind === 'workflow.progress' ? `workflow-${event.workflow?.status ?? 'started'}` : event.kind === 'page.progress' ? event.pageState ?? event.kind : event.kind }]).slice(-60);
-  return { pages, ready, completed, terminal, elapsed, total, percent, eta, samples, feed };
+  // Before the page plan: the workstreams running side by side, each from its `overall` start to its end.
+  const lanes = new Map<string, { module: string; status: 'running' | 'done' | 'failed'; text: string; ms: number; start: number }>();
+  const log: { key: string; t: number; module: string; text: string }[] = [];
+  for (const event of ordered) {
+    const flow = event.workflow;
+    if (event.kind !== 'workflow.progress' || !flow) continue;
+    const text = event.message.replace(/^[^·]*·\s*/, ''), at = Date.parse(event.timestamp);
+    const lane = lanes.get(flow.module) ?? { module: flow.module, status: 'running', text: '', ms: 0, start: at };
+    if (flow.step === 'overall') { if (flow.status !== 'started') lane.status = flow.status === 'failed' ? 'failed' : 'done'; }
+    else { lane.text = text; log.push({ key: String(event.sequence), t: Math.max(0, at - start), module: flow.module, text }); }
+    lane.ms = at - lane.start;
+    lanes.set(flow.module, lane);
+  }
+  const order = ['planner', 'sources', 'director'];
+  return { pages, ready, completed, terminal, elapsed, total, percent, eta, samples, feed,
+    lanes: [...lanes.values()].map(lane => lane.status === 'running' && !terminal ? { ...lane, ms: end - lane.start } : lane).sort((a, b) => order.indexOf(a.module) - order.indexOf(b.module)), log: log.slice(-6) };
 }
 
 export function duration(ms: number | undefined): string {

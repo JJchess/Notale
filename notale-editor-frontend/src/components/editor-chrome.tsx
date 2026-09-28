@@ -2,6 +2,7 @@
 import {ASSISTANT_NAME} from '@notale/editor/i18n';
 import {useI18n} from '../i18n/react';
 import {LanguageMenu} from './language-menu';
+import {useNotaleHome} from './back-to-notale';
 import {CourseDialog} from './course-editor';
 import {unavailableFeature} from '../feature-availability';
 import {ObjectMenu} from './object-menu';
@@ -81,15 +82,15 @@ import {ImageCropButton} from './image-crop';
 import {LinkInspectorPanel} from './link-editor';
 import {SidebarEffects,SidebarPanel,InspectorPanel,InspectorTabButton,ToolButton,SidebarControl} from './sidebar';
 import {FileMenu} from './file-menu';
-import {DocumentSwitcher} from './document-switcher';
 import {SaveStatus,HistoryControls,PresentControls} from './editor-controls';
 import {CanvasHost} from './canvas-host';
 import {PageList} from './page-list';
 // React owns the editor shell. Empty panel hosts are populated by the editing controllers.
 function ActivityBar(){
  const t=useI18n();
+ const home=useNotaleHome();
 return (<nav className="tool-rail" aria-label={t("创作工具")}>
-<a className="tool-brand" href="/" aria-label={t("Notale 首页")}>{"N"}<span>
+<a className="tool-brand" href={home??"/"} aria-label={t(home?"返回 Notale":"Notale 首页")} title={home?t("返回 Notale"):undefined}>{"N"}<span>
 </span>
 </a>
 <ToolButton tool="insert" aria-controls="tool-panel" aria-label={t("插入")}>
@@ -157,7 +158,7 @@ return (<header className="app-header">
 <a className="brand" href="/">{"Notale"}<span>{t("互动演示")}</span>
 </a>
 <div className="header-history" role="toolbar" aria-label={t("历史操作")}><HistoryControls/></div>
-<FileMenu/><DocumentSwitcher/>
+<FileMenu/>
 <div className="header-selection" role="toolbar" aria-label={t("对象操作")}><SelectionTools/></div>
 <span className="preview-indicator">{t("互动预览")}</span>
 <SaveStatus/><SaveRecoveryActions/>

@@ -4,6 +4,7 @@ import {useI18n} from '../i18n/react';
 import { isComposingKey } from "../keyboard";
 import {useEffect,useLayoutEffect,useRef,useState,type ReactNode} from 'react';
 import {editorActions} from '../state/editor-session';
+import {findActions} from '../state/find-dialog';
 import {useEditorSelector,shallowEqual} from '../state/use-editor-selector';
 
 const paths={
@@ -11,6 +12,7 @@ const paths={
   copy:<><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M15 8V3H3v12h5"/></>,
   trash:<path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/>,
   up:<path d="m6 10 6-6 6 6M12 4v16"/>,down:<path d="m6 14 6 6 6-6M12 4v16"/>,
+  find:<><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></>,
   plus:<><circle cx="12" cy="12" r="9"/><path d="M7 12h10M12 7v10"/></>,
 };
 function Icon({children}:{children:ReactNode}){
@@ -19,12 +21,14 @@ return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="curre
 function run(action:()=>unknown){try{void Promise.resolve(action()).catch(editorActions.reportError);}catch(error){editorActions.reportError(error);}}
 export function SaveStatus(){
  const t=useI18n();
-const report=useEditorSelector(state=>state.save);return <span id="save-status" role="status" data-state={report.state} title={t(report.detail)}>{t(report.label)}</span>;}
+const report=useEditorSelector(state=>state.save),loaded=useEditorSelector(state=>!!state.document);
+  // Where the saving stands is where the saved versions are: a click opens version history.
+  return <button type="button" id="save-status" aria-live="polite" data-state={report.state} disabled={!loaded} title={`${t(report.detail)} · ${t("历史版本")}`} onClick={()=>run(editorActions.openHistory)}>{t(report.label)}</button>;}
 export function HistoryControls(){
  const t=useI18n();
 
   const {canUndo,canRedo}=useEditorSelector(state=>({canUndo:state.canUndo,canRedo:state.canRedo}),shallowEqual);
-  return <><button id="undo" className="icon-button" aria-label={t("撤销")} title={t("撤销 · Ctrl/⌘ + Z")} disabled={!canUndo} onClick={()=>run(editorActions.undo)}><Icon>{paths.undo}</Icon></button><button id="redo" className="icon-button" aria-label={t("重做")} title={t("重做 · Ctrl/⌘ + Shift + Z")} disabled={!canRedo} onClick={()=>run(editorActions.redo)}><Icon>{paths.redo}</Icon></button></>;
+  return <><button id="undo" className="icon-button" aria-label={t("撤销")} title={t("撤销 · Ctrl/⌘ + Z")} disabled={!canUndo} onClick={()=>run(editorActions.undo)}><Icon>{paths.undo}</Icon></button><button id="redo" className="icon-button" aria-label={t("重做")} title={t("重做 · Ctrl/⌘ + Shift + Z")} disabled={!canRedo} onClick={()=>run(editorActions.redo)}><Icon>{paths.redo}</Icon></button><button id="open-find-replace" className="icon-button" aria-label={t("查找和替换")} title={t("查找和替换讲义中的文字 · Ctrl H")} onClick={()=>findActions.open()}><Icon>{paths.find}</Icon></button></>;
 }
 export function PageCommands(){
  const t=useI18n();

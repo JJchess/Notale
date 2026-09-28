@@ -11,7 +11,7 @@ export const starterPipeline: GenerationPipeline = async ({ run, outputDir, sign
   if (signal.aborted) return;
   await emit("phase.changed", "正在构思讲义结构", { phase: "ideate" });
   await mkdir(path.join(outputDir, "assets"), { recursive: true });
-  const title = escapeHtml(run.request.query);
+  const title = escapeHtml(run.request.title ?? run.request.query);
   const pages = [
     { id: "page-01", title: "主题导入", body: `从一个核心问题开始理解：${title}` },
     { id: "page-02", title: "关键结构", body: "这里将由 TypeScript planner 与并行 Builder 生成完整内容。" },

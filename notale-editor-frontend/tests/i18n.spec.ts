@@ -25,7 +25,7 @@ test('language switches preserve editing state, authored text and export languag
  await expect(page.frameLocator('#canvas').locator('[data-notale-id="link"]')).toHaveText('中文原文');
  const canvas=await page.locator('#canvas').contentFrame().locator('body').elementHandle();
  await expect.poll(()=>canvas!.evaluate(()=> (window as any).__NOTALE__.locale)).toBe('en-US');
- await page.locator('#file-menu-trigger').click();await page.locator('#open-find-replace').click();
+ await page.locator('#open-find-replace').click();
  await page.locator('#find-query').fill('保存');
  const speaker=await context.newPage();await speaker.goto(`/present?document=${id}&speaker=1`,{waitUntil:'domcontentloaded'});
  await expect(speaker.locator('html')).toHaveAttribute('lang','en-US');

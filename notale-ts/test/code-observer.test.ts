@@ -9,7 +9,7 @@ import { CODE_FILES, CODE_SAMPLES, codeReferences } from '../src/core/code-obser
 import { RESOURCES } from '../src/core/guidance.js';
 import { resolveBuilderProfile, loadConfig } from '../src/adapters/models/profiles.js';
 import { buildOne, codeGuard, Page } from '../src/core/builder.js';
-import { runBrowserCheck, representativeFrames, selectCodeShots } from '../src/tools/code-check.js';
+import { runBrowserCheck, representativeFrames, selectCodeShots, hostPhaseFailure } from '../src/tools/code-check.js';
 import { browser, staticServer, closeVisualChecker } from '../src/tools/visual-check.js';
 import { publishLecture } from '../src/core/publication.js';
 import { lectureArchive, archiveContentTypes } from '../src/server/lecture-archive.js';
@@ -61,6 +61,13 @@ test('observer diagnostics report execution failures before waiting for a frame'
     {source:'values = []', observe:'def observe(context):\n    raise ValueError("observer evidence")', expected:/observer evidence/},
     {source:'values = []', tests:'def run_tests(ns):\n    return [{"name":"independent check", "passed":False, "message":"test evidence"}]', expected:/test evidence/},
     {source:'values = []', render:'window.renderNotaleView = () => { throw Error("render evidence"); };', expected:/render evidence/},
+    // The declared form: a listed function's returns merge into frames, and the renderer sees their history.
+    {source:'def tick(i):\n    return {"i": i, "sq": i * i}\nfor i in range(3):\n    tick(i)\nvalues = []', observe:'STAGES = {"tick": "tick"}\n',
+      render:'window.renderNotaleView = ({state, history}) => { if (!Array.isArray(history)) throw Error("history missing"); if (history.length && history.at(-1).i !== state.i) throw Error("history out of step"); document.getElementById("code-plot").textContent = String(history.length); };', expected:/全部通过[\s\S]*|starter.py: 3 帧/},
+    // SVG fills black by default; the host makes an unfilled path a line and leaves an explicit fill alone.
+    {source:'values = [1]', render:'window.renderNotaleView = () => { const plot = document.getElementById("code-plot"); plot.innerHTML = \'<svg><path d="M0 0 V10 H10"/><polyline points="0,0 5,5 10,0"/><path fill="red" d="M0 0 H5 V5 Z"/></svg>\'; const [open, line, filled] = plot.querySelectorAll("path, polyline"); const fill = el => getComputedStyle(el).fill; if (fill(open) !== "none" || fill(line) !== "none" || fill(filled) !== "rgb(255, 0, 0)") throw Error("fill " + [open, line, filled].map(fill).join("|")); };', expected:/全部通过/},
+    // The scaffold's placeholder renderer fails instead of passing as an empty view (a page once shipped with it).
+    {source:'values = []', render:await readFile(path.join(RESOURCES,'code-observer/scaffold/view/render.js'),'utf8'), expected:/尚未实现[\s\S]*starter.py: \d+ 帧/},
     // The host never runs the lesson when the renderer throws at the initial view, so a render error cannot carry a test verdict.
   ];
   try {
@@ -99,7 +106,7 @@ test('observer first input, exact ownership and same-context repair (no model)',
   assert.equal(profile.http_timeout_sec, 300); assert.equal(profile.vision_input, true);
   const created = await scaffold(pages, 'page-01', 'test', 1);
   const lesson = path.join(lessonRoot(pages, 'page-01'), 'lesson');
-  assert.equal((created.editable as unknown[]).length, 4);
+  assert.equal((created.editable as unknown[]).length, 3);
   assert.deepEqual(await scaffold(pages, 'page-01', 'test', 1), created);
   const context = {cwd:pages, pid:'page-01'};
   assert.equal(codeGuard('Write', {file_path:path.join(lesson,'starter.py')}, context), undefined);
@@ -209,6 +216,11 @@ test('observer: portable publication, runtime, editor archive and session', {tim
 });
 
 
+test('a host-side check failure is retried, not handed to the author', () => {
+  assert.equal(hostPhaseFailure('✗ 代码工作台自检失败（退出码 1）\nError: 工作台资源加载中断（error），请刷新重试\n检查阶段：编辑器就绪\nrequest failed: http://127.0.0.1:1/workers.js'), true);
+  assert.equal(hostPhaseFailure('✗ 代码工作台自检失败（退出码 1）\nError: 可视化渲染失败：x\n检查阶段：初次课程执行与测试'), false);
+  assert.equal(hostPhaseFailure('✓ 代码工作台执行与抽样渲染检查通过\n全部通过'), false);
+});
 test('code Check selects semantic evidence and preserves endpoints', () => {
   const stages = ['forward','loss','backward','update','update','update','update','forward','loss','backward','update','update','update','update','done'];
   assert.deepEqual(representativeFrames(stages), [0,1,2,3,7,14]);

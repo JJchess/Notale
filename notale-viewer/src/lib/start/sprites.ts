@@ -1,44 +1,105 @@
-/** Istar as a small pixel wizard: pointed hat with a star, beard, robe, staff with a glowing tip.
- * One drawn frame; the crouch and the jump are derived from it, so there is one picture to get right.
- * Each character is a palette key, `.` transparent. */
+/** Valar, the start-page pixel storyteller: a folded hat, a readable face, a short beard,
+ * a cloth-bound book and a warm star staff. Frames share a 22 × 25 grid and a fixed foot line.
+ * Each character is a palette key; `.` is transparent. */
 export interface Sprite { frames: Record<"stand" | "crouch" | "jump", string[]>; palette: Record<string, string> }
 
-const STAND = [
-  "......k.....",
-  ".....khk....",
-  ".....khhk...",
-  "....khbhk.gg",
-  "....khhhhkgg",
-  "...khhhhhhky",
-  "..kkkkkkkkky",
-  ".....ssss..y",
-  ".....kssk..y",
-  "....wwwwww.y",
-  "...wwwwwwwwy",
-  "...rwwwwwwsy",
-  "..rrrwwwwrry",
-  "..rrrrwwrr.y",
-  "..rrrrrrrr.y",
-  "...rrrrrr..y",
-  "...kk..kk...",
-];
-const blank = (width: number) => ".".repeat(width);
 export const WIZARD: Sprite = {
   frames: {
-    stand: STAND,
-    // Knees bent: one robe row gone, the figure one row lower.
-    crouch: [blank(STAND[0]!.length), ...STAND.slice(0, 15), STAND[16]!],
-    // In the air: feet apart and tucked.
-    jump: [...STAND.slice(0, 16), "..k......k.."],
+    stand: [
+      "........kkk...........",
+      "......kkhhhkk.........",
+      ".....khhllhhhkk.......",
+      "....khhllhhkkhk.......",
+      "....khhlhhk..kk....g..",
+      "...khhllhhhk......ggg.",
+      "...khhghhhhk.....gcgcg",
+      "..khhggghhhhk.....ggg.",
+      ".kkkkkkkkkkkkk.....g..",
+      "..kdddddddddk......y..",
+      ".....kvsssvk.......y..",
+      ".....vskssksk......y..",
+      "....kvssstssk......y..",
+      "....kvwwwvwk.......y..",
+      "....krvwwvrrk......y..",
+      "...krrrvvrrrlk.....y..",
+      "..kbklrgglrrrlk....y..",
+      "..kbcckrllrrrlksssst..",
+      "..kbcckrllrrldk....y..",
+      "...kkkrrllrrddk....y..",
+      "....krrrllrrddk....y..",
+      "...krrrrllrrdddk...y..",
+      "...kdddddddddddk...y..",
+      "....kkk....kkk.....y..",
+      "....kkk....kkk........",
+    ],
+    crouch: [
+      "......................",
+      "......................",
+      "........kkk...........",
+      "......kkhhhkk.........",
+      ".....khhllhhhkk.......",
+      "....khhllhhkkhk.......",
+      "....khhlhhk..kk....g..",
+      "...khhllhhhk......ggg.",
+      "...khhghhhhk.....gcgcg",
+      "..khhggghhhhk.....ggg.",
+      ".kkkkkkkkkkkkk.....g..",
+      "..kdddddddddk......y..",
+      ".....kvsssvk.......y..",
+      ".....vskssksk......y..",
+      "....kvssstssk......y..",
+      "....kvwwwvwk.......y..",
+      "....krvwwvrrk......y..",
+      "...krrrvvrrrlk.....y..",
+      "..kbcckrgglrrrksssty..",
+      "..kbcckrllrrddk....y..",
+      "...kkkrrllrrdddk...y..",
+      "..krrrrrllrrrdddk..y..",
+      "..kdddddddddddddk..y..",
+      "...kkk......kkk....y..",
+      "...kkk......kkk.......",
+    ],
+    jump: [
+      "........kkk...........",
+      "......kkhhhkk.........",
+      ".....khhllhhhkk.......",
+      "....khhllhhkkhk.......",
+      "....khhlhhk..kk....g..",
+      "...khhllhhhk......ggg.",
+      "...khhghhhhk.....gcgcg",
+      "..khhggghhhhk.....ggg.",
+      ".kkkkkkkkkkkkk.....g..",
+      "..kdddddddddk......y..",
+      ".....kvsssvk.......y..",
+      ".....vskssksk......y..",
+      "....kvssstssk......y..",
+      "....kvwwwvwk.......y..",
+      "....krvwwvrrk......y..",
+      "...krrrvvrrrlkssst.y..",
+      "..kbklrgglrrrlk....y..",
+      "..kbcckrllrrrlk....y..",
+      "..kbcckrllrrrldk...y..",
+      "...kkrrrllrrrrddk..y..",
+      "..krrrrrllrrrrrddk.y..",
+      "..kddddkkkdddddddk.y..",
+      "...kkk.....kkk.....y..",
+      "..kk.........kk.......",
+      ".kk...........kk......",
+    ],
   },
   palette: {
-    k: "#29272e", // outline (the editor's ink)
-    h: "#6c18f5", // hat (the accent)
-    b: "#f5c518", // star on the hat
-    s: "#f2c9a0", // face, hand
-    w: "#f7f5f2", // beard
-    r: "#4b2aa8", // robe
-    y: "#8a5a2b", // staff
-    g: "#5ee0f0", // staff's light
+    k: "#302c3f",
+    h: "#75619c",
+    l: "#a18aba",
+    d: "#453954",
+    r: "#62507e",
+    s: "#edc49b",
+    t: "#bd8e72",
+    w: "#faf0dd",
+    v: "#c9bdad",
+    g: "#d8ad63",
+    c: "#f1dfb9",
+    b: "#536a78",
+    y: "#8b654c",
   },
 };

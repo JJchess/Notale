@@ -53,11 +53,11 @@ const ids = (seen: string) => [...seen.matchAll(/id=([0-9a-f-]{36})/g)].map(m =>
 test('a new deck with a PDF: generate, the PDF as material, fields only as said, language into the scenario', async () => {
   const w = await world(), work = workers(), events: TurnEvent[] = [];
   try {
-    const m = model([seen => ({ action: 'generate', reason: '要做新讲义', query: '贝叶斯推断入门', minutes: 45, language: 'English', files: [{ id: ids(seen)[0], role: 'material' }] })]);
+    const m = model([seen => ({ action: 'generate', reason: '要做新讲义', query: '贝叶斯推断入门', title: '贝叶斯推断', minutes: 45, language: 'English', files: [{ id: ids(seen)[0], role: 'material' }] })]);
     await say(w.session, '用这篇论文做一份45分钟的英文讲义', [{ name: 'paper.pdf', bytes: pdf }], { complete: m.complete, ...work, emit: e => events.push(e) });
     assert.deepEqual(events.map(e => e.type), ['understood', 'run', 'progress', 'result']);
     const request = work.started[0]!;
-    assert.deepEqual([request.query, request.minutes, request.scenario, request.materials.map(f => f.name), request.template, request.styleImages], ['贝叶斯推断入门', 45, '全部页面文字使用English撰写', ['paper.pdf'], undefined, []]);
+    assert.deepEqual([request.query, request.title, request.minutes, request.scenario, request.materials.map(f => f.name), request.template, request.styleImages], ['贝叶斯推断入门', '贝叶斯推断', 45, '全部页面文字使用English撰写', ['paper.pdf'], undefined, []]);
     assert.equal(request.audience, undefined, 'not said, not filled');
     assert.deepEqual(w.session.artifacts.map(a => [a.runId, a.kind]), [['run-1', 'generate']]);
   } finally { await w.done(); }

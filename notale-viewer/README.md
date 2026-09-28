@@ -32,6 +32,12 @@ npm run dev
 
 Set `NOTALE_API_URL` when the backend is not at `http://127.0.0.1:4321`. In production, set it when running `npm run build`: Next.js stores this rewrite destination in the build, so setting it only for `npm run start` does not change the backend. Rebuild when changing the production API origin.
 
+## Open in the editor
+
+The session's edit button imports the displayed `.notale` version into the standalone editor once, then reopens that document so saved manual changes are preserved. Run the editor separately and configure `EDITOR_URL` (server address, default `http://127.0.0.1:4312`) and, when different, `EDITOR_PUBLIC_URL` (browser address). The server route reads these variables and `NOTALE_API_URL` at request time; keep the API origin consistent with the build-time proxy setting. `NOTALE_API_TOKEN`, if set, stays on the server.
+
+This standalone entry uses one Viewer server process and a persistent `.local` directory for its run-to-document mapping. Keep it on a trusted local network. Hosted deployments with user identities must use their authenticated resource and editor-entry adapters. A failed editor lookup does not import a replacement unless the document is confirmed missing.
+
 The viewer installs and builds on its own. Its small local protocol-v1 declarations describe the HTTP boundary; it has no `file:` dependency on `notale-ts`. The centered home screen creates runs. A run page replays prior events, follows live SSE updates, restores after refresh, shows generation progress, and automatically opens the final static lecture on success.
 
 ## Browser delivery

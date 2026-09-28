@@ -1,10 +1,11 @@
 import type { Preview } from './attachments.js';
+import { normalizeTitle, TITLE_INSTRUCTION } from '../core/title.js';
 
 /** What one message is: a new deck, a change to one this session made, a question back, or a reply.
  * Decided by one model call that submits `Route` (the way the planner submits Submit); what
  * happens after is plain code. */
 export type Route =
-  | { action: 'generate'; reason: string; query: string; minutes?: number; audience?: string; scenario?: string; language?: string; style?: string;
+  | { action: 'generate'; reason: string; query: string; title?: string; minutes?: number; audience?: string; scenario?: string; language?: string; style?: string;
       files: { id: string; role: 'material' | 'template' | 'style-reference' }[] }
   | { action: 'fix'; reason: string; target: string; instruction: string; page?: number; files: { id: string; role: 'reference' }[] }
   | { action: 'ask'; reason: string; question: string; options?: string[] }
@@ -24,6 +25,7 @@ export const ROUTE_TOOL = {
       action: { type: 'string', enum: ['generate', 'fix', 'ask', 'reply'], description: 'generate=做一份新讲义；fix=修改本会话已有的一份讲义；ask=信息不够或有歧义，先问作者；reply=不需要生成也不需要修改' },
       reason: { type: 'string', description: '一句话：你为什么这样理解，会展示给作者' },
       query: { type: 'string', description: 'generate：作者的原话，只去掉已填进 minutes、audience 等字段的部分，不改写、不扩写' },
+      title: { type: 'string', description: `generate：${TITLE_INSTRUCTION}` },
       minutes: { type: 'integer', description: 'generate：单位分钟。作者说了时长就填；没说时长但说了场合（如大学一节课、初二物理课），按该场合的一次课填（大学一次课通常两节连上，约 90 分钟；中小学一节约 45 分钟，说了连堂就按连堂），并在 reason 里写出按多少分钟理解；都没说就不填' },
       audience: { type: 'string', description: 'generate：作者说了受众才填' },
       scenario: { type: 'string', description: 'generate：使用场景或其他要求（作者说了才填）' },
@@ -47,7 +49,7 @@ export const ROUTE_TOOL = {
   },
 } as const;
 
-export const SYSTEM = `你是 Notale 的入口：读作者这条消息和附件，调用一次 Route 说明要做什么。只填作者说了的内容，不补作者没提的要求；拿不准就 ask。`;
+export const SYSTEM = `你是 Notale 的入口：读作者这条消息和附件，调用一次 Route 说明要做什么。只填作者说了的内容，不补作者没提的要求；拿不准就 ask。生成讲义时填写 title，标题可根据作者的主题概括。`;
 
 /** The model's view of this message: what was said before, what exists, what came attached. */
 export function brief(input: Understanding): string {
@@ -82,7 +84,7 @@ export function validate(args: Record<string, unknown>, input: Understanding): R
         if (file.kind === 'video') return ask(`视频目前只能在修改讲义时作参考，还不能用来生成。「${file.name}」要先做一份讲义，再照视频修改吗？`);
       }
       if (roles.filter(r => r.role === 'template').length > 1) return ask('一次只能用一个模板，用哪一份？');
-      const optional = { minutes: int('minutes'), audience: str('audience'), scenario: str('scenario'), language: str('language'), style: str('style') };
+      const optional = { title: normalizeTitle(args.title), minutes: int('minutes'), audience: str('audience'), scenario: str('scenario'), language: str('language'), style: str('style') };
       return { action: 'generate', reason, query, ...Object.fromEntries(Object.entries(optional).filter(([, v]) => v !== undefined)),
         files: roles.map(r => ({ id: r.id, role: r.role as 'material' | 'template' | 'style-reference' })) };
     }

@@ -117,7 +117,18 @@ def _notale_run(files_json, entry, observe_source, tests_source, limits_json, se
         observer={'__name__':'__observer__'}
         exec(compile(observe_source,'lesson/observe.py','exec'),observer)
         observe=observer.get('observe')
-        if not callable(observe):raise TypeError('observe.py must define observe(context)')
+        stages=observer.get('STAGES')
+        # The declared form: a listed function's return is merged over the previous frame, so each frame
+        # is the lesson's state so far; later fields overwrite earlier ones.
+        if not callable(observe) and isinstance(stages,dict):
+            merged={}
+            def observe(ctx,stages=stages):
+                if ctx.event!='return' or ctx.function not in stages:return None
+                value=ctx.return_value
+                merged.update(value if isinstance(value,dict) else {'value':value})
+                merged['stage']=stages[ctx.function]
+                return dict(merged)
+        if not callable(observe):raise TypeError('observe.py 需要 STAGES = {函数名: 阶段}')
     except BaseException as exc:
         return json.dumps({'ok':False,'error':error(exc,'observation'),'frames':[],'tests':[]})
     random.seed(seed)

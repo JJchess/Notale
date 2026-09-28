@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./styles.css";
+import { Sidebar } from "../src/components/sidebar";
 
 export const metadata: Metadata = {
   title: "Notale · 讲义生成",
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="zh-CN"><body>{children}</body></html>;
+  return <html lang="zh-CN"><body><div className="app-frame"><Sidebar /><div className="app-main">{children}</div></div></body></html>;
 }

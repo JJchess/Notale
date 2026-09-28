@@ -80,7 +80,7 @@ export function istarFixer(options: { service: RunService; generator: Generator;
       const said = [result.status === 'interrupted' && result.changed ? '已停止，保留了停下前的改动。' : '', result.text, result.note].filter(Boolean).join('\n');
       if (!result.changed) return { status: result.status === 'complete' ? 'no-change' : result.status, text: [result.text, result.note].filter(Boolean).join('\n') };
       const title = (await options.generator.describe(request.target)).title;
-      const snapshot = await options.service.start(createRunRequestSchema.parse({ query: title, basedOn: request.target }), {
+      const snapshot = await options.service.start(createRunRequestSchema.parse({ query: title, title, basedOn: request.target }), {
         pipeline: async ({ outputDir, signal: runSignal, emit }) => {
           const pages = join(dirname(outputDir), 'work', 'pages');
           await mkdir(pages, { recursive: true });

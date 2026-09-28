@@ -11,14 +11,28 @@ def f(x):
     return x ** 3 - x - 2.0
 
 
+def sample_f(a, b, n=40):
+    # 在区间两侧各放宽 10% 取样 f，用来看清区间里 f 的形状。
+    pad = 0.1 * (b - a)
+    xs = [a - pad + (b - a + 2 * pad) * i / n for i in range(n + 1)]
+    return [[x, f(x)] for x in xs]
+
+
+def start(a, b, tol):
+    # 题目本身：初始区间、精度要求和 f 在区间上的形状；尚未二分，m 是区间中点。
+    m = 0.5 * (a + b)
+    return {"initial": [a, b], "tol": tol, "a": a, "b": b, "m": m, "fm": f(m), "curve": sample_f(a, b)}
+
+
 def bisect_step(a, b, fa, fb):
     # 一次区间减半：先算中点和它的函数值，再决定保留哪一半。
-    # 返回新区间端点及函数值；m 保留本次实际求值的中点。
+    # 返回新区间及本次实际求值的中点 m、f(m)，curve 是减半前区间里 f 的形状。
     m = 0.5 * (a + b)
     fm = f(m)
+    curve = sample_f(a, b)
     if fa * fm <= 0.0:   # 根落在左半 [a, m]
-        return a, m, fa, fm, m
-    return m, b, fm, fb, m  # 根落在右半 [m, b]
+        return {"a": a, "b": m, "fa": fa, "fb": fm, "m": m, "fm": fm, "curve": curve}
+    return {"a": m, "b": b, "fa": fm, "fb": fb, "m": m, "fm": fm, "curve": curve}  # 根落在右半 [m, b]
 
 
 def bisect(a, b, tol=1e-6, max_iter=100):
@@ -28,10 +42,12 @@ def bisect(a, b, tol=1e-6, max_iter=100):
     fa, fb = f(a), f(b)
     if fa * fb > 0.0:
         raise ValueError("f(a) 与 f(b) 必须异号，二分法才能保证有根")
+    start(a, b, tol)
     m = 0.5 * (a + b)
     k = 0
     for k in range(1, max_iter + 1):
-        a, b, fa, fb, m = bisect_step(a, b, fa, fb)
+        step = bisect_step(a, b, fa, fb)
+        a, b, fa, fb, m = step["a"], step["b"], step["fa"], step["fb"], step["m"]
         if b - a < tol:
             break
     return {"root": m, "residual": f(m), "interval": (a, b), "width": b - a, "steps": k}

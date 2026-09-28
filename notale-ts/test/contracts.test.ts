@@ -147,7 +147,7 @@ test('lecture archive preserves files and produces an importable editor manifest
   const root = await mkdtemp(path.join(os.tmpdir(), 'notale-archive-'));
   const store = new RunStore(root), service = new RunService(store, starterPipeline);
   try {
-    const run = await store.create(createRunRequestSchema.parse({ query: 'archive fixture' }));
+    const run = await store.create(createRunRequestSchema.parse({ query: 'A long request about the archive fixture', title: '  Archive\n title  ' }));
     await assert.rejects(lectureArchive(service, run.id, {}), /lecture_not_completed/);
     const output = path.join(store.runDir(run.id), 'output');
     await writeFile(path.join(output, 'index.html'), '<p>assembled</p>');
@@ -162,6 +162,7 @@ test('lecture archive preserves files and produces an importable editor manifest
     assert.equal(nativeManifest.formatVersion, 1);
     assert.equal(nativeManifest.entry, 'index.html');
     assert.equal(nativeManifest.document.schemaVersion, 1);
+    assert.equal(document.title, 'Archive title');
     assert.deepEqual(document.slides.map((s: any) => s.sourcePath), ['page-01.html', 'page-02.html']);
     assert.match(document.slides[0].html, /<p data-notale-id="[\w-]+">first<\/p>/);
     assert.equal(document.assets['index.html'], undefined, 'editor reserves the assembled entry');

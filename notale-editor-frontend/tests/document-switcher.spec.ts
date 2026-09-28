@@ -12,13 +12,12 @@ test('React file menu renames and switches documents, retaining the current docu
   await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
   await page.locator('#file-menu-trigger').dblclick();await page.locator('#deck-title').fill('React 重命名');await page.locator('#deck-title').press('Enter');
   await expect(page.locator('#file-title')).toHaveText('React 重命名');await page.evaluate(()=>(window as any).NotaleWorkbench.whenSynchronized());
-  await page.locator('#file-menu-trigger').click();await page.locator('[data-file="switch"]').click();
-  await expect(page.locator('#documents option:checked')).toHaveText('React 重命名');
-  await page.locator('#documents').selectOption(ids[1]);await expect(page.locator('#switch-document-dialog')).not.toBeVisible();await expect(page.locator('#file-title')).toHaveText('切换验证 1');
+  await page.locator('#file-menu-trigger').click();
+  await expect(page.locator('#file-menu [aria-checked="true"]')).toHaveText('React 重命名');
+  await page.locator(`#file-menu [data-document="${ids[1]}"]`).click();await expect(page.locator('#file-menu')).toHaveCount(0);await expect(page.locator('#file-title')).toHaveText('切换验证 1');
   await page.evaluate(()=>(window as any).NotaleWorkbench.whenReady());
   await page.route('**/api/documents/'+ids[0],route=>route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({error:'INTERNAL',message:'加载失败验证'})}));
-  await page.locator('#file-menu-trigger').click();await page.locator('[data-file="switch"]').click();await page.locator('#documents').selectOption(ids[0]);
-  await expect(page.locator('#switch-document-dialog .settings-status')).not.toHaveText('');await expect(page.locator('#documents')).toHaveValue(ids[1]);await expect(page.locator('#file-title')).toHaveText('切换验证 1');
-  await page.locator('#switch-document-dialog').getByRole('button',{name:'关闭',exact:true}).click();
+  await page.locator('#file-menu-trigger').click();await page.locator(`#file-menu [data-document="${ids[0]}"]`).click();
+  await expect(page.locator('#file-title')).toHaveText('切换验证 1');await page.locator('#file-menu-trigger').click();await expect(page.locator('#file-menu [aria-checked="true"]')).toHaveText('切换验证 1');await page.keyboard.press('Escape');
   await page.unroute('**/api/documents/'+ids[0]);const saved=await page.request.get('/api/documents/'+ids[0]).then(r=>r.json());expect(saved.document.title).toBe('React 重命名');
 });

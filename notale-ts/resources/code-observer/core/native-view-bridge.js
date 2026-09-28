@@ -163,7 +163,7 @@
       ? String(safePacket.previousStep.sequence ?? "")
       : "";
     delete document.documentElement.dataset.renderedFrameIndex;
-    const result = renderer({state:safePacket.step.state,previousState:safePacket.previousStep?.state ?? null,
+    const result = renderer({state:safePacket.step.state,previousState:safePacket.previousStep?.state ?? null,history:safePacket.history ?? [],
       playback:safePacket.playback,environment:safePacket.environment});
     if (result && typeof result.then === "function") {
       throw new TypeError("renderNotaleView 必须同步完成渲染，不能返回 Promise。");

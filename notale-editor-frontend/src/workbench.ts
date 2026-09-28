@@ -51,7 +51,7 @@ import type {ChartAuthoring} from '@notale/editor/browser';
 import {prepareSvgImport} from './vector-import.js';
 import {createVectorIngress} from './vector-ingress.js';
 import {createVectorInspector} from './vector-inspector.js';
-import {bindRecovery} from './state/recovery';
+import {bindRecovery,recoveryActions,recoveryState} from './state/recovery';
 import {createTextIngress, type TextDraft} from './text-ingress.js';
 import { createAnimationPath } from './animation-path.js';
 import { createObjectMenu, type ObjectMenuItem, type FormatControl } from './object-menu.js';
@@ -538,6 +538,17 @@ function selectDocument(document: Snapshot['document']) {
   const entry={id:document.id,title:document.title};
   editorSession.update({documents:documents.some(item=>item.id===document.id)?documents.map(item=>item.id===document.id?entry:item):[entry,...documents]});
 }
+// Like Word's Document Recovery: what can be recovered is offered once, unasked, after the first
+// lecture opens; with nothing to recover there is nothing to see. The rows are not per document.
+let recoveryOffered=false;
+async function offerRecovery(){
+  if(recoveryOffered)return;recoveryOffered=true;
+  try{
+    await recoveryActions.refresh();
+    const keyboard=await editorActions.keyboardRecoveries();
+    if((recoveryState.getSnapshot().rows.length||keyboard.length)&&!editorSession.getSnapshot().documentDialog)editorActions.openRecovery();
+  }catch{}
+}
 async function load(id: string) {
   assertWorkbenchOpen();
   await kernel.flush();
@@ -573,6 +584,7 @@ async function load(id: string) {
     } catch {}
     history.replaceState(null, '', `?document=${id}`);
     await render();
+    void offerRecovery();
   } finally {
     releaseBusy();
     if (editorSession.snapshot) mark();

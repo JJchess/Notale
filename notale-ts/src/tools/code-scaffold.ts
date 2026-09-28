@@ -5,7 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { RESOURCES } from '../core/guidance.js';
 import { resolvePath } from '../core/planner-contract.js';
-import { CODE_FILES, CODE_RUNTIME_VERSION } from '../core/code-observer.js';
+import { CODE_FILES, CODE_RUNTIME_VERSION, LESSON_FILES } from '../core/code-observer.js';
 
 const outerTemplate = readFileSync(path.join(RESOURCES, 'code-observer/outer.html'), 'utf8');
 const packageRoot = path.resolve(RESOURCES, '..');
@@ -90,7 +90,7 @@ export async function scaffold(pagesDir: string, pid: string, title: string, tot
       outer = outer.replaceAll(`${pid}/index.html`, `${pid}/index.html?theme=../../theme.css`);
     writeFileSync(path.join(pages, pid + '.html'), outer);
     writeFileSync(marker, JSON.stringify({ schemaVersion: 1, runtimeVersion: CODE_RUNTIME_VERSION, page: pid,
-      title: configuredTitle, editable, fixedRuntime: prefix.slice(0, -1) }, null, 2) + '\n');
+      title: configuredTitle, editable: LESSON_FILES.map(file => 'lesson/' + file), fixedRuntime: prefix.slice(0, -1) }, null, 2) + '\n');
   }
   const { lesson } = await import(pathToFileURL(path.join(target, 'lesson/lesson.js')).href);
   return { page: path.join(pages, pid + '.html'), workbench: path.join(target, 'index.html'), limits: lesson.limits,

@@ -33,7 +33,7 @@ export function toolSpecs(skill?: string, visionInput = true): Record<string, an
     }
     if (spec.name === 'Write' && skill) spec.description = '写完整文件，用于创建或整体重构；局部修正用 Patch。';
   }
-  if (skill === 'build-code') for (const spec of specs) if (['Write', 'Patch'].includes(spec.name)) spec.description += ' 写入成功后宿主自动运行课程，把执行、测试、抽样渲染与重置结果附在返回里。';
+  if (skill === 'build-code') for (const spec of specs) if (['Write', 'Patch'].includes(spec.name)) spec.description += ' 写入成功后宿主自动运行课程，把执行、抽样渲染与重置结果附在返回里。';
   if (visionInput) specs.push(...structuredClone(constants.MEDIA_SCHEMAS));
   return specs;
 }

@@ -169,15 +169,3 @@ export function FindReplaceDialog() {
     </dialog>
   );
 }
-
-export function FindReplaceButton() {
- const t=useI18n();
-
-  return (
-    <button
-      id="open-find-replace"
-      title={t("查找和替换讲义中的文字 · Ctrl H")}
-      onClick={() => findActions.open()}
-    >{t("查找和替换…")}</button>
-  );
-}

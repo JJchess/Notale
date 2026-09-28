@@ -31,6 +31,8 @@ export function selectCodeShots(shots: string[]): string[] {
 
 /** Failed course tests are collected here so the frame, view and reset checks still run and report in the same round. */
 const testFailures = new WeakMap<Page | Frame, string>();
+/** The scaffold's renderer is still in place: reported with the rest, not before the lesson has run. */
+const placeholderViews = new WeakSet<Page | Frame>();
 async function assertHealthy(page: Page | Frame): Promise<void> {
   const state = await page.evaluate('window.CodeLab?.getState()') as Record<string, any> | undefined;
   if (state?.outputKind === 'warning') testFailures.set(page, state.output || '课程测试失败');
@@ -48,7 +50,7 @@ async function waitForState(page: Page | Frame, condition: string, phase: string
     await assertHealthy(page);
   } catch (error) {
     await assertHealthy(page);
-    throw new Error(`阶段：${phase}\n${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`阶段：${phase}\n${error instanceof Error ? error.message : describe(error)}`);
   }
 }
 
@@ -66,6 +68,7 @@ async function checkView(page: Page | Frame, index: number): Promise<void> {
   }
   await assertHealthy(page);
   assert.ok(await frame.locator('body > *').count() > 0, 'lesson view is empty');
+  if (await frame.evaluate(() => (window as any).renderNotaleView?.placeholder === true)) placeholderViews.add(page);
   assert.equal(await page.locator('#visualizerError').isVisible(), false, await page.locator('#visualizerError').innerText());
 }
 const stateOf = (page: Page | Frame): Promise<Record<string, any>> => page.evaluate('CodeLab.getState()');
@@ -113,7 +116,17 @@ async function lessonCoverage(page: Page | Frame, capture: (name: string) => Pro
     await checkView(page, -1);
   }
 }
+/** Phases the host owns: a failure there (a worker request dropped, a runtime that did not load) says
+ * nothing about the lesson, so it is retried once instead of being handed to the author. */
+const HOST_PHASES = /检查阶段：(?:打开代码工作台|编辑器就绪|Python 运行时就绪)$/;
 export async function runBrowserCheck(pages: string, pid: string, shot = false, signal?: AbortSignal, outer = false): Promise<{ report: string; shots: string[] }> {
+  const first = await checkOnce(pages, pid, shot, signal, outer);
+  return hostPhaseFailure(first.report) ? checkOnce(pages, pid, shot, signal, outer) : first;
+}
+export const hostPhaseFailure = (report: string) => HOST_PHASES.test(report.split('\n').find(line => line.startsWith('检查阶段：')) ?? '');
+const describe = (error: unknown) => error instanceof Error ? `${error.name}: ${error.message}`
+  : error && typeof error === 'object' && 'type' in error ? `浏览器事件 ${String((error as { type: unknown }).type)}（宿主资源加载中断）` : String(error);
+async function checkOnce(pages: string, pid: string, shot = false, signal?: AbortSignal, outer = false): Promise<{ report: string; shots: string[] }> {
   const root = lessonRoot(pages, pid), marker = path.join(root, '.notale-code-lesson.json');
   if (!existsSync(marker)) return { report: `失败:代码工作台尚未生成，找不到 ${marker}`, shots: [] };
   const version = JSON.parse(readFileSync(marker, 'utf8')).runtimeVersion;
@@ -170,9 +183,9 @@ export async function runBrowserCheck(pages: string, pid: string, shot = false, 
     const preview = await course.evaluate('CodeLab.getPreview()');
     if (preview) await writeFile(path.join(root, 'lesson/preview.json'), JSON.stringify(preview));
     assert.deepEqual(external, []); assert.deepEqual(errors, []);
-    const failedTests = testFailures.get(course);
+    const failedTests = [placeholderViews.has(course) ? 'view/render.js 尚未实现：还是脚手架占位，请根据 packet.state 画出本题的可视化' : '', testFailures.get(course) ?? ''].filter(Boolean).join('\n');
     if (failedTests) {
-      report = `✗ 代码工作台自检失败（退出码 1）\n✗ 课程测试未通过（执行、抽样渲染与重置已检查，见下）：\n${failedTests}\n` + summary.join('\n') + '\n检查阶段：课程测试';
+      report = `✗ 代码工作台自检失败（退出码 1）\n✗ 交付检查未通过（执行、抽样渲染与重置已检查，见下）：\n${failedTests}\n` + summary.join('\n') + '\n检查阶段：课程测试';
       await capture('failure');
     } else {
       report = '✓ 代码工作台执行与抽样渲染检查通过\n' + summary.join('\n') + '\n';
@@ -181,7 +194,7 @@ export async function runBrowserCheck(pages: string, pid: string, shot = false, 
     }
   } catch (error) {
     if (combined.aborted) throw combined.reason;
-    report = `✗ 代码工作台自检失败（退出码 1）\n${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`;
+    report = `✗ 代码工作台自检失败（退出码 1）\n${describe(error)}`;
     report += `\n检查阶段：${phase}`;
     const failedTests = course && testFailures.get(course);
     if (failedTests) report += `\n✗ 课程测试也未通过：\n${failedTests}`;

@@ -5,7 +5,7 @@ import type { Session } from './session.js';
 
 /** The two wholes this layer hands work to. Neither knows about the other or about sessions. */
 export interface GenerateRequest {
-  query: string; minutes?: number; audience?: string; scenario?: string; style?: string;
+  query: string; title?: string; minutes?: number; audience?: string; scenario?: string; style?: string;
   materials: { name: string; file: string; kind: string }[];
   template?: { name: string; file: string };
   styleImages: { name: string; file: string }[];

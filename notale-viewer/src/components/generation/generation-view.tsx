@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { PageProgress } from "../../lib/protocol";
 import type { progressState } from "../../lib/progress-state";
-import { GenerationProgress } from "../generation-progress";
+import { PlanningView } from "./planning-view";
 import { PagePreview } from "./page-preview";
 import { PageRail } from "./page-rail";
 
@@ -15,13 +15,13 @@ const urlOf = (page: PageProgress) => page.previewUrl ? `/notale-api${page.previ
 /** A lecture being generated. Before there is a page plan: the stages. Then: every planned page
  * with how far it got, and the finished ones live -- the newest, unless the author picked one.
  * `onViewing` reports the page on screen, so the finished lecture can open on it. */
-export function GenerationView({ state, phase, status, onViewing }: { state: State; phase?: string; status: string; onViewing?: (pageId: string) => void }) {
+export function GenerationView({ state, status, onViewing }: { state: State; phase?: string; status: string; onViewing?: (pageId: string) => void }) {
   const [picked, setPicked] = useState<string>();
   const ready = state.pages.filter(page => page.state === "ready");
   const newest = [...ready].sort((a, b) => (a.updatedAt ?? "").localeCompare(b.updatedAt ?? "")).at(-1);
   const shown = ready.find(page => page.pageId === picked) ?? newest;
   useEffect(() => { if (shown) onViewing?.(shown.pageId); }, [shown?.pageId, onViewing]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!state.pages.length) return <GenerationProgress state={state} phase={phase} status={status} />;
+  if (!state.pages.length) return <PlanningView state={state} status={status} />;
 
   const building = state.pages.findIndex(page => working.has(page.state));
   const at = shown ? ready.indexOf(shown) : -1;

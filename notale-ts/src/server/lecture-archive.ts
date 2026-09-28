@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { RESOURCES } from '../core/guidance.js';
+import { normalizeTitle } from '../core/title.js';
 import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import type { RunService } from '../core/run-service.js';
 
@@ -60,7 +61,7 @@ export async function lectureArchive(service: RunService, id: string, mime: Reco
       }))];
     })),
     document: {
-    schemaVersion: 1, id: randomUUID(), title: run.request.query.slice(0, 300) || '讲义',
+    schemaVersion: 1, id: randomUUID(), title: normalizeTitle(run.request.title) ?? normalizeTitle(run.request.query) ?? '讲义',
     width: 1600, height: 900, slides, assets, codeLessons,
   } }));
   return new Promise((resolve, reject) => {
