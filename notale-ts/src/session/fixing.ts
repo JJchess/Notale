@@ -6,7 +6,7 @@ import { readPage } from '@notale/format/page';
 import { createRunRequestSchema } from '../protocol/index.js';
 import { publishPages } from '../core/publication.js';
 import type { RunService } from '../core/run-service.js';
-import { fixModel, lectureFiles, PAGE, runFix, Transcript, type FixModel } from '../fix/istar.js';
+import { fixModel, lectureFiles, PAGE, runFix, Transcript, type FixModel, type FixDeps } from '../fix/istar.js';
 import { SandboxPool } from '../fix/sandbox.js';
 import type { FixRequest, Fixer, Generator } from './turn.js';
 
@@ -53,8 +53,10 @@ export const draftTarget = (session: { dir: string }) => readFile(join(session.d
 
 /** Istar on a copy of a run this session made. It runs first; only if it changed something is the
  * result published as a new run based on the target (same preview, same .notale, `basedOn` set). */
-export function istarFixer(options: { service: RunService; generator: Generator; owner: string; model?: () => FixModel; env?: NodeJS.ProcessEnv }): Fixer & { close(): Promise<void> } {
+export function istarFixer(options: { service: RunService; generator: Generator; owner: string; model?: () => FixModel; env?: NodeJS.ProcessEnv; media?: FixDeps['media'] | false }): Fixer & { close(): Promise<void> } {
+  if (options.env !== undefined && !options.model) throw new Error('An explicit environment requires a fix model');
   const env = options.env ?? process.env, model = options.model ?? (() => fixModel(env));
+  const media = options.media === false ? undefined : options.media ?? (env.GEMINI_API_KEY || env.PARATERA_API_KEY ? { env } : undefined);
   const sandboxes = new SandboxPool(options.owner);
   let swept: Promise<void> | undefined;
   // One agent conversation per session, so "the title I just changed" still means something.
@@ -71,7 +73,7 @@ export function istarFixer(options: { service: RunService; generator: Generator;
       const result = await runFix({ instruction: request.instruction, images: request.images, inputs, ...(request.page ? { page: request.page } : {}) }, {
         model: model(), transcript, dir,
         sandbox: async () => { swept ??= sandboxes.sweep(); await swept; return sandboxes.get(request.session.id, dir); },
-        ...(env.GEMINI_API_KEY || env.PARATERA_API_KEY ? { media: { env } } : {}),
+        ...(media ? { media } : {}),
         report: step => onEvent({ type: 'step', ...step }),
         text: delta => onEvent({ type: 'text', ...(delta === null ? { reset: true } : { delta }) }),
         draft: draft => onEvent({ type: 'draft', ...draft }),

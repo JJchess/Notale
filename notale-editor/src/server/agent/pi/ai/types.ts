@@ -118,6 +118,8 @@ export interface AssistantMessage {
 	provider: string;
 	model: string;
 	responseId?: string | undefined;
+	/** Opaque Responses output (including encrypted reasoning) for a same-model next turn. */
+	providerReplay?: Record<string, unknown>[];
 	usage: Usage;
 	stopReason: StopReason;
 	errorMessage?: string;

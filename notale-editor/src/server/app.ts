@@ -43,6 +43,8 @@ export interface AppOptions {
   serveWorkbench?: boolean;
   ai?: AiRuntime;
   models?: ModelRegistry;
+  /** Explicit host capabilities; passing this object prevents standalone credential discovery. */
+  media?: { availability: ReturnType<typeof mediaAvailability>; call: typeof mediaCall };
 }
 export function createApps(options: AppOptions) {
   const api = options.api ?? Fastify({ logger: options.logger ?? false, bodyLimit: 75_000_000 });
@@ -53,7 +55,8 @@ export function createApps(options: AppOptions) {
   api.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: 75_000_000 }, (_req, body, done) => done(null, body));
   const { store, integration } = options;
   const ai = options.ai ?? createAiRuntime();
-  const models = options.models ?? new ModelRegistry();
+  const models = options.models ?? (options.ai ? new ModelRegistry({}, fetch, { providers: {} }) : new ModelRegistry());
+  const media = options.media ?? { availability: mediaAvailability(options.ai ? {} : process.env), call: mediaCall };
   const posters=new PosterService(process.env.EDITOR_POSTER_DIR);
   api.addHook('onClose',async()=>posters.close());
   async function context(
@@ -196,7 +199,7 @@ export function createApps(options: AppOptions) {
   api.post<{Params:{id:string}}>('/api/documents/:id/prepare',async req=>
     store.prepareSync(await context(req,'edit',req.params.id),req.params.id,commitSchema.parse(req.body)));
   // A candidate, never a commit: the author applies it from the editor, or discards it.
-  api.get('/api/ai/status',async()=>({available:ai.available,reason:ai.reason,model:ai.model.id,...describeMessage(ai.reason??''),tools:mediaAvailability()}));
+  api.get('/api/ai/status',async()=>({available:ai.available,reason:ai.reason,model:ai.model.id,...describeMessage(ai.reason??''),tools:media.availability}));
   // A conversation is a session (pi's transcript + a sandbox + a review baseline); the deck it
   // edits is the document itself, and review is that document against the session's baseline.
   const sessions=new SessionStore(),sandboxes=new SandboxPool();
@@ -276,7 +279,7 @@ export function createApps(options: AppOptions) {
     // Auth and body validation happen before the stream starts, so those fail as ordinary 4xx.
     try{
       write({type:'session',id:session.id,reviewBase:session.reviewBase});
-      const open=mediaAvailability();
+      const open=media.availability;
       const result=await runTurn({...turnRequest,files},{
         runtime,session,signal:gone.signal,report,mutationId:()=>randomUUID(),
         text:delta=>write(delta===null?{type:'text',reset:true}:{type:'text',delta}),
@@ -287,7 +290,7 @@ export function createApps(options: AppOptions) {
         blob:hash=>store.blob(ctx,hash),
         upload:(data,mime)=>store.upload(ctx,{data,mime}),
         media:{tools:IMAGE_TOOL_SCHEMAS.filter(spec=>spec.name==='ImageSearch'?open.imageSearch.available:open.imageGen.available),
-          call:async(name,args,outDir,signal)=>{const out=await mediaCall(name,args,outDir,{},signal);return {text:out.text,images:out.images.map(image=>({path:image.path,bytes:image.bytes}))};}},
+          call:async(name,args,outDir,signal)=>{const out=await media.call(name,args,outDir,{},signal);return {text:out.text,images:out.images.map(image=>({path:image.path,bytes:image.bytes}))};}},
       });
       write({type:'result',sessionId:session.id,reviewBase:session.reviewBase,...result});
     }catch(cause){

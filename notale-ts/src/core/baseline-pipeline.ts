@@ -29,6 +29,9 @@ import { publicReason } from './public-text.js';
 
 export interface PipelineOptions {
   planner?: PlannerOverrides; config?: ModelConfig; envFile?: string; profile?: string; template?: string;
+  /** An explicitly supplied environment disables standalone dotenv/config discovery. */
+  env?: NodeJS.ProcessEnv;
+  media?: ReturnType<typeof mediaPorts>;
   build?: Pick<BuildOptions, 'samples' | 'includeAux' | 'notes' | 'prompts' | 'only'>;
 }
 export function runtimeEnvironment(env: NodeJS.ProcessEnv = process.env, file?: string): NodeJS.ProcessEnv {
@@ -57,9 +60,10 @@ export function workflowTraceText({ step, request, submitted }: WorkflowTrace): 
 }
 /** Shared production ports for the service and separate Planner/Builder commands. */
 export function baselineRuntime(root: string, options: PipelineOptions = {}, signal?: AbortSignal) {
-    const env = runtimeEnvironment(process.env, options.envFile), cfg = options.config ?? loadConfig();
+    if (options.env !== undefined && !options.config) throw new Error('An explicit environment requires a model config');
+    const env = options.env !== undefined ? { ...options.env } : runtimeEnvironment(process.env, options.envFile), cfg = options.config ?? loadConfig();
     const models = skillModels(cfg, options.profile, { env }, options.planner);
-    const media = mediaPorts({ env, backend: cfg.media?.image_search_backend ?? 'gemini' }), writer = new TraceWriter(path.join(root, 'trace.jsonl'), randomUUID(), env);
+    const media = options.media ?? mediaPorts({ env, backend: cfg.media?.image_search_backend ?? 'gemini' }), writer = new TraceWriter(path.join(root, 'trace.jsonl'), randomUUID(), env);
     const trace = (record: WorkflowTrace) => {
       const { step, started, finished, response } = record;
       const recent = workflowTraceText(record);

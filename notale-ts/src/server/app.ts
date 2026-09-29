@@ -16,7 +16,7 @@ import { archiveContentTypes } from './lecture-archive.js';
 import { LectureExports, lectureFilename } from './lecture-exports.js';
 import { ASSISTANT_NAME, fixModel } from '../fix/istar.js';
 import { GENERATOR_NAME } from '../core/baseline-pipeline.js';
-import { loadConfig } from '../adapters/models/profiles.js';
+import { loadConfig, type ModelConfig } from '../adapters/models/profiles.js';
 import { istarFixer } from '../session/fixing.js';
 import { runGenerator } from '../session/generation.js';
 import { sessionRoutes } from '../session/routes.js';
@@ -27,6 +27,8 @@ const contentTypes = archiveContentTypes;
 
 export interface AppOptions {
   runsRoot: string;
+  /** Describes an explicitly injected pipeline without reading standalone model config. */
+  modelConfig?: ModelConfig;
   pipeline?: GenerationPipeline;
   useStarterPipeline?: boolean;
   logger?: boolean;
@@ -38,6 +40,8 @@ export interface AppOptions {
 }
 
 export function createApp(options: AppOptions) {
+  if (options.modelConfig && !options.pipeline && !options.useStarterPipeline) throw new Error('An explicit model config requires an injected generation pipeline');
+  if (options.modelConfig && options.sessions && (!options.sessions.complete || !options.sessions.fixer)) throw new Error('Explicit session configuration requires complete and fixer adapters');
   const app = Fastify({ logger: options.logger ?? true });
   app.register(fastifyStatic, { serve: false, preCompressed: true, dotfiles: 'deny' });
   const store = new RunStore(options.runsRoot);
@@ -133,7 +137,7 @@ export function createApp(options: AppOptions) {
 
   // Who answers on this server and with which model, for a client's status line.
   app.get("/v1/info", async () => {
-    const { model } = loadConfig();
+    const { model } = options.modelConfig ?? loadConfig();
     return { assistant: ASSISTANT_NAME, generator: GENERATOR_NAME, model: model.name, effort: model.reasoning_effort ?? '' };
   });
   app.get("/v1/runs", async () => store.list());

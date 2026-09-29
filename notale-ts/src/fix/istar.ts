@@ -6,7 +6,8 @@ import path, { dirname, join, relative, resolve, sep } from 'node:path';
 import { Type } from 'typebox';
 import { references, workbenchFrames } from '@notale/format/page';
 import { codeResourcePath, discoverCodeLessons } from '@notale/format';
-import { loadConfig } from '../adapters/models/profiles.js';
+import { loadConfig, type ModelConfig } from '../adapters/models/profiles.js';
+import { streamOpenAIHttp } from './pi/ai/openai-http.js';
 import { RESOURCES } from '../core/guidance.js';
 import { check } from '../tools/check.js';
 import { mediaCall } from '../tools/media-execution.js';
@@ -16,7 +17,7 @@ import { GeminiFiles } from './pi/ai/gemini-files.js';
 import {
   Agent, compactIfNeeded, estimateContextTokens, createBashTool, createEditTool, createReadTool, createWriteTool,
   isContextOverflow, isRetryableAssistantError, retryDelayMs, streamGoogle,
-  type AgentEvent, type AgentMessage, type AgentTool, type Api, type AssistantMessage, type ImageContent, type Model, type StreamFn,
+  type AgentEvent, type AgentMessage, type AgentTool, type Api, type AssistantMessage, type ImageContent, type Model, type StreamFn, type SimpleStreamOptions,
 } from './pi/index.js';
 import { detectSupportedImageMimeTypeFromFile } from './pi/tools/mime.js';
 
@@ -28,14 +29,30 @@ export const ASSISTANT_NAME = 'Istar';
 
 export interface FixStep { label: string; status: 'active' | 'done'; chip?: string; detail?: string[] }
 export interface FixModel { model: Model<Api>; streamFn: StreamFn; apiKey: string; vision: boolean }
+export function createConfiguredFixModel(options: { model: Model<Api>; apiKey: string; timeoutMs?: number; vision?: boolean; reasoning?: SimpleStreamOptions['reasoning'] }): FixModel {
+  const { model, apiKey } = options;
+  if (!apiKey.trim()) throw new Error('Model credential is required');
+  const stream = model.api === 'google-generative-ai' ? streamGoogle : ['openai-completions', 'openai-responses'].includes(model.api) ? streamOpenAIHttp : undefined;
+  if (!stream) throw new Error(`Unsupported model API: ${model.api}`);
+  return { model, apiKey, vision: options.vision !== false && model.input.includes('image'),
+    streamFn: (target, context, streamOptions) => stream(target, context, { ...streamOptions, ...(options.reasoning ? { reasoning: options.reasoning } : {}), apiKey, timeoutMs: options.timeoutMs ?? 300_000 }) };
+}
 
-/** The generator's model (config.yaml `model`, locked to gemini-3.8-flash / low), on Gemini's own
- * API rather than its OpenAI-compatible one: pi's Google provider keeps thought signatures. */
-export function fixModel(env: NodeJS.ProcessEnv = process.env): FixModel {
-  const section = loadConfig().model;
+/** Standalone keeps Gemini's native protocol and thought signatures. An explicit host config
+ * selects its own wire protocol; it never reads the standalone model file. */
+export function fixModel(env: NodeJS.ProcessEnv = process.env, configured?: ModelConfig): FixModel {
+  const section = (configured ?? loadConfig()).model;
   const id = section.name, keyEnv = section.api_key_env;
   const key = env[keyEnv];
   if (!key) throw Object.assign(new Error(`未配置模型服务：设置环境变量 ${keyEnv} 后可用`), { status: 503 });
+  if (configured) {
+    if (section.reasoning_effort && !['minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(section.reasoning_effort)) throw new Error('Unsupported reasoning effort');
+    const wire = section.adapter ?? section.wire_api ?? 'responses';
+    const api = wire === 'responses' ? 'openai-responses' : wire === 'chat' ? 'openai-completions' : wire;
+    return createConfiguredFixModel({ apiKey: key, reasoning: section.reasoning_effort as SimpleStreamOptions['reasoning'], model: { id, name: id, api, provider: 'configured', baseUrl: section.base_url,
+      reasoning: !!section.reasoning_effort, input: section.vision_input === false ? ['text'] : ['text', 'image'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128_000, maxTokens: section.max_output_tokens ?? 16_384 } });
+  }
   const baseUrl = section.base_url.replace(/\/$/, '').replace(/\/openai$/, '');
   const model = {
     id, name: id, api: 'google-generative-ai', provider: 'google', baseUrl, reasoning: true, input: ['text', 'image', 'pdf', 'video'],
@@ -203,7 +220,7 @@ export interface FixDeps {
   dir: string;
   sandbox: () => Promise<Sandbox>;
   /** Offer ImageSearch / ImageGen (they need keys the host may not have). */
-  media?: { env: NodeJS.ProcessEnv };
+  media?: { env: NodeJS.ProcessEnv; call?: typeof mediaCall; tools?: string[] };
   report?: (step: FixStep) => void;
   /** The model's words as they stream; `null` when a new model call starts. */
   text?: (delta: string | null) => void;
@@ -229,8 +246,8 @@ export async function runFix(request: FixTurn, deps: FixDeps): Promise<FixResult
     const files = confined(dir);
     // Documents and video go to Gemini's Files API once; the transcript keeps only the references,
     // cached per conversation (its .inputs/ outlives each checkout).
-    const uploads = new GeminiFiles({ apiKey: runtime.apiKey, cacheFile: join(dir, '.inputs', '.gemini-files.json') });
-    const streamFn: StreamFn = (target, context, options) => runtime.streamFn(target, context, { ...options, files: uploads } as never);
+    const uploads = model.api === 'google-generative-ai' ? new GeminiFiles({ apiKey: runtime.apiKey, cacheFile: join(dir, '.inputs', '.gemini-files.json') }) : undefined;
+    const streamFn: StreamFn = (target, context, options) => runtime.streamFn(target, context, { ...options, ...(uploads ? { files: uploads } : {}) } as never);
     // Pages changed since the last check get notale-ts's Check (render errors, overflow).
     let checked = new Map(before);
     let focus = pages[(request.page ?? 1) - 1] ?? pages[0] ?? '', revision = 0;
@@ -248,7 +265,7 @@ export async function runFix(request: FixTurn, deps: FixDeps): Promise<FixResult
       return { problems, warnings };
     };
     const tools: AgentTool[] = [
-      createReadTool(dir, { operations: files.read, model, media: { uploader: uploads, scratch: join(dir, '.inputs', '.derived') } }) as AgentTool,
+      createReadTool(dir, { operations: files.read, model, media: { ...(uploads ? { uploader: uploads } : {}), scratch: join(dir, '.inputs', '.derived') } }) as AgentTool,
       createWriteTool(dir, { operations: files.write }) as AgentTool,
       createEditTool(dir, { operations: files.edit }) as AgentTool,
       createBashTool(dir, { operations: { exec: async (command, cwd, options) => (await deps.sandbox()).exec(command, cwd, options) } }) as AgentTool,
@@ -267,10 +284,10 @@ export async function runFix(request: FixTurn, deps: FixDeps): Promise<FixResult
       },
     ];
     // Media lands in assets/img/ like the generator's; the model references what it keeps.
-    for (const spec of deps.media ? MEDIA : []) tools.push({
+    for (const spec of deps.media ? MEDIA.filter(tool => !deps.media!.tools || deps.media!.tools.includes(tool.name)) : []) tools.push({
       name: spec.name, label: spec.name, description: spec.description, parameters: Type.Unsafe(spec.parameters),
       async execute(_id, params, toolSignal) {
-        const out = await mediaCall(spec.name, params as Record<string, unknown>, dir, 'fix', { env: deps.media!.env }, toolSignal);
+        const out = await (deps.media!.call ?? mediaCall)(spec.name, params as Record<string, unknown>, dir, 'fix', { env: deps.media!.env }, toolSignal);
         return { content: [{ type: 'text', text: `${out.text}\n\n要用哪张，页面按相对路径引用（path 是相对讲义目录的）。` },
           ...(runtime.vision ? out.images.map(([mimeType, data]) => ({ type: 'image' as const, data, mimeType })) : [])], details: {} };
       },

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
-import { streamGoogle, streamOpenAICompletions, type Api, type Model, type OpenAICompletionsCompat, type StreamFn } from './agent/pi/index.js';
+import { streamGoogle, streamOpenAICompletions, type Api, type Model, type OpenAICompletionsCompat, type StreamFn, type SimpleStreamOptions } from './agent/pi/index.js';
 import { DomainError } from '../domain/model.js';
+import { streamOpenAIHttp } from './agent/pi/ai/openai-http.js';
 /** The editor reaches model services through the forked pi providers (agent/pi/ai/google.ts and
  * openai-completions.ts). Which services exist, where they live and which key they read is host
  * configuration, in the shape of pi's models.json. */
@@ -29,14 +30,20 @@ function googleModel(id: string, baseUrl: string, env: NodeJS.ProcessEnv, contex
 }
 /** pi's httpIdleTimeoutMs / Codex's stream_idle_timeout_ms: 5 minutes without data, then retry. */
 const idleTimeout = (env: NodeJS.ProcessEnv) => Number(env.EDITOR_AI_HTTP_IDLE_TIMEOUT_MS ?? 300_000);
-function runtimeFor(model: Model<Api>, key: string, env: NodeJS.ProcessEnv): AiRuntime {
-  const stream = model.api === 'openai-completions' ? streamOpenAICompletions : streamGoogle;
+export function createConfiguredAiRuntime(options: { model: Model<Api>; apiKey: string; timeoutMs?: number; vision?: boolean; reasoning?: SimpleStreamOptions['reasoning'] }): AiRuntime {
+  const { model, apiKey: key } = options;
+  if (!key.trim()) throw new DomainError('AI_UNCONFIGURED', 'Model credential is required', 503);
+  const stream = model.api === 'openai-completions' ? streamOpenAICompletions : model.api === 'openai-responses' ? streamOpenAIHttp : model.api === 'google-generative-ai' ? streamGoogle : undefined;
+  if (!stream) throw new DomainError('AI_MODEL_UNAVAILABLE', `Unsupported model API: ${model.api}`, 503);
   return {
     available: true, reason: '', model,
-    vision: env.EDITOR_AI_VISION !== 'off' && model.input.includes('image'),
+    vision: options.vision !== false && model.input.includes('image'),
     getApiKey: () => key,
-    streamFn: (target, context, options) => stream(target, context, { ...options, apiKey: key, temperature: 0, timeoutMs: idleTimeout(env) }),
+    streamFn: (target, context, streamOptions) => stream(target, context, { ...streamOptions, ...(options.reasoning ? { reasoning: options.reasoning } : {}), apiKey: key, temperature: 0, timeoutMs: options.timeoutMs ?? 300_000 }),
   };
+}
+function runtimeFor(model: Model<Api>, key: string, env: NodeJS.ProcessEnv): AiRuntime {
+  return createConfiguredAiRuntime({ model, apiKey: key, timeoutMs: idleTimeout(env), vision: env.EDITOR_AI_VISION !== 'off' });
 }
 export function createAiRuntime(env: NodeJS.ProcessEnv = process.env): AiRuntime {
   const id = env.EDITOR_AI_MODEL || DEFAULT_MODEL;
@@ -55,11 +62,11 @@ export function createAiRuntime(env: NodeJS.ProcessEnv = process.env): AiRuntime
  * asking the service what the key can use. */
 export interface ProviderConfig {
   name: string;
-  api: 'google-generative-ai' | 'openai-completions';
+  api: 'google-generative-ai' | 'openai-completions' | 'openai-responses';
   baseUrl: string;
   apiKey: string;
   compat?: OpenAICompletionsCompat;
-  models?: { id: string; name?: string; input?: ('text' | 'image')[]; contextWindow?: number; maxTokens?: number }[];
+  models?: { id: string; name?: string; input?: ('text' | 'image')[]; contextWindow?: number; maxTokens?: number; reasoning?: boolean }[];
   /** Extra query for the model listing (SiliconFlow lists every modality unless asked for chat). */
   listQuery?: string;
   /** A path that checks the key, for services whose model listing is public (OpenRouter). */
@@ -96,7 +103,9 @@ const LIST_TTL_MS = 10 * 60_000;
 export class ModelRegistry {
   private readonly providers: Record<string, ProviderConfig>;
   private readonly cache = new Map<string, { at: number; listed: Promise<Listed> }>();
-  constructor(private readonly env: NodeJS.ProcessEnv = process.env, private readonly request: typeof fetch = fetch) {
+  constructor(private readonly env: NodeJS.ProcessEnv = process.env, private readonly request: typeof fetch = fetch,
+    private readonly configured?: { providers: Record<string, ProviderConfig>; defaultModel?: { provider: string; id: string }; reasoning?: SimpleStreamOptions['reasoning']; timeoutMs?: number }) {
+    if (configured) { this.providers = { ...configured.providers }; return; }
     const extra = env.EDITOR_AI_MODELS_JSON ? (JSON.parse(readFileSync(env.EDITOR_AI_MODELS_JSON, 'utf8')) as { providers?: Record<string, ProviderConfig> }).providers : undefined;
     this.providers = { ...builtInProviders(env), ...extra };
   }
@@ -114,7 +123,7 @@ export class ModelRegistry {
   }
   /** Asks the service which models this key can use. Judged by the body, not the status line. */
   private async probe(config: ProviderConfig, key: string): Promise<Listed> {
-    if (config.models) return { models: config.models.map(m => ({ id: m.id, name: m.name ?? m.id, vision: !!m.input?.includes('image'), contextWindow: m.contextWindow ?? 128_000, maxTokens: m.maxTokens ?? 16_384, reasoning: false })) };
+    if (config.models) return { models: config.models.map(m => ({ id: m.id, name: m.name ?? m.id, vision: !!m.input?.includes('image'), contextWindow: m.contextWindow ?? 128_000, maxTokens: m.maxTokens ?? 16_384, reasoning: m.reasoning ?? false })) };
     if (config.keyCheck) {
       const check = await this.request(`${config.baseUrl}${config.keyCheck}`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) });
       if (!check.ok) return { error: `密钥无效：HTTP ${check.status}` };
@@ -153,6 +162,10 @@ export class ModelRegistry {
   }
   /** The runtime for one turn: the default model, or the one the author picked. */
   async runtime(ref?: { provider: string; id: string }): Promise<AiRuntime> {
+    if (!ref && this.configured) {
+      invariantModel(this.configured.defaultModel, 'No default model configured');
+      ref = this.configured.defaultModel;
+    }
     if (!ref) return createAiRuntime(this.env);
     const config = this.providers[ref.provider];
     invariantModel(config, `模型不可用：${ref.provider}/${ref.id}`);
@@ -163,9 +176,9 @@ export class ModelRegistry {
     invariantModel(found, `模型不可用：${ref.provider}/${ref.id}`);
     const model = config.api === 'google-generative-ai'
       ? googleModel(found.id, config.baseUrl, this.env, found.contextWindow)
-      : { id: found.id, name: found.name, api: 'openai-completions', provider: ref.provider, baseUrl: config.baseUrl, reasoning: found.reasoning,
+      : { id: found.id, name: found.name, api: config.api, provider: ref.provider, baseUrl: config.baseUrl, reasoning: found.reasoning,
           input: found.vision ? ['text', 'image'] : ['text'], cost, contextWindow: found.contextWindow, maxTokens: found.maxTokens, ...(config.compat ? { compat: config.compat } : {}) } as Model<Api>;
-    return runtimeFor(model, key, this.env);
+    return this.configured ? createConfiguredAiRuntime({ model, apiKey: key, reasoning: this.configured.reasoning, timeoutMs: this.configured.timeoutMs }) : runtimeFor(model, key, this.env);
   }
 }
 function invariantModel(value: unknown, message: string): asserts value {
