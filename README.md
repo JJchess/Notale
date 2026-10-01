@@ -1,32 +1,64 @@
 # Notale
 
-**Build interactive lectures. Teach from the same canvas.**
+**From a topic to an interactive lecture.**
 
 [![CI](https://github.com/THU-AICosmos/Notale/actions/workflows/ci.yml/badge.svg)](https://github.com/THU-AICosmos/Notale/actions/workflows/ci.yml)
-[![Package version](https://img.shields.io/badge/packages-0.1.0-6246C8?style=flat-square)](notale-editor/package.json)
+[![Version](https://img.shields.io/badge/version-0.1.0-6246C8?style=flat-square)](CHANGELOG.md)
 [![Node.js](https://img.shields.io/badge/Node.js-20.19%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white)](notale-editor/package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](notale-editor/tsconfig.json)
 [![MIT license](https://img.shields.io/badge/license-MIT-2EA44F?style=flat-square)](LICENSE)
 
-English · [简体中文](README.zh-CN.md)
+**English** · [简体中文](README.zh-CN.md)
 
-Canonical repository: [THU-AICosmos/Notale](https://github.com/THU-AICosmos/Notale). [JJchess/Notale](https://github.com/JJchess/Notale) is a synchronized mirror. Both remain private until the maintainer completes review and explicitly authorizes public release.
+[Get started](#get-started) · [Workflow](#from-first-prompt-to-the-classroom) · [Architecture](#how-it-is-built) · [Contribute](#development-and-contributing)
 
-![The Notale editor showing an interactive lecture page and its style panel](notale-editor-frontend/docs/release/screenshots/editor.png)
+Notale helps teachers and educational content creators turn a topic and teaching materials into interactive lectures. Generate a first draft with AI, revise it through conversation, refine it in a visual editor, and present it with notes and an audience view.
 
-Notale is an open-source toolkit for creating and teaching with interactive lectures. Its TypeScript generator creates web-native lecture pages; the Viewer follows generation and presents the result; the editor lets you refine, save, and deliver it. Supported charts, controls, media, and simulations remain interactive instead of becoming static screenshots.
+The pages run in the browser. Supported controls, charts, simulations, and code activities let learners change inputs and explore what happens. You can shape both the content and the sequence in which it is taught.
 
-## What you can do
+![Notale's visual editor with page thumbnails, a lecture cover, and the style panel](notale-editor-frontend/docs/release/screenshots/editor.png)
 
-- **Create and refine pages:** edit text, images, shapes, SVG, connectors, tables, and charts; arrange layers and use original page templates and diagrams.
-- **Design the teaching sequence:** organize pages and in-page steps, add animation cues and speaker notes, and preview without leaving the editor.
-- **Present interactively:** use a speaker view, timer, annotations, and a synchronized audience window in the same browser.
-- **Keep work recoverable and portable:** save with revision history and local draft recovery; import and export Notale projects and export a standalone HTML presentation.
-- **Generate a first draft:** plan and build lecture pages with the TypeScript backend, then inspect progress in the separate Viewer.
+*The editing workspace: arrange pages, refine the canvas, and prepare a lecture for presentation.*
+
+## What you can make
+
+- **An AI-generated first draft.** Start with a topic; attach reference materials, a PPTX template, or a style image. Follow generation in the Viewer and request changes in the same conversation.
+- **Pages you can refine.** Edit text, images, shapes, SVG, connectors, tables, and charts. Arrange layers or start from the included page templates and diagrams.
+- **A teaching sequence.** Organize pages and in-page steps, add animation cues and speaker notes, then rehearse in preview.
+- **An interactive presentation.** Use a speaker view, timer, annotations, and a synchronized audience window in the same browser. Supported page interactions remain available during presentation.
+- **A project you can keep.** Save with revision history and local draft recovery. Import and export `.notale` projects, or export a standalone HTML presentation.
+
+Custom scripts and Canvas content need a supported adapter for visual editing. Review generated content and interactions before teaching; see [integration coverage](notale-editor-frontend/docs/INTEGRATION-COVERAGE.md) for the current editing boundary.
+
+## From first prompt to the classroom
+
+Try a prompt that describes what learners should do:
+
+> Create a lecture introducing gradient descent. Let learners change the learning rate, predict what will happen, and compare convergence with overshooting. Include pauses for discussion.
+
+| Step | Your next action |
+| --- | --- |
+| **1. Generate** | Submit the topic and any materials in the Viewer. Follow progress and inspect the completed pages. |
+| **2. Revise** | Ask for a clearer explanation or a different activity. A completed revision becomes a new version; the earlier result is kept. |
+| **3. Refine** | Open the selected version in the separately running editor. Adjust supported elements, page order, steps, and notes. Reopening that version returns to the same document and preserves saved manual edits. |
+| **4. Teach or share** | Present with speaker tools and an audience window, or export the project or HTML presentation. |
+
+The generator, Viewer, and editor are separate applications. You can also start directly in the editor and author a lecture without AI.
 
 ## Get started
 
-Requires Node.js **20.19+**, npm, and PostgreSQL 16. Docker Compose can start the supplied local database. Run from the repository root:
+Requires **Node.js 20.19+** and **npm**. The editor also needs **PostgreSQL 16**; the supplied Docker Compose configuration can run it locally. AI generation needs model credentials, and conversational revision uses a Docker sandbox.
+
+From the repository root, install and build the shared format package once before either path:
+
+```bash
+npm ci --prefix notale-format
+npm run build --prefix notale-format
+```
+
+### Option A — Try the editor
+
+Manual editing and presentation do not require model credentials. From the repository root:
 
 ```bash
 cd notale-editor
@@ -40,34 +72,68 @@ npm run build
 npm run start:local
 ```
 
-Open **http://localhost:4312**. Press `Ctrl+C` to stop the application services; the database and its data remain. To use an existing PostgreSQL server, set `DATABASE_URL` and skip the Compose command. See [local deployment](notale-editor-frontend/docs/LOCAL-DEPLOYMENT.md) for port configuration and upgrades.
+Open **http://localhost:4312**. `Ctrl+C` stops the application services; the database and its data remain. To use an existing PostgreSQL server, set `DATABASE_URL` and skip the Compose command. See [local deployment](notale-editor-frontend/docs/LOCAL-DEPLOYMENT.md) for ports and configuration.
 
-To try generation without model credentials, start the backend and Viewer in separate terminals:
+### Option B — Generate with AI
+
+Copy [`.env.example`](.env.example) to `.env.local` at the repository root and fill in the keys for your model configuration. The default configuration uses `GEMINI_API_KEY`; image generation also needs `PARATERA_API_KEY`. Both the generator and editor read this ignored local file, with shell environment variables taking precedence.
+
+**Terminal 1 — generator**, starting from the repository root:
 
 ```bash
-cd notale-ts && npm ci && npm run build && npm run dev -- serve --starter
-cd notale-viewer && npm ci && npm run dev
+cd notale-ts
+npm ci
+npm run build
+npx playwright install chromium
+npm run dev -- serve --sessions .local/sessions
 ```
 
-For real generation and the editor's Istar, copy `.env.example` to `.env.local` at the repository root and fill in your keys; notale-ts and notale-editor both read this one file (values already set in the shell win). See the [generator guide](notale-ts/README.md). The editor and generator can be run independently.
+Chromium is used for visual checks. On Linux hosts missing browser system libraries, use `npx playwright install --with-deps chromium` instead; it may require administrator privileges.
+
+**Terminal 2 — Viewer**, also starting from the repository root:
+
+```bash
+cd notale-viewer
+npm ci
+npm run dev
+```
+
+Open **http://localhost:3000**. The Viewer connects to the generator at `http://127.0.0.1:4321`. The `--sessions` option enables the conversation endpoints used by its home screen. PostgreSQL is only needed when you also run the editor.
+
+To revise generated lectures through conversation, first set up the [AI agent sandbox](notale-ts/sandbox/README.md). To use **Open in editor**, also run Option A. See the [generator guide](notale-ts/README.md) for model profiles and CLI usage, and the [Viewer guide](notale-viewer/README.md) for connection settings.
+
+For development, `serve --starter` supplies deterministic sample run data without model calls. It does not provide a credential-free AI conversation experience.
+
+> [!IMPORTANT]
+> These instructions start a local development setup. The editor uses a fixed development identity. A hosted deployment needs authentication and authorization, a private preview-signing secret, and a separate slide-content origin. Follow the [integration guide](notale-editor/docs/INTEGRATION.md) before exposing it to other users.
 
 ## How it is built
 
-| Directory | Role |
+| Project | Responsibility |
 | --- | --- |
-| [`notale-editor-frontend/`](notale-editor-frontend/) | Next.js and React editor, presentation workspace, and browser checks |
+| [`notale-ts/`](notale-ts/) | Lecture generation, conversational revisions, CLI, HTTP/SSE service, and publication assets |
+| [`notale-viewer/`](notale-viewer/) | Topic and material input, generation progress, conversation, preview, and editor handoff |
+| [`notale-editor-frontend/`](notale-editor-frontend/) | Next.js and React editing and presentation workspace |
 | [`notale-editor/`](notale-editor/) | TypeScript document model, HTTP API, revision store, and native slide runtime |
-| [`notale-format/`](notale-format/) | Shared native project and page-runtime format contract |
-| [`notale-ts/`](notale-ts/) | TypeScript lecture generation, CLI, HTTP/SSE service, and publication assets |
-| [`notale-viewer/`](notale-viewer/) | Generation progress, preview, and archive download |
+| [`notale-format/`](notale-format/) | Shared project archive and page-runtime format contract |
 
-The frontend uses a pinned `@notale/editor` package and communicates with the backend over HTTP. PostgreSQL stores documents and assets; authored slide content is served from a separate origin. After changing the shared backend contract, run `npm run contract:update` in `notale-editor-frontend/` before rebuilding the frontend.
+The generator produces browser-based lecture pages and `.notale` archives. The Viewer follows generation and imports a selected result into the editor. The editor frontend uses a pinned `@notale/editor` package and talks to the backend over HTTP. PostgreSQL stores editor documents and assets; authored slide content is served from a separate origin.
 
-> [!IMPORTANT]
-> The local starter uses a fixed development identity and listens on loopback. A public deployment needs host-provided authentication and authorization, a private preview-signing secret, and a separate slide-content origin. See the [integration guide](notale-editor/docs/INTEGRATION.md).
+## Development and contributing
 
-Notale is at **0.1.0**. Visual editing of custom scripts or Canvas content requires a supported adapter; arbitrary effects do not automatically become editable controls. The [integration coverage](notale-editor-frontend/docs/INTEGRATION-COVERAGE.md) records what is connected and what still needs work.
+Choose the project above that owns your change and follow its setup and verification instructions. If you change the shared editor backend contract, run `npm run contract:update` in `notale-editor-frontend/` before rebuilding the frontend. For documentation changes, keep these two README files aligned.
 
-**Explore:** [frontend development](notale-editor-frontend/README.md) · [architecture](notale-editor-frontend/docs/EDITOR-ARCHITECTURE.md) · [presentation](notale-editor-frontend/docs/PRESENTATION.md) · [original templates](notale-editor-frontend/templates/original/README.md)
+Bug reports are most useful with reproduction steps, expected and actual behavior, and a minimal example with private content removed. For a substantial change, describe the intended user workflow in an issue before opening a pull request.
 
-Notale-owned source code is [MIT licensed](LICENSE). Bundled third-party resources retain their own notices. The public source consists of the five projects above and root documentation.
+| Read more | Start here |
+| --- | --- |
+| Generate and revise lectures | [Generator](notale-ts/README.md) · [Viewer](notale-viewer/README.md) |
+| Develop the editor | [Frontend guide](notale-editor-frontend/README.md) · [Architecture](notale-editor-frontend/docs/EDITOR-ARCHITECTURE.md) |
+| Prepare a presentation | [Presentation guide](notale-editor-frontend/docs/PRESENTATION.md) · [Original templates](notale-editor-frontend/templates/original/README.md) |
+| Integrate or host Notale | [Integration guide](notale-editor/docs/INTEGRATION.md) · [Integration coverage](notale-editor-frontend/docs/INTEGRATION-COVERAGE.md) |
+
+### Project status and license
+
+Notale is at **0.1.0**, in preparation for public release. The canonical repository is [THU-AICosmos/Notale](https://github.com/THU-AICosmos/Notale); [JJchess/Notale](https://github.com/JJchess/Notale) is a synchronized mirror. Both remain private pending maintainer review and explicit authorization to make them public.
+
+Notale-owned source code is [MIT licensed](LICENSE). Bundled third-party resources retain their own licenses and notices; see the [resource audit](notale-ts/RESOURCE-AUDIT.md). The source distribution covers the five projects above and root documentation.
