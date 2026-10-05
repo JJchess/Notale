@@ -4,6 +4,8 @@ import type { NextConfig } from "next";
 const apiOrigin = process.env.NOTALE_API_URL ?? "http://127.0.0.1:4321";
 
 const config: NextConfig = {
+  // A separate output keeps candidate previews from replacing a running stable build.
+  distDir: process.env.NOTALE_DIST_DIR ?? ".next",
   experimental: { proxyClientMaxBodySize: "101mb" },
   async rewrites() {
     return [

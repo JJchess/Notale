@@ -23,6 +23,7 @@ The pages run in the browser. Supported controls, charts, simulations, and code 
 ## What you can make
 
 - **An AI-generated first draft.** Start with a topic; attach reference materials, a PPTX template, or a style image. Follow generation in the Viewer and request changes in the same conversation.
+- **A workspace for your lectures.** Search server-side history, rename lectures, and archive or restore them. The Viewer keeps input drafts and uploaded attachment references, supports Chinese and English interface text, and lets you read earlier replies while new output arrives.
 - **Pages you can refine.** Edit text, images, shapes, SVG, connectors, tables, and charts. Arrange layers or start from the included page templates and diagrams.
 - **A teaching sequence.** Organize pages and in-page steps, add animation cues and speaker notes, then rehearse in preview.
 - **An interactive presentation.** Use a speaker view, timer, annotations, and a synchronized audience window in the same browser. Supported page interactions remain available during presentation.
@@ -44,6 +45,8 @@ Try a prompt that describes what learners should do:
 | **4. Teach or share** | Present with speaker tools and an audience window, or export the project or HTML presentation. |
 
 The generator, Viewer, and editor are separate applications. You can also start directly in the editor and author a lecture without AI.
+
+In the Viewer, use **Cmd/Ctrl+K** to find a lecture. Resize the preview and conversation panels, open a focus or fullscreen view, and select an earlier version without new results changing that selection. On narrow screens, switch between lecture and conversation tabs. The interface language setting does not change the language requested for generated content.
 
 ## Get started
 
@@ -112,7 +115,7 @@ For development, `serve --starter` supplies deterministic sample run data withou
 | Project | Responsibility |
 | --- | --- |
 | [`notale-ts/`](notale-ts/) | Lecture generation, conversational revisions, CLI, HTTP/SSE service, and publication assets |
-| [`notale-viewer/`](notale-viewer/) | Topic and material input, generation progress, conversation, preview, and editor handoff |
+| [`notale-viewer/`](notale-viewer/) | Lecture library, reliable topic and attachment input, generation progress, conversation, preview, and editor handoff |
 | [`notale-editor-frontend/`](notale-editor-frontend/) | Next.js and React editing and presentation workspace |
 | [`notale-editor/`](notale-editor/) | TypeScript document model, HTTP API, revision store, and native slide runtime |
 | [`notale-format/`](notale-format/) | Shared project archive and page-runtime format contract |

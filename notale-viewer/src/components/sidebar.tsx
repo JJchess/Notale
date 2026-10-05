@@ -2,92 +2,74 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type MouseEvent } from "react";
-import { RECENT_EVENT, recentSessions, type RecentSession } from "../lib/recent-sessions";
+import { useEffect, useRef, useState } from "react";
+import { Archive, BookOpen, CircleHelp, Languages, LoaderCircle, PanelLeftClose, PanelLeftOpen, Plus, Search, X } from "lucide-react";
+import { useSessionList } from "../lib/use-session-list";
+import { useLocale } from "./locale";
+import { QuickSearch } from "./shell/quick-search";
+import { Dialog } from "./ui/dialog";
+import styles from "./shell/shell.module.css";
 
 const KEY = "notale-sidebar-expanded";
-const DAY = 86_400_000;
-
-function PanelLeft({ size, stroke }: { size: number; stroke: number }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /></svg>;
-}
-function MessageSquare({ stroke }: { stroke: number }) {
-  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>;
-}
-
-/** Today / yesterday / this week / earlier, by the day each session was last touched. */
-function groups(list: RecentSession[], now = new Date()) {
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const label = (at: string) => { const t = Date.parse(at); return t >= today ? "今天" : t >= today - DAY ? "昨天" : t >= today - 6 * DAY ? "本周" : "更早"; };
-  const out: { label: string; items: RecentSession[] }[] = [];
-  for (const entry of list) { const name = label(entry.at); (out.at(-1)?.label === name ? out.at(-1)!.items : (out.push({ label: name, items: [] }), out.at(-1)!.items)).push(entry); }
-  return out;
-}
-
-/** A long title slides left on hover to show its end, at about 60px/s (edumanus' hover-scroll text). */
-function slide(event: MouseEvent<HTMLElement>) {
-  const box = event.currentTarget.querySelector<HTMLElement>(".sidebar-title");
-  const track = box?.firstElementChild as HTMLElement | null;
-  if (!box || !track) return;
-  const overflow = track.scrollWidth - box.clientWidth;
-  box.style.setProperty("--slide", overflow > 0 ? `${-(overflow + 20)}px` : "0px");
-  box.style.setProperty("--slide-time", `${Math.min(4, Math.max(0.6, (overflow + 20) / 60))}s`);
-}
-
-/** New chat and the sessions this browser opened, down the left edge. Collapses to nothing but a
- * floating toggle; the choice is remembered per viewer. Styled after edumanus-frontend's navigation. */
 export function Sidebar() {
-  const path = usePathname();
-  const [expanded, setExpanded] = useState<boolean>();
-  const [list, setList] = useState<RecentSession[]>([]);
-  // Width animates only on a toggle, not when the saved state is first applied.
-  const [animate, setAnimate] = useState(false);
-  const narrow = () => typeof window !== "undefined" && window.matchMedia("(max-width: 700px)").matches;
+  const path = usePathname(), { t, locale, setLocale } = useLocale(), catalog = useSessionList();
+  const [collapsed, setCollapsed] = useState(false), [drawer, setDrawer] = useState(false), [search, setSearch] = useState(false), [help, setHelp] = useState(false);
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => { const media = matchMedia("(max-width: 899px)"); const update = () => setMobile(media.matches); update(); media.addEventListener("change", update); return () => media.removeEventListener("change", update); }, []);
+  useEffect(() => { const main = document.querySelector<HTMLElement>(".app-main"); if (main) main.inert = mobile && drawer; return () => { if (main) main.inert = false; }; }, [mobile, drawer]);
+  const nav = useRef<HTMLElement>(null), toggleRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { try { setCollapsed(localStorage.getItem(KEY) === "false"); } catch { /* default */ } }, []);
+  useEffect(() => { setDrawer(false); }, [path]);
   useEffect(() => {
-    let saved: string | null = null;
-    try { saved = localStorage.getItem(KEY); } catch { /* no storage: fall back to the width */ }
-    setExpanded(saved === null || narrow() ? window.matchMedia("(min-width: 900px)").matches : saved === "true");
-    const load = () => setList(recentSessions());
-    load();
-    window.addEventListener(RECENT_EVENT, load);
-    window.addEventListener("storage", load);
-    return () => { window.removeEventListener(RECENT_EVENT, load); window.removeEventListener("storage", load); };
+    const key = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setDrawer(false); setSearch(current => !current); }
+    };
+    window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key);
   }, []);
-  const toggle = (next: boolean) => {
-    setAnimate(true);
-    setExpanded(next);
-    if (!narrow()) try { localStorage.setItem(KEY, String(next)); } catch { /* kept for this page only */ }
-  };
-  const close = () => { if (narrow()) setExpanded(false); };
-  const current = path.startsWith("/s/") ? path.slice(3) : undefined;
-  const state = expanded === undefined ? "is-auto" : expanded ? "is-open" : "is-closed";
-  useEffect(() => { document.documentElement.dataset.sidebar = state; }, [state]);
-
-  return (
-    <nav className={`sidebar ${state}${animate ? " is-ready" : ""}`} aria-label="会话">
-      {expanded !== false && <div className="sidebar-inner">
-        <header className="sidebar-head">
-          <Link href="/" className="brand" aria-label="Notale 首页" onClick={close}><span className="brand-mark">N</span><span className="brand-word">NOTALE</span></Link>
-          <button type="button" className="sidebar-collapse" aria-label="收起侧边栏" title="收起侧边栏" onClick={() => toggle(false)}><PanelLeft size={20} stroke={2} /></button>
-        </header>
-        <div className="sidebar-nav">
-          <Link href="/" className={"sidebar-nav-row" + (path === "/" ? " is-active" : "")} aria-current={path === "/" ? "page" : undefined} onClick={close}>
-            <span className="sidebar-nav-icon"><MessageSquare stroke={path === "/" ? 2 : 1.75} /></span><span>新对话</span>
-          </Link>
-        </div>
-        <div className="sidebar-history">
-          {groups(list).map(group => <section key={group.label} aria-label={group.label}>
-            <h2>{group.label}</h2>
-            <ul>{group.items.map(entry => <li key={entry.id}>
-              <Link href={`/s/${entry.id}`} className={"sidebar-row" + (entry.id === current ? " is-selected" : "")} aria-current={entry.id === current ? "page" : undefined} title={entry.title} onMouseEnter={slide} onClick={close}>
-                <span className="sidebar-title"><span>{entry.title}</span></span>
-                {entry.busy && <i className="sidebar-busy" aria-label="生成中" />}
-              </Link>
-            </li>)}</ul>
-          </section>)}
-        </div>
-      </div>}
-      {expanded === false && <button type="button" className="sidebar-open" aria-label="展开侧边栏" title="展开侧边栏" onClick={() => toggle(true)}><PanelLeft size={18} stroke={1.75} /></button>}
+  useEffect(() => {
+    if (!drawer || !mobile) return;
+    const el = nav.current;
+    el?.querySelector<HTMLElement>("a,button")?.focus();
+    const keys = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setDrawer(false); toggleRef.current?.focus(); }
+      if (event.key !== "Tab" || !el) return;
+      const focusable = [...el.querySelectorAll<HTMLElement>('a[href],button:not([disabled])')].filter(node => node.offsetParent !== null);
+      const first = focusable[0], last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", keys); return () => document.removeEventListener("keydown", keys);
+  }, [drawer, mobile]);
+  const toggle = () => { const next = !collapsed; setCollapsed(next); try { localStorage.setItem(KEY, String(!next)); } catch { /* in-memory preference */ } };
+  const title = (value: string) => value || t("未命名讲义", "Untitled lecture");
+  return <>
+    <button ref={toggleRef} data-navigation-toggle className={styles.mobileToggle} title={t("打开导航", "Open navigation")} aria-label={t("打开导航", "Open navigation")} aria-expanded={drawer} aria-controls="primary-navigation" onClick={() => setDrawer(true)}><PanelLeftOpen size={20} /></button>
+    {drawer && <button className={styles.scrim} aria-label={t("关闭导航", "Close navigation")} tabIndex={-1} onClick={() => { setDrawer(false); toggleRef.current?.focus(); }} />}
+    <nav id="primary-navigation" ref={nav} inert={mobile && !drawer} className={`${styles.sidebar} ${collapsed ? styles.collapsed : ""} ${drawer ? styles.drawer : ""}`} aria-label={t("主导航", "Navigation")}>
+      <header className={styles.brandRow}>
+        <Link href="/" aria-label={t("Notale 首页", "Notale home")}><img src={collapsed && !drawer ? "/brand/notale-mark.svg" : "/brand/notale-lockup.svg"} alt="Notale" width={collapsed && !drawer ? 30 : 116} height={32} /></Link>
+        <button type="button" className={`${styles.collapseButton} icon-button`} title={t("收起导航", "Collapse navigation")} aria-label={t("收起导航", "Collapse navigation")} onClick={toggle}><PanelLeftClose size={17} /></button>
+        <button type="button" className={`${styles.drawerClose} icon-button`} aria-label={t("关闭导航", "Close navigation")} onClick={() => { setDrawer(false); toggleRef.current?.focus(); }}><X size={19} /></button>
+      </header>
+      <div className={styles.primaryNav}>
+        <Link href="/" className={`${styles.navItem} ${styles.create} ${path === "/" ? styles.active : ""}`} title={t("新建讲义", "New lecture")} aria-label={t("新建讲义", "New lecture")} aria-current={path === "/" ? "page" : undefined}><Plus size={19} /><span>{t("新建讲义", "New lecture")}</span></Link>
+        <button type="button" className={styles.navItem} title={t("查找讲义", "Find a lecture")} aria-label={t("查找讲义", "Find a lecture")} onClick={() => { setDrawer(false); setSearch(true); }}><Search size={18} /><span>{t("查找", "Search")}</span><kbd>⌘ K</kbd></button>
+        <Link href="/library" className={`${styles.navItem} ${path === "/library" ? styles.active : ""}`} title={t("我的讲义", "My lectures")} aria-label={t("我的讲义", "My lectures")} aria-current={path === "/library" ? "page" : undefined}><BookOpen size={18} /><span>{t("我的讲义", "My lectures")}</span></Link>
+        <Link href="/archive" className={`${styles.navItem} ${path === "/archive" ? styles.active : ""}`} title={t("归档", "Archive")} aria-label={t("归档", "Archive")} aria-current={path === "/archive" ? "page" : undefined}><Archive size={18} /><span>{t("归档", "Archive")}</span></Link>
+      </div>
+      <div className={styles.history}>
+        {catalog.items.length > 0 && <h2>{t("最近", "Recent")}</h2>}
+        {catalog.items.slice(0, 20).map(item => <Link key={item.id} href={`/s/${item.id}`} title={title(item.title)} aria-current={path === `/s/${item.id}` ? "page" : undefined} className={`${styles.historyItem} ${path === `/s/${item.id}` ? styles.selected : ""}`}><span>{title(item.title)}</span>{item.busy && <LoaderCircle className={styles.spinning} size={13} aria-label={t("进行中", "In progress")} />}</Link>)}
+        {catalog.error && <button className={styles.historyRetry} title={catalog.error} onClick={() => void catalog.refresh()}>{t("重新读取讲义", "Reload lectures")}</button>}
+      </div>
+      <footer className={styles.footer}>
+        <button className={styles.navItem} title={t("切换为英文", "Switch to Chinese")} aria-label={t("切换为英文", "Switch to Chinese")} onClick={() => setLocale(locale === "en" ? "zh-CN" : "en")}><Languages size={18} /><span>{locale === "en" ? "English" : "简体中文"}</span></button>
+        <button className={styles.navItem} title={t("键盘快捷键", "Keyboard shortcuts")} aria-label={t("键盘快捷键", "Keyboard shortcuts")} onClick={() => { setDrawer(false); setHelp(true); }}><CircleHelp size={18} /><span>{t("快捷键", "Shortcuts")}</span></button>
+        {collapsed && <button className={`${styles.expandButton} icon-button`} aria-label={t("展开导航", "Expand navigation")} title={t("展开导航", "Expand navigation")} onClick={toggle}><PanelLeftOpen size={18} /></button>}
+      </footer>
     </nav>
-  );
+    {search && <QuickSearch onClose={() => setSearch(false)} />}
+    <Dialog open={help} title={t("键盘快捷键", "Keyboard shortcuts")} onClose={() => setHelp(false)}><dl className={styles.shortcuts}><div><dt>{t("查找讲义", "Find a lecture")}</dt><dd><kbd>⌘ / Ctrl K</kbd></dd></div><div><dt>{t("发送消息", "Send a message")}</dt><dd><kbd>Enter</kbd></dd></div><div><dt>{t("换行", "New line")}</dt><dd><kbd>Shift Enter</kbd></dd></div><div><dt>{t("关闭弹窗", "Close dialog")}</dt><dd><kbd>Esc</kbd></dd></div><div><dt>{t("调整分栏（聚焦分隔线）", "Resize split (focus divider)")}</dt><dd><kbd>← →</kbd></dd></div></dl></Dialog>
+  </>;
 }

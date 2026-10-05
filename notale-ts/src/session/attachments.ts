@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, extname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -41,9 +41,22 @@ export async function saveAttachment(session: Session, name: string, bytes: Buff
   return attachment;
 }
 export async function loadAttachment(session: Session, id: string) {
-  const dir = join(session.dir, 'files', id);
-  const meta = JSON.parse(await readFile(join(dir, 'meta.json'), 'utf8')) as Attachment;
-  return { meta, file: join(dir, 'original') };
+  const missing = () => Object.assign(new Error('附件不存在'), { status: 404 });
+  if (!/^[0-9a-f-]{36}$/.test(id)) throw missing();
+  try {
+    const base = await realpath(session.dir), dir = join(base, 'files', id);
+    // Refuse symlink escapes for the original and its metadata, including cross-session links.
+    const [file, metadata] = await Promise.all([realpath(join(dir, 'original')), realpath(join(dir, 'meta.json'))]);
+    if (file !== join(dir, 'original') || metadata !== join(dir, 'meta.json') || !(await stat(file)).isFile()) throw missing();
+    const meta = JSON.parse(await readFile(metadata, 'utf8')) as Attachment;
+    const known = typeof meta.name === 'string' ? KINDS[extname(meta.name).toLowerCase()] : undefined;
+    const safeMime = Object.values(KINDS).some(value => value.kind === meta.kind && value.mime === meta.mime);
+    if (meta.id !== id || !known || known.kind !== meta.kind || !safeMime || !Number.isFinite(meta.size) || meta.size < 0) throw missing();
+    return { meta, file };
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'ENOENT' || cause instanceof SyntaxError) throw missing();
+    throw cause;
+  }
 }
 
 /** What the model gets to see of a file before deciding what it is for: enough to tell a template

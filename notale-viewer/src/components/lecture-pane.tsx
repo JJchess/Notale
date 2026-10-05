@@ -14,7 +14,7 @@ export interface Live { index: string; draft: PageSource; original: PageSource; 
  * ready; the same lecture only turns the page (`#/N`, a same-document navigation). While it shows a
  * draft, `live` keeps it current: a changed page is swapped in place and what is new in it appears
  * element by element (LiveDraft). */
-export function LecturePane({ src, title, live }: { src: string; title: string; live?: Live }) {
+export function LecturePane({ src, title, live, onViewing }: { src: string; title: string; live?: Live; onViewing?: (page: string) => void }) {
   const [frames, setFrames] = useState<Frame[]>([{ id: 0, src }]);
   const refs = useRef(new Map<number, HTMLIFrameElement>()), next = useRef(1), draft = useRef<LiveDraft | undefined>(undefined);
   const shown = frames[0]!;
@@ -51,6 +51,25 @@ export function LecturePane({ src, title, live }: { src: string; title: string; 
   useEffect(() => {
     if (sources) draft.current?.update({ page: sources.page, revision: sources.revision });
   }, [shown.id, sources?.draft, sources?.page, sources?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const requestedBase = base(src);
+  useEffect(() => {
+    // During a version swap the old frame stays visible; it must not set the new run's page.
+    if (!onViewing || base(shown.src) !== requestedBase) return;
+    let previous = "";
+    const observe = () => {
+      const frame = refs.current.get(shown.id);
+      if (!frame) return;
+      try {
+        const page = new PlayerFrame(frame).current();
+        if (page && page !== previous) { previous = page; onViewing(page); }
+      } catch { /* A pending same-origin player is not ready yet. */ }
+    };
+    observe();
+    const timer = setInterval(observe, 250);
+    return () => clearInterval(timer);
+  }, [shown.id, onViewing, requestedBase]); // shown.src hash changes must not restart observation before navigation settles.
+
 
   return <>{frames.map((frame, index) => (
     <iframe key={frame.id} ref={node => { if (node) refs.current.set(frame.id, node); else refs.current.delete(frame.id); }}

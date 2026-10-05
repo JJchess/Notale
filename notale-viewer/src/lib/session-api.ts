@@ -1,4 +1,4 @@
-import type { Attachment, SessionSnapshot, TurnEvent } from "./session-protocol";
+import type { Attachment, SessionPage, SessionSnapshot, SessionSummary, TurnEvent } from "./session-protocol";
 
 const base = "/notale-session/v1";
 async function json<T>(response: Response): Promise<T> {
@@ -48,4 +48,24 @@ export async function interruptTurn(sessionId: string) {
 /** The fix agent's working copy, played like a lecture. */
 export function draftUrl(sessionId: string, file = "index.html") {
   return `${base}/sessions/${encodeURIComponent(sessionId)}/draft/${file}`;
+}
+
+export const CATALOG_EVENT = "notale-catalog-change";
+export function dispatchCatalogChange() { if (typeof window !== "undefined") window.dispatchEvent(new Event(CATALOG_EVENT)); }
+export async function listSessions(input: { q?: string; archived?: boolean; cursor?: string; limit?: number } = {}, signal?: AbortSignal): Promise<SessionPage> {
+  const query = new URLSearchParams({ archived: String(input.archived ?? false), limit: String(input.limit ?? 50) });
+  if (input.q?.trim()) query.set("q", input.q.trim());
+  if (input.cursor) query.set("cursor", input.cursor);
+  return json(await fetch(`${base}/sessions?${query}`, { cache: "no-store", signal }));
+}
+export async function updateSession(id: string, patch: { title?: string; archived?: boolean }): Promise<SessionSummary> {
+  const result = await json<SessionSummary>(await fetch(`${base}/sessions/${encodeURIComponent(id)}`, {
+    method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch),
+  }));
+  dispatchCatalogChange();
+  window.dispatchEvent(new CustomEvent("notale-session-updated", { detail: { id } }));
+  return result;
+}
+export function attachmentUrl(sessionId: string, fileId: string, download = false) {
+  return `${base}/sessions/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(fileId)}${download ? "?download=1" : ""}`;
 }

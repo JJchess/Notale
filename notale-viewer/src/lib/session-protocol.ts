@@ -17,7 +17,9 @@ export type Entry =
 
 export interface SessionRun { runId: string; kind: "generate" | "fix"; basedOn?: string; status?: string }
 /** `busy`: a message is in flight; `GET …/turn` replays it and follows the rest. */
-export interface SessionSnapshot { id: string; busy: boolean; runs: SessionRun[]; entries: Entry[]; files: Attachment[] }
+export interface SessionSnapshot { id: string; title?: string; archived?: boolean; updatedAt?: string; busy: boolean; runs: SessionRun[]; entries: Entry[]; files: Attachment[] }
+export interface SessionSummary { id: string; title: string; createdAt: string; updatedAt: string; archived: boolean; busy: boolean; versions: number; latestCompletedRunId?: string }
+export interface SessionPage { items: SessionSummary[]; nextCursor?: string }
 export interface Attachment { id: string; name: string; kind: "pdf" | "docx" | "pptx" | "image" | "video"; size: number }
 
 export type TurnEvent =

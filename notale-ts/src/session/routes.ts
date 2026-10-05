@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ServerResponse } from 'node:http';
 import { realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { SessionStore } from './session.js';
+import { SessionStore, sessionPatch } from './session.js';
 import { ATTACHMENT_LIMITS, loadAttachment, saveAttachment } from './attachments.js';
 import { turn, type Fixer, type Generator, type TurnEvent } from './turn.js';
 import { draftDir, draftTarget } from './fixing.js';
@@ -15,7 +15,10 @@ interface Live { events: (TurnEvent | { type: 'done' } | { type: 'error'; messag
 
 /** The conversation in front of generation and fixing, on the same server as the runs it makes:
  *   POST /v1/sessions                 → {id}
+ *   GET  /v1/sessions                → {items: SessionSummary[], nextCursor?}
+ *   PATCH /v1/sessions/:id           {title?, archived?} → SessionSummary
  *   POST /v1/sessions/:id/files       raw bytes, name in `x-file-name` (URI-encoded) → {id, name, kind, size}
+ *   GET  /v1/sessions/:id/files/:fileId scoped attachment preview/download
  *   POST /v1/sessions/:id/turns       {text, fileIds} → ndjson TurnEvents, then {type:'done'}
  *   GET  /v1/sessions/:id/turn        the message in flight: what happened so far, then the rest (ndjson); 404 when none
  *   POST /v1/sessions/:id/interrupt   stops it (a fix keeps what it wrote; a generation is cancelled)
@@ -24,10 +27,10 @@ interface Live { events: (TurnEvent | { type: 'done' } | { type: 'error'; messag
  * One message at a time per session: a second one while one runs is refused, not queued. */
 export function sessionRoutes(app: FastifyInstance, deps: { root: string; complete: Complete; generator: Generator; fixer: Fixer; runOutput: (runId: string) => string }) {
   const sessions = new SessionStore(deps.root), live = new Map<string, Live>();
-  const open = (id: string) => sessions.get(id).catch(() => { throw Object.assign(new Error('会话不存在'), { statusCode: 404 }); });
+  const open = (id: string) => sessions.get(id);
   const failure = (cause: unknown) => {
     const status = (cause as { statusCode?: number; status?: number }).statusCode ?? (cause as { status?: number }).status ?? 500;
-    return { status, body: { error: status === 404 ? 'NOT_FOUND' : 'FAILED', message: cause instanceof Error ? cause.message : String(cause) } };
+    return { status, body: { error: (cause as { code?: string }).code === 'SESSION_BUSY' ? 'SESSION_BUSY' : status === 404 ? 'NOT_FOUND' : status === 400 ? 'BAD_REQUEST' : 'FAILED', message: cause instanceof Error ? cause.message : String(cause) } };
   };
   const line = (res: ServerResponse, event: unknown) => { if (!res.writableEnded) res.write(JSON.stringify(event) + '\n'); };
   /** Streams a message to one client: everything so far, then live until it is done. */
@@ -41,12 +44,37 @@ export function sessionRoutes(app: FastifyInstance, deps: { root: string; comple
   app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: ATTACHMENT_LIMITS.bytes }, (_request, body, done) => done(null, body));
 
   app.post('/v1/sessions', async (_request, reply) => reply.code(201).send({ id: (await sessions.create()).id }));
+  app.get<{ Querystring: { q?: string; archived?: string; limit?: string; cursor?: string } }>('/v1/sessions', async (request, reply) => {
+    try {
+      const { q, archived, limit, cursor } = request.query;
+      if (typeof q !== 'undefined' && typeof q !== 'string' || archived !== undefined && archived !== 'true' && archived !== 'false' || limit !== undefined && !/^\d+$/.test(limit) || cursor !== undefined && typeof cursor !== 'string') return reply.code(400).send({ error: 'BAD_REQUEST', message: '会话列表参数无效' });
+      return await sessions.list({ ...(q !== undefined ? { q } : {}), ...(archived !== undefined ? { archived: archived === 'true' } : {}), ...(limit !== undefined ? { limit: Number(limit) } : {}), ...(cursor !== undefined ? { cursor } : {}) }, id => live.has(id));
+    } catch (cause) { const { status, body } = failure(cause); return reply.code(status).send(body); }
+  });
+  app.patch<{ Params: { id: string }; Body: unknown }>('/v1/sessions/:id', async (request, reply) => {
+    try {
+      const patch = sessionPatch(request.body), session = await open(request.params.id);
+      return await session.update(patch, () => live.has(session.id));
+    } catch (cause) { const { status, body } = failure(cause); return reply.code(status).send(body); }
+  });
   app.get<{ Params: { id: string } }>('/v1/sessions/:id', async (request, reply) => {
     try {
       const session = await open(request.params.id);
       // Names of the files messages carried, so a transcript can show them.
       const files = await Promise.all([...session.usedFiles].map(id => loadAttachment(session, id).then(found => found.meta, () => undefined)));
-      return { id: session.id, busy: live.has(session.id), runs: session.runs, entries: session.entries, files: files.filter(Boolean) };
+      return { ...session.summary(live.has(session.id)), runs: session.runs, entries: session.entries, files: files.filter(Boolean) };
+    } catch (cause) { const { status, body } = failure(cause); return reply.code(status).send(body); }
+  });
+  app.get<{ Params: { id: string; fileId: string } }>('/v1/sessions/:id/files/:fileId', async (request, reply) => {
+    try {
+      const session = await open(request.params.id), { meta, file } = await loadAttachment(session, request.params.fileId);
+      const mode = ['image', 'video', 'pdf'].includes(meta.kind) ? 'inline' : 'attachment';
+      const name = meta.name.replace(/[\u0000-\u001f\u007f/\\]/gu, '').replace(/[\uD800-\uDFFF]/gu, '\uFFFD');
+      const fallback = name.replace(/[^\x20-\x7e]|["\\]/g, '_') || 'attachment';
+      const encoded = encodeURIComponent(name).replace(/['()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+      reply.type(meta.mime).header('x-content-type-options', 'nosniff').header('cache-control', 'private, no-store')
+        .header('content-disposition', `${mode}; filename="${fallback}"; filename*=UTF-8''${encoded}`);
+      return reply.sendFile(path.basename(file), path.dirname(file), { cacheControl: false, contentType: false });
     } catch (cause) { const { status, body } = failure(cause); return reply.code(status).send(body); }
   });
   app.post<{ Params: { id: string } }>('/v1/sessions/:id/files', { bodyLimit: ATTACHMENT_LIMITS.bytes }, async (request, reply) => {
@@ -67,9 +95,15 @@ export function sessionRoutes(app: FastifyInstance, deps: { root: string; comple
     const fileIds = Array.isArray(input.fileIds) ? input.fileIds as unknown[] : [];
     if (!text || text.length > 20_000) return reply.code(400).send({ error: 'BAD_TEXT', message: '消息不能为空，最长 20000 字' });
     if (fileIds.length > ATTACHMENT_LIMITS.files || fileIds.some(id => typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id))) return reply.code(400).send({ error: 'BAD_FILES', message: '最多 10 个附件' });
-    if (live.has(session.id)) return reply.code(409).send({ error: 'SESSION_BUSY', message: '这个会话还有一条消息在处理' });
     const current: Live = { events: [], listeners: new Set(), stop: new AbortController() };
-    live.set(session.id, current);
+    // Admission and archive writes are serialized, so neither can slip through the other's check.
+    const admitted = await session.exclusive(() => {
+      if (live.has(session.id)) return 'SESSION_BUSY';
+      if (session.archived) return 'SESSION_ARCHIVED';
+      live.set(session.id, current);
+      return undefined;
+    });
+    if (admitted) return reply.code(409).send({ error: admitted, message: admitted === 'SESSION_BUSY' ? '这个会话还有一条消息在处理' : '请先恢复已归档的会话' });
     const emit = (event: Live['events'][number]) => { current.events.push(event); for (const res of current.listeners) line(res, event); };
     const finished = turn(session, { text, fileIds: fileIds as string[] }, { complete: deps.complete, generator: deps.generator, fixer: deps.fixer, emit, signal: current.stop.signal })
       .then(() => emit({ type: 'done' }), cause => emit({ type: 'error', message: cause instanceof Error ? cause.message : String(cause) }))

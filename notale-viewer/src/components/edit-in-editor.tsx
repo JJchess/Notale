@@ -1,20 +1,22 @@
 "use client";
 
 import { useState } from "react";
+import { useLocale } from "./locale";
 
 /** Opens the version on screen in the editor, in this tab. Waits in place; a failure turns the
  * icon into a mark whose tooltip says why, and clicking again retries. */
 export function EditInEditor({ runId, sessionId, version }: { runId: string; sessionId: string; version: number }) {
+  const { t } = useLocale();
   const [state, setState] = useState<"idle" | "opening" | { error: string }>("idle");
-  const label = typeof state === "object" ? `没能打开编辑器：${state.error}` : `在编辑器中打开 v${version}`;
+  const label = typeof state === "object" ? t(`没能打开编辑器：${state.error}`, `Could not open editor: ${state.error}`) : t(`在编辑器中打开版本 ${version}`, `Open version ${version} in editor`);
   async function open() {
     setState("opening");
     try {
       const response = await fetch(`/open-in-editor/${encodeURIComponent(runId)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session: sessionId }) });
       const body = await response.json().catch(() => ({})) as { url?: string; message?: string };
-      if (!response.ok || !body.url) throw new Error(body.message ?? "编辑器没有响应");
+      if (!response.ok || !body.url) throw new Error(body.message ?? t("编辑器没有响应", "Editor did not respond"));
       location.assign(body.url);
-    } catch (cause) { setState({ error: cause instanceof Error ? cause.message : "编辑器没有响应" }); }
+    } catch (cause) { setState({ error: cause instanceof Error ? cause.message : t("编辑器没有响应", "Editor did not respond") }); }
   }
   return (
     <button type="button" className={"edit-in-editor" + (typeof state === "object" ? " is-failed" : "")} aria-label={label} title={label}

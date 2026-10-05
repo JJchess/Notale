@@ -56,9 +56,9 @@ export function useRun(runId: string | undefined) {
   }, [runId]);
   const progress = useMemo(() => progressState(run, events, now), [run, events, now]);
   useEffect(() => {
-    if (progress.terminal) return;
+    if (!runId || progress.terminal) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [progress.terminal]);
+  }, [runId, progress.terminal]);
   return { run, setRun, events, connection, progress };
 }

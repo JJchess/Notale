@@ -1,222 +1,237 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { ArchiveRestore, ArrowDown, ChevronLeft, ChevronRight, Download, Maximize, MessageSquare, Minimize, PanelRightClose, PanelRightOpen, Presentation, RefreshCw } from "lucide-react";
 import { Composer } from "./composer";
 import { IstarCard, UserBubble, exchanges, type RunView } from "./talk";
 import { VersionMenu, type VersionItem } from "./version-menu";
 import { EditInEditor } from "./edit-in-editor";
-import { PixelWordmark } from "./start/pixel-wordmark";
 import { SplitHandle } from "./split-handle";
 import { LecturePane } from "./lecture-pane";
-import { UrlSource } from "../lib/live/live-draft";
-import { rememberSession } from "../lib/recent-sessions";
 import { GenerationView } from "./generation/generation-view";
+import { PageRail } from "./generation/page-rail";
 import { publicPhase } from "./run-experience";
-import { pendingKey } from "./home-composer";
-import { cancelRun, previewUrl } from "../lib/api";
+import { useLocale } from "./locale";
+import { UrlSource } from "../lib/live/live-draft";
+import { ackPendingTurn, claimPendingTurn, peekPendingTurn, releasePendingTurn, type PendingTurn } from "../lib/pending-turn";
+import { cancelRun, getRun, previewUrl } from "../lib/api";
 import { useRun } from "../lib/use-run";
-import { draftUrl, followTurn, getSession, interruptTurn, sendTurn } from "../lib/session-api";
-import type { Entry, SessionSnapshot, TurnEvent } from "../lib/session-protocol";
+import { useSession } from "../lib/use-session";
+import { acceptedMessage, selectedVersion } from "../lib/session-state";
+import { useReadingFollow } from "../lib/use-reading-follow";
+import { draftUrl, interruptTurn, updateSession } from "../lib/session-api";
+import type { Entry } from "../lib/session-protocol";
+import type { PageProgress } from "../lib/protocol";
+import "./workbench.css";
 
-type Step = { label: string; status?: string };
-type Draft = { page: string; revision: number };
-/** Reveal's slide index for a page file. ponytail: assumes page-NN numbering has no gaps, which is
- * how the generator writes it; a gap only lands the draft one page off. */
-const slideOf = (page: string) => Math.max(0, Number(/page-(\d+)/.exec(page)?.[1] ?? 1) - 1);
-/** The conversation panel: 380 px by default, between 300 px and 55 % of the window. */
-const TALK = { key: "notale-talk-width", initial: 380, min: 300, share: 0.55 };
+const TALK = { key: "notale-talk-width", initial: 408, min: 320, share: 0.55 };
 const done = (status?: string) => status === "completed";
-/** Lectures shown inside the viewer: the player drops its own backdrop and lets the stage show through. */
+const slideOf = (page: string) => Math.max(0, Number(/page-(\d+)/.exec(page)?.[1] ?? 1) - 1);
 const EMBED = "?embed=1";
 
-/** A conversation about lectures: the lecture on the left, what was said on the right. Every
- * generation or change is a version; the newest finished one is shown unless the author picks
- * another. While a change is being made, the left shows its draft as it is written. A message runs
- * on the server: a reload rebuilds the record and picks the message in flight up again. */
 export function SessionView({ sessionId }: { sessionId: string }) {
-  const [snapshot, setSnapshot] = useState<SessionSnapshot>();
-  const [live, setLive] = useState<Entry[]>([]);
-  const [step, setStep] = useState<Step>();
-  const [draft, setDraft] = useState<Draft>();
-  const [typing, setTyping] = useState("");
-  // A change's new version opens on the page the draft was last on.
-  const [landing, setLanding] = useState<{ runId: string; page: string }>();
-  const draftPage = useRef("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
-  const [picked, setPicked] = useState<string>();
-  // Names of files sent from this page, shown before the session record has them.
-  const [sentNames, setSentNames] = useState<Map<string, string>>(new Map());
-  const log = useRef<HTMLDivElement>(null), sentPending = useRef(false), following = useRef(false), shell = useRef<HTMLElement>(null);
+  return <SessionWorkspace key={sessionId} sessionId={sessionId} />;
+}
+
+function SessionWorkspace({ sessionId }: { sessionId: string }) {
+  const { t } = useLocale();
+  const session = useSession(sessionId), { snapshot, live, typing, step, sending, connection, uncertain, reload } = session;
+  const [picked, setPicked] = useState<string>(), [sentNames, setSentNames] = useState<Map<string, string>>(new Map());
+  const [localError, setLocalError] = useState(""), [stopping, setStopping] = useState(false), [restoring, setRestoring] = useState(false);
+  const [pendingRetry, setPendingRetry] = useState<PendingTurn>();
+  const shell = useRef<HTMLElement>(null), stage = useRef<HTMLElement>(null);
   const [talkWidth, setTalkWidth] = useState(TALK.initial), [resizing, setResizing] = useState(false), [viewport, setViewport] = useState(0);
+  const [focused, setFocused] = useState(false), [fullscreen, setFullscreen] = useState(false), [tab, setTab] = useState<"lecture" | "chat">("chat");
+  const [pageRecord, setPageRecord] = useState<Record<string, string>>({}), [pageList, setPageList] = useState<{ runId: string; pages: PageProgress[] }>();
+  const [pageError, setPageError] = useState(false), [pageRetry, setPageRetry] = useState(0);
   const maxTalk = Math.max(TALK.min, Math.round((viewport || 1400) * TALK.share));
   const clampTalk = useCallback((width: number) => Math.min(Math.max(width, TALK.min), maxTalk), [maxTalk]);
   useEffect(() => {
-    try { const saved = Number(localStorage.getItem(TALK.key)); if (saved) setTalkWidth(saved); } catch { /* the default width */ }
+    try { const saved = Number(localStorage.getItem(TALK.key)); if (saved) setTalkWidth(saved); } catch { /* default */ }
     const measure = () => setViewport(shell.current?.clientWidth ?? window.innerWidth);
-    measure(); window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    const observer = new ResizeObserver(measure); if (shell.current) observer.observe(shell.current);
+    measure();
+    const full = () => setFullscreen(document.fullscreenElement === stage.current);
+    document.addEventListener("fullscreenchange", full);
+    return () => { observer.disconnect(); document.removeEventListener("fullscreenchange", full); };
   }, []);
+  useEffect(() => {
+    const renamed = (event: Event) => { if ((event as CustomEvent<{ id: string }>).detail.id === sessionId) reload(); };
+    window.addEventListener("notale-session-updated", renamed);
+    return () => window.removeEventListener("notale-session-updated", renamed);
+  }, [sessionId, reload]);
   const resize = useCallback((input: { clientX: number } | { width: number }) => {
     const box = shell.current?.getBoundingClientRect();
     const width = clampTalk("width" in input ? input.width : (box ? box.right - input.clientX : TALK.initial));
     setTalkWidth(width);
-    try { localStorage.setItem(TALK.key, String(width)); } catch { /* kept for this visit only */ }
+    try { localStorage.setItem(TALK.key, String(width)); } catch { /* kept in memory */ }
   }, [clampTalk]);
-
-  const reload = useCallback(async () => { const next = await getSession(sessionId); setSnapshot(next); setLive([]); return next; }, [sessionId]);
-  useEffect(() => { void reload().catch(cause => setError(cause instanceof Error ? cause.message : "会话打不开")); }, [reload]);
-
   const entries = useMemo(() => [...(snapshot?.entries ?? []), ...live], [snapshot, live]);
-  // Named by the title the first generation got, else by the first message (here and on the start page).
-  const named = entries.find(entry => entry.type === "understood" && entry.route.action === "generate");
-  const firstWords = (named?.type === "understood" && named.route.action === "generate" ? named.route.title : undefined)
-    ?? entries.find(entry => entry.type === "user")?.text;
+  const reading = useReadingFollow(`${entries.length}:${typing}:${step?.label ?? ""}:${tab}`);
   const names = useMemo(() => new Map([...sentNames, ...(snapshot?.files ?? []).map(file => [file.id, file.name] as const)]), [snapshot, sentNames]);
-  // Versions in the order they were made; a run's status comes from its finished entry.
   const runs = useMemo(() => {
     const ended = new Map(entries.flatMap(entry => entry.type === "finished" ? [[entry.runId, entry.status] as const] : []));
     return entries.flatMap(entry => entry.type === "run" ? [{ ...entry, status: ended.get(entry.runId) }] : []);
   }, [entries]);
   const version = (runId?: string) => runs.findIndex(run => run.runId === runId) + 1;
-  const running = runs.findLast(run => !run.status);
-  const followed = useRun(running?.runId);
+  const running = runs.findLast(run => !run.status), followed = useRun(running?.runId);
   const runningDone = running && ["completed", "failed", "cancelled"].includes(followed.run?.status ?? "") ? followed.run!.status : undefined;
   const finished = runs.filter(run => done(run.status) || (run.runId === running?.runId && done(runningDone)));
-  const shown = finished.find(run => run.runId === picked) ?? finished.at(-1);
-
-  // A new finished version replaces what is shown, unless the author is looking at an older one on purpose.
-  const newest = finished.at(-1)?.runId;
-  useEffect(() => { setPicked(undefined); }, [newest]);
-  useEffect(() => { const node = log.current; if (node) node.scrollTop = node.scrollHeight; }, [entries.length, typing]);
-  // A generated lecture opens on the page the author was looking at while it was being made.
-  const genPage = useRef("");
+  const shown = selectedVersion(finished, picked), shownId = shown?.runId;
+  const busy = sending || uncertain || !!snapshot?.busy || !!running && !runningDone;
+  const genPage = useRef(""), [generationLanding, setGenerationLanding] = useState<{ runId: string; page: string }>();
   const viewing = useCallback((pageId: string) => { genPage.current = pageId; }, []);
-  useEffect(() => { if (running?.kind === "generate" && done(runningDone) && genPage.current) setLanding({ runId: running.runId, page: genPage.current }); }, [running, runningDone]);
-  // A run followed to its end outside a turn stream (after a reload): refresh the record.
-  useEffect(() => { if (runningDone && !sending) void reload(); }, [runningDone, sending, reload]);
-
-  const onEvent = useCallback((event: TurnEvent) => {
-    const stamp = new Date().toISOString();
-    if (event.type === "understood") setLive(current => [...current, { type: "understood", route: event.route, at: stamp }]);
-    else if (event.type === "question") setLive(current => [...current, { type: "question", text: event.text, ...(event.options ? { options: event.options } : {}), at: stamp }]);
-    else if (event.type === "reply") { setTyping(""); setLive(current => [...current, { type: "reply", text: event.text, at: stamp }]); }
-    else if (event.type === "run") setLive(current => [...current, { type: "run", runId: event.runId, kind: event.kind, ...(event.basedOn ? { basedOn: event.basedOn } : {}), at: stamp }]);
-    else if (event.type === "result") { if (draftPage.current) setLanding({ runId: event.runId, page: draftPage.current }); setDraft(undefined); setLive(current => [...current, { type: "finished", runId: event.runId, status: event.status, at: stamp }]); }
-    else if (event.type === "working") {
-      const work = event.event;
-      if (work.type === "step" && work.label) setStep({ label: work.label, status: work.status });
-      else if (work.type === "text") setTyping(current => work.reset ? "" : current + (work.delta ?? ""));
-      else if (work.type === "draft" && work.page) { draftPage.current = work.page; setDraft({ page: work.page, revision: work.revision ?? 0 }); }
-    } else if (event.type === "error") setError(event.message);
-  }, []);
-  /** Listens to one message to its end, then rebuilds from the record. */
-  const listen = useCallback(async (stream: () => Promise<void>) => {
-    setSending(true); setError(""); setStep(undefined); setTyping(""); setDraft(undefined); draftPage.current = "";
-    try { await stream(); await reload(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "发送失败"); await reload().catch(() => {}); }
-    finally { setSending(false); setStep(undefined); setTyping(""); setDraft(undefined); }
-  }, [reload]);
-  const send = useCallback(async (text: string, files: { id: string; name: string }[]) => {
+  useEffect(() => {
+    if (running?.kind === "generate" && done(runningDone) && genPage.current) setGenerationLanding({ runId: running.runId, page: genPage.current });
+  }, [running?.runId, running?.kind, runningDone]);
+  useEffect(() => { if (runningDone && !sending) reload(); }, [runningDone, sending, reload]);
+  useEffect(() => {
+    if (!shownId) return;
+    let stopped = false;
+    setPageError(false);
+    void getRun(shownId).then(run => { if (!stopped) setPageList({ runId: shownId, pages: run.pages ?? [] }); }).catch(() => { if (!stopped) setPageError(true); });
+    return () => { stopped = true; };
+  }, [shownId, pageRetry]);
+  const pages = pageList && pageList.runId === shownId ? pageList.pages : [];
+  const landing = session.landing?.runId === shownId ? session.landing : generationLanding?.runId === shownId ? generationLanding : undefined;
+  const selectedPage = shownId ? pageRecord[shownId] ?? landing?.page.replace(/\.html$/, "") ?? pages[0]?.pageId : undefined;
+  const pageIndex = Math.max(0, pages.findIndex(page => page.pageId === selectedPage));
+  const setPage = useCallback((page: string) => { if (shownId) setPageRecord(current => current[shownId] === page ? current : { ...current, [shownId]: page }); }, [shownId]);
+  const playerViewing = useCallback((page: string) => setPage(page.replace(/\.html$/, "")), [setPage]);
+  const pick = (runId: string) => { setPicked(runId); setTab("lecture"); };
+  const send = useCallback(async (text: string, files: { id: string; name: string }[], onAccepted?: () => void) => {
+    setLocalError("");
     setSentNames(current => new Map([...current, ...files.map(file => [file.id, file.name] as const)]));
-    setLive(current => [...current, { type: "user", text, files: files.map(file => file.id), at: new Date().toISOString() }]);
-    await listen(() => sendTurn(sessionId, text, files.map(file => file.id), onEvent));
-  }, [sessionId, listen, onEvent]);
-  // A message still running (sent before a reload, or from another tab): replay it and follow the rest.
+    reading.latest();
+    await session.send(text, files.map(file => file.id), onAccepted);
+  }, [session.send, reading.latest]);
   useEffect(() => {
-    if (!snapshot?.busy || sending || following.current) return;
-    following.current = true;
-    // What already happened is in the record; a replayed record event only means "read it again".
-    const replayed = (event: TurnEvent) => {
-      if (!["understood", "question", "reply", "run", "result"].includes(event.type)) return onEvent(event);
-      if (event.type === "result") { if (draftPage.current) setLanding({ runId: event.runId, page: draftPage.current }); setDraft(undefined); }
-      if (event.type === "reply") setTyping("");
-      void reload();
-    };
-    void listen(() => followTurn(sessionId, replayed)).finally(() => { following.current = false; });
-  }, [snapshot, sending, sessionId, listen, onEvent, reload]);
-  const stop = useCallback(async () => {
+    if (!snapshot) return;
+    const pending = peekPendingTurn(sessionId);
+    if (!pending) return;
+    if (acceptedMessage(snapshot, 0, pending.text, pending.files.map(file => file.id))) { ackPendingTurn(sessionId, pending.id); setPendingRetry(undefined); return; }
+    if (snapshot.busy || sending || uncertain) return;
+    if (pending.claimed) { setPendingRetry(pending); return; }
+    if (snapshot.entries.some(entry => entry.type === "user")) { setPendingRetry(pending); return; }
+    const claimed = claimPendingTurn(sessionId);
+    if (claimed) void send(claimed.text, claimed.files).catch(() => setPendingRetry(claimed));
+  }, [snapshot, sessionId, sending, uncertain, send]);
+  const retryPending = async () => {
+    if (!pendingRetry || busy) return;
+    releasePendingTurn(sessionId, pendingRetry.id);
+    const pending = claimPendingTurn(sessionId);
+    if (pending) { setPendingRetry(undefined); try { await send(pending.text, pending.files); } catch { setPendingRetry(pending); } }
+  };
+  const stop = async () => {
+    if (stopping) return;
+    setStopping(true); setLocalError("");
     try { await interruptTurn(sessionId); }
-    catch { if (running && !runningDone) await cancelRun(running.runId).catch(cause => setError(cause instanceof Error ? cause.message : "停止失败")); }
-  }, [sessionId, running, runningDone]);
-
-  // The first message, handed over by the home page.
-  useEffect(() => {
-    if (!snapshot || sentPending.current) return;
-    sentPending.current = true;
-    let pending: { text: string; files: { id: string; name: string }[] } | undefined;
-    try { const raw = sessionStorage.getItem(pendingKey(sessionId)); if (raw) { pending = JSON.parse(raw); sessionStorage.removeItem(pendingKey(sessionId)); } } catch { /* nothing handed over */ }
-    if (pending && !snapshot.busy && !snapshot.entries.some(entry => entry.type === "user")) void send(pending.text, pending.files ?? []);
-  }, [snapshot, sessionId, send]);
-
+    catch (cause) {
+      if (running && !runningDone) { try { await cancelRun(running.runId); } catch (fallback) { setLocalError(fallback instanceof Error ? fallback.message : t("停止失败", "Could not stop")); } }
+      else setLocalError(cause instanceof Error ? cause.message : t("停止失败", "Could not stop"));
+    } finally { setStopping(false); }
+  };
+  const restore = async () => {
+    setRestoring(true);
+    try { await updateSession(sessionId, { archived: false }); reload(); }
+    catch (cause) { setLocalError(cause instanceof Error ? cause.message : t("恢复失败", "Could not restore")); }
+    finally { setRestoring(false); }
+  };
+  const toggleFullscreen = async () => {
+    try { if (document.fullscreenElement) await document.exitFullscreen(); else await stage.current?.requestFullscreen(); }
+    catch { setLocalError(t("浏览器无法进入全屏，可使用专注预览", "Fullscreen is unavailable. Use focus view instead.")); }
+  };
   const lastUser = entries.findLastIndex(entry => entry.type === "user");
-  // The run being changed right now: the draft starts as a copy of it.
   const fixing = entries.slice(lastUser).findLast(entry => entry.type === "understood" && entry.route.action === "fix");
   const target = fixing?.type === "understood" && fixing.route.action === "fix" ? fixing.route.target : undefined;
-  const sources = useMemo(() => target ? {
-    draft: new UrlSource(file => draftUrl(sessionId, file)),
-    original: new UrlSource(file => previewUrl(target, file)),
-  } : undefined, [sessionId, target]);
-  const busy = sending || !!snapshot?.busy || !!running && !runningDone;
-  // What each run came to, for its badge and the version menu.
+  const sources = useMemo(() => target ? { draft: new UrlSource(file => draftUrl(sessionId, file)), original: new UrlSource(file => previewUrl(target, file)) } : undefined, [sessionId, target]);
+  const draft = session.draft && (!picked || picked === target) ? session.draft : undefined;
+  const showGeneration = !draft && running?.kind === "generate" && !runningDone && !picked;
   const stateOf = (run: (typeof runs)[number]): RunView["state"] => {
     const status = run.status ?? (run.runId === running?.runId ? runningDone : undefined);
     return done(status) ? "done" : status === "cancelled" ? "stopped" : status ? "failed" : "working";
   };
   const progressOf = (run: (typeof runs)[number]) => run.kind === "generate" && run.runId === running?.runId && followed.run
-    ? `${publicPhase[followed.run.phase ?? "starting"] ?? "生成中"} · ${followed.progress.pages.filter(page => page.state === "ready").length}/${followed.progress.pages.length || "?"} 页` : undefined;
+    ? t(`${publicPhase[followed.run.phase ?? "starting"] ?? "生成中"} · ${followed.progress.pages.filter(page => page.state === "ready").length}/${followed.progress.pages.length || "?"} 页`, `${followed.progress.pages.filter(page => page.state === "ready").length}/${followed.progress.pages.length || "?"} pages ready`) : undefined;
   const turns = exchanges(entries);
-  const title = firstWords?.replace(/\s+/g, " ").trim();
+  const generated = entries.find(entry => entry.type === "understood" && entry.route.action === "generate");
+  const inferred = generated?.type === "understood" && generated.route.action === "generate" ? generated.route.title : undefined;
+  const title = snapshot?.title || inferred || (entries.find(entry => entry.type === "user") as Extract<Entry, { type: "user" }> | undefined)?.text || t("新讲义", "New lecture");
   const versions: VersionItem[] = finished.map(run => ({ runId: run.runId, version: version(run.runId), kind: run.kind, at: run.at, ...(run.basedOn ? { basedOn: version(run.basedOn) } : {}) }));
-  useEffect(() => { if (firstWords) rememberSession(sessionId, firstWords.slice(0, 80), finished.length, busy); }, [sessionId, firstWords, finished.length, busy]);
-  return (
-    <main ref={shell} className={"session-shell" + (resizing ? " is-resizing" : "")} style={{ "--talk-width": `${clampTalk(talkWidth)}px` } as CSSProperties}>
-      <section className="session-stage">
-        {(draft || shown) && <LecturePane
-          src={draft ? `${draftUrl(sessionId)}${EMBED}#/${slideOf(draft.page)}` : previewUrl(shown!.runId) + EMBED + (landing?.runId === shown!.runId ? `#/${slideOf(landing.page)}` : "")}
-          title={draft ? "修改中的草稿" : `讲义 v${version(shown!.runId)}`}
-          {...(draft && sources ? { live: { index: draftUrl(sessionId) + EMBED, ...sources, page: draft.page, revision: draft.revision } } : {})} />}
-        {draft ? <>
-          <div className="stage-draft" role="status"><i /><span>{step?.label ?? "准备草稿"}</span><em>草稿</em></div>
-        </> : shown ? <>
-          {busy && <div className="stage-busy" role="status" aria-label="处理中"><i /></div>}
-          <div className="stage-bar">
-            <VersionMenu versions={versions} shown={shown.runId} onPick={setPicked} download={`/notale-api/v1/runs/${encodeURIComponent(shown.runId)}/download?format=notale`} />
-            <EditInEditor key={shown.runId} runId={shown.runId} sessionId={sessionId} version={version(shown.runId)} />
+  const error = localError || session.error;
+  const download = shownId ? `/notale-api/v1/runs/${encodeURIComponent(shownId)}/download?format=notale` : "";
+  const canPreview = !!(draft || shown || showGeneration);
+  return <main ref={shell} className={`session-shell workbench${resizing ? " is-resizing" : ""}${focused ? " is-focused" : ""}`} data-mobile-tab={tab} style={{ "--talk-width": `${clampTalk(talkWidth)}px` } as CSSProperties}>
+    <header className="workbench-header"><h1 title={title}>{title}</h1>
+      {snapshot?.archived && <button type="button" className="workbench-restore" onClick={() => void restore()} disabled={restoring}><ArchiveRestore size={14} />{t("恢复讲义", "Restore lecture")}</button>}
+      <span className={`workbench-connection is-${connection}`} role="status">{stopping ? t("正在停止", "Stopping") : connection === "reconnecting" ? t("正在恢复连接", "Reconnecting") : connection === "offline" ? t("连接中断", "Disconnected") : busy ? t("正在处理", "Working") : snapshot?.archived ? t("已归档", "Archived") : ""}</span>
+    </header>
+    <div className="workbench-tabs" role="tablist" aria-label={t("工作区", "Workspace")} onKeyDown={event => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === "Home" ? "lecture" : event.key === "End" ? "chat" : tab === "lecture" ? "chat" : "lecture";
+      setTab(next); event.currentTarget.querySelector<HTMLButtonElement>(`#${next}-tab`)?.focus();
+    }}>
+      <button type="button" role="tab" id="lecture-tab" tabIndex={tab === "lecture" ? 0 : -1} aria-selected={tab === "lecture"} aria-controls="lecture-panel" onClick={() => setTab("lecture")}><Presentation size={16} />{t("讲义", "Lecture")}</button>
+      <button type="button" role="tab" id="chat-tab" tabIndex={tab === "chat" ? 0 : -1} aria-selected={tab === "chat"} aria-controls="chat-panel" onClick={() => setTab("chat")}><MessageSquare size={16} />{t("对话", "Chat")}</button>
+    </div>
+    <div className="workbench-body">
+      <section ref={stage} className="session-stage workbench-stage" id="lecture-panel" aria-label={t("讲义预览", "Lecture preview")}>
+        <div className="workbench-toolbar">
+          {shown && !draft ? <VersionMenu versions={versions} shown={shown.runId} onPick={pick} download={download} /> : draft ? <span className="workbench-draft" role="status"><i />{t("修改中的草稿", "Live draft")}</span> : <span />}
+          <div className="workbench-actions">
+            {shown && !draft && <><a className="workbench-icon" href={download} download aria-label={t("下载讲义", "Download lecture")} title={t("下载讲义", "Download lecture")}><Download size={16} /></a><EditInEditor key={shown.runId} runId={shown.runId} sessionId={sessionId} version={version(shown.runId)} /></>}
+            {canPreview && <><button type="button" className="workbench-icon" aria-pressed={focused} aria-label={t(focused ? "显示对话" : "专注预览", focused ? "Show chat" : "Focus preview")} title={t(focused ? "显示对话" : "专注预览", focused ? "Show chat" : "Focus preview")} onClick={() => setFocused(value => !value)}>{focused ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}</button>
+              <button type="button" className="workbench-icon" aria-label={t(fullscreen ? "退出全屏" : "全屏预览", fullscreen ? "Exit fullscreen" : "Fullscreen preview")} title={t(fullscreen ? "退出全屏" : "全屏预览", fullscreen ? "Exit fullscreen" : "Fullscreen preview")} onClick={() => void toggleFullscreen()}>{fullscreen ? <Minimize size={16} /> : <Maximize size={16} />}</button></>}
           </div>
-        </> : running && running.kind === "generate" ? <div className="stage-progress" id="generation-panel">
-          <GenerationView state={followed.progress} phase={followed.run?.phase} status={publicPhase[followed.run?.phase ?? "starting"] ?? "生成中"} onViewing={viewing} />
-        </div> : <div className="stage-empty">{snapshot && <div className="stage-mark" aria-hidden="true"><PixelWordmark /></div>}</div>}
+        </div>
+        <div className={"workbench-canvas" + (shown && !draft && !showGeneration && pages.length ? " has-pages" : "")}>
+          {shown && !draft && !showGeneration && !!pages.length && <PageRail pages={pages} selected={selectedPage} onSelect={setPage} urlOf={page => page.previewUrl ? `/notale-api${page.previewUrl}?embed=1` : previewUrl(shown.runId, `${page.pageId}.html`) + EMBED} />}
+          <div className="workbench-player">
+            {(draft || shown && !showGeneration) && <LecturePane src={draft ? `${draftUrl(sessionId)}${EMBED}#/${slideOf(draft.page)}` : `${previewUrl(shown!.runId)}${EMBED}#/${pages.length ? pageIndex : slideOf(selectedPage ?? "page-01")}`}
+              title={draft ? t("修改中的草稿", "Live draft") : t(`讲义 · 版本 ${version(shown!.runId)}`, `Lecture · Version ${version(shown!.runId)}`)}
+              {...(draft && sources ? { live: { index: draftUrl(sessionId) + EMBED, ...sources, page: draft.page, revision: draft.revision } } : { onViewing: playerViewing })} />}
+            {showGeneration ? <GenerationView state={followed.progress} phase={followed.run?.phase} status={t(publicPhase[followed.run?.phase ?? "starting"] ?? "生成中", "Generating lecture")} onViewing={viewing} />
+              : !draft && !shown && <div className="workbench-empty" aria-hidden="true"><img src="/brand/notale-mark.svg" alt="" /></div>}
+          </div>
+        </div>
+        {shown && !draft && !showGeneration && pages.length > 0 && <nav className="workbench-page-nav" aria-label={t("翻页", "Page navigation")}>
+          <button type="button" className="workbench-icon" disabled={pageIndex === 0} onClick={() => setPage(pages[pageIndex - 1]!.pageId)} aria-label={t("上一页", "Previous page")} title={t("上一页", "Previous page")}><ChevronLeft size={16} /></button>
+          <span>{pageIndex + 1} / {pages.length}</span><button type="button" className="workbench-icon" disabled={pageIndex >= pages.length - 1} onClick={() => setPage(pages[pageIndex + 1]!.pageId)} aria-label={t("下一页", "Next page")} title={t("下一页", "Next page")}><ChevronRight size={16} /></button>
+        </nav>}
+        {pageError && <button type="button" className="workbench-retry-pages" onClick={() => setPageRetry(value => value + 1)}>{t("页面列表加载失败，重试", "Page list could not load. Retry")}</button>}
       </section>
-      <SplitHandle value={clampTalk(talkWidth)} min={TALK.min} max={maxTalk} label="调整对话面板宽度" onResize={resize} onDragging={setResizing} onReset={() => resize({ width: TALK.initial })} />
-      <aside className="session-talk">
-        <header className="session-head">
-          {title && <h1 className="session-title" title={title}>{title}</h1>}
-        </header>
-        <div ref={log} className="session-log" aria-live="polite" aria-busy={!snapshot}>
-          {!snapshot && !error && <div className="talk-skeleton" aria-hidden="true"><i /><i /><i /></div>}
-          {turns.map((turn, index) => {
-            const last = index === turns.length - 1;
-            const views: RunView[] = turn.runs.map(entry => {
-              const run = runs.find(item => item.runId === entry.runId)!;
-              return { runId: entry.runId, kind: entry.kind, version: version(entry.runId), state: stateOf(run), shown: shown?.runId === entry.runId,
-                ...(entry.basedOn ? { basedOn: version(entry.basedOn) } : {}), ...(progressOf(run) ? { progress: progressOf(run)! } : {}) };
-            });
-            const route = turn.understood, why = route && (route.action === "generate" || route.action === "fix") ? route.reason : undefined;
-            const hasIstar = views.length || turn.replies.length || turn.question || (last && (sending || typing || error));
-            return <Fragment key={index}>
-              {turn.user && <UserBubble entry={turn.user} names={names} />}
-              {hasIstar && <IstarCard runs={views} replies={turn.replies} {...(turn.question ? { question: turn.question.text } : {})} {...(why ? { understood: why } : {})}
-                {...(last && typing ? { typing } : {})} thinking={last && sending} {...(last && error ? { error } : {})} onPick={setPicked}
-                options={last && turn.question?.options?.length ? <div className="talk-options">{turn.question.options.map(option => <button key={option} type="button" disabled={busy} onClick={() => void send(option, [])}>{option}</button>)}</div> : undefined} />}
-            </Fragment>;
-          })}
-          {error && !turns.length && <p className="talk-error" role="alert">{error}</p>}
-        </div>
-        <div className="session-compose">
-          <Composer session={async () => sessionId} busy={busy} onStop={() => void stop()} placeholder={finished.length ? "想怎么改？比如：把第 3 页改成两栏" : "想做一份什么样的讲义？"} onSend={send} />
-        </div>
+      <SplitHandle value={clampTalk(talkWidth)} min={TALK.min} max={maxTalk} label={t("调整对话面板宽度", "Resize conversation panel")} onResize={resize} onDragging={setResizing} onReset={() => resize({ width: TALK.initial })} />
+      <aside className="session-talk workbench-talk" id="chat-panel" aria-label={t("对话", "Conversation")}>
+        <header className="workbench-chat-head"><span>{t("与 Notale 对话", "Chat with Notale")}</span>{(connection === "offline" || connection === "reconnecting") && <button type="button" className="workbench-icon" onClick={session.reconnect} aria-label={t("重新连接", "Reconnect")} title={t("重新连接", "Reconnect")}><RefreshCw size={14} /></button>}</header>
+        <div className="workbench-log-wrap"><div ref={reading.log} className="session-log" tabIndex={0} aria-label={t("对话记录", "Conversation history")} aria-busy={!snapshot}>
+          <div ref={reading.content} className="workbench-messages">
+            {!snapshot && !error && <div className="talk-skeleton" aria-hidden="true"><i /><i /><i /></div>}
+            {turns.map((turn, index) => {
+              const last = index === turns.length - 1;
+              const views: RunView[] = turn.runs.map(entry => {
+                const run = runs.find(item => item.runId === entry.runId)!;
+                return { runId: entry.runId, kind: entry.kind, version: version(entry.runId), state: stateOf(run), shown: shown?.runId === entry.runId,
+                  ...(entry.basedOn ? { basedOn: version(entry.basedOn) } : {}), ...(progressOf(run) ? { progress: progressOf(run)! } : {}) };
+              });
+              const why = turn.understood?.reason;
+              const hasReply = views.length || turn.replies.length || turn.question || last && (sending || typing || error);
+              return <Fragment key={index}>
+                {turn.user && <UserBubble entry={turn.user} names={names} sessionId={sessionId} />}
+                {hasReply && <IstarCard runs={views} replies={turn.replies} question={turn.question?.text} understood={why} typing={last ? typing : undefined}
+                  thinking={last && sending} step={last ? step?.label : undefined} error={last ? error : undefined} onPick={pick}
+                  options={last && turn.question?.options?.length ? <div className="talk-options" role="group" aria-label={t("回答澄清问题", "Answer clarification")}>{turn.question.options.map(option => <button key={option} type="button" disabled={busy || snapshot?.archived} onClick={() => { void send(option, []).catch(cause => setLocalError(cause instanceof Error ? cause.message : t("发送失败", "Could not send"))); }}>{option}</button>)}</div> : undefined} />}
+              </Fragment>;
+            })}
+            {error && !turns.length && <p className="talk-error" role="alert">{error}</p>}
+            {uncertain && <p className="talk-recovery" role="status">{t("正在确认消息是否已送达，输入与附件已保留。", "Checking whether your message was received. Your draft and attachments are preserved.")}</p>}
+            {pendingRetry && !busy && <div className="talk-recovery"><p>{t("首页的输入已保留，消息尚未确认发送。", "Your home-page draft is preserved. Sending has not been confirmed.")}</p><p>{pendingRetry.text}</p><button type="button" onClick={() => void retryPending()}>{t("发送保留的输入", "Send preserved draft")}</button></div>}
+          </div>
+        </div>{reading.paused && <button type="button" className="workbench-latest" onClick={reading.latest}><ArrowDown size={14} />{t("回到最新", "Jump to latest")}</button>}</div>
+        <div className="session-compose"><Composer key={sessionId} draftKey={`session:${sessionId}`} session={async () => sessionId} busy={busy || !snapshot || snapshot.archived}
+          onStop={busy && !uncertain && !snapshot?.archived ? () => void stop() : undefined}
+          placeholder={snapshot?.archived ? t("恢复讲义后继续对话", "Restore this lecture to continue") : finished.length ? t("想怎么改？比如：把第 3 页改成两栏", "What would you like to change? Try a two-column page 3") : t("想做一份什么样的讲义？", "What would you like to teach?")} onSend={send} /></div>
       </aside>
-    </main>
-  );
+    </div>
+  </main>;
 }
