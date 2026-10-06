@@ -230,7 +230,7 @@ function SessionWorkspace({ sessionId }: { sessionId: string }) {
         </div>{reading.paused && <button type="button" className="workbench-latest" onClick={reading.latest}><ArrowDown size={14} />{t("回到最新", "Jump to latest")}</button>}</div>
         <div className="session-compose"><Composer key={sessionId} draftKey={`session:${sessionId}`} session={async () => sessionId} busy={busy || !snapshot || snapshot.archived}
           onStop={busy && !uncertain && !snapshot?.archived ? () => void stop() : undefined}
-          placeholder={snapshot?.archived ? t("恢复讲义后继续对话", "Restore this lecture to continue") : finished.length ? t("想怎么改？比如：把第 3 页改成两栏", "What would you like to change? Try a two-column page 3") : t("想做一份什么样的讲义？", "What would you like to teach?")} onSend={send} /></div>
+          placeholder={snapshot?.archived ? t("恢复讲义后继续对话", "Restore this lecture to continue") : finished.length ? t("修改要求或问题", "Changes or questions") : t("讲义主题或要求", "Topic or instructions")} onSend={send} /></div>
       </aside>
     </div>
   </main>;

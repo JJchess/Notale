@@ -22,7 +22,7 @@ export function HomeComposer() {
     return session.current;
   };
   return <Composer session={ensure} autoFocus tone="start" draftKey={HOME_DRAFT_KEY}
-    placeholder={t("想把什么内容做成讲义？", "What would you like to teach?")}
+    placeholder={t("讲义主题或要求", "Topic or instructions")}
     onSend={async (text, files, onAccepted) => {
       const id = await ensure();
       putPendingTurn(id, { text, files });
