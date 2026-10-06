@@ -14,13 +14,21 @@ The Viewer is a lecture workspace: start with a topic, work through a conversati
 
 | Surface | Design and behavior |
 | --- | --- |
-| Shared shell | Approved logo; collapsible desktop navigation; mobile drawer; create, library, archive, quick search and language controls. Recent lectures come from the server. |
-| Home `/` | A distinct Notale knowledge scene built from lecture pages, curves and structure diagrams. The composer is the clear primary action. A few teaching examples seed a draft and wait for the user to send. Recent lectures lead back into work. |
+| Shared shell | A 236px navigation rail on the page background, with the approved logo, search and collapse controls together at the top. Quiet navigation rows lead to create, library and archive. A collapsible recent list provides lecture actions and cover previews; settings collect language and shortcut controls. |
+| Home `/` | The approved 180px Notale lockup and one composer, separated by 32px and centered in the available main area. Input width is at most 720px, with 20px side padding on mobile. Recent lectures live in navigation and the library. Short screens scroll naturally. |
 | Library `/library` and archive `/archive` | Searchable server history with rename, archive and restore actions. Preserve a natural empty list; only an active search with no matches needs a no-results message. |
 | Session `/s/[sessionId]` | Lecture preview and conversation form a resizable workbench. Focus mode and fullscreen give the lecture more space. A selected old version stays selected when a new one finishes. |
 | Run `/runs/[runId]` | Direct access to a generated run, using the same brand, controls and event-backed progress language. |
 
-The home scene may use small pointer-driven depth on desktop. On touch devices, in a hidden tab and under `prefers-reduced-motion`, it stays static. The workspace keeps movement restrained so pages and reading remain stable. No forest, borrowed mascot, reference branding or ornamental pixel typography is part of the Notale direction.
+Home presents the creation input directly. Keep slogans, decorative lecture sheets, duplicate starting prompts and model infrastructure details out of this surface. The workspace keeps movement restrained so pages and reading remain stable; honor `prefers-reduced-motion` throughout.
+
+### Navigation details
+
+- Use the page background without a separate panel border or shadow. Keep 12px horizontal rail padding, roughly 38px navigation rows, 12px corner radii and 2px row gaps. Navigation text is 13px/600; recent titles use 13px/500. Hover and selection use neutral fills; focus remains visible.
+- The top row uses 34px icon buttons with 4px gaps. Desktop collapse closes the rail completely, leaving a top-left reopen control with dedicated room in page headers. Keep transitions around 200ms.
+- Recent lectures scroll independently, with roughly 11 rows visible at full height and a smaller area on short screens. Use existing pagination for additional records. Show row actions on hover and keyboard focus, and always on touch devices. Rename and archive retain existing server constraints.
+- Desktop hover previews are 216px wide with a 24px rail gap. Load the current cover on demand and close its preview when opening a row menu. Lectures without covers show their title.
+- Keep one compact settings control at the bottom. Language and keyboard help belong in its menu; account and team controls require real corresponding features.
 
 ## Input, reading and recovery
 
@@ -34,6 +42,7 @@ The home scene may use small pointer-driven depth on desktop. On touch devices, 
 ## Navigation, preview and accessibility
 
 - Cmd/Ctrl+K opens a searchable lecture switcher with arrow-key selection and Enter to open. The dialog focuses its input after `showModal()` and restores focus on close.
+- Cmd/Ctrl+B toggles desktop navigation outside text-entry controls. Persist navigation and recent-group expansion. Hidden navigation is inert; restore focus when collapsing or closing the drawer.
 - Page thumbnails show the page itself. Titles live in tooltips and accessible names, without repeated captions around the canvas. Load thumbnails near the viewport and bound active preview frames; avoid running every lecture page at once.
 - Keep the current lecture visible during version transitions. Changing a page, resizing the split or switching a narrow-screen tab preserves the work already on screen. Download and editor entry always refer to the chosen version.
 - On narrow screens, lecture and conversation become tabs. Preserve mounted content and state when switching. The mobile navigation drawer can close through Escape, its close control or its backdrop.

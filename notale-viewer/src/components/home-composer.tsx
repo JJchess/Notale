@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Composer, type PromptSeed } from "./composer";
+import { Composer } from "./composer";
 import { createSession } from "../lib/session-api";
 import { HOME_DRAFT_KEY, clearComposerDraft, readComposerDraft, writeComposerDraft } from "../lib/composer-drafts";
 import { putPendingTurn } from "../lib/pending-turn";
@@ -10,7 +10,7 @@ import { useLocale } from "./locale";
 
 /** The draft's uploaded IDs belong to one session, including after a reload. The typed handoff
  * survives blocked sessionStorage through a document-level memory slot. The session page claims it. */
-export function HomeComposer({ status, promptSeed }: { status?: ReactNode; promptSeed?: PromptSeed }) {
+export function HomeComposer() {
   const { t } = useLocale();
   const router = useRouter();
   const session = useRef<Promise<string> | undefined>(undefined);
@@ -21,8 +21,8 @@ export function HomeComposer({ status, promptSeed }: { status?: ReactNode; promp
     }
     return session.current;
   };
-  return <Composer session={ensure} autoFocus tone="start" draftKey={HOME_DRAFT_KEY} promptSeed={promptSeed} status={status}
-    placeholder={t("描述讲义的主题、时长与受众，可附论文、PPT 模板或风格参考图", "Describe your topic, duration and audience. Add papers, slides or visual references.")}
+  return <Composer session={ensure} autoFocus tone="start" draftKey={HOME_DRAFT_KEY}
+    placeholder={t("想把什么内容做成讲义？", "What would you like to teach?")}
     onSend={async (text, files, onAccepted) => {
       const id = await ensure();
       putPendingTurn(id, { text, files });
