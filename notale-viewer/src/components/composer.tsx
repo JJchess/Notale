@@ -16,6 +16,7 @@ interface Item {
   state: "uploading" | "ready" | "failed"; id?: string; error?: string;
   controller?: AbortController; preview?: string;
 }
+interface RejectedAttachment { name: string; reason: "format" | "size" | "count" }
 interface ComposerProps {
   session: () => Promise<string>;
   /** onAccepted clears the captured draft early; only invoke after durable server acceptance. */
@@ -38,6 +39,7 @@ export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus
   const { t } = useLocale();
   const [text, setText] = useState(initialText), [items, setItems] = useState<Item[]>([]);
   const [error, setError] = useState(""), [dragging, setDragging] = useState(false), [sending, setSending] = useState(false);
+  const [rejected, setRejected] = useState<RejectedAttachment[]>([]);
   const [preview, setPreview] = useState<{ src: string; name: string }>();
   const [ready, setReady] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null), picker = useRef<HTMLInputElement>(null), dialog = useRef<HTMLDialogElement>(null);
@@ -113,8 +115,13 @@ export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus
   function add(files: File[]) {
     if (!files.length || !ready) return;
     const room = Math.max(0, MAX_FILES - itemsRef.current.length);
-    const valid = files.filter(file => ACCEPT.test(file.name) && file.size <= MAX_BYTES).slice(0, room);
-    setError(valid.length < files.length ? t("支持 PDF、DOCX、PPTX、图片和视频；单个不超过 100 MB，最多 10 个。", "Add PDF, DOCX, PPTX, images or videos. Up to 10 files, 100 MB each.") : "");
+    const valid: File[] = [], declined: RejectedAttachment[] = [];
+    for (const file of files) {
+      const reason = !ACCEPT.test(file.name) ? "format" : file.size > MAX_BYTES ? "size" : valid.length >= room ? "count" : undefined;
+      if (reason) declined.push({ name: file.name, reason });
+      else valid.push(file);
+    }
+    setRejected(declined); setError("");
     const added: Item[] = valid.map(file => {
       let preview: string | undefined;
       if (IMAGE.test(file.name)) { try { preview = URL.createObjectURL(file); } catch { /* filename remains usable without a local preview */ } }
@@ -141,7 +148,7 @@ export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus
   const canSend = ready && !!text.trim() && !waitingForFiles && !busy && !sending;
   async function send() {
     if (!canSend || sendLock.current) return;
-    sendLock.current = true; setSending(true); setError("");
+    sendLock.current = true; setSending(true); setError(""); setRejected([]);
     const capturedRevision = revision.current, captured = [...itemsRef.current];
     const words = textRef.current.trim(), files = captured.map(item => ({ id: item.id!, name: item.name }));
     let accepted = false;
@@ -160,7 +167,9 @@ export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus
   function remove(key: string) {
     const item = itemsRef.current.find(entry => entry.key === key); if (item) dispose(item);
     updateItems(itemsRef.current.filter(entry => entry.key !== key));
+    setRejected([]);
   }
+  const rejectionText = rejected.map(({ name, reason }) => `${name}${t("：", ": ")}${reason === "format" ? t("不支持此文件格式", "Unsupported file format") : reason === "size" ? t("超过 100 MB", "Exceeds 100 MB") : t("最多添加 10 个附件", "You can add up to 10 attachments")}`).join(t("；", "; "));
   function endPreview() { setPreview(undefined); requestAnimationFrame(() => previewTrigger.current?.focus()); }
   return <div className={`${styles.composer} ${tone === "start" ? styles.start : ""} ${dragging ? styles.dropping : ""}`}>
     {dragging && <div className={styles.dropOverlay} role="status"><Paperclip size={28} /><span>{t("松开以添加附件", "Drop to add attachments")}</span></div>}
@@ -182,7 +191,7 @@ export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus
     <div className={styles.bar}>
       <button type="button" className={styles.attach} aria-label={t("添加附件", "Add attachments")} title={t("添加论文、PPT 模板、图片或视频", "Add a paper, PPT template, image or video")} disabled={!ready || items.length >= MAX_FILES} onClick={() => picker.current?.click()}><Paperclip size={19} aria-hidden="true" /></button>
       <input ref={picker} type="file" multiple hidden accept=".pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp,.mp4,.mov,.webm" onChange={event => { add(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
-      <div className={styles.status}>{error ? <span className={styles.error} role="alert">{error}</span> : status}</div>
+      <div className={styles.status}>{error || rejectionText ? <span className={styles.error} role="alert">{error || rejectionText}</span> : status}</div>
       {(busy || sending) && onStop ? <button type="button" className={styles.stop} aria-label={t("停止生成", "Stop generation")} title={t("停止生成", "Stop generation")} onClick={onStop}><Square size={13} fill="currentColor" aria-hidden="true" /></button> : <button type="button" className={styles.send} aria-label={t("发送", "Send")} title={t("发送（Enter）", "Send (Enter)")} disabled={!canSend} onClick={() => void send()}>{sending ? <LoaderCircle size={18} className={styles.spin} aria-hidden="true" /> : <ArrowUp size={19} aria-hidden="true" />}</button>}
     </div>
     <dialog ref={dialog} className={styles.preview} aria-label={preview?.name} onCancel={endPreview} onClose={endPreview} onClick={event => { if (event.target === event.currentTarget) endPreview(); }}>

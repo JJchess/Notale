@@ -22,6 +22,8 @@ The Viewer is a lecture workspace: start with a topic, work through a conversati
 
 Home presents the creation input directly. Keep slogans, decorative lecture sheets, duplicate starting prompts and model infrastructure details out of this surface. The workspace keeps movement restrained so pages and reading remain stable; honor `prefers-reduced-motion` throughout.
 
+The home logo also summons Valar, the original 66×75 pixel wizard, on click, Enter or Space. The short, single-play Easter egg appears near the logo, lights the star staff, hops onto the input edge and disappears behind it. It adds no persistent hint or decoration. Reduced motion shows a brief static pose; navigation, resizing or hiding the tab cancels and removes the animation. The character never intercepts input or file drops.
+
 ### Navigation details
 
 - Use the page background without a separate panel border or shadow. Keep 12px horizontal rail padding, roughly 38px navigation rows, 12px corner radii and 2px row gaps. Navigation text is 13px/600; recent titles use 13px/500. Hover and selection use neutral fills; focus remains visible.
@@ -33,6 +35,7 @@ Home presents the creation input directly. Keep slogans, decorative lecture shee
 ## Input, reading and recovery
 
 - Home and sessions share one composer: text, drag/drop, paste, file picking, upload state, retry, removal and attachment preview. Successful uploads retain server IDs; unavailable local `File` objects are never pretended to survive a reload.
+- Attachment limits appear only when a file is rejected, with its name and the specific format, size or count reason. Do not show the generic supported-format and quota paragraph. Mixed selections still add the accepted files; actual upload and send failures remain visible.
 - Drafts belong to a session; the home draft has its own key. Preserve text and uploaded references on failure and during navigation. Clear them only after the server has accepted the message. When the outcome is uncertain, recover the transcript before offering another submission.
 - Chinese IME composition must finish without accidentally sending or triggering search shortcuts. Shift+Enter inserts a newline; Enter sends when composition is complete.
 - Render assistant Markdown safely, with copy actions, real clarification options, result cards and collapsible work details. Keep local connection failures separate from task failures and cancellation.
