@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLocale } from "../locale";
+import { stylePreviewFrame } from "../../lib/preview-style";
 import styles from "./generation.module.css";
 
 type Deck = { step?: number; stepMax?: number; stepTo?: (step: number) => void };
@@ -17,6 +18,7 @@ export function PagePreview({ src, title, position, onPrevious, onNext }: {
   const stage = useRef<HTMLDivElement>(null), frame = useRef<HTMLIFrameElement>(null);
   const [scale, setScale] = useState(0.5);
   const [steps, setSteps] = useState<{ step: number; max: number }>({ step: 0, max: 0 });
+  useEffect(() => frame.current ? stylePreviewFrame(frame.current) : undefined, [src]);
   useEffect(() => {
     const node = stage.current;
     if (!node) return;

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LiveDraft, type PageSource } from "../lib/live/live-draft";
 import { PlayerFrame } from "../lib/live/player-frame";
+import { stylePreviewFrame } from "../lib/preview-style";
 
 type Frame = { id: number; src: string };
 const base = (src: string) => src.split("#")[0];
@@ -17,8 +18,22 @@ export interface Live { index: string; draft: PageSource; original: PageSource; 
 export function LecturePane({ src, title, live, onViewing }: { src: string; title: string; live?: Live; onViewing?: (page: string) => void }) {
   const [frames, setFrames] = useState<Frame[]>([{ id: 0, src }]);
   const refs = useRef(new Map<number, HTMLIFrameElement>()), next = useRef(1), draft = useRef<LiveDraft | undefined>(undefined);
+  const styles = useRef(new Map<number, () => void>());
   const shown = frames[0]!;
   const sources = live && base(shown.src) === base(live.index) ? live : undefined;
+
+  useEffect(() => {
+    for (const [id, dispose] of styles.current) {
+      if (!refs.current.has(id)) { dispose(); styles.current.delete(id); }
+    }
+    for (const [id, frame] of refs.current) {
+      if (!styles.current.has(id)) styles.current.set(id, stylePreviewFrame(frame));
+    }
+  }, [frames]);
+  useEffect(() => {
+    const active = styles.current;
+    return () => { active.forEach(dispose => dispose()); active.clear(); };
+  }, []);
 
   // Another lecture: load it underneath. The same one at another page: only the hash changes.
   useEffect(() => {

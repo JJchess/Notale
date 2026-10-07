@@ -161,11 +161,13 @@ function SessionWorkspace({ sessionId }: { sessionId: string }) {
   const error = localError || session.error;
   const download = shownId ? `/notale-api/v1/runs/${encodeURIComponent(shownId)}/download?format=notale` : "";
   const canPreview = !!(draft || shown || showGeneration);
+  const status = stopping ? t("正在停止", "Stopping") : connection === "reconnecting" ? t("正在恢复连接", "Reconnecting") : connection === "offline" ? t("连接中断", "Disconnected") : busy ? t("正在处理", "Working") : snapshot?.archived ? t("已归档", "Archived") : "";
+  const sessionControls = <>
+    {status && <span className={`workbench-connection is-${connection}`} role="status" title={status}>{status}</span>}
+    {snapshot?.archived && <button type="button" className="workbench-icon" onClick={() => void restore()} disabled={restoring} aria-label={t("恢复讲义", "Restore lecture")} title={t("恢复讲义", "Restore lecture")}><ArchiveRestore size={14} /></button>}
+    {(connection === "offline" || connection === "reconnecting") && <button type="button" className="workbench-icon" onClick={session.reconnect} aria-label={t("重新连接", "Reconnect")} title={t("重新连接", "Reconnect")}><RefreshCw size={14} /></button>}
+  </>;
   return <main ref={shell} className={`session-shell workbench${resizing ? " is-resizing" : ""}${focused ? " is-focused" : ""}`} data-mobile-tab={tab} style={{ "--talk-width": `${clampTalk(talkWidth)}px` } as CSSProperties}>
-    <header className="workbench-header"><h1 title={title}>{title}</h1>
-      {snapshot?.archived && <button type="button" className="workbench-restore" onClick={() => void restore()} disabled={restoring}><ArchiveRestore size={14} />{t("恢复讲义", "Restore lecture")}</button>}
-      <span className={`workbench-connection is-${connection}`} role="status">{stopping ? t("正在停止", "Stopping") : connection === "reconnecting" ? t("正在恢复连接", "Reconnecting") : connection === "offline" ? t("连接中断", "Disconnected") : busy ? t("正在处理", "Working") : snapshot?.archived ? t("已归档", "Archived") : ""}</span>
-    </header>
     <div className="workbench-tabs" role="tablist" aria-label={t("工作区", "Workspace")} onKeyDown={event => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       event.preventDefault();
@@ -179,6 +181,7 @@ function SessionWorkspace({ sessionId }: { sessionId: string }) {
       <section ref={stage} className="session-stage workbench-stage" id="lecture-panel" aria-label={t("讲义预览", "Lecture preview")}>
         <div className="workbench-toolbar">
           {shown && !draft ? <VersionMenu versions={versions} shown={shown.runId} onPick={pick} download={download} /> : draft ? <span className="workbench-draft" role="status"><i />{t("修改中的草稿", "Live draft")}</span> : <span />}
+          <div className="workbench-stage-status">{sessionControls}</div>
           <div className="workbench-actions">
             {shown && !draft && <><a className="workbench-icon" href={download} download aria-label={t("下载讲义", "Download lecture")} title={t("下载讲义", "Download lecture")}><Download size={16} /></a><EditInEditor key={shown.runId} runId={shown.runId} sessionId={sessionId} version={version(shown.runId)} /></>}
             {canPreview && <><button type="button" className="workbench-icon" aria-pressed={focused} aria-label={t(focused ? "显示对话" : "专注预览", focused ? "Show chat" : "Focus preview")} title={t(focused ? "显示对话" : "专注预览", focused ? "Show chat" : "Focus preview")} onClick={() => setFocused(value => !value)}>{focused ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}</button>
@@ -203,7 +206,7 @@ function SessionWorkspace({ sessionId }: { sessionId: string }) {
       </section>
       <SplitHandle value={clampTalk(talkWidth)} min={TALK.min} max={maxTalk} label={t("调整对话面板宽度", "Resize conversation panel")} onResize={resize} onDragging={setResizing} onReset={() => resize({ width: TALK.initial })} />
       <aside className="session-talk workbench-talk" id="chat-panel" aria-label={t("对话", "Conversation")}>
-        <header className="workbench-chat-head"><span>{t("与 Notale 对话", "Chat with Notale")}</span>{(connection === "offline" || connection === "reconnecting") && <button type="button" className="workbench-icon" onClick={session.reconnect} aria-label={t("重新连接", "Reconnect")} title={t("重新连接", "Reconnect")}><RefreshCw size={14} /></button>}</header>
+        <header className="workbench-chat-head"><h1 title={title}>{title}</h1>{sessionControls}</header>
         <div className="workbench-log-wrap"><div ref={reading.log} className="session-log" tabIndex={0} aria-label={t("对话记录", "Conversation history")} aria-busy={!snapshot}>
           <div ref={reading.content} className="workbench-messages">
             {!snapshot && !error && <div className="talk-skeleton" aria-hidden="true"><i /><i /><i /></div>}
