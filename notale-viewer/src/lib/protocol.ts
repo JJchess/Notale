@@ -1,5 +1,7 @@
+import type { ModelRef } from "./models.js";
 /** Read-only client view of the versioned Notale HTTP protocol. */
 export interface CreateRunRequest {
+  model?: ModelRef;
   templateId?: string;
   fileIds?: string[];
   query: string;

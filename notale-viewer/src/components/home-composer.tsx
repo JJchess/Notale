@@ -1,5 +1,6 @@
 "use client";
 
+
 import { useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Composer } from "./composer";
@@ -23,9 +24,9 @@ export function HomeComposer() {
   };
   return <Composer session={ensure} autoFocus tone="start" draftKey={HOME_DRAFT_KEY}
     placeholder={t("讲义主题或要求", "Topic or instructions")}
-    onSend={async (text, files, onAccepted) => {
+    onSend={async (text, files, onAccepted, model) => {
       const id = await ensure();
-      putPendingTurn(id, { text, files });
+      putPendingTurn(id, { text, files, model });
       // The pending slot now owns this payload, so navigation need not keep the input mounted.
       onAccepted?.();
       const nextDraft = readComposerDraft(HOME_DRAFT_KEY);

@@ -1,6 +1,7 @@
+import type { ModelRef } from "./models";
 import { parseComposerDraft, type DraftAttachment } from "./composer-drafts";
 
-export interface PendingTurn { id: string; text: string; files: DraftAttachment[]; claimed?: boolean }
+export interface PendingTurn { model?: ModelRef; id: string; text: string; files: DraftAttachment[]; claimed?: boolean }
 const pending = new Map<string, PendingTurn | null>();
 export const pendingKey = (sessionId: string) => `notale-pending-${sessionId}`;
 
@@ -9,8 +10,8 @@ function save(sessionId: string, turn: PendingTurn): void {
   try { sessionStorage.setItem(pendingKey(sessionId), JSON.stringify(turn)); } catch { /* Memory carries the turn through client navigation. */ }
 }
 
-export function putPendingTurn(sessionId: string, input: Pick<PendingTurn, "text" | "files">): PendingTurn {
-  const turn: PendingTurn = { id: crypto.randomUUID(), text: input.text, files: input.files.map(file => ({ ...file })) };
+export function putPendingTurn(sessionId: string, input: Pick<PendingTurn, "text" | "files" | "model">): PendingTurn {
+  const turn: PendingTurn = { id: crypto.randomUUID(), text: input.text, ...(input.model ? { model: { ...input.model } } : {}), files: input.files.map(file => ({ ...file })) };
   save(sessionId, turn);
   return turn;
 }
@@ -24,7 +25,7 @@ export function peekPendingTurn(sessionId: string): PendingTurn | undefined {
     const value = JSON.parse(raw) as Record<string, unknown>;
     const draft = parseComposerDraft({ ...value, sessionId });
     if (!draft?.text.trim() || typeof value.id !== "string" || !value.id) return;
-    const turn: PendingTurn = { id: value.id, text: draft.text, files: draft.files, ...(value.claimed === true ? { claimed: true } : {}) };
+    const turn: PendingTurn = { id: value.id, text: draft.text, ...(draft.model ? { model: draft.model } : {}), files: draft.files, ...(value.claimed === true ? { claimed: true } : {}) };
     pending.set(sessionId, turn);
     return turn;
   } catch { return; }

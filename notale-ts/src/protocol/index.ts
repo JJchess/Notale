@@ -1,3 +1,4 @@
+import { modelRefSchema } from "../adapters/models/selection.js";
 import { z } from "zod";
 import { normalizeTitle } from '../core/title.js';
 
@@ -14,6 +15,7 @@ export type RunStatus = z.infer<typeof runStatusSchema>;
 
 export const createRunRequestSchema = z.object({
   query: z.string(),
+  model: modelRefSchema.optional(),
   /** Shown as the lecture's title; the query when absent. */
   title: z.string().transform(value => normalizeTitle(value)).optional(),
   fileIds: z.array(z.string().uuid()).max(10).refine(ids => new Set(ids).size === ids.length, "duplicate files").optional(),

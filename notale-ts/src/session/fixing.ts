@@ -53,7 +53,7 @@ export const draftTarget = (session: { dir: string }) => readFile(join(session.d
 
 /** Istar on a copy of a run this session made. It runs first; only if it changed something is the
  * result published as a new run based on the target (same preview, same .notale, `basedOn` set). */
-export function istarFixer(options: { service: RunService; generator: Generator; owner: string; model?: () => FixModel; env?: NodeJS.ProcessEnv; media?: FixDeps['media'] | false }): Fixer & { close(): Promise<void> } {
+export function istarFixer(options: { service: RunService; generator: Generator; owner: string; model?: (request: FixRequest) => FixModel; env?: NodeJS.ProcessEnv; media?: FixDeps['media'] | false }): Fixer & { close(): Promise<void> } {
   if (options.env !== undefined && !options.model) throw new Error('An explicit environment requires a fix model');
   const env = options.env ?? process.env, model = options.model ?? (() => fixModel(env));
   const media = options.media === false ? undefined : options.media ?? (env.GEMINI_API_KEY || env.PARATERA_API_KEY ? { env } : undefined);
@@ -71,7 +71,7 @@ export function istarFixer(options: { service: RunService; generator: Generator;
       if (!transcripts.has(request.session.id)) transcripts.set(request.session.id, Transcript.open(join(root, 'transcript.jsonl')));
       const transcript = await transcripts.get(request.session.id)!;
       const result = await runFix({ instruction: request.instruction, images: request.images, inputs, ...(request.page ? { page: request.page } : {}) }, {
-        model: model(), transcript, dir,
+        model: model(request), transcript, dir,
         sandbox: async () => { swept ??= sandboxes.sweep(); await swept; return sandboxes.get(request.session.id, dir); },
         ...(media ? { media } : {}),
         report: step => onEvent({ type: 'step', ...step }),
@@ -82,7 +82,7 @@ export function istarFixer(options: { service: RunService; generator: Generator;
       const said = [result.status === 'interrupted' && result.changed ? '已停止，保留了停下前的改动。' : '', result.text, result.note].filter(Boolean).join('\n');
       if (!result.changed) return { status: result.status === 'complete' ? 'no-change' : result.status, text: [result.text, result.note].filter(Boolean).join('\n') };
       const title = (await options.generator.describe(request.target)).title;
-      const snapshot = await options.service.start(createRunRequestSchema.parse({ query: title, title, basedOn: request.target }), {
+      const snapshot = await options.service.start(createRunRequestSchema.parse({ query: title, title, basedOn: request.target, model: request.model }), {
         pipeline: async ({ outputDir, signal: runSignal, emit }) => {
           const pages = join(dirname(outputDir), 'work', 'pages');
           await mkdir(pages, { recursive: true });

@@ -11,7 +11,8 @@ import { createRunRequestSchema } from "../protocol/index.js";
 import { RunStore } from "../core/run-store.js";
 import { RunService, type GenerationPipeline } from "../core/run-service.js";
 import { starterPipeline } from "../core/starter-pipeline.js";
-import { createBaselinePipeline } from "../core/baseline-pipeline.js";
+import { ModelRegistry } from '../adapters/models/registry.js';
+import { runtimeEnvironment, createBaselinePipeline } from "../core/baseline-pipeline.js";
 import { archiveContentTypes } from './lecture-archive.js';
 import { LectureExports, lectureFilename } from './lecture-exports.js';
 import { ASSISTANT_NAME, fixModel } from '../fix/istar.js';
@@ -45,7 +46,13 @@ export function createApp(options: AppOptions) {
   const app = Fastify({ logger: options.logger ?? true });
   app.register(fastifyStatic, { serve: false, preCompressed: true, dotfiles: 'deny' });
   const store = new RunStore(options.runsRoot);
-  const service: RunService = new RunService(store, options.pipeline ?? (options.useStarterPipeline ? starterPipeline : createBaselinePipeline()),
+  const models = !options.pipeline && !options.useStarterPipeline && !options.modelConfig ? new ModelRegistry(loadConfig(), runtimeEnvironment()) : undefined;
+  const selectedPipeline: GenerationPipeline = context => {
+    const selected = models!.resolve(context.run.request.model);
+    return createBaselinePipeline({ config: selected.config, env: models!.env, profile: selected.profile.id })(context);
+  };
+  app.get('/v1/models', async (_request, reply) => reply.header('cache-control', 'no-store').send(models?.catalog() ?? { providers: [] }));
+  const service: RunService = new RunService(store, options.pipeline ?? (options.useStarterPipeline ? starterPipeline : selectedPipeline),
     id => exports.ensure(id).catch(error => { app.log.error({ err: error, runId: id }, 'Lecture export failed'); }));
   const exports = new LectureExports(service);
   app.addHook('onReady', async () => {
@@ -106,6 +113,10 @@ export function createApp(options: AppOptions) {
   app.post("/v1/runs", async (request, reply) => {
     const parsed = createRunRequestSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", issues: parsed.error.issues });
+    try {
+      if (models) parsed.data.model = models.resolve(parsed.data.model).ref;
+      else if (parsed.data.model) throw Object.assign(new Error('此部署不支持选择模型。'), { status: 400 });
+    } catch (cause) { return reply.code((cause as { status?: number }).status ?? 500).send({ error: 'INVALID_MODEL', message: (cause as Error).message }); }
     if (parsed.data.templateId) {
       try { await templates.file(parsed.data.templateId); }
       catch { return reply.code(400).send({ error: "invalid_template", message: "模板不存在或校验失败，请重新上传" }); }
@@ -243,9 +254,9 @@ export function createApp(options: AppOptions) {
 
   if (options.sessions) {
     const generator = runGenerator(service, options.runsRoot);
-    const fixer = options.sessions.fixer ?? istarFixer({ service, generator, owner: 'notale-ts-' + createHash('sha256').update(path.resolve(options.sessions.root)).digest('hex').slice(0, 8) });
+    const fixer = options.sessions.fixer ?? istarFixer({ service, generator, ...(models ? { model: request => models.agent(request.model), env: models.env } : {}), owner: 'notale-ts-' + createHash('sha256').update(path.resolve(options.sessions.root)).digest('hex').slice(0, 8) });
     if ('close' in fixer && typeof fixer.close === 'function') app.addHook('onClose', () => (fixer as { close(): Promise<void> }).close());
-    sessionRoutes(app, { root: options.sessions.root, complete: options.sessions.complete ?? modelComplete(() => fixModel()), generator, fixer, runOutput: id => path.join(store.runDir(id), 'output') });
+    sessionRoutes(app, { root: options.sessions.root, ...(models ? { resolveModel: (value: unknown) => { const { ref } = models.resolve(value); return { model: ref, complete: modelComplete(() => models.agent(ref)) }; } } : {}), complete: options.sessions.complete ?? modelComplete(() => fixModel()), generator, fixer, runOutput: id => path.join(store.runDir(id), 'output') });
   }
 
   return { app, store, service };

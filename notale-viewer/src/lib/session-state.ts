@@ -1,3 +1,4 @@
+import { sameModel, type ModelRef } from "./models";
 import type { Entry, SessionSnapshot, TurnEvent } from "./session-protocol";
 
 export type Connection = "loading" | "ready" | "streaming" | "reconnecting" | "offline";
@@ -15,7 +16,7 @@ export interface SessionState {
 }
 export interface SessionTransport {
   get(): Promise<SessionSnapshot>;
-  send(text: string, files: string[], onEvent: (event: TurnEvent) => void, signal: AbortSignal): Promise<void>;
+  send(text: string, files: string[], onEvent: (event: TurnEvent) => void, signal: AbortSignal, model?: ModelRef): Promise<void>;
   follow(onEvent: (event: TurnEvent) => void, signal: AbortSignal): Promise<void>;
 }
 const recorded = new Set(["understood", "question", "reply", "run", "result"]);
@@ -24,8 +25,8 @@ export const initialSessionState = (): SessionState => ({ live: [], typing: "", 
 export function selectedVersion<T extends { runId: string }>(finished: T[], picked?: string): T | undefined {
   return finished.find(run => run.runId === picked) ?? finished.at(-1);
 }
-export function acceptedMessage(snapshot: SessionSnapshot, baseline: number, text: string, files: string[]) {
-  return snapshot.entries.slice(baseline).some(entry => entry.type === "user" && entry.text === text && entry.files.length === files.length && entry.files.every((id, index) => id === files[index]));
+export function acceptedMessage(snapshot: SessionSnapshot, baseline: number, text: string, files: string[], model?: ModelRef) {
+  return snapshot.entries.slice(baseline).some(entry => entry.type === "user" && sameModel(entry.model, model) && entry.text === text && entry.files.length === files.length && entry.files.every((id, index) => id === files[index]));
 }
 
 /** One mounted session owns one subscription. Reconnection always reads the server record and
@@ -41,7 +42,7 @@ export class SessionClient {
   private refreshing = false;
   private submitting = false;
   private refreshAgain = false;
-  private pending?: { text: string; files: string[]; baseline: number; accept?: () => void; accepted: boolean };
+  private pending?: { model?: ModelRef; text: string; files: string[]; baseline: number; accept?: () => void; accepted: boolean };
 
   constructor(private transport: SessionTransport, private changed: (state: SessionState) => void, private refreshed?: () => void, private retryDelay = 1000) {}
   private patch(change: Partial<SessionState>) {
@@ -59,7 +60,7 @@ export class SessionClient {
     const generation = this.generation;
     const snapshot = await this.transport.get();
     if (this.closed || generation !== this.generation) return snapshot;
-    if (this.pending && acceptedMessage(snapshot, this.pending.baseline, this.pending.text, this.pending.files)) this.accept();
+    if (this.pending && acceptedMessage(snapshot, this.pending.baseline, this.pending.text, this.pending.files, this.pending.model)) this.accept();
     const recovered = this.state.uncertain && this.pending?.accepted;
     this.patch({ snapshot, live: [], uncertain: false, ...(recovered ? { error: "" } : {}) });
     this.refreshed?.();
@@ -129,18 +130,18 @@ export class SessionClient {
       if (!this.closed && token === this.generation) this.schedule();
     }
   }
-  async send(text: string, files: string[], onAccepted?: () => void) {
+  async send(text: string, files: string[], onAccepted?: () => void, model?: ModelRef) {
     if (this.closed || this.controller || this.state.sending || this.state.uncertain || this.state.snapshot?.busy) throw new Error("A message is already being processed");
     clearTimeout(this.timer); this.timer = undefined;
     ++this.generation;
     const controller = this.controller = new AbortController();
     this.submitting = true;
-    this.pending = { text, files, baseline: this.state.snapshot?.entries.length ?? 0, accept: onAccepted, accepted: false };
+    this.pending = { text, files, ...(model ? { model: { ...model } } : {}), baseline: this.state.snapshot?.entries.length ?? 0, accept: onAccepted, accepted: false };
     this.draftPage = "";
     this.patch({ sending: true, error: "", connection: "streaming", typing: "", step: undefined, draft: undefined,
-      live: [{ type: "user", text, files, at: new Date().toISOString() }] });
+      live: [{ type: "user", text, files, ...(model ? { model: { ...model } } : {}), at: new Date().toISOString() }] });
     let failure: unknown;
-    try { await this.transport.send(text, files, event => this.event(event, false), controller.signal); }
+    try { await this.transport.send(text, files, event => this.event(event, false), controller.signal, this.pending?.model); }
     catch (cause) { failure = cause; }
     finally { if (this.controller === controller) this.controller = undefined; }
     if (this.closed) { this.submitting = false; return; }

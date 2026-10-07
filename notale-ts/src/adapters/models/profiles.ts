@@ -4,6 +4,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 import { z } from 'zod';
 import { PAGE_SKILLS, RESOURCES } from '../../core/guidance.js';
+import { modelSelectionSchema } from './selection.js';
 
 const common = {
   api_key_env: z.string(), reasoning_effort: z.string(), vision_input: z.boolean(),
@@ -19,6 +20,7 @@ const BuilderProfile = z.object({
   adapter: z.string().toLowerCase().pipe(z.enum(['responses', 'chat', 'messages'])),
 });
 const Config = z.object({
+  model_selection: modelSelectionSchema.optional(),
   model: ModelSection,
   planner: z.object({ reasoning_effort: z.string() }),
   media: z.object({ image_search_backend: z.string().optional() }).optional(),

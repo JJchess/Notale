@@ -1,6 +1,7 @@
+import { parseModelRef, type ModelRef } from "./models";
 /** Drafts keep server references, never File objects or document-scoped blob URLs. */
 export interface DraftAttachment { id: string; name: string; size?: number; type?: string }
-export interface ComposerDraft { text: string; sessionId?: string; files: DraftAttachment[] }
+export interface ComposerDraft { model?: ModelRef; text: string; sessionId?: string; files: DraftAttachment[] }
 export const HOME_DRAFT_KEY = "home";
 const drafts = new Map<string, ComposerDraft | null>();
 const keyFor = (key: string) => `notale-composer:${key}`;
@@ -23,7 +24,7 @@ export function parseComposerDraft(value: unknown): ComposerDraft | undefined {
       if (files.length === 10) break;
     }
   }
-  return { text: row.text, ...(sessionId ? { sessionId } : {}), files };
+  return { text: row.text, ...(parseModelRef(row.model) ? { model: parseModelRef(row.model) } : {}), ...(sessionId ? { sessionId } : {}), files };
 }
 
 export function readComposerDraft(key: string): ComposerDraft | undefined {

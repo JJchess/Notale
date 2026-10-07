@@ -1,3 +1,4 @@
+import type { ModelRef } from "./models.js";
 /** The session layer's HTTP boundary (notale-ts `src/session/`), declared locally like protocol.ts: the
  * viewer builds on its own and has no dependency on the sibling package. */
 export type Route =
@@ -8,7 +9,7 @@ export type Route =
 
 export type Entry =
   | { type: "session"; id: string; createdAt: string }
-  | { type: "user"; text: string; files: string[]; at: string }
+  | { type: "user"; model?: ModelRef; text: string; files: string[]; at: string }
   | { type: "understood"; route: Route; at: string }
   | { type: "run"; runId: string; kind: "generate" | "fix"; basedOn?: string; at: string }
   | { type: "finished"; runId: string; status: string; at: string }

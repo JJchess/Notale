@@ -6,6 +6,7 @@ import { SessionStore, sessionPatch } from './session.js';
 import { ATTACHMENT_LIMITS, loadAttachment, saveAttachment } from './attachments.js';
 import { turn, type Fixer, type Generator, type TurnEvent } from './turn.js';
 import { draftDir, draftTarget } from './fixing.js';
+import { modelErrorMessage, type ModelRef } from '../adapters/models/selection.js';
 import type { Complete } from './understand.js';
 
 /** One message in flight. It belongs to the server, not to the connection that sent it: a client
@@ -25,7 +26,7 @@ interface Live { events: (TurnEvent | { type: 'done' } | { type: 'error'; messag
  *   GET  /v1/sessions/:id/draft/*     the fix agent's working copy, for a live preview
  *   GET  /v1/sessions/:id             → {id, busy, runs (with status once ended), entries, files (attachment names)}
  * One message at a time per session: a second one while one runs is refused, not queued. */
-export function sessionRoutes(app: FastifyInstance, deps: { root: string; complete: Complete; generator: Generator; fixer: Fixer; runOutput: (runId: string) => string }) {
+export function sessionRoutes(app: FastifyInstance, deps: { root: string; complete: Complete; resolveModel?: (value: unknown) => { model: ModelRef; complete: Complete }; generator: Generator; fixer: Fixer; runOutput: (runId: string) => string }) {
   const sessions = new SessionStore(deps.root), live = new Map<string, Live>();
   const open = (id: string) => sessions.get(id);
   const failure = (cause: unknown) => {
@@ -86,7 +87,7 @@ export function sessionRoutes(app: FastifyInstance, deps: { root: string; comple
       return reply.code(201).send(await saveAttachment(session, name, request.body));
     } catch (cause) { const { status, body } = failure(cause); return reply.code(status).send(body); }
   });
-  app.post<{ Params: { id: string }; Body: { text?: unknown; fileIds?: unknown } }>('/v1/sessions/:id/turns', { bodyLimit: 1 << 20 }, async (request, reply) => {
+  app.post<{ Params: { id: string }; Body: { text?: unknown; fileIds?: unknown; model?: unknown } }>('/v1/sessions/:id/turns', { bodyLimit: 1 << 20 }, async (request, reply) => {
     let session;
     try { session = await open(request.params.id); } catch (cause) { const { status, body } = failure(cause); return reply.code(status).send(body); }
     // Validated before the stream starts, so a bad request is an ordinary 4xx.
@@ -95,6 +96,11 @@ export function sessionRoutes(app: FastifyInstance, deps: { root: string; comple
     const fileIds = Array.isArray(input.fileIds) ? input.fileIds as unknown[] : [];
     if (!text || text.length > 20_000) return reply.code(400).send({ error: 'BAD_TEXT', message: '消息不能为空，最长 20000 字' });
     if (fileIds.length > ATTACHMENT_LIMITS.files || fileIds.some(id => typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id))) return reply.code(400).send({ error: 'BAD_FILES', message: '最多 10 个附件' });
+    let selected: { model: ModelRef; complete: Complete } | undefined;
+    try {
+      if (deps.resolveModel) selected = deps.resolveModel(input.model);
+      else if (input.model !== undefined) throw Object.assign(new Error('此部署不支持选择模型。'), { status: 400 });
+    } catch (cause) { const { status, body } = failure(cause); return reply.code(status).send(body); }
     const current: Live = { events: [], listeners: new Set(), stop: new AbortController() };
     // Admission and archive writes are serialized, so neither can slip through the other's check.
     const admitted = await session.exclusive(() => {
@@ -105,8 +111,8 @@ export function sessionRoutes(app: FastifyInstance, deps: { root: string; comple
     });
     if (admitted) return reply.code(409).send({ error: admitted, message: admitted === 'SESSION_BUSY' ? '这个会话还有一条消息在处理' : '请先恢复已归档的会话' });
     const emit = (event: Live['events'][number]) => { current.events.push(event); for (const res of current.listeners) line(res, event); };
-    const finished = turn(session, { text, fileIds: fileIds as string[] }, { complete: deps.complete, generator: deps.generator, fixer: deps.fixer, emit, signal: current.stop.signal })
-      .then(() => emit({ type: 'done' }), cause => emit({ type: 'error', message: cause instanceof Error ? cause.message : String(cause) }))
+    const finished = turn(session, { text, fileIds: fileIds as string[], ...(selected ? { model: selected.model } : {}) }, { complete: selected?.complete ?? deps.complete, generator: deps.generator, fixer: deps.fixer, emit, signal: current.stop.signal })
+      .then(() => emit({ type: 'done' }), cause => emit({ type: 'error', message: modelErrorMessage(cause) }))
       .finally(() => { live.delete(session.id); for (const res of current.listeners) res.end(); current.listeners.clear(); });
     void finished;
     reply.hijack();

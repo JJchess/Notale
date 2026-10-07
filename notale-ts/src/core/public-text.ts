@@ -1,4 +1,5 @@
 /** What a person is told about a failure. Raw reasons stay in builder-results.json, trace.jsonl and run.error records. */
+import { modelErrorMessage } from '../adapters/models/selection.js';
 import type { Page } from './builder.js';
 
 const CATEGORIES: Array<[RegExp, string]> = [
@@ -16,7 +17,7 @@ export function publicReason(page: Pick<Page, 'why' | 'last_stop_error' | 'audit
 }
 /** A run-level error for the API: first line only, no filesystem paths or stack frames, bounded. */
 export function publicMessage(error: unknown): string {
-  const first = (error instanceof Error ? error.message : String(error)).split('\n')[0] ?? '';
+  const first = modelErrorMessage(error).split('\n')[0] ?? '';
   const cleaned = first.replace(/\/[\w./@-]+/g, '').replace(/\s+/g, ' ').trim();
   return [...cleaned].slice(0, 160).join('') || '讲义生成失败';
 }

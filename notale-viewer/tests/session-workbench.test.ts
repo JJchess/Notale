@@ -135,3 +135,12 @@ test("draft completion clears the live draft and preserves the final viewed page
     assert.deepEqual(client.state.landing, { runId: "fixed-run", page: "page-03.html" });
   } finally { client.dispose(); }
 });
+
+test("reconciliation never accepts an identical message sent to a different model", async () => {
+  const { acceptedMessage } = await import("../src/lib/session-state");
+  const google = { providerId: "google", modelId: "gemini-3.8-flash" }, glm = { providerId: "paratera", modelId: "GLM-5.3-Flash" };
+  const snapshot = { id: "s", busy: false, runs: [], files: [], entries: [{ type: "user" as const, text: "same", files: [], at: "now", model: google }] };
+  assert.equal(acceptedMessage(snapshot, 0, "same", [], google), true);
+  assert.equal(acceptedMessage(snapshot, 0, "same", [], glm), false);
+  assert.equal(acceptedMessage(snapshot, 0, "same", []), false);
+});

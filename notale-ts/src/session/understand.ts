@@ -111,16 +111,17 @@ export function validate(args: Record<string, unknown>, input: Understanding): R
 
 /** A model call as the pi fork makes it: a system prompt, messages, tools; returns the assistant
  * message. Injected so tests can script it. */
-export type Complete = (input: { systemPrompt: string; messages: unknown[]; tools: unknown[] }) => Promise<{ content: ({ type: 'text'; text: string } | { type: 'toolCall'; name: string; arguments: Record<string, unknown> } | { type: string })[]; stopReason?: string; errorMessage?: string }>;
+export type Complete = (input: { systemPrompt: string; messages: unknown[]; tools: unknown[] }, signal?: AbortSignal) => Promise<{ content: ({ type: 'text'; text: string } | { type: 'toolCall'; name: string; arguments: Record<string, unknown> } | { type: string })[]; stopReason?: string; errorMessage?: string }>;
 
-export async function understand(input: Understanding, complete: Complete): Promise<Route> {
+export async function understand(input: Understanding, complete: Complete, signal?: AbortSignal): Promise<Route> {
   const content = [
     { type: 'text', text: brief(input) },
     // The first page of a PDF and every image are shown, not described: a template or a style
     // reference is told apart by how it looks.
     ...input.files.flatMap(f => f.image ? [{ type: 'text', text: `附件 ${f.id} 的样子：` }, { type: 'image', data: f.image.data, mimeType: f.image.mime }] : []),
   ];
-  const message = await complete({ systemPrompt: SYSTEM, messages: [{ role: 'user', content, timestamp: Date.now() }], tools: [ROUTE_TOOL] });
+  const message = await complete({ systemPrompt: SYSTEM, messages: [{ role: 'user', content, timestamp: Date.now() }], tools: [ROUTE_TOOL] }, signal);
+  signal?.throwIfAborted();
   if (message.stopReason === 'error') throw new Error(`理解阶段的模型调用失败：${message.errorMessage ?? ''}`);
   const call = message.content.find((part): part is { type: 'toolCall'; name: string; arguments: Record<string, unknown> } => part.type === 'toolCall' && (part as { name?: string }).name === 'Route');
   if (call) return validate(call.arguments, input);
@@ -129,11 +130,10 @@ export async function understand(input: Understanding, complete: Complete): Prom
   return { action: 'reply', reason: '', text: text || '能再说具体一点吗？' };
 }
 
-/** The understanding stage's one model call, through the fix agent's model (the generator's model;
- * model choice is locked for this project). Resolved per call, so a server starts without a key. */
+/** The understanding stage uses the model captured for this turn. */
 export function modelComplete(model: () => import('../fix/istar.js').FixModel): Complete {
-  return async ({ systemPrompt, messages, tools }) => {
+  return async ({ systemPrompt, messages, tools }, signal) => {
     const runtime = model();
-    return await (await runtime.streamFn(runtime.model, { systemPrompt, messages, tools } as never, {})).result() as Awaited<ReturnType<Complete>>;
+    return await (await runtime.streamFn(runtime.model, { systemPrompt, messages, tools } as never, { signal })).result() as Awaited<ReturnType<Complete>>;
   };
 }

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowUp, FileText, LoaderCircle, Paperclip, RotateCcw, Square, X } from "lucide-react";
+import { ModelPicker } from "./model-picker";
+import { rememberModel, type ModelRef } from "../lib/models";
 import { uploadAttachment } from "../lib/session-api";
 import { attachmentPreviewUrl, readComposerDraft, writeComposerDraft } from "../lib/composer-drafts";
 import { useLocale } from "./locale";
@@ -20,7 +22,7 @@ interface RejectedAttachment { name: string; reason: "format" | "size" | "count"
 interface ComposerProps {
   session: () => Promise<string>;
   /** onAccepted clears the captured draft early; only invoke after durable server acceptance. */
-  onSend: (text: string, files: { id: string; name: string }[], onAccepted?: () => void) => Promise<void> | void;
+  onSend: (text: string, files: { id: string; name: string }[], onAccepted?: () => void, model?: ModelRef) => Promise<void> | void;
   busy?: boolean;
   onStop?: () => void;
   status?: ReactNode;
@@ -29,18 +31,22 @@ interface ComposerProps {
   autoFocus?: boolean;
   draftKey?: string;
   initialText?: string;
+  initialModel?: ModelRef;
+  onModelChange?: (model: ModelRef) => void;
   promptSeed?: PromptSeed;
   onSessionResolved?: (id: string) => void;
 }
 
 /** Shared home/conversation input. A submitted draft remains editable until the server accepts it.
  * Acceptance removes only the submitted revision and attachment keys, preserving newer edits. */
-export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus, status, tone, draftKey, initialText = "", promptSeed, onSessionResolved }: ComposerProps) {
+export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus, status, tone, draftKey, initialText = "", initialModel, onModelChange, promptSeed, onSessionResolved }: ComposerProps) {
   const { t } = useLocale();
   const [text, setText] = useState(initialText), [items, setItems] = useState<Item[]>([]);
   const [error, setError] = useState(""), [dragging, setDragging] = useState(false), [sending, setSending] = useState(false);
   const [rejected, setRejected] = useState<RejectedAttachment[]>([]);
   const [preview, setPreview] = useState<{ src: string; name: string }>();
+  const [model, setModel] = useState<ModelRef>(), [modelReady, setModelReady] = useState(false);
+  const modelRef = useRef<ModelRef | undefined>(undefined), explicitModel = useRef(false);
   const [ready, setReady] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null), picker = useRef<HTMLInputElement>(null), dialog = useRef<HTMLDialogElement>(null);
   const closePreview = useRef<HTMLButtonElement>(null), previewTrigger = useRef<HTMLElement | null>(null);
@@ -52,8 +58,13 @@ export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus
   const tRef = useRef(t); tRef.current = t;
   const persist = useCallback(() => {
     if (!draftKey || loadedKey.current !== draftKey) return;
-    writeComposerDraft(draftKey, { text: textRef.current, sessionId: sessionId.current, files: itemsRef.current.flatMap(item => item.state === "ready" && item.id ? [{ id: item.id, name: item.name, size: item.size, type: item.type }] : []) });
+    writeComposerDraft(draftKey, { text: textRef.current, model: modelRef.current, sessionId: sessionId.current, files: itemsRef.current.flatMap(item => item.state === "ready" && item.id ? [{ id: item.id, name: item.name, size: item.size, type: item.type }] : []) });
   }, [draftKey]);
+  const chooseModel = useCallback((value: ModelRef, explicit = true) => {
+    if (explicit) { explicitModel.current = true; rememberModel(value); }
+    modelRef.current = value; setModel(value); persist(); onModelChange?.(value);
+  }, [persist, onModelChange]);
+  useEffect(() => { if (initialModel && !explicitModel.current) chooseModel(initialModel, false); }, [initialModel, chooseModel]);
   const updateItems = useCallback((next: Item[]) => { itemsRef.current = next; setItems(next); persist(); }, [persist]);
   const updateText = useCallback((next: string) => { revision.current++; textRef.current = next; setText(next); persist(); }, [persist]);
   const dispose = (item: Item) => { item.controller?.abort(); if (item.preview?.startsWith("blob:")) URL.revokeObjectURL(item.preview); };
@@ -67,6 +78,7 @@ export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus
     for (const item of itemsRef.current) dispose(item);
     const saved = draftKey ? readComposerDraft(draftKey) : undefined;
     loadedKey.current = draftKey;
+    if (saved?.model) { explicitModel.current = true; modelRef.current = saved.model; setModel(saved.model); onModelChange?.(saved.model); }
     sessionId.current = saved?.sessionId;
     textRef.current = saved?.text ?? initialText;
     const restored: Item[] = (saved?.files ?? []).map(file => ({ ...file, key: `saved:${file.id}`, state: "ready", ...(saved?.sessionId && IMAGE.test(file.name) ? { preview: attachmentPreviewUrl(saved.sessionId, file.id) } : {}) }));
@@ -145,10 +157,11 @@ export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus
   }, []);
 
   const waitingForFiles = items.some(item => item.state !== "ready");
-  const canSend = ready && !!text.trim() && !waitingForFiles && !busy && !sending;
+  const canSend = ready && modelReady && !!text.trim() && !waitingForFiles && !busy && !sending;
   async function send() {
     if (!canSend || sendLock.current) return;
     sendLock.current = true; setSending(true); setError(""); setRejected([]);
+    const capturedModel = modelRef.current ? { ...modelRef.current } : undefined;
     const capturedRevision = revision.current, captured = [...itemsRef.current];
     const words = textRef.current.trim(), files = captured.map(item => ({ id: item.id!, name: item.name }));
     let accepted = false;
@@ -160,7 +173,7 @@ export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus
       for (const item of itemsRef.current) if (keys.has(item.key)) dispose(item);
       updateItems(itemsRef.current.filter(item => !keys.has(item.key)));
     };
-    try { await onSend(words, files, accept); accept(); }
+    try { await onSend(words, files, accept, capturedModel); accept(); }
     catch (cause) { if (alive.current) setError(cause instanceof Error ? cause.message : t("发送失败，内容和附件已保留。", "Could not send. Your message and attachments are saved.")); }
     finally { sendLock.current = false; if (alive.current) setSending(false); }
   }
@@ -190,6 +203,7 @@ export function Composer({ session, onSend, onStop, busy, placeholder, autoFocus
     </ul>}
     <div className={styles.bar}>
       <button type="button" className={styles.attach} aria-label={t("添加附件", "Add attachments")} title={t("添加论文、PPT 模板、图片或视频", "Add a paper, PPT template, image or video")} disabled={!ready || items.length >= MAX_FILES} onClick={() => picker.current?.click()}><Paperclip size={19} aria-hidden="true" /></button>
+      <ModelPicker value={model} onChange={chooseModel} onReady={setModelReady} />
       <input ref={picker} type="file" multiple hidden accept=".pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp,.mp4,.mov,.webm" onChange={event => { add(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
       <div className={styles.status}>{error || rejectionText ? <span className={styles.error} role="alert">{error || rejectionText}</span> : status}</div>
       {(busy || sending) && onStop ? <button type="button" className={styles.stop} aria-label={t("停止生成", "Stop generation")} title={t("停止生成", "Stop generation")} onClick={onStop}><Square size={13} fill="currentColor" aria-hidden="true" /></button> : <button type="button" className={styles.send} aria-label={t("发送", "Send")} title={t("发送（Enter）", "Send (Enter)")} disabled={!canSend} onClick={() => void send()}>{sending ? <LoaderCircle size={18} className={styles.spin} aria-hidden="true" /> : <ArrowUp size={19} aria-hidden="true" />}</button>}

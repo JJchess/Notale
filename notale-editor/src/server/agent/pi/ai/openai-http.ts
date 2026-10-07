@@ -1,5 +1,6 @@
 /** Explicit OpenAI Responses/Chat wire adapter. No provider or credential discovery.
  * Kept identical in the generator and editor's local agent forks. */
+import { transformMessages } from './transform-messages.js';
 import { AssistantMessageEventStream } from './event-stream.js';
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions, ToolCall } from './types.js';
 
@@ -19,10 +20,10 @@ export function openAIHttpBody(model: Model<Api>, context: Context, options: Sim
   const responses = model.api === 'openai-responses', input: Row[] = [], toolImages: Row[] = [];
   const flushToolImages = () => { if (toolImages.length) input.push({ role: 'user', content: toolImages.splice(0) }); };
   if (!responses && context.systemPrompt) input.push({ role: 'system', content: context.systemPrompt });
-  for (const message of context.messages) {
+  for (const message of transformMessages(context.messages, model)) {
     if (message.role !== 'toolResult') flushToolImages();
     if (message.role === 'assistant') {
-      if (responses && message.api === model.api && message.provider === model.provider && message.model === model.id && message.providerReplay) {
+      if (message.api === model.api && message.provider === model.provider && message.model === model.id && message.providerReplay) {
         input.push(...message.providerReplay); continue;
       }
       const text = message.content.filter(p => p.type === 'text').map(p => p.text).join('');
@@ -75,6 +76,7 @@ function completeMessage(message: AssistantMessage, raw: Row, responses: boolean
   } else {
     const choice = raw.choices?.[0];
     if (!choice?.finish_reason) throw new Error('Model stream ended without a finish reason');
+    message.providerReplay = [{ role: 'assistant', ...structuredClone(choice.message) }];
     if (choice.message?.content) message.content.push({ type: 'text', text: choice.message.content });
     for (const call of choice.message?.tool_calls ?? []) message.content.push({ type: 'toolCall', id: call.id, name: call.function.name, arguments: JSON.parse(call.function.arguments || '{}') });
     message.stopReason = choice.finish_reason === 'length' ? 'length' : choice.finish_reason === 'content_filter' ? 'error' : message.content.some(p => p.type === 'toolCall') ? 'toolUse' : 'stop';
@@ -110,7 +112,7 @@ export function streamOpenAIHttp(model: Model<Api>, context: Context, options: S
         const reader = response.body?.getReader();
         if (!reader) throw new Error('Model response has no body');
         const decoder = new TextDecoder(); let buffer = '';
-        const chat: Row = { choices: [{ message: { content: '', tool_calls: [] } }] };
+        const chat: Row = { choices: [{ message: { role: 'assistant', content: '', tool_calls: [] } }] };
         let previewIndex: number | undefined;
         const delta = (text: string) => {
           if (!text) return;
@@ -132,10 +134,12 @@ export function streamOpenAIHttp(model: Model<Api>, context: Context, options: S
             if (choice.finish_reason) chat.choices[0].finish_reason = choice.finish_reason;
             const change = choice.delta ?? {};
             if (change.content) { chat.choices[0].message.content += change.content; delta(change.content); }
+            if (change.reasoning_content) chat.choices[0].message.reasoning_content = (chat.choices[0].message.reasoning_content ?? '') + change.reasoning_content;
             for (const call of change.tool_calls ?? []) {
               const index = call.index ?? 0;
-              const target = chat.choices[0].message.tool_calls[index] ??= { id: '', function: { name: '', arguments: '' } };
+              const target = chat.choices[0].message.tool_calls[index] ??= { id: '', type: 'function', function: { name: '', arguments: '' } };
               if (call.id) target.id = call.id;
+              if (call.extra_content) target.extra_content = { ...target.extra_content, ...call.extra_content };
               if (call.function?.name) target.function.name += call.function.name;
               if (call.function?.arguments) target.function.arguments += call.function.arguments;
             }

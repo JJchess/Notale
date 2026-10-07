@@ -1,3 +1,4 @@
+import type { ModelRef } from "./models";
 import type { Attachment, SessionPage, SessionSnapshot, SessionSummary, TurnEvent } from "./session-protocol";
 
 const base = "/notale-session/v1";
@@ -33,9 +34,9 @@ async function events(response: Response, onEvent: (event: TurnEvent) => void) {
 }
 /** Sends one message and reads its events as they come. The message runs on the server either way:
  * leaving the page only stops listening. */
-export async function sendTurn(sessionId: string, text: string, fileIds: string[], onEvent: (event: TurnEvent) => void, signal?: AbortSignal) {
+export async function sendTurn(sessionId: string, text: string, fileIds: string[], onEvent: (event: TurnEvent) => void, signal?: AbortSignal, model?: ModelRef) {
   await events(await fetch(`${base}/sessions/${encodeURIComponent(sessionId)}/turns`, {
-    method: "POST", signal, headers: { "content-type": "application/json" }, body: JSON.stringify({ text, fileIds }),
+    method: "POST", signal, headers: { "content-type": "application/json" }, body: JSON.stringify({ text, fileIds, model }),
   }), onEvent);
 }
 /** The message in flight, from its start: what happened so far, then the rest. */

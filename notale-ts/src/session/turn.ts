@@ -1,3 +1,4 @@
+import type { ModelRef } from '../adapters/models/selection.js';
 import { readFile } from 'node:fs/promises';
 import { loadAttachment, preview } from './attachments.js';
 import { understand, type Artifact, type Complete, type Route } from './understand.js';
@@ -5,6 +6,7 @@ import type { Session } from './session.js';
 
 /** The two wholes this layer hands work to. Neither knows about the other or about sessions. */
 export interface GenerateRequest {
+  model?: ModelRef;
   query: string; title?: string; minutes?: number; audience?: string; scenario?: string; style?: string;
   materials: { name: string; file: string; kind: string }[];
   template?: { name: string; file: string };
@@ -20,7 +22,7 @@ export interface Generator {
 }
 /** `images` go in the message itself (pi); `files` are documents and videos the agent reads with
  * read, from its workspace (Kimi Code: the prompt names the file, the agent pulls it). */
-export interface FixRequest { session: Session; target: string; instruction: string; page?: number; images: { mime: string; data: string }[]; files: { file: string; name: string; kind: string }[] }
+export interface FixRequest { model?: ModelRef; session: Session; target: string; instruction: string; page?: number; images: { mime: string; data: string }[]; files: { file: string; name: string; kind: string }[] }
 export interface Fixer {
   /** Changes a copy of `target` and delivers it as a new run based on it. No change (the agent only
    * answered, or asked back) is no run: `runId` is absent and `text` is its answer. */
@@ -39,7 +41,7 @@ export type TurnEvent =
 
 const now = () => new Date().toISOString();
 /** One message: keep it, understand it, and hand it to whoever does the work. */
-export async function turn(session: Session, message: { text: string; fileIds: string[] },
+export async function turn(session: Session, message: { text: string; fileIds: string[]; model?: ModelRef },
   deps: { complete: Complete; generator: Generator; fixer: Fixer; emit: (event: TurnEvent) => void; signal?: AbortSignal }) {
   // Files were uploaded on their own (POST …/files); a message only names them, once each.
   const used = session.usedFiles;
@@ -47,12 +49,13 @@ export async function turn(session: Session, message: { text: string; fileIds: s
     if (used.has(id)) throw Object.assign(new Error('这个附件已经随上一条消息发过了'), { status: 400 });
     await loadAttachment(session, id).catch(() => { throw Object.assign(new Error('附件不存在'), { status: 400 }); });
   }
-  await session.append({ type: 'user', text: message.text, files: message.fileIds, at: now() });
+  await session.append({ type: 'user', ...(message.model ? { model: message.model } : {}), text: message.text, files: message.fileIds, at: now() });
 
   const artifacts: Artifact[] = [];
   for (const run of session.artifacts) artifacts.push({ runId: run.runId, kind: run.kind, ...(await deps.generator.describe(run.runId).catch(() => ({ title: '（读不到）', pages: [] }))) });
   const files = await Promise.all(session.pendingFiles.map(id => preview(session, id)));
-  const route = await understand({ text: message.text, history: session.history().slice(0, -1), artifacts, files }, deps.complete);
+  const route = await understand({ text: message.text, history: session.history().slice(0, -1), artifacts, files }, deps.complete, deps.signal);
+  deps.signal?.throwIfAborted();
   await session.append({ type: 'understood', route, at: now() });
   deps.emit({ type: 'understood', route });
 
@@ -73,7 +76,8 @@ export async function turn(session: Session, message: { text: string; fileIds: s
     const { action: _action, reason: _reason, files: _files, language, ...fields } = route;
     // The generator has no language field; the scenario carries it.
     const scenario = [fields.scenario, language ? `全部页面文字使用${language}撰写` : undefined].filter(Boolean).join('；');
-    const { runId } = await deps.generator.start({ ...fields, ...(scenario ? { scenario } : {}), materials, ...(templates[0] ? { template: templates[0] } : {}), styleImages });
+    deps.signal?.throwIfAborted();
+    const { runId } = await deps.generator.start({ ...fields, ...(message.model ? { model: message.model } : {}), ...(scenario ? { scenario } : {}), materials, ...(templates[0] ? { template: templates[0] } : {}), styleImages });
     await session.append({ type: 'run', runId, kind: 'generate', at: now() });
     deps.emit({ type: 'run', runId, kind: 'generate' });
     // A stop cancels the run; following goes on until the run says it has ended.
@@ -88,7 +92,8 @@ export async function turn(session: Session, message: { text: string; fileIds: s
   const images = await Promise.all(attached.filter(a => a.meta.kind === 'image').map(async ({ meta, file }) => ({ mime: meta.mime, data: (await readFile(file)).toString('base64') })));
   const references = attached.filter(a => a.meta.kind !== 'image').map(({ meta, file }) => ({ file, name: meta.name, kind: meta.kind }));
   let announced = '', recorded: Promise<void> = Promise.resolve();
-  const fixed = await deps.fixer.run({ session, target: route.target, instruction: route.instruction, ...(route.page ? { page: route.page } : {}), images, files: references },
+  deps.signal?.throwIfAborted();
+  const fixed = await deps.fixer.run({ session, ...(message.model ? { model: message.model } : {}), target: route.target, instruction: route.instruction, ...(route.page ? { page: route.page } : {}), images, files: references },
     event => {
       // The fixer names its run as soon as it has one; that is the session's new artifact.
       if (typeof event.runId === 'string' && !announced) { announced = event.runId; recorded = session.append({ type: 'run', runId: announced, kind: 'fix', basedOn: route.target, at: now() }); deps.emit({ type: 'run', runId: announced, kind: 'fix', basedOn: route.target }); }

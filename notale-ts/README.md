@@ -12,7 +12,7 @@ npm run build
 npm run dev -- serve --starter
 ```
 
-The starter service uses deterministic data and makes no model requests. For real generation, set `GEMINI_API_KEY` in your environment or in the workspace's ignored `.env.local` (one file at the Notale root, shared with notale-editor; copy `../.env.example`), then run `npm run dev -- serve`. `PARATERA_API_KEY` is needed when the ImageGen tool is used. You can select another local secrets file with `--env-file PATH`; `NOTALE_DOTENV_DISABLED=1` disables loading a file. Environment variables take precedence over file values. Keep credentials out of Git.
+The starter service uses deterministic data and makes no model requests. For real generation, set `GEMINI_API_KEY` in your environment or in the workspace's ignored `.env.local` (one file at the Notale root, shared with notale-editor; copy `../.env.example`), then run `npm run dev -- serve`. `PARATERA_API_KEY` enables the Paratera model and is also needed when the ImageGen tool is used. You can select another local secrets file with `--env-file PATH`; `NOTALE_DOTENV_DISABLED=1` disables loading a file. Environment variables take precedence over file values. Keep credentials out of Git.
 
 The separate [Viewer](../notale-viewer/README.md) connects to the service at `http://127.0.0.1:4321` by default. You can also generate directly:
 
@@ -55,3 +55,11 @@ Completed lectures are static directories with relative regular files. The servi
 ## Licensing
 
 Notale-owned source code is MIT licensed. Bundled third-party fonts, browser libraries, Python wheels, and sample assets retain their own notices; see `resources/licenses/`, the notices shipped with generated artifacts, and the [resource audit](RESOURCE-AUDIT.md). Resource provenance is tracked separately from source-code licensing.
+
+## Per-message models
+
+The standalone Viewer composer selects one model for the whole message: understanding and title, planning, visual design, page generation, and edits. The default is **Gemini 3.8 Flash** (Google); **GLM-5.3-Flash** (Paratera) is also available. Configure `GEMINI_API_KEY` and/or `PARATERA_API_KEY` on the server. Credentials never reach the browser.
+
+`resources/config.yaml` → `model_selection` is the allowlist. Each entry references a builder profile; all stages use that profile for the submitted turn. `GET /v1/models` exposes labels, IDs and credential availability. Both `POST /v1/runs` and `POST /v1/sessions/:id/turns` accept `model: { providerId, modelId }`; omitting it selects the server default. The reference is stored with the message and run. Invalid or unconfigured selections fail before admission, without falling back to another provider. Changing the choice while a message runs applies to the next message.
+
+Host-injected deployments retain their explicit pipeline and credentials and do not expose standalone model choices. Provider-native reasoning stays with its original model; cross-model edit history retains portable text and tool results.

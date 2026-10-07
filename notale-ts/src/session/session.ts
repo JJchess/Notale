@@ -1,3 +1,4 @@
+import type { ModelRef } from '../adapters/models/selection.js';
 import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -7,7 +8,7 @@ import { AUTO_TITLE_MAX, normalizeTitle, TITLE_MAX } from '../core/title.js';
  * session has produced -- its artifacts -- are the runs it dispatched; a fix may only touch those. */
 export type Entry =
   | { type: 'session'; id: string; createdAt: string }
-  | { type: 'user'; text: string; files: string[]; at: string }
+  | { type: 'user'; model?: ModelRef; text: string; files: string[]; at: string }
   | { type: 'understood'; route: import('./understand.js').Route; at: string }
   | { type: 'run'; runId: string; kind: 'generate' | 'fix'; basedOn?: string; at: string }
   | { type: 'finished'; runId: string; status: string; at: string }

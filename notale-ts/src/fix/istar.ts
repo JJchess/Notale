@@ -29,13 +29,17 @@ export const ASSISTANT_NAME = 'Istar';
 
 export interface FixStep { label: string; status: 'active' | 'done'; chip?: string; detail?: string[] }
 export interface FixModel { model: Model<Api>; streamFn: StreamFn; apiKey: string; vision: boolean }
-export function createConfiguredFixModel(options: { model: Model<Api>; apiKey: string; timeoutMs?: number; vision?: boolean; reasoning?: SimpleStreamOptions['reasoning'] }): FixModel {
+export function createConfiguredFixModel(options: { model: Model<Api>; apiKey: string; timeoutMs?: number; vision?: boolean; reasoning?: SimpleStreamOptions['reasoning']; requestOptions?: Record<string, unknown> }): FixModel {
   const { model, apiKey } = options;
   if (!apiKey.trim()) throw new Error('Model credential is required');
   const stream = model.api === 'google-generative-ai' ? streamGoogle : ['openai-completions', 'openai-responses'].includes(model.api) ? streamOpenAIHttp : undefined;
   if (!stream) throw new Error(`Unsupported model API: ${model.api}`);
   return { model, apiKey, vision: options.vision !== false && model.input.includes('image'),
-    streamFn: (target, context, streamOptions) => stream(target, context, { ...streamOptions, ...(options.reasoning ? { reasoning: options.reasoning } : {}), apiKey, timeoutMs: options.timeoutMs ?? 300_000 }) };
+    streamFn: (target, context, streamOptions) => stream(target, context, { ...streamOptions, ...(options.reasoning ? { reasoning: options.reasoning } : {}), apiKey, timeoutMs: options.timeoutMs ?? 300_000,
+      ...(options.requestOptions ? { onPayload: async (body, target) => {
+        const payload = { ...(body as Record<string, unknown>), ...options.requestOptions };
+        return await streamOptions?.onPayload?.(payload, target) ?? payload;
+      } } : {}) }) };
 }
 
 /** Standalone keeps Gemini's native protocol and thought signatures. An explicit host config

@@ -1,4 +1,5 @@
 "use client";
+import type { ModelRef } from "../lib/models";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ArchiveRestore, ArrowDown, ChevronLeft, ChevronRight, Download, Maximize, MessageSquare, Minimize, PanelRightClose, PanelRightOpen, Presentation, RefreshCw } from "lucide-react";
@@ -38,6 +39,7 @@ function SessionWorkspace({ sessionId }: { sessionId: string }) {
   const session = useSession(sessionId), { snapshot, live, typing, step, sending, connection, uncertain, reload } = session;
   const [picked, setPicked] = useState<string>(), [sentNames, setSentNames] = useState<Map<string, string>>(new Map());
   const [localError, setLocalError] = useState(""), [stopping, setStopping] = useState(false), [restoring, setRestoring] = useState(false);
+  const [nextModel, setNextModel] = useState<ModelRef>();
   const [pendingRetry, setPendingRetry] = useState<PendingTurn>();
   const shell = useRef<HTMLElement>(null), stage = useRef<HTMLElement>(null);
   const [talkWidth, setTalkWidth] = useState(TALK.initial), [resizing, setResizing] = useState(false), [viewport, setViewport] = useState(0);
@@ -99,28 +101,28 @@ function SessionWorkspace({ sessionId }: { sessionId: string }) {
   const setPage = useCallback((page: string) => { if (shownId) setPageRecord(current => current[shownId] === page ? current : { ...current, [shownId]: page }); }, [shownId]);
   const playerViewing = useCallback((page: string) => setPage(page.replace(/\.html$/, "")), [setPage]);
   const pick = (runId: string) => { setPicked(runId); setTab("lecture"); };
-  const send = useCallback(async (text: string, files: { id: string; name: string }[], onAccepted?: () => void) => {
+  const send = useCallback(async (text: string, files: { id: string; name: string }[], onAccepted?: () => void, model?: ModelRef) => {
     setLocalError("");
     setSentNames(current => new Map([...current, ...files.map(file => [file.id, file.name] as const)]));
     reading.latest();
-    await session.send(text, files.map(file => file.id), onAccepted);
+    await session.send(text, files.map(file => file.id), onAccepted, model);
   }, [session.send, reading.latest]);
   useEffect(() => {
     if (!snapshot) return;
     const pending = peekPendingTurn(sessionId);
     if (!pending) return;
-    if (acceptedMessage(snapshot, 0, pending.text, pending.files.map(file => file.id))) { ackPendingTurn(sessionId, pending.id); setPendingRetry(undefined); return; }
+    if (acceptedMessage(snapshot, 0, pending.text, pending.files.map(file => file.id), pending.model)) { ackPendingTurn(sessionId, pending.id); setPendingRetry(undefined); return; }
     if (snapshot.busy || sending || uncertain) return;
     if (pending.claimed) { setPendingRetry(pending); return; }
     if (snapshot.entries.some(entry => entry.type === "user")) { setPendingRetry(pending); return; }
     const claimed = claimPendingTurn(sessionId);
-    if (claimed) void send(claimed.text, claimed.files).catch(() => setPendingRetry(claimed));
+    if (claimed) void send(claimed.text, claimed.files, undefined, claimed.model).catch(() => setPendingRetry(claimed));
   }, [snapshot, sessionId, sending, uncertain, send]);
   const retryPending = async () => {
     if (!pendingRetry || busy) return;
     releasePendingTurn(sessionId, pendingRetry.id);
     const pending = claimPendingTurn(sessionId);
-    if (pending) { setPendingRetry(undefined); try { await send(pending.text, pending.files); } catch { setPendingRetry(pending); } }
+    if (pending) { setPendingRetry(undefined); try { await send(pending.text, pending.files, undefined, pending.model); } catch { setPendingRetry(pending); } }
   };
   const stop = async () => {
     if (stopping) return;
@@ -223,7 +225,7 @@ function SessionWorkspace({ sessionId }: { sessionId: string }) {
                 {turn.user && <UserBubble entry={turn.user} names={names} sessionId={sessionId} />}
                 {hasReply && <IstarCard runs={views} replies={turn.replies} question={turn.question?.text} understood={why} typing={last ? typing : undefined}
                   thinking={last && sending} step={last ? step?.label : undefined} error={last ? error : undefined} onPick={pick}
-                  options={last && turn.question?.options?.length ? <div className="talk-options" role="group" aria-label={t("回答澄清问题", "Answer clarification")}>{turn.question.options.map(option => <button key={option} type="button" disabled={busy || snapshot?.archived} onClick={() => { void send(option, []).catch(cause => setLocalError(cause instanceof Error ? cause.message : t("发送失败", "Could not send"))); }}>{option}</button>)}</div> : undefined} />}
+                  options={last && turn.question?.options?.length ? <div className="talk-options" role="group" aria-label={t("回答澄清问题", "Answer clarification")}>{turn.question.options.map(option => <button key={option} type="button" disabled={busy || snapshot?.archived} onClick={() => { void send(option, [], undefined, nextModel).catch(cause => setLocalError(cause instanceof Error ? cause.message : t("发送失败", "Could not send"))); }}>{option}</button>)}</div> : undefined} />}
               </Fragment>;
             })}
             {error && !turns.length && <p className="talk-error" role="alert">{error}</p>}
@@ -231,7 +233,7 @@ function SessionWorkspace({ sessionId }: { sessionId: string }) {
             {pendingRetry && !busy && <div className="talk-recovery"><p>{t("首页的输入已保留，消息尚未确认发送。", "Your home-page draft is preserved. Sending has not been confirmed.")}</p><p>{pendingRetry.text}</p><button type="button" onClick={() => void retryPending()}>{t("发送保留的输入", "Send preserved draft")}</button></div>}
           </div>
         </div>{reading.paused && <button type="button" className="workbench-latest" onClick={reading.latest}><ArrowDown size={14} />{t("回到最新", "Jump to latest")}</button>}</div>
-        <div className="session-compose"><Composer key={sessionId} draftKey={`session:${sessionId}`} session={async () => sessionId} busy={busy || !snapshot || snapshot.archived}
+        <div className="session-compose"><Composer initialModel={snapshot?.entries.findLast(entry => entry.type === "user")?.model} onModelChange={setNextModel} key={sessionId} draftKey={`session:${sessionId}`} session={async () => sessionId} busy={busy || !snapshot || snapshot.archived}
           onStop={busy && !uncertain && !snapshot?.archived ? () => void stop() : undefined}
           placeholder={snapshot?.archived ? t("恢复讲义后继续对话", "Restore this lecture to continue") : finished.length ? t("修改要求或问题", "Changes or questions") : t("讲义主题或要求", "Topic or instructions")} onSend={send} /></div>
       </aside>

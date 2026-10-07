@@ -71,3 +71,15 @@ test("storage-denied handoff survives client navigation and prevents a stale ack
   ackPendingTurn("handoff-memory", next.id);
   assert.equal(peekPendingTurn("handoff-memory"), undefined);
 });
+
+test("draft and homepage handoff capture the model, including a safe retry", () => {
+  storage();
+  const model = { providerId: "paratera", modelId: "GLM-5.3-Flash" };
+  writeComposerDraft("model-draft", { text: "new", files: [], model });
+  assert.deepEqual(readComposerDraft("model-draft")?.model, model);
+  const turn = putPendingTurn("model-session", { text: "new", files: [], model });
+  model.modelId = "changed-for-next-turn";
+  assert.equal(claimPendingTurn("model-session")?.model?.modelId, "GLM-5.3-Flash");
+  releasePendingTurn("model-session", turn.id);
+  assert.equal(claimPendingTurn("model-session")?.model?.modelId, "GLM-5.3-Flash");
+});
