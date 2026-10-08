@@ -6,7 +6,7 @@
 [![版本](https://img.shields.io/badge/version-0.1.0-6246C8?style=flat-square)](CHANGELOG.md)
 [![Node.js](https://img.shields.io/badge/Node.js-20.19%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white)](notale-editor/package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](notale-editor/tsconfig.json)
-[![MIT 许可证](https://img.shields.io/badge/license-MIT-2EA44F?style=flat-square)](LICENSE)
+[![Apache License 2.0](https://img.shields.io/badge/license-Apache%202.0-2EA44F?style=flat-square)](LICENSE)
 
 [English](README.md) · **简体中文**
 
