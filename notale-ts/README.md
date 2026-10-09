@@ -63,3 +63,13 @@ The standalone Viewer composer selects one model for the whole message: understa
 `resources/config.yaml` → `model_selection` is the allowlist. Each entry references a builder profile; all stages use that profile for the submitted turn. `GET /v1/models` exposes labels, IDs and credential availability. Both `POST /v1/runs` and `POST /v1/sessions/:id/turns` accept `model: { providerId, modelId }`; omitting it selects the server default. The reference is stored with the message and run. Invalid or unconfigured selections fail before admission, without falling back to another provider. Changing the choice while a message runs applies to the next message.
 
 Host-injected deployments retain their explicit pipeline and credentials and do not expose standalone model choices. Provider-native reasoning stays with its original model; cross-model edit history retains portable text and tool results.
+
+## Visual request size
+
+Style selection sends all ten overview sheets as temporary 1200-pixel JPEGs at quality 60, with a 1 MiB budget for the complete serialized model request. Selected styles are then loaded at their existing detail resolution; overview images are removed from subsequent theme requests and repeated reference images are deduplicated. Original catalogue assets are unchanged.
+
+If selection exceeds its local budget or the gateway returns HTTP 413, it can replace the overviews once with 1000-pixel JPEGs at quality 50. The replacement request must fit both 768 KiB and 75% of the original request size. It never retries the same oversized body or silently omits styles.
+
+Set an optional positive integer `max_request_bytes` in `model` or a builder profile to enforce a gateway-specific limit. Builder profiles inherit the top-level value unless they override it; a per-call budget and the profile limit use the smaller value. The byte count includes UTF-8 text, image base64, tools, adapter packaging and `request_options`. Other stages have no new default 1 MiB limit. Host integrations should pass this value through their injected model configuration.
+
+Request diagnostics distinguish local budget failures from gateway HTTP 413 and include the stage, adapter, image count and serialized bytes without printing image data or credentials. A successful source update still requires a smoke check against the deployment's actual gateway limit.

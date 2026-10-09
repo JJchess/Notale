@@ -3,6 +3,7 @@ import { workflowNotice, observedStep, type ProgressObserver } from './workflow-
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ChatInputBlock, ChatMessage, ChatModel, ToolCall } from '../adapters/models/chat-model.js';
+import { ModelHttpError, ModelRequestBudgetError } from '../adapters/models/runtime.js';
 import { PLANNER_IDENTITY, plannerPrompt, resolvePath } from './planner-contract.js';
 import { chatTools, errorOutput, objectArguments, plannerInstructions, type MediaOutput, type PlanningRequest, type WorkflowTrace } from './planner.js';
 import { valueError } from './theme.js';
@@ -14,6 +15,7 @@ const runtimeError = (message: string): Error => Object.assign(new Error(message
 export interface DirectorRequest extends PlanningRequest { style?: string; template?: string }
 export interface StyleInput { text: string; images: ChatInputBlock[] }
 export interface ReferenceImage { id: string; shot: string }
+export interface SelectionImageOptions { width: number; quality: number }
 export interface DirectorPorts {
   progress?: ProgressObserver;
   model: Pick<ChatModel, 'respond'>;
@@ -24,7 +26,7 @@ export interface DirectorPorts {
     match(request?: string): string | undefined;
     identify(value: unknown): string;
     readPath(value: string): string;
-    selectionInputs(): Promise<StyleInput>;
+    selectionInputs(options?: SelectionImageOptions): Promise<StyleInput>;
     selectedInputs(ids: string[]): Promise<StyleInput>;
     inputs(request?: string): Promise<StyleInput>;
     detail(value: unknown): Promise<StyleInput>;
@@ -91,16 +93,49 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
   }
   if (!ports.visionInput) throw valueError('Style Director 需要启用 vision_input 的模型，不能盲写参考主题');
   const history: ChatMessage[] = [];
+  let selectionMessage: ChatMessage | undefined;
+  let selectionReduced = false;
+  let selectionBudget = 1024 * 1024;
+  const replaceSelectionContent = (content: ChatInputBlock[]) => {
+    if (!selectionMessage) throw runtimeError('选样请求缺少参考图片消息');
+    const previous = selectionMessage;
+    selectionMessage = { ...previous, content };
+    history[history.indexOf(previous)] = selectionMessage;
+  };
   const request = async (content: string | ChatInputBlock[] | undefined, tools: ReturnType<typeof writeSpec>, step: string) => {
     signal?.throwIfAborted();
-    if (content !== undefined) history.push({ role: 'user', content });
+    let submitted = content;
+    if (content !== undefined) {
+      const message: ChatMessage = { role: 'user', content };
+      history.push(message);
+      if (step === 'style-pick' && !selectionMessage) selectionMessage = message;
+    }
     const started = new Date().toISOString();
-    const messages: ChatMessage[] = [{ role: 'system', content: PLANNER_IDENTITY + '\n\n' + guidance.visualSlopBlock() }, ...history];
+    const messagesForRequest = (): ChatMessage[] => [{ role: 'system', content: PLANNER_IDENTITY + '\n\n' + guidance.visualSlopBlock() }, ...history];
+    let messages = messagesForRequest();
     workflowNotice(ports.progress, 'director', step, 'started', step === 'style-pick' ? '开始选择参考风格' : '开始生成主题');
-    const response = await ports.model.respond(messages, tools, signal);
+    const respond = () => ports.model.respond(messages, tools, signal, { stage: step, ...(step === 'style-pick' ? { maxRequestBytes: selectionBudget } : {}) });
+    let response: Awaited<ReturnType<ChatModel['respond']>>;
+    try { response = await respond(); }
+    catch (error) {
+      const tooLarge = error instanceof ModelRequestBudgetError || (error instanceof ModelHttpError && error.status === 413);
+      const diagnostic = tooLarge ? error.request : undefined;
+      if (step !== 'style-pick' || selectionReduced || !diagnostic || !(diagnostic.requestBytes > 0)) throw error;
+      signal?.throwIfAborted();
+      selectionReduced = true;
+      selectionBudget = Math.floor(Math.min(768 * 1024, diagnostic.requestBytes * 0.75, diagnostic.maxRequestBytes ?? Infinity));
+      const smaller = await ports.catalog.selectionInputs({ width: 1000, quality: 50 });
+      const initial = selectionMessage?.content;
+      if (!Array.isArray(initial) || initial[0]?.type !== 'text') throw runtimeError('选样请求缺少完整指令');
+      submitted = [initial[0], ...smaller.images];
+      replaceSelectionContent(submitted);
+      messages = messagesForRequest();
+      workflowNotice(ports.progress, 'director', step, 'reworking', '参考图片过大，缩小后重试');
+      response = await respond();
+    }
     workflowNotice(ports.progress, 'director', step, 'completed', step === 'style-pick' ? '本轮选样响应已返回' : '本轮主题响应已返回');
     modelCalls++;
-    await ports.trace({ step, started, finished: new Date().toISOString(), request: messages, response, ...(content !== undefined ? { submitted: content } : {}) });
+    await ports.trace({ step, started, finished: new Date().toISOString(), request: messages, response, ...(submitted !== undefined ? { submitted } : {}) });
     history.push(response.message);
     return response.message.tool_calls ?? [];
   };
@@ -130,6 +165,9 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
         await writeFile(out, submission.css!.trim() + '\n', 'utf8');
         workflowNotice(ports.progress, 'director', 'selection', 'completed', '参考风格已确定');
         picks = ids;
+        // Preserve the selection rationale and tool-call pairs, without
+        // carrying all ten overview images into every theme round.
+        if (Array.isArray(selectionMessage?.content)) replaceSelectionContent(selectionMessage.content.filter(block => block.type !== 'image_url'));
         break;
       }
       workflowNotice(ports.progress, 'director', 'selection', 'reworking', '参考风格未通过检查，继续调整');
@@ -199,7 +237,15 @@ export async function direct(run: DirectorRequest, ports: DirectorPorts, signal?
       } catch (error) { if (signal?.aborted) throw signal.reason; if (!resourceFailure(error) && !['TypeError', 'KeyError'].includes((error as Error)?.name)) throw error; output = errorOutput(error); }
       result(call, output);
     }
-    if (pending.length) history.push({ role: 'user', content: pending });
+    if (pending.length) {
+      const known = new Set(history.flatMap(message => Array.isArray(message.content) ? message.content.flatMap(block => block.type === 'image_url' ? [block.image_url.url] : []) : []));
+      const fresh = pending.filter(block => {
+        if (block.type !== 'image_url') return true;
+        if (known.has(block.image_url.url)) return false;
+        known.add(block.image_url.url); return true;
+      });
+      if (fresh.length) history.push({ role: 'user', content: fresh });
+    }
     if (writes.length) {
       if (!bad.length) {
         if (!ports.theme.references(css!).length && available.length) css = css!.replace('==== /INTERFACE ====', `reference ${available[0]}\n==== /INTERFACE ====`);

@@ -9,6 +9,7 @@ import { modelSelectionSchema } from './selection.js';
 const common = {
   api_key_env: z.string(), reasoning_effort: z.string(), vision_input: z.boolean(),
   http_timeout_sec: z.number().int().optional(), max_output_tokens: z.number().int().optional(),
+  max_request_bytes: z.number().int().positive().optional(),
   replay_reasoning: z.boolean().optional(), request_options: z.record(z.string(), z.unknown()).optional(),
 };
 const ModelSection = z.object({
@@ -37,6 +38,7 @@ export interface ResolvedProfile {
   id: string; model: string; base_url: string; api_key_env: string; adapter: string;
   reasoning_effort: string; vision_input: boolean; http_timeout_sec: number;
   max_output_tokens: number; request_options: Record<string, unknown>; replay_reasoning: boolean;
+  max_request_bytes?: number;
 }
 
 export function loadConfig(file = path.join(RESOURCES, 'config.yaml')): ModelConfig {
@@ -50,11 +52,13 @@ export function resolveBuilderProfile(cfg: ModelConfig, requested?: string, env:
   const raw = profiles[id]!;
   const base_url = (raw.base_url_env ? env[raw.base_url_env] : '') || raw.base_url;
   if (!base_url) throw new Error(`builder profile '${id}' has no base_url`);
+  const maxRequestBytes = raw.max_request_bytes ?? cfg.model.max_request_bytes;
   return {
     id, model: raw.model, base_url, api_key_env: raw.api_key_env, adapter: raw.adapter,
     reasoning_effort: raw.reasoning_effort, vision_input: raw.vision_input,
     http_timeout_sec: raw.http_timeout_sec || cfg.model.http_timeout_sec || 900,
     max_output_tokens: raw.max_output_tokens || cfg.model.max_output_tokens || 128000,
+    ...(maxRequestBytes !== undefined ? { max_request_bytes: maxRequestBytes } : {}),
     request_options: { ...raw.request_options }, replay_reasoning: raw.replay_reasoning ?? raw.adapter === 'chat',
   };
 }
@@ -66,6 +70,7 @@ export function defaultModelProfile(cfg: ModelConfig = loadConfig()): ResolvedPr
     id: 'default', model: raw.name, base_url: raw.base_url, api_key_env: raw.api_key_env, adapter,
     reasoning_effort: raw.reasoning_effort || 'medium', vision_input: raw.vision_input ?? true,
     http_timeout_sec: raw.http_timeout_sec || 900, max_output_tokens: raw.max_output_tokens || 128000,
+    ...(raw.max_request_bytes !== undefined ? { max_request_bytes: raw.max_request_bytes } : {}),
     request_options: { ...raw.request_options }, replay_reasoning: raw.replay_reasoning ?? adapter === 'chat',
   };
 }

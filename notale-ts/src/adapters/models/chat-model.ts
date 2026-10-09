@@ -32,6 +32,11 @@ export interface AssistantTurn {
 }
 
 /** Response port implemented by the baseline multi-wire runtime. */
+export interface ModelRequestOptions {
+  stage?: string;
+  maxRequestBytes?: number;
+}
+
 export interface ChatModel {
-  respond(messages: ChatMessage[], tools?: ToolDefinition[], signal?: AbortSignal): Promise<AssistantTurn>;
+  respond(messages: ChatMessage[], tools?: ToolDefinition[], signal?: AbortSignal, options?: ModelRequestOptions): Promise<AssistantTurn>;
 }

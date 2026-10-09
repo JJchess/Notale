@@ -1,7 +1,7 @@
 /** Canonical Responses-shaped model boundary. */
 import { setTimeout as delay } from 'node:timers/promises';
 import { Agent } from 'undici';
-import type { AssistantTurn, ChatMessage, ToolDefinition } from './chat-model.js';
+import type { AssistantTurn, ChatMessage, ModelRequestOptions, ToolDefinition } from './chat-model.js';
 import { defaultModelProfile, loadConfig, resolveBuilderProfile, skillProfiles, type ResolvedProfile } from './profiles.js';
 
 type Item = Record<string, any>;
@@ -149,10 +149,38 @@ export function normalizedBaseUrl(value: string): string {
   url.pathname = url.pathname.replace(/\/+$/, '') || '/v1';
   return url.toString();
 }
+/** Transport metadata only: never retain prompts, images, endpoints or credentials here. */
+export interface ModelRequestDiagnostics {
+  stage?: string;
+  adapter: string;
+  requestBytes: number;
+  maxRequestBytes?: number;
+  imageCount: number;
+}
+export class ModelRequestBudgetError extends Error {
+  readonly code = 'MODEL_REQUEST_TOO_LARGE';
+  constructor(readonly request: ModelRequestDiagnostics) {
+    super(`模型请求体超过本地预算：${request.requestBytes} bytes > ${request.maxRequestBytes} bytes${request.stage ? ` (${request.stage})` : ''}`);
+    this.name = 'ModelRequestBudgetError';
+  }
+}
 export class ModelHttpError extends Error {
-  constructor(readonly status: number, message: string, readonly retryText = message) { super(message); this.name = 'ModelHttpError'; }
+  constructor(readonly status: number, message: string, readonly retryText = message, readonly request?: ModelRequestDiagnostics) { super(message); this.name = 'ModelHttpError'; }
 }
 export class ModelConnectionError extends Error {}
+function requestLimit(...values: (number | undefined)[]): number | undefined {
+  const limits = values.filter((value): value is number => value !== undefined);
+  if (limits.some(value => !Number.isSafeInteger(value) || value <= 0)) throw new TypeError('Model request byte limits must be positive safe integers');
+  return limits.length ? Math.min(...limits) : undefined;
+}
+function imageCount(input: unknown): number {
+  if (Array.isArray(input)) return input.reduce<number>((count, value) => count + imageCount(value), 0);
+  if (!object(input)) return 0;
+  if ((input.type === 'input_image' && typeof input.image_url === 'string')
+    || (input.type === 'image_url' && (typeof input.image_url === 'string' || typeof input.image_url?.url === 'string'))
+    || (input.type === 'image' && object(input.source) && ['base64', 'url'].includes(input.source.type))) return 1;
+  return Object.values(input).reduce<number>((count, value) => count + imageCount(value), 0);
+}
 // Undici's default 300s headers/body caps would cut requests below http_timeout_sec (900s).
 const dispatcher = new Agent({ headersTimeout: 0, bodyTimeout: 0 });
 export interface TransportOptions {
@@ -163,7 +191,7 @@ export class ModelRuntime {
   constructor(readonly profile: ResolvedProfile, private readonly transport: TransportOptions = {}) {
     if (!['chat', 'messages', 'responses'].includes(profile.adapter)) throw new Error(`unknown model adapter '${profile.adapter}'`);
   }
-  async complete(body: CanonicalBody, signal?: AbortSignal): Promise<ModelResponse> {
+  async complete(body: CanonicalBody, signal?: AbortSignal, options: ModelRequestOptions = {}): Promise<ModelResponse> {
     const profile = this.profile;
     const key = (this.transport.env ?? process.env)[profile.api_key_env];
     if (!key) throw new Error(`环境变量 ${profile.api_key_env} 没有值,检查 .env.local`);
@@ -176,7 +204,17 @@ export class ModelRuntime {
     const translated = profile.adapter === 'chat' ? chatBody(body) : profile.adapter === 'messages' ? toMessages(body) : { ...body };
     const headers: Record<string, string> = { 'content-type': 'application/json', authorization: `Bearer ${key}` };
     if (profile.adapter === 'messages') { headers['x-api-key'] = key; headers['anthropic-version'] = '2023-06-01'; }
-    const payload = JSON.stringify({ ...translated, ...profile.request_options });
+    const wireBody = { ...translated, ...profile.request_options };
+    const payload = JSON.stringify(wireBody);
+    const maxRequestBytes = requestLimit(options.maxRequestBytes, profile.max_request_bytes);
+    const request: ModelRequestDiagnostics = {
+      ...(options.stage ? { stage: options.stage } : {}), adapter: profile.adapter,
+      requestBytes: Buffer.byteLength(payload, 'utf8'),
+      ...(maxRequestBytes !== undefined ? { maxRequestBytes } : {}),
+      imageCount: imageCount(profile.adapter === 'responses' ? wireBody.input : wireBody.messages),
+    };
+    if (request.maxRequestBytes !== undefined && request.requestBytes > request.maxRequestBytes) throw new ModelRequestBudgetError(request);
+    if (request.stage || request.maxRequestBytes !== undefined) console.info('Model request', request);
     let response: Response, text: string;
     try {
       // The whole request, body included, shares one deadline with the caller's signal.
@@ -189,11 +227,13 @@ export class ModelRuntime {
       throw new ModelConnectionError(error instanceof Error ? error.message : String(error), { cause: error });
     }
     if (!response.ok) {
+      // Some gateways echo request bodies on 413. Keep their text out of errors/logs.
+      if (response.status === 413) throw new ModelHttpError(413, `413 模型网关拒绝了过大的请求体 ${JSON.stringify(request)}`, '413', request);
       const detail = profile.adapter === 'messages' ? text.slice(0, 600) : text;
       let retryText = detail;
       // Messages errors are matched against the truncated raw text.
       if (profile.adapter !== 'messages') try { retryText = JSON.stringify(JSON.parse(detail.trim())); } catch { /* Plain HTTP error body. */ }
-      throw new ModelHttpError(response.status, `${response.status} ${detail}`, retryText);
+      throw new ModelHttpError(response.status, `${response.status} ${detail}`, retryText, request);
     }
     const raw = JSON.parse(text);
     if (profile.adapter === 'chat') return adaptChat(raw, body.max_output_tokens, profile.replay_reasoning);
@@ -202,7 +242,7 @@ export class ModelRuntime {
       incomplete_details: raw.incomplete_details ?? null,
       usage: { ...raw.usage, input_tokens: tokenCount(raw.usage?.input_tokens), output_tokens: tokenCount(raw.usage?.output_tokens), input_tokens_details: { ...raw.usage?.input_tokens_details, cached_tokens: raw.usage?.input_tokens_details?.cached_tokens == null ? null : tokenCount(raw.usage.input_tokens_details.cached_tokens) } } };
   }
-  async respondCanonical(instructions: string, history: Item[], tools: Item[], options: { effort?: string; signal?: AbortSignal } = {}): Promise<ModelResponse> {
+  async respondCanonical(instructions: string, history: Item[], tools: Item[], options: ModelRequestOptions & { effort?: string; signal?: AbortSignal } = {}): Promise<ModelResponse> {
     const body: CanonicalBody = { model: this.profile.model, instructions, input: history, tools, store: false, max_output_tokens: this.profile.max_output_tokens, reasoning: { effort: options.effort || this.profile.reasoning_effort } };
     let last: unknown;
     for (const wait of [0, ...LADDER]) {
@@ -213,7 +253,7 @@ export class ModelRuntime {
         else await delay(milliseconds, undefined, options.signal ? { signal: options.signal } : {});
       }
       options.signal?.throwIfAborted();
-      try { return await this.complete(body, options.signal); }
+      try { return await this.complete(body, options.signal, options); }
       catch (error) {
         if (options.signal?.aborted) throw options.signal.reason;
         const retry = error instanceof ModelHttpError ? error.status === 429 || error.status >= 500 || (error.status === 400 && GATEWAY_HINTS.some(hint => error.retryText.toLowerCase().includes(hint))) : error instanceof ModelConnectionError;
@@ -225,7 +265,7 @@ export class ModelRuntime {
   }
   static replay(response: ModelResponse): Item[] { return (response.replay_items.length ? response.replay_items : response.output).map(replayItem); }
   /** Bridge for existing TS orchestration; opaque replay is never sent as chat metadata. */
-  async respond(messages: ChatMessage[], tools: ToolDefinition[] = [], signal?: AbortSignal): Promise<AssistantTurn> {
+  async respond(messages: ChatMessage[], tools: ToolDefinition[] = [], signal?: AbortSignal, options: ModelRequestOptions = {}): Promise<AssistantTurn> {
     const instructions = messages.filter(message => message.role === 'system').map(message => message.content).join('\n\n');
     const history: Item[] = [];
     for (const message of messages) {
@@ -237,7 +277,7 @@ export class ModelRuntime {
         for (const call of message.tool_calls) history.push({ type: 'function_call', name: call.function.name, arguments: call.function.arguments, call_id: call.id });
       } else history.push({ role: message.role, content: Array.isArray(message.content) ? message.content.map(block => block.type === 'text' ? { type: 'input_text', text: block.text } : { type: 'input_image', image_url: block.image_url.url }) : message.content });
     }
-    const response = await this.respondCanonical(instructions, history, tools.map(tool => ({ type: tool.type, ...tool.function })), signal ? { signal } : {});
+    const response = await this.respondCanonical(instructions, history, tools.map(tool => ({ type: tool.type, ...tool.function })), { ...options, ...(signal ? { signal } : {}) });
     const text = textOf(response);
     return { id: response.id, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens,
       ...(response.usage.input_tokens_details.cached_tokens !== null ? { cachedTokens: response.usage.input_tokens_details.cached_tokens } : {}),

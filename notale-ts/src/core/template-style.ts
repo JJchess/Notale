@@ -56,7 +56,7 @@ export async function directTemplate(run: DirectorRequest, ports: DirectorPorts,
     signal?.throwIfAborted();
     workflowNotice(ports.progress, 'director', 'template-style', 'started', '正在识别模板固定元素与可替换区域');
     const request: ChatMessage[] = [{ role: 'system', content: instructions }, ...history], started = new Date().toISOString();
-    const response = await ports.model.respond(request, tools, signal);
+    const response = await ports.model.respond(request, tools, signal, { stage: 'template-style' });
     await ports.trace({ step: 'template-style', started, finished: new Date().toISOString(), request, response });
     history.push(response.message);
     const calls = response.message.tool_calls ?? [];

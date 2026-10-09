@@ -3,12 +3,13 @@ import { readFileSync, existsSync, statSync, lstatSync } from 'node:fs';
 import { mkdir, copyFile, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import sharp from 'sharp';
 import { decodeText } from './text.js';
 import { thumbnailJpeg } from '../tools/image-resample.js';
 import { RESOURCES, SKILLS } from './guidance.js';
 import { resolvePath } from './planner-contract.js';
 import { valueError, cssUrls, isWithin, parseCss, unquoteUrl, splitResourceUrl } from './theme.js';
-import type { ReferenceImage, StyleInput } from './director.js';
+import type { ReferenceImage, SelectionImageOptions, StyleInput } from './director.js';
 import type { ChatInputBlock } from '../adapters/models/chat-model.js';
 
 export const FONT_ROOT = path.join(RESOURCES, 'vendor/fonts');
@@ -65,7 +66,7 @@ export async function prepareFonts(css: string, assets: string): Promise<string[
   return copied;
 }
 const cached: Record<string, { path: string; sha256: string; width: number; height: number }> = JSON.parse(readFileSync(path.join(RESOURCES, 'style-images.json'), 'utf8'));
-export async function images(refs: ReferenceImage[], width = 900): Promise<ChatInputBlock[]> {
+export async function images(refs: ReferenceImage[], width = 900, rendition?: SelectionImageOptions): Promise<ChatInputBlock[]> {
   const blocks: ChatInputBlock[] = [];
   for (const reference of refs) {
     const source = await readFile(reference.shot);
@@ -83,6 +84,13 @@ export async function images(refs: ReferenceImage[], width = 900): Promise<ChatI
         throw error;
       });
       data = output.data; w = output.width; h = output.height;
+    }
+    if (rendition) {
+      // Keep catalogue assets and their frozen checksums intact. Only the
+      // transport copy is reduced; detail() still uses the full rendition.
+      const output = await sharp(data).resize({ width: rendition.width, height: rendition.width, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: rendition.quality, chromaSubsampling: '4:2:0' }).toBuffer({ resolveWithObject: true });
+      data = output.data; w = output.info.width; h = output.info.height;
     }
     const digest = createHash('sha256').update(data).digest('hex');
     blocks.push({ type: 'text', text: `参考 ${reference.id || ''}: ${reference.shot} (${w}×${h}, sha256=${digest})` }, { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + data.toString('base64') } });
@@ -131,7 +139,7 @@ export class StyleCatalog {
     for (const id of new Set(ids)) selected.push(await this.detail(id));
     return { text: selected.map(input => input.text).join('\n\n'), images: selected.flatMap(input => input.images) };
   }
-  async selectionInputs(): Promise<StyleInput> {
+  async selectionInputs(rendition: SelectionImageOptions = { width: 1200, quality: 60 }): Promise<StyleInput> {
     const folder = path.join(this.root, 'contact-sheets');
     const names = [...new Set([...decodeText(readFileSync(path.join(folder, 'README.md'))).matchAll(/!\[[^\]]*\]\(([^)]+\.png)\)/g)].map(match => match[1]!))];
     const refs = names.map(name => {
@@ -140,6 +148,6 @@ export class StyleCatalog {
       return { id: `风格概览 ${name}`, shot };
     });
     if (!refs.length) throw valueError('风格概览索引为空');
-    return { text: this.rows().map(row => row.slice(0, 3).join(' | ')).join('\n'), images: await images(refs, 1600) };
+    return { text: this.rows().map(row => row.slice(0, 3).join(' | ')).join('\n'), images: await images(refs, 1600, rendition) };
   }
 }
