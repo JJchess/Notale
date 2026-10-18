@@ -1,142 +1,134 @@
-# Notale
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/notale-lockup-dark.svg">
+    <img src="notale-viewer/public/brand/notale-lockup.svg" alt="Notale" width="240">
+  </picture>
+</p>
 
-**从一个主题，到一份可交互的讲义。**
+<h1 align="center">重塑知识的创作与学习方式</h1>
 
-[![CI](https://github.com/THU-AICosmos/Notale/actions/workflows/ci.yml/badge.svg)](https://github.com/THU-AICosmos/Notale/actions/workflows/ci.yml)
-[![版本](https://img.shields.io/badge/version-0.1.0-6246C8?style=flat-square)](CHANGELOG.md)
-[![Node.js](https://img.shields.io/badge/Node.js-20.19%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white)](notale-editor/package.json)
-[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](notale-editor/tsconfig.json)
-[![Apache License 2.0](https://img.shields.io/badge/license-Apache%202.0-2EA44F?style=flat-square)](LICENSE)
+<p align="center">AI 原生互动知识创作平台</p>
 
-[English](README.md) · **简体中文**
+<p align="center">
+  <a href="https://github.com/THU-AICosmos/Notale/actions/workflows/ci.yml"><img src="https://github.com/THU-AICosmos/Notale/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.0-6246C8?style=flat-square" alt="版本 0.1.0"></a>
+  <a href="docs/DOCKER.zh-CN.md"><img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker Compose"></a>
+  <a href="notale-editor/tsconfig.json"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-2EA44F?style=flat-square" alt="Apache License 2.0"></a>
+</p>
 
-[本地启动](#本地启动) · [使用流程](#从第一次提问到课堂讲授) · [项目架构](#项目架构) · [参与贡献](#开发与贡献)
+<p align="center"><a href="README.md">English</a> · <strong>简体中文</strong></p>
 
-Notale 帮助教师和教育内容创作者，把主题与教学材料变成互动讲义。用 AI 生成初稿，通过对话修改内容，在可视化编辑器中精修，再配合讲者备注和观众窗口完成讲授。
+<p align="center"><a href="https://aicosmos.ai">在线体验</a> · <a href="#快速开始">快速开始</a> · <a href="#让知识在眼前绽放">真实案例</a> · <a href="#项目架构">项目架构</a></p>
 
-讲义页面在浏览器中运行。受支持的控件、图表、模拟和代码活动，让学习者能够改变输入、观察结果、探索规律。你可以同时设计讲什么，以及按怎样的顺序讲。
+![创作者像指挥者一样，组织和探索互动的知识世界](docs/assets/readme/hero-zh.jpg)
 
-![Notale 可视化编辑器：左侧页面缩略图、中央讲义封面与右侧样式面板](notale-editor-frontend/docs/release/screenshots/editor.png)
+知识可以成为每个人都能亲自参与的体验。系统的讲解帮助我们建立认识，动手实验则让我们改变条件、观察反馈、验证理解。Notale 将这些过程组织在同一套知识叙事中。
 
-*编辑工作区：编排页面、调整画布内容，为讲授做好准备。*
+用自然语言描述你想讲授、分享或理解的主题，按需上传论文、参考材料和 PPTX 模板。Notale 将它们转化为集知识讲解、动态可视与真实操作于一体的互动讲义。生成后，还可以通过对话和可视化编辑持续打磨，再用于演示，或导出为 HTML 带走。
 
-## 可以做什么
+由**清华大学 CoAI 实验室 AI Cosmos 团队**打造，Notale 希望降低互动知识内容的创作门槛，让创作者专注于知识本身，让学习者从被动接收走向主动探索。
 
-- **从 AI 初稿开始。** 输入主题，按需附上参考材料、PPTX 模板或风格图片。在 Viewer 中查看生成进度，并在同一段对话中提出修改。
-- **管理你的讲义。** 搜索服务端历史，重命名、归档或恢复讲义。Viewer 保留输入草稿和已上传附件引用，支持中英文界面；新内容输出时，也可以安心阅读之前的回复。
-- **精修每一页。** 编辑文字、图片、形状、SVG、连线、表格和图表，调整图层，或使用内置的页面模板与图示。
-- **设计讲授顺序。** 编排页面和页内步骤，加入动画与讲者备注，再通过预览排练。
-- **现场讲解与互动。** 使用讲者视图、计时器、批注，以及同一浏览器中同步的观众窗口。受支持的页面交互在演示时仍可使用。
-- **保存和带走作品。** 使用修订历史与本地草稿恢复，导入、导出 `.notale` 工程，或导出可独立打开的 HTML 演示。
+## 快速开始
 
-自定义脚本和 Canvas 内容需要相应适配器才能进行可视化编辑。用于教学前，请检查生成内容与交互；当前可编辑范围见[集成覆盖说明](notale-editor-frontend/docs/INTEGRATION-COVERAGE.md)。
+使用 **Docker 和 Docker Compose** 启动自己的个人工作空间。Node.js、PostgreSQL 和浏览器依赖均在容器中运行，无需在宿主机另外安装。
 
-## 从第一次提问到课堂讲授
-
-可以这样描述你希望学习者参与的活动：
-
-> 制作一份介绍梯度下降的讲义。让学习者调节学习率，先预测结果，再比较收敛与越过最优点的情况。安排几个停下来讨论的节点。
-
-| 步骤 | 接下来做什么 |
-| --- | --- |
-| **1. 生成初稿** | 在 Viewer 中提交主题和材料，查看进度，检查生成完成的页面。 |
-| **2. 对话修改** | 要求换一种解释或调整互动活动。完成的修改会形成新版本，之前的结果仍然保留。 |
-| **3. 编辑精修** | 将选中的版本打开到单独运行的编辑器，调整受支持的元素、页面顺序、步骤与备注。再次打开该版本会回到同一文档，保留已经保存的手工修改。 |
-| **4. 讲授或交付** | 配合讲者工具与观众窗口演示，或导出工程、HTML 演示。 |
-
-生成器、Viewer 和编辑器是独立应用。你也可以直接进入编辑器，手工创作一份讲义。
-
-在 Viewer 中按 **Cmd/Ctrl+K** 查找讲义。预览与对话支持调整分栏、专注预览和全屏；主动选中旧版本后，新结果不会改变当前选择。窄屏下通过“讲义／对话”标签切换。切换界面语言不会改变你要求生成的讲义语言。
-
-## 本地启动
-
-需要 **Node.js 20.19+** 和 **npm**。编辑器还需要 **PostgreSQL 16**，可通过项目提供的 Docker Compose 配置启动。AI 生成需要模型密钥，对话修改需要 Docker 沙箱。
-
-选择下方任一路径前，先在仓库根目录安装并构建共享格式包：
+**1. 获取代码，创建配置文件。**
 
 ```bash
-npm ci --prefix notale-format
-npm run build --prefix notale-format
+git clone https://github.com/THU-AICosmos/Notale.git
+cd Notale
+cp .env.example .env.local
 ```
 
-### 路径 A：体验编辑器
+**2. 打开 `.env.local`，填写 `GEMINI_API_KEY` 和 `PARATERA_API_KEY`。** 两者分别是所用模型服务商的凭据，模型调用使用你自己的服务商账户。
 
-手工编辑和演示无需模型密钥。从仓库根目录执行：
+**3. 一行命令启动。**
 
 ```bash
-cd notale-editor
-npm ci
-docker compose up -d --wait
-npm run build
-
-cd ../notale-editor-frontend
-npm ci
-npm run build
-npm run start:local
+docker compose --env-file .env.local up -d --build --wait
 ```
 
-打开 **http://localhost:4312**。`Ctrl+C` 会停止应用服务，数据库及其数据仍会保留。若已有 PostgreSQL，设置 `DATABASE_URL` 后跳过 Compose 命令。端口和配置详见[本地部署说明](notale-editor-frontend/docs/LOCAL-DEPLOYMENT.md)。
+打开 **[localhost:3000](http://localhost:3000)** 开始创作。可视化编辑器位于 **[localhost:4312](http://localhost:4312)**；也可在生成结果中选择“在编辑器中打开”，继续修改这份讲义。首次启动需要构建应用、下载依赖，耗时会比后续启动更长。
 
-### 路径 B：用 AI 生成讲义
-
-把仓库根目录的 [`.env.example`](.env.example) 复制为 `.env.local`，填写所选模型配置需要的密钥。默认配置使用 `GEMINI_API_KEY`，图片生成还需要 `PARATERA_API_KEY`。生成器和编辑器共用这份被 Git 忽略的本地文件；已设置的 shell 环境变量优先。
-
-**终端一：生成器**，从仓库根目录执行：
+停止服务并保留数据：
 
 ```bash
-cd notale-ts
-npm ci
-npm run build
-npx playwright install chromium
-npm run dev -- serve --sessions .local/sessions
+docker compose --env-file .env.local down
 ```
 
-Chromium 用于页面视觉检查。若 Linux 主机缺少浏览器系统依赖，将安装命令替换为 `npx playwright install --with-deps chromium`，这可能需要管理员权限。
-
-**终端二：Viewer**，同样从仓库根目录执行：
-
-```bash
-cd notale-viewer
-npm ci
-npm run dev
-```
-
-打开 **http://localhost:3000**。Viewer 默认连接 `http://127.0.0.1:4321` 上的生成器。`--sessions` 用于启用首页所需的对话接口。只有同时运行编辑器时，才需要 PostgreSQL。
-
-要通过对话修改已生成讲义，请先完成 [AI 代理沙箱配置](notale-ts/sandbox/README.md)。要使用“在编辑器中打开”，还需启动路径 A。模型配置和命令行用法见[生成器指南](notale-ts/README.md)，服务连接设置见 [Viewer 指南](notale-viewer/README.md)。
-
-开发时可用 `serve --starter` 提供无需模型调用的固定生成样例数据。它不提供免密钥的 AI 对话体验。
+配置、日志、更新、数据存储与故障排查见 **[Docker 部署指南](docs/DOCKER.zh-CN.md)**。
 
 > [!IMPORTANT]
-> 以上步骤启动的是本地开发环境，编辑器使用固定的开发身份。对外部署需要接入身份认证与权限控制、设置私有预览签名密钥，并为讲义内容使用独立来源。向其他用户开放前，请按照[集成指南](notale-editor/docs/INTEGRATION.md)完成配置。
+> 这套配置是绑定本机访问的个人工作空间。若要向其他用户开放服务，请按照[集成指南](notale-editor/docs/INTEGRATION.md)接入身份认证与权限控制，并为讲义内容设置独立来源。
+
+## 让知识在眼前绽放
+
+### 让抽象原理变得可感知
+
+移动相机，调整视野或裁剪平面，三维场景与二维投影便会同步变化。读者能够亲手改变条件，理解公式如何影响眼前的世界。
+
+![调整相机控件，观察三维场景和二维投影实时联动](docs/assets/readme/camera-projection.gif)
+
+### 让真实计算成为讲解的一部分
+
+修改 Python 数组，运行代码。插入排序工作台将代码、执行记录与动态柱状图放在同一页面，动画随**浏览器中真实的 Python 执行结果**展开。
+
+![修改输入数组并运行 Python，得到新的排序轨迹](docs/assets/readme/code-execution.gif)
+
+*演示来自内置的插入排序 sample。录制时实际修改输入并运行代码，执行结果由程序计算产生。*
+
+### 带上你的材料，延续你的风格
+
+论文提供内容依据，PPTX 模板提供视觉参考。在这个案例中，用户上传《Attention Is All You Need》与公开演示模板，生成了一套**六页注意力机制讲义**，包含知识讲解与互动实验。
+
+![公开 PPTX 模板及沿用其视觉风格的六页注意力讲义](docs/assets/readme/template.png)
+
+*模板：SlidesCarnival，Colorful Geometric / Dumaine，CC BY 4.0，内容已改编。详见[素材来源](docs/assets/readme/SOURCES.md)。*
+
+### 把互动组织成完整的学习历程
+
+Notale 将互动活动融入有结构的知识讲解。下面是**另一个独立案例**：从六章大纲出发，生成一套 **33 页课程**，涵盖 Transformer、注意力机制、缩放定律、后训练与推理系统。
+
+![代表页面与完整的 33 页课程全览](docs/assets/readme/course.png)
+
+*这套课程来自独立的大纲任务，与上方的论文、模板案例分别生成。*
+
+## 从第一稿，继续创作
+
+1. **创作。** 描述主题，附上材料，在 Viewer 中查看生成过程。
+2. **探索。** 改变输入、操作可视模型、运行受支持的代码实验。
+3. **打磨。** 对话修改或进入可视化编辑器，调整内容、页面、步骤与备注。
+4. **演示与保存。** 使用讲者工具和观众窗口演示，导出 HTML 或 `.notale` 工程。
+
+![Notale 可视化编辑器：页面缩略图、画布与样式面板](notale-editor-frontend/docs/release/screenshots/editor.png)
+
+完成的对话修改会形成新版本；再次打开同一版本，会保留已保存的手工编辑。你也可以直接进入编辑器，不经过 AI 生成，从头创作讲义。
+
+自定义脚本和 Canvas 内容需要相应适配器才能进行可视化编辑，当前范围见[集成覆盖说明](notale-editor-frontend/docs/INTEGRATION-COVERAGE.md)。
 
 ## 项目架构
 
 | 项目 | 职责 |
 | --- | --- |
-| [`notale-ts/`](notale-ts/) | 讲义生成、对话修改、命令行、HTTP/SSE 服务与产物资源 |
-| [`notale-viewer/`](notale-viewer/) | 讲义库、可靠的主题与附件输入、生成进度、对话、预览和编辑器入口 |
-| [`notale-editor-frontend/`](notale-editor-frontend/) | 基于 Next.js 与 React 的编辑和讲授工作区 |
-| [`notale-editor/`](notale-editor/) | TypeScript 文档模型、HTTP API、修订存储与原生页面运行时 |
-| [`notale-format/`](notale-format/) | 共享的工程归档与页面运行时格式契约 |
+| [`notale-ts/`](notale-ts/) | AI 生成、对话修改、命令行与 HTTP/SSE 服务 |
+| [`notale-viewer/`](notale-viewer/) | 讲义库、创作对话、生成进度与预览 |
+| [`notale-editor-frontend/`](notale-editor-frontend/) | 可视化编辑与演示工作区 |
+| [`notale-editor/`](notale-editor/) | 文档模型、HTTP API、修订存储与页面运行时 |
+| [`notale-format/`](notale-format/) | 共享的 `.notale` 归档与页面运行时格式 |
 
-生成器输出在浏览器中运行的讲义页面与 `.notale` 归档。Viewer 展示生成过程，并将选中的结果导入编辑器。编辑器前端使用固定版本的 `@notale/editor` 包，通过 HTTP 与后端通信。PostgreSQL 保存编辑器文档和资源，讲义内容由独立来源提供。
+生成器输出在浏览器中运行的讲义页面，Viewer 展示生成过程，并将选中的结果打开到编辑器。PostgreSQL 保存编辑器文档与资源，讲义内容由独立来源提供。
 
-## 开发与贡献
-
-从上表找到负责相应功能的项目，按其说明配置开发环境并验证改动。若修改编辑器后端的共享契约，请先在 `notale-editor-frontend/` 中执行 `npm run contract:update`，再重新构建前端。修改文档时，请保持两份 README 同步。
-
-提交问题时，请提供复现步骤、预期与实际表现，以及去除私人内容的最小示例。较大的改动建议先通过 issue 描述预期的用户流程，再提交 pull request。
+源码开发需要 **Node.js 20.19+**，按对应项目的指南配置即可。上方 Docker 方式会准备完整的本地运行环境。
 
 | 继续了解 | 文档入口 |
 | --- | --- |
-| 生成和修改讲义 | [生成器](notale-ts/README.md) · [Viewer](notale-viewer/README.md) |
+| 运行和维护个人工作空间 | [Docker 部署指南](docs/DOCKER.zh-CN.md) |
+| 配置生成器与模型服务 | [生成器指南](notale-ts/README.md) · [Viewer 指南](notale-viewer/README.md) |
 | 开发编辑器 | [前端指南](notale-editor-frontend/README.md) · [架构说明](notale-editor-frontend/docs/EDITOR-ARCHITECTURE.md) |
-| 准备课堂演示 | [讲授指南](notale-editor-frontend/docs/PRESENTATION.md) · [原创模板](notale-editor-frontend/templates/original/README.md) |
-| 集成或部署 Notale | [集成指南](notale-editor/docs/INTEGRATION.md) · [集成覆盖说明](notale-editor-frontend/docs/INTEGRATION-COVERAGE.md) |
+| 准备演示 | [讲授指南](notale-editor-frontend/docs/PRESENTATION.md) · [页面模板](notale-editor-frontend/templates/original/README.md) |
+| 将 Notale 接入自己的产品 | [集成指南](notale-editor/docs/INTEGRATION.md) |
 
-### 项目状态与许可证
+欢迎提交可复现的问题、新案例，以及让创作体验更好的改进。较大的改动建议先通过 issue 描述预期流程；修改文档时，请保持中英文 README 同步。
 
-Notale 当前版本为 **0.1.0**，正在准备公开发布。主仓库为 [THU-AICosmos/Notale](https://github.com/THU-AICosmos/Notale)，[JJchess/Notale](https://github.com/JJchess/Notale) 为同步镜像。两者均保持 private，待维护者审阅并明确授权后再公开。
-
-Notale 自有源码采用 [MIT 许可证](LICENSE)。随项目分发的第三方资源保留各自的许可证与声明，详见[资源审计说明](notale-ts/RESOURCE-AUDIT.md)。源码分发范围包括上述五个项目及根目录文档。
+Notale 自有源码采用 [Apache 2.0 许可证](LICENSE)。第三方资源保留各自的许可证与声明，详见[资源声明](notale-ts/RESOURCE-AUDIT.md)和 [README 素材来源](docs/assets/readme/SOURCES.md)。

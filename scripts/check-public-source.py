@@ -8,7 +8,7 @@ import sys
 import tarfile
 
 ROOTS = {'notale-format', 'notale-editor', 'notale-editor-frontend', 'notale-ts', 'notale-viewer', 'scripts', 'docs', '.github'}
-FILES = {'README.md', 'README.zh-CN.md', 'LICENSE', 'CHANGELOG.md', '.gitignore', '.env.example'}
+FILES = {'README.md', 'README.zh-CN.md', 'LICENSE', 'CHANGELOG.md', '.gitignore', '.env.example', 'compose.yaml', '.dockerignore'}
 # Permit the exact core repository coordinate (and its URL paths), never similarly named private repositories.
 PRIVATE = re.compile(rb'notale[-_]v2|THU-AICosmos(?!/Notale(?:\.git)?(?=$|[/\s\"\'<>()\[\],:;?!#`]))|Notale-(?:online|integration-archive)|Notale-internal-archive|interactive_lecture_platform_integration|/(?:data1/home|home|Users)/[\w.-]+/')
 SECRETS = re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----|\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|(?:AKIA|ASIA)[A-Z0-9]{16})\b')

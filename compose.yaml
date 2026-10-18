@@ -1,0 +1,183 @@
+name: notale
+
+x-app: &app
+  image: notale-local:${NOTALE_IMAGE_TAG:-latest}
+  build:
+    context: .
+    dockerfile: scripts/docker/Dockerfile
+  init: true
+  restart: unless-stopped
+  user: "1000:1000"
+  volumes:
+    - data:/data
+  environment: &app-environment
+    NODE_ENV: production
+    NEXT_TELEMETRY_DISABLED: "1"
+  healthcheck: &http-health
+    test: ["CMD", "node", "/app/scripts/docker/health.mjs"]
+    interval: 10s
+    timeout: 5s
+    start_period: 40s
+    retries: 12
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: notale_editor
+      POSTGRES_PASSWORD: notale-local-container
+      POSTGRES_DB: notale_editor
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notale_editor -d notale_editor"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  sandbox-engine:
+    build:
+      context: .
+      dockerfile: scripts/docker/engine.Dockerfile
+    privileged: true
+    restart: unless-stopped
+    command: ["dockerd", "--host=unix:///run/notale-docker/docker.sock", "--group=notale"]
+    environment:
+      DOCKER_HOST: unix:///run/notale-docker/docker.sock
+      DOCKER_TLS_CERTDIR: ""
+    volumes:
+      - sandbox-engine:/var/lib/docker
+      - sandbox-socket:/run/notale-docker
+      - data:/data
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 5s
+      timeout: 5s
+      start_period: 20s
+      retries: 24
+
+  init:
+    <<: *app
+    user: "0:0"
+    restart: "no"
+    command: ["node", "/app/scripts/docker/init.mjs"]
+    healthcheck:
+      disable: true
+    environment:
+      DOCKER_HOST: unix:///run/notale-docker/docker.sock
+    volumes:
+      - data:/data
+      - sandbox-socket:/run/notale-docker
+    depends_on:
+      sandbox-engine:
+        condition: service_healthy
+
+  generator:
+    <<: *app
+    working_dir: /app/notale-ts
+    command: ["node", "dist/cli/main.js", "serve", "--host", "0.0.0.0", "--port", "4321", "--runs", "/data/generator/runs", "--sessions", "/data/generator/sessions"]
+    shm_size: 1gb
+    environment:
+      <<: *app-environment
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY in .env.local}
+      PARATERA_API_KEY: ${PARATERA_API_KEY:?Set PARATERA_API_KEY in .env.local}
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
+      SILICONFLOW_BASE_URL: ${SILICONFLOW_BASE_URL:-}
+      DOCKER_HOST: unix:///run/notale-docker/docker.sock
+      NOTALE_DOTENV_DISABLED: "1"
+      NOTALE_CHROMIUM_PATH: /opt/notale/chromium
+      NOTALE_AGENT_SANDBOX_IMAGE: notale-agent-sandbox:local
+      NOTALE_AGENT_SANDBOX_NETWORK: notale-agent-net
+      NOTALE_AGENT_SANDBOX_PROXY: http://notale-agent-proxy:8888
+      NOTALE_HEALTH_URL: http://127.0.0.1:4321/healthz
+    volumes:
+      - data:/data
+      - sandbox-socket:/run/notale-docker
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+  editor:
+    <<: *app
+    working_dir: /app/notale-editor
+    command: ["node", "dist/server/main.js"]
+    shm_size: 1gb
+    security_opt:
+      - seccomp=./scripts/docker/chromium-seccomp.json
+    environment:
+      <<: *app-environment
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY in .env.local}
+      PARATERA_API_KEY: ${PARATERA_API_KEY:?Set PARATERA_API_KEY in .env.local}
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
+      SILICONFLOW_BASE_URL: ${SILICONFLOW_BASE_URL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      DOCKER_HOST: unix:///run/notale-docker/docker.sock
+      DATABASE_URL: postgres://notale_editor:notale-local-container@postgres:5432/notale_editor
+      EDITOR_HOST: 0.0.0.0
+      EDITOR_PORT: "4310"
+      EDITOR_CONTENT_PORT: "4311"
+      EDITOR_CONTENT_ORIGIN: http://editor:4311
+      EDITOR_RUNTIME_DIR: /app/notale-editor/dist
+      EDITOR_CHROMIUM_PATH: /opt/notale/chromium
+      EDITOR_AI_SESSION_DIR: /data/editor/ai-sessions
+      EDITOR_AI_UPLOAD_DIR: /data/editor/ai-uploads
+      EDITOR_AGENT_SANDBOX_IMAGE: notale-agent-sandbox:local
+      EDITOR_AGENT_SANDBOX_NETWORK: notale-agent-net
+      EDITOR_AGENT_SANDBOX_PROXY: http://notale-agent-proxy:8888
+      NOTALE_HEALTH_URL: http://127.0.0.1:4310/health
+    volumes:
+      - data:/data
+      - sandbox-socket:/run/notale-docker
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+  editor-web:
+    <<: *app
+    working_dir: /app/notale-editor-frontend
+    command: ["node", ".local/tooling/scripts/serve.js"]
+    environment:
+      <<: *app-environment
+      HOST: 0.0.0.0
+      PORT: "4312"
+      EDITOR_BACKEND_URL: http://editor:4310
+      EDITOR_CONTENT_BACKEND_URL: http://editor:4311
+      EDITOR_PUBLIC_CONTENT_URL: http://notale-content.localhost:${NOTALE_EDITOR_PORT:-4312}
+      NOTALE_HEALTH_URL: http://127.0.0.1:4312/health
+    volumes: []
+    ports:
+      - "127.0.0.1:${NOTALE_EDITOR_PORT:-4312}:4312"
+    depends_on:
+      editor:
+        condition: service_healthy
+
+  viewer:
+    <<: *app
+    working_dir: /app/notale-viewer
+    command: ["node", "node_modules/next/dist/bin/next", "start", "--hostname", "0.0.0.0", "--port", "3000"]
+    environment:
+      <<: *app-environment
+      NOTALE_API_URL: http://generator:4321
+      EDITOR_URL: http://editor-web:4312
+      EDITOR_PUBLIC_URL: http://localhost:${NOTALE_EDITOR_PORT:-4312}
+      NOTALE_HEALTH_URL: http://127.0.0.1:3000/
+    ports:
+      - "127.0.0.1:${NOTALE_VIEWER_PORT:-3000}:3000"
+    depends_on:
+      generator:
+        condition: service_healthy
+      editor-web:
+        condition: service_healthy
+
+volumes:
+  data:
+  postgres:
+  sandbox-engine:
+  sandbox-socket:

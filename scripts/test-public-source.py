@@ -49,6 +49,33 @@ class SourcePolicy(unittest.TestCase):
         POLICY['archive']('editor.tgz', output.getvalue())
         self.assertIn('editor.tgz:package/README.md: private workspace reference', POLICY['errors'])
 
+    def test_docker_entrypoints_do_not_allow_private_deployment_trees(self):
+        with tempfile.TemporaryDirectory(prefix='notale-policy-') as directory:
+            root = Path(directory)
+            subprocess.run(['git', 'init', '--quiet'], cwd=root, check=True)
+            allowed = ['compose.yaml', '.dockerignore', 'scripts/docker/Dockerfile']
+            for name in allowed:
+                file = root / name
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text('# Public Docker distribution\n')
+            subprocess.run(['git', 'add', '--', *allowed], cwd=root, check=True)
+            def check():
+                return subprocess.run([sys.executable, str(SCRIPTS / 'check-public-source.py'), '--staged'],
+                                      cwd=root, text=True, capture_output=True)
+            result = check()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            rejected = ['compose.private.yaml', '.env.local', 'integration/config.yaml',
+                        'scripts/deploy/config.yaml', 'scripts/docker/.local/state.json']
+            for name in rejected:
+                file = root / name
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text('local data\n')
+            subprocess.run(['git', 'add', '--', *rejected], cwd=root, check=True)
+            result = check()
+            self.assertNotEqual(result.returncode, 0)
+            for name in rejected:
+                self.assertIn(name + ':', result.stderr)
+
     def test_hook_rejects_private_ancestry_even_behind_clean_tip(self):
         with tempfile.TemporaryDirectory(prefix='notale-policy-') as directory:
             root = Path(directory)
