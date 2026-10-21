@@ -19,7 +19,7 @@
 
 <p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
 
-<p align="center"><a href="https://aicosmos.ai">Try Notale</a> · <a href="#quick-start">Quick start</a> · <a href="#see-knowledge-in-motion">See it in action</a> · <a href="#inside-notale">Architecture</a></p>
+<p align="center"><a href="https://aicosmos.ai">Try Notale</a> · <a href="#quick-start">Quick start</a> · <a href="#see-knowledge-in-motion">See it in action</a> · <a href="#inside-notale">Architecture</a> · <a href="https://github.com/JJchess/Notale">Mirror</a></p>
 
 ![A creator conducting a world of interactive knowledge](docs/assets/readme/hero-en.jpg)
 

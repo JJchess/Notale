@@ -19,7 +19,7 @@
 
 <p align="center"><a href="README.md">English</a> · <strong>简体中文</strong></p>
 
-<p align="center"><a href="https://aicosmos.ai">在线体验</a> · <a href="#快速开始">快速开始</a> · <a href="#让知识在眼前绽放">真实案例</a> · <a href="#项目架构">项目架构</a></p>
+<p align="center"><a href="https://aicosmos.ai">在线体验</a> · <a href="#快速开始">快速开始</a> · <a href="#让知识在眼前绽放">真实案例</a> · <a href="#项目架构">项目架构</a> · <a href="https://github.com/JJchess/Notale">镜像仓库</a></p>
 
 ![创作者像指挥者一样，组织和探索互动的知识世界](docs/assets/readme/hero-zh.jpg)
 
