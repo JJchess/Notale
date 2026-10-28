@@ -12,6 +12,10 @@ export class DocumentSession {
   private closed=false;private closeTask:Promise<void>|undefined;
   private events=new AbortController();private poll:ReturnType<typeof setInterval>|undefined;
   private releaseOwner:(()=>void)|undefined;
+  // Keep admitted intents visible until acknowledgement; IndexedDB reads may
+  // finish before a concurrent local write becomes observable.
+  private admitted=new Map<string,SavedOperation>();
+  private pendingEntries(stored:SavedOperation[]){return [...new Map([...this.admitted.values(),...stored].filter(e=>e.state==='pending').map(e=>[e.id,e])).values()].sort((a,b)=>a.createdAt-b.createdAt);}
   private documentId='';private entries:SavedOperation[]=[];private undone:SavedOperation[]=[];
   private running:Promise<void>|undefined;private failure:unknown;private activeId='';private lastTime=0;private volatile:SavedOperation[]=[];private retainedCount=0;private timer:ReturnType<typeof setTimeout>|undefined;private backoff=1000;
   private initialized:Promise<void>;
@@ -32,7 +36,7 @@ export class DocumentSession {
       };
     }
     for(const key of ['changed','error','paint','confirm','recovered','remote'] as const){const callback=this.context[key] as (...args:any[])=>unknown;(this.context as any)[key]=(...args:any[])=>this.closed?(key==='remote'?Promise.resolve():undefined):callback(...args);}
-    this.channel.onmessage=e=>{if(e.data?.documentId===this.documentId){if(e.data.task?.owner===this.ownerId)this.context.confirm(e.data.task,e.data.version);if(!this.running)void this.reloadAndDrain();}};
+    this.channel.onmessage=e=>{if(e.data?.documentId===this.documentId){if(e.data.task?.owner===this.ownerId){this.admitted.delete(e.data.task.request.mutationId);this.context.confirm(e.data.task,e.data.version);}if(!this.running)void this.reloadAndDrain();}};
     window.addEventListener('online',()=>{void this.retry().catch(this.context.error);},{signal:this.events.signal});
     window.addEventListener('focus',()=>{if(this.documentId)void this.context.remote().catch(()=>{});},{signal:this.events.signal});
     this.poll=setInterval(()=>{if(this.documentId&&!document.hidden&&!this.running)void this.context.remote().catch(()=>{});},3000);
@@ -63,8 +67,8 @@ export class DocumentSession {
   }
   async ownsHistory(task:Pending){if(!task.owner||task.owner===this.ownerId)return true;const locks=await navigator.locks.query();return !locks.held?.some(l=>l.name==='notale-tab:'+this.journal.namespace+':'+task.owner);}
   private async reloadAndDrain(){try{await this.refresh();await this.context.remote();await this.drain();}catch(e){this.context.error(e);}}
-  private async refresh(){const all=await this.journal.list(this.documentId);this.retainedCount=all.filter(e=>e.state==='recovery').length;this.entries=all.filter(e=>e.state==='pending');this.context.changed();}
-  async load(documentId:string){await this.initialized;this.assertOpen();this.documentId=documentId;this.failure=undefined;this.undone=[];for(const entry of await this.journal.list(documentId)){if(entry.staged&&entry.draftTask&&await this.ownsHistory(entry.draftTask))await this.journal.finalize(entry.id);}await this.refresh();}
+  private async refresh(){const all=await this.journal.list(this.documentId);this.retainedCount=all.filter(e=>e.state==='recovery').length;this.entries=this.pendingEntries(all.filter(e=>e.state==='pending'));this.context.changed();}
+  async load(documentId:string){await this.initialized;this.assertOpen();this.documentId=documentId;this.admitted.clear();this.failure=undefined;this.undone=[];for(const entry of await this.journal.list(documentId)){if(entry.staged&&entry.draftTask&&await this.ownsHistory(entry.draftTask))await this.journal.finalize(entry.id);}await this.refresh();}
   private record(edit?:GeometryEdit,task?:Pending):SavedOperation{return {id:edit?.id??task!.request.mutationId,documentId:this.documentId,edit,task:task?{...task,owner:task.owner??this.ownerId}:undefined,createdAt:this.lastTime=Math.max(Date.now(),this.lastTime+1),state:'pending'};}
   async enqueue(edit:GeometryEdit){
     if(!commitSchema.shape.commands.safeParse(edit.commands).success)throw Error('手势命令无效');
@@ -77,7 +81,7 @@ export class DocumentSession {
     try{const previous=await this.journal.get(task.request.mutationId);
       if(previous?.sent)return; // Never change the identity of an already submitted task.
       entry.createdAt=previous?.createdAt??entry.createdAt;
-      await this.journal.put(entry);this.volatile=this.volatile.filter(item=>item.id!==entry.id);this.entries=this.entries.filter(item=>item.id!==entry.id);this.retainedCount++;this.context.recovered(task);this.context.changed();}
+      await this.journal.put(entry);this.admitted.delete(entry.id);this.volatile=this.volatile.filter(item=>item.id!==entry.id);this.entries=this.entries.filter(item=>item.id!==entry.id);this.retainedCount++;this.context.recovered(task);this.context.changed();}
     catch(error){this.volatile=this.volatile.filter(item=>item.id!==entry.id);this.volatile.push(entry);this.failure=error;this.context.changed();throw error;}
   }
   /** Retry an already registered local write without registering the operation twice. */
@@ -96,9 +100,9 @@ export class DocumentSession {
   async cancelText(id:string){const result=await this.journal.cancel(id);if(result)await this.refresh();return result;}
   operations():Pending[]{return this.entries.map(entry=>entry.task??entry.draftTask??{...this.context.task(entry.edit),owner:entry.edit.owner??this.ownerId}).filter(Boolean);}
   async enqueueTask(task:Pending){if(!isPending(task))throw invalidPendingError(task);await this.add(this.record(undefined,task));void this.drain().catch(this.context.error);}
-  async cancelOperation(id:string){const result=await this.journal.cancel(id);if(result){this.entries=this.entries.filter(e=>e.id!==id);this.context.changed();}return result;}
+  async cancelOperation(id:string){const result=await this.journal.cancel(id);if(result){this.admitted.delete(id);this.entries=this.entries.filter(e=>e.id!==id);this.context.changed();}return result;}
   async submit(task:Pending){task={...task,kernel:task.kernel??{protocol:2}};if(!isPending(task))throw invalidPendingError(task);const entry=this.record(undefined,task);await this.add(entry);await this.drain();if(await this.journal.get(entry.id))throw this.failure??Error('修改尚未同步，已保存在本机');}
-  private async add(entry:SavedOperation){await this.initialized;this.assertOpen();this.entries.push(entry);this.undone=[];this.context.changed();try{await this.journal.put(entry);}catch(e){this.volatile.push(entry);this.failure=Error('无法写入本机草稿，请保留当前窗口并导出修改');this.context.error(this.failure);this.context.changed();throw e;}this.context.changed();}
+  private async add(entry:SavedOperation){await this.initialized;this.assertOpen();this.admitted.set(entry.id,entry);this.entries.push(entry);this.undone=[];this.context.changed();try{await this.journal.put(entry);}catch(e){this.volatile.push(entry);this.failure=Error('无法写入本机草稿，请保留当前窗口并导出修改');this.context.error(this.failure);this.context.changed();throw e;}this.context.changed();}
   has(id:string){return this.entries.some(e=>e.id===id&&!!e.edit);}
   get onlyChartEdits(){return this.entries.every(e=>e.edit?.chart);}
   get count(){return this.entries.length;}
@@ -109,19 +113,19 @@ export class DocumentSession {
   private patches(edit:GeometryEdit,reverse=false):GeometryState[]{return (reverse?edit.before:edit.after).map((state:GeometryState)=>{if(state.vector||state.chart)return state;const old=(reverse?edit.after:edit.before).find((s:GeometryState)=>s.id===state.id);const a=document.createElement('div'),b=document.createElement('div');a.setAttribute('style',old?.style??'');b.setAttribute('style',state.style??'');const patch:Record<string,string|null>={};for(const key of new Set([...a.style,...b.style]))if(a.style.getPropertyValue(key)!==b.style.getPropertyValue(key))patch[key]=b.style.getPropertyValue(key)||null;return {...state,patch};});}
   states(slideId:string){return this.entries.filter(e=>e.edit?.slideId===slideId).flatMap(e=>this.patches(e.edit!));}
   get firstSlide(){return this.entries[0]?.edit?.slideId??this.entries[0]?.task?.slideId;}
-  async undo(){if(!this.canUndo)return false;const edit=this.entries.at(-1)!;if(!await this.journal.cancel(edit.id))return false;this.entries=this.entries.filter(e=>e.id!==edit.id);this.undone.push(edit);this.context.paint(this.patches(edit.edit,true));this.context.changed();return true;}
+  async undo(){if(!this.canUndo)return false;const edit=this.entries.at(-1)!;if(!await this.journal.cancel(edit.id))return false;this.admitted.delete(edit.id);this.entries=this.entries.filter(e=>e.id!==edit.id);this.undone.push(edit);this.context.paint(this.patches(edit.edit,true));this.context.changed();return true;}
   async redo(){const entry=this.undone.pop();if(!entry)return false;const rest=[...this.undone];await this.enqueue({...entry.edit,id:crypto.randomUUID(),task:undefined});this.undone=rest;this.context.paint(this.patches(entry.edit));return true;}
   async drain():Promise<void>{
     await this.initialized;if(this.closed)return;if(this.running){await this.running;return this.drain();}if(this.failure)throw this.failure;if(!this.documentId)return;
     this.running=(async()=>{await navigator.locks.request('notale-sync:'+this.journal.namespace+':'+this.documentId,async()=>{
-      while(!this.closed){const pending=(await this.journal.list(this.documentId)).filter(e=>e.state==='pending');if(!pending.length){this.entries=[];break;}
-        const entry=pending[0];this.entries=pending;if(entry.staged)break;this.activeId=entry.id;
+      while(!this.closed){const pending=(await this.journal.list(this.documentId)).filter(e=>e.state==='pending');if(!pending.length){this.entries=this.pendingEntries([]);break;}
+        const entry=pending[0];this.entries=this.pendingEntries(pending);if(entry.staged)break;this.activeId=entry.id;
         if(!entry.task){entry.task={...this.context.task(entry.edit),owner:entry.edit.owner??this.ownerId,geometry:!entry.edit.vector&&!entry.edit.chart,vector:!!entry.edit.vector,chart:!!entry.edit.chart};if(!await this.journal.claim(entry.id,entry.task))continue;}
         if(this.closed)break;
         if(!await this.journal.markSending(entry.id))continue;
         if(this.closed)break;
-        try{const version=await this.context.submit(entry.task);await this.journal.acknowledge(entry.id,this.documentId,version,(this.closed?undefined:this.context.snapshot()));this.backoff=1000;this.entries=this.entries.filter(e=>e.id!==entry.id);this.activeId='';this.context.changed();if(!this.closed)this.channel.postMessage({documentId:this.documentId,version,task:entry.task});}
-        catch(error){const code=(error as any)?.code;if(code==='INVALID_SAVE_REQUEST'||code==='SYNC_RECOVERY_REQUIRED'||code==='OBJECT_NOT_FOUND'||code==='SLIDE_NOT_FOUND') {entry.state='recovery';entry.error=String(error);await this.journal.put(entry);this.retainedCount++;this.context.recovered(entry.task);this.entries=this.entries.filter(e=>e.id!==entry.id);this.context.error(Error(code==='INVALID_SAVE_REQUEST'?String(error)+'；该操作已保留为恢复草稿，后续保存可继续':'部分修改无法应用，完整操作已保留为恢复草稿'));continue;}throw error;}
+        try{const version=await this.context.submit(entry.task);await this.journal.acknowledge(entry.id,this.documentId,version,(this.closed?undefined:this.context.snapshot()));this.backoff=1000;this.admitted.delete(entry.id);this.entries=this.entries.filter(e=>e.id!==entry.id);this.activeId='';this.context.changed();if(!this.closed)this.channel.postMessage({documentId:this.documentId,version,task:entry.task});}
+        catch(error){const code=(error as any)?.code;if(code==='INVALID_SAVE_REQUEST'||code==='SYNC_RECOVERY_REQUIRED'||code==='OBJECT_NOT_FOUND'||code==='SLIDE_NOT_FOUND') {entry.state='recovery';entry.error=String(error);await this.journal.put(entry);this.admitted.delete(entry.id);this.retainedCount++;this.context.recovered(entry.task);this.entries=this.entries.filter(e=>e.id!==entry.id);this.context.error(Error(code==='INVALID_SAVE_REQUEST'?String(error)+'；该操作已保留为恢复草稿，后续保存可继续':'部分修改无法应用，完整操作已保留为恢复草稿'));continue;}throw error;}
       }
     });})();
     try{await this.running;void this.context.remote().catch(this.context.error);}catch(error){this.failure=error;const code=(error as any)?.code;if(!this.closed&&(!code||/^HTTP_5|^HTTP_429|^NETWORK|^TIMEOUT|^INTERNAL/.test(code))){clearTimeout(this.timer);this.timer=setTimeout(()=>{void this.retry().catch(()=>{});},this.backoff);this.backoff=Math.min(30000,this.backoff*2);}throw error;}finally{this.running=undefined;this.activeId='';this.context.changed();}
@@ -134,7 +138,7 @@ export class DocumentSession {
     if(this.volatile.length)throw Error('本机保存失败，请重试或导出草稿后继续');
   }
   async barrier(){if(this.entries.length)await this.drain();}
-  async abandon(){if(this.running)throw Error('请等待当前保存结束');for(const e of this.entries){e.state='recovery';e.error='用户保留草稿后重新载入';await this.journal.put(e);}this.entries=[];this.undone=[];this.failure=undefined;this.context.changed();}
+  async abandon(){if(this.running)throw Error('请等待当前保存结束');for(const e of this.entries){e.state='recovery';e.error='用户保留草稿后重新载入';await this.journal.put(e);}this.admitted.clear();this.entries=[];this.undone=[];this.failure=undefined;this.context.changed();}
   async checkpoint(snapshot:unknown){await this.journal.checkpoint(this.documentId,snapshot);}
   async pull(){await this.context.remote();}
   async importDraft(raw:string){await this.initialized;await this.journal.importFile(raw);this.context.changed();}

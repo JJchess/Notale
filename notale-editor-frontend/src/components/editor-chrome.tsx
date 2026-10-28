@@ -1,4 +1,6 @@
 
+import {Fragment,type ReactNode,type ComponentType} from 'react';
+import {newEditorFilm} from '../editor-navigation';
 import {ASSISTANT_NAME} from '@notale/editor/i18n';
 import {useI18n} from '../i18n/react';
 import {LanguageMenu} from './language-menu';
@@ -20,7 +22,6 @@ import {TemplateLibrary,TemplatePreview} from './template-library';
 import {InsertionDrop} from './insertion-drop';
 import {InsertCatalog} from './insert-catalog';
 import {InteractiveDrawer} from './interactive-drawer';
-import {ToolPanelSash} from './tool-panel-sash';
 import {SourceEditor} from './source-editor';
 import {MediaInspector} from './media-inspector';
 import {SaveRecoveryActions} from './save-recovery-actions';
@@ -82,14 +83,16 @@ import {ImageCropButton} from './image-crop';
 import {LinkInspectorPanel} from './link-editor';
 import {SidebarEffects,SidebarPanel,InspectorPanel,InspectorTabButton,ToolButton,SidebarControl} from './sidebar';
 import {FileMenu} from './file-menu';
+import {editorActions} from '../state/editor-session';
 import {SaveStatus,HistoryControls,PresentControls} from './editor-controls';
 import {CanvasHost} from './canvas-host';
 import {PageList} from './page-list';
+import {useEditingCapability} from './use-editing-capability';
 // React owns the editor shell. Empty panel hosts are populated by the editing controllers.
 function ActivityBar(){
  const t=useI18n();
  const home=useNotaleHome();
-return (<nav className="tool-rail" aria-label={t("创作工具")}>
+return (<nav className="tool-rail notale-chrome-rail" aria-label={t("创作工具")}>
 <a className="tool-brand" href={home??"/"} aria-label={t(home?"返回 Notale":"Notale 首页")} title={home?t("返回 Notale"):undefined}>{"N"}<span>
 </span>
 </a>
@@ -152,37 +155,40 @@ return (<nav className="tool-rail" aria-label={t("创作工具")}>
 <div className="tool-rail-footer"><LanguageMenu/></div>
 </nav>);}
 
-function EditorHeader(){
+export type SurfaceSlots={workspace:ReactNode;imports:ReactNode;exports:ReactNode;present:ReactNode;media?:ReactNode;inspector?:ReactNode;pageList?:ReactNode;animation?:ReactNode;timing?:ReactNode;timeline?:ReactNode;layers?:ReactNode;animationTools?:ReactNode;nativeProperties?:ComponentType<{children:ReactNode}>};
+function EditorHeader({surface}:{surface?:SurfaceSlots}){
  const t=useI18n();
-return (<header className="app-header">
-<a className="brand" href="/">{"Notale"}<span>{t("互动演示")}</span>
+return (<header className="app-header notale-chrome-header">
+<a className="brand notale-wordmark" href="/">{"Notale"}<span>{t("互动演示")}</span>
 </a>
-<div className="header-history" role="toolbar" aria-label={t("历史操作")}><HistoryControls/></div>
+<div className="header-history" role="toolbar" aria-label={t("历史操作")}><HistoryControls find={!surface}/></div>
 <FileMenu/>
 <div className="header-selection" role="toolbar" aria-label={t("对象操作")}><SelectionTools/></div>
 <span className="preview-indicator">{t("互动预览")}</span>
-<SaveStatus/><SaveRecoveryActions/>
+<SaveStatus/>{!surface && <SaveRecoveryActions/>}
 <HeaderMenu id="import" label={t("导入")} title={t("导入 PPTX 或 Notale 文件")}>
-<ImportControls/>
+{surface?.imports ?? <ImportControls/>}
+<button onClick={()=>void newEditorFilm().catch(editorActions.reportError)}>{t("新建影片")}</button>
 </HeaderMenu>
 <HeaderMenu id="export" label={t("导出")} title={t("导出 PDF 或 Notale 文件")}>
-<ExportControls/>
+{surface?.exports ?? <ExportControls/>}
 </HeaderMenu>
-<DocumentIOStatus/><PresentControls/>
+{surface?.present ?? <><DocumentIOStatus/><PresentControls/></>}
 </header>);}
 
-function EditorWorkspace(){
+function EditorWorkspace({surface}:{surface?:SurfaceSlots}){
  const t=useI18n();
-return (<main className="workspace"><SidebarEffects/>
+ const layoutUnavailable=useEditingCapability('document:layout');
+ const NativeProperties=surface?.nativeProperties??Fragment;
+return (<main className={'workspace'+(surface?' film-surface':'')+(surface?.timeline?' has-timeline':'')}><SidebarEffects/>
 <SidebarPanel as="aside" id="tool-panel" className="tool-panel" aria-label={t("内容工具")}>
-<ToolPanelSash/>
 <div className="tool-panel-heading" hidden={true}>
 <strong id="tool-panel-title">
 </strong>
 <SidebarControl action="close-tools" id="close-tool-panel" aria-label={t("收起工具面板")}>{"×"}</SidebarControl>
 </div>
 <SidebarPanel as="div" id="insert-drawer">
-<InsertCatalog/>
+<InsertCatalog media={surface?.media}/>
 </SidebarPanel>
 <SidebarPanel as="div" id="interactive-drawer">
 <InteractiveDrawer/>
@@ -200,10 +206,10 @@ return (<main className="workspace"><SidebarEffects/>
 <SidebarPanel as="aside" id="page-panel" className="slide-rail" aria-label={t("页面导航")}>
 <div className="rail-title" hidden={true}>{t("页面 ")}<PageCount/>
 </div>
-<PageList/>
+{surface?.pageList??<PageList/>}
 </SidebarPanel>
 <section className="center">
-
+{surface?.workspace??<>
 <MasterEditBanner/>
 <div id="canvas-viewport" className="canvas-viewport" tabIndex={0} aria-label={t("画布视口")}>
 <CanvasLoading/><InsertionDrop/>
@@ -245,7 +251,7 @@ return (<main className="workspace"><SidebarEffects/>
 <NotesEditor/>
 <AnimationTimeline/>
 </SidebarPanel>
-<CommentsPanel/></section>
+<CommentsPanel/></>}</section>
 <SidebarPanel as="aside" id="property-panel" className="inspector" aria-label={t("编辑属性")}>
 <div className="inspector-heading" hidden={true}>
 <span>{t("编辑工具")}</span>
@@ -257,9 +263,11 @@ return (<main className="workspace"><SidebarEffects/>
 <InspectorTabButton tab="animation" >{t("动画")}</InspectorTabButton>
 </div>
 <InspectorPanel tab="objects" >
-<Layers/>
+{surface?.layers??<Layers/>}
 </InspectorPanel>
 <InspectorPanel tab="format" >
+{surface?.inspector}
+<NativeProperties>
 <StyleScopeScroll/><StyleScope scope="object">
 <SelectionSummary/><FormatTabs of="object"/>
 <PropertyGroup id="property-text" title={t("文字")} kind="text" facet="font">
@@ -295,13 +303,14 @@ return (<main className="workspace"><SidebarEffects/>
 <StyleScope scope="global">
 <span className="settings-scope">{t("全局样式")}</span><FormatTabs of="page"/>
 <FormatPane facet="page"><PageSizeSettings/></FormatPane>
-<FormatPane facet="theme"><ThemePanel/></FormatPane><FormatPane facet="background"><PageBackground/></FormatPane><FormatPane facet="page"><LayoutManager/></FormatPane>
+<FormatPane facet="theme"><ThemePanel/></FormatPane><FormatPane facet="background"><PageBackground/></FormatPane><FormatPane facet="page">{!layoutUnavailable&&<LayoutManager/>}</FormatPane>
 
 
 </StyleScope>
+</NativeProperties>
 </InspectorPanel>
 <InspectorPanel tab="animation" >
-<AnimationHeading/><AnimationGallery/><AnimationPreviewControls/>
+{surface?.animationTools??<><AnimationHeading/><AnimationGallery/></>}{surface?.animation??<><AnimationPreviewControls/>
 <div className="animation-list-heading">
 <strong>{t("动画顺序")}</strong>
 
@@ -310,8 +319,10 @@ return (<main className="workspace"><SidebarEffects/>
 <AnimationEditingStatus/>
 <AnimationForm/>
 <details className="animation-step-details"><summary>{t("讲授步骤与讲稿")}</summary><StepControls/><div id="teaching-steps-mount"><TeachingSteps/></div></details>
+</>}
 </InspectorPanel>
 </SidebarPanel>
+{surface?.timeline}
 <PreviewOverlay/></main>);}
 
 function EditorAuxiliary1(){
@@ -321,12 +332,12 @@ return <MediaPicker/>;}
 function EditorAuxiliary2(){
 
 return <Notifications/>;}
-export function EditorChrome(){
+export function EditorChrome({surface}:{surface?:SurfaceSlots}){
 
 return <>
-<ActivityBar />
-<EditorHeader />
-<EditorWorkspace />
+<ActivityBar/>
+<EditorHeader surface={surface}/>
+<EditorWorkspace surface={surface}/>
 <EditorAuxiliary1 /><ObjectMenu/>
 <ResourceNotice scope="editor"/>
 <MediaDropOverlay/><EditorAuxiliary2 /><TextLinkDialog/><RichEditorDialog/><ImageCropDialog/><FindReplaceDialog/><EquationDialog/><CodeDialog/><CourseDialog/><StaticChartDialog/><ChartGalleryDialog/><ChartImportDialog/><ChartDataMenuView/><ChartGridView/><ChartToolbarView/><ChartBindingsView/><DocumentDialogs/><PageSettingsDialog/>

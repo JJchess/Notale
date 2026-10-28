@@ -1,5 +1,5 @@
-export interface CanvasLoadingState {visible:boolean;timedOut:boolean;retrying:boolean;}
-const initial:CanvasLoadingState={visible:false,timedOut:false,retrying:false};
+export interface CanvasLoadingState {visible:boolean;timedOut:boolean;retrying:boolean;mode:'initial'|'replacement';}
+const initial:CanvasLoadingState={visible:false,timedOut:false,retrying:false,mode:'initial'};
 let state=initial;
 const listeners=new Set<()=>void>();
 export const canvasLoadingState={

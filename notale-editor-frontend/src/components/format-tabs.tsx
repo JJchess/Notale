@@ -11,6 +11,7 @@ import {nativeChartInspectorState} from '../state/native-chart-inspector';
 import {chartPropertiesState} from '../state/chart-properties';
 import {revealPresetState} from '../state/reveal-preset';
 import {useEditorSelector} from '../state/use-editor-selector';
+import {useEditingCapability} from './use-editing-capability';
 /** The facet icons, in PowerPoint's order: fill and line, effects, size and properties,
  * then whatever the selected type adds. */
 const icons:Record<FormatTab,ReactNode>={
@@ -28,6 +29,7 @@ function Icon({tab}:{tab:FormatTab}){
 
 return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icons[tab]}</svg>;}
 function useFormat(){
+ const background=useEditingCapability('document:background'),theme=useEditingCapability('document:theme');
  const selected=useEditorSelector(state=>state.selectedIds.length>0);
  const inspector=useEditorSelector(state=>state.inspector);
  const connector=!!useSyncExternalStore(connectorInspectorState.subscribe,connectorInspectorState.getSnapshot,connectorInspectorState.getServerSnapshot).draft;
@@ -38,7 +40,8 @@ function useFormat(){
  const nativeChart=useSyncExternalStore(nativeChartInspectorState.subscribe,nativeChartInspectorState.getSnapshot,nativeChartInspectorState.getServerSnapshot).available;
  const chartProperties=useSyncExternalStore(chartPropertiesState.subscribe,chartPropertiesState.getSnapshot,chartPropertiesState.getServerSnapshot).visible;
  const interactive=inspector.binding||!!reveal.draft||scene.scenes.some(entry=>entry.id===scene.selected);
- return formatView(selected,inspector.kind,inspector.typography,chosen.scope,chosen.tab,{connector,interactive,vector,chart:nativeChart||chartProperties});
+ const pageTabs:FormatTab[]=[...(!background?['background' as const]:[]),...(!theme?['theme' as const]:[]),'page'];
+ return formatView(selected,inspector.kind,inspector.typography,chosen.scope,chosen.tab,{connector,interactive,vector,chart:nativeChart||chartProperties,pageTabs});
 }
 /** The tab rows. Both stay mounted so the panel keeps its scroll position and so the
  * imperative controllers that mount into these panes by id never lose their host. */

@@ -38,7 +38,7 @@ const server = createServer(async (req, res) => {
   }
   if(pathname==='/show.html'){res.writeHead(302,{location:'/present'+new URL(req.url!,'http://frontend.local').search}).end();return;}
   // Host API/show routing; preview URLs point at the isolated content hostname above.
-  if (pathname.startsWith('/api/') || ['/health', '/show.html', '/show.js', '/reveal.css'].includes(pathname)) {
+  if (['/api/', '/film-media/', '/film-export/', '/assets/', '/fixtures/motale/'].some(prefix => pathname.startsWith(prefix)) || ['/health', '/show.html', '/show.js', '/reveal.css'].includes(pathname)) {
     const target = new URL(backend);
     target.pathname = pathname;
     target.search = new URL(req.url!, 'http://frontend.local').search;

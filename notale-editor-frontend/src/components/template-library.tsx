@@ -17,6 +17,7 @@ import {
   templateLibraryActions as actions,
 } from "../state/template-library";
 import { useEditorSelector } from "../state/use-editor-selector";
+import {useEditingCapability} from './use-editing-capability';
 const base = TEMPLATE_CATALOG_BASE;
 function useLibrary() {
   return useSyncExternalStore(
@@ -27,6 +28,7 @@ function useLibrary() {
 }
 export function TemplateLibrary() {
  const t=useI18n();
+ const reason=useEditingCapability('template:page');
 
   const model = useLibrary(),
     visible = useEditorSelector((state) => state.sidebar.tool === "templates");
@@ -64,7 +66,7 @@ export function TemplateLibrary() {
         ))}
       </div>
       <p className="template-status" role="status">
-        {model.loading ? t("正在加载模板…") : t(model.error) || (model.entries && !entries.length ? t("没有匹配的模板") : "")}
+        {model.loading ? t("正在加载模板…") : t(model.error) || (model.entries && !entries.length ? t("没有匹配的模板") : !entries.length&&reason?t(reason):"")}
       </p>
       {model.error && (<button onClick={() => void actions.ensure()}>{t("重试")}</button>)}
     </>
@@ -123,6 +125,7 @@ function PreviewDialog() {
 
   const model = useLibrary(),
     dialog = useRef<HTMLDialogElement>(null);
+  const reason=useEditingCapability(model.preview?.kind==='diagram'?'template:diagram':'template:page');
   useLayoutEffect(() => {
     const node = dialog.current!;
     node.showModal();
@@ -230,12 +233,13 @@ function PreviewDialog() {
         />
       </div>
       <div className="template-dialog-actions">
-        <span role="status">{t(model.message)}</span>
+        <span role="status">{t(reason??model.message)}</span>
         <button
           type="button"
           className="primary"
           data-template-use={preview.kind}
-          disabled={model.busy}
+          disabled={model.busy||!!reason}
+          title={reason?t(reason):undefined}
           onClick={() => void actions.insert()}
         >
           {preview.kind === "diagram" ? t("插入当前页") : t("添加为新页面")}

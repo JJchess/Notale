@@ -6,8 +6,11 @@ import {upcoming} from './upcoming';
 import {maxStep,stepLabel,stepInterval,showControl,readShowCheckpoint,mergePresentationRuntime,presentationOrder,validPresentationState,type ShowControlMode,type Snapshot,type Slide,type PresentationSessionState,type PresentationRuntimePatch,type PresentationRuntimeState,type PresentationViewport} from '@notale/editor/browser';
 import {trackPreviewLease} from '../canvas/resource-lease';
 export type Tool='pointer'|'laser'|'pen'|'highlight'|'eraser'|'zoom';
-export type PresentationView={snapshot?:Snapshot;slides:Slide[];state?:PresentationSessionState;control:ShowControlMode|'audience';speaker:boolean;overview:boolean;tool:Tool;ready:boolean;error:string;audiences:number;sound:boolean;capabilities:string[];activity:number};
-const initial:PresentationView={slides:[],control:'starting',speaker:false,overview:false,tool:'pointer',ready:false,error:'',audiences:0,sound:false,capabilities:[],activity:0};
+export type PresentationView={snapshot?:Snapshot;slides:Slide[];state?:PresentationSessionState;control:ShowControlMode|'audience';speaker:boolean;overview:boolean;tool:Tool;ready:boolean;initializing:boolean;loadError:string;error:string;audiences:number;sound:boolean;capabilities:string[];activity:number};
+const initial:PresentationView={slides:[],control:'starting',speaker:false,overview:false,tool:'pointer',ready:false,initializing:true,loadError:'',error:'',audiences:0,sound:false,capabilities:[],activity:0};
+export const PRESENTATION_FRAME_TIMEOUT_MS=20_000;
+export const PRESENTATION_INITIAL_TIMEOUT_MS=30_000;
+type FrameReadiness={slideId:string;frame:HTMLIFrameElement;generation:number;phase:'loading'|'ready'|'failed';runtimeId?:string;error:string;deadline?:ReturnType<typeof setTimeout>;poll?:ReturnType<typeof setInterval>};
 const finite=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v);
 export class PresentationController {
  private view:PresentationView={...initial};private listeners=new Set<()=>void>();private params=new URLSearchParams(location.search);
@@ -22,14 +25,15 @@ export class PresentationController {
  private timer?:ReturnType<typeof setTimeout>;private autoDue=0;private autoRemaining:number|undefined;private persistTimer?:ReturnType<typeof setTimeout>;private helloTimer?:ReturnType<typeof setInterval>;
  private audienceSeen=new Map<string,number>();private windowId=crypto.randomUUID();private configured=new WeakMap<HTMLIFrameElement,string>();private destroyed=false;private nextFrame?:HTMLIFrameElement;private previewKey='';private switching=false;private animate=true;private backwards=false;private viewportListeners=new Set<(data:any)=>void>();
  private flushes=new Map<string,()=>void>();private transition=Promise.resolve();private request=new AbortController();
+ private frameReadiness=new Map<HTMLIFrameElement,FrameReadiness>();private generation=0;private engineReady=false;private initialDeadline=0;
  subscribe=(fn:()=>void)=>{this.listeners.add(fn);return()=>{this.listeners.delete(fn);};};getSnapshot=()=>this.view;
- private emit(patch:Partial<PresentationView>={}){this.view={...this.view,...patch};this.listeners.forEach(fn=>fn());}
+ private emit(patch:Partial<PresentationView>={}){if(this.destroyed)return;this.view={...this.view,...patch};this.listeners.forEach(fn=>fn());}
  private get state(){return this.view.state!;}private get leader(){return this.view.control==='controlling';}
  private get current(){return this.view.slides.find(s=>s.id===this.state?.slideId);}
  private key(){return 'notale-show:'+this.session+':'+this.state.documentId;}
  private read(){try{const data=JSON.parse(localStorage.getItem(this.key())??'null');return validPresentationState(data,this.state.documentId,this.state.version,this.session)?data:undefined;}catch{return undefined;}}
  private persist(immediate=false){if(!this.leader||!this.view.state)return;clearTimeout(this.persistTimer);const save=()=>{try{localStorage.setItem(this.key(),JSON.stringify(this.state));}catch{this.emit({error:'浏览器未能保存本次放映进度，请保留当前窗口。'});}};if(immediate)save();else this.persistTimer=setTimeout(save,200);}
- private sendFrame(frame:HTMLIFrameElement|undefined,type:string,data:unknown){if(frame?.contentWindow&&frame.src)this.post(frame.contentWindow,new URL(frame.src).origin,type,data);}
+ private sendFrame(frame:HTMLIFrameElement|undefined,type:string,data:unknown){if(!this.destroyed&&frame?.contentWindow&&frame.src)this.post(frame.contentWindow,new URL(frame.src).origin,type,data);}
  private post(window:Window,origin:string,type:string,data:unknown){window.postMessage({source:'notale-host',channel:this.channel,type,data},origin);}
  private frame(){return this.frames.get(this.state?.slideId);}
  private role(frame:HTMLIFrameElement){return this.state?.ended||frame===this.nextFrame||frame!==this.frame()?'preview':this.audience?'audience':this.leader?'controller':'following';}
@@ -39,12 +43,24 @@ export class PresentationController {
  private address(){return {documentId:this.state.documentId,version:this.state.version,session:this.session,term:this.state.term,sequence:this.state.sequence,sender:this.windowId};}
  private paint(){this.refreshApplyReport();const s=this.state;this.emit({capabilities:s.runtime[s.slideId]?.capabilities??[]});for(const frame of this.frames.values())this.configure(frame);this.paintPreview();}
  private applyCurrent(animate=this.animate){if(!this.view.ready)return;this.configure();const runtime=this.state.runtime[this.state.slideId];if(runtime&&runtime.step!==this.state.step)this.sendFrame(this.frame(),'presentation-apply',{patch:runtime,full:true});this.sendFrame(this.frame(),'seek',{step:this.state.step,animate,media:this.leader});if(runtime&&runtime.step===this.state.step)this.sendFrame(this.frame(),'presentation-apply',{patch:runtime,full:true});this.paintPreview();}
- private async json(url:string){const r=await fetch(url,{signal:this.request.signal});if(!r.ok)throw Error('无法加载放映内容（'+r.status+'）');return r.json();}
+ private initialBound<T>(operation:Promise<T>):Promise<T>{
+  return new Promise<T>((resolve,reject)=>{
+   const timeout=setTimeout(()=>{this.request.abort();finish(()=>reject(Error('放映初始化超时，请重试')));},Math.max(0,this.initialDeadline-Date.now()));
+   const aborted=()=>finish(()=>reject(Error('放映初始化已取消')));
+   const finish=(settle:()=>void)=>{clearTimeout(timeout);this.abort.signal.removeEventListener('abort',aborted);settle();};
+   this.abort.signal.addEventListener('abort',aborted,{once:true});
+   if(this.abort.signal.aborted)aborted();
+   operation.then(value=>finish(()=>resolve(value)),cause=>finish(()=>reject(cause)));
+  });
+ }
+ private json(url:string){return this.initialBound((async()=>{const r=await fetch(url,{signal:this.request.signal});if(!r.ok)throw Error('无法加载放映内容（'+r.status+'）');return r.json();})());}
  async mount(root:HTMLElement){
-  if(this.mounting||this.destroyed)return;this.mounting=true;
+  if(this.mounting||this.destroyed)return;this.mounting=true;this.initialDeadline=Date.now()+PRESENTATION_INITIAL_TIMEOUT_MS;
+  this.params.set('session',this.session);history.replaceState(null,'','/present?'+this.params);
   this.engineRoot=root;try{
    const id=this.params.get('document');if(!id)throw Error('没有指定讲义');
    const snapshot:Snapshot=await this.json('/api/documents/'+encodeURIComponent(id)+(this.params.get('version')?'?version='+encodeURIComponent(this.params.get('version')!):''));
+   if(this.destroyed)return;
    const slides=snapshot.document.slides.filter(s=>!s.hidden&&!s.layoutSourceId);if(!slides.length)throw Error('没有可放映的页面');
    const selected=slides.find(s=>s.id===this.params.get('slide'))??slides[0];
    let state:PresentationSessionState={protocol:2,documentId:id,version:snapshot.version,session:this.session,term:0,sequence:0,slideId:selected.id,step:0,max:maxStep(selected),ended:false,blank:false,timer:{elapsed:0,runningSince:Date.now()},autoPaused:false,viewport:{scale:1,x:0,y:0},annotations:{},runtime:{}};
@@ -53,13 +69,14 @@ export class PresentationController {
    else {const old=readShowCheckpoint(localStorage.getItem('notale-show-v1:'+this.session+':'+id),id,snapshot.version);if(old&&slides.some(s=>s.id===old.slideId)){state={...state,slideId:old.slideId,step:old.step,max:old.max,blank:old.blank,timer:{elapsed:0,runningSince:old.started}};if(!this.audience)this.emit({speaker:old.speaker});}}
    this.emit({state});this.params.set('version',String(snapshot.version));this.params.set('session',this.session);history.replaceState(null,'','/present?'+this.params);
    const previews=await this.json('/api/documents/'+encodeURIComponent(id)+'/preview?version='+snapshot.version);if(this.destroyed)return;
-   this.channel=previews.channel;this.lease=trackPreviewLease(id,previews,'presentation');for(const page of previews.slides)this.urls.set(page.id,page.url);
+   if(typeof previews.channel!=='string'||!previews.channel||!Array.isArray(previews.slides))throw Error('放映页面地址无效，请重试');
+   this.channel=previews.channel;this.lease=trackPreviewLease(id,previews,'presentation');for(const page of previews.slides)if(typeof page.url==='string'&&page.url)this.urls.set(page.id,page.url);
    const host=root.querySelector('.slides')!;
-   for(const page of slides){const section=document.createElement('section');section.dataset.transition=page.transition;const iframe=document.createElement('iframe');iframe.dataset.slideId=page.id;iframe.title=page.name;iframe.inert=true;iframe.setAttribute('sandbox','allow-scripts allow-same-origin allow-forms allow-popups');iframe.setAttribute('allow','autoplay');section.append(iframe);host.append(section);this.frames.set(page.id,iframe);}
+   for(const page of slides){const section=document.createElement('section');section.dataset.transition=page.transition;const iframe=this.createFrame(page);section.append(iframe);host.append(section);this.frames.set(page.id,iframe);}
    window.addEventListener('message',this.message,{signal:this.abort.signal});window.addEventListener('keydown',this.keydown,{signal:this.abort.signal});window.addEventListener('pagehide',()=>{this.persist(true);this.bus.postMessage({kind:'bye',...this.address()});this.control?.close();},{signal:this.abort.signal});
    this.bus.onmessage=e=>this.receive(e.data);
    this.engine=new Reveal(root,{width:snapshot.document.width,height:snapshot.document.height,margin:0,controls:false,progress:false,center:false,keyboard:false,touch:false,hash:false,embedded:true,loop:false,slideNumber:false,transition:'fade',viewDistance:2,mobileViewDistance:2,preloadIframes:true,autoSlide:0});
-   this.warmFrames();await this.engine.initialize();if(this.destroyed)return;
+   this.warmFrames();await this.initialBound(this.engine.initialize());if(this.destroyed)return;this.engineReady=true;this.emit({initializing:false});
    this.switching=true;this.engine.slide(slides.findIndex(s=>s.id===this.state.slideId));this.switching=false;
    this.engine.on('slidechanged',()=>{if(this.switching)return;const page=slides[this.engine.getIndices().h];if(this.leader)this.move(page.id,0);});
    this.control=this.audience?undefined:showControl({key:'notale-show-controller:'+this.session+':'+id+':'+snapshot.version,requestRelease:()=>this.bus.postMessage({kind:'takeover',...this.address()}),error:e=>this.fail(e),change:mode=>{
@@ -68,11 +85,67 @@ export class PresentationController {
     else{this.schedule();this.configure();this.hello();}
    }});
    this.control?.start();this.hello();this.helloTimer=setInterval(()=>{this.hello();if(this.leader){const now=Date.now();for(const [id,time] of this.audienceSeen)if(now-time>6500){this.audienceSeen.delete(id);this.applyReports.delete(id);}this.refreshApplyReport();if(this.view.audiences!==this.audienceSeen.size){this.emit({audiences:this.audienceSeen.size});this.configure();}}},2000);
-   this.sendFrame(this.frame(),'state',{});this.emit();
-   Object.assign(window,{NotaleShow:{next:()=>this.next(),prev:()=>this.prev(),seek:(n:number,animate=true)=>this.seek(n,animate),reveal:{slide:(index:number)=>this.jump(index),getIndices:()=>({h:slides.findIndex(s=>s.id===this.state.slideId)})},state:()=>({...this.state,index:slides.findIndex(s=>s.id===this.state.slideId),started:this.state.timer.runningSince??Date.now()-this.state.timer.elapsed,control:this.view.control,ready:this.view.ready})}});
-  }catch(e){if(!this.destroyed)this.fail(e);}
+   this.synchronizePosition(false);this.emit();
+   Object.assign(window,{NotaleShow:{next:()=>this.next(),prev:()=>this.prev(),seek:(n:number,animate=true)=>this.seek(n,animate),reveal:{slide:(index:number)=>this.jump(index),getIndices:()=>({h:slides.findIndex(s=>s.id===this.state.slideId)})},state:()=>({...this.state,index:slides.findIndex(s=>s.id===this.state.slideId),started:this.state.timer.runningSince??Date.now()-this.state.timer.elapsed,control:this.view.control,ready:this.view.ready,initializing:this.view.initializing,loadError:this.view.loadError})}});
+  }catch(e){if(!this.destroyed){this.engineReady=false;this.request.abort();this.emit({initializing:true,ready:false,loadError:String(e instanceof Error?e.message:e)});}}
  }
  url(id:string,role='preview'){const original=this.urls.get(id);if(!original)return '';const url=new URL(original);url.searchParams.set('notaleRole',role);return url.href;}
+ private createFrame(page:Slide){
+  const frame=document.createElement('iframe');frame.dataset.slideId=page.id;frame.title=page.name;frame.inert=true;
+  frame.setAttribute('sandbox','allow-scripts allow-same-origin allow-forms allow-popups');frame.setAttribute('allow','autoplay');
+  const record:FrameReadiness={slideId:page.id,frame,generation:++this.generation,phase:'loading',error:''};this.frameReadiness.set(frame,record);
+  frame.addEventListener('load',()=>{if(!this.liveFrame(record)||!frame.getAttribute('src'))return;if(record.phase!=='ready'){this.sendFrame(frame,'state',{});if(frame===this.frame())this.watchFrame(record);}});
+  frame.addEventListener('error',()=>{if(this.liveFrame(record)&&frame.getAttribute('src')&&record.phase!=='ready')this.frameFailed(record,'本页画面加载失败，可以重试或切换页面');});
+  return frame;
+ }
+ private liveFrame(record:FrameReadiness){return !this.destroyed&&this.frameReadiness.get(record.frame)===record&&this.frames.get(record.slideId)===record.frame;}
+ private stopWatching(record:FrameReadiness){clearTimeout(record.deadline);clearInterval(record.poll);record.deadline=undefined;record.poll=undefined;}
+ private frameFailed(record:FrameReadiness,message:string){
+  if(!this.liveFrame(record)||record.phase==='ready')return;
+  this.stopWatching(record);record.phase='failed';record.error=message;
+  if(record.frame===this.frame()&&this.engineReady){this.emit({ready:false,loadError:message});this.schedule();}
+ }
+ private watchFrame(record:FrameReadiness){
+  if(!this.engineReady||!this.liveFrame(record)||record.frame!==this.frame()||record.phase!=='loading'||record.deadline)return;
+  record.deadline=setTimeout(()=>this.frameFailed(record,'本页画面加载超时，可以重试或切换页面'),PRESENTATION_FRAME_TIMEOUT_MS);
+  let probes=0;
+  this.sendFrame(record.frame,'state',{});
+  record.poll=setInterval(()=>{
+   if(!this.liveFrame(record)||record.frame!==this.frame()||record.phase!=='loading'||++probes>=20){clearInterval(record.poll);record.poll=undefined;return;}
+   this.sendFrame(record.frame,'state',{});
+  },1000);
+ }
+ private releaseFrame(frame:HTMLIFrameElement){
+  const record=this.frameReadiness.get(frame);if(record)this.stopWatching(record);
+  this.frameReadiness.delete(frame);if(frame.contentWindow)this.readyFrames.delete(frame.contentWindow);
+  this.configured.delete(frame);this.frameSteps.delete(frame);this.busyFrames.delete(frame);
+ }
+ private startFrame(frame:HTMLIFrameElement){
+  const record=this.frameReadiness.get(frame)!;let url='';
+  try{url=this.url(record.slideId);}catch{}
+  if(!url){this.frameFailed(record,'本页放映地址不可用，请重新打开讲义');return;}
+  frame.src=url;
+ }
+ private activateFrame(){
+  const frame=this.frame(),record=frame&&this.frameReadiness.get(frame);
+  for(const other of this.frameReadiness.values())if(other!==record)this.stopWatching(other);
+  const ready=!!(this.engineReady&&record?.phase==='ready'&&frame?.contentWindow&&this.readyFrames.get(frame.contentWindow)===record.runtimeId);
+  this.emit({ready,loadError:record?.phase==='failed'?record.error:''});
+  if(!ready){if(record)this.watchFrame(record);this.schedule();return;}
+  const max=Math.max(maxStep(this.current!),this.frameSteps.get(frame!)??0),step=this.backwards?max:Math.min(this.state.step,max);this.backwards=false;
+  if(max!==this.state.max||step!==this.state.step){if(this.leader)this.commit({max,step});else this.emit({state:{...this.state,max,step}});}
+  this.applyCurrent(this.animate);this.schedule();
+ }
+ retry=()=>{
+  if(this.destroyed||!this.view.loadError)return;
+  if(!this.engineReady){this.persist(true);this.emit({loadError:''});this.params.set('session',this.session);if(this.view.state)this.params.set('version',String(this.state.version));location.replace('/present?'+this.params);return;}
+  const old=this.frame(),page=this.current;if(!old||!page)return;
+  this.navigationEpoch++;this.persist(true);this.flushes.forEach(done=>done());this.flushes.clear();
+  this.releaseFrame(old);const replacement=this.createFrame(page);this.frames.set(page.id,replacement);
+  old.replaceWith(replacement);this.resident.delete(page.id);this.resident.set(page.id,replacement);
+  this.emit({ready:false,loadError:''});this.startFrame(replacement);this.activateFrame();
+ };
+ private navigationEpoch=0;
  private applyReports=new Map<string,{slideId:string;sequence:number;term:number;failed:boolean}>();
  private dismissedApplyReport="";
  private localApplyStatus:{slideId:string;failed:boolean}|undefined;
@@ -83,7 +156,7 @@ export class PresentationController {
   const message='观众窗口的部分互动内容未能更新，请重新打开观众窗口重试';
   if(failed&&key!==this.dismissedApplyReport&&this.view.error!==message)this.emit({error:message});else if(!failed&&this.view.error===message)this.emit({error:''});
  }
- private hello(){if(!this.view.state)return;this.bus.postMessage({kind:'hello',...this.address(),audience:this.audience});if(this.audience&&this.localApplyStatus?.slideId===this.state.slideId)this.bus.postMessage({kind:'apply-status',...this.address(),...this.localApplyStatus});}
+ private hello(){if(this.destroyed||!this.view.state)return;this.bus.postMessage({kind:'hello',...this.address(),audience:this.audience});if(this.audience&&this.localApplyStatus?.slideId===this.state.slideId)this.bus.postMessage({kind:'apply-status',...this.address(),...this.localApplyStatus});}
  private receive(data:any){
   if(!this.view.state||data?.documentId!==this.state.documentId||data.version!==this.state.version||data.session!==this.session||data.sender===this.windowId)return;
   if(data.kind==='takeover'){void this.control?.yieldIfRequested();return;}
@@ -109,14 +182,19 @@ export class PresentationController {
  private message=(event:MessageEvent)=>{
   if(!this.view.state||event.data?.source!=='notale-slide'||event.data.channel!==this.channel)return;
   const frame=[...this.frames.values(),this.nextFrame].find(f=>f?.contentWindow===event.source);if(!frame?.getAttribute('src')||event.origin!==new URL(frame.src).origin)return;
+  const record=this.frameReadiness.get(frame);if(!record||!this.liveFrame(record))return;
   const {type,data}=event.data;
   if(type==='embedded-state'){if(data?.busy)this.busyFrames.add(frame);else this.busyFrames.delete(frame);return;}
   if(type==='ready'){
-   this.sendFrame(frame,'locale-change',{locale:localeStore.getSnapshot()});
-   const runtimeId=data.runtimeId??'legacy';if(this.readyFrames.get(event.source as Window)===runtimeId)return;this.readyFrames.set(event.source as Window,runtimeId);this.frameSteps.set(frame,Number(data.max)||0);
-   this.configure(frame);if(frame===this.nextFrame){this.paintPreview();return;}
-   if(frame!==this.frame())return;let max=Math.max(maxStep(this.current!),Number(data.max)||0);const step=this.backwards?max:Math.min(this.state.step,max);this.backwards=false;
-   this.emit({ready:true,state:{...this.state,max,step}});this.applyCurrent(this.animate);if(this.leader){this.commit({max,step});this.sendFrame(frame,'presentation-capture',{});}this.schedule();return;
+   if(data?.slideId!==undefined&&data.slideId!==record.slideId)return;
+   const runtimeId=data?.runtimeId??'legacy';if(typeof runtimeId!=='string'||!runtimeId)return;
+   const duplicate=record.phase==='ready'&&record.runtimeId===runtimeId;
+   this.stopWatching(record);record.phase='ready';record.runtimeId=runtimeId;record.error='';
+   this.readyFrames.set(event.source as Window,runtimeId);this.frameSteps.set(frame,Number.isSafeInteger(data?.max)&&data.max>=0?data.max:0);
+   this.sendFrame(frame,'locale-change',{locale:localeStore.getSnapshot()});this.configure(frame);
+   if(frame===this.nextFrame){this.paintPreview();return;}
+   if(frame===this.frame()&&this.engineReady&&(!duplicate||!this.view.ready)){this.activateFrame();if(this.leader)this.sendFrame(frame,'presentation-capture',{});}
+   return;
   }
   if(frame!==this.frame())return;
   if(type==='presentation-apply-status'){if(this.audience&&typeof data.failed==='boolean'){this.localApplyStatus={slideId:this.state.slideId,failed:data.failed};this.bus.postMessage({kind:'apply-status',...this.address(),slideId:this.state.slideId,failed:data.failed});return;}const message='部分互动内容未能更新，请重新打开观众窗口重试';if(data.failed===true)this.emit({error:message});else if(data.failed===false&&this.view.error===message)this.emit({error:''});return;}
@@ -138,30 +216,30 @@ export class PresentationController {
   for(const index of desired){
    const id=this.view.slides[index].id,frame=this.frames.get(id)!;
    if(!this.resident.has(id)){
-    frame.src=this.url(id);this.resident.set(id,frame);
+    this.resident.set(id,frame);this.startFrame(frame);
    }
   }
   const current=this.frames.get(this.state.slideId)!;
   this.resident.delete(this.state.slideId);this.resident.set(this.state.slideId,current);
   for(const [id,frame] of this.resident){
    if(this.resident.size<=8)break;if(pinned.has(id)||this.busyFrames.has(frame))continue;
-   if(frame.contentWindow)this.readyFrames.delete(frame.contentWindow);
-   this.configured.delete(frame);this.frameSteps.delete(frame);frame.removeAttribute('src');frame.inert=true;this.resident.delete(id);
+   this.releaseFrame(frame);const placeholder=this.createFrame(this.view.slides.find(page=>page.id===id)!);
+   this.frames.set(id,placeholder);frame.replaceWith(placeholder);this.resident.delete(id);
   }
  }
  private synchronizePosition(animate:boolean){
-  this.animate=animate;this.warmFrames();const at=this.view.slides.findIndex(s=>s.id===this.state.slideId);if(this.engine?.getIndices().h!==at){this.switching=true;this.engine?.slide(at);this.switching=false;this.emit({ready:this.readyFrames.has(this.frame()?.contentWindow!)});}
-  if(this.view.ready){const max=Math.max(maxStep(this.current!),this.frameSteps.get(this.frame()!)??0),step=this.backwards?max:Math.min(this.state.step,max);this.backwards=false;if(max!==this.state.max||step!==this.state.step){if(this.leader)this.commit({max,step});else this.emit({state:{...this.state,max,step}});}this.applyCurrent(animate);}else this.sendFrame(this.frame(),'state',{});
+  this.animate=animate;this.warmFrames();const at=this.view.slides.findIndex(s=>s.id===this.state.slideId);if(this.engine?.getIndices().h!==at){this.switching=true;this.engine?.slide(at);this.switching=false;}
+  this.activateFrame();
  }
  private flush(){if(!this.view.ready||!this.leader)return Promise.resolve();const requestId=crypto.randomUUID();return new Promise<void>(resolve=>{const timeout=setTimeout(()=>{this.flushes.delete(requestId);resolve();},300);this.flushes.set(requestId,()=>{clearTimeout(timeout);resolve();});this.sendFrame(this.frame(),'presentation-flush',{requestId});});}
  private queue(fn:()=>void){
-  const term=this.state.term;
-  const current=()=>!this.destroyed&&this.leader&&this.state.term===term;
+  const term=this.state.term,epoch=this.navigationEpoch;
+  const current=()=>!this.destroyed&&this.leader&&this.state.term===term&&this.navigationEpoch===epoch;
   this.transition=this.transition.then(async()=>{if(!current())return;await this.flush();if(current())fn();}).catch(e=>this.fail(e));
  }
- private move(slideId:string,step:number,backwards=false){if(!this.leader)return;this.animate=!backwards;this.backwards=backwards;const page=this.view.slides.find(s=>s.id===slideId)!;const runtimeMax=maxStep(page);this.commit({slideId,step,max:Math.max(runtimeMax,step),ended:false,viewport:{scale:1,x:0,y:0}});this.synchronizePosition(!backwards);this.schedule();}
- next=()=>{if(!this.leader||!this.view.ready)return;this.queue(()=>{if(this.state.step<this.state.max)this.seek(this.state.step+1);else{const at=this.view.slides.findIndex(s=>s.id===this.state.slideId);if(at+1<this.view.slides.length)this.move(this.view.slides[at+1].id,0);else if(this.view.snapshot!.document.presentation.loop)this.move(this.view.slides[0].id,0);else{this.commit({ended:true});this.schedule();}}});};
- prev=()=>{if(!this.leader)return;this.queue(()=>{if(this.state.ended){this.commit({ended:false});return;}if(this.state.step>0)this.seek(this.state.step-1,false);else{const at=this.view.slides.findIndex(s=>s.id===this.state.slideId);if(at>0){const page=this.view.slides[at-1];this.move(page.id,maxStep(page),true);}}});};
+ private move(slideId:string,step:number,backwards=false){if(this.destroyed||!this.leader)return;this.animate=!backwards;this.backwards=backwards;const page=this.view.slides.find(s=>s.id===slideId)!;const runtimeMax=maxStep(page);this.commit({slideId,step,max:Math.max(runtimeMax,step),ended:false,viewport:{scale:1,x:0,y:0}});this.synchronizePosition(!backwards);this.schedule();}
+ next=()=>{if(!this.leader||this.state.ended)return;this.queue(()=>{if(this.state.ended)return;if(this.view.ready&&this.state.step<this.state.max)this.seek(this.state.step+1);else{const at=this.view.slides.findIndex(s=>s.id===this.state.slideId);if(at+1<this.view.slides.length)this.move(this.view.slides[at+1].id,0);else if(this.view.snapshot!.document.presentation.loop)this.move(this.view.slides[0].id,0);else{this.commit({ended:true});this.schedule();}}});};
+ prev=()=>{if(!this.leader)return;this.queue(()=>{if(this.state.ended){this.commit({ended:false});this.synchronizePosition(false);return;}if(this.view.ready&&this.state.step>0)this.seek(this.state.step-1,false);else{const at=this.view.slides.findIndex(s=>s.id===this.state.slideId);if(at>0){const page=this.view.slides[at-1];this.move(page.id,maxStep(page),true);}}});};
  seek=(step:number,animate=true)=>{if(!this.leader||!finite(step))return;this.animate=animate;this.commit({step:Math.max(0,Math.min(this.state.max,Math.floor(step))),ended:false});this.sendFrame(this.frame(),'seek',{step:this.state.step,animate,media:true});this.sendFrame(this.frame(),'presentation-capture',{});this.schedule();};
  jump=(index:number)=>{if(!this.leader||!this.view.slides[index])return;this.queue(()=>{this.emit({overview:false});this.move(this.view.slides[index].id,0);});};
  overview=()=>{if(!this.leader)return;const open=!this.view.overview;if(open&&this.timer)this.autoRemaining=Math.max(0,this.autoDue-Date.now());this.emit({overview:open});this.schedule(true);};
@@ -174,7 +252,7 @@ export class PresentationController {
  timerPause=()=>{const timer=this.state.timer;this.commit({timer:timer.runningSince===null?{...timer,runningSince:Date.now()}:{elapsed:timer.elapsed+Date.now()-timer.runningSince,runningSince:null}});};
  timerReset=()=>this.commit({timer:{elapsed:0,runningSince:Date.now()}});
  autoPause=()=>{if(this.timer)this.autoRemaining=Math.max(0,this.autoDue-Date.now());this.commit({autoPaused:!this.state.autoPaused});this.schedule(true);};
- private schedule(resume=false){clearTimeout(this.timer);this.timer=undefined;if(!resume)this.autoRemaining=undefined;if(!this.leader||!this.view.ready||this.view.overview||this.state.autoPaused||this.state.blank||this.state.ended)return;const interval=resume&&this.autoRemaining!==undefined?Math.max(1,this.autoRemaining):stepInterval(this.current!,this.state.step);this.autoRemaining=undefined;if(interval){this.autoDue=Date.now()+interval;this.timer=setTimeout(()=>this.next(),interval);}}
+ private schedule(resume=false){clearTimeout(this.timer);this.timer=undefined;if(!resume)this.autoRemaining=undefined;if(this.destroyed||!this.leader||!this.view.ready||this.view.overview||this.state.autoPaused||this.state.blank||this.state.ended)return;const interval=resume&&this.autoRemaining!==undefined?Math.max(1,this.autoRemaining):stepInterval(this.current!,this.state.step);this.autoRemaining=undefined;if(interval){this.autoDue=Date.now()+interval;this.timer=setTimeout(()=>this.next(),interval);}}
  private paintPreview(){}
  posterUrl(id:string,step=0){const snapshot=this.view.snapshot;return snapshot?`/api/documents/${encodeURIComponent(snapshot.document.id)}/slides/${encodeURIComponent(id)}/poster?version=${snapshot.version}&step=${step}`:'';}
  speaker=()=>{if(this.audience)return;this.emit({speaker:!this.view.speaker});this.params.set('speaker',this.view.speaker?'1':'0');history.replaceState(null,'','/present?'+this.params);requestAnimationFrame(()=>this.engine?.layout());this.paintPreview();};
@@ -183,11 +261,11 @@ export class PresentationController {
  fullscreen=()=>{if(document.fullscreenElement)void document.exitFullscreen();else void document.documentElement.requestFullscreen().catch(()=>this.fail('请使用浏览器的全屏操作'));};
  takeover=()=>this.control?.takeover();
  activity=()=>{if(Date.now()-this.view.activity>150)this.emit({activity:Date.now()});};
- end=()=>{if(this.leader){const timer=this.state.timer;this.commit({ended:true,blank:false,autoPaused:true,timer:{elapsed:timer.elapsed+(timer.runningSince===null?0:Math.max(0,Date.now()-timer.runningSince)),runningSince:null}});this.schedule();}this.persist(true);this.control?.close();this.bus.postMessage({kind:'bye',...this.address()});if(window.opener){window.close();}else location.assign('/?document='+this.state.documentId);};
+ end=()=>{if(this.destroyed)return;this.navigationEpoch++;if(this.view.state){if(this.leader){const timer=this.state.timer;this.commit({ended:true,blank:false,autoPaused:true,timer:{elapsed:timer.elapsed+(timer.runningSince===null?0:Math.max(0,Date.now()-timer.runningSince)),runningSince:null}});this.schedule();}this.persist(true);this.bus.postMessage({kind:'bye',...this.address()});}const id=this.view.state?.documentId??this.params.get('document');this.destroy();if(window.opener)window.close();else location.assign(id?'/?document='+encodeURIComponent(id):'/');};
  private keydown=(e:KeyboardEvent)=>{if(isComposingKey(e)||e.defaultPrevented)return;const target=e.target as HTMLElement;if(target?.isContentEditable||['INPUT','TEXTAREA','SELECT'].includes(target?.tagName))return;if((e.key===' '||e.key==='Enter')&&target?.closest('button,summary,a[href],[role=button]'))return;if(this.handleKey(e))e.preventDefault();};
  handleKey=(e:{key:string;ctrlKey?:boolean;metaKey?:boolean;shiftKey?:boolean;altKey?:boolean})=>{if(!this.leader)return false;const key=e.key.toLowerCase();if((e.ctrlKey||e.metaKey)&&['z','y'].includes(key)&&['pen','highlight','eraser'].includes(this.view.tool)){this.viewportListeners.forEach(fn=>fn({kind:'history',redo:key==='y'||e.shiftKey}));return true;}if(e.ctrlKey||e.metaKey||e.altKey)return false;if(key==='escape'){if(this.view.overview)this.overview();else if(this.view.tool!=='pointer')this.tool('pointer');else if(this.state.viewport.scale!==1)this.viewport({scale:1,x:0,y:0});else if(document.fullscreenElement)void document.exitFullscreen();else this.end();return true;}if(this.view.overview)return false;if(['arrowright','pagedown',' '].includes(key)){this.next();return true;}if(['arrowleft','pageup'].includes(key)){this.prev();return true;}if(key==='home')this.jump(0);else if(key==='end')this.jump(this.view.slides.length-1);else if(key==='b')this.blank();else if(key==='o')this.overview();else if(key==='l')this.tool(this.view.tool==='laser'?'pointer':'laser');else if(key==='p')this.tool(this.view.tool==='pen'?'pointer':'pen');else if(key==='f')this.fullscreen();else return false;return true;};
  fail=(error:unknown)=>this.emit({error:String(error instanceof Error?error.message:error)});
  clearError=()=>{this.dismissedApplyReport=this.applyReportKey();this.emit({error:''});};
  layout=()=>this.engine?.layout();
- destroy(){this.destroyed=true;this.unsubscribeLocale();this.persist(true);this.request.abort();this.abort.abort();clearTimeout(this.timer);clearTimeout(this.persistTimer);clearInterval(this.helloTimer);this.lease?.stop();this.control?.close();this.bus.close();this.engine?.destroy();this.listeners.clear();for(const frame of this.frames.values())frame.remove();this.frames.clear();this.resident.clear();this.readyFrames.clear();this.flushes.forEach(fn=>fn());}
+ destroy(){if(this.destroyed)return;this.destroyed=true;this.navigationEpoch++;this.unsubscribeLocale();this.persist(true);this.request.abort();this.abort.abort();clearTimeout(this.timer);clearTimeout(this.persistTimer);clearInterval(this.helloTimer);this.lease?.stop();this.control?.close();this.bus.close();this.engine?.destroy();this.listeners.clear();for(const frame of this.frames.values()){this.releaseFrame(frame);frame.remove();}this.frames.clear();this.resident.clear();this.readyFrames.clear();this.flushes.forEach(fn=>fn());this.flushes.clear();}
 }

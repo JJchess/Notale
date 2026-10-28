@@ -1,0 +1,22 @@
+import {translateUi as filmText} from '../i18n/store';
+import type {FilmSource} from '@notale/editor/film';
+type Stream={codec_type?:string;codec_name?:string;width?:number;height?:number;avg_frame_rate?:string;sample_rate?:string;channels?:number;channel_layout?:string};
+type Metadata={name:string;bytes:number;modified:string;format?:string;duration?:number;bitRate?:number;streams:Stream[]};
+const bytes=(n:number)=>n<1024?`${n} B`:n<1024**2?`${(n/1024).toFixed(1)} KiB`:n<1024**3?`${(n/1024**2).toFixed(2)} MiB`:`${(n/1024**3).toFixed(2)} GiB`;
+const fps=(value:string|undefined)=>{if(!value)return;const [a,b]=value.split('/').map(Number),n=a/(b??1);return Number.isFinite(n)&&n>0?`${Number(n.toFixed(3))} fps${b&&b!==1?` (${value})`:''}`:undefined;};
+export function sourceProperties(root:HTMLElement,source:FilmSource,options:{relink?:(id:string,mode:'relink'|'replace')=>void}={}){
+ const dialog=document.createElement('dialog');dialog.className='film-document-dialog film-resource-dialog';dialog.setAttribute('aria-label',filmText('素材属性'));
+ const title=document.createElement('h2');title.textContent=source.title;const data=document.createElement('dl'),status=document.createElement('p');status.setAttribute('role','status');
+ const actions=document.createElement('div');actions.className='film-actions';const close=document.createElement('button');close.textContent=filmText('关闭');close.onclick=()=>dialog.close();actions.append(close);dialog.append(title,data,status,actions);
+ const row=(label:string,value:unknown)=>{if(value===undefined||value==='')return;const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=filmText(label);dd.textContent=String(value);data.append(dt,dd);};
+ row(filmText('类型'),({video:'视频',audio:'声音',image:'图片',openfilm:'网页',motale:'Motale',lecture:'讲义页',overlay:'原生叠加',sequence:'序列'} as const)[source.kind]);row(filmText('路径'),source.uri);if(source.width&&source.height)row(filmText('源尺寸'),`${source.width} × ${source.height}`);if(source.duration!==undefined)row(filmText('源时长'),`${source.duration.toFixed(3)} s`);
+ const abort=new AbortController();dialog.onclose=()=>{abort.abort();dialog.remove();};root.append(dialog);dialog.showModal();close.focus();
+ // In-memory sequence/overlay sources have no original file to probe or download.
+ if(['sequence','overlay'].includes(source.kind))return;
+ if(options.relink&&!['lecture'].includes(source.kind))for(const [mode,label]of [['relink','重新定位素材'],['replace','替换素材']] as const){const action=document.createElement('button');action.textContent=filmText(label);action.onclick=()=>{dialog.close();options.relink!(source.id,mode);};actions.prepend(action);}
+ const retry=document.createElement('button');retry.textContent=filmText('重试');retry.hidden=true;actions.prepend(retry);
+ const read=async()=>{retry.hidden=true;status.textContent=filmText('正在读取素材属性…');try{const response=await fetch('/film-media/metadata?uri='+encodeURIComponent(source.uri),{signal:abort.signal}),body=await response.json() as Metadata&{error?:string};if(!response.ok)throw Error(body.error??'无法读取素材属性');if(abort.signal.aborted)return;row(filmText('文件大小'),`${bytes(body.bytes)} (${body.bytes.toLocaleString()} 字节)`);row(filmText('文件修改时间'),new Date(body.modified).toLocaleString());row(filmText('封装'),body.format);row(filmText('文件时长'),body.duration===undefined?undefined:`${body.duration.toFixed(3)} s`);row(filmText('总码率'),body.bitRate===undefined?undefined:`${Math.round(body.bitRate/1000)} kb/s`);
+  for(const [i,stream]of body.streams.entries()){const name=stream.codec_type==='video'?'画面':stream.codec_type==='audio'?'声音':stream.codec_type??'流';row(`${name} ${i+1} 编码`,stream.codec_name);if(stream.width&&stream.height)row(`${name}尺寸`,`${stream.width} × ${stream.height}`);if(stream.codec_type==='video')row(filmText('帧率'),fps(stream.avg_frame_rate));if(stream.sample_rate)row(filmText('采样率'),`${Number(stream.sample_rate).toLocaleString()} Hz`);if(stream.channels)row(filmText('声道'),`${stream.channels}${stream.channel_layout?' · '+stream.channel_layout:''}`);}
+  const download=document.createElement('a');download.textContent=filmText('下载原文件');download.href='/film-media/download?uri='+encodeURIComponent(source.uri);download.download=body.name;actions.prepend(download);status.textContent='';
+ }catch(error){if(!abort.signal.aborted){status.textContent=String(error instanceof Error?error.message:error);retry.hidden=false;}}};retry.onclick=()=>{void read();};void read();
+}

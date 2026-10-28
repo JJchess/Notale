@@ -1,4 +1,4 @@
-interface Actions {insert:(kind:string,value?:string)=>Promise<unknown>;drag:(visible:boolean)=>void;error:(cause:unknown)=>void;}
+interface Actions {insert:(kind:string,value?:string)=>Promise<unknown>;drag:(visible:boolean)=>void;error:(cause:unknown)=>void;unavailableReason?:(kind:string)=>string|undefined;}
 let current:Actions|undefined;const listeners=new Set<()=>void>();
 export const insertActionsState={getSnapshot:()=>current,getServerSnapshot:()=>undefined,subscribe:(fn:()=>void)=>{listeners.add(fn);return()=>{listeners.delete(fn);};}};
 export function bindInsertActions(actions:Actions){current=actions;listeners.forEach(fn=>fn());return {dispose(){if(current===actions){current=undefined;listeners.forEach(fn=>fn());}}};}

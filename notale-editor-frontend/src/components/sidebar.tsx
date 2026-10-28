@@ -3,6 +3,7 @@ import {useLayoutEffect,useRef,type ReactNode,type HTMLAttributes,type ButtonHTM
 import {sidebar} from '../state/sidebar';
 import type {InspectorTab,PanelName} from '../state/sidebar-state';
 import {useEditorSelector} from '../state/use-editor-selector';
+import {ToolPanelSash} from './tool-panel-sash';
 export function SidebarEffects(){
   const view=useEditorSelector(state=>state.sidebar),restored=useRef(false);
   useLayoutEffect(()=>{
@@ -15,8 +16,12 @@ export function SidebarEffects(){
   },[view]);return null;
 }
 export function SidebarPanel({as:Tag='aside',...props}:HTMLAttributes<HTMLElement>&{as?:'aside'|'div'|'section';children?:ReactNode}){
+ const node=useRef<HTMLElement>(null),positions=useRef(new Map<string,number>());
+ const paneKey=useEditorSelector(state=>props.id==='property-panel'?state.sidebar.tab:props.id==='tool-panel'?state.sidebar.tool:props.id??'');
  const visible=useEditorSelector(state=>{const s=state.sidebar;switch(props.id){case 'page-panel':return s.pages;case 'property-panel':return s.inspector;case 'notes-panel':return s.notes;case 'tool-panel':return !!s.tool;case 'insert-drawer':return s.tool==='insert';case 'interactive-drawer':return s.tool==='interactive';case 'template-drawer':return s.tool==='templates';default:return true;}});
- return <Tag {...props} hidden={!visible}/>;
+ useLayoutEffect(()=>{if(visible&&node.current)node.current.scrollTop=positions.current.get(paneKey)??0;},[paneKey,visible]);
+ const resizable=Tag==='aside'&&['tool-panel','page-panel','property-panel'].includes(props.id??'');
+ return <Tag {...props} ref={element=>{node.current=element;}} hidden={!visible} onScroll={event=>{if(event.target===event.currentTarget)positions.current.set(paneKey,event.currentTarget.scrollTop);props.onScroll?.(event);}}>{resizable&&<ToolPanelSash/>}{props.children}</Tag>;
 }
 export function InspectorPanel({tab,children}: {tab:InspectorTab;children:ReactNode}){const visible=useEditorSelector(state=>state.sidebar.tab===tab);return <section data-panel={tab} hidden={!visible}>{children}</section>;}
 export function InspectorTabButton({tab,children}:{tab:InspectorTab;children:ReactNode}){const active=useEditorSelector(state=>state.sidebar.tab===tab);return <button data-tab={tab} className={active?'active':undefined} onClick={()=>sidebar.tab(tab)}>{children}</button>;}

@@ -6,7 +6,7 @@ import {createPortal} from 'react-dom';
 import {computePosition,flip,shift,offset} from '@floating-ui/dom';
 import {isComposingKey} from '../keyboard';
 export type PageMenuTarget={id:string;documentId:string;x:number;y:number;origin:HTMLButtonElement};
-export function PageMenu({target,index,count,close,action}:{target:PageMenuTarget;index:number;count:number;close:(restore?:boolean)=>void;action:(action:string)=>void}){
+export function PageMenu({target,index,count,close,action,available}:{target:PageMenuTarget;index:number;count:number;close:(restore?:boolean)=>void;action:(action:string)=>void;available?:string[]}){
  const t=useI18n();
 
  const ref=useRef<HTMLDivElement>(null),[position,setPosition]=useState({left:target.x,top:target.y});
@@ -28,6 +28,6 @@ export function PageMenu({target,index,count,close,action}:{target:PageMenuTarge
   if(event.key==='Tab'){event.preventDefault();close(true);return;}
   if(['ArrowUp','ArrowDown','Home','End'].includes(event.key)){event.preventDefault();const buttons=[...ref.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')],at=buttons.indexOf(document.activeElement as HTMLButtonElement);buttons[event.key==='Home'?0:event.key==='End'?buttons.length-1:(at+(event.key==='ArrowUp'?-1:1)+buttons.length)%buttons.length]?.focus();}
  }} onBlur={event=>{if(event.relatedTarget&&!event.currentTarget.contains(event.relatedTarget as Node))closeRef.current();}}>
- {entries.map(entry=><button key={entry.id} role="menuitem" data-page-action={entry.id} className={(entry.separator?'menu-section ':'')+(entry.id==='delete'?'danger':'')} disabled={index<0||entry.disabled} onClick={()=>action(entry.id)}><span>{t(entry.label)}</span>{entry.key && <kbd>{entry.key}</kbd>}</button>)}
+ {entries.filter(entry=>!available||available.includes(entry.id)).map(entry=><button key={entry.id} role="menuitem" data-page-action={entry.id} className={(entry.separator?'menu-section ':'')+(entry.id==='delete'?'danger':'')} disabled={index<0||entry.disabled} onClick={()=>action(entry.id)}><span>{t(entry.label)}</span>{entry.key && <kbd>{entry.key}</kbd>}</button>)}
  </div>,document.body);
 }

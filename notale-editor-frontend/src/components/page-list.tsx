@@ -11,12 +11,30 @@ import {editorActions,editorSession} from '../state/editor-session';
 
 import {useEditorSelector,shallowEqual} from '../state/use-editor-selector';
 const useSession=()=>useEditorSelector(state=>({document:state.document,activePageId:state.activePageId,pageQuery:state.pageQuery}),shallowEqual);
-export function PageList() {
+export interface PageListAdapter {
+ documentId:string;
+ pages:Array<{id:string;name:string;hidden?:boolean}>;
+ activePageId:string;
+ select(id:string):void|Promise<void>;
+ mountThumbnail(id:string,host:HTMLElement):void|(()=>void);
+ add?():void|Promise<void>;
+ copy?(id:string):void|Promise<void>;
+ remove?(id:string):void|Promise<void>;
+ move?(id:string,index:number):void|Promise<void>;
+ settings?(id:string):void|Promise<void>;
+}
+function AdaptedThumbnail({adapter,id}:{adapter:PageListAdapter;id:string}){
+ const host=useRef<HTMLSpanElement>(null);
+ useLayoutEffect(()=>{if(host.current)return adapter.mountThumbnail(id,host.current);},[adapter.documentId,adapter.mountThumbnail,id]);
+ return <span ref={host} className="page-thumbnail film-page-thumbnail" data-thumbnail={id} aria-hidden="true"/>;
+}
+export function PageList({adapter}:{adapter?:PageListAdapter}) {
  const t=useI18n();
 
-  const state=useSession(),pages=state.document?.document.slides.filter(page=>!page.layoutSourceId)??[];
+  const state=useSession(),pages=adapter?.pages??state.document?.document.slides.filter(page=>!page.layoutSourceId)??[];
+  const activePageId=adapter?.activePageId??state.activePageId;
   const query=state.pageQuery.trim().toLocaleLowerCase();
-  const matches=(page:(typeof pages)[number],index:number)=>!query||`${String(index+1).padStart(2,'0')} ${page.name} ${page.section||'未分章节'} ${page.animations.length} 动画 ${t('动画')} ${page.hidden?'已隐藏 '+t('已隐藏'):''}`.toLocaleLowerCase().includes(query);
+  const matches=(page:(typeof pages)[number],index:number)=>!query||`${String(index+1).padStart(2,'0')} ${page.name} ${'section' in page?page.section||'未分章节':''} ${'animations' in page?(page.animations as unknown[]).length+' 动画 '+t('动画'):''} ${page.hidden?'已隐藏 '+t('已隐藏'):''}`.toLocaleLowerCase().includes(query);
   const matching=pages.filter(matches);
   const displayed=matching;
   const visible=new Set(displayed.map(page=>page.id));
@@ -27,11 +45,13 @@ export function PageList() {
   const [drop,setDrop]=useState<{id:string;after:boolean}>();
   const [announcement,setAnnouncement]=useState('');
   const [menu,setMenu]=useState<PageMenuTarget>();
-  const documentId=state.document?.document.id;
-  useLayoutEffect(()=>{editorActions.pagesCommitted();},[state.document,state.activePageId,state.pageQuery]);
+  const documentId=adapter?.documentId??state.document?.document.id;
+  const showPage=(id:string)=>Promise.resolve(adapter?adapter.select(id):editorActions.showPage(id));
+  useLayoutEffect(()=>{if(!adapter)editorActions.pagesCommitted();},[adapter,state.document,state.activePageId,state.pageQuery]);
   useLayoutEffect(()=>{moving.current=undefined;setDrop(undefined);setAnnouncement('');setMenu(undefined);},[documentId]);
   const run=(task:Promise<unknown>)=>{void task.catch(editorActions.reportError);};
   async function move(id:string,index:number){
+    if(adapter){await adapter.move?.(id,index);if(cards.current.get(id)?.isConnected)cards.current.get(id)?.focus({preventScroll:true});return;}
     const sequence=++moveSequence.current;
     const origin=editorSession.getSnapshot(),card=cards.current.get(id);
     const focused=document.activeElement===card;
@@ -45,9 +65,14 @@ export function PageList() {
   function openMenu(id:string,x:number,y:number,origin:HTMLButtonElement){
     origin.focus({preventScroll:true});
     setMenu({id,documentId:documentId!,x,y,origin});
-    run(editorActions.showPage(id));
+    run(showPage(id));
   }
   async function act(action:string,id:string,origin:HTMLElement|null){
+    if(adapter){
+      if(pageActionBusy.current)return;pageActionBusy.current=true;
+      try{const index=pages.findIndex(page=>page.id===id);if(action==='add')await adapter.add?.();else if(action==='copy')await adapter.copy?.(id);else if(action==='delete')await adapter.remove?.(id);else if(action==='settings')await adapter.settings?.(id);else if(action==='up'||action==='down')await move(id,Math.max(0,Math.min(pages.length-1,index+(action==='up'?-1:1))));}
+      catch(error){editorActions.reportError(error);}finally{pageActionBusy.current=false;}return;
+    }
     if(pageActionBusy.current)return;
     const snapshot=editorSession.getSnapshot(),doc=snapshot.document?.document;
     if(!doc||!doc.slides.some(p=>p.id===id&&!p.layoutSourceId))return;
@@ -86,39 +111,39 @@ export function PageList() {
     if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){
       event.preventDefault();event.stopPropagation();const r=event.currentTarget.getBoundingClientRect();openMenu(id,r.left+28,r.top+20,event.currentTarget);return;
     }
-    if(event.key==='F2'&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();event.stopPropagation();pageSettingsActions.open(id);return;}
+    if(event.key==='F2'&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();event.stopPropagation();if(adapter)void act('settings',id,event.currentTarget);else pageSettingsActions.open(id);return;}
     if(event.ctrlKey||event.metaKey||event.shiftKey||!['ArrowUp','ArrowDown','Home','End'].includes(event.key))return;
     event.preventDefault();event.stopPropagation();
     const list=event.altKey?pages:displayed,from=list.findIndex(page=>page.id===id);
     const to=event.key==='Home'?0:event.key==='End'?list.length-1:Math.max(0,Math.min(list.length-1,from+(event.key==='ArrowUp'?-1:1)));
     if(to===from||!list[to])return;
     if(event.altKey)run(move(id,to));
-    else {cards.current.get(list[to].id)?.focus();run(editorActions.showPage(list[to].id));}
+    else {cards.current.get(list[to].id)?.focus();run(showPage(list[to].id));}
   }
   return <>
     <div className="page-rail-tools">
       <label className="slide-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="slide-search" type="search" aria-label={t("查找页面")} placeholder={t("查找页面")} autoComplete="off" value={state.pageQuery} onChange={event=>editorSession.update({pageQuery:event.target.value})} onKeyDown={event=>{if(!isComposingKey(event.nativeEvent)&&event.key==='Escape'&&state.pageQuery){event.preventDefault();event.stopPropagation();editorSession.update({pageQuery:''});}}}/></label>
-      <button id="add-slide" className="page-add" title={t("新建页面")} aria-label={t("新建页面")} disabled={!pages.some(p=>p.id===state.activePageId)} onClick={event=>void act('add',state.activePageId,event.currentTarget)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg></button>
+      <button id="add-slide" className="page-add" title={t(adapter&&!adapter.add?'从插入目录添加页面内容':'新建页面')} aria-label={t("新建页面")} disabled={adapter?!adapter.add:!pages.some(p=>p.id===activePageId)} onClick={event=>void act('add',activePageId,event.currentTarget)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg></button>
     </div>
     <div className="page-rail-scroll">
-    <p id="slide-search-empty" className="hint" hidden={matching.length>0}>{t("没有匹配的页面")}</p>
+    <p id="slide-search-empty" className="hint" hidden={!query||matching.length>0}>{t("没有匹配的页面")}</p>
     <div id="slides">{pages.map((page,index)=><button key={page.id}
       ref={node=>{if(node)cards.current.set(page.id,node);else cards.current.delete(page.id);}}
-      className={'slide-card'+(page.id===state.activePageId?' active':'')+(drop?.id===page.id?(drop.after?' drop-after':' drop-before'):'')}
-      data-slide={page.id} hidden={!visible.has(page.id)} draggable title={page.name} aria-label={t("第 {0} 页：{1}", {"0": index+1, "1": page.name})}
+      className={'slide-card'+(page.id===activePageId?' active':'')+(drop?.id===page.id?(drop.after?' drop-after':' drop-before'):'')}
+      data-slide={page.id} hidden={!visible.has(page.id)} draggable={!adapter||!!adapter.move} title={page.name} aria-label={t("第 {0} 页：{1}", {"0": index+1, "1": page.name})}
       onContextMenu={event=>{event.preventDefault();openMenu(page.id,event.clientX,event.clientY,event.currentTarget);}}
-      aria-current={page.id===state.activePageId} onClick={()=>run(editorActions.showPage(page.id))} onKeyDown={event=>keydown(event,page.id)}
+      aria-current={page.id===activePageId} onClick={()=>run(showPage(page.id))} onKeyDown={event=>keydown(event,page.id)}
       onDragStart={event=>{if(!documentId)return;moving.current={id:page.id,documentId};event.dataTransfer.setData('application/x-notale-page',page.id);event.dataTransfer.effectAllowed='move';}}
       onDragOver={event=>{if(!moving.current||moving.current.documentId!==documentId)return;event.preventDefault();event.dataTransfer.dropEffect='move';const r=event.currentTarget.getBoundingClientRect();setDrop(moving.current.id===page.id?undefined:{id:page.id,after:event.clientY>=r.top+r.height/2});}}
       onDragEnd={()=>{moving.current=undefined;setDrop(undefined);}}
       onDrop={event=>{const source=moving.current;moving.current=undefined;setDrop(undefined);if(!source||source.documentId!==documentId||source.id===page.id)return;event.preventDefault();const remaining=pages.filter(p=>p.id!==source.id),at=remaining.findIndex(p=>p.id===page.id);if(at>=0&&pages.some(p=>p.id===source.id))run(move(source.id,at+(drop?.id===page.id&&drop.after?1:0)));}}>
       <span className="number">{String(index+1).padStart(2,'0')}{page.hidden && <svg className="page-hidden" viewBox="0 0 24 24" aria-label={t("已隐藏")}><path d="m3 3 18 18M10 5c6-1 10 7 10 7l-3 4M7 7c-2 1-4 5-4 5s5 8 11 6"/></svg>}</span>
       {/* The thumbnail renderer exclusively owns the contents of this empty host. */}
-      <PageThumbnail documentId={documentId!} pageId={page.id}/>
+      {adapter?<AdaptedThumbnail adapter={adapter} id={page.id}/>:<PageThumbnail documentId={documentId!} pageId={page.id}/>}
 
     </button>)}</div>
     </div>
-    {menu&&menu.documentId===documentId && <PageMenu target={menu} index={pages.findIndex(p=>p.id===menu.id)} count={pages.length} close={(restore=false)=>{setMenu(undefined);if(restore&&menu.origin.isConnected)menu.origin.focus({preventScroll:true});}} action={action=>{const captured=menu;setMenu(undefined);if(captured.documentId!==editorSession.getSnapshot().document?.document.id)return;captured.origin.focus({preventScroll:true});void act(action,captured.id,captured.origin);}}/>}
+    {menu&&menu.documentId===documentId && <PageMenu target={menu} index={pages.findIndex(p=>p.id===menu.id)} count={pages.length} available={adapter?[...(adapter.add?['add']:[]),...(adapter.copy?['copy']:[]),...(adapter.remove?['delete']:[]),...(adapter.move?['up','down']:[]),...(adapter.settings?['settings']:[])]:undefined} close={(restore=false)=>{setMenu(undefined);if(restore&&menu.origin.isConnected)menu.origin.focus({preventScroll:true});}} action={action=>{const captured=menu;setMenu(undefined);if(captured.documentId!==(adapter?.documentId??editorSession.getSnapshot().document?.document.id))return;captured.origin.focus({preventScroll:true});void act(action,captured.id,captured.origin);}}/>}
     <span className="sr-only" role="status">{t(announcement)}</span>
   </>;
 }

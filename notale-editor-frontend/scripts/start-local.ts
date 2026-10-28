@@ -40,12 +40,14 @@ async function ready(url: string) {
 try {
   await access(resolve(backend, 'dist/server/main.js'));
   await access(resolve(frontend, process.env.NEXT_DIST_DIR ?? '.next', 'BUILD_ID'));
+  const playerDir = resolve(frontend, process.env.EDITOR_FILM_PLAYER_DIR ?? '.local/film-runtime');
+  await access(resolve(playerDir, 'player-build.json'));
   for (const candidate of ports) await new Promise<void>((done, fail) => {
     const socket = createServer();
     socket.once('error', () => fail(Error(`Port ${candidate} is unavailable; existing processes were not stopped`)));
     socket.listen(candidate, '127.0.0.1', () => socket.close(error => error ? fail(error) : done()));
   });
-  start(['dist/server/main.js'], backend, { ...process.env, EDITOR_PORT: String(apiPort), EDITOR_CONTENT_PORT: String(contentPort), EDITOR_RUNTIME_DIR: resolve(backend, 'dist') });
+  start(['dist/server/main.js'], backend, { ...process.env, EDITOR_PORT: String(apiPort), EDITOR_CONTENT_PORT: String(contentPort), EDITOR_RUNTIME_DIR: resolve(backend, 'dist'), EDITOR_FILM_PLAYER_DIR: playerDir });
   await ready(`http://127.0.0.1:${apiPort}/health`);
   start(['.local/tooling/scripts/serve.js'], frontend, { ...process.env, NODE_ENV: 'production', PORT: String(port), EDITOR_BACKEND_URL: `http://127.0.0.1:${apiPort}`, EDITOR_CONTENT_BACKEND_URL: `http://127.0.0.1:${contentPort}`, EDITOR_PUBLIC_CONTENT_URL: `http://notale-content.localhost:${port}` });
   await ready(`http://127.0.0.1:${port}`);

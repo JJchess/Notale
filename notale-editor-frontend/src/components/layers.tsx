@@ -1,6 +1,5 @@
 "use client";
 import {useI18n} from '../i18n/react';
-import {translateUi as t} from '../i18n/store';
 
 import { isComposingKey } from "../keyboard";
 
@@ -9,6 +8,7 @@ import { editorSession, editorActions } from "../state/editor-session";
 import type { NameFieldState } from "../state/inspector";
 import type { LayerRow, LayerState } from "../state/layers";
 import { useEditorSelector } from "../state/use-editor-selector";
+import './layers-reorder.css';
 function LayerName({
   field,
   label,
@@ -86,9 +86,10 @@ const LayerButton = memo(function LayerButton({
   selected,
 }: {
   row: LayerRow;
-  source: Pick<LayerState, "documentId" | "pageId">;
+  source: LayerState;
   selected: boolean;
 }) {
+  const t=useI18n();
   const [renaming, setRenaming] = useState<NameFieldState>();
   const button = useRef<HTMLButtonElement>(null),
     restore = useRef(false);
@@ -123,8 +124,15 @@ const LayerButton = memo(function LayerButton({
   return (
     <button
       ref={button}
+      draggable={!!source.reorder&&!row.locked}
       onDoubleClick={rename}
       onKeyDown={(event) => {
+        if(event.altKey&&!event.ctrlKey&&!event.metaKey&&['ArrowUp','ArrowDown'].includes(event.key)&&source.reorder){
+          event.preventDefault();event.stopPropagation();
+          const siblings=source.rows.filter(item=>item.parent===row.parent),index=siblings.findIndex(item=>item.id===row.id),target=siblings[index+(event.key==='ArrowUp'?-1:1)];
+          if(target)void source.reorder([row.id],target.id,event.key==='ArrowUp'?'before':'after').catch(editorActions.reportError);
+          return;
+        }
         if (
           event.key === "F2" &&
           !event.ctrlKey &&
@@ -161,6 +169,8 @@ export function Layers() {
  const t=useI18n();
 
   const list = useRef<HTMLDivElement>(null);
+  const dragging=useRef<{source:LayerState;ids:string[]}|undefined>(undefined);
+  const [drop,setDrop]=useState<{id:string;placement:'before'|'after'}>();
   const source = useEditorSelector((state) => state.layers),
     query = useEditorSelector((state) => state.objectQuery),
     selected = useEditorSelector((state) => state.selectedIds);
@@ -204,6 +214,24 @@ export function Layers() {
       <div
         id="objects"
         ref={list}
+        data-dragging={!!drop}
+        onDragStart={event=>{
+          event.stopPropagation();
+          const node=(event.target as HTMLElement).closest<HTMLElement>('[data-object]'),row=source?.rows.find(row=>row.id===node?.dataset.object);
+          if(!source?.reorder||search||!row||row.locked){event.preventDefault();return;}
+          const wanted=selected.includes(row.id)?source.rows.filter(item=>selected.includes(item.id)).map(item=>item.id):[row.id];
+          if(wanted.some(id=>source.rows.find(item=>item.id===id)?.parent!==row.parent||source.rows.find(item=>item.id===id)?.locked)){event.preventDefault();return;}
+          dragging.current={source,ids:wanted};event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('application/x-notale-layers',JSON.stringify(wanted));
+        }}
+        onDragOver={event=>{
+          const active=dragging.current,node=(event.target as HTMLElement).closest<HTMLElement>('[data-object]'),row=source?.rows.find(row=>row.id===node?.dataset.object);
+          if(!active||active.source!==source||!row||active.ids.includes(row.id)||search||active.ids.some(id=>source.rows.find(item=>item.id===id)?.parent!==row.parent)){setDrop(undefined);return;}
+          event.preventDefault();event.dataTransfer.dropEffect='move';const box=node!.getBoundingClientRect(),placement=event.clientY<box.top+box.height/2?'before':'after';
+          setDrop({id:row.id,placement});
+        }}
+        onDrop={event=>{event.preventDefault();event.stopPropagation();const active=dragging.current;dragging.current=undefined;setDrop(undefined);if(active&&active.source===source&&drop)void source?.reorder?.(active.ids,drop.id,drop.placement).catch(editorActions.reportError);}}
+        onDragEnd={()=>{dragging.current=undefined;setDrop(undefined);}}
+        onDragLeave={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setDrop(undefined);}}
         onKeyDown={(event) => {
           if (
             event.ctrlKey ||
@@ -243,12 +271,14 @@ export function Layers() {
         }}
       >
         {source && rows.map((row) => (
+          <div key={row.id} className="layer-drop-row" data-drop={drop?.id===row.id?drop.placement:undefined}>
             <LayerButton
               key={JSON.stringify([source.documentId, source.pageId, row.id])}
               row={row}
-              source={source}
+              source={search?{...source,reorder:undefined}:source}
               selected={ids.has(row.id)}
             />
+          </div>
           ))}
       </div>
       {source && rows.length === 0 && !!search && (<p className="hint" role="status">{t("没有匹配的对象")}</p>)}

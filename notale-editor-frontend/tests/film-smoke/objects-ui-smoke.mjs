@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {chromium} from '@playwright/test';
+const base=process.env.MOTALE_PREVIEW_URL??'http://127.0.0.1:4322';assert.equal((await fetch(base+'/film')).status,200);
+const browser=await chromium.launch({executablePath:process.env.MOTALE_CHROMIUM??chromium.executablePath(),headless:true,args:['--no-sandbox']});
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:960}});page.setDefaultTimeout(8000);page.on('dialog',d=>d.accept());const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+ await page.goto(base+'/film');await page.getByRole('button',{name:'文字',exact:true}).click();
+ const iframe=page.locator('[data-preview-clip-id] iframe').first();await iframe.waitFor();const frame=await(await iframe.elementHandle()).contentFrame();await frame.waitForFunction(()=>window.NotaleBridge?.state().mode==='edit');
+ const seek=at=>page.locator('[data-role="seek"]').evaluate((node,at)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(node,String(at));node.dispatchEvent(new Event('input',{bubbles:true}));},at);
+ const property=async(name,value)=>{await page.getByRole('combobox',{name:'对象属性',exact:true}).selectOption(name);await page.getByRole('textbox',{name:'对象属性值',exact:true}).fill(value);await page.getByRole('textbox',{name:'对象属性值',exact:true}).press('Tab');};
+ const key=()=>page.getByRole('button',{name:'添加对象关键帧',exact:true}).click();
+ const download=async()=>{const wait=page.waitForEvent('download');await page.getByRole('button',{name:'下载工作副本',exact:true}).click();return JSON.parse(await readFile(await(await wait).path(),'utf8'));};
+ await property('translate','0px 0px');await key();await seek(60);await property('translate','240px 120px');await seek(30);
+ await frame.waitForFunction(()=>getComputedStyle(document.querySelector('#stage > p')).translate==='120px 60px');
+ await seek(0);await property('color','#ff0000');await key();await seek(60);await property('color','#0000ff');await seek(30);await frame.waitForFunction(()=>getComputedStyle(document.querySelector('#stage > p')).color==='rgb(128, 0, 128)');
+ await property('filter','blur(2px)');await frame.waitForFunction(()=>getComputedStyle(document.querySelector('#stage > p')).filter==='blur(2px)');
+ await page.getByRole('checkbox',{name:'锁定对象',exact:true}).check();assert.equal(await page.getByRole('textbox',{name:'对象属性值',exact:true}).isDisabled(),true);
+ await page.getByRole('button',{name:'编辑叠加对象',exact:true}).click();await frame.waitForFunction(()=>window.NotaleBridge.state().mode==='edit');
+ await frame.waitForFunction(()=>window.__NOTALE__.slide.locked.includes('overlay-0'));assert.equal(await frame.locator('.moveable-control:visible').count(),0);
+ await page.getByRole('checkbox',{name:'锁定对象',exact:true}).uncheck();
+ await frame.waitForFunction(()=>getComputedStyle(document.querySelector('#stage > p')).translate==='none');
+ const box=await iframe.boundingBox(),position=await frame.locator('#stage > p').evaluate(n=>{const r=n.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,w:innerWidth,h:innerHeight};});
+ await page.mouse.dblclick(box.x+position.x*box.width/position.w,box.y+position.y*box.height/position.h);await frame.locator('[contenteditable="true"]').waitFor();await page.keyboard.press('ControlOrMeta+a');await page.keyboard.type('Base content');await page.keyboard.press('Escape');
+ let doc=await download();assert.match(doc.tracks[0].clips[0].overlayHtml,/Base content/);assert.ok(!doc.tracks[0].clips[0].overlayHtml.includes('120px 60px'));assert.ok(!doc.tracks[0].clips[0].overlayHtml.includes('128, 0, 128'));
+ await page.getByRole('button',{name:'完成对象编辑',exact:true}).click();await frame.waitForFunction(()=>getComputedStyle(document.querySelector('#stage > p')).color==='rgb(128, 0, 128)');
+ await page.getByRole('combobox',{name:'对象属性',exact:true}).selectOption('translate');await seek(0);await page.getByLabel('对象关键帧缓动',{exact:true}).selectOption('custom');await page.getByLabel('对象贝塞尔 X1',{exact:true}).fill('.4');await page.getByLabel('对象贝塞尔 X1',{exact:true}).press('Tab');
+ doc=await download();assert.deepEqual(doc.tracks[0].clips[0].objects['overlay-0'].keyframes.translate[0].easing,[.4,0,.75,1]);await page.getByLabel('对象关键帧缓动',{exact:true}).selectOption('linear');
+ await seek(30);await page.locator('[data-action="split"]').click();doc=await download();const right=doc.tracks[0].clips.find(c=>c.at===30);assert.equal(right.animationOffset,30);
+ await seek(45);const rightFrame=page.frameLocator(`[data-preview-clip-id="${right.id}"] iframe`);await rightFrame.locator('#stage > p').waitFor();
+ await page.waitForTimeout(120);assert.equal(await rightFrame.locator('#stage > p').evaluate(n=>getComputedStyle(n).translate),'180px 90px');
+ const before=Number(await page.locator('[data-role="seek"]').inputValue());await page.getByRole('button',{name:'播放或暂停（空格）'}).click();await page.waitForTimeout(500);await page.getByRole('button',{name:'播放或暂停（空格）'}).click();const advanced=Number(await page.locator('[data-role="seek"]').inputValue())-before;assert.ok(advanced>=10&&advanced<=24,`animation transport advanced ${advanced} frames in about 0.5s`);
+ assert.equal(await page.locator('.film-object-inspector').evaluate(n=>getComputedStyle(n).overscrollBehavior),'none');
+ await page.screenshot({path:'.local/motale-film/objects.png'});assert.deepEqual(errors,[]);
+ console.log('PASS object CSS/color/geometry frames + custom curves + native locks + base text edits without baked animation + split continuity');
+}finally{await browser.close();}

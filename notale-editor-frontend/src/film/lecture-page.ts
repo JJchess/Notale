@@ -1,0 +1,15 @@
+import type {FilmSource} from '@notale/editor/film';
+/** Frozen Notale export pages keep their existing, public step transport. */
+export class LecturePage {
+ private ready=false;private loaded=false;private runtime=false;private disposed=false;private step=-1;private painted=-1;private pending=-1;private serial=0;private abort=new AbortController();private timer:ReturnType<typeof setTimeout>;private channel='export';
+ constructor(private frame:HTMLIFrameElement,private source:FilmSource,private fail:(message:string)=>void){
+  const url=new URL(source.uri,location.href);if(url.origin!==location.origin)throw Error('讲义页需要同源的固定副本');url.searchParams.set('notaleRole','preview');frame.title=source.title;frame.allow="autoplay 'none'";window.addEventListener('message',this.receive,{signal:this.abort.signal});
+  frame.addEventListener('load',()=>{void this.loadedPage();},{signal:this.abort.signal});this.timer=setTimeout(()=>{if(!this.ready&&!this.disposed)this.fail('讲义页面运行时加载超时');},15000);frame.src=url.href;
+ }
+ private send(type:string,data:unknown){this.frame.contentWindow?.postMessage({source:'notale-host',channel:this.channel,type,data},location.origin);}
+ private async loadedPage(){try{const page=this.frame.contentDocument;if(!page)throw Error('无法访问讲义页');const config=JSON.parse(page.getElementById('notale-author-config')?.textContent??'null');if(config?.channel!=='export')throw Error('请选择导出的讲义页固定副本');await page.fonts.ready;await Promise.all([...page.images].map(image=>image.complete?Promise.resolve():new Promise<void>(resolve=>{image.addEventListener('load',()=>resolve(),{once:true,signal:this.abort.signal});image.addEventListener('error',()=>resolve(),{once:true,signal:this.abort.signal});})));if(this.disposed)return;this.loaded=true;this.send('state',{});this.check();}catch(error){if(!this.disposed)this.fail(String(error));}}
+ private check(){if(this.runtime&&this.loaded){this.ready=true;clearTimeout(this.timer);this.send('mode',{mode:'play'});}}
+ private receive=(event:MessageEvent)=>{if(this.disposed||event.source!==this.frame.contentWindow||event.origin!==location.origin||event.data?.source!=='notale-slide'||event.data.channel!==this.channel)return;const {type,data}=event.data;if(type==='ready'){this.runtime=true;this.check();}if(type==='step'&&data.step===this.pending){const serial=this.serial,step=this.pending;requestAnimationFrame(()=>requestAnimationFrame(()=>{if(!this.disposed&&serial===this.serial){this.painted=step;this.pending=-1;}}));}if(['edit-error','runtime-reload-required'].includes(type))this.fail(data?.message??'讲义运行时无法定位步骤');};
+ prepare(time:number){if(!this.ready)return false;const marks=this.source.markers??[];let step=0;for(let i=0;i<marks.length;i++)if(time+1e-7>=marks[i].time)step=i;else break;if(step===this.step&&step===this.painted)return true;if(step!==this.pending){this.step=step;this.pending=step;++this.serial;this.send('seek',{step,animate:false,media:false});}return false;}
+ dispose(){this.disposed=true;++this.serial;clearTimeout(this.timer);this.abort.abort();}
+}

@@ -13,16 +13,23 @@ test('React shell preserves canvas editing, shortcuts and persistence',async({pa
   await ready();
   if(!process.env.NEXT_COMPARE_LEGACY)expect(await page.locator('script[src*="/_next/"]').count()).toBeGreaterThan(0);
   const heading=page.frameLocator('#canvas').locator('[data-notale-id="heading"]');
+  // The viewport refits after selecting/reopening a slide. Compare author-space
+  // geometry, while retaining screen-space coordinates for the real pointer drag.
+  const authorX=()=>heading.evaluate(e=>{
+    const stage=e.ownerDocument.getElementById('stage')!,rect=e.getBoundingClientRect(),parent=stage.getBoundingClientRect();
+    return (rect.x-parent.x)*stage.offsetWidth/parent.width;
+  });
+  const initialX=await authorX();
   const r=await heading.evaluate(e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height,v:innerWidth};});
   const f=await page.locator('#canvas').boundingBox();expect(f).not.toBeNull();
   const scale=f!.width/r.v,x=f!.x+(r.x+r.w/2)*scale,y=f!.y+(r.y+r.h/2)*scale;
   await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+50,y+30,{steps:5});await page.mouse.up();
-  await expect.poll(()=>heading.evaluate(e=>e.getBoundingClientRect().x)).toBeGreaterThan(r.x+20);
+  await expect.poll(()=>authorX()).toBeGreaterThan(initialX+20);
   await page.evaluate(()=>(window as any).NotaleWorkbench.whenEditsIdle());
   await page.locator('#undo').click();
-  await expect.poll(()=>heading.evaluate(e=>e.getBoundingClientRect().x)).toBeCloseTo(r.x,0);
+  await expect.poll(()=>authorX()).toBeCloseTo(initialX,0);
   await page.locator('#redo').click();
-  await expect.poll(()=>heading.evaluate(e=>e.getBoundingClientRect().x)).toBeGreaterThan(r.x+20);
+  await expect.poll(()=>authorX()).toBeGreaterThan(initialX+20);
   await page.keyboard.press('Control+d');
   await expect(page.frameLocator('#canvas').locator('h1')).toHaveCount(2);
   await ready();await page.keyboard.press('Control+z');
@@ -34,7 +41,7 @@ test('React shell preserves canvas editing, shortcuts and persistence',async({pa
   await ready();await page.reload({waitUntil:'domcontentloaded'});
   await page.waitForFunction(()=>(window as any).NotaleWorkbench?.getSnapshot());await ready();
   await expect(heading).toHaveText('Next.js 保存验证');
-  expect(await heading.evaluate(e=>e.getBoundingClientRect().x)).toBeGreaterThan(r.x+20);
+  expect(await authorX()).toBeGreaterThan(initialX+20);
   await page.keyboard.press('Control+z');
   await expect(heading).toHaveText('迁移前后的编辑体验');await ready();
   await page.keyboard.press('Control+Shift+z');

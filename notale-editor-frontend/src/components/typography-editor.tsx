@@ -15,6 +15,8 @@ import {
   fontFamilyLabel,
 } from "../state/typography";
 import { PaintInput } from "./appearance-editor";
+import {ProjectFontPicker} from './project-font-picker';
+import {projectFontsState} from '../film/project-fonts';
 export function TypographyEditor() {
 
 
@@ -27,13 +29,16 @@ export function TypographyEditor() {
 }
 function TypographyFields({ model }: { model: TypographyModel }) {
  const t=useI18n();
+ const projectFonts=useSyncExternalStore(projectFontsState.subscribe,projectFontsState.getSnapshot,projectFontsState.getServerSnapshot);
+ const fontLabel=(value:string)=>{const family=fontFamilyLabel(value);return projectFonts?.fonts.find(font=>font.family===family)?.displayName??family;};
 
   const values = () =>
     Object.fromEntries(
       typographyFields.map((id) => [id, model.snapshot.fields[id].value]),
     );
   const [fields, setFields] = useState(values),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [fontFocused,setFontFocused]=useState(false);
   const current = useRef(fields),
     focus = useRef(""),
     fontDirty = useRef(false),
@@ -117,14 +122,15 @@ function TypographyFields({ model }: { model: TypographyModel }) {
             placeholder={
               model.snapshot.fields["font-family"].mixed ? t("多种字体") : t("沿用页面字体")
             }
-            title={latest.current.snapshot.fields["font-family"].value}
+            title={fontLabel(latest.current.snapshot.fields["font-family"].value)}
             value={
-              fontDirty.current
+              fontFocused||fontDirty.current
                 ? fields["font-family"]
-                : fontFamilyLabel(fields["font-family"])
+                : fontLabel(fields["font-family"])
             }
             onFocus={() => {
               focus.current = "font-family";
+              setFontFocused(true);
             }}
             onChange={(e) => {
               fontDirty.current = true;
@@ -132,13 +138,14 @@ function TypographyFields({ model }: { model: TypographyModel }) {
             }}
             onBlur={() => {
               focus.current = "";
+              setFontFocused(false);
               if (fontDirty.current) {
                 fontDirty.current = false;
                 const previous =
                   latest.current.snapshot.fields["font-family"].value;
                 const typed = current.current["font-family"];
                 const value =
-                  typed === fontFamilyLabel(previous) ? previous : typed;
+                  typed === fontFamilyLabel(previous)||typed===fontLabel(previous) ? previous : typed;
                 change("font-family", value);
                 if (value !== previous)
                   void save(typographyStyle("font-family", value));
@@ -173,6 +180,7 @@ function TypographyFields({ model }: { model: TypographyModel }) {
             ))}
           </datalist>
         </label>
+        <div className="full-field"><ProjectFontPicker commands={family=>latest.current.commands(typographyStyle('font-family',family))} onApplied={family=>{fontDirty.current=false;change('font-family',family);}}/></div>
         <label>{t("行高 px")}{numeric("line-height", "number", 1)}</label>
         <label>{t("字距 px")}{numeric("letter-spacing")}</label>
         <label>{t("段落对齐")}{select("text-align", [

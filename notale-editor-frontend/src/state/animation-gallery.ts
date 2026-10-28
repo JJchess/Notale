@@ -6,7 +6,7 @@ export const animationEffectGroups=[
 ];
 export const animationEffectLabels:Record<string,string>={'draw-stroke':'描边绘制',appear:'出现','fade-in':'淡入','fly-in':'飞入','zoom-in':'缩放进入','float-in':'浮入','bounce-in':'弹跳','wipe-in':'擦除','split-in':'劈裂',pulse:'强调 · 脉冲',spin:'旋转',disappear:'消失','fade-out':'淡出','fly-out':'飞出','zoom-out':'缩小退出','wipe-out':'擦除退出','split-out':'闭合',motion:'移动路径'};
 export const animationEffectSymbols:Record<string,string>={'draw-stroke':'✎',appear:'◈','fade-in':'◌','fly-in':'↘','zoom-in':'⤢','float-in':'↑','bounce-in':'↟','wipe-in':'▥','split-in':'◧',pulse:'✦',spin:'⟳',disappear:'◇','fade-out':'◌','fly-out':'↗','zoom-out':'⤡','wipe-out':'▥','split-out':'◨',motion:'↝'};
-interface Gallery {group:string;enabled:boolean;clearable:boolean;selected?:string;apply?:(effect:string)=>Promise<unknown>;clear?:()=>Promise<unknown>;}
+interface Gallery {group:string;enabled:boolean;clearable:boolean;selected?:string;supportedEffects?:readonly string[];reasons?:Record<string,string>;presetOnly?:boolean;apply?:(effect:string)=>Promise<unknown>;clear?:()=>Promise<unknown>;}
 const initial:Gallery={group:'entrance',enabled:false,clearable:false};
 let model=initial,owner:symbol|undefined;const listeners=new Set<()=>void>();
 function publish(next:Gallery){model=next;listeners.forEach(listener=>listener());}
@@ -19,6 +19,6 @@ export function bindAnimationGallery(){const token=Symbol();owner=token;return {
 };}
 export async function applyAnimationGallery(source:Gallery,effect?:string){
  if(source!==model)throw Error('动画选区已变化，请重试');
- if(effect!==undefined){if(!source.enabled||!animationEffectLabels[effect])return;await source.apply?.(effect);}
+ if(effect!==undefined){if(!source.enabled||!animationEffectLabels[effect])return;if(source.supportedEffects&&!source.supportedEffects.includes(effect))throw Error(source.reasons?.[effect]??'当前对象不支持此效果');if(source.reasons?.[effect])throw Error(source.reasons[effect]);await source.apply?.(effect);}
  else if(source.clearable)await source.clear?.();
 }

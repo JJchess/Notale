@@ -3,11 +3,12 @@ import {useI18n} from '../../i18n/react';
 
 import { isComposingKey } from "../../keyboard";
 
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState,type ReactNode } from "react";
 import {
   boundedNumber,
   numericExpression,
 } from "../../state/numeric-expression";
+import {bindNumericScrub} from '../../state/numeric-scrub';
 interface NumberFieldProps {
   id: string;
   label: string;
@@ -18,6 +19,7 @@ interface NumberFieldProps {
   max?: number;
   step?: number;
   integer?: boolean;
+  after?: ReactNode;
   onCommit: (value: number) => unknown;
   onError?: (error: unknown) => void;
 }
@@ -34,6 +36,7 @@ export function NumberField({
   integer = false,
   onCommit,
   onError,
+  after,
 }: NumberFieldProps) {
  const t=useI18n();
 
@@ -41,6 +44,8 @@ export function NumberField({
     [draft, setDraft] = useState(text),
     [error, setError] = useState("");
   const revision = useRef(0);
+  const inputRef=useRef<HTMLInputElement>(null);
+  const scrub=useRef({read:()=>draft,limits:()=>({min,max,step,integer}),start:()=>{},change:(_value:string)=>{},finish:(_cancelled:boolean)=>{}});
   useLayoutEffect(
     () => () => {
       revision.current++;
@@ -105,10 +110,15 @@ export function NumberField({
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   }
+  scrub.current={read:()=>current.current,limits:()=>({min,max,step,integer}),start:()=>{},change,finish:cancelled=>{if(cancelled)cancel();else commit();}};
+  useLayoutEffect(()=>bindNumericScrub(inputRef.current!,{
+    read:()=>scrub.current.read(),limits:()=>scrub.current.limits(),start:()=>scrub.current.start(),change:value=>scrub.current.change(value),finish:cancelled=>scrub.current.finish(cancelled),
+  }),[id]);
   return (
     <label className="editor-number-field" hidden={hidden}>
       {t(label)}
       <input
+        ref={inputRef}
         id={id}
         type="text"
         role="spinbutton"
@@ -178,6 +188,7 @@ export function NumberField({
           }
         }}
       />
+      {after}
       {error && (<span className="editor-field-error" id={errorId} role="alert">
           {t(error)}
         </span>)}

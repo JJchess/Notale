@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import {mkdir,writeFile,readFile} from 'node:fs/promises';
+import {chromium} from '@playwright/test';
+const base=process.env.MOTALE_PREVIEW_URL??'http://127.0.0.1:4322';assert.equal((await fetch(base+'/film')).status,200);
+await mkdir('.local/motale-film/assets',{recursive:true});await writeFile('.local/motale-film/assets/handles.svg','<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect width="400" height="200" fill="#8bb7d1"/><circle cx="80" cy="100" r="50" fill="#b3a0ed"/></svg>');
+const doc={kind:'film',schemaVersion:1,id:'handles',title:'画布变换',width:1280,height:720,frameRate:{numerator:30,denominator:1},sources:[{id:'s',kind:'image',title:'测试图片',uri:'/assets/handles.svg',width:400,height:200}],tracks:[{id:'v',kind:'media',title:'画面',locked:false,hidden:false,muted:false,clips:[{id:'a',sourceId:'s',title:'图片',in:0,at:0,duration:150,animationOffset:30,appearance:{keyframes:{x:[{frame:0,value:640},{frame:60,value:760}]}}}]}],markers:[]};
+const browser=await chromium.launch({executablePath:process.env.MOTALE_CHROMIUM??chromium.executablePath(),headless:true,args:['--no-sandbox']});
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:960}});page.setDefaultTimeout(8000);page.on('dialog',d=>d.accept());const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+ await page.goto(base+'/film');const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'打开影片 JSON'}).click();await(await chooser).setFiles({name:'handles.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(doc))});await page.locator('[data-clip-id="a"] .film-clip-body').click();
+ await page.getByRole('button',{name:'编辑片段位置与变换',exact:true}).click();
+ const iframe=page.locator('iframe.film-clip-handles');await iframe.waitFor();const frame=await(await iframe.elementHandle()).contentFrame();await frame.locator('.moveable-control[data-direction="se"]').waitFor({state:'visible'});
+ const proxy=frame.locator('[data-notale-id="film-clip"]'),picture=page.locator('[data-preview-clip-id="a"]');
+ async function point(locator,fx=.5,fy=.5){const box=await iframe.boundingBox(),local=await locator.evaluate(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,vw:innerWidth,vh:innerHeight};});return{x:box.x+(local.x+local.width*fx)*box.width/local.vw,y:box.y+(local.y+local.height*fy)*box.height/local.vh};}
+ const download=async()=>{const pending=page.waitForEvent('download');await page.getByRole('button',{name:'下载工作副本'}).click();return JSON.parse(await readFile(await(await pending).path(),'utf8'));};
+ const box=()=>picture.boundingBox();const near=(a,b,label)=>{for(const k of ['x','y','width','height'])assert.ok(Math.abs(a[k]-b[k])<1.2,`${label} ${k}: ${a[k]} vs ${b[k]}`);};
+ let saved,p;
+ if(process.env.MOTALE_HANDLES_PHASE!=='cancel'){
+ const before=await box(),start=await point(proxy);await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(start.x+52,start.y+27,{steps:8});await page.waitForTimeout(70);const live=await box();assert.ok(live.x-before.x>40,'actual image moves before releasing native handle');await page.mouse.up();await page.waitForTimeout(100);near(await box(),live,'drag commit continuity');
+ saved=await download();let clip=saved.tracks[0].clips[0];assert.equal(clip.appearance.keyframes.x.length,3);assert.ok(clip.appearance.keyframes.x.find(k=>k.frame===30).value>750);assert.equal(clip.appearance.keyframes.x[0].value,640);assert.ok(clip.appearance.values.y>380);assert.equal(clip.overlayHtml,undefined);
+ const set=async(name,value)=>{await page.getByRole('combobox',{name:'叠加属性',exact:true}).selectOption(name);await page.getByLabel('属性值',{exact:true}).fill(String(value));await page.getByLabel('属性值',{exact:true}).press('Tab');await page.waitForTimeout(80);};
+ await set('rotation',30);
+ const se=frame.locator('.moveable-control[data-direction="se"]');p=await point(se);await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x+42,p.y+9,{steps:8});await page.waitForTimeout(70);const scaled=await box();await page.mouse.up();await page.waitForTimeout(100);near(await box(),scaled,'rotated nonuniform scale continuity');
+ saved=await download();clip=saved.tracks[0].clips[0];assert.ok(Math.abs(clip.appearance.values.skewX)>1,'world scaling retains shear');
+ const turn=frame.locator('.moveable-rotation-control');p=await point(turn);const center=await point(proxy),vx=p.x-center.x,vy=p.y-center.y;await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(center.x-vy,center.y+vx,{steps:12});await page.waitForTimeout(70);const rotated=await box();await page.mouse.up();await page.waitForTimeout(100);near(await box(),rotated,'rotation continuity');saved=await download();assert.ok(Math.abs(saved.tracks[0].clips[0].appearance.values.rotation-clip.appearance.values.rotation)>25);
+ }else saved=await download();
+ await page.screenshot({path:'.local/motale-film/clip-handles.png'});
+ const persisted=JSON.stringify(saved),cancelBefore=await box();p=await point(proxy);await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x-35,p.y+20,{steps:8});await page.waitForTimeout(50);assert.equal(await frame.evaluate(()=>document.hasFocus()),true,'native gesture receives keyboard focus');await page.keyboard.press('Escape');await page.mouse.up();await page.waitForTimeout(100);near(await box(),cancelBefore,'Escape restores source');assert.equal(JSON.stringify(await download()),persisted,'cancel never writes author state');
+ await page.getByRole('button',{name:'播放或暂停（空格）'}).click();await iframe.waitFor({state:'detached'});await page.waitForTimeout(150);assert.notEqual(await page.locator('[data-role=time]').textContent(),'00:00:00:00');await page.getByRole('button',{name:'播放或暂停（空格）'}).click();
+ await page.getByRole('button',{name:'轨道设置：画面',exact:true}).click();await page.getByRole('checkbox',{name:'锁定轨道',exact:true}).check();await page.locator('[data-clip-id="a"] .film-clip-body').click();assert.equal(await page.getByRole('button',{name:'编辑片段位置与变换',exact:true}).isDisabled(),true);assert.equal(await page.locator('iframe.film-clip-handles').count(),0);
+ assert.deepEqual(errors,[]);console.log(process.env.MOTALE_HANDLES_PHASE==='cancel'?'PASS Escape cancellation + playback/locked pointer release':'PASS native clip drag/live preview + rotated scale/shear + rotation + split-clock keys + Escape + playback/locked pointer release');
+}finally{await browser.close();}

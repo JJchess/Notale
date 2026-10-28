@@ -13,7 +13,7 @@ test('loading timers and late retries cannot revive a disposed loading controlle
   controller.start();assert.equal(pending.size,2);
   for(const callback of pending.values())callback();assert.equal(state.getSnapshot().timedOut,true);
   const first=actions.retry();await actions.retry();assert.equal(retries,1);
-  controller.dispose();controller.dispose();assert.equal(pending.size,0);assert.deepEqual(state.getSnapshot(),{visible:false,timedOut:false,retrying:false});
+  controller.dispose();controller.dispose();assert.equal(pending.size,0);assert.deepEqual(state.getSnapshot(),{visible:false,timedOut:false,retrying:false,mode:'initial'});
   reject(Error('late failure'));await first;assert.equal(reports,0);
   controller.start();await actions.retry();assert.equal(pending.size,0);assert.equal(retries,1);
  }finally{globalThis.setTimeout=originalSet;globalThis.clearTimeout=originalClear;}

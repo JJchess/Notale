@@ -28,7 +28,7 @@ const count=useEditorSelector(state=>state.document?.document.slides.filter(page
 
 export function ObjectLockButton(){
  const t=useI18n();
-const count=useEditorSelector(state=>state.selectedIds.length);return <button id="lock" disabled={!count} onClick={()=>run(editorActions.toggleObjectLock)}>{t("锁定 / 解锁")}</button>;}
+const count=useEditorSelector(state=>state.selectedIds.length),canLock=useEditorSelector(state=>state.inspector.canLock!==false);return canLock?<button id="lock" disabled={!count} onClick={()=>run(editorActions.toggleObjectLock)}>{t("锁定 / 解锁")}</button>:null;}
 
 export function SelectionTools(){
  const t=useI18n();

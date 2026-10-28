@@ -1,6 +1,7 @@
 "use client";
 import {useI18n} from '../i18n/react';
 
+import {PropertyAnimation} from './property-animation';
 import { NumberField } from "./ui/number-field";
 import { editorActions, editorSession } from "../state/editor-session";
 import { useEditorSelector } from "../state/use-editor-selector";
@@ -24,6 +25,7 @@ export function GeometryFields() {
         <NumberField
           key={(source?.key ?? "empty") + field}
           id={field}
+          after={<PropertyAnimation property={({tx:'translate',ty:'translate','object-width':'width','object-height':'height',rotation:'rotate',scale:'scale'})[field]}/> }
           label={t(label)}
           value={source?.values[field]}
           disabled={!source?.editable}

@@ -55,3 +55,11 @@ test('authored types are read from the ancestor that owns them',()=>{
 test('a parent cycle cannot hang the type walk',()=>{
  assert.equal(inspectSelection([object('a',{parent:'b'}),object('b',{parent:'a'})],['a']).kind,'object');
 });
+
+ test('explicit text boxes expose content without flattening authored containers',()=>{
+  const box=object('box',{tag:'div',attributes:{'data-type':'text'}}),plain=inspectSelection([box],['box']);
+  assert.equal(plain.kind,'text');assert.equal(plain.text,true);assert.equal(plain.typography,true);
+  const styled=inspectSelection([box,object('bold',{tag:'b',parent:'box'})],['box']);assert.equal(styled.typography,true);assert.equal(styled.text,false);
+  assert.equal(inspectSelection([box,object('image',{tag:'img',parent:'box'})],['box']).typography,false);
+  assert.equal(inspectSelection([{...box,attributes:{'data-type':'text','data-notale-tex':'x'}}],['box']).text,false);
+ });

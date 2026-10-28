@@ -1,4 +1,5 @@
 'use client';
+import {newEditorFilm} from '../editor-navigation';
 import {useI18n} from '../i18n/react';
 
 import { isComposingKey } from "../keyboard";
@@ -13,7 +14,7 @@ import {useEditorSelector,shallowEqual} from '../state/use-editor-selector';
 export function FileMenu(){
  const t=useI18n();
 
-  const current=useEditorSelector(state=>({id:state.document?.document.id??'',title:state.document?.document.title??'未打开讲义',documents:state.documents,busy:state.busy}),shallowEqual);
+  const current=useEditorSelector(state=>({id:state.document?.document.id??'',title:state.document?.document.title??'未打开文件',documents:state.documents,busy:state.busy}),shallowEqual);
   const [open,setOpen]=useState(false),[editing,setEditing]=useState(false),[draft,setDraft]=useState(''),[error,setError]=useState(''),[pending,setPending]=useState(false);
   const [position,setPosition]=useState({left:0,top:0}),[query,setQuery]=useState('');
   const trigger=useRef<HTMLButtonElement>(null),menu=useRef<HTMLDivElement>(null),input=useRef<HTMLInputElement>(null),source=useRef({id:'',title:''}),saving=useRef(false);
@@ -35,19 +36,20 @@ export function FileMenu(){
   async function choose(id:string){setOpen(false);if(id===current.id||current.busy)return;try{await editorActions.loadDocument(id);}catch(cause){editorActions.reportError(cause);}}
   return <>
     <div className="file-title" hidden={editing}>
-      <button ref={trigger} id="file-menu-trigger" className="file-title-button" disabled={!current.id} aria-haspopup="menu" aria-expanded={open} title={t("切换讲义")} onClick={()=>setOpen(value=>!value)} onDoubleClick={rename}><span id="file-title">{current.id?current.title:t(current.title)}</span><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button>
+      <button ref={trigger} id="file-menu-trigger" className="file-title-button" disabled={!current.id} aria-haspopup="menu" aria-expanded={open} title={t("切换文件")} onClick={()=>setOpen(value=>!value)} onDoubleClick={rename}><span id="file-title">{current.id?current.title:t(current.title)}</span><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button>
       <button type="button" id="rename-document" className="file-rename" disabled={!current.id} aria-label={t("重命名")} title={t("重命名")} onClick={rename}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5zM15 5l4 4"/></svg></button>
     </div>
     <form id="rename-document-form" hidden={!editing} data-busy={pending} onSubmit={event=>{event.preventDefault();void submit();}} onKeyDown={event=>{event.stopPropagation();if(isComposingKey(event.nativeEvent))return;if(event.key==='Escape'){event.preventDefault();if(!pending){setEditing(false);requestAnimationFrame(()=>trigger.current?.focus());}}}}>
       <input ref={input} id="deck-title" required maxLength={300} aria-label={t("文件名")} value={draft} disabled={pending} onChange={event=>setDraft(event.target.value)}/><span role="status">{t(error)}</span>
     </form>
-    {open && createPortal(<div ref={menu} id="file-menu" className="editor-popup" role="menu" aria-label={t("切换讲义")} style={{position:'fixed',...position}} onKeyDown={event=>{
+    {open && createPortal(<div ref={menu} id="file-menu" className="editor-popup" role="menu" aria-label={t("切换文件")} style={{position:'fixed',...position}} onKeyDown={event=>{
       event.stopPropagation();if(isComposingKey(event.nativeEvent))return;const buttons=[...menu.current!.querySelectorAll<HTMLButtonElement>('button')],index=buttons.indexOf(document.activeElement as HTMLButtonElement);
       if(event.key==='Escape'){setOpen(false);trigger.current?.focus();}if(event.key==='Tab')setOpen(false);
       if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();buttons[(index+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}
     }}>
       <input type="search" className="file-menu-search" aria-label={t("搜索")} placeholder={t("搜索")} value={query} onChange={event=>setQuery(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!isComposingKey(event.nativeEvent)&&matches[0]){event.preventDefault();void choose(matches[0].id);}}}/>
       {matches.map(item=><button key={item.id} role="menuitemradio" aria-checked={item.id===current.id} title={item.title} data-document={item.id} onClick={()=>void choose(item.id)}><span>{item.title}</span><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.2 5 8.6 9.5 3.6"/></svg></button>)}
+      <hr/><button role="menuitem" onClick={()=>{setOpen(false);void newEditorFilm().catch(editorActions.reportError);}}>{t("新建影片")}</button>
     </div>,document.body)}
   </>;
 }

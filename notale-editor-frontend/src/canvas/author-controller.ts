@@ -29,7 +29,8 @@ export class AuthorCanvasController {
  beginPage(){if(this.disposed)return;++this.refreshSequence;++this.epoch;++this.sequence;this.previews=[];this.rendered=undefined;this.externalPreview=undefined;}
  resetDocument(){this.beginPage();this.signature='';this.base='';this.paintedAssets={};for(const lease of this.leases.values())lease.stop();this.leases.clear();}
  seed(confirmed:Snapshot,slide:Slide,url:string){if(this.disposed)return;this.rendered=structuredClone(slide);this.base=new URL('../'.repeat(slide.sourcePath.split('/').length-1)||'./',url).href;this.signature=JSON.stringify(confirmed.document.assets);this.paintedAssets=confirmed.document.assets;}
- preview(commands:Command[]){if(this.disposed)return;this.previews.push(...commands);this.canvas.send('author-preview',{commands});}
+ recordLocalPreview(commands:Command[]){if(this.disposed)return;this.previews.push(...structuredClone(commands));}
+ preview(commands:Command[]){if(this.disposed)return;this.recordLocalPreview(commands);this.canvas.send('author-preview',{commands});}
  /** Paints a candidate the author has not applied yet -- e.g. an AI edit under review. The
   * committed state (`rendered`) is untouched, so this is always cheaply reversible; it only
   * makes sense while nothing else is editing, and the caller must clear it before any real
@@ -80,7 +81,7 @@ export class AuthorCanvasController {
   const preview=await this.context.preview(documentId,snapshot.version);
   if(this.disposed||sequence!==this.refreshSequence||epoch!==this.epoch||documentId!==this.context.snapshot().document.id||pageId!==this.context.pageId())return;
   this.retain(documentId,preview);this.context.refreshed(preview,snapshot);
-  const source=preview.slides.find(s=>s.id===pageId);if(source)this.canvas.send('runtime-refresh',{url:source.url,version:snapshot.version});
+  const source=preview.slides.find(s=>s.id===pageId);if(source){const url=new URL(source.url);url.searchParams.set('notaleMode','edit');this.canvas.send('runtime-refresh',{url:url.href,version:snapshot.version});}
  }
  dispose(){if(this.disposed)return;this.resetDocument();this.disposed=true;this.detach();}
 }

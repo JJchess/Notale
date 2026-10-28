@@ -122,7 +122,7 @@ export class EditorKernel {
   get canUndo() { return this.editing || this.undoStack.length > 0; }
   get canRedo() { return this.redoStack.length > 0; }
   handlesVersion(version: number) { return [...this.seen.values()].some(entry=>entry.version===version); }
-  private task(commands: Command[], id=crypto.randomUUID()): Pending {
+  private task(commands: Command[], id:string=crypto.randomUUID()): Pending {
     const queued=this.context.operations(),position=queued.findIndex(task=>task.request.mutationId===id);
     const predecessors=position<0?queued:queued.slice(0,position);
     return {kind:'commit',owner:this.context.owner(),documentId:this.confirmed.document.id,slideId:commands.find(c=>'slideId' in c)?.['slideId'],kernel:{protocol:2,dependencies:predecessors.filter(task=>task.documentId===this.confirmed.document.id&&task.request.mutationId!==id&&!this.acknowledged.has(task.request.mutationId)).map(task=>task.request.mutationId)},request:{baseVersion:this.confirmed.version,mutationId:id,commands}};
@@ -258,10 +258,12 @@ export class EditorKernel {
   }
   private async flushPending() { for(const key of [...this.gestures.keys()])await this.commitPending(key); }
   private inverse(entry: EditTransaction, inverseId: string): Pending {
-    const preview=authorChanges(entry.after,entry.before);
-    return {kind:'restore',owner:this.context.owner(),documentId:this.confirmed.document.id,slideId:entry.task.slideId,
-      inverseMutationId:inverseId,historyAction:'undo',kernel:{protocol:2,prepared:true,preview,htmlBases:this.bases(entry.after,preview)},
-      request:{baseVersion:this.confirmed.version,mutationId:crypto.randomUUID(),version:entry.version??1}};
+    const preview=authorChanges(entry.after,entry.before),task=this.task([]);
+    // An inverse must observe the same admitted predecessors as a normal edit.
+    // Keep their identities in its durable request; never rebase a retry on send.
+    return {...task,kind:'restore',slideId:entry.task.slideId,
+      inverseMutationId:inverseId,historyAction:'undo',kernel:{...task.kernel!,prepared:true,preview,htmlBases:this.bases(entry.after,preview)},
+      request:{baseVersion:task.request.baseVersion,mutationId:task.request.mutationId,version:entry.version??1}};
   }
   private async undoPending() {
     await this.flushPending();

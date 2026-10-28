@@ -1,6 +1,7 @@
+import { applyFilmCommands } from '@notale/editor/film';
 import { arrangePlan, applyAuthorChanges, mergeAuthorHtml, type AuthorChangeSet, type Command, type Snapshot, type Slide } from '@notale/editor/browser';
 
-const local = new Set<Command['type']>(['elements.arrange','element.patch','element.transform','element.lock','group.set','group.remove','slide.update','deck.update','animation.set','animation.remove','animation.reorder','native-chart.edit','native-chart.set','native-chart.remove','svg.patch','svg.structure']);
+const local = new Set<Command['type']>(['film.edit','elements.arrange','element.patch','element.transform','element.lock','group.set','group.remove','slide.update','deck.update','animation.set','animation.remove','animation.reorder','native-chart.edit','native-chart.set','native-chart.remove','svg.patch','svg.structure']);
 export const canProject = (commands: Command[]) => commands.every(c => local.has(c.type));
 const style = (node: HTMLElement | SVGElement, patch: Record<string, string>) => {
   for (const [key, value] of Object.entries(patch)) {
@@ -20,7 +21,8 @@ export function projectCommands(source: Snapshot, commands: Command[]): Snapshot
   function dom(s: Slide) { if (!html.has(s.id)) html.set(s.id, new DOMParser().parseFromString(s.html, 'text/html')); return html.get(s.id)!; }
   const expanded=commands.flatMap(c=>c.type==='elements.arrange'?arrangePlan(source.document,source.document.slides.find(s=>s.id===c.slideId)!,c):[c]);
   for (const c of expanded) {
-    if (c.type === 'deck.update') { const {type,...patch}=c;Object.assign(document, patch); continue; }
+    if(c.type==='film.edit'){if(!document.film)throw Error('Film document required');document.film=applyFilmCommands(document.film,c.commands);Object.assign(document,{title:document.film.title,width:document.film.width,height:document.film.height});continue;}
+    if (c.type === 'deck.update') { const {type,...patch}=c;Object.assign(document, patch);if(document.film)document.film={...document.film,title:document.title,width:document.width,height:document.height}; continue; }
     if (!('slideId' in c)) continue;
     const s = page(c.slideId); if (!s) continue;
     const get = (id: string) => dom(s).querySelector<HTMLElement>('[' + 'data-notale-id="' + CSS.escape(id) + '"]');

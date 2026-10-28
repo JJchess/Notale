@@ -4,10 +4,11 @@ import {readFileSync,readdirSync,statSync} from 'node:fs';
 import {join} from 'node:path';
 import {describeMessage} from '@notale/editor/i18n';
 import {GENERIC_LABELS} from '../src/state/ai-edits';
+import {editorEnglish} from '../src/i18n/editor-messages';
 
-/** Every fixed Chinese string the UI hands to t() must resolve in the catalog; otherwise the English
+/** Every fixed Chinese string the UI hands to t() must resolve in the catalog or the editor's own messages; otherwise the English
  * UI silently shows Chinese. Template holes (`${…}`) count as any value. */
-const covered=(text:string)=>{const sample=text.replace(/\$\{[^}]*\}/g,'x');return !!describeMessage(sample)||!!describeMessage(sample.trim());};
+const covered=(text:string)=>{const sample=text.replace(/\$\{[^}]*\}/g,'x');return !!describeMessage(sample)||!!describeMessage(sample.trim())||Object.hasOwn(editorEnglish,text);};
 const cjk=/[一-鿿]/;
 test('every fixed string passed to t() is in the translation catalog',()=>{
  const files:string[]=[];

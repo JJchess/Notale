@@ -13,7 +13,7 @@ export function ToolPanelSash(){
  const drag=useRef<{x:number;width:number}|undefined>(undefined);
  const [dragging,setDragging]=useState(false);
  useEffect(()=>{toolPanelActions.restore();},[]);
- useLayoutEffect(()=>{document.body.style.setProperty('--tool-panel-width',`${model.width}px`);},[model.width]);
+ useLayoutEffect(()=>{document.body.style.setProperty('--tool-panel-width',`${model.width}px`);document.body.style.setProperty('--editor-sidebar-width',`${model.width}px`);},[model.width]);
  useEffect(()=>{
   if(!dragging)return;
   // The canvas iframe eats pointer events once the cursor crosses into it.

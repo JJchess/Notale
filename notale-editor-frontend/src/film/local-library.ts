@@ -1,0 +1,16 @@
+import {parseFilmDocument,type FilmDocument} from '@notale/editor/film';
+export type LibraryItem={id:string;name:string;created:number;document:FilmDocument};
+let database:Promise<IDBDatabase>|undefined;
+function db(){return database??=new Promise((resolve,reject)=>{const request=indexedDB.open('notale-film-library',1);request.onupgradeneeded=()=>{request.result.createObjectStore('items',{keyPath:'id'});request.result.createObjectStore('labels');};request.onsuccess=()=>resolve(request.result);request.onerror=()=>{database=undefined;reject(request.error);};});}
+async function transaction<T>(name:'items'|'labels',mode:IDBTransactionMode,run:(store:IDBObjectStore)=>IDBRequest<T>){const database=await db();return new Promise<T>((resolve,reject)=>{const tx=database.transaction(name,mode),request=run(tx.objectStore(name));tx.oncomplete=()=>resolve(request.result);tx.onerror=()=>reject(tx.error??request.error);tx.onabort=()=>reject(tx.error??Error('本机素材库存储被取消'));});}
+export const filmLibrary={
+ async all(){const rows=await transaction<LibraryItem[]>('items','readonly',store=>store.getAll());return rows.map(row=>({...row,document:parseFilmDocument(row.document)})).sort((a,b)=>b.created-a.created);},
+ async put(item:LibraryItem){const value={...item,document:parseFilmDocument(item.document)};await transaction('items','readwrite',store=>store.put(value));},
+ async remove(id:string){await transaction('items','readwrite',store=>store.delete(id));},
+ label(key:string,value?:string){return value===undefined?transaction<string|undefined>('labels','readonly',store=>store.get(key)):transaction('labels','readwrite',store=>store.put(value,key)).then(()=>value);}
+};
+export function libraryDialog(root:HTMLElement,use:(document:FilmDocument)=>boolean){
+ const dialog=document.createElement('dialog');dialog.className='film-document-dialog film-library-dialog';dialog.setAttribute('aria-label','片段库');const search=document.createElement('input');search.type='search';search.placeholder='搜索片段库';search.setAttribute('aria-label','搜索片段库');const list=document.createElement('div'),status=document.createElement('p'),close=document.createElement('button');close.textContent='关闭';close.onclick=()=>dialog.close();dialog.append(search,list,status,close);dialog.onclose=()=>dialog.remove();root.append(dialog);dialog.showModal();search.focus();
+ let items:LibraryItem[]=[];function paint(){list.replaceChildren();const visible=items.filter(item=>item.name.toLocaleLowerCase().includes(search.value.toLocaleLowerCase()));for(const item of visible){const row=document.createElement('div');row.className='film-library-row';const button=document.createElement('button');button.textContent=item.name;button.onclick=()=>{try{if(use(item.document))dialog.close();}catch(error){status.textContent=String(error);}};const remove=document.createElement('button');remove.textContent='×';remove.title='从片段库移除';remove.setAttribute('aria-label','从片段库移除：'+item.name);remove.onclick=()=>void filmLibrary.remove(item.id).then(()=>{items=items.filter(x=>x.id!==item.id);paint();}).catch(error=>{status.textContent=String(error);});row.append(button,remove);list.append(row);}status.textContent=search.value&&!visible.length?'没有匹配的片段':'';}
+ search.oninput=paint;void filmLibrary.all().then(rows=>{items=rows;paint();}).catch(error=>{status.textContent=String(error);});return dialog;
+}

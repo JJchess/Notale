@@ -1,3 +1,5 @@
+import {openEditorDocument} from './editor-navigation';
+import {AuthorRuntimeRefreshBaselines,needsAuthorRuntimeRefresh} from './canvas/author-runtime-refresh';
 import {localeStore,translator,responseMessage} from './i18n/store';
 import {bindCourseEditor,courseActions,courseIdentity,type CourseEditing} from './state/course-editor';
 import {sidebar} from './state/sidebar';
@@ -5,6 +7,7 @@ import {runtimeIdentity} from './canvas/page-identity';
 import {PreviewLeases} from './canvas/preview-leases';
 import {waitForPrintPages} from './print-readiness';
 import {assetBase64} from './asset-encoding';
+import {bindLectureFonts,lectureFontCommands,lectureFontMime,lectureFontPath,lectureProjectFonts} from './lecture-fonts';
 import {coalescedRefresh} from './state/coalesced-refresh';
 import {AuthorObjects,type AuthorObject} from './canvas/author-objects';
 import {KeyboardQueue,type KeyboardIntent} from './state/keyboard-queue';
@@ -21,6 +24,7 @@ import {createConnectorInspector} from './state/connector-inspector';
 import {AcceptedOperations} from './state/accepted-operations';
 import {createComponentNavigation} from './state/component-navigation';
 import {captureLayerPlan,layerPlanCommands} from './state/layer-commands';
+import {relativeLayerCommands,type LayerStyles} from './state/layer-reorder';
 import {assertSelectionEditable,deleteSelectionCommands,groupingPlan} from './state/selection-commands';
 import {UiTasks} from './lifecycle/ui-tasks';
 import {bindNotesEditor} from './state/notes-editor';
@@ -42,7 +46,7 @@ import {scopeActions} from './state/action-scope';
 import {CanvasResources} from './canvas/resources.js';
 import {AuthorCanvasController} from './canvas/author-controller';
 import { EditorKernel } from './editor-kernel.js';
-import { applyAuthorChanges, type AuthorChangesPage, type SyncAcknowledgement } from '@notale/editor/browser';
+import { commitSchema, applyAuthorChanges, type AuthorChangesPage, type SyncAcknowledgement } from '@notale/editor/browser';
 import {selectionBounds,geometryCommand,selectionUnits,alignmentCommands} from './object-geometry.js';
 import {animationOrderCommands,hasTeachingStructure,sequenceAnimations} from './animation-authoring.js';
 import {createTemplateLibrary} from './template-library.js';
@@ -93,6 +97,7 @@ import {
   type Pending,
   type HistoryPlan,
 } from './pending-journal.js';
+import { isComposingKey } from './keyboard';
 import { editShortcut, type EditAction } from './shortcuts.js';
 import { selectIds } from '@notale/editor/browser';
 import {createMediaInspector} from './state/media-inspector';
@@ -108,7 +113,7 @@ import { createPageBackground } from './page-background.js';
 import { createCommentsPanel } from './comments-panel.js';
 import { setSaveStatus, showSaveStatus, PHASES } from './save-status.js';
 let mounted:symbol|undefined;
-export function mountWorkbench(){
+export function mountWorkbench(options:{documentId?:string}={}){
   if(mounted)return;
   const identity=Symbol('workbench');mounted=identity;
   const workbenchEvents=new AbortController();
@@ -177,7 +182,13 @@ type Capture = {
   nativeChartTargets?: string[];
   nativeChartStates?: Record<string, import('@notale/editor/browser').NativeChartState>;
 };
-function whenReady(){return canvasController.whenReady();}
+async function whenReady(){
+  for(;;){
+    await canvasController.whenReady();const paint=editablePaint;
+    try{await paint;}catch(cause){if(paint===editablePaint)throw cause;}
+    if(paint===editablePaint)return;
+  }
+}
 let clipboard:
   | { documentId: string; source: Slide; targets: string[]; mode: 'copy' | 'cut'; capture: Capture }
   | undefined;
@@ -446,6 +457,10 @@ function paintChartModels(){
 async function flushAuthor(){await kernel.flush();await propertyEdits;await echartsUI?.flush();await whenReady();await flushTextEditor();await whenEditsIdle();await geometrySession.barrier();await geometrySession.pull();}
 async function flushDocument(){const documentId=editorSession.snapshot.document.id;await notesEditor.flush();await flushAuthor();assertWorkbenchOpen();if(editorSession.snapshot.document.id!==documentId)throw Error('讲义已切换，请重试当前操作');}
 const mutationVersions=new Map<string,number>();
+// Acknowledgement may arrive before a resource refresh fails. Keep the original
+// confirmed baseline across retries of that mutation, never the optimistic paint.
+const runtimeRefreshBaselines=new AuthorRuntimeRefreshBaselines();
+canvasController.onDispose(()=>runtimeRefreshBaselines.clear());
 const historyKey = (id: string) => `notale-editor-history:${id}`;
 function nextHistory(task:Pending,version:number):HistoryPlan {
   if(task.kernel&&task.historyAction){const target=task.inverseMutationId?mutationVersions.get(task.inverseMutationId):task.inverseVersion;
@@ -464,6 +479,7 @@ async function transmit(task: Pending) {
   refreshPendingControls();
   setSaveStatus(task.kind === 'restore' ? PHASES.restoring : PHASES.saving);
   try {
+    const runtimeBefore=task.kernel?.prepared?runtimeRefreshBaselines.capture(kernel.confirmed,task.request.mutationId):undefined;
     if(!task.kernel)journal.put(task,editorSession.snapshot.document.title);
     refreshRecoveries();
     const request=task.inverseMutationId?{baseVersion:task.request.baseVersion,mutationId:task.request.mutationId,commands:[],inverseMutationId:task.inverseMutationId}
@@ -503,9 +519,10 @@ async function transmit(task: Pending) {
       if(node)send('text-confirm',{...task.textEdit,html:node.innerHTML});
     }
     if(editorSession.canvasReady)send('geometry-confirm',{mutationId:task.request.mutationId,version:result.version,transforms:slide().transforms});
-    if(task.kernel?.prepared&&editorSession.canvasReady&&task.slideId===editorSession.pageId){
+    if(runtimeBefore&&editorSession.canvasReady&&task.slideId===editorSession.pageId&&needsAuthorRuntimeRefresh(runtimeBefore,result,task.slideId)){
       await authorCanvas.refreshRuntime(result,task.slideId);
     }
+    runtimeRefreshBaselines.complete(task.documentId,task.request.mutationId);
     if (advanced) {
       notices.show('这批修改已确认，已载入其他窗口的较新版本');
     }
@@ -567,6 +584,7 @@ async function load(id: string) {
     assertWorkbenchOpen();
     pending = undefined;
     pendingConflict = false;
+    runtimeRefreshBaselines.clear();
     canvasController.suspend();authorCanvas.resetDocument();kernel.load(result);editorSession.update({document:kernel.current,canvas:'loading'});
     await geometrySession.load(id);assertWorkbenchOpen();kernel.refresh();
     await geometrySession.checkpoint(editorSession.snapshot);
@@ -597,6 +615,7 @@ function pageError(e: unknown) {
 }
 let pageNavigation=0;
 let editablePaint:Promise<void>=Promise.resolve();
+let editablePaintSequence=0;
 async function showPage(id: string) {
   const navigation=++pageNavigation;
   performance.mark(`notale:navigation:${navigation}`);
@@ -724,14 +743,14 @@ editorActions.pagesCommitted=()=>{
   if(previewSlides.length){pageThumbnails.update(previewSlides,kernel.confirmed.document);pageThumbnails.patch(editorSession.snapshot.document,authorCanvas.assetBase);}
 };
 
-async function render(reason: 'navigation'|'page-removed'|'source-script'|'runtime-recovery' = 'navigation') {
+async function render(reason: 'navigation'|'page-removed'|'source-script'|'runtime-recovery' = 'navigation', current?:()=>boolean) {
   assertWorkbenchOpen();
-  (window as any).__notaleMounts??=[];(window as any).__notaleMounts.push({reason,slideId:editorSession.pageId,at:performance.now()});
   if(canvasGesture)await new Promise<void>(resolve=>gestureWaiters.add(resolve));
-  assertWorkbenchOpen();
+  assertWorkbenchOpen();if(current&&!current())return;
+  (window as any).__notaleMounts??=[];(window as any).__notaleMounts.push({reason,slideId:editorSession.pageId,at:performance.now()});
   objectMenu.close();textSession=undefined;authorCanvas.beginPage();
   const generation = ++renderGeneration;
-  canvasLoading.start();
+  canvasLoading.start(reason!=='navigation'&&canvasController.canPreserveDisplay(editorSession.snapshot.document.id,editorSession.pageId)?'replacement':'initial');
   editorSession.update({canvas:'loading'});
   channel = '';
   canvasController.suspend();
@@ -786,14 +805,23 @@ async function render(reason: 'navigation'|'page-removed'|'source-script'|'runti
   layoutValuesUI.render();
   layoutManager.render();
 }
+let layerCaptureSource='',layerCaptureStyles:LayerStyles={};
 function renderObjects() {
-  const layers={documentId:editorSession.snapshot.document.id,pageId:editorSession.pageId,rows:layerRows(objects)};
+  const documentId=editorSession.snapshot.document.id,pageId=editorSession.pageId,origin=arrangementSource(),sourceObjects=objects;
+  const layers={documentId,pageId,scope:origin,rows:layerRows(objects,layerCaptureSource===origin?layerCaptureStyles:Object.fromEntries(objects.map(object=>[object.id,object.style]))),reorder:async(ids:string[],target:string,placement:'before'|'after')=>{
+    const check=()=>{if(editorSession.snapshot.document.id!==documentId||editorSession.pageId!==pageId||arrangementSource()!==origin)throw Error('页面或图层已变化，请重新拖动');};
+    check();await kernel.flush();await geometrySession.whenLocallySaved();check();
+    const parent=sourceObjects.find(object=>object.id===target)?.parent,captureIds=sourceObjects.filter(object=>object.parent===parent||object.id===parent).map(object=>object.id),capture=await captureSelection(captureIds);check();
+    const edits=relativeLayerCommands(pageId,sourceObjects,capture.computedStyles,ids,target,placement);if(edits.length)await commands(edits);
+  }};
   if(JSON.stringify(layers)!==JSON.stringify(editorSession.getSnapshot().layers))editorSession.update({layers});
+  if(editorSession.canvasReady&&layerCaptureSource!==origin){layerCaptureSource=origin;layerCaptureStyles=Object.fromEntries(objects.map(object=>[object.id,object.style]));void captureSelection(objects.map(object=>object.id)).then(capture=>{if(editorSession.snapshot.document.id!==documentId||editorSession.pageId!==pageId||arrangementSource()!==origin)return;layerCaptureStyles=capture.computedStyles;editorSession.update({layers:{...layers,rows:layerRows(sourceObjects,capture.computedStyles)}});}).catch(()=>{if(layerCaptureSource===origin)layerCaptureSource='';});}
   animationForm.update({targets:objects.map(o=>({value:o.id,label:o.tag+' '+(o.text.trim()||o.attributes.id||'').slice(0,30)}))});
 }
 let inspectedSelectionKey = '';
 let selectionFieldsKey = '';
 function renderSelection(autoInspect = true) {
+  projectFonts.update();
   syncAnimationSelection();
   const nextSelectionKey=JSON.stringify([editorSession.snapshot.document.id,editorSession.pageId,[...editorSession.selection].sort()]);
   const selectionChanged=nextSelectionKey!==inspectedSelectionKey;
@@ -969,10 +997,23 @@ function initializeEditCanvas() {
   send('mode', { mode:'edit' });
   setStep(editorSession.canvasMax, false, 0);
 }
+let pendingRuntimeReload:{frame:HTMLIFrameElement;generation:number}|undefined;
+function requestRuntimeReload(reason:'source-script'|'runtime-recovery'){
+  const sourceFrame=frame,generation=renderGeneration,navigation=pageNavigation;
+  const documentId=editorSession.snapshot.document.id,pageId=editorSession.pageId,runtimeId=frameRuntimeId;
+  if(pendingRuntimeReload?.frame===sourceFrame&&pendingRuntimeReload.generation===generation)return;
+  const operation={frame:sourceFrame,generation};pendingRuntimeReload=operation;let replacementGeneration:number|undefined;
+  const current=()=>!workbenchEvents.signal.aborted&&frame===sourceFrame&&renderGeneration===generation&&pageNavigation===navigation&&frameRuntimeId===runtimeId&&editorSession.snapshot.document.id===documentId&&editorSession.pageId===pageId;
+  void (async()=>{
+    await kernel.flush();if(!current())return;
+    await geometrySession.barrier();if(!current())return;
+    replacementGeneration=renderGeneration+1;await render(reason,current);
+  })().catch(cause=>{if(current()||(!workbenchEvents.signal.aborted&&renderGeneration===replacementGeneration&&editorSession.snapshot.document.id===documentId&&editorSession.pageId===pageId))error(cause);}).finally(()=>{if(pendingRuntimeReload===operation)pendingRuntimeReload=undefined;});
+}
 canvasController.subscribe((e) => {
   if(e.data.channel!==channel)return;
   const { type, data } = e.data;
-  if(type==='runtime-reload-required'&&data.runtimeId===frameRuntimeId&&data.slideId===editorSession.pageId)void kernel.flush().then(()=>geometrySession.barrier()).then(()=>render(data.reason==='source-script'?'source-script':'runtime-recovery')).catch(error);
+  if(type==='runtime-reload-required'&&data?.runtimeId===frameRuntimeId&&data.slideId===editorSession.pageId)requestRuntimeReload(data.reason==='source-script'?'source-script':'runtime-recovery');
   echartsUI?.receive(type,data);
   if (type === 'native-chart-error') error(new Error(`原生图表：${data.error}`));
   if(type==='gesture-active'&&data.runtimeId===frameRuntimeId&&data.slideId===editorSession.pageId){canvasGesture=!!data.active;if(!canvasGesture){for(const done of gestureWaiters)done();gestureWaiters.clear();}}
@@ -1002,9 +1043,10 @@ canvasController.subscribe((e) => {
     sourceScenes = data.scenes ?? [];
     initializeEditCanvas();
     send('camera',{scale:editorShell.zoom()});
-    const readyFrame=frame,readyGeneration=renderGeneration;
-    editablePaint=(async()=>{await authorCanvas.update();if(readyFrame!==frame||readyGeneration!==renderGeneration)return;await canvasController.request('author-flush',{},'author-flushed');if(readyFrame!==frame||readyGeneration!==renderGeneration)return;frame.inert=false;canvasLoading.ready();editorSession.update({canvas:'ready'});pageThumbnails.start();})();
-    void editablePaint.catch(error);
+    const readyFrame=frame,readyGeneration=renderGeneration,paintSequence=++editablePaintSequence;
+    const ownsPaint=()=>!workbenchEvents.signal.aborted&&readyFrame===frame&&readyGeneration===renderGeneration&&paintSequence===editablePaintSequence;
+    editablePaint=(async()=>{await authorCanvas.update();if(!ownsPaint())return;await canvasController.request('author-flush',{},'author-flushed');if(!ownsPaint()||!canvasController.commitDisplay(readyFrame))return;canvasLoading.ready();editorSession.update({canvas:'ready'});pageThumbnails.start();})();
+    void editablePaint.catch(cause=>{if(ownsPaint())error(cause);});
     const drafts=geometrySession.states(editorSession.pageId);if(drafts.length)send('geometry-draft',{states:drafts});
     if(geometrySession.count)void geometrySession.drain().catch(error);
     sendSnapping();
@@ -1053,6 +1095,9 @@ canvasController.subscribe((e) => {
   if(type==='camera-pan')editorShell.pan(data.x,data.y);
   if (type === 'camera-wheel') editorShell.wheel(data.x,data.y,data.delta);
   if (type === 'geometry-commit' && data.slideId === editorSession.pageId && data.runtimeId === frameRuntimeId) {
+    const parsed = commitSchema.shape.commands.safeParse(data.commands);
+    if (!parsed.success) {error(new Error('手势命令无效'));return;}
+    authorCanvas.recordLocalPreview(parsed.data);
     void geometrySession.enqueue(data as GeometryEdit).catch(error);
   }
   if (type === 'box-resize')
@@ -1538,9 +1583,10 @@ function enqueueEdit(action:EditAction,focusCanvas=false){
 }
 async function executeKeyboardIntent(item:KeyboardIntent,effectsComplete:(selection?:readonly string[])=>void):Promise<readonly string[]|undefined>{
       assertWorkbenchOpen();
-      if (item.documentId !== editorSession.snapshot.document.id || item.slideId !== editorSession.pageId)
-        throw new Error('页面已切换，未执行剩余快捷键操作');
       const action = item.action;
+      const historyAction = action.type === 'undo' || action.type === 'redo';
+      if (item.documentId !== editorSession.snapshot.document.id || (!historyAction && item.slideId !== editorSession.pageId))
+        throw new Error('页面已切换，未执行剩余快捷键操作');
       if (['nudge', 'copy', 'cut', 'delete', 'duplicate','group','ungroup','front','back','forward','backward'].includes(action.type)) {
         changeSelection(item.ids);
         renderObjects();
@@ -1619,7 +1665,7 @@ function keepsNativeUndo(target: EventTarget | null) {
   return target instanceof HTMLInputElement && !target.hasAttribute('data-editor-number') && TEXT_ENTRY.has(target.type);
 }
 document.addEventListener('keydown', (e) => {
-  if(e.defaultPrevented)return;
+  if(e.defaultPrevented||isComposingKey(e)||e.altKey)return;
   if((e.target as Element)?.closest?.('#chart-data-dock')){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();void(e.shiftKey?redoEdit():undoEdit()).catch(error);}return;}
   const action = editShortcut(e);
   if (!action) return;
@@ -1641,7 +1687,7 @@ const vectorIngress=createVectorIngress(geometrySession,()=>editorSession.snapsh
 async function init(id?: string) {
   assertWorkbenchOpen();
   const chosen = id ?? new URLSearchParams(location.search).get('document');
-  const populate = (docs: {id:string;title:string}[]) => {
+  const populate = (docs: {id:string;title:string;kind?:string}[]) => {
     if(workbenchEvents.signal.aborted)return;
     // Preserve a document opened or created while the catalogue was loading.
     const current = editorSession.snapshot?.document;
@@ -1658,7 +1704,7 @@ async function init(id?: string) {
     });
     return;
   }
-  const docs = await api('/api/documents');
+  const docs = (await api('/api/documents')).filter((doc:{kind?:string})=>doc.kind!=='film');
   assertWorkbenchOpen();
   populate(docs);
   if (!docs[0]?.id) {
@@ -1668,7 +1714,7 @@ async function init(id?: string) {
   }
   await load(docs[0].id);
 }
-editorActions.loadDocument=load;
+editorActions.loadDocument=openEditorDocument;
 let recoveryController:ReturnType<typeof bindRecovery>|undefined;
 async function refreshRecoveries(){await recoveryController?.refresh();}
 function downloadRecovery(raw: string) {
@@ -1797,6 +1843,19 @@ const typographyUI = createTypography({
   commands,preview:(key,cmds)=>kernel.preview(key,cmds),commit:(key,cmds)=>kernel.commit(key,cmds),cancel:key=>kernel.cancel(key),error,
 });
 canvasController.onDispose(()=>typographyUI.disposeCapture());
+const projectFonts=bindLectureFonts(()=>!!editorSession.getSnapshot().document,{
+ scope:()=>JSON.stringify([editorSession.snapshot.document.id,editorSession.snapshot.version,kernel.revision,editorSession.pageId,[...editorSession.selection]]),
+ getFonts:()=>lectureProjectFonts(editorSession.snapshot.document,authorCanvas.assetBase),
+ apply:(font,styles)=>acceptedCommands.run(async()=>{
+  const source=editorSession.snapshot.document,page=editorSession.pageId,selection=JSON.stringify([...editorSession.selection]);
+  const assertSource=()=>{assertWorkbenchOpen();if(editorSession.snapshot.document!==source||editorSession.pageId!==page||JSON.stringify([...editorSession.selection])!==selection)throw Error('编辑目标已改变，请重新选择字体');};
+  let asset=source.assets[lectureFontPath(font)];
+  if(!asset){const response=await fetch(font.uri,{signal:workbenchEvents.signal});if(!response.ok)throw Error('无法读取字体文件');const bytes=new Uint8Array(await response.arrayBuffer());assertSource();asset=await uploadAsset(bytes,lectureFontMime(font));assertSource();}
+  const edits=lectureFontCommands(source,page,font,asset,styles);
+  await kernel.executeAfter(edits,async()=>{if(textSession){await flushTextEditor();send('text-end',{});}await textIngress.flush();assertSource();});
+ }),
+});
+canvasController.onDispose(()=>projectFonts.dispose());
 const assetLibrary = createAssetLibrary({
   document: () => editorSession.snapshot.document,
   slide,
@@ -1998,7 +2057,7 @@ previewRegistrations.prepare=async () => {
 };
 previewRegistrations.present=()=>{void editorActions.present().catch(error);};
 previewRegistrations.error=error;
-const canvasLoading = createCanvasLoading(async () => { await whenIdle(); await render(); }, pageError);
+const canvasLoading = createCanvasLoading(async () => { await whenIdle(); await render(canvasController.canPreserveDisplay(editorSession.snapshot.document.id,editorSession.pageId)?'runtime-recovery':'navigation'); }, pageError);
 canvasController.onDispose(()=>canvasLoading.dispose());
 const documentSettings=bindDocumentSettings({signal:workbenchEvents.signal,document:()=>editorSession.snapshot.document,commands,history:()=>api(`/api/documents/${editorSession.snapshot.document.id}/history`),restore,flush:flushDocument});
 canvasController.onDispose(()=>documentSettings.dispose());
@@ -2024,7 +2083,7 @@ const templateLibrary=createTemplateLibrary({ready:()=>initialized,snapshot:()=>
   changeSelection(members);renderObjects();renderSelection();
 }});
 canvasController.onDispose(()=>templateLibrary.dispose());
-const initialized = init();
+const initialized = init(options.documentId);
 void initialized.catch(error);
 // A small stable surface for host integration and browser acceptance tests.
 Object.assign(window, {
@@ -2090,6 +2149,6 @@ function connectorGeometryNotice() {
   notices.show('连接线会跟随端点，请移动或调整端点对象',5000);
 }
 
-return {dispose:()=>canvasController.dispose()};
+return {dispose:()=>canvasController.dispose(),beforeLeave:async()=>{await initialized;await acceptedCommands.whenIdle();await kernel.whenIdle();await kernel.flush();await geometrySession.whenLocallySaved();await geometrySession.barrier();}};
   } catch(cause) {release();if(mounted===identity)mounted=undefined;throw cause;}
 }

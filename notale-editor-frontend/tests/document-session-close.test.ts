@@ -98,3 +98,17 @@ test('retrying a recovery write updates retained status and removes its staged q
    network.resolve(2);await session.barrier();
   }finally{disk.resolve();network.resolve(2);await session.close();env.restore();}
  });
+
+test('acknowledging an earlier save never removes a newer admitted local write from projection',async()=>{
+ const env=environment(),f=fixture(),disk=deferred<void>(),network=deferred<number>(),started=deferred<void>();let calls=0;
+ const session=new DocumentSession(context(async()=>{calls++;if(calls===1){started.resolve();return network.promise;}return 3;}),f.journal);
+ const first=f.operation(),second=f.operation(),put=f.journal.put.bind(f.journal);
+ try{
+  await session.load('doc');await session.enqueueTask(first.task!);await started.promise;
+  f.journal.put=async entry=>{if(entry.id===second.id)await disk.promise;await put(entry);};
+  const queued=session.enqueueTask(second.task!);while(!session.operations().some(t=>t.request.mutationId===second.id))await Promise.resolve();
+  network.resolve(2);await session.barrier();
+  assert.ok(session.operations().some(t=>t.request.mutationId===second.id),'new local intent must stay in the visible author projection while its disk write is pending');
+  disk.resolve();await queued;await session.barrier();assert.equal(calls,2);assert.equal(session.count,0);
+ }finally{disk.resolve();network.resolve(2);await session.close();env.restore();}
+});

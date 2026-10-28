@@ -25,7 +25,7 @@ const SPECIAL:Partial<Record<SelectionKind,[label:string,title:string]>>={
 };
 /** Availability the panel cannot derive from the object list alone: connectors are not
  * objects, and scene/component/reveal panels are driven by their own runtime stores. */
-export interface FormatAvailability {connector?:boolean;interactive?:boolean;vector?:boolean;chart?:boolean;}
+export interface FormatAvailability {connector?:boolean;interactive?:boolean;vector?:boolean;chart?:boolean;pageTabs?:readonly FormatTab[];}
 const OBJECT_TABS:TabView[]=[
  {id:'fill',label:'填充与线条',title:'填充与线条'},
  {id:'effects',label:'效果',title:'阴影与透明度'},
@@ -46,7 +46,7 @@ const KIND_SCOPE_LABEL:Partial<Record<SelectionKind,string>>={
  equation:'公式选项',code:'代码选项',canvas:'互动选项',text:'对象选项',multiple:'对象选项',
 };
 export function formatScopes(selected:boolean,kind:SelectionKind,typography:boolean,availability:FormatAvailability={}):ScopeView[]{
- if(!selected)return [{id:'page',label:'页面选项',tabs:PAGE_TABS}];
+ if(!selected)return [{id:'page',label:'页面选项',tabs:availability.pageTabs?PAGE_TABS.filter(tab=>availability.pageTabs!.includes(tab.id)):PAGE_TABS}];
  const special=(availability.vector?['矢量','路径、顶点与渐变'] as const:undefined)??SPECIAL[kind]??(availability.chart?['图表','图表的数据、类型与外观'] as const:undefined)??(availability.connector?['连接线','连接线的端点、箭头与线型'] as const:availability.interactive?['互动','互动参数与初始值'] as const:undefined);
  const tabs=[...OBJECT_TABS,...(special?[{id:'special' as const,label:special[0],title:special[1]}]:[])];
  const scopes:ScopeView[]=[{id:'object',label:KIND_SCOPE_LABEL[kind]??'对象选项',tabs}];

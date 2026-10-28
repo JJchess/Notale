@@ -1,7 +1,7 @@
 import {CanvasRequests} from './request-session';
 import {localeStore,translateUi} from '../i18n/store';
 interface CanvasPage {documentId:string;version:number;pageId:string;url:string;channel:string;runtimeKey?:string;}
-interface Entry {page:CanvasPage;frame:HTMLIFrameElement;busy?:boolean;heavy?:boolean;}
+interface Entry {page:CanvasPage;frame:HTMLIFrameElement;busy?:boolean;heavy?:boolean;committed?:boolean;}
 const controllers=new WeakMap<HTMLElement,CanvasController>();
 export function disposeCanvasHost(host:HTMLElement){controllers.get(host)?.dispose();}
 
@@ -9,6 +9,10 @@ export function disposeCanvasHost(host:HTMLElement){controllers.get(host)?.dispo
 export class CanvasController {
   private entries=new Map<string,Entry>();
   private active?:Entry;
+  /** One fully painted frame, outside the runtime cache and message routing. */
+  private retained?:Entry;
+  private retainedFocus=false;
+  private suspendedFocus?:Entry;
   private suspended=true;
   private disposed=false;
   private disposal=new Set<()=>void>();
@@ -28,14 +32,43 @@ export class CanvasController {
   private trim(){for(const [id,entry] of this.entries){const heavy=[...this.entries.values()].filter(e=>e.heavy).length;if(this.entries.size<=this.capacity&&heavy<=2)break;if(entry===this.active||entry.busy||(this.entries.size<=this.capacity&&!entry.heavy))continue;this.remove(entry);this.entries.delete(id);}}
   get activePage(){return this.active?.page;}
   get frame(){return this.active?.frame??this.placeholder;}
+  get hasRetainedFrame(){return !!this.retained;}
+  canPreserveDisplay(documentId:string,pageId:string){
+    const displayed=this.retained??this.active;
+    return !this.disposed&&!!displayed?.committed&&displayed.page.documentId===documentId&&displayed.page.pageId===pageId;
+  }
+  private discardRetained(){const entry=this.retained;this.retained=undefined;this.retainedFocus=false;if(entry)this.remove(entry);}
+  private retain(entry:Entry){
+    this.retained=entry;this.retainedFocus=this.suspendedFocus===entry||document.activeElement===entry.frame;
+    this.entries.delete(entry.page.pageId);
+    const frame=entry.frame,style=getComputedStyle(frame);
+    // Preserve id-based preview styling before giving the id to the new frame.
+    for(const key of ['position','left','top','width','height','transform','transformOrigin','border','background','boxShadow'] as const)frame.style[key]=style[key];
+    if(style.position==='static'){frame.style.position='absolute';frame.style.left='0';frame.style.top='0';frame.style.width='100%';frame.style.height='100%';}
+    frame.removeAttribute('id');frame.setAttribute('data-notale-retiring','true');frame.setAttribute('aria-hidden','true');
+    frame.inert=true;frame.style.pointerEvents='none';frame.style.display='block';frame.style.visibility='visible';
+  }
+  /** A bridge handshake is not a display commit: callers finish author paint first. */
+  commitDisplay(expectedFrame:HTMLIFrameElement){
+    const entry=this.active;
+    if(this.disposed||this.suspended||!entry||entry.frame!==expectedFrame)return false;
+    const focus=document.activeElement,restoreFocus=this.retainedFocus&&!!this.retained&&(focus===this.retained.frame||focus===document.body||focus===this.host);
+    entry.committed=true;entry.frame.style.visibility='visible';entry.frame.inert=false;
+    this.discardRetained();this.suspendedFocus=undefined;
+    if(restoreFocus)entry.frame.focus({preventScroll:true});
+    return true;
+  }
   private create(){const frame=document.createElement('iframe');frame.title=translateUi(this.options.title);frame.setAttribute('sandbox','allow-scripts allow-same-origin allow-forms allow-popups');frame.inert=true;return frame;}
   private post(entry:Entry,type:string,data:unknown){entry.frame.contentWindow?.postMessage({source:'notale-host',channel:entry.page.channel,type,data},new URL(entry.page.url).origin);}
   activate(page:CanvasPage,force=false){
     if(this.disposed)throw Error('画布已关闭');
+    const preserve=force&&this.canPreserveDisplay(page.documentId,page.pageId);
     if(this.active&&!this.suspended)this.suspend();
     this.suspended=false;
     const revision=page.runtimeKey!==undefined?page.documentId:`${page.documentId}:${page.version}`;
-    if(this.active){this.post(this.active,'canvas-visibility',{visible:false});this.active.frame.removeAttribute('id');this.active.frame.style.display='none';this.active.frame.inert=true;}
+    if(!preserve)this.discardRetained();
+    else if(!this.retained&&this.active)this.retain(this.active);
+    if(this.active){this.post(this.active,'canvas-visibility',{visible:false});this.active.frame.removeAttribute('id');if(this.active!==this.retained)this.active.frame.style.display='none';this.active.frame.inert=true;}
     if(this.revision!==revision){for(const entry of this.entries.values())this.remove(entry);this.entries.clear();this.revision=revision;}
     let entry=this.entries.get(page.pageId);
     if(entry&&(force||(page.runtimeKey!==undefined ? entry.page.runtimeKey!==page.runtimeKey : entry.page.url!==page.url||entry.page.channel!==page.channel))){this.remove(entry);this.entries.delete(page.pageId);entry=undefined;}
@@ -43,7 +76,7 @@ export class CanvasController {
     if(!entry){entry={page,frame:this.create()};this.host.append(entry.frame);entry.frame.src=page.url;}
     this.placeholder.remove();
     this.entries.delete(page.pageId);this.entries.set(page.pageId,entry);this.active=entry;
-    entry.frame.id=this.options.id;entry.frame.style.display='block';
+    entry.frame.id=this.options.id;entry.frame.style.display='block';entry.frame.style.visibility=this.retained?'hidden':'visible';entry.frame.inert=true;
     this.trim();
     if(reused){this.post(entry,'canvas-visibility',{visible:true});this.post(entry,'state',{});}
     return {frame:entry.frame,reused,page:entry.page};
@@ -72,6 +105,7 @@ export class CanvasController {
   request<T>(type:string,data:Record<string,unknown>,responseType=type){return this.requests.request<T>(type,data,responseType);}
   suspend(){
     if(this.suspended||this.disposed)return;
+    this.suspendedFocus=this.active?.frame===document.activeElement?this.active:undefined;
     this.suspended=true;this.requests.reset();
     if(this.active){this.active.frame.inert=true;this.post(this.active,'canvas-visibility',{visible:false});}
   }
@@ -104,7 +138,7 @@ export class CanvasController {
     this.listeners.clear();
     release(()=>window.removeEventListener('message',this.receive));
     for(const entry of this.entries.values())release(()=>this.remove(entry));
-    this.entries.clear();release(()=>this.placeholder.remove());this.active=undefined;
+    this.entries.clear();release(()=>this.discardRetained());release(()=>this.placeholder.remove());this.active=undefined;this.suspendedFocus=undefined;
     if(controllers.get(this.host)===this)controllers.delete(this.host);
     if(errors.length)console.error(new AggregateError(errors,'画布资源清理失败'));
   }

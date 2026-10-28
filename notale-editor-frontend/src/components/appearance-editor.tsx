@@ -1,4 +1,5 @@
 "use client";
+import {PropertyAnimation} from './property-animation';
 import {useI18n} from '../i18n/react';
 
 import { isComposingKey } from "../keyboard";
@@ -10,6 +11,7 @@ import {
 } from "../state/appearance-editor";
 import { SHADOWS } from "../state/appearance";
 import { PropertyGesture } from "../state/property-gesture";
+import {bindNumericScrub} from '../state/numeric-scrub';
 import { useFormatFacet } from "./format-tabs";
 export function AppearanceEditor() {
 
@@ -29,6 +31,8 @@ function AppearanceFields({ model }: { model: AppearanceModel }) {
   const fillFacet = useFormatFacet("fill"),
     effectsFacet = useFormatFacet("effects"),
     textFacet = useFormatFacet("textbox");
+  const supports=(field:string)=>!model.supportedFields||model.supportedFields.includes(field);
+  const showFill=fillFacet&&['fill','gradient','stroke','radius','accent'].some(supports),showEffects=effectsFacet&&['shadow','opacity'].some(supports),showText=textFacet&&supports('fit');
   const [mixed, setMixed] = useState(model.mixed);
   const [fields, setFields] = useState(model.fields);
   const current = useRef(fields),
@@ -163,11 +167,11 @@ function AppearanceFields({ model }: { model: AppearanceModel }) {
       aria-busy={!model.captured}
       className="property-group"
       disabled={model.locked}
-      hidden={!fillFacet && !effectsFacet && !textFacet}
+      hidden={!showFill && !showEffects && !showText}
     >
       <legend>{fillFacet ? t("填充与线条") : effectsFacet ? t("效果") : t("文本框")}</legend>
-      <div hidden={!fillFacet}>
-      <div className="paint-row">
+      <div hidden={!showFill}>
+      <div className="paint-row" hidden={!supports('fill')}>
         {toggle("appearance-fill-none", "fill", "无填充")}
         <label className={fields["appearance-fill-none"] ? "paint-off" : ""}>{t("填充")}{input("appearance-fill", "fill", "color")}
         </label>
@@ -175,7 +179,7 @@ function AppearanceFields({ model }: { model: AppearanceModel }) {
       <div
         className="paint-row"
         id="appearance-gradient-row"
-        hidden={!model.html}
+        hidden={!model.html||!supports('gradient')}
       >
         {toggle("appearance-gradient", "gradient", "渐变")}
         <label>{t("渐变终点")}{input(
@@ -199,21 +203,21 @@ function AppearanceFields({ model }: { model: AppearanceModel }) {
           )}
         </label>
       </div>
-      <div className="paint-row">
+      <div className="paint-row" hidden={!supports('stroke')}>
         {toggle("appearance-stroke-none", "stroke", "无描边")}
         <label>{t("描边")}{input("appearance-stroke", "stroke", "color")}</label>
         <label>{t("粗细")}{input("appearance-stroke-width", "stroke", "number", 0, 80, 0.5)}
         </label>
       </div>
       <div className="field-grid">
-        <label id="appearance-radius-field" hidden={!model.html}>{t("圆角")}{input("appearance-radius", "radius", "number", 0, 400, 1)}
+        <label id="appearance-radius-field" hidden={!model.html||!supports('radius')}>{t("圆角")}{input("appearance-radius", "radius", "number", 0, 400, 1)}
         </label>
       </div>
-      <label id="appearance-accent-field" hidden={!model.accent}>{t("主色（联动整组配色）")}{input("appearance-accent", "accent", "color")}
+      <label id="appearance-accent-field" hidden={!model.accent||!supports('accent')}>{t("主色（联动整组配色）")}{input("appearance-accent", "accent", "color")}
       </label>
       </div>
-      <div hidden={!effectsFacet}>
-      <div className="field-grid">
+      <div hidden={!showEffects}>
+      <div className="field-grid" hidden={!supports('shadow')}>
         <label>{t("阴影")}{select("appearance-shadow", "shadow", [
             ...Object.entries(SHADOWS).map(
               ([key, [label]]) => [key, label] as [string, string],
@@ -222,13 +226,13 @@ function AppearanceFields({ model }: { model: AppearanceModel }) {
           ])}
         </label>
       </div>
-      <label className="appearance-opacity">{t("不透明度")}{input("appearance-opacity", "opacity", "range", 0, 100, 1)}
+      <label className="appearance-opacity" hidden={!supports('opacity')}>{t("不透明度")}{input("appearance-opacity", "opacity", "range", 0, 100, 1)}
         <output id="appearance-opacity-value">
           {mixed.includes("appearance-opacity") ? "—" : fields["appearance-opacity"] + "%"}
-        </output>
+        </output><PropertyAnimation property="opacity"/>
       </label>
       </div>
-      <label id="appearance-fit-field" hidden={!model.fit || !textFacet}>{t("文字框大小")}{select("appearance-fit", "fit", [
+      <label id="appearance-fit-field" hidden={!model.fit || !showText}>{t("文字框大小")}{select("appearance-fit", "fit", [
           ["fixed", "固定尺寸"],
           ["height", "高度随文字"],
           ["both", "宽高随文字"],
@@ -262,6 +266,7 @@ export function PaintInput(props: {
     initial = useRef(props.value),
     valueRef = useRef(props.value),
     keyboard = useRef(false),
+    scrubbing = useRef(false),
     editing = useRef(false);
   latest.current = props;
   const finish = () => {
@@ -293,14 +298,22 @@ export function PaintInput(props: {
       queueMicrotask(() => {
         if (
           gesture.current === active &&
-          !keyboard.current &&
+          !keyboard.current && !scrubbing.current &&
           input.validity.valid
         )
           finish();
       });
     };
     input.addEventListener("change", complete);
+    const releaseScrub=props.type==='number'?bindNumericScrub(input,{
+      read:()=>latest.current.mixed?'':valueRef.current,
+      limits:()=>({min:latest.current.min,max:latest.current.max,step:Number(latest.current.step)||1}),
+      start:()=>{scrubbing.current=true;},
+      change:value=>{valueRef.current=value;latest.current.onValue(value);try{active.update(latest.current.read(),initial.current);}catch(error){cancel();latest.current.model.transactions.error(error);}},
+      finish:cancelled=>{scrubbing.current=false;if(cancelled)cancel();else finish();},
+    }):()=>{};
     return () => {
+      releaseScrub();
       input.removeEventListener("change", complete);
       gesture.current = undefined;
       keyboard.current = false;
@@ -376,7 +389,7 @@ export function PaintInput(props: {
         }
       }}
       onKeyUp={() => {
-        if (keyboard.current) finish();
+        if (keyboard.current&&!scrubbing.current) finish();
       }}
       onPointerCancel={cancel}
     />

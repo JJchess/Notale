@@ -1,4 +1,5 @@
 import {isLocale,resolveLocale,translateMessage,formatMessage,type Locale,type MessageKey,type MessageParams} from '@notale/editor/i18n';
+import {editorEnglish} from './editor-messages';
 export {isLocale,resolveLocale};
 export type {Locale,MessageKey,MessageParams};
 export const LOCALE_KEY='notale-locale';
@@ -20,6 +21,7 @@ export function initializeLocale(initial:Locale){
 }
 export function translator(locale:Locale){return <T>(value:T,params?:MessageParams):T=>{
  if(typeof value!=='string')return value;
+ if(Object.hasOwn(editorEnglish,value)){const template=locale==='en-US'?editorEnglish[value]:value;return template.replace(/\{(\w+)\}/g,(match,name)=>params?.[name]===undefined?match:String(params[name])) as T;}
  return (params?formatMessage(locale,value as MessageKey,params):translateMessage(locale,value)) as T;
 };}
 /** For imperative product UI only; React uses the provider-bound translator. */

@@ -15,6 +15,7 @@ import { editorActions, editorSession } from "../state/editor-session";
 import { useEditorSelector, shallowEqual } from "../state/use-editor-selector";
 import { useAuthorDraft } from "../state/use-author-draft";
 import { sizeValue, type HistoryRevision } from "../state/document-settings";
+import {useEditingCapability} from './use-editing-capability';
 const close = () => editorSession.update({ documentDialog: undefined });
 function SettingsDialog({
   id,
@@ -259,6 +260,7 @@ export function ThemeSettingsButton() {
 }
 export function PageSizeSettings() {
  const t=useI18n(),locale=useLocale();
+ const unavailable=useEditingCapability('document:size');
 
   const field = useEditorSelector(
     (state) => {
@@ -269,8 +271,8 @@ export function PageSizeSettings() {
     },
     (a, b) => a === b || (!!a && !!b && shallowEqual(a, b)),
   );
-  const form = useAuthorDraft(field, editorActions.saveDeckSize),
-    value = form.draft ? JSON.parse(form.draft) : { width: "", height: "" };
+  const form = useAuthorDraft(unavailable?undefined:field, editorActions.saveDeckSize),
+    value = !unavailable&&form.draft ? JSON.parse(form.draft) : { width: "", height: "" };
   return (
     <section className="global-settings-section">
       <h3>{t("页面尺寸")}</h3>
@@ -285,7 +287,8 @@ export function PageSizeSettings() {
               max="10000"
               step="1"
               value={value[axis]}
-              disabled={!field || form.pending}
+              disabled={!!unavailable || !field || form.pending}
+              aria-describedby={unavailable?'deck-size-status':undefined}
               onKeyDown={(event) => {
                 if (isComposingKey(event.nativeEvent)) return;
                 if (event.key === "Escape") {
@@ -309,11 +312,12 @@ export function PageSizeSettings() {
       </div>
       <button
         id="save-deck-size"
-        disabled={!field || form.pending}
+        disabled={!!unavailable || !field || form.pending}
+        title={unavailable?t(unavailable):undefined}
         onClick={() => void form.apply()}
       >{t("应用尺寸")}</button>
-      <p id="deck-size-status" role="status" hidden={!form.error}>
-        {t(form.error)}
+      <p id="deck-size-status" role="status" hidden={!unavailable&&!form.error}>
+        {t(unavailable??form.error)}
       </p>
     </section>
   );

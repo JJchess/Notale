@@ -12,7 +12,7 @@ export function createCanvasLoading(retry:()=>Promise<unknown>,report:(error:unk
  };
  canvasLoadingActions.retry=run;
  return {
-  start(){if(disposed)return;clear();state.update({visible:false,timedOut:false});appear=setTimeout(()=>state.update({visible:true}),400);timeout=setTimeout(()=>state.update({visible:true,timedOut:true}),8000);},
+  start(mode:'initial'|'replacement'='initial'){if(disposed)return;clear();state.update({visible:false,timedOut:false,mode});appear=setTimeout(()=>state.update({visible:true}),400);timeout=setTimeout(()=>state.update({visible:true,timedOut:true}),8000);},
   ready(){if(disposed)return;clear();state.update({visible:false,timedOut:false});},
   dispose(){if(disposed)return;disposed=true;clear();if(canvasLoadingActions.retry===run){canvasLoadingActions.retry=async()=>{};state.reset();}},
  };

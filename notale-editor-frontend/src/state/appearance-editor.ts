@@ -10,6 +10,7 @@ import {
 } from "./appearance";
 import type { PropertyTransactions } from "./property-gesture";
 export interface AppearanceModel {
+  supportedFields?: readonly string[];
   key: string;
   sourceKey: string;
   captured: boolean;
@@ -55,6 +56,7 @@ export function bindAppearance(
     documentId: () => string;
     capture: ConstructorParameters<typeof AppearanceCapture>[0]["capture"];
     commands: (commands: Command[]) => Promise<unknown>;
+    supportedFields?: () => readonly string[] | undefined;
   },
 ) {
   const identity = Symbol("appearance");
@@ -105,6 +107,7 @@ export function bindAppearance(
     }
     const currentSession = session;
     const next: AppearanceModel = {
+      supportedFields: context.supportedFields?.(),
       key,
       sourceKey,
       captured: false,

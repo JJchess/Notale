@@ -1,5 +1,6 @@
 'use client';
 import {useI18n} from '../i18n/react';
+import {useEditingCapability} from './use-editing-capability';
 
 import {Fragment,useEffect,useLayoutEffect,useRef,useState,useSyncExternalStore} from 'react';
 import {aiEditsState,diffChips,DIFF_PREVIEW,ATTACHMENT_LIMIT,FILE_LIMIT,FILE_PATTERN,type AiTurn,type AiMention,type DiffRow,type DiffChip,type ChangeKind} from '../state/ai-edits';
@@ -136,6 +137,7 @@ function mentionAt(text:string,caret:number){
  * they take the whole width and the controls drop to a row of their own. */
 function Composer(){
  const t=useI18n();
+ const unavailable=useEditingCapability('ai');
  const model=useSyncExternalStore(aiEditsState.subscribe,aiEditsState.getSnapshot,aiEditsState.getServerSnapshot);
  const running=model.status==='running';
  const box=useRef<HTMLDivElement>(null),grid=useRef<HTMLDivElement>(null),field=useRef<HTMLTextAreaElement>(null),measure=useRef<HTMLSpanElement>(null),files=useRef<HTMLInputElement>(null);
@@ -168,7 +170,7 @@ function Composer(){
   requestAnimationFrame(()=>{field.current?.focus();field.current?.setSelectionRange(at,at);});
  };
  // Pictures need a model that sees them; documents and video always go (read turns them into what the model can take).
- const canAttach=!running&&((model.vision&&model.attachments.length<ATTACHMENT_LIMIT)||model.files.length<FILE_LIMIT);
+ const canAttach=!unavailable&&!running&&((model.vision&&model.attachments.length<ATTACHMENT_LIMIT)||model.files.length<FILE_LIMIT);
  const uploading=model.files.some(file=>file.state==='uploading');
  const take=(list:FileList|null|undefined)=>{const picked=[...(list??[])].filter(file=>file.type.startsWith('image/')||FILE_PATTERN.test(file.name));if(picked.length&&canAttach)void model.attach?.(picked);return picked.length>0;};
  return <div ref={box} className={'ai-composer'+(wide?' is-wide':'')+(dragging?' is-dropping':'')}
@@ -198,7 +200,7 @@ function Composer(){
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
    </button>
    <textarea id="ai-instruction" ref={field} rows={1} placeholder={placeholder}
-    value={model.instruction} disabled={running||!model.available} aria-autocomplete="list" aria-expanded={menuOpen}
+    value={unavailable?'':model.instruction} disabled={!!unavailable||running||!model.available} aria-autocomplete="list" aria-expanded={menuOpen}
     onChange={event=>{model.change?.({instruction:event.target.value});setCaret(event.target.selectionStart);}}
     onSelect={event=>setCaret(event.currentTarget.selectionStart)}
     onPaste={event=>{if(take(event.clipboardData.files))event.preventDefault();}}
@@ -211,11 +213,11 @@ function Composer(){
      }
      if(menuOpen&&event.key==='Escape'){event.preventDefault();setDismissed(mention!.start);return;}
      if(event.key!=='Enter'||event.shiftKey)return;   // Shift+Enter is the newline, on every platform
-     event.preventDefault();if(!uploading)void model.submit?.();
+     event.preventDefault();if(!uploading&&!unavailable)void model.submit?.();
     }}/>
-   <ModelPicker providers={model.providers} {...(model.choice?{choice:model.choice}:{})} {...(model.defaultModel?{fallback:model.defaultModel}:{})} disabled={running}
+   <ModelPicker providers={model.providers} {...(model.choice?{choice:model.choice}:{})} {...(model.defaultModel?{fallback:model.defaultModel}:{})} disabled={running||!!unavailable}
     onPick={ref=>{const changed=ref.provider!==(model.choice??model.defaultModel)?.provider||ref.id!==(model.choice??model.defaultModel)?.id;model.pickModel?.(ref);if(changed)setSweep(value=>value+1);field.current?.focus();}}/>
-   {running ? <button id="ai-stop" className="ai-send is-stop" aria-label={t("停止")} title={t("停止")} onClick={()=>model.stop?.()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button> : <button id="ai-submit" className="ai-send" aria-label={t("发送")} title={t("发送（回车）")} disabled={!model.instruction.trim()||!model.available||uploading} onClick={()=>void model.submit?.()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>}
+   {running ? <button id="ai-stop" className="ai-send is-stop" aria-label={t("停止")} title={t("停止")} onClick={()=>model.stop?.()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button> : <button id="ai-submit" className="ai-send" aria-label={t("发送")} title={t(unavailable??"发送（回车）")} disabled={!!unavailable||!model.instruction.trim()||!model.available||uploading} onClick={()=>void model.submit?.()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>}
   </div>
   <input ref={files} type="file" accept={(model.vision?'image/png,image/jpeg,image/webp,':'')+'.pdf,.docx,.pptx,.mp4,.mov,.webm'} multiple hidden onChange={event=>{take(event.target.files);event.target.value='';}}/>
   {menuOpen && <MentionMenu anchor={box} items={items} active={active} onPick={pick} onHover={setActive}/>}
@@ -225,6 +227,7 @@ function Composer(){
  * pinned composer below. The two ready-made presets that used to live here were removed. */
 export function InteractiveDrawer(){
  const t=useI18n();
+ const unavailable=useEditingCapability('ai');
 
  const model=useSyncExternalStore(aiEditsState.subscribe,aiEditsState.getSnapshot,aiEditsState.getServerSnapshot);
  const running=model.status==='running',review=model.review;
@@ -236,6 +239,7 @@ export function InteractiveDrawer(){
  const log=useRef<HTMLDivElement>(null),stick=useRef(true);
  // Follow new content, but stop following once the author scrolls up to read.
  useEffect(()=>{const node=log.current;if(node&&stick.current)node.scrollTop=node.scrollHeight;});
+ if(unavailable)return <div id="interactive-panel" className="interactive-panel"><div className="ai-log"/><div className="ai-composer-area"><Composer/><p id="ai-unavailable" className="hint" role="status">{t(unavailable)}</p></div></div>;
  return <div id="interactive-panel" className="interactive-panel">
   <div ref={log} className="ai-log" data-selectable-text onScroll={event=>{const node=event.currentTarget;stick.current=node.scrollHeight-node.scrollTop-node.clientHeight<24;}}>
    {empty ? <div className="ai-welcome">

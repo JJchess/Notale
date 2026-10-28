@@ -87,7 +87,7 @@ export class PreviewController {
    const page=this.state.source?.snapshot.document.slides.find(s=>s.id===pageId);if(page)this.send('charts-update',{charts:page.nativeCharts});
    clearTimeout(this.timeout);this.session.update({max,step,status:'ready',error:''});
    this.send('mode',{mode:'play'});this.send('seek',{step,animate:!this.ending});this.ending=false;
-   this.canvas.frame.inert=false;this.canvas.frame.style.visibility='visible';
+   this.canvas.commitDisplay(this.canvas.frame);
    const source=this.state.source!;for(const index of [this.state.index+1,this.state.index-1]){const neighbor=this.pages[index];if(neighbor)this.canvas.preload({documentId:source.snapshot.document.id,version:source.snapshot.version,pageId:neighbor.id,url:neighbor.url,channel:this.channel});}
   }
   if(type==='navigate'&&this.state.status==='ready'){

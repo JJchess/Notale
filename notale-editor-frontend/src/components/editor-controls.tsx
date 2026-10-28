@@ -24,11 +24,11 @@ export function SaveStatus(){
 const report=useEditorSelector(state=>state.save),loaded=useEditorSelector(state=>!!state.document);
   // Where the saving stands is where the saved versions are: a click opens version history.
   return <button type="button" id="save-status" aria-live="polite" data-state={report.state} disabled={!loaded} title={`${t(report.detail)} · ${t("历史版本")}`} onClick={()=>run(editorActions.openHistory)}>{t(report.label)}</button>;}
-export function HistoryControls(){
+export function HistoryControls({find=true}:{find?:boolean}){
  const t=useI18n();
 
   const {canUndo,canRedo}=useEditorSelector(state=>({canUndo:state.canUndo,canRedo:state.canRedo}),shallowEqual);
-  return <><button id="undo" className="icon-button" aria-label={t("撤销")} title={t("撤销 · Ctrl/⌘ + Z")} disabled={!canUndo} onClick={()=>run(editorActions.undo)}><Icon>{paths.undo}</Icon></button><button id="redo" className="icon-button" aria-label={t("重做")} title={t("重做 · Ctrl/⌘ + Shift + Z")} disabled={!canRedo} onClick={()=>run(editorActions.redo)}><Icon>{paths.redo}</Icon></button><button id="open-find-replace" className="icon-button" aria-label={t("查找和替换")} title={t("查找和替换讲义中的文字 · Ctrl H")} onClick={()=>findActions.open()}><Icon>{paths.find}</Icon></button></>;
+  return <><button id="undo" className="icon-button" aria-label={t("撤销")} title={t("撤销 · Ctrl/⌘ + Z")} disabled={!canUndo} onClick={()=>run(editorActions.undo)}><Icon>{paths.undo}</Icon></button><button id="redo" className="icon-button" aria-label={t("重做")} title={t("重做 · Ctrl/⌘ + Shift + Z")} disabled={!canRedo} onClick={()=>run(editorActions.redo)}><Icon>{paths.redo}</Icon></button>{find && <button id="open-find-replace" className="icon-button" aria-label={t("查找和替换")} title={t("查找和替换讲义中的文字 · Ctrl H")} onClick={()=>findActions.open()}><Icon>{paths.find}</Icon></button>}</>;
 }
 export function PageCommands(){
  const t=useI18n();

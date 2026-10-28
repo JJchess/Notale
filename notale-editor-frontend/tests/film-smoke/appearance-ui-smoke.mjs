@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import { mkdir,readFile,writeFile } from 'node:fs/promises';
+import { chromium } from '@playwright/test';
+const base=process.env.MOTALE_PREVIEW_URL??'http://127.0.0.1:4322';assert.equal((await fetch(base+'/film')).status,200);
+await mkdir('.local/motale-film/assets',{recursive:true});await writeFile('.local/motale-film/assets/appearance.svg','<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="1280" height="720" fill="#e3b35c"/><text x="140" y="390" fill="#253347" font-size="100">KEYFRAMES</text></svg>');
+const doc={kind:'film',schemaVersion:1,id:'appearance-ui',title:'关键帧叠加',width:1280,height:720,frameRate:{numerator:30,denominator:1},sources:[{id:'s',kind:'image',title:'图层',uri:'/assets/appearance.svg'},{id:'motion',kind:'motale',title:'Motion',uri:'/fixtures/motale/motion/index.html',duration:150,width:1280,height:720}],tracks:[{id:'top',kind:'media',title:'叠加',locked:false,hidden:false,muted:false,clips:[{id:'overlay',sourceId:'s',title:'叠加图',at:0,duration:150,in:0}]},{id:'base',kind:'media',title:'Motion',locked:false,hidden:false,muted:false,clips:[{id:'motale',sourceId:'motion',title:'频谱',at:0,duration:150,in:108}]}],markers:[]};
+const browser=await chromium.launch({executablePath:process.env.MOTALE_CHROMIUM??chromium.executablePath(),headless:true,args:['--no-sandbox']});
+try {
+ const page=await browser.newPage({viewport:{width:1440,height:960}});page.setDefaultTimeout(7000);page.on('dialog',d=>d.accept());const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+ await page.goto(base+'/film');const action=name=>page.locator(`[data-action="${name}"]`).click();
+ const choose=page.waitForEvent('filechooser');await action('open');await(await choose).setFiles({name:'appearance.film.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(doc))});await page.locator('[data-clip-id="overlay"] .film-clip-body').click();
+ const seek=frame=>page.locator('[data-role="seek"]').evaluate((node,frame)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(node,String(frame));node.dispatchEvent(new Event('input',{bubbles:true}));},frame);
+ const property=async(name,value)=>{await page.getByRole('combobox',{name:'叠加属性',exact:true}).selectOption(name);const field=page.getByLabel('属性值',{exact:true});if(await field.evaluate(n=>n.tagName==='SELECT'))await field.selectOption(String(value));else{await field.fill(String(value));await field.press('Tab');}};
+ const output=async()=>{const pending=page.waitForEvent('download');await action('download');return JSON.parse(await readFile(await(await pending).path(),'utf8'));};
+ await property('x',100);await page.getByRole('button',{name:'在播放头添加或更新关键帧',exact:true}).click();await seek(60);await property('x',500);
+ await seek(30);assert.equal(await page.getByLabel('属性值',{exact:true}).inputValue(),'300');
+ await seek(0);await page.getByLabel('关键帧缓动',{exact:true}).selectOption('custom');await page.getByLabel('贝塞尔 X1',{exact:true}).fill('.4');await page.getByLabel('贝塞尔 X1',{exact:true}).press('Tab');
+ let saved=await output();assert.deepEqual(saved.tracks[0].clips[0].appearance.keyframes.x[0].easing,[.4,0,.75,1]);
+ await page.getByLabel('关键帧缓动',{exact:true}).selectOption('linear');
+ for(const [name,value] of [['width',320],['height',180],['opacity',.5],['rotation',30],['blur',2],['blendMode','multiply'],['mask','ellipse']])await property(name,value);
+ await seek(30);await page.waitForFunction(()=>document.querySelector('[data-preview-clip-id="overlay"]')?.style.opacity==='0.5');
+ const node=page.locator('[data-preview-clip-id="overlay"]');assert.equal(await node.evaluate(n=>n.style.mixBlendMode),'multiply');assert.match(await node.evaluate(n=>n.style.clipPath),/ellipse/);assert.match(await node.evaluate(n=>n.style.transform),/rotate\(30deg\)/);assert.match(await node.evaluate(n=>n.style.filter),/blur\(2px\)/);
+ const position=await node.evaluate(n=>{const r=n.getBoundingClientRect(),p=n.parentElement.getBoundingClientRect(),s=Math.min(p.width/1280,p.height/720);return {actual:r.x+r.width/2,expected:p.x+p.width/2+(300-640)*s};});assert.ok(Math.abs(position.actual-position.expected)<1);
+ await action('split');saved=await output();assert.equal(saved.tracks[0].clips.length,2);const right=saved.tracks[0].clips[1];assert.equal(right.animationOffset,30);
+ await page.locator(`[data-clip-id="${right.id}"] .film-clip-body`).click();await seek(60);await property('x',700);saved=await output();assert.equal(saved.tracks[0].clips[0].appearance.keyframes.x[1].value,500);assert.equal(saved.tracks[0].clips[1].appearance.keyframes.x[1].value,700);
+ await seek(30);await property('mask','inset');await property('cropTop',20);await property('cropLeft',10);await page.waitForFunction(id=>document.querySelector(`[data-preview-clip-id="${id}"]`)?.style.clipPath.includes('20%'),right.id);
+ await page.getByRole('button',{name:'轨道设置：叠加',exact:true}).click();await page.getByRole('checkbox',{name:'锁定轨道',exact:true}).check();await page.locator(`[data-clip-id="${right.id}"] .film-clip-body`).click();assert.equal(await page.getByLabel('属性值',{exact:true}).isDisabled(),true);
+ assert.equal(await page.locator('.film-key-list').evaluate(n=>getComputedStyle(n).overscrollBehavior),'none');
+ await page.screenshot({path:'.local/motale-film/appearance.png'});assert.deepEqual(errors,[]);
+ console.log('PASS author properties + linear/custom Bezier keys + real geometry/filter/blend/masks + split curve continuity/independence + locked UI');
+}finally{await browser.close();}
