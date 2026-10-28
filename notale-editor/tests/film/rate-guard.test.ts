@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {emptyFilm,applyFilmCommands} from '../../src/film/index.js';
+const initial=emptyFilm('rate-guard','Original'),next={...initial,frameRate:{numerator:120,denominator:1}};
+const command={type:'film.document.restore' as const,document:next,expected:initial};
+assert.equal(applyFilmCommands(initial,[command]).frameRate.numerator,120);
+const reordered=Object.fromEntries(Object.entries(initial).reverse()) as typeof initial;assert.equal(applyFilmCommands(reordered,[command]).frameRate.numerator,120);
+const changed=applyFilmCommands(initial,[{type:'film.marker.put',marker:{id:'new',at:1,title:'Concurrent'}}]);
+assert.throws(()=>applyFilmCommands(changed,[command]),/拒绝覆盖新修订/);
+assert.equal(changed.frameRate.numerator,30);assert.equal(changed.markers.length,1);
+assert.equal(applyFilmCommands(initial,[{type:'film.document.restore',document:next}]).frameRate.numerator,120);
+console.log('PASS expected author snapshot guards restore against concurrent revision; legacy history restore remains explicit');

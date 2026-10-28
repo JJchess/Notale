@@ -34,7 +34,7 @@ export function authorChanges(before: Snapshot, after: Snapshot): AuthorChangeSe
   const changes: AuthorChange[] = [];
   function visit(a: unknown, b: unknown, path: (string | number)[]) {
     if (same(a, b)) return;
-    if (typeof a === 'string' && typeof b === 'string' && path.at(-1) === 'html') {
+    if (typeof a === 'string' && typeof b === 'string' && path.length === 3 && path[0] === 'slides' && path[2] === 'html') {
       let start = 0, end = 0;
       while (start < Math.min(a.length, b.length) && a[start] === b[start]) start++;
       while (end < Math.min(a.length, b.length) - start && a[a.length - end - 1] === b[b.length - end - 1]) end++;
@@ -84,6 +84,7 @@ export function reverseAuthorChanges(change: AuthorChangeSet, fromVersion = chan
 export type OperationPolicy = 'property' | 'structure' | 'metadata' | 'runtime' | 'resource';
 /** Exhaustive registration is mandatory for every new domain command. */
 export const operationPolicies = {
+  'film.edit':'structure',
   'codeLesson.update':'runtime',
   'svg.patch':'runtime','svg.structure':'runtime','svg.import':'structure',
   'deck.update':'metadata','layout.set':'runtime','comment.set':'metadata','comment.remove':'metadata',

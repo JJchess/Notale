@@ -1,3 +1,5 @@
+import { parseFilmDocument, type FilmDocument } from '@notale/format/film';
+import type { FilmCommand } from '../film/commands.js';
 import { chartAuthoringSchema } from './chart-authoring.js';
 import { vectorCommands } from './vector-schema.js';
 import { canvasInstanceSchema } from './canvas-schema.js';
@@ -254,9 +256,15 @@ export const commentSchema = z
       .default([]),
   })
   .strict();
+export const filmDocumentSchema = z.unknown().superRefine((value,ctx)=>{
+  try { parseFilmDocument(value); } catch(error) { ctx.addIssue({code:'custom',message:error instanceof Error?error.message:String(error)}); }
+}).describe('Notale FilmDocument schemaVersion 1; validated by the public film format parser') as z.ZodType<FilmDocument>;
+const filmCommandSchema=z.object({type:z.string().startsWith('film.')}).passthrough() as unknown as z.ZodType<FilmCommand>;
 export const documentSchema = z
   .object({
     schemaVersion: z.literal(1),
+    kind: z.literal('film').optional(),
+    film: filmDocumentSchema.optional(),
     id: identifier,
     title: z.string().min(1).max(300),
     width: z.number().int().min(100).max(10000).default(1600),
@@ -265,7 +273,7 @@ export const documentSchema = z
     themeTokens: styleSchema.optional(),
     layouts: z.array(layoutSchema).max(100).default([]),
     componentLibrary: z.array(componentDefinitionSchema).max(100).optional(),
-    slides: z.array(slideSchema).min(1).max(1000),
+    slides: z.array(slideSchema).max(1000),
     assets: z.record(filePath, assetSchema).default({}),
     codeLessons: z.record(filePath, codeLessonSchema).optional(),
     comments: z.array(commentSchema).max(2000).default([]),
@@ -274,7 +282,11 @@ export const documentSchema = z
       .strict()
       .default({ loop: false, showSlideNumber: true }),
   })
-  .strict();
+  .strict().superRefine((doc,ctx)=>{
+    if(doc.kind==='film'){
+      if(!doc.film || doc.slides.length || doc.film.id!==doc.id || doc.film.title!==doc.title || doc.film.width!==doc.width || doc.film.height!==doc.height)ctx.addIssue({code:'custom',message:'Film document envelope does not match its content'});
+    }else if(doc.film || !doc.slides.length)ctx.addIssue({code:'custom',message:'Lecture documents require at least one slide and cannot contain film data'});
+  });
 export type Slide = z.infer<typeof slideSchema>;
 export type DeckDocument = z.infer<typeof documentSchema>;
 export type Asset = z.infer<typeof assetSchema>;
@@ -292,6 +304,7 @@ const patch = z
   })
   .strict();
 export const commandSchema = z.discriminatedUnion('type', [
+  z.object({type:z.literal('film.edit'),commands:z.array(filmCommandSchema).min(1).max(500)}).strict(),
   ...vectorCommands,
   z
     .object({

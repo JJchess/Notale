@@ -35,6 +35,10 @@ for (const name of ['workbench.html', 'workbench.css', 'show.html'])
   await copyFile('src/browser/' + name, 'dist/' + name);
 await copyFile('node_modules/reveal.js/dist/reveal.css', 'dist/reveal.css');
 await copyFile('node_modules/pathkit-wasm/bin/pathkit.wasm',runtimeDir+'/pathkit.wasm');
+await mkdir('dist/server/film', { recursive: true });
+for (const name of ['package-limits.json', 'slides-export.py', 'write-otio.py', 'requirements-export.txt']) {
+  await copyFile('src/server/film/' + name, 'dist/server/film/' + name);
+}
 
 await writeFile(runtimeDir+'/runtime-notices.txt', 'These licenses cover Notale and its third-party runtime code. User-authored slides and assets retain their own ownership and licensing.\n\n'+await readFile('LICENSE','utf8')+'\n\n'+await readFile('docs/THIRD-PARTY-NOTICES.txt','utf8'));
 await recordBuild();

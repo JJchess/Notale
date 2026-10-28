@@ -1,3 +1,4 @@
+import { applyFilmCommands } from '../film/commands.js';
 import {validateCodeLessons,updateCodeLesson} from './code-lessons.js';
 import { cleanChartReferences, mergeChartEdit, newChart } from './chart-authoring.js';
 import { applyVectorCommand } from './vector-commands.js';
@@ -21,7 +22,7 @@ import { connectorSvg } from './connectors.js';
 import { posix } from 'node:path';
 import { rebaseTheme } from './urls.js';
 import { parseCss, type Stylesheets } from './layout-css.js';
-import { type Command, type DeckDocument, type Slide, documentSchema, invariant } from './model.js';
+import { type Command, type DeckDocument, type Slide, documentSchema, invariant, DomainError } from './model.js';
 import {
   assertStatic,
   materializeLayout,
@@ -455,6 +456,12 @@ export function applyCommands(
   };
   for (let index = 0; index < queue.length; index++) {
     const cmd = queue[index];
+    if(cmd.type==='film.edit'){
+      invariant(doc.kind==='film'&&doc.film,'DOCUMENT_KIND_MISMATCH','Film edits require a film document');
+      try { doc.film=applyFilmCommands(doc.film!,cmd.commands); } catch(error) { throw new DomainError('INVALID_FILM_EDIT',error instanceof Error?error.message:String(error),400); }
+      Object.assign(doc,{title:doc.film.title,width:doc.film.width,height:doc.film.height});continue;
+    }
+    invariant(doc.kind!=='film'||cmd.type==='deck.update','DOCUMENT_KIND_MISMATCH','Lecture commands cannot edit films');
     if (cmd.type === 'layout.checkout' || cmd.type === 'layout.publish') {
       applyLayoutAuthoring(doc, cmd, options.stylesheets);
       continue;
@@ -473,6 +480,7 @@ export function applyCommands(
     if (cmd.type === 'deck.update') {
       const { type, ...rest } = cmd;
       Object.assign(doc, rest);
+      if(doc.film)doc.film={...doc.film,title:doc.title,width:doc.width,height:doc.height};
       continue;
     }
     if (cmd.type === 'layout.set') {

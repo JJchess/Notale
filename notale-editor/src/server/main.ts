@@ -30,8 +30,17 @@ const apps = createApps({
   contentOrigin: process.env.EDITOR_CONTENT_ORIGIN ?? `http://127.0.0.1:${contentPort}`,
   logger: true,
   integration: {
-    context: async () => ({ actor: 'local-author', scope: 'local-workspace' }),
+    context: async () => ({ actor: process.env.EDITOR_LOCAL_ACTOR ?? 'local-author', scope: process.env.EDITOR_LOCAL_SCOPE ?? 'local-workspace' }),
     authorize: async () => true,
+  },
+  film: {
+    dataDir: resolve(process.env.EDITOR_FILM_DATA_DIR ?? '.local/editor-film'),
+    playerDir: process.env.EDITOR_FILM_PLAYER_DIR,
+    ffmpeg: process.env.EDITOR_FFMPEG_PATH,
+    ffprobe: process.env.EDITOR_FFPROBE_PATH,
+    chromium: process.env.EDITOR_CHROMIUM_PATH,
+    python: process.env.EDITOR_PYTHON_PATH,
+    trustedLocalFilms: process.env.EDITOR_TRUSTED_LOCAL_FILMS === '1' && ['127.0.0.1', 'localhost', '::1'].includes(host),
   },
 });
 await apps.content.listen({ host, port: contentPort });

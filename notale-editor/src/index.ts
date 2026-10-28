@@ -1,5 +1,6 @@
 export { createApps, type AppOptions, type Integration } from './server/app.js';
 export { Store, type Context, type AssetInput, sha256 } from './server/store.js';
+export type { FilmServerOptions } from './server/film/config.js';
 export {
   documentSchema,
   slideSchema,

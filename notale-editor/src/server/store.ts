@@ -266,7 +266,7 @@ export class Store {
   }
   async list(ctx: Context) {
     const r = await this.pool.query(
-      `SELECT d.id,d.head AS version,r.document->>'title' AS title,jsonb_array_length(r.document->'slides') AS slides,r.created_at FROM editor_documents d JOIN editor_revisions r ON r.document_id=d.id AND r.version=d.head WHERE d.scope=$1 ORDER BY r.created_at DESC`,
+      `SELECT d.id,d.head AS version,r.document->>'title' AS title,COALESCE(r.document->>'kind','lecture') AS kind,jsonb_array_length(r.document->'slides') AS slides,r.created_at FROM editor_documents d JOIN editor_revisions r ON r.document_id=d.id AND r.version=d.head WHERE d.scope=$1 ORDER BY r.created_at DESC`,
       [ctx.scope],
     );
     return r.rows;
@@ -348,7 +348,8 @@ export class Store {
     const recoveryId=input.mutationId;
     const exists=await this.pool.query('SELECT id FROM editor_documents WHERE id=$1 AND scope=$2',[recoveryId,ctx.scope]);
     if(exists.rowCount)return this.get(ctx,recoveryId);
-    return this.create(ctx,{...intended,id:recoveryId,title:(intended.title+'（恢复副本）').slice(0,300)});
+    const title=(intended.title+'（恢复副本）').slice(0,300);
+    return this.create(ctx,{...intended,id:recoveryId,title,...(intended.film?{film:{...intended.film,id:recoveryId,title}}:{})});
   }
   async revisionChanges(ctx: Context, id: string, version: number): Promise<AuthorChangeSet> {
     await this.requireDoc(this.pool,ctx,id);

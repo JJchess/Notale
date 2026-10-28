@@ -1,5 +1,7 @@
+import {filmEnglish} from './film-catalog.js';
 /** Reviewed product copy. Chinese source keys preserve legacy state and error semantics. */
 export const english = {
+  ...filmEnglish,
   "让 {0} 改这一页…": "Ask {0} to edit this slide…",
   "{0} · AI 编辑": "{0} · AI editing",
   "{0} 页": "{0} slides",

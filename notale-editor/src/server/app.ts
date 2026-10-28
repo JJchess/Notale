@@ -21,6 +21,8 @@ import { mediaCall, mediaAvailability, IMAGE_TOOL_SCHEMAS } from './media/index.
 import { runTurn, type AiStep } from './agent/run.js';
 import { SessionStore, SandboxPool } from './agent/session.js';
 import { AiUploads } from './agent/uploads.js';
+import { registerFilm } from './film/routes.js';
+import type { FilmServerOptions } from './film/config.js';
 import { MAX_MEDIA_BYTES } from './agent/pi/index.js';
 import { diffDocuments } from '../domain/document-diff.js';
 import { draftFile, renderDraftPage } from './agent/draft-renderer.js';
@@ -45,6 +47,7 @@ export interface AppOptions {
   models?: ModelRegistry;
   /** Explicit host capabilities; passing this object prevents standalone credential discovery. */
   media?: { availability: ReturnType<typeof mediaAvailability>; call: typeof mediaCall };
+  film?: FilmServerOptions;
 }
 export function createApps(options: AppOptions) {
   const api = options.api ?? Fastify({ logger: options.logger ?? false, bodyLimit: 75_000_000 });
@@ -478,6 +481,10 @@ export function createApps(options: AppOptions) {
           );
       const metadata = snapshot.document.assets[path];
       invariant(metadata, 'NOT_FOUND', 'File not found', 404);
+      // Fonts are reusable in the editor's picker as well as the isolated page.
+      // The signed capability, lease and document lookup above still gate every
+      // request, including 304/Range responses; HTML and scripts remain isolated.
+      if (/^font\/(?:woff2?|ttf|otf|sfnt)$/.test(metadata.mime)) reply.header('Access-Control-Allow-Origin', '*');
       const etag = `"${metadata.hash}"`;
       reply.type(metadata.mime).header('ETag', etag).header('Accept-Ranges', 'bytes').header('Cache-Control', 'private, max-age=0, must-revalidate');
       // The scoped revision contains the immutable asset hash; a cache hit needs no blob read.
@@ -578,5 +585,6 @@ export function createApps(options: AppOptions) {
       );
     api.get('/', async (_req, reply) => reply.redirect('/workbench.html'));
   }
+  if (options.film) registerFilm({ api, content, store, context, secret: options.secret, contentOrigin: options.contentOrigin, film: options.film });
   return { api, content };
 }

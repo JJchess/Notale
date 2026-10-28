@@ -9,6 +9,20 @@ export function isNotaleEnvelope(value: unknown): value is NotaleEnvelope<unknow
 export function notaleFilename(title: string): string {
   return (title.replace(/[<>:"/\\|?*\u0000-\u001f]/g,'-').trim().replace(/[. ]+$/,'').slice(0,120) || 'Notale')+'.notale';
 }
+/** A Motale film as one file (Motale's docs/MOTALE-FORMAT.md): the film as delivered, a manifest of every file with its sha256,
+ * and optionally author data (author.json) and viewer versions (versions.json), each named in acts.json. */
+export const MOTALE_FORMAT = {format:'motale',formatVersion:1,entry:'index.html'} as const;
+export const MOTALE_MANIFEST = 'motale-project.json';
+export interface MotaleEnvelope {format:'motale';formatVersion:1;entry:'index.html';film:{id:string;title:string;cut:number;cover?:string;bridge:string};files:Record<string,{hash:string;size:number;mime:string}>;}
+export function isMotaleEnvelope(value: unknown): value is MotaleEnvelope {
+  if (!value || typeof value !== 'object') return false;
+  const envelope = value as Record<string, unknown>;
+  return envelope.format === MOTALE_FORMAT.format && envelope.formatVersion === MOTALE_FORMAT.formatVersion && envelope.entry === MOTALE_FORMAT.entry
+    && !!envelope.film && typeof envelope.film === 'object' && !!envelope.files && typeof envelope.files === 'object' && !Array.isArray(envelope.files);
+}
+export function motaleFilename(title: string): string {
+  return (title.replace(/[<>:"/\\|?*\u0000-\u001f]/g,'-').trim().replace(/[. ]+$/,'').slice(0,120) || 'Motale')+'.motale';
+}
 export interface PageRuntime {
   version: 1;
   kind: 'slide' | 'code-workbench';
