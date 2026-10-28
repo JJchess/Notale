@@ -8,12 +8,13 @@ import path from 'node:path';
 import { lookup } from 'mime-types';
 import { FilmProcesses, runtimeOptions, scopeDirectory, type FilmServerOptions } from './config.js';
 import type { Context, Store } from '../store.js';
+import type { Snapshot } from '../../domain/model.js';
 import { parseFilmDocument } from '../../film/index.js';
 import { byteRange } from '../range.js';
 import { createMediaService } from './media-service.mjs';
 import { createExportService } from './export-service.mjs';
 import { collectResources, mapDocumentResources, resourceName } from './export-resources.mjs';
-import { validFilmMotaleAuthor } from '../../film/index.js';
+import { filmEnvelope, filmFromMotale, validFilmMotaleAuthor } from '../../film/index.js';
 import { decodeMotale, encodeMotale, motaleFilename, motaleKey } from '../motale-archive.js';
 
 type Action = 'read' | 'edit' | 'create' | 'export';
@@ -145,10 +146,9 @@ export function registerFilm(options: Options) {
   const signature = (value: string) => createHmac('sha256', options.secret).update(value).digest('base64url');
   // A .motale file (Motale's docs/MOTALE-FORMAT.md) is unpacked into its own folder under assets/motale/, which the preview
   // grants and portable exports already take whole as a Motale bundle (collectResources); its author data goes to the clips.
-  api.post('/api/film/motale-import', async req => {
-    const ctx = await context(req, 'create'), { root } = await workspace(ctx);
-    if (!Buffer.isBuffer(req.body)) throw fail('请上传 .motale 文件');
-    const { manifest, files } = await decodeMotale(req.body), key = motaleKey(manifest), folder = path.join(root, 'assets', 'motale', key);
+  async function importMotale(ctx: Context, bytes: Buffer) {
+    const { root } = await workspace(ctx);
+    const { manifest, files } = await decodeMotale(bytes), key = motaleKey(manifest), folder = path.join(root, 'assets', 'motale', key);
     if (!await stat(folder).then(() => true, () => false)) {
       const partial = `${folder}.partial`; await rm(partial, { recursive: true, force: true });
       for (const [name, bytes] of Object.entries(files)) { await mkdir(path.dirname(path.join(partial, name)), { recursive: true }); await writeFile(path.join(partial, name), bytes); }
@@ -159,6 +159,11 @@ export function registerFilm(options: Options) {
     let author: unknown = null;
     try { if (typeof acts.author === 'string' && files[acts.author]) author = JSON.parse(Buffer.from(files[acts.author]!).toString('utf8')); } catch { /* unreadable: none */ }
     return { title: manifest.film.title, acts, uri: `/assets/motale/${key}/index.html`, author: validFilmMotaleAuthor(author) ? author : null };
+  }
+  api.post('/api/film/motale-import', async req => {
+    const ctx = await context(req, 'create');
+    if (!Buffer.isBuffer(req.body)) throw fail('请上传 .motale 文件');
+    return importMotale(ctx, req.body);
   });
   api.post('/api/film/motale-export', async (req, reply) => {
     const ctx = await context(req, 'export'), { root } = await workspace(ctx);
@@ -207,4 +212,14 @@ export function registerFilm(options: Options) {
     reply.hijack(); await sendFile(req.raw, reply.raw, file);
   });
   api.addHook('onClose', async () => { closing = true; await Promise.all([processes.close(), ...[...services.values()].map(value => value.exports.close())]); grants.clear(); });
+  return {
+    /** A .motale stored as a film document under the caller's id, as the browser's own import saves it; an id already
+     * stored in this scope is returned unchanged, so a host can import the same delivered cut again safely. */
+    async importMotaleDocument(ctx: Context, bytes: Buffer, id: string): Promise<Snapshot> {
+      const existing = await store.get(ctx, id).catch(() => undefined);
+      if (existing) return existing;
+      const film = filmFromMotale(await importMotale(ctx, bytes), { id, sourceId: randomUUID() });
+      return store.create(ctx, filmEnvelope(film));
+    },
+  };
 }

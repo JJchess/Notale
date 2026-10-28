@@ -10,7 +10,7 @@ import { scopeDirectory } from '../src/server/film/config.js';
 import { decodeMotale, encodeMotale } from '../src/server/motale-archive.js';
 import type { Store } from '../src/server/store.js';
 
-const film = (): Record<string, Uint8Array> => ({
+const filmFiles = (): Record<string, Uint8Array> => ({
   'index.html': strToU8('<script type="module" src="shell.js"></script>'), 'shell.js': strToU8(''),
   'acts.json': strToU8(JSON.stringify({ title: '圆的面积', acts: [{ id: 'a', title: 'A', start: 0, end: 6 }] })),
   'acts/a.js': strToU8('export const ID = "a";'), 'ACT.md': strToU8('notes'), 'cover.jpg': strToU8('jpg'),
@@ -18,7 +18,7 @@ const film = (): Record<string, Uint8Array> => ({
 const author = { schema: 'motale-author/2', acts: { a: { objects: { dot: { x: 10 } } } } };
 
 test('.motale: packed with the leftovers dropped and author data named in acts.json; tampered or unsafe packages are refused', async () => {
-  const bytes = await encodeMotale(film(), { id: 'circle', cut: 2 }, author);
+  const bytes = await encodeMotale(filmFiles(), { id: 'circle', cut: 2 }, author);
   const { manifest, files } = await decodeMotale(bytes);
   assert.deepEqual(manifest.film, { id: 'circle', cut: 2, title: '圆的面积', cover: 'cover.jpg', bridge: 'motale-bridge/2' });
   assert.ok(!('ACT.md' in files));
@@ -42,7 +42,7 @@ test('.motale through the film routes: imported into its own asset folder with i
   await api.ready(); await content.ready();
   try {
     const upload = (payload: Uint8Array) => api.inject({ method: 'POST', url: '/api/film/motale-import', headers: { 'content-type': 'application/octet-stream' }, payload: Buffer.from(payload) });
-    const imported = await upload(await encodeMotale(film(), { id: 'circle', cut: 2 }, author));
+    const imported = await upload(await encodeMotale(filmFiles(), { id: 'circle', cut: 2 }, author));
     assert.equal(imported.statusCode, 200, imported.body);
     const { uri, acts, author: came, title } = imported.json();
     assert.match(uri, /^\/assets\/motale\/[0-9a-f]{16}\/index\.html$/, 'a folder of its own, which collectResources takes whole as a Motale bundle');
@@ -66,4 +66,27 @@ test('.motale through the film routes: imported into its own asset folder with i
   } finally {
     await api.close(); await content.close(); await rm(dataDir, { recursive: true, force: true });
   }
+});
+
+test('.motale as a stored film document: acts become clips with the author data; the same id is not imported twice', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'notale-motale-document-'));
+  const api = Fastify(), content = Fastify(), stored = new Map<string, { document: unknown; version: number }>();
+  let creates = 0;
+  const store = {
+    get: async (ctx: { scope: string }, id: string) => { const value = stored.get(ctx.scope + ':' + id); if (!value) throw Object.assign(Error('Document not found'), { statusCode: 404 }); return value; },
+    create: async (ctx: { scope: string }, document: { id: string }) => { creates++; const value = { document, version: 1 }; stored.set(ctx.scope + ':' + document.id, value); return value; },
+  } as unknown as Store;
+  const film = registerFilm({ api, content, store, secret: 'test-secret', contentOrigin: 'http://content.example', film: { dataDir },
+    context: async () => { throw Object.assign(Error('browser routes are not used here'), { statusCode: 401 }); } });
+  try {
+    const ctx = { actor: 'author', scope: 'A' }, bytes = Buffer.from(await encodeMotale(filmFiles(), { id: 'circle', cut: 2 }, author));
+    const first = await film.importMotaleDocument(ctx, bytes, 'doc-1') as { document: { id: string; kind: string; film: { sources: { uri: string }[]; tracks: { clips: { motale?: unknown }[] }[] } } };
+    assert.equal(first.document.id, 'doc-1'); assert.equal(first.document.kind, 'film');
+    assert.match(first.document.film.sources[0]!.uri, /^\/assets\/motale\/[^/]+\/index\.html$/);
+    assert.deepEqual(first.document.film.tracks[0]!.clips[0]!.motale, author);
+    const folder = path.join(scopeDirectory(dataDir, 'A'), first.document.film.sources[0]!.uri.slice(1, -'/index.html'.length));
+    assert.match(await readFile(path.join(folder, 'motale-project.json'), 'utf8'), /"cut": 2/);
+    const again = await film.importMotaleDocument(ctx, bytes, 'doc-1');
+    assert.equal(again, stored.get('A:doc-1')); assert.equal(creates, 1);
+  } finally { await api.close(); await content.close(); await rm(dataDir, { recursive: true, force: true }); }
 });

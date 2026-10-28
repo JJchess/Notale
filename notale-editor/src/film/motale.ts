@@ -33,3 +33,10 @@ export function importMotaleActs(value: unknown, options: { id: string; sourceId
     at: doc.tracks[0].kind === 'media' ? doc.tracks[0].clips[i].at : secondsFrame(a.start, doc.frameRate) }));
   return parseFilmDocument(doc);
 }
+
+/** A whole .motale import as a film: its acts become clips, and each clip carries the package's author data. */
+export function filmFromMotale(imported: { acts: unknown; uri: string; author?: unknown }, options: { id: string; sourceId: string; rate?: FilmRate }): FilmDocument {
+  const film = importMotaleActs(imported.acts, { ...options, uri: imported.uri });
+  if (imported.author) for (const track of film.tracks) if (track.kind === 'media') for (const clip of track.clips) clip.motale = structuredClone(imported.author) as NonNullable<typeof clip.motale>;
+  return film;
+}

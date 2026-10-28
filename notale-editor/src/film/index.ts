@@ -4,6 +4,7 @@ export * from './commands.js';
 export * from './frame.js';
 export * from './library.js';
 export * from './motale.js';
+export * from './document.js';
 export * from './subtitles.js';
 export * from './time.js';
 export * from './appearance.js';
